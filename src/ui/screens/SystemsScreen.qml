@@ -39,6 +39,7 @@ Item {
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
     readonly property bool _crtGridLayout: Theme.crtNativePath && !systems._listLayout
     readonly property var _tileLayout: systems._crtGridLayout ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
+    readonly property int _listOverlayBottomMargin: Sizing.pctH(6) + systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight
 
     signal requestAccept(systemId: string)
     signal requestHubScreen
@@ -309,10 +310,10 @@ Item {
     }
 
     ScreenStateOverlay {
-        x: (systems._listLayout ? systemsList.x : systemsGrid.x) + Sizing.center(systems._listLayout ? systemsList.width : systemsGrid.width, width)
-        y: (systems._listLayout ? systemsList.y : systemsGrid.y) + Sizing.center(systems._listLayout ? systemsList.height : systemsGrid.height, height)
-        width: systems._listLayout ? systemsList.width : systemsGrid.width
-        height: systems._listLayout ? systemsList.height : systemsGrid.height
+        x: systems._listLayout ? 0 : systemsGrid.x
+        y: systems._listLayout ? systemsList.y : systemsGrid.y
+        width: systems._listLayout ? systems.width : systemsGrid.width
+        height: systems._listLayout ? Math.max(0, systems.height - systemsList.y - systems._listOverlayBottomMargin) : systemsGrid.height
         loading: Browse.SystemsModel.loading
         errorMessage: Browse.SystemsModel.error_message ?? ""
         count: Browse.SystemsModel.count

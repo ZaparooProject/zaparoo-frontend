@@ -161,6 +161,7 @@ pub struct GamesModelRust {
     card_write_error: QString,
     current_description: QString,
     current_detail_tags: QString,
+    current_detail_loading: bool,
     current_detail_image_key: QString,
     current_detail_image_index: i32,
     current_detail_image_count: i32,
@@ -263,6 +264,7 @@ impl Default for GamesModelRust {
             card_write_error: QString::default(),
             current_description: QString::default(),
             current_detail_tags: QString::default(),
+            current_detail_loading: false,
             current_detail_image_key: QString::default(),
             current_detail_image_index: 0,
             current_detail_image_count: 0,
@@ -323,6 +325,7 @@ pub mod ffi {
         #[qproperty(QString, card_write_error)]
         #[qproperty(QString, current_description)]
         #[qproperty(QString, current_detail_tags)]
+        #[qproperty(bool, current_detail_loading)]
         #[qproperty(QString, current_detail_image_key)]
         #[qproperty(i32, current_detail_image_index)]
         #[qproperty(i32, current_detail_image_count)]
@@ -750,6 +753,7 @@ impl ffi::GamesModel {
             .description_seq
             .fetch_add(1, Ordering::SeqCst);
         if index < 0 || index >= self.count {
+            self.as_mut().set_current_detail_loading(false);
             self.as_mut().set_current_description(QString::default());
             self.as_mut().set_current_detail_tags(QString::default());
             clear_detail_images(self.as_mut());
@@ -757,6 +761,7 @@ impl ffi::GamesModel {
         }
         let entry = &self.entries[index as usize];
         if entry.is_folder() {
+            self.as_mut().set_current_detail_loading(false);
             self.as_mut().set_current_description(QString::default());
             self.as_mut().set_current_detail_tags(QString::default());
             clear_detail_images(self.as_mut());
@@ -772,6 +777,7 @@ impl ffi::GamesModel {
                 .set_current_description(QString::from(description.as_str()));
         }
         if system.is_empty() || path.is_empty() {
+            self.as_mut().set_current_detail_loading(false);
             self.as_mut().set_current_description(QString::default());
             self.as_mut().set_current_detail_tags(QString::default());
             clear_detail_images(self.as_mut());
@@ -779,6 +785,7 @@ impl ffi::GamesModel {
         }
         let cache_key = MediaKey::new(system.clone(), path.clone());
         if let Some(metadata) = detail_metadata_cache_hit(self.as_mut(), &cache_key) {
+            self.as_mut().set_current_detail_loading(false);
             apply_detail_metadata(self.as_mut(), metadata);
             return;
         }
@@ -787,6 +794,7 @@ impl ffi::GamesModel {
         if description.is_empty() {
             self.as_mut().set_current_description(QString::default());
         }
+        self.as_mut().set_current_detail_loading(true);
         let fallback_description = description;
         let seq = self.rust().description_seq.clone();
         let ticket = seq.load(Ordering::SeqCst);
@@ -810,7 +818,7 @@ impl ffi::GamesModel {
                             } else {
                                 meta_description
                             },
-                            tags: detail_tags_from_meta(&result.media, &title, &filename),
+                            tags: detail_tags_from_meta(&result.media, &filename),
                             image_keys: detail_image_keys_from_meta(&result.media, &system, &path),
                         })
                     }
@@ -819,6 +827,7 @@ impl ffi::GamesModel {
                         None
                     }
                 };
+                model.as_mut().set_current_detail_loading(false);
                 if let Some(metadata) = metadata {
                     cache_detail_metadata(model.as_mut(), cache_key, metadata.clone());
                     apply_detail_metadata(model.as_mut(), metadata);
@@ -836,6 +845,7 @@ impl ffi::GamesModel {
             .rust_mut()
             .description_seq
             .fetch_add(1, Ordering::SeqCst);
+        self.as_mut().set_current_detail_loading(false);
         self.as_mut().set_current_description(QString::default());
         self.as_mut().set_current_detail_tags(QString::default());
         clear_detail_images(self);
@@ -936,6 +946,7 @@ impl ffi::GamesModel {
         self.as_mut().set_current_path(QString::from(path.as_str()));
         self.as_mut().set_loading(true);
         self.as_mut().set_error_message(QString::default());
+        self.as_mut().set_current_detail_loading(false);
         self.as_mut().set_current_description(QString::default());
         self.as_mut().set_current_detail_tags(QString::default());
         self.as_mut()
@@ -1052,58 +1063,104 @@ fn description_from_meta(meta: &MediaMeta) -> String {
         .unwrap_or_default()
 }
 
-fn detail_tags_from_meta<'a>(
-    meta: &'a MediaMeta,
-    fallback_title: &'a str,
-    filename: &'a str,
-) -> String {
+fn detail_tags_from_meta<'a>(meta: &'a MediaMeta, filename: &'a str) -> String {
     let source = if meta.title.tags.is_empty() {
         meta.tags.as_slice()
     } else {
         meta.title.tags.as_slice()
     };
-    let mut rows: Vec<(&str, &str)> = Vec::new();
-    let meta_title = meta.title.name.trim();
-    let title = if meta_title.is_empty() {
-        fallback_title.trim()
-    } else {
-        meta_title
-    };
-    if !title.is_empty() {
-        rows.push(("title", title));
-    }
-    let filename = filename.trim();
-    if !filename.is_empty() {
-        rows.push(("filename", filename));
-    }
-    for tag_type in ["genre", "year", "rating"] {
+    let mut rows: Vec<(String, String)> = Vec::new();
+    for tag_type in [
+        "system",
+        "platform",
+        "year",
+        "release date",
+        "release_date",
+        "genre",
+        "players",
+        "play mode",
+        "play_mode",
+        "cooperative",
+        "developer",
+        "publisher",
+        "rating",
+    ] {
         rows.extend(
             source
                 .iter()
-                .filter(|tag| tag.tag_type == tag_type && !tag.tag.trim().is_empty())
-                .map(|tag| (tag.tag_type.as_str(), tag.tag.trim())),
+                .filter(|tag| {
+                    tag.tag_type.eq_ignore_ascii_case(tag_type) && !tag.tag.trim().is_empty()
+                })
+                .map(|tag| (display_tag_label(&tag.tag_type), tag.tag.trim().to_string())),
         );
     }
     rows.extend(
         source
             .iter()
             .filter(|tag| {
-                !matches!(tag.tag_type.as_str(), "genre" | "year" | "rating")
+                !is_ordered_detail_tag(&tag.tag_type)
                     && !tag.tag_type.trim().is_empty()
                     && !tag.tag.trim().is_empty()
             })
-            .map(|tag| (tag.tag_type.as_str(), tag.tag.trim())),
+            .map(|tag| (display_tag_label(&tag.tag_type), tag.tag.trim().to_string())),
     );
+    let filename = filename.trim();
+    if !filename.is_empty() {
+        rows.push(("Filename".to_string(), filename.to_string()));
+    }
     rows.into_iter()
-        .map(|(tag_type, value)| {
-            let mut label = tag_type.to_string();
-            if let Some(first) = label.get_mut(0..1) {
-                first.make_ascii_uppercase();
-            }
-            format!("{label}\t{value}")
-        })
+        .map(|(label, value)| format!("{label}\t{value}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn is_ordered_detail_tag(tag_type: &str) -> bool {
+    matches!(
+        tag_type
+            .trim()
+            .to_ascii_lowercase()
+            .replace('-', " ")
+            .as_str(),
+        "system"
+            | "platform"
+            | "year"
+            | "release date"
+            | "release_date"
+            | "genre"
+            | "players"
+            | "play mode"
+            | "play_mode"
+            | "cooperative"
+            | "developer"
+            | "publisher"
+            | "rating"
+    )
+}
+
+fn display_tag_label(tag_type: &str) -> String {
+    let normalized = tag_type
+        .trim()
+        .to_ascii_lowercase()
+        .replace(['-', '_'], " ");
+    match normalized.as_str() {
+        "release date" => "Release date".to_string(),
+        "play mode" => "Play mode".to_string(),
+        other => {
+            let mut words = other.split_whitespace();
+            let Some(first) = words.next() else {
+                return String::new();
+            };
+            let mut label = first.to_string();
+            if let Some(ch) = label.get_mut(0..1) {
+                ch.make_ascii_uppercase();
+            }
+            for word in words {
+                label.push(' ');
+                label.push_str(word);
+            }
+            label
+        }
+    }
 }
 
 fn file_stem_or_name(path: &str, name: &str) -> String {

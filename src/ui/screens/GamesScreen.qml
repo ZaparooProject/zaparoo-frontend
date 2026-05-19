@@ -35,8 +35,8 @@ Item {
     // and the anchored tile both light up.
     property bool gridFocused: true
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
-    readonly property real _listBandScale: 0.85
     readonly property int _listPageSize: 10
+    readonly property int _listOverlayBottomMargin: Sizing.pctH(6) + games._tileLayout.activeLabelBottomMargin + games._tileLayout.activeLabelHeight
     readonly property int _browsePageSize: games._listLayout ? games._listPageSize : gamesGrid.pageSize
     readonly property bool _crtGridLayout: Theme.crtNativePath && !games._listLayout
     readonly property var _tileLayout: games._crtGridLayout ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
@@ -375,7 +375,8 @@ Item {
         anchors.right: parent.right
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(2)
-        height: Math.round(Math.max(0, games.height - (topStrip.y + topStrip.height + Sizing.pctH(2)) - Sizing.pctH(8)) * games._listBandScale)
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Sizing.pctH(8)
     }
 
     BrowseList {
@@ -415,39 +416,16 @@ Item {
         anchors.bottom: listBand.bottom
         title: gamesList.currentName
         coverKey: Browse.GamesModel.current_detail_image_key !== "" ? Browse.GamesModel.current_detail_image_key : gamesList.currentCoverKey
-        description: Browse.GamesModel.current_description
         showDescription: false
         showTitle: false
         detailTags: Browse.GamesModel.current_detail_tags
+        loading: Browse.GamesModel.current_detail_loading
         canPreviousImage: Browse.GamesModel.current_detail_image_can_prev
         canNextImage: Browse.GamesModel.current_detail_image_can_next
         onVisibleChanged: {
             if (visible)
                 Browse.GamesModel.load_description_at(gamesGrid.currentIndex);
         }
-    }
-
-    Text {
-        id: listDescription
-
-        visible: listBand.visible && text !== ""
-        anchors.left: parent.left
-        anchors.leftMargin: Sizing.pctW(5)
-        anchors.right: parent.right
-        anchors.rightMargin: Sizing.pctW(5)
-        anchors.top: listBand.bottom
-        anchors.topMargin: Sizing.pctH(2)
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.pctH(8)
-        text: Browse.GamesModel.current_description
-        color: Theme.textLabel
-        font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.2)
-        wrapMode: Text.Wrap
-        elide: Text.ElideRight
-        horizontalAlignment: Text.AlignLeft
-        verticalAlignment: Text.AlignTop
-        renderType: Text.NativeRendering
     }
 
     // Grid fills the safe zone between the top strip and the active
@@ -565,10 +543,10 @@ Item {
     }
 
     ScreenStateOverlay {
-        x: (games._listLayout ? gamesList.x : gamesGrid.x) + Sizing.center(games._listLayout ? gamesList.width : gamesGrid.width, width)
-        y: (games._listLayout ? gamesList.y : gamesGrid.y) + Sizing.center(games._listLayout ? gamesList.height : gamesGrid.height, height)
-        width: games._listLayout ? gamesList.width : gamesGrid.width
-        height: games._listLayout ? gamesList.height : gamesGrid.height
+        x: games._listLayout ? 0 : gamesGrid.x
+        y: games._listLayout ? listBand.y : gamesGrid.y
+        width: games._listLayout ? games.width : gamesGrid.width
+        height: games._listLayout ? Math.max(0, games.height - listBand.y - games._listOverlayBottomMargin) : gamesGrid.height
         loading: Browse.GamesModel.loading
         errorMessage: Browse.GamesModel.error_message ?? ""
         count: Browse.GamesModel.count

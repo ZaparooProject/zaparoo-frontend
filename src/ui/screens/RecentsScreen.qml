@@ -38,6 +38,7 @@ Item {
     // hides while a modal (the context menu) is on top of the stack.
     property bool gridFocused: true
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
+    readonly property int _listOverlayBottomMargin: Sizing.pctH(15)
 
     // True while either the cross-screen router is mid-flip
     // (`transitioning`) or the in-screen cover gate is holding
@@ -204,6 +205,10 @@ Item {
             recents._focusIndex(index);
             recents.handleAction("accept");
         }
+        onItemRightClicked: index => {
+            recents._focusIndex(index);
+            recents.handleAction("write_card");
+        }
         onEmptyRightClicked: recents.handleAction("cancel")
         onPageWheelRequested: delta => recents.handleAction(delta > 0 ? "page_next" : "page_prev")
     }
@@ -271,10 +276,10 @@ Item {
     }
 
     ScreenStateOverlay {
-        x: (recents._listLayout ? recentsList.x : recentsGrid.x) + Sizing.center(recents._listLayout ? recentsList.width : recentsGrid.width, width)
-        y: (recents._listLayout ? recentsList.y : recentsGrid.y) + Sizing.center(recents._listLayout ? recentsList.height : recentsGrid.height, height)
-        width: recents._listLayout ? recentsList.width : recentsGrid.width
-        height: recents._listLayout ? recentsList.height : recentsGrid.height
+        x: recents._listLayout ? 0 : recentsGrid.x
+        y: recents._listLayout ? recentsList.y : recentsGrid.y
+        width: recents._listLayout ? recents.width : recentsGrid.width
+        height: recents._listLayout ? Math.max(0, recents.height - recentsList.y - recents._listOverlayBottomMargin) : recentsGrid.height
         loading: Browse.RecentsModel.loading
         errorMessage: Browse.RecentsModel.error_message ?? ""
         count: Browse.RecentsModel.count

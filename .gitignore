@@ -63,6 +63,7 @@ output/
 CLAUDE.md
 .claude/
 .opencode/
+.pi/
 docs/plans/
 
 # Cargo build cache

@@ -17,6 +17,7 @@ qt_add_qml_module(
         ContextMenu.qml
         CoreStatusPill.qml
         FirstRunIndexModal.qml
+        GameInfoModal.qml
         HeaderBar.qml
         LoadingIndicator.qml
         ListPickerModal.qml

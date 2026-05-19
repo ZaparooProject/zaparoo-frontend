@@ -27,6 +27,7 @@ fn main() {
         "src/models/alternate_versions.rs",
         "src/models/categories.rs",
         "src/models/systems.rs",
+        "src/models/game_info.rs",
         "src/models/games.rs",
         "src/models/favorites.rs",
         "src/models/browse.rs",

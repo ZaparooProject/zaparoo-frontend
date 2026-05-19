@@ -31,6 +31,7 @@ pub mod build_info;
 pub mod categories;
 pub mod favorites;
 pub mod favorites_state;
+pub mod game_info;
 pub mod games;
 pub mod games_state;
 pub mod hub_state;

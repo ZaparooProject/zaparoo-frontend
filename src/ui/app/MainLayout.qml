@@ -206,6 +206,7 @@ ApplicationWindow {
     property alias contextMenu: contextMenu
     property alias commercialNoticeModal: commercialNoticeModal
     property alias firstRunIndexModal: firstRunIndexModal
+    property alias gameInfoModal: gameInfoModal
     property alias logUploadModal: logUploadModal
     property alias quitConfirmModal: quitConfirmModal
     property alias settingNeedsRestartModal: settingNeedsRestartModal
@@ -224,6 +225,7 @@ ApplicationWindow {
     property bool qrCodeModalVisible: false
     property bool commercialNoticeModalVisible: false
     property bool firstRunIndexModalVisible: false
+    property bool gameInfoModalVisible: false
     property bool logUploadModalVisible: false
     property bool quitConfirmModalVisible: false
     property bool listPickerModalVisible: false
@@ -250,6 +252,7 @@ ApplicationWindow {
 
     signal contextMenuAccepted(string id)
     signal contextMenuCloseRequested
+    signal closeGameInfoRequested
 
     // Forward-transition state owned by Main.qml. "" while idle;
     // "systems" or "games" while waiting on a model fill before
@@ -574,6 +577,14 @@ ApplicationWindow {
             open: root.qrCodeModalVisible
         }
 
+        GameInfoModal {
+            id: gameInfoModal
+
+            anchors.fill: parent
+            open: root.gameInfoModalVisible
+            onCloseRequested: root.closeGameInfoRequested()
+        }
+
         // First-run mediadb index modal. Pushed by Main.qml the first time
         // we connect to a Core whose mediadb is empty. Blocks the screens
         // beneath until the initial scan completes (or the user cancels and
@@ -713,7 +724,7 @@ ApplicationWindow {
                             label: qsTr("Cancel")
                         }
                     ];
-                if (root.qrCodeModalVisible)
+                if (root.qrCodeModalVisible || root.gameInfoModalVisible)
                     return [
                         {
                             button: "ButtonB",

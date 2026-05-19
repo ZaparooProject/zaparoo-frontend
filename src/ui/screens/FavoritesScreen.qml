@@ -38,6 +38,7 @@ Item {
     // hides while a modal (the context menu) is on top of the stack.
     property bool gridFocused: true
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
+    readonly property int _listOverlayBottomMargin: Sizing.pctH(15)
 
     // True while either the cross-screen router is mid-flip
     // (`transitioning`) or the in-screen cover gate is holding
@@ -177,7 +178,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: Sizing.pctH(11)
+        anchors.topMargin: Sizing.headerBottom + Sizing.pctH(1)
         height: Sizing.pctH(7)
         title: qsTr("Favorites")
         currentPage: favoritesGrid.currentPage
@@ -273,10 +274,10 @@ Item {
     }
 
     ScreenStateOverlay {
-        x: (favorites._listLayout ? favoritesList.x : favoritesGrid.x) + Sizing.center(favorites._listLayout ? favoritesList.width : favoritesGrid.width, width)
-        y: (favorites._listLayout ? favoritesList.y : favoritesGrid.y) + Sizing.center(favorites._listLayout ? favoritesList.height : favoritesGrid.height, height)
-        width: favorites._listLayout ? favoritesList.width : favoritesGrid.width
-        height: favorites._listLayout ? favoritesList.height : favoritesGrid.height
+        x: favorites._listLayout ? 0 : favoritesGrid.x
+        y: favorites._listLayout ? favoritesList.y : favoritesGrid.y
+        width: favorites._listLayout ? favorites.width : favoritesGrid.width
+        height: favorites._listLayout ? Math.max(0, favorites.height - favoritesList.y - favorites._listOverlayBottomMargin) : favoritesGrid.height
         loading: Browse.FavoritesModel.loading
         errorMessage: Browse.FavoritesModel.error_message ?? ""
         count: Browse.FavoritesModel.count
