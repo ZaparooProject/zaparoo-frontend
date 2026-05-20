@@ -40,6 +40,7 @@ TestCase {
         // run in microseconds, so the pending fire would land on the
         // next test if we didn't reset it here.
         main._stopRepeat();
+        main._stopCancelHold();
     }
 
     function test_initial_state_is_hub(): void {
@@ -95,6 +96,7 @@ TestCase {
     function test_escape_on_games_returns_to_systems(): void {
         main.activeScreen = main.screenGames;
         main.handleKey(Qt.Key_Escape);
+        main.handleKeyRelease(Qt.Key_Escape);
         compare(main.activeScreen, main.screenSystems);
     }
 
@@ -102,6 +104,7 @@ TestCase {
     function test_escape_on_systems_returns_to_hub(): void {
         main.activeScreen = main.screenSystems;
         main.handleKey(Qt.Key_Escape);
+        main.handleKeyRelease(Qt.Key_Escape);
         compare(main.activeScreen, main.screenHub);
     }
 
@@ -118,7 +121,34 @@ TestCase {
     function test_backspace_behaves_like_escape_on_games(): void {
         main.activeScreen = main.screenGames;
         main.handleKey(Qt.Key_Backspace);
+        main.handleKeyRelease(Qt.Key_Backspace);
         compare(main.activeScreen, main.screenSystems);
+    }
+
+    function test_cancel_press_arms_hold_without_immediate_navigation(): void {
+        main.activeScreen = main.screenGames;
+        main.handleKey(Qt.Key_Escape);
+        compare(main.activeScreen, main.screenGames, "Back press must wait for release-or-hold timeout");
+        compare(main._cancelHoldPending, true);
+    }
+
+    function test_cancel_hold_from_games_routes_directly_to_hub(): void {
+        main.activeScreen = main.screenGames;
+        main.handleKey(Qt.Key_Escape);
+        tryCompare(main, "activeScreen", main.screenHub);
+        compare(main._cancelHoldPending, false, "Hold timer must clear after firing");
+        main.handleKeyRelease(Qt.Key_Escape);
+        compare(main.activeScreen, main.screenHub, "Release after long-hold must not fire a second cancel");
+    }
+
+    function test_cancel_hold_on_hub_opens_quit_confirm(): void {
+        main.activeScreen = main.screenHub;
+        main.handleKey(Qt.Key_Escape);
+        tryCompare(main, "quitConfirmModalVisible", true);
+        compare(main.activeScreen, main.screenHub, "Long-hold Back on Hub must stay on Hub and ask for quit");
+        compare(main._cancelHoldPending, false, "Hold timer must clear after opening quit confirm");
+        main.handleKeyRelease(Qt.Key_Escape);
+        compare(main.quitConfirmModalVisible, true, "Release after long-hold must not close the quit confirm");
     }
 
     // Cross-row mapping. The test harness has no live CategoriesModel

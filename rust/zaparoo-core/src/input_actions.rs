@@ -16,6 +16,7 @@ pub mod actions {
     pub const RIGHT: &str = "right";
     pub const ACCEPT: &str = "accept";
     pub const CANCEL: &str = "cancel";
+    pub const CANCEL_HOLD: &str = "cancel_hold";
     pub const WRITE_CARD: &str = "write_card";
     pub const DETAILS: &str = "details";
     pub const PAGE_PREV: &str = "page_prev";

@@ -295,6 +295,45 @@ MainLayout {
         Browse.AppState.active_screen = screen;
     }
 
+    function _closeAllModals(): void {
+        root.hideCardWriteModal();
+        root.qrCodeModalVisible = false;
+        root.commercialNoticeModalVisible = false;
+        root.firstRunIndexModalVisible = false;
+        root.logUploadModalVisible = false;
+        root.quitConfirmModalVisible = false;
+        root.listPickerModalVisible = false;
+        root.settingNeedsRestartModalVisible = false;
+        root.contextMenuVisible = false;
+        root.contextMenuOwner = "";
+        root.contextMenuIndex = -1;
+        root.contextMenuMode = "main";
+        root.contextMenuEntries = [];
+        root._discoverParentEntries = [];
+        root._discoverMenuPending = false;
+        root.listPickerTitle = "";
+        root.listPickerEntries = [];
+        root.listPickerInitialId = "";
+        root.listPickerFieldId = "";
+        root._pendingLanguageSelection = "";
+        root._pendingResolutionSelection = "";
+        ScreenManager.modalStack = [];
+    }
+
+    function _forceHub(): void {
+        root._stopRepeat();
+        root._stopCancelHold();
+        root.gamesScreen.flushSelectedPersist();
+        root.pendingTransition = "";
+        if (root.activeScreen === root.screenHub) {
+            root._closeAllModals();
+            root.openQuitConfirmModal();
+            return;
+        }
+        root._closeAllModals();
+        root._goto(root.screenHub);
+    }
+
     // Single-shot callback slots fired by the loadingChanged
     // listeners below. Only one transition is in flight at a time
     // (input gate guarantees this), so two scalars are enough.
@@ -1276,6 +1315,10 @@ MainLayout {
         if (root._maybeDismissScreensaver())
             return;
         root._resetIdle();
+        if (action === "cancel_hold") {
+            root._forceHub();
+            return;
+        }
         // Input gate. While a forward transition is in flight, swallow
         // every press so a user mashing buttons during the loading
         // wait can't queue a second transition or kick a half-cancel
@@ -1347,13 +1390,18 @@ MainLayout {
     // active, just like fresh presses.
     readonly property int _repeatInitialMs: 350
     readonly property int _repeatTickMs: 90
+    readonly property int _cancelHoldMs: 1000
     property string _heldAction: ""
     property int _heldKey: 0
     property bool _dispatchingRepeat: false
+    property bool _cancelPending: false
+    property bool _cancelHoldReady: false
+    property int _cancelHeldKey: 0
     // Aliased so tst_navigation.qml can observe the repeat state machine
     // — child Timer ids are file-scoped and aren't reachable otherwise.
     property alias _repeatPending: repeatInitial.running
     property alias _repeatTicking: repeatTick.running
+    property alias _cancelHoldPending: cancelHoldTimer.running
 
     function _stopRepeat(): void {
         repeatInitial.stop();
@@ -1370,8 +1418,22 @@ MainLayout {
         root.gamesScreen.flushSelectedPersist();
     }
 
+    function _stopCancelHold(): void {
+        cancelHoldTimer.stop();
+        root._cancelPending = false;
+        root._cancelHoldReady = false;
+        root._cancelHeldKey = 0;
+    }
+
     function _isRepeatableAction(action: string): bool {
         return action === "up" || action === "down" || action === "left" || action === "right";
+    }
+
+    function _armCancelHold(key: int): void {
+        root._cancelPending = true;
+        root._cancelHoldReady = false;
+        root._cancelHeldKey = key;
+        cancelHoldTimer.restart();
     }
 
     // State-machine half of handleKey: records the held key/action and
@@ -1399,6 +1461,10 @@ MainLayout {
         const action = Browse.Input.action_for_key(key);
         if (action === "")
             return;
+        if (action === "cancel") {
+            root._armCancelHold(key);
+            return;
+        }
         root.handleAction(action);
         root._armRepeat(action, key);
     }
@@ -1514,6 +1580,12 @@ MainLayout {
     // a release of any other key in flight (a chord, an unrelated press
     // mid-hold) is ignored.
     function handleKeyRelease(key: int): void {
+        if (root._cancelPending && key === root._cancelHeldKey) {
+            const action = root._cancelHoldReady ? "cancel_hold" : "cancel";
+            root._stopCancelHold();
+            root.handleAction(action);
+            return;
+        }
         if (root._heldAction !== "" && key === root._heldKey)
             root._stopRepeat();
     }
@@ -1522,6 +1594,17 @@ MainLayout {
         root._dispatchingRepeat = true;
         root.handleAction(root._heldAction);
         root._dispatchingRepeat = false;
+    }
+
+    Timer {
+        id: cancelHoldTimer
+        interval: root._cancelHoldMs
+        repeat: false
+        onTriggered: {
+            if (!root._cancelPending)
+                return;
+            root._cancelHoldReady = true;
+        }
     }
 
     Timer {
@@ -1561,8 +1644,10 @@ MainLayout {
     // quirk) would leave the timer ticking forever. `root.active` is
     // ApplicationWindow's own active property.
     onActiveChanged: {
-        if (!root.active)
+        if (!root.active) {
             root._stopRepeat();
+            root._stopCancelHold();
+        }
     }
 
     Item {
