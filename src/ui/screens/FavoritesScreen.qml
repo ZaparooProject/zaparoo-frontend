@@ -186,42 +186,67 @@ Item {
         totalText: Browse.FavoritesModel.count > 0 ? qsTr("%1 entries").arg(Browse.FavoritesModel.count) : ""
     }
 
-    BrowseList {
-        id: favoritesList
+    Item {
+        id: listCard
 
         visible: !favorites._gateHide && favorites._listLayout
         anchors.left: parent.left
         anchors.leftMargin: Sizing.pctW(5)
+        anchors.right: parent.right
+        anchors.rightMargin: Sizing.pctW(5)
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(2)
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Sizing.pctH(8)
-        width: Sizing.pctW(45)
-        model: Browse.FavoritesModel
-        currentIndex: favoritesGrid.currentIndex
-        onItemHovered: index => favorites._focusIndex(index)
-        onItemClicked: index => {
-            favorites._focusIndex(index);
-            favorites.handleAction("accept");
-        }
-        onItemRightClicked: index => {
-            favorites._focusIndex(index);
-            favorites.handleAction("write_card");
-        }
-        onEmptyRightClicked: favorites.handleAction("cancel")
-        onPageWheelRequested: delta => favorites.handleAction(delta > 0 ? "page_next" : "page_prev")
-    }
 
-    BrowseDetailPane {
-        visible: !favorites._gateHide && favorites._listLayout
-        anchors.left: favoritesList.right
-        anchors.leftMargin: Sizing.pctW(5)
-        anchors.right: parent.right
-        anchors.rightMargin: Sizing.pctW(5)
-        anchors.top: favoritesList.top
-        anchors.bottom: favoritesList.bottom
-        title: favoritesList.currentName
-        coverKey: favoritesList.currentCoverKey
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.surfaceCard
+            border.width: Sizing.stroke(1)
+            border.color: Theme.borderMid
+            radius: Sizing.cornerRadius
+        }
+
+        CardDivider {
+            id: listDivider
+
+            x: Sizing.center(parent.width, width)
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+        }
+
+        BrowseList {
+            id: favoritesList
+
+            anchors.left: parent.left
+            anchors.right: listDivider.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            showChrome: false
+            model: Browse.FavoritesModel
+            currentIndex: favoritesGrid.currentIndex
+            onItemHovered: index => favorites._focusIndex(index)
+            onItemClicked: index => {
+                favorites._focusIndex(index);
+                favorites.handleAction("accept");
+            }
+            onItemRightClicked: index => {
+                favorites._focusIndex(index);
+                favorites.handleAction("write_card");
+            }
+            onEmptyRightClicked: favorites.handleAction("cancel")
+            onPageWheelRequested: delta => favorites.handleAction(delta > 0 ? "page_next" : "page_prev")
+        }
+
+        BrowseDetailPane {
+            anchors.left: listDivider.right
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            showChrome: false
+            title: favoritesList.currentName
+            coverKey: favoritesList.currentCoverKey
+        }
     }
 
     PagedGrid {

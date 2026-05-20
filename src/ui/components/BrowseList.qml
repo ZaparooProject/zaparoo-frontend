@@ -16,6 +16,7 @@ Item {
     property int totalItemsOverride: -1
     property int targetVisibleRowCount: 0
     property bool showFileStem: false
+    property bool showChrome: true
     readonly property int itemCount: listView.count
     readonly property int totalItems: totalItemsOverride >= 0 ? totalItemsOverride : itemCount
     readonly property int cardPaddingX: Sizing.pctW(2)
@@ -65,6 +66,7 @@ Item {
         border.width: Sizing.stroke(1)
         border.color: Theme.borderMid
         radius: Sizing.cornerRadius
+        visible: root.showChrome
     }
 
     onItemCountChanged: {

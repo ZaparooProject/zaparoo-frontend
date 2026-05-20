@@ -368,63 +368,79 @@ Item {
     }
 
     Item {
-        id: listBand
+        id: listCard
 
         visible: !games.transitioning && !games.coverGateLoading && games._listLayout
         anchors.left: parent.left
+        anchors.leftMargin: Sizing.pctW(5)
         anchors.right: parent.right
+        anchors.rightMargin: Sizing.pctW(5)
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(2)
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Sizing.pctH(8)
-    }
 
-    BrowseList {
-        id: gamesList
-
-        visible: !games.transitioning && !games.coverGateLoading && games._listLayout
-        anchors.left: listBand.left
-        anchors.leftMargin: Sizing.pctW(5)
-        anchors.top: listBand.top
-        anchors.bottom: listBand.bottom
-        width: Sizing.pctW(45)
-        model: Browse.GamesModel
-        totalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
-        targetVisibleRowCount: games._listPageSize
-        showFileStem: true
-        currentIndex: gamesGrid.currentIndex
-        onItemHovered: index => games._focusIndex(index)
-        onItemClicked: index => {
-            games._focusIndex(index);
-            games.handleAction("accept");
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.surfaceCard
+            border.width: Sizing.stroke(1)
+            border.color: Theme.borderMid
+            radius: Sizing.cornerRadius
         }
-        onItemRightClicked: index => {
-            games._focusIndex(index);
-            games.handleAction("write_card");
-        }
-        onEmptyRightClicked: games.handleAction("cancel")
-        onPageWheelRequested: delta => games.handleAction(delta > 0 ? "page_next" : "page_prev")
-    }
 
-    BrowseDetailPane {
-        visible: !games.transitioning && !games.coverGateLoading && games._listLayout
-        anchors.left: gamesList.right
-        anchors.leftMargin: Sizing.pctW(5)
-        anchors.right: parent.right
-        anchors.rightMargin: Sizing.pctW(5)
-        anchors.top: listBand.top
-        anchors.bottom: listBand.bottom
-        title: gamesList.currentName
-        coverKey: Browse.GamesModel.current_detail_image_key !== "" ? Browse.GamesModel.current_detail_image_key : gamesList.currentCoverKey
-        showDescription: false
-        showTitle: false
-        detailTags: Browse.GamesModel.current_detail_tags
-        loading: Browse.GamesModel.current_detail_loading
-        canPreviousImage: Browse.GamesModel.current_detail_image_can_prev
-        canNextImage: Browse.GamesModel.current_detail_image_can_next
-        onVisibleChanged: {
-            if (visible)
-                Browse.GamesModel.load_description_at(gamesGrid.currentIndex);
+        CardDivider {
+            id: listDivider
+
+            x: Sizing.center(parent.width, width)
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+        }
+
+        BrowseList {
+            id: gamesList
+
+            anchors.left: parent.left
+            anchors.right: listDivider.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            showChrome: false
+            model: Browse.GamesModel
+            totalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
+            targetVisibleRowCount: games._listPageSize
+            showFileStem: true
+            currentIndex: gamesGrid.currentIndex
+            onItemHovered: index => games._focusIndex(index)
+            onItemClicked: index => {
+                games._focusIndex(index);
+                games.handleAction("accept");
+            }
+            onItemRightClicked: index => {
+                games._focusIndex(index);
+                games.handleAction("write_card");
+            }
+            onEmptyRightClicked: games.handleAction("cancel")
+            onPageWheelRequested: delta => games.handleAction(delta > 0 ? "page_next" : "page_prev")
+        }
+
+        BrowseDetailPane {
+            anchors.left: listDivider.right
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            showChrome: false
+            title: gamesList.currentName
+            coverKey: Browse.GamesModel.current_detail_image_key !== "" ? Browse.GamesModel.current_detail_image_key : gamesList.currentCoverKey
+            showDescription: false
+            showTitle: false
+            detailTags: Browse.GamesModel.current_detail_tags
+            loading: Browse.GamesModel.current_detail_loading
+            loadingText: qsTr("Loading game…")
+            canPreviousImage: Browse.GamesModel.current_detail_image_can_prev
+            canNextImage: Browse.GamesModel.current_detail_image_can_next
+            onVisibleChanged: {
+                if (visible)
+                    Browse.GamesModel.load_description_at(gamesGrid.currentIndex);
+            }
         }
     }
 
@@ -544,9 +560,9 @@ Item {
 
     ScreenStateOverlay {
         x: games._listLayout ? 0 : gamesGrid.x
-        y: games._listLayout ? listBand.y : gamesGrid.y
+        y: games._listLayout ? listCard.y : gamesGrid.y
         width: games._listLayout ? games.width : gamesGrid.width
-        height: games._listLayout ? Math.max(0, games.height - listBand.y - games._listOverlayBottomMargin) : gamesGrid.height
+        height: games._listLayout ? Math.max(0, games.height - listCard.y - games._listOverlayBottomMargin) : gamesGrid.height
         loading: Browse.GamesModel.loading
         errorMessage: Browse.GamesModel.error_message ?? ""
         count: Browse.GamesModel.count

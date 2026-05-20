@@ -186,42 +186,67 @@ Item {
         visible: !systems.transitioning && systems._tileLayout.showTopStrip
     }
 
-    BrowseList {
-        id: systemsList
+    Item {
+        id: listCard
 
         visible: !systems.transitioning && systems._listLayout
         anchors.left: parent.left
         anchors.leftMargin: Sizing.pctW(5)
+        anchors.right: parent.right
+        anchors.rightMargin: Sizing.pctW(5)
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(2)
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Sizing.pctH(8)
-        width: Sizing.pctW(45)
-        model: Browse.SystemsModel
-        currentIndex: systemsGrid.currentIndex
-        onItemHovered: index => systems._focusIndex(index)
-        onItemClicked: index => {
-            systems._focusIndex(index);
-            systems.handleAction("accept");
-        }
-        onItemRightClicked: index => {
-            systems._focusIndex(index);
-            systems.handleAction("write_card");
-        }
-        onEmptyRightClicked: systems.handleAction("cancel")
-        onPageWheelRequested: delta => systems.handleAction(delta > 0 ? "page_next" : "page_prev")
-    }
 
-    BrowseDetailPane {
-        visible: !systems.transitioning && systems._listLayout
-        anchors.left: systemsList.right
-        anchors.leftMargin: Sizing.pctW(5)
-        anchors.right: parent.right
-        anchors.rightMargin: Sizing.pctW(5)
-        anchors.top: systemsList.top
-        anchors.bottom: systemsList.bottom
-        title: systemsList.currentName
-        coverKey: systemsList.currentCoverKey
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.surfaceCard
+            border.width: Sizing.stroke(1)
+            border.color: Theme.borderMid
+            radius: Sizing.cornerRadius
+        }
+
+        CardDivider {
+            id: listDivider
+
+            x: Sizing.center(parent.width, width)
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+        }
+
+        BrowseList {
+            id: systemsList
+
+            anchors.left: parent.left
+            anchors.right: listDivider.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            showChrome: false
+            model: Browse.SystemsModel
+            currentIndex: systemsGrid.currentIndex
+            onItemHovered: index => systems._focusIndex(index)
+            onItemClicked: index => {
+                systems._focusIndex(index);
+                systems.handleAction("accept");
+            }
+            onItemRightClicked: index => {
+                systems._focusIndex(index);
+                systems.handleAction("write_card");
+            }
+            onEmptyRightClicked: systems.handleAction("cancel")
+            onPageWheelRequested: delta => systems.handleAction(delta > 0 ? "page_next" : "page_prev")
+        }
+
+        BrowseDetailPane {
+            anchors.left: listDivider.right
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            showChrome: false
+            title: systemsList.currentName
+            coverKey: systemsList.currentCoverKey
+        }
     }
 
     // Grid fills the safe zone between the top strip and the active

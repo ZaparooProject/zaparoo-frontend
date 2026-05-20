@@ -18,21 +18,21 @@ Item {
     property bool canPreviousImage: false
     property bool canNextImage: false
     property bool loading: false
-
-    property int _labelColumnWidth: 0
+    property bool showChrome: true
+    property string loadingText: qsTr("Loading…")
 
     readonly property int _cardPaddingX: Sizing.pctW(2)
     readonly property int _cardPaddingY: Sizing.pctH(2)
     readonly property int _carouselGutter: (canPreviousImage || canNextImage) ? Sizing.pctW(4) : 0
+    readonly property int _labelColumnWidth: Sizing.pctW(8)
     readonly property int _tagLabelGap: Sizing.pctW(1.4)
     readonly property int _tagRowCount: detailTags === "" ? 0 : detailTags.split("\n").length
     readonly property int _tagRowSpacing: Sizing.pctH(0.8)
     readonly property int _metadataNaturalHeight: _tagRowCount <= 0 ? 0 : (_tagRowCount * Sizing.pctH(3)) + ((_tagRowCount - 1) * _tagRowSpacing)
-    readonly property int _compactDetailHeight: loading ? Sizing.pctH(12) : Math.min(Sizing.px(content.height * 0.45), _metadataNaturalHeight)
+    readonly property int _compactDetailHeight: Math.min(Sizing.px(content.height * 0.45), Math.max(Sizing.pctH(12), _metadataNaturalHeight))
     readonly property bool _coverPending: coverKey === "icons/Loading"
     readonly property url _coverSource: _coverPending ? "" : Resources.coverUrl(coverKey)
-
-    onDetailTagsChanged: root._labelColumnWidth = 0
+    readonly property bool _paneLoading: root.loading
 
     Rectangle {
         anchors.fill: parent
@@ -40,6 +40,7 @@ Item {
         border.width: Sizing.stroke(1)
         border.color: Theme.borderMid
         radius: Sizing.cornerRadius
+        visible: root.showChrome
     }
 
     Item {
@@ -70,23 +71,21 @@ Item {
                 sourceSize.width: 512
                 smooth: true
                 asynchronous: true
-                visible: root._coverSource !== "" && status === Image.Ready
+                visible: !root._paneLoading && root._coverSource !== "" && status === Image.Ready
             }
 
             Image {
-                id: loadingGlyph
-
                 x: Sizing.center(parent.width, width)
                 y: Sizing.center(parent.height, height)
                 width: Math.min(Sizing.pctH(10), parent.width, parent.height)
                 height: width
-                source: Resources.iconUrl("Loading")
+                source: Resources.iconUrl(root._coverPending || cover.status === Image.Loading ? "Loading" : "File")
                 sourceSize.width: Sizing.px(width)
                 sourceSize.height: Sizing.px(height)
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 asynchronous: false
-                visible: root._coverPending || cover.status === Image.Loading
+                visible: !root._paneLoading && (root._coverPending || cover.status === Image.Loading || root._coverSource === "" || cover.status === Image.Error)
             }
         }
 
@@ -98,7 +97,7 @@ Item {
             anchors.verticalCenter: imageSlot.verticalCenter
             fillMode: Image.PreserveAspectFit
             smooth: true
-            visible: root.canPreviousImage
+            visible: !root._paneLoading && root.canPreviousImage
         }
 
         Image {
@@ -109,7 +108,7 @@ Item {
             anchors.verticalCenter: imageSlot.verticalCenter
             fillMode: Image.PreserveAspectFit
             smooth: true
-            visible: root.canNextImage
+            visible: !root._paneLoading && root.canNextImage
         }
 
         Text {
@@ -128,7 +127,7 @@ Item {
             elide: Text.ElideRight
             horizontalAlignment: Text.AlignLeft
             renderType: Text.NativeRendering
-            visible: root.showTitle && root.title !== ""
+            visible: !root._paneLoading && root.showTitle && root.title !== ""
         }
 
         Item {
@@ -140,17 +139,10 @@ Item {
             height: root.showTitle ? Math.max(0, parent.height - y) : root._compactDetailHeight
             clip: true
 
-            LoadingIndicator {
-                visible: root.loading
-                x: Sizing.center(parent.width, width)
-                y: Sizing.center(parent.height, height)
-                text: qsTr("Loading details…")
-            }
-
             Column {
                 id: tagTable
 
-                visible: !root.loading && root.detailTags !== ""
+                visible: !root._paneLoading && root.detailTags !== ""
                 anchors.fill: parent
                 spacing: root._tagRowSpacing
                 clip: true
@@ -170,16 +162,6 @@ Item {
                         readonly property string label: parts.length > 0 ? parts[0] : ""
                         readonly property string value: parts.length > 1 ? parts[1] : ""
                         readonly property bool isFilename: label === "Filename"
-
-                        TextMetrics {
-                            id: labelMetrics
-                            text: tagRow.label
-                            font.family: Theme.fontUi
-                            font.pixelSize: Sizing.fontSize(2.2)
-                            onAdvanceWidthChanged: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(advanceWidth))
-                        }
-
-                        Component.onCompleted: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(labelMetrics.advanceWidth))
 
                         Text {
                             id: tagType
@@ -216,6 +198,13 @@ Item {
                     }
                 }
             }
+        }
+
+        LoadingIndicator {
+            visible: root._paneLoading
+            x: Sizing.center(parent.width, width)
+            y: Sizing.center(parent.height, height)
+            text: root.loadingText
         }
     }
 }

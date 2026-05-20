@@ -187,42 +187,67 @@ Item {
         totalText: Browse.RecentsModel.count > 0 ? qsTr("%1 entries").arg(Browse.RecentsModel.count) : ""
     }
 
-    BrowseList {
-        id: recentsList
+    Item {
+        id: listCard
 
         visible: !recents._gateHide && recents._listLayout
         anchors.left: parent.left
         anchors.leftMargin: Sizing.pctW(5)
+        anchors.right: parent.right
+        anchors.rightMargin: Sizing.pctW(5)
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(2)
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Sizing.pctH(8)
-        width: Sizing.pctW(45)
-        model: Browse.RecentsModel
-        currentIndex: recentsGrid.currentIndex
-        onItemHovered: index => recents._focusIndex(index)
-        onItemClicked: index => {
-            recents._focusIndex(index);
-            recents.handleAction("accept");
-        }
-        onItemRightClicked: index => {
-            recents._focusIndex(index);
-            recents.handleAction("write_card");
-        }
-        onEmptyRightClicked: recents.handleAction("cancel")
-        onPageWheelRequested: delta => recents.handleAction(delta > 0 ? "page_next" : "page_prev")
-    }
 
-    BrowseDetailPane {
-        visible: !recents._gateHide && recents._listLayout
-        anchors.left: recentsList.right
-        anchors.leftMargin: Sizing.pctW(5)
-        anchors.right: parent.right
-        anchors.rightMargin: Sizing.pctW(5)
-        anchors.top: recentsList.top
-        anchors.bottom: recentsList.bottom
-        title: recentsList.currentName
-        coverKey: recentsList.currentCoverKey
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.surfaceCard
+            border.width: Sizing.stroke(1)
+            border.color: Theme.borderMid
+            radius: Sizing.cornerRadius
+        }
+
+        CardDivider {
+            id: listDivider
+
+            x: Sizing.center(parent.width, width)
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+        }
+
+        BrowseList {
+            id: recentsList
+
+            anchors.left: parent.left
+            anchors.right: listDivider.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            showChrome: false
+            model: Browse.RecentsModel
+            currentIndex: recentsGrid.currentIndex
+            onItemHovered: index => recents._focusIndex(index)
+            onItemClicked: index => {
+                recents._focusIndex(index);
+                recents.handleAction("accept");
+            }
+            onItemRightClicked: index => {
+                recents._focusIndex(index);
+                recents.handleAction("write_card");
+            }
+            onEmptyRightClicked: recents.handleAction("cancel")
+            onPageWheelRequested: delta => recents.handleAction(delta > 0 ? "page_next" : "page_prev")
+        }
+
+        BrowseDetailPane {
+            anchors.left: listDivider.right
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            showChrome: false
+            title: recentsList.currentName
+            coverKey: recentsList.currentCoverKey
+        }
     }
 
     PagedGrid {

@@ -29,6 +29,7 @@ Row {
     // and total-files badges in TopStatusStrip.
     property real glyphSize: Sizing.fontSize(3)
 
+    width: Sizing.px(implicitWidth)
     height: indicator.glyphSize
     spacing: Sizing.pctW(0.6)
 
