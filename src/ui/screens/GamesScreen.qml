@@ -49,6 +49,12 @@ Item {
     // `ScreenStateOverlay` paints alone in both cases.
     readonly property bool coverGateLoading: Browse.GamesModel.loading
 
+    Binding {
+        target: Browse.GamesModel
+        property: "cover_key_roles_enabled"
+        value: !games._listLayout
+    }
+
     on_ListLayoutChanged: {
         if (games._listLayout) {
             games._fillListPage();
@@ -364,7 +370,17 @@ Item {
         }
         currentPage: Math.floor(gamesGrid.currentIndex / games._browsePageSize)
         totalPages: games._tileLayout.showBottomStatusRow ? 1 : Math.max(1, Math.ceil((Browse.GamesModel.dir_count + Browse.GamesModel.total_files) / games._browsePageSize))
-        totalText: games._tileLayout.showBottomStatusRow ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : "")
+        totalText: games._listLayout || games._tileLayout.showBottomStatusRow ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : "")
+        rightTextOverride: {
+            if (!games._listLayout)
+                return "";
+            if (Browse.GamesModel.loading_more)
+                return qsTr("Loading more…");
+            if (gamesGrid.itemCount <= 0)
+                return "";
+            const total = Math.max(1, Browse.GamesModel.dir_count + Browse.GamesModel.total_files);
+            return qsTr("%1 / %2").arg(gamesGrid.currentIndex + 1).arg(total);
+        }
     }
 
     Item {
@@ -391,7 +407,7 @@ Item {
         CardDivider {
             id: listDivider
 
-            x: Sizing.center(parent.width, width)
+            x: Sizing.px(parent.width * 2 / 3)
             anchors.top: parent.top
             anchors.bottom: parent.bottom
         }
@@ -493,7 +509,8 @@ Item {
         onCurrentPageChanged: {
             const first = currentPage * pageSize;
             Browse.GamesModel.visible_first_row = first;
-            Browse.GamesModel.prefetch_around(first);
+            if (!games._listLayout)
+                Browse.GamesModel.prefetch_around(first);
         }
         onItemHovered: index => games._focusIndex(index)
         onItemClicked: index => {
@@ -585,7 +602,7 @@ Item {
     // over the global "Loading..." overlay.
     LoadingIndicator {
         id: pageLoadingCue
-        visible: !games.transitioning && !games.coverGateLoading && Browse.GamesModel.loading_more && gamesGrid.hasPendingTarget
+        visible: !games.transitioning && !games.coverGateLoading && !games._listLayout && Browse.GamesModel.loading_more && gamesGrid.hasPendingTarget
         anchors.left: activeLabel.left
         anchors.leftMargin: games._tileLayout.showBottomStatusRow && bottomTotalText.visible ? bottomTotalText.x + bottomTotalText.width + games._tileLayout.bottomStatusLeftMargin : gamesGrid.leftInset
         anchors.verticalCenter: activeLabel.verticalCenter

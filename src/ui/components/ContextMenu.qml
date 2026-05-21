@@ -46,9 +46,12 @@ Item {
     // rounded corners — see the panel `Rectangle` below.
     readonly property int panelRadius: Sizing.half(Sizing.cornerRadius)
     readonly property int panelHeight: Math.min(entries.length * rowHeight + Math.max(0, entries.length - 1) * rowSpacing + 2 * panelRadius, Math.max(0, _usableBottom - menu.margin))
-    readonly property bool preferRight: anchorRect.x + anchorRect.width + gap + panelWidth <= width - margin
-    readonly property int preferredX: preferRight ? Sizing.px(anchorRect.x + anchorRect.width + gap) : Sizing.px(anchorRect.x - gap - panelWidth)
-    readonly property int preferredY: Sizing.px(anchorRect.y + Sizing.center(anchorRect.height, panelHeight))
+    readonly property bool _fitsRight: anchorRect.x + anchorRect.width + gap + panelWidth <= width - margin
+    readonly property bool _fitsLeft: anchorRect.x - gap - panelWidth >= margin
+    readonly property bool _placeBesideAnchor: _fitsRight || _fitsLeft
+    readonly property bool _fitsBelow: anchorRect.y + anchorRect.height + gap + panelHeight <= _usableBottom
+    readonly property int preferredX: _placeBesideAnchor ? (_fitsRight ? Sizing.px(anchorRect.x + anchorRect.width + gap) : Sizing.px(anchorRect.x - gap - panelWidth)) : Sizing.px(anchorRect.x + Sizing.center(anchorRect.width, panelWidth))
+    readonly property int preferredY: _placeBesideAnchor ? Sizing.px(anchorRect.y + Sizing.center(anchorRect.height, panelHeight)) : (_fitsBelow ? Sizing.px(anchorRect.y + anchorRect.height + gap) : Sizing.px(anchorRect.y - gap - panelHeight))
 
     visible: open
     enabled: visible

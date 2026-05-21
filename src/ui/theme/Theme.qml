@@ -18,6 +18,10 @@ QtObject {
     // contrast — the page bg pattern stays visible in the gaps between
     // tiles, and each tile reads as a self-contained chip.
     readonly property color surfaceCard: "#2a2a45"
+    // Selected row fill. Cooler and darker than the amber accent so
+    // text stays high-contrast while the accent bar remains the focus
+    // cue layered on top.
+    readonly property color selectionSurface: "#3a3a66"
     // Modal scrim — translucent black so the screen behind a modal
     // dims uniformly without a blur or shader pass.
     readonly property color scrim: "#cc000000"

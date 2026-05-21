@@ -23,6 +23,7 @@ Item {
     property int currentPage: 0 // 0-indexed; displayed as N+1
     property int totalPages: 1
     property string totalText: "" // formatted; empty hides the slot
+    property string rightTextOverride: "" // formatted; non-empty replaces Page N / M
     readonly property int _slotWidth: Sizing.px(status.width / 3)
     readonly property int _slotMargin: Sizing.pctW(5)
     readonly property int _textMeasureSlack: Theme.crtNativePath ? 0 : 2
@@ -80,14 +81,14 @@ Item {
     Text {
         id: pageCounter
 
-        visible: status.totalPages > 1
+        visible: status.rightTextOverride !== "" || status.totalPages > 1
         anchors.right: parent.right
         anchors.rightMargin: status._slotMargin
         anchors.bottom: titleText.bottom
         width: status._slotWidth - status._slotMargin
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight
-        text: qsTr("Page %1 / %2").arg(status.currentPage + 1).arg(status.totalPages)
+        text: status.rightTextOverride !== "" ? status.rightTextOverride : qsTr("Page %1 / %2").arg(status.currentPage + 1).arg(status.totalPages)
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontSize(2.9)
         color: Theme.textPrimary

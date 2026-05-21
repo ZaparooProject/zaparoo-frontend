@@ -77,19 +77,14 @@ const CACHE_CAP_BYTES: usize = 64 * 1024 * 1024;
 /// memo.
 const MAX_FETCH_ATTEMPTS: u8 = 3;
 
-/// Number of parallel fetch worker tasks pulling from the shared
-/// LIFO queue. The Zaparoo Core WebSocket multiplexes JSON-RPC calls
-/// by id so concurrent `media.image` requests are safe at the wire;
-/// however, Core itself currently serializes its `media.image`
-/// handler at roughly one response per 250–400 ms. Empirically all
-/// four workers spend most of their time parked on `oneshot`
-/// receivers waiting for Core's serial output — so the *immediate*
-/// throughput floor is set by Core, not by us. Four workers is kept
-/// as an upper bound that costs nothing under the current cadence
-/// (idle workers parked on `Notify` are free) and turns into an
-/// instant win the moment Core gains concurrency in its image
-/// handler. Don't drop this back to 1.
-const FETCH_DRIVER_WORKERS: usize = 4;
+/// Number of fetch worker tasks pulling from the shared LIFO queue.
+/// Keep this single-flight against Core: fast list scrolling on `MiSTer`
+/// can otherwise stack multiple large `media.image` bulk requests on
+/// top of Core's image handler and reset the WebSocket. The queue is
+/// already LIFO and capped, so one in-flight batch is enough to keep
+/// the visible work moving without turning cover fetches into a Core
+/// `DoS` vector.
+const FETCH_DRIVER_WORKERS: usize = 1;
 
 /// Hard cap on pending enqueues in the LIFO fetch queue. New pushes
 /// spill the **oldest** entry off the front, on the assumption that
@@ -756,7 +751,11 @@ fn process_batch_outcomes(
     for (entry, outcome) in outcomes {
         let key = entry.key.clone();
         let is_transient = matches!(outcome, FetchOutcome::Transient);
+        let is_connection_down = matches!(outcome, FetchOutcome::ConnectionDown);
         let update = finish_fetch(state, cap_bytes, &key, outcome);
+        if is_connection_down {
+            continue;
+        }
         if is_transient {
             let attempts = {
                 #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
@@ -862,12 +861,15 @@ enum FetchOutcome {
     /// path)` — empty payload, unsupported format. Caller memoises so
     /// page revisits do not re-issue a guaranteed-miss RPC.
     NoImage,
-    /// Local or RPC-level failure that may not repeat: socket flap,
-    /// rate-limit during fast flicking, base64 wire corruption, generic
-    /// `media.image` error from Core. Caller clears `pending` and lets
-    /// the next `enqueue` retry; never memoised, because the *next*
-    /// time the user looks at this row Core may answer cleanly.
+    /// Local or RPC-level failure that may not repeat while Core is
+    /// still connected: stale `media_id`, base64 wire corruption, or a
+    /// generic `media.image` error. Caller retries within the bounded
+    /// attempt budget.
     Transient,
+    /// Batch-level connection failure (`disconnected`, `not connected`,
+    /// reset/refused). Caller clears `pending` but does not immediately
+    /// retry every key, avoiding a retry storm while Core is down.
+    ConnectionDown,
 }
 
 /// Fetch a batch of media images in a single bulk JSON-RPC. Returns
@@ -918,15 +920,30 @@ async fn fetch_batch(
     let response = match result {
         Ok(r) => r,
         Err(e) => {
+            let connection_down = is_connection_down_error(&e.message);
             info!(
                 batch_size = batch.len(),
-                "media_image_cache: media.image (bulk) failed: {} (transient, will retry on next enqueue)",
+                "media_image_cache: media.image (bulk) failed: {} ({})",
                 e.message,
+                if connection_down {
+                    "connection down, cleared pending without immediate retry"
+                } else {
+                    "transient, will retry within attempt budget"
+                },
             );
             return batch
                 .iter()
                 .cloned()
-                .map(|entry| (entry, FetchOutcome::Transient))
+                .map(|entry| {
+                    (
+                        entry,
+                        if connection_down {
+                            FetchOutcome::ConnectionDown
+                        } else {
+                            FetchOutcome::Transient
+                        },
+                    )
+                })
                 .collect();
         }
     };
@@ -1104,12 +1121,22 @@ fn finish_fetch(
                 ext: None,
             })
         }
-        // Transient: drop the pending guard and let the next enqueue
-        // retry. No map insert, no negative memo, no broadcast — the
-        // row's `coverKey` is unchanged so subscribers have nothing to
-        // act on.
-        FetchOutcome::Transient => None,
+        // Transient: drop the pending guard and let the bounded retry
+        // path decide whether to requeue. No map insert, no negative
+        // memo, no broadcast — the row's `coverKey` is unchanged so
+        // subscribers have nothing to act on.
+        FetchOutcome::Transient | FetchOutcome::ConnectionDown => None,
     }
+}
+
+fn is_connection_down_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("disconnected")
+        || lower.contains("not connected")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("broken pipe")
+        || lower.contains("channel closed")
 }
 
 static GLOBAL_MEDIA_IMAGE_CACHE: OnceLock<Arc<MediaImageCache>> = OnceLock::new();
@@ -1207,9 +1234,9 @@ mod tests {
     )]
 
     use super::{
-        drain_one_round, ext_for_content_type, ext_from_extension_field, finish_fetch, CacheState,
-        FetchOutcome, MediaImageCache, MediaImageUpdate, MediaKey, NegativeMemo, QueueEntry,
-        IMAGE_BATCH_PAGES, MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
+        drain_one_round, ext_for_content_type, ext_from_extension_field, finish_fetch,
+        is_connection_down_error, CacheState, FetchOutcome, MediaImageCache, MediaImageUpdate,
+        MediaKey, NegativeMemo, QueueEntry, IMAGE_BATCH_PAGES, MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
     };
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex, RwLock};
@@ -1394,6 +1421,31 @@ mod tests {
         assert!(!guard.map.contains_key(&k));
         assert!(!guard.pending.contains(&k));
         assert!(guard.negative.contains(&k));
+    }
+
+    #[test]
+    fn connection_down_outcome_only_clears_pending() {
+        let state = Arc::new(RwLock::new(CacheState::new()));
+        let k = key("SNES", "/p");
+        state.write().unwrap().pending.insert(k.clone());
+        let update = finish_fetch(&state, usize::MAX, &k, FetchOutcome::ConnectionDown);
+        assert!(update.is_none());
+        let guard = state.read().unwrap();
+        assert!(!guard.pending.contains(&k));
+        assert!(!guard.map.contains_key(&k));
+        assert!(!guard.negative.contains(&k));
+        assert!(!guard.attempts.contains_key(&k));
+    }
+
+    #[test]
+    fn connection_down_classifier_matches_client_disconnect_messages() {
+        assert!(is_connection_down_error("disconnected"));
+        assert!(is_connection_down_error("not connected"));
+        assert!(is_connection_down_error(
+            "IO error: Connection reset by peer"
+        ));
+        assert!(is_connection_down_error("IO error: Connection refused"));
+        assert!(!is_connection_down_error("base64 decode failed"));
     }
 
     fn ok_png(state: &Arc<RwLock<CacheState>>, cap: usize, k: &MediaKey, n: usize) {

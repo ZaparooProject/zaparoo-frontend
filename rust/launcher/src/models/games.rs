@@ -158,6 +158,7 @@ pub struct GamesModelRust {
     current_detail_image_count: i32,
     current_detail_image_can_prev: bool,
     current_detail_image_can_next: bool,
+    cover_key_roles_enabled: bool,
     detail_image_keys: Vec<MediaKey>,
     // Watcher for the current initial-page subscription. Aborted on
     // every path swap so the prior watcher stops enqueuing callbacks
@@ -259,6 +260,7 @@ impl Default for GamesModelRust {
             current_detail_image_count: 0,
             current_detail_image_can_prev: false,
             current_detail_image_can_next: false,
+            cover_key_roles_enabled: true,
             detail_image_keys: Vec::new(),
             watcher: None,
             seq: Arc::new(AtomicU64::new(0)),
@@ -318,6 +320,7 @@ pub mod ffi {
         #[qproperty(i32, current_detail_image_count)]
         #[qproperty(bool, current_detail_image_can_prev)]
         #[qproperty(bool, current_detail_image_can_next)]
+        #[qproperty(bool, cover_key_roles_enabled)]
         #[qproperty(i32, visible_first_row)]
         type GamesModel = super::GamesModelRust;
 
@@ -447,7 +450,12 @@ impl ffi::GamesModel {
             ZAP_SCRIPT_ROLE => QVariant::from(&QString::from(entry.zap_script.as_str())),
             SYSTEM_ID_ROLE => QVariant::from(&QString::from(entry_system_id(entry).as_str())),
             COVER_KEY_ROLE => QVariant::from(&QString::from(
-                cover_key_for(entry, u32::try_from(self.page_size.max(1)).unwrap_or(1)).as_str(),
+                if self.cover_key_roles_enabled {
+                    cover_key_for(entry, u32::try_from(self.page_size.max(1)).unwrap_or(1))
+                } else {
+                    cover_placeholder_for(entry)
+                }
+                .as_str(),
             )),
             ENTRY_TYPE_ROLE => QVariant::from(&QString::from(entry.entry_type.as_str())),
             FILE_COUNT_ROLE => QVariant::from(&i32::try_from(entry.file_count).unwrap_or(i32::MAX)),
@@ -757,15 +765,15 @@ impl ffi::GamesModel {
         }
 
         let description = entry.description.clone();
-        let filename = file_stem_or_name(&entry.path, &entry.name);
-        let detail_tags = detail_tags_from_entry(entry, &filename);
+        let detail_tags = detail_tags_from_entry(entry);
+        let detail_image_key = media_key_for(entry);
 
         self.as_mut().set_current_detail_loading(false);
         self.as_mut()
             .set_current_description(QString::from(description.as_str()));
         self.as_mut()
             .set_current_detail_tags(QString::from(detail_tags.as_str()));
-        clear_detail_images(self);
+        set_detail_image_keys(self, detail_image_key);
     }
 
     fn clear_current_detail(mut self: Pin<&mut Self>) {
@@ -981,11 +989,11 @@ fn entry_system_id(entry: &BrowseEntry) -> String {
     entry.system_ids.first().cloned().unwrap_or_default()
 }
 
-fn detail_tags_from_entry(entry: &BrowseEntry, filename: &str) -> String {
-    detail_tags_from_tags(entry.tags.as_slice(), filename)
+fn detail_tags_from_entry(entry: &BrowseEntry) -> String {
+    detail_tags_from_tags(entry.tags.as_slice())
 }
 
-fn detail_tags_from_tags(source: &[TagInfo], filename: &str) -> String {
+fn detail_tags_from_tags(source: &[TagInfo]) -> String {
     let rows = [
         (
             "Year",
@@ -1005,7 +1013,6 @@ fn detail_tags_from_tags(source: &[TagInfo], filename: &str) -> String {
             detail_value_for_aliases(source, &["publisher"]),
         ),
         ("Rating", detail_value_for_aliases(source, &["rating"])),
-        ("Filename", filename.trim().to_string()),
     ];
     rows.into_iter()
         .map(|(label, value)| format!("{label}\t{value}"))
@@ -1052,6 +1059,19 @@ fn clear_detail_images(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().set_current_detail_image_can_next(false);
 }
 
+fn set_detail_image_keys(mut model: Pin<&mut ffi::GamesModel>, key: Option<MediaKey>) {
+    model.as_mut().rust_mut().detail_image_keys.clear();
+    if let Some(key) = key {
+        model.as_mut().rust_mut().detail_image_keys.push(key);
+    }
+    model.as_mut().set_current_detail_image_index(0);
+    let count = i32::try_from(model.detail_image_keys.len()).unwrap_or(i32::MAX);
+    model.as_mut().set_current_detail_image_count(count);
+    model.as_mut().set_current_detail_image_can_prev(false);
+    model.as_mut().set_current_detail_image_can_next(count > 1);
+    sync_current_detail_image_key_with_page_size(model, 1);
+}
+
 fn set_detail_image_index(mut model: Pin<&mut ffi::GamesModel>, index: i32) {
     let count = i32::try_from(model.detail_image_keys.len()).unwrap_or(i32::MAX);
     let clamped = if count <= 0 {
@@ -1070,7 +1090,15 @@ fn set_detail_image_index(mut model: Pin<&mut ffi::GamesModel>, index: i32) {
     sync_current_detail_image_key(model);
 }
 
-fn sync_current_detail_image_key(mut model: Pin<&mut ffi::GamesModel>) {
+fn sync_current_detail_image_key(model: Pin<&mut ffi::GamesModel>) {
+    let page_size = u32::try_from(model.page_size.max(1)).unwrap_or(1);
+    sync_current_detail_image_key_with_page_size(model, page_size);
+}
+
+fn sync_current_detail_image_key_with_page_size(
+    mut model: Pin<&mut ffi::GamesModel>,
+    page_size: u32,
+) {
     let index = model.current_detail_image_index;
     if index < 0 {
         model
@@ -1091,15 +1119,19 @@ fn sync_current_detail_image_key(mut model: Pin<&mut ffi::GamesModel>) {
         ));
     } else {
         if !cache.is_negative(&key) {
-            cache.enqueue_with_media_id(
-                key,
-                None,
-                u32::try_from(model.page_size.max(1)).unwrap_or(1),
-            );
+            cache.enqueue_with_media_id(key, None, page_size.max(1));
         }
         model
             .as_mut()
             .set_current_detail_image_key(QString::default());
+    }
+}
+
+fn cover_placeholder_for(entry: &BrowseEntry) -> String {
+    if entry.is_folder() {
+        "icons/Folder".to_string()
+    } else {
+        "icons/File".to_string()
     }
 }
 
@@ -2085,10 +2117,11 @@ mod tests {
     )]
 
     use super::{
-        chunk_for_subbatching, compute_unresolved_keys, cover_key_for_with, decide_initial,
-        dedup_roots_drop_ancestors, detail_tags_from_tags, display_name, entry_system_id,
-        is_strict_ancestor_path, leading_dir_count, media_key_for, position_of_game_path,
-        prefetch_around_plan, project_status, transform_entries, InitialAction, Projection,
+        chunk_for_subbatching, compute_unresolved_keys, cover_key_for_with, cover_placeholder_for,
+        decide_initial, dedup_roots_drop_ancestors, detail_tags_from_tags, display_name,
+        entry_system_id, is_strict_ancestor_path, leading_dir_count, media_key_for,
+        position_of_game_path, prefetch_around_plan, project_status, transform_entries,
+        InitialAction, Projection,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
     use std::collections::HashSet;
@@ -2513,6 +2546,18 @@ mod tests {
     }
 
     #[test]
+    fn cover_placeholder_never_returns_loading_icon() {
+        assert_eq!(
+            cover_placeholder_for(&media("smb", "/p/smb", "NES")),
+            "icons/File"
+        );
+        assert_eq!(
+            cover_placeholder_for(&folder("Games", "/x")),
+            "icons/Folder"
+        );
+    }
+
+    #[test]
     fn cover_key_for_media_negatively_memoed_returns_file_icon() {
         let entry = media("smb", "/p/smb", "NES");
         let key = media_key_for(&entry).expect("media has key");
@@ -2822,7 +2867,7 @@ mod tests {
             tag_type: "genre".into(),
             tag: "Platformer".into(),
         }];
-        let detail = detail_tags_from_tags(&tags, "mario");
+        let detail = detail_tags_from_tags(&tags);
         let rows: Vec<&str> = detail.split('\n').collect();
         assert_eq!(
             rows,
@@ -2833,7 +2878,6 @@ mod tests {
                 "Developer\t",
                 "Publisher\t",
                 "Rating\t",
-                "Filename\tmario",
             ]
         );
     }
@@ -2858,7 +2902,7 @@ mod tests {
                 tag: "Shooter".into(),
             },
         ];
-        let detail = detail_tags_from_tags(&tags, "game");
+        let detail = detail_tags_from_tags(&tags);
         let rows: Vec<&str> = detail.split('\n').collect();
         assert_eq!(rows[0], "Year\t1984");
         assert_eq!(rows[1], "Genre\tAction, Shooter");

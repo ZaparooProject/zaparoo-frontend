@@ -132,6 +132,25 @@ Item {
                 restoreMode: Binding.RestoreNone
             }
 
+            Item {
+                anchors.fill: parent
+                visible: row.selected
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: Theme.selectionSurface
+                    radius: Sizing.cornerRadius
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: Sizing.cornerRadius
+                    color: Theme.selectionSurface
+                }
+            }
+
             Rectangle {
                 anchors.left: parent.left
                 anchors.top: parent.top

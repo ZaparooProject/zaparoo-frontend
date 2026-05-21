@@ -24,15 +24,50 @@ Item {
     readonly property int _cardPaddingX: Sizing.pctW(2)
     readonly property int _cardPaddingY: Sizing.pctH(2)
     readonly property int _carouselGutter: (canPreviousImage || canNextImage) ? Sizing.pctW(4) : 0
-    readonly property int _labelColumnWidth: Sizing.pctW(8)
+    property int _labelColumnWidth: 0
+    readonly property int _tagTextSize: Sizing.fontSize(2.2)
     readonly property int _tagLabelGap: Sizing.pctW(1.4)
-    readonly property int _tagRowCount: detailTags === "" ? 0 : detailTags.split("\n").length
-    readonly property int _tagRowSpacing: Sizing.pctH(0.8)
-    readonly property int _metadataNaturalHeight: _tagRowCount <= 0 ? 0 : (_tagRowCount * Sizing.pctH(3)) + ((_tagRowCount - 1) * _tagRowSpacing)
-    readonly property int _compactDetailHeight: Math.min(Sizing.px(content.height * 0.45), Math.max(Sizing.pctH(12), _metadataNaturalHeight))
+    readonly property var _detailRows: _parseDetailTags(detailTags)
+    readonly property int _tagRowCount: _detailRows.length
+    readonly property int _tagRowHeight: Sizing.pctH(3)
+    readonly property int _tagRowSpacing: Sizing.pctH(0.55)
+    readonly property int _metadataNaturalHeight: _tagRowCount <= 0 ? 0 : (_tagRowCount * _tagRowHeight) + ((_tagRowCount - 1) * _tagRowSpacing)
+    readonly property int _compactDetailHeight: Math.min(Sizing.px(content.height * 0.38), _metadataNaturalHeight)
     readonly property bool _coverPending: coverKey === "icons/Loading"
     readonly property url _coverSource: _coverPending ? "" : Resources.coverUrl(coverKey)
     readonly property bool _paneLoading: root.loading
+
+    onDetailTagsChanged: root._labelColumnWidth = 0
+
+    function _localizedTagLabel(label: string): string {
+        if (label === "Year")
+            return qsTr("Year");
+        if (label === "Genre")
+            return qsTr("Genre");
+        if (label === "Players")
+            return qsTr("Players");
+        if (label === "Developer")
+            return qsTr("Developer");
+        if (label === "Publisher")
+            return qsTr("Publisher");
+        if (label === "Rating")
+            return qsTr("Rating");
+        return label;
+    }
+
+    function _parseDetailTags(tags: string): var {
+        if (tags === "")
+            return [];
+        return tags.split("\n").map(row => {
+            const parts = row.split("\t");
+            const rawLabel = parts.length > 0 ? parts[0] : "";
+            return {
+                "rawLabel": rawLabel,
+                "label": root._localizedTagLabel(rawLabel),
+                "value": parts.length > 1 ? parts[1] : ""
+            };
+        });
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -56,12 +91,14 @@ Item {
         Item {
             id: imageSlot
 
-            anchors.left: parent.left
-            anchors.leftMargin: root._carouselGutter
-            anchors.right: parent.right
-            anchors.rightMargin: root._carouselGutter
+            readonly property int availableWidth: Math.max(0, parent.width - (2 * root._carouselGutter))
+            readonly property int availableHeight: Math.max(0, root.showTitle ? Sizing.px(parent.height * 0.48) : detailBody.y - Sizing.pctH(1))
+            readonly property int slotSize: Math.min(availableWidth, availableHeight)
+
+            x: root._carouselGutter + Sizing.center(availableWidth, width)
             anchors.top: parent.top
-            height: root.showTitle ? Sizing.px(parent.height * 0.48) : Math.max(0, detailBody.y - Sizing.pctH(2))
+            width: slotSize
+            height: slotSize
 
             Image {
                 id: cover
@@ -142,26 +179,36 @@ Item {
             Column {
                 id: tagTable
 
-                visible: !root._paneLoading && root.detailTags !== ""
+                visible: !root._paneLoading && root._detailRows.length > 0
                 anchors.fill: parent
                 spacing: root._tagRowSpacing
                 clip: true
 
                 Repeater {
-                    model: root.detailTags === "" ? [] : root.detailTags.split("\n")
+                    model: root._detailRows
 
                     delegate: Item {
                         id: tagRow
 
-                        required property string modelData
+                        required property var modelData
 
                         width: tagTable.width
-                        height: Math.max(Sizing.pctH(3), tagValue.paintedHeight)
+                        height: root._tagRowHeight
 
-                        readonly property list<string> parts: modelData.split("\t")
-                        readonly property string label: parts.length > 0 ? parts[0] : ""
-                        readonly property string value: parts.length > 1 ? parts[1] : ""
-                        readonly property bool isFilename: label === "Filename"
+                        readonly property string rawLabel: modelData.rawLabel ?? ""
+                        readonly property string label: modelData.label ?? ""
+                        readonly property string value: modelData.value ?? ""
+
+                        TextMetrics {
+                            id: labelMetrics
+
+                            text: tagRow.label
+                            font.family: Theme.fontUi
+                            font.pixelSize: root._tagTextSize
+                            onAdvanceWidthChanged: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(advanceWidth))
+                        }
+
+                        Component.onCompleted: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(labelMetrics.advanceWidth))
 
                         Text {
                             id: tagType
@@ -172,9 +219,9 @@ Item {
                             text: tagRow.label
                             color: Theme.textLabel
                             font.family: Theme.fontUi
-                            font.pixelSize: Sizing.fontSize(2.2)
+                            font.pixelSize: root._tagTextSize
                             elide: Text.ElideRight
-                            horizontalAlignment: Text.AlignLeft
+                            horizontalAlignment: Text.AlignRight
                             renderType: Text.NativeRendering
                         }
 
@@ -188,10 +235,10 @@ Item {
                             text: tagRow.value
                             color: Theme.textPrimary
                             font.family: Theme.fontUi
-                            font.pixelSize: Sizing.fontSize(2.2)
-                            wrapMode: Text.Wrap
-                            maximumLineCount: tagRow.isFilename ? 8 : 2
-                            elide: tagRow.isFilename ? Text.ElideNone : Text.ElideRight
+                            font.pixelSize: root._tagTextSize
+                            wrapMode: Text.NoWrap
+                            maximumLineCount: 1
+                            elide: Text.ElideRight
                             horizontalAlignment: Text.AlignLeft
                             renderType: Text.NativeRendering
                         }
