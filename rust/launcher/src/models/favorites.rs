@@ -776,13 +776,15 @@ fn sync_current_detail_image_key(mut model: Pin<&mut ffi::FavoritesModel>) {
         model.as_mut().set_current_detail_image_key(QString::from(
             MediaImageCache::image_key_for(&key).as_str(),
         ));
-    } else {
-        if !cache.is_negative(&key) {
-            cache.enqueue_with_media_id(key, model.current_detail_media_id, 1);
-        }
+    } else if cache.is_negative(&key) {
         model
             .as_mut()
             .set_current_detail_image_key(QString::default());
+    } else {
+        cache.enqueue_with_media_id(key, model.current_detail_media_id, 1);
+        model
+            .as_mut()
+            .set_current_detail_image_key(QString::from("icons/Loading"));
     }
 }
 

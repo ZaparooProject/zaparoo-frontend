@@ -245,27 +245,27 @@
 <context>
     <name>FavoritesScreen</name>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="183"/>
+        <location filename="../screens/FavoritesScreen.qml" line="225"/>
         <source>Favorites</source>
         <translation>즐겨찾기</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="186"/>
+        <location filename="../screens/FavoritesScreen.qml" line="228"/>
         <source>%1 entries</source>
         <translation>항목 %1개</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="190"/>
+        <location filename="../screens/FavoritesScreen.qml" line="232"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="280"/>
+        <location filename="../screens/FavoritesScreen.qml" line="334"/>
         <source>No favorites yet</source>
         <translation>아직 즐겨찾기가 없습니다</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="281"/>
+        <location filename="../screens/FavoritesScreen.qml" line="335"/>
         <source>Loading favorites…</source>
         <translation>즐겨찾기 불러오는 중…</translation>
     </message>
@@ -326,13 +326,13 @@
 <context>
     <name>GameInfoModal</name>
     <message>
-        <location filename="../components/GameInfoModal.qml" line="86"/>
-        <source>Back to close</source>
+        <location filename="../components/GameInfoModal.qml" line="104"/>
+        <source>Loading details…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/GameInfoModal.qml" line="114"/>
-        <source>Loading details…</source>
+        <location filename="../components/GameInfoModal.qml" line="174"/>
+        <source>Loading image…</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -446,7 +446,7 @@
     <message>
         <location filename="../app/Main.qml" line="761"/>
         <location filename="../app/Main.qml" line="781"/>
-        <source>More info</source>
+        <source>View details</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -679,27 +679,27 @@
 <context>
     <name>RecentsScreen</name>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="184"/>
+        <location filename="../screens/RecentsScreen.qml" line="226"/>
         <source>Recently Played</source>
         <translation>최근 플레이</translation>
     </message>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="187"/>
+        <location filename="../screens/RecentsScreen.qml" line="229"/>
         <source>%1 entries</source>
         <translation>항목 %1개</translation>
     </message>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="191"/>
+        <location filename="../screens/RecentsScreen.qml" line="233"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="282"/>
+        <location filename="../screens/RecentsScreen.qml" line="336"/>
         <source>Nothing played yet</source>
         <translation>아직 플레이한 항목이 없습니다</translation>
     </message>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="283"/>
+        <location filename="../screens/RecentsScreen.qml" line="337"/>
         <source>Loading recently played…</source>
         <translation>최근 플레이 불러오는 중…</translation>
     </message>

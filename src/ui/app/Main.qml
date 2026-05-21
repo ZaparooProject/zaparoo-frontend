@@ -758,7 +758,7 @@ MainLayout {
             const entries = [
                 {
                     id: "more_info",
-                    label: qsTr("More info")
+                    label: qsTr("View details")
                 },
                 {
                     id: "launch_game",
@@ -778,7 +778,7 @@ MainLayout {
             const entries = [];
             entries.push({
                 id: "more_info",
-                label: qsTr("More info")
+                label: qsTr("View details")
             });
             entries.push({
                 id: "toggle_favorite",

@@ -245,27 +245,27 @@
 <context>
     <name>FavoritesScreen</name>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="183"/>
+        <location filename="../screens/FavoritesScreen.qml" line="225"/>
         <source>Favorites</source>
         <translation>Favoriten</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="186"/>
+        <location filename="../screens/FavoritesScreen.qml" line="228"/>
         <source>%1 entries</source>
         <translation>%1 Einträge</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="190"/>
+        <location filename="../screens/FavoritesScreen.qml" line="232"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="280"/>
+        <location filename="../screens/FavoritesScreen.qml" line="334"/>
         <source>No favorites yet</source>
         <translation>Noch keine Favoriten</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="281"/>
+        <location filename="../screens/FavoritesScreen.qml" line="335"/>
         <source>Loading favorites…</source>
         <translation>Favoriten werden geladen…</translation>
     </message>
@@ -326,13 +326,13 @@
 <context>
     <name>GameInfoModal</name>
     <message>
-        <location filename="../components/GameInfoModal.qml" line="86"/>
-        <source>Back to close</source>
+        <location filename="../components/GameInfoModal.qml" line="104"/>
+        <source>Loading details…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/GameInfoModal.qml" line="114"/>
-        <source>Loading details…</source>
+        <location filename="../components/GameInfoModal.qml" line="174"/>
+        <source>Loading image…</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -444,12 +444,6 @@
         <translation>Core starten</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="761"/>
-        <location filename="../app/Main.qml" line="781"/>
-        <source>More info</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../app/Main.qml" line="785"/>
         <source>Remove from favorites</source>
         <translation>Aus Favoriten entfernen</translation>
@@ -474,6 +468,12 @@
         <location filename="../app/Main.qml" line="804"/>
         <source>Launch game</source>
         <translation>Spiel starten</translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="761"/>
+        <location filename="../app/Main.qml" line="781"/>
+        <source>View details</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../app/Main.qml" line="1652"/>
@@ -679,27 +679,27 @@
 <context>
     <name>RecentsScreen</name>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="184"/>
+        <location filename="../screens/RecentsScreen.qml" line="226"/>
         <source>Recently Played</source>
         <translation>Zuletzt gespielt</translation>
     </message>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="187"/>
+        <location filename="../screens/RecentsScreen.qml" line="229"/>
         <source>%1 entries</source>
         <translation>%1 Einträge</translation>
     </message>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="191"/>
+        <location filename="../screens/RecentsScreen.qml" line="233"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="283"/>
+        <location filename="../screens/RecentsScreen.qml" line="337"/>
         <source>Loading recently played…</source>
         <translation>Zuletzt gespielte werden geladen…</translation>
     </message>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="282"/>
+        <location filename="../screens/RecentsScreen.qml" line="336"/>
         <source>Nothing played yet</source>
         <translation>Noch nichts gespielt</translation>
     </message>

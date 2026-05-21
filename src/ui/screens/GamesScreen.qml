@@ -401,7 +401,7 @@ Item {
         showFileStem: true
         currentIndex: gamesGrid.currentIndex
         detailTitle: listCard.currentName
-        detailCoverKey: Browse.GamesModel.current_detail_image_key !== "" ? Browse.GamesModel.current_detail_image_key : listCard.currentCoverKey
+        detailCoverKey: Browse.GamesModel.current_detail_image_key
         detailShowDescription: false
         detailShowTitle: false
         detailTags: Browse.GamesModel.current_detail_tags

@@ -12,6 +12,8 @@ Item {
 
     property bool open: false
     property int _labelColumnWidth: 0
+    readonly property bool _hasContentAbove: flick.contentY > 1
+    readonly property bool _hasContentBelow: flick.contentY + flick.height < flick.contentHeight - 1
 
     signal closeRequested
 
@@ -20,15 +22,34 @@ Item {
     anchors.fill: parent
     z: 300
 
-    onOpenChanged: root._labelColumnWidth = 0
+    onOpenChanged: {
+        root._labelColumnWidth = 0;
+        if (root.open)
+            flick.contentY = 0;
+    }
+
+    function _scrollBody(delta: int): void {
+        if (!flick.visible)
+            return;
+        const maxY = Math.max(0, flick.contentHeight - flick.height);
+        flick.contentY = Math.max(0, Math.min(maxY, flick.contentY + delta));
+    }
 
     function handleAction(action: string): void {
         if (action === "cancel" || action === "accept")
             root.closeRequested();
-        else if (action === "left")
+        else if (action === "left" && Browse.GameInfo.image_count > 1)
             Browse.GameInfo.cycle_image(-1);
-        else if (action === "right")
+        else if (action === "right" && Browse.GameInfo.image_count > 1)
             Browse.GameInfo.cycle_image(1);
+        else if (action === "up")
+            root._scrollBody(-Sizing.pctH(8));
+        else if (action === "down")
+            root._scrollBody(Sizing.pctH(8));
+        else if (action === "page_prev")
+            root._scrollBody(-Math.max(Sizing.pctH(12), flick.height - Sizing.pctH(8)));
+        else if (action === "page_next")
+            root._scrollBody(Math.max(Sizing.pctH(12), flick.height - Sizing.pctH(8)));
     }
 
     Rectangle {
@@ -47,8 +68,8 @@ Item {
 
             x: Sizing.center(parent.width, width)
             y: Sizing.center(parent.height, height)
-            width: Sizing.px(Math.min(parent.width * 0.84, Sizing.pctH(118)))
-            height: Sizing.px(Math.min(parent.height - Sizing.pctH(14), Sizing.pctH(78)))
+            width: Sizing.px(Math.min(parent.width - Sizing.pctW(6), Sizing.pctH(150)))
+            height: Sizing.px(parent.height - Sizing.pctH(16))
             color: Theme.bgPanel
             radius: Sizing.cornerRadius
 
@@ -63,37 +84,49 @@ Item {
 
                 anchors.left: parent.left
                 anchors.leftMargin: Sizing.pctW(4)
-                anchors.right: closeText.left
-                anchors.rightMargin: Sizing.pctW(2)
+                anchors.right: parent.right
+                anchors.rightMargin: Sizing.pctW(4)
                 anchors.top: parent.top
                 anchors.topMargin: Sizing.pctH(4)
                 text: Browse.GameInfo.title
                 color: Theme.textPrimary
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(3.2)
+                font.pixelSize: Sizing.fontSize(3.4)
                 font.weight: Font.Medium
                 elide: Text.ElideRight
+                maximumLineCount: 1
                 horizontalAlignment: Text.AlignLeft
                 renderType: Text.NativeRendering
             }
 
-            Text {
-                id: closeText
+            LoadingIndicator {
+                visible: Browse.GameInfo.loading
+                x: Sizing.center(parent.width, width)
+                y: Sizing.center(parent.height, height)
+                text: qsTr("Loading details…")
+            }
 
+            Text {
+                visible: !Browse.GameInfo.loading && Browse.GameInfo.error_message !== ""
+                anchors.left: parent.left
+                anchors.leftMargin: Sizing.pctW(4)
                 anchors.right: parent.right
                 anchors.rightMargin: Sizing.pctW(4)
-                anchors.verticalCenter: titleText.verticalCenter
-                text: qsTr("Back to close")
-                color: Theme.textLabel
+                anchors.top: titleText.bottom
+                anchors.topMargin: Sizing.pctH(4)
+                text: Browse.GameInfo.error_message
+                color: Theme.textPrimary
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.2)
-                horizontalAlignment: Text.AlignRight
+                font.pixelSize: Sizing.fontSize(2.6)
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignLeft
                 renderType: Text.NativeRendering
             }
 
-            Rectangle {
-                id: contentCard
+            Flickable {
+                id: flick
 
+                visible: !Browse.GameInfo.loading && Browse.GameInfo.error_message === ""
                 anchors.left: parent.left
                 anchors.leftMargin: Sizing.pctW(4)
                 anchors.right: parent.right
@@ -102,168 +135,162 @@ Item {
                 anchors.topMargin: Sizing.pctH(3)
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: Sizing.pctH(4)
-                color: Theme.surfaceCard
-                border.width: Sizing.stroke(1)
-                border.color: Theme.borderMid
-                radius: Sizing.cornerRadius
+                contentWidth: width
+                contentHeight: contentColumn.height
+                boundsBehavior: Flickable.StopAtBounds
+                clip: true
 
-                LoadingIndicator {
-                    visible: Browse.GameInfo.loading
-                    x: Sizing.center(parent.width, width)
-                    y: Sizing.center(parent.height, height)
-                    text: qsTr("Loading details…")
-                }
+                Column {
+                    id: contentColumn
 
-                Text {
-                    visible: !Browse.GameInfo.loading && Browse.GameInfo.error_message !== ""
-                    anchors.left: parent.left
-                    anchors.leftMargin: Sizing.pctW(3)
-                    anchors.right: parent.right
-                    anchors.rightMargin: Sizing.pctW(3)
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: Browse.GameInfo.error_message
-                    color: Theme.textPrimary
-                    font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
-                    wrapMode: Text.WordWrap
-                    horizontalAlignment: Text.AlignHCenter
-                    renderType: Text.NativeRendering
-                }
+                    width: flick.width
+                    spacing: Sizing.pctH(2.4)
 
-                Flickable {
-                    id: flick
+                    Item {
+                        width: parent.width
+                        height: Browse.GameInfo.image_count > 0 ? Sizing.pctH(32) : 0
+                        visible: height > 0
 
-                    visible: !Browse.GameInfo.loading && Browse.GameInfo.error_message === ""
-                    anchors.fill: parent
-                    anchors.leftMargin: Sizing.pctW(3)
-                    anchors.rightMargin: Sizing.pctW(3)
-                    anchors.topMargin: Sizing.pctH(3)
-                    anchors.bottomMargin: Sizing.pctH(3)
-                    contentWidth: width
-                    contentHeight: contentColumn.height
-                    boundsBehavior: Flickable.StopAtBounds
-                    clip: true
-
-                    Column {
-                        id: contentColumn
-
-                        width: flick.width
-                        spacing: Sizing.pctH(2.2)
-
-                        Item {
-                            width: parent.width
-                            height: Browse.GameInfo.image_key !== "" ? Sizing.pctH(26) : 0
-                            visible: height > 0
-
-                            Image {
-                                anchors.fill: parent
-                                source: Resources.coverUrl(Browse.GameInfo.image_key)
-                                sourceSize.width: 512
-                                fillMode: Image.PreserveAspectFit
-                                smooth: true
-                                asynchronous: true
-                            }
-
-                            Image {
-                                source: Resources.iconUrl("NavLeft")
-                                width: Sizing.pctH(4)
-                                height: width
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                fillMode: Image.PreserveAspectFit
-                                smooth: true
-                                visible: Browse.GameInfo.image_can_prev
-                            }
-
-                            Image {
-                                source: Resources.iconUrl("NavRight")
-                                width: Sizing.pctH(4)
-                                height: width
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                fillMode: Image.PreserveAspectFit
-                                smooth: true
-                                visible: Browse.GameInfo.image_can_next
-                            }
+                        Image {
+                            anchors.fill: parent
+                            source: Browse.GameInfo.image_key !== "" ? Resources.coverUrl(Browse.GameInfo.image_key) : ""
+                            sourceSize.width: 768
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            asynchronous: true
                         }
 
-                        Column {
-                            id: tagTable
+                        LoadingIndicator {
+                            visible: Browse.GameInfo.image_key === ""
+                            x: Sizing.center(parent.width, width)
+                            y: Sizing.center(parent.height, height)
+                            text: qsTr("Loading image…")
+                            glyphSize: Sizing.fontSize(2.4)
+                        }
 
-                            width: parent.width
-                            spacing: Sizing.pctH(0.8)
-                            visible: Browse.GameInfo.detail_tags !== ""
+                        Image {
+                            source: Resources.iconUrl("NavLeft")
+                            width: Sizing.pctH(4)
+                            height: width
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            visible: Browse.GameInfo.image_count > 1 && Browse.GameInfo.image_can_prev
+                        }
 
-                            Repeater {
-                                model: Browse.GameInfo.detail_tags === "" ? [] : Browse.GameInfo.detail_tags.split("\n")
+                        Image {
+                            source: Resources.iconUrl("NavRight")
+                            width: Sizing.pctH(4)
+                            height: width
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            visible: Browse.GameInfo.image_count > 1 && Browse.GameInfo.image_can_next
+                        }
+                    }
 
-                                delegate: Item {
-                                    id: tagRow
+                    Column {
+                        id: tagTable
 
-                                    required property string modelData
+                        width: parent.width
+                        spacing: Sizing.pctH(0.8)
+                        visible: Browse.GameInfo.detail_tags !== ""
 
-                                    width: tagTable.width
-                                    height: Math.max(Sizing.pctH(3), tagValue.paintedHeight)
+                        Repeater {
+                            model: Browse.GameInfo.detail_tags === "" ? [] : Browse.GameInfo.detail_tags.split("\n")
 
-                                    readonly property list<string> parts: modelData.split("\t")
-                                    readonly property string label: parts.length > 0 ? parts[0] : ""
-                                    readonly property string value: parts.length > 1 ? parts[1] : ""
+                            delegate: Item {
+                                id: tagRow
 
-                                    TextMetrics {
-                                        id: labelMetrics
-                                        text: tagRow.label
-                                        font.family: Theme.fontUi
-                                        font.pixelSize: Sizing.fontSize(2.4)
-                                        onAdvanceWidthChanged: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(advanceWidth))
-                                    }
+                                required property string modelData
 
-                                    Component.onCompleted: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(labelMetrics.advanceWidth))
+                                width: tagTable.width
+                                height: Math.max(Sizing.pctH(3), tagValue.paintedHeight)
 
-                                    Text {
-                                        anchors.left: parent.left
-                                        anchors.top: parent.top
-                                        width: root._labelColumnWidth
-                                        text: tagRow.label
-                                        color: Theme.textLabel
-                                        font.family: Theme.fontUi
-                                        font.pixelSize: Sizing.fontSize(2.4)
-                                        elide: Text.ElideRight
-                                        horizontalAlignment: Text.AlignLeft
-                                        renderType: Text.NativeRendering
-                                    }
+                                readonly property list<string> parts: modelData.split("\t")
+                                readonly property string label: parts.length > 0 ? parts[0] : ""
+                                readonly property string value: parts.length > 1 ? parts[1] : ""
 
-                                    Text {
-                                        id: tagValue
+                                TextMetrics {
+                                    id: labelMetrics
+                                    text: tagRow.label
+                                    font.family: Theme.fontUi
+                                    font.pixelSize: Sizing.fontSize(2.4)
+                                    onAdvanceWidthChanged: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(advanceWidth))
+                                }
 
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: root._labelColumnWidth + Sizing.pctW(1.4)
-                                        anchors.right: parent.right
-                                        anchors.top: parent.top
-                                        text: tagRow.value
-                                        color: Theme.textPrimary
-                                        font.family: Theme.fontUi
-                                        font.pixelSize: Sizing.fontSize(2.4)
-                                        wrapMode: Text.Wrap
-                                        horizontalAlignment: Text.AlignLeft
-                                        renderType: Text.NativeRendering
-                                    }
+                                Component.onCompleted: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(labelMetrics.advanceWidth))
+
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    width: root._labelColumnWidth
+                                    text: tagRow.label
+                                    color: Theme.textLabel
+                                    font.family: Theme.fontUi
+                                    font.pixelSize: Sizing.fontSize(2.4)
+                                    elide: Text.ElideRight
+                                    horizontalAlignment: Text.AlignLeft
+                                    renderType: Text.NativeRendering
+                                }
+
+                                Text {
+                                    id: tagValue
+
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: root._labelColumnWidth + Sizing.pctW(1.4)
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    text: tagRow.value
+                                    color: Theme.textPrimary
+                                    font.family: Theme.fontUi
+                                    font.pixelSize: Sizing.fontSize(2.4)
+                                    wrapMode: Text.Wrap
+                                    horizontalAlignment: Text.AlignLeft
+                                    renderType: Text.NativeRendering
                                 }
                             }
                         }
+                    }
 
-                        Text {
-                            width: parent.width
-                            visible: Browse.GameInfo.description !== ""
-                            text: Browse.GameInfo.description
-                            color: Theme.textPrimary
-                            font.family: Theme.fontUi
-                            font.pixelSize: Sizing.fontSize(2.6)
-                            wrapMode: Text.WordWrap
-                            horizontalAlignment: Text.AlignLeft
-                            renderType: Text.NativeRendering
-                        }
+                    Text {
+                        width: parent.width
+                        visible: Browse.GameInfo.description !== ""
+                        text: Browse.GameInfo.description
+                        color: Theme.textPrimary
+                        font.family: Theme.fontUi
+                        font.pixelSize: Sizing.fontSize(2.6)
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignLeft
+                        renderType: Text.NativeRendering
                     }
                 }
+            }
+
+            Image {
+                source: Resources.iconUrl("ScrollUp")
+                width: Sizing.pctH(3)
+                height: width
+                anchors.bottom: flick.top
+                anchors.bottomMargin: Sizing.pctH(0.5)
+                anchors.horizontalCenter: flick.horizontalCenter
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                visible: flick.visible && root._hasContentAbove
+            }
+
+            Image {
+                source: Resources.iconUrl("ScrollDown")
+                width: Sizing.pctH(3)
+                height: width
+                anchors.top: flick.bottom
+                anchors.topMargin: Sizing.pctH(0.5)
+                anchors.horizontalCenter: flick.horizontalCenter
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                visible: flick.visible && root._hasContentBelow
             }
         }
     }
