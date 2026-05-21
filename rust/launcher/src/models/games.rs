@@ -768,12 +768,13 @@ impl ffi::GamesModel {
         let detail_tags = detail_tags_from_entry(entry);
         let detail_image_key = media_key_for(entry);
 
-        self.as_mut().set_current_detail_loading(false);
+        self.as_mut().set_current_detail_loading(true);
         self.as_mut()
             .set_current_description(QString::from(description.as_str()));
         self.as_mut()
             .set_current_detail_tags(QString::from(detail_tags.as_str()));
-        set_detail_image_keys(self, detail_image_key);
+        set_detail_image_keys(self.as_mut(), detail_image_key);
+        self.as_mut().set_current_detail_loading(false);
     }
 
     fn clear_current_detail(mut self: Pin<&mut Self>) {

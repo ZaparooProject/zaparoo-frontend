@@ -154,9 +154,8 @@ Item {
                         Image {
                             anchors.fill: parent
                             source: Browse.GameInfo.image_key !== "" ? Resources.coverUrl(Browse.GameInfo.image_key) : ""
-                            sourceSize.width: 768
+                            sourceSize.width: Sizing.px(parent.width)
                             fillMode: Image.PreserveAspectFit
-                            smooth: true
                             asynchronous: true
                         }
 

@@ -176,10 +176,12 @@ Item {
         Item {
             id: detailBody
 
+            readonly property int _bodyY: Math.round(root.showTitle ? (titleText.visible ? titleText.y + titleText.height : imageSlot.y + imageSlot.height) + Sizing.pctH(2) : parent.height - height)
+
             x: 0
-            y: root.showTitle ? (titleText.visible ? titleText.y + titleText.height : imageSlot.y + imageSlot.height) + Sizing.pctH(2) : parent.height - height
+            y: _bodyY
             width: parent.width
-            height: root.showTitle ? Math.max(0, parent.height - y) : root._compactDetailHeight
+            height: root.showTitle ? Math.round(Math.max(0, parent.height - _bodyY)) : root._compactDetailHeight
             clip: true
 
             Column {

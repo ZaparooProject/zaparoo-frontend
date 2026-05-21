@@ -454,7 +454,8 @@ impl ffi::RecentsModel {
         self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
         self.as_mut().rust_mut().current_detail_media_id = media_id;
         sync_current_detail_image_key(self.as_mut());
-        self.as_mut().set_current_detail_loading(false);
+        self.as_mut().set_current_detail_loading(true);
+        self.as_mut().set_current_detail_tags(QString::default());
         let seq = self.rust().detail_seq.clone();
         let qt_thread = self.qt_thread();
         let store = global_store();
@@ -467,13 +468,16 @@ impl ffi::RecentsModel {
                 if seq.load(Ordering::SeqCst) != ticket {
                     return;
                 }
-                model.as_mut().set_current_detail_loading(false);
                 match result {
                     Ok(result) => model.as_mut().set_current_detail_tags(QString::from(
                         detail_tags_from_meta(&result.media).as_str(),
                     )),
-                    Err(e) => warn!("recent detail fetch failed for {path}: {}", e.message),
+                    Err(e) => {
+                        model.as_mut().set_current_detail_tags(QString::default());
+                        warn!("recent detail fetch failed for {path}: {}", e.message);
+                    }
                 }
+                model.as_mut().set_current_detail_loading(false);
             });
         });
     }

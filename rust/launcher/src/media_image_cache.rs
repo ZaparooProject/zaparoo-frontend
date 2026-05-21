@@ -1090,6 +1090,9 @@ fn finish_fetch(
                     cap_bytes,
                     "media_image_cache: payload exceeds cache cap, recording as negative",
                 );
+                if let Some(prev) = guard.map.remove(key) {
+                    guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
+                }
                 guard.negative.insert(key.clone());
                 return Some(MediaImageUpdate {
                     key: key.clone(),
@@ -1115,6 +1118,9 @@ fn finish_fetch(
             })
         }
         FetchOutcome::NoImage => {
+            if let Some(prev) = guard.map.remove(key) {
+                guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
+            }
             guard.negative.insert(key.clone());
             Some(MediaImageUpdate {
                 key: key.clone(),

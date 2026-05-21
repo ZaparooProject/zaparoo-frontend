@@ -2,7 +2,9 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
+use crate::media_image_cache::{
+    global_media_image_cache, MediaImageCache, MediaImageUpdate, MediaKey,
+};
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
@@ -173,7 +175,7 @@ impl ffi::GameInfo {
                 match rx.recv().await {
                     Ok(update) => {
                         let _ = qt_thread.queue(move |model| {
-                            notify_cover_update(model, &update.key);
+                            notify_cover_update(model, &update);
                         });
                     }
                     Err(RecvError::Lagged(_)) => {}
@@ -373,15 +375,23 @@ fn sync_current_image_key(mut model: Pin<&mut ffi::GameInfo>) {
     }
 }
 
-fn notify_cover_update(mut model: Pin<&mut ffi::GameInfo>, key: &MediaKey) {
+fn notify_cover_update(mut model: Pin<&mut ffi::GameInfo>, update: &MediaImageUpdate) {
     let current = model
         .detail_image_keys
         .get(model.image_index as usize)
         .cloned();
-    if current.as_ref().is_some_and(|current| current == key) {
-        model
-            .as_mut()
-            .set_image_key(QString::from(MediaImageCache::image_key_for(key).as_str()));
+    if !current
+        .as_ref()
+        .is_some_and(|current| current == &update.key)
+    {
+        return;
+    }
+    if update.ext.is_some() {
+        model.as_mut().set_image_key(QString::from(
+            MediaImageCache::image_key_for(&update.key).as_str(),
+        ));
+    } else {
+        model.as_mut().set_image_key(QString::default());
     }
 }
 

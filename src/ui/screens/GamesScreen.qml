@@ -542,9 +542,9 @@ Item {
     }
 
     ScreenStateOverlay {
-        x: games._listLayout ? 0 : gamesGrid.x
+        x: games._listLayout ? listCard.x : gamesGrid.x
         y: games._listLayout ? listCard.y : gamesGrid.y
-        width: games._listLayout ? games.width : gamesGrid.width
+        width: games._listLayout ? listCard.width : gamesGrid.width
         height: games._listLayout ? Math.max(0, games.height - listCard.y - games._listOverlayBottomMargin) : gamesGrid.height
         loading: Browse.GamesModel.loading
         errorMessage: Browse.GamesModel.error_message ?? ""
