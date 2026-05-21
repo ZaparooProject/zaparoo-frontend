@@ -52,6 +52,12 @@ Item {
             return qsTr("Publisher");
         if (label === "Rating")
             return qsTr("Rating");
+        if (label === "Category")
+            return qsTr("Category");
+        if (label === "Release date")
+            return qsTr("Release date");
+        if (label === "Manufacturer")
+            return qsTr("Manufacturer");
         return label;
     }
 

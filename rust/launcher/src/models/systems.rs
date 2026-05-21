@@ -31,6 +31,8 @@ pub struct SystemInfo {
     pub id: String,
     pub name: String,
     pub category: String,
+    pub release_date: Option<String>,
+    pub manufacturer: Option<String>,
 }
 
 #[derive(Default)]
@@ -102,6 +104,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn system_name_at(self: &SystemsModel, index: i32) -> QString;
+
+        #[qinvokable]
+        fn detail_tags_at(self: &SystemsModel, index: i32) -> QString;
 
         #[qinvokable]
         fn write_card_at(self: Pin<&mut SystemsModel>, index: i32);
@@ -185,6 +190,8 @@ fn rows_for_category(catalog: Option<&CatalogData>, cat: &str) -> Vec<SystemInfo
                 id: s.id,
                 name: s.name,
                 category: s.category,
+                release_date: s.release_date,
+                manufacturer: s.manufacturer,
             })
             .collect()
     })
@@ -396,6 +403,13 @@ impl ffi::SystemsModel {
         QString::from(self.systems[index as usize].name.as_str())
     }
 
+    fn detail_tags_at(&self, index: i32) -> QString {
+        if index < 0 || index >= self.count {
+            return QString::default();
+        }
+        QString::from(detail_tags_for_system(&self.systems[index as usize]).as_str())
+    }
+
     fn launch_text_at(&self, index: i32) -> QString {
         if index < 0 || index >= self.count {
             return QString::default();
@@ -486,6 +500,34 @@ impl ffi::SystemsModel {
     }
 }
 
+fn detail_tags_for_system(system: &SystemInfo) -> String {
+    let rows = [
+        ("Category", system.category.trim().to_string()),
+        (
+            "Release date",
+            system
+                .release_date
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+        ),
+        (
+            "Manufacturer",
+            system
+                .manufacturer
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+        ),
+    ];
+    rows.into_iter()
+        .map(|(label, value)| format!("{label}\t{value}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -495,7 +537,9 @@ mod tests {
         reason = "tests should fail-fast on unexpected errors"
     )]
 
-    use super::{position_of_system_id, project, rows_for_category, SystemInfo};
+    use super::{
+        detail_tags_for_system, position_of_system_id, project, rows_for_category, SystemInfo,
+    };
     use zaparoo_core::media_types::SystemInfo as MediaSystemInfo;
     use zaparoo_core::remote_resource::ResourceStatus;
     use zaparoo_core::systems_catalog::CatalogData;
@@ -505,6 +549,7 @@ mod tests {
             id: id.into(),
             name: name.into(),
             category: category.into(),
+            ..MediaSystemInfo::default()
         }
     }
 
@@ -582,6 +627,29 @@ mod tests {
     }
 
     #[test]
+    fn rows_for_category_preserves_system_metadata() {
+        let mut nes = sys("nes", "Nintendo Entertainment System", "Consoles");
+        nes.release_date = Some("1983".into());
+        nes.manufacturer = Some("Nintendo".into());
+        let catalog = catalog_with(vec![nes]);
+        let rows = rows_for_category(Some(&catalog), "Consoles");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].release_date.as_deref(), Some("1983"));
+        assert_eq!(rows[0].manufacturer.as_deref(), Some("Nintendo"));
+    }
+
+    #[test]
+    fn detail_tags_for_system_emits_fixed_rows() {
+        let mut system = local_sys("NES");
+        system.release_date = Some("1983".into());
+        system.manufacturer = Some("Nintendo".into());
+        assert_eq!(
+            detail_tags_for_system(&system),
+            "Category\tConsoles\nRelease date\t1983\nManufacturer\tNintendo"
+        );
+    }
+
+    #[test]
     fn rows_for_category_unknown_returns_empty() {
         let catalog = catalog_with(vec![sys("smb", "SMB", "Consoles")]);
         let rows = rows_for_category(Some(&catalog), "DoesNotExist");
@@ -593,6 +661,8 @@ mod tests {
             id: id.into(),
             name: id.into(),
             category: "Consoles".into(),
+            release_date: None,
+            manufacturer: None,
         }
     }
 

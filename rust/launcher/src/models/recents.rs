@@ -40,7 +40,8 @@ use zaparoo_core::client::ClientError;
 use zaparoo_core::endpoints::media_history::{HistoryArgs, MediaHistoryEndpoint};
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::media_types::{
-    MediaHistoryEntry, MediaHistoryParams, MediaHistoryResult, RunParams,
+    MediaHistoryEntry, MediaHistoryParams, MediaHistoryResult, MediaMeta, MediaMetaParams,
+    RunParams, TagInfo,
 };
 use zaparoo_core::remote_resource::ResourceStatus;
 
@@ -60,6 +61,13 @@ const FILE_STEM_ROLE: i32 = 256 + 7;
 const PAGE_SIZE: u32 = 25;
 
 #[derive(Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "the bools are independent qproperties surfaced to QML; collapsing them \
+              into an enum would force the QML side to read a single state property \
+              and re-derive each flag locally, which is exactly the work the bridge \
+              avoids"
+)]
 pub struct RecentsModelRust {
     entries: Vec<MediaHistoryEntry>,
     count: i32,
@@ -68,6 +76,12 @@ pub struct RecentsModelRust {
     error_message: QString,
     has_next_page: bool,
     next_cursor: Option<String>,
+    current_detail_loading: bool,
+    current_detail_tags: QString,
+    current_detail_image_key: QString,
+    current_detail_media_key: Option<MediaKey>,
+    current_detail_media_id: Option<i64>,
+    detail_seq: Arc<AtomicU64>,
     // Bumped whenever the cursor chain is reset by an initial
     // `apply_state` so any in-flight `fetch_more` callback can detect
     // its append no longer belongs to the current chain.
@@ -121,6 +135,9 @@ pub mod ffi {
         #[qproperty(bool, loading_more)]
         #[qproperty(QString, error_message)]
         #[qproperty(bool, has_next_page)]
+        #[qproperty(bool, current_detail_loading)]
+        #[qproperty(QString, current_detail_tags)]
+        #[qproperty(QString, current_detail_image_key)]
         type RecentsModel = super::RecentsModelRust;
 
         #[qinvokable]
@@ -137,6 +154,12 @@ pub mod ffi {
 
         #[qinvokable]
         fn system_id_at(self: &RecentsModel, index: i32) -> QString;
+
+        #[qinvokable]
+        fn load_detail_at(self: Pin<&mut RecentsModel>, index: i32);
+
+        #[qinvokable]
+        fn clear_current_detail(self: Pin<&mut RecentsModel>);
 
         #[qinvokable]
         fn index_for_path(self: &RecentsModel, path: &QString) -> i32;
@@ -233,6 +256,7 @@ fn apply_state(
         model.as_mut().ensure_cover_subscription();
         enqueue_recents_covers(&entries);
         let count = i32::try_from(entries.len()).unwrap_or(i32::MAX);
+        clear_current_detail_state(model.as_mut());
         model.as_mut().begin_reset_model();
         model.as_mut().rust_mut().entries = entries;
         model.as_mut().rust_mut().count = count;
@@ -267,6 +291,7 @@ fn apply_state(
         // Disarm the cover gate too: a stale timer firing during the
         // next Ready would clear loading prematurely.
         disarm_cover_gate(model.as_mut());
+        clear_current_detail_state(model.as_mut());
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().rust_mut().next_cursor = None;
         if !model.loading {
@@ -281,6 +306,7 @@ fn apply_state(
         // Ready could otherwise append rows that don't belong to the
         // current chain.
         disarm_cover_gate(model.as_mut());
+        clear_current_detail_state(model.as_mut());
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().rust_mut().next_cursor = None;
         if model.loading {
@@ -405,6 +431,57 @@ impl ffi::RecentsModel {
         QString::from(self.entries[index as usize].system_id.as_str())
     }
 
+    fn load_detail_at(mut self: Pin<&mut Self>, index: i32) {
+        let ticket = self
+            .as_mut()
+            .rust_mut()
+            .detail_seq
+            .fetch_add(1, Ordering::SeqCst)
+            + 1;
+        if index < 0 || index >= self.count {
+            clear_current_detail_state(self.as_mut());
+            return;
+        }
+        let entry = &self.entries[index as usize];
+        let system = entry.system_id.clone();
+        let path = entry.media_path.clone();
+        let media_id = entry.media_id;
+        if system.trim().is_empty() || path.trim().is_empty() {
+            clear_current_detail_state(self.as_mut());
+            return;
+        }
+        let detail_key = MediaKey::new(system.clone(), path.clone());
+        self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
+        self.as_mut().rust_mut().current_detail_media_id = media_id;
+        sync_current_detail_image_key(self.as_mut());
+        self.as_mut().set_current_detail_loading(false);
+        let seq = self.rust().detail_seq.clone();
+        let qt_thread = self.qt_thread();
+        let store = global_store();
+        global_handle().spawn(async move {
+            let result = store
+                .client()
+                .media_meta(MediaMetaParams::for_media(system, path.clone()))
+                .await;
+            let _ = qt_thread.queue(move |mut model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                model.as_mut().set_current_detail_loading(false);
+                match result {
+                    Ok(result) => model.as_mut().set_current_detail_tags(QString::from(
+                        detail_tags_from_meta(&result.media).as_str(),
+                    )),
+                    Err(e) => warn!("recent detail fetch failed for {path}: {}", e.message),
+                }
+            });
+        });
+    }
+
+    fn clear_current_detail(self: Pin<&mut Self>) {
+        clear_current_detail_state(self);
+    }
+
     fn index_for_path(&self, path: &QString) -> i32 {
         position_of_path(&self.entries, &path.to_string())
     }
@@ -502,6 +579,89 @@ fn cover_key_for_with(
     }
 }
 
+fn detail_tags_from_meta(meta: &MediaMeta) -> String {
+    let source = if meta.title.tags.is_empty() {
+        meta.tags.as_slice()
+    } else {
+        meta.title.tags.as_slice()
+    };
+    let rows = [
+        (
+            "Year",
+            detail_value_for_aliases(source, &["year", "release date", "release_date"]),
+        ),
+        (
+            "Genre",
+            detail_value_for_aliases(source, &["genre", "gamegenre"]),
+        ),
+        ("Players", detail_value_for_aliases(source, &["players"])),
+        (
+            "Developer",
+            detail_value_for_aliases(source, &["developer"]),
+        ),
+        (
+            "Publisher",
+            detail_value_for_aliases(source, &["publisher"]),
+        ),
+        ("Rating", detail_value_for_aliases(source, &["rating"])),
+    ];
+    rows.into_iter()
+        .map(|(label, value)| format!("{label}\t{value}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn detail_value_for_aliases(source: &[TagInfo], aliases: &[&str]) -> String {
+    source
+        .iter()
+        .filter(|tag| {
+            aliases
+                .iter()
+                .any(|alias| tag.tag_type.eq_ignore_ascii_case(alias))
+                && !tag.tag.trim().is_empty()
+        })
+        .map(|tag| tag.tag.trim().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn clear_current_detail_state(mut model: Pin<&mut ffi::RecentsModel>) {
+    model
+        .as_mut()
+        .rust_mut()
+        .detail_seq
+        .fetch_add(1, Ordering::SeqCst);
+    model.as_mut().rust_mut().current_detail_media_key = None;
+    model.as_mut().rust_mut().current_detail_media_id = None;
+    model.as_mut().set_current_detail_loading(false);
+    model.as_mut().set_current_detail_tags(QString::default());
+    model
+        .as_mut()
+        .set_current_detail_image_key(QString::default());
+}
+
+fn sync_current_detail_image_key(mut model: Pin<&mut ffi::RecentsModel>) {
+    let Some(key) = model.current_detail_media_key.clone() else {
+        model
+            .as_mut()
+            .set_current_detail_image_key(QString::default());
+        return;
+    };
+    let cache = global_media_image_cache();
+    if cache.is_cached(&key) {
+        model.as_mut().set_current_detail_image_key(QString::from(
+            MediaImageCache::image_key_for(&key).as_str(),
+        ));
+    } else {
+        if !cache.is_negative(&key) {
+            cache.enqueue_with_media_id(key, model.current_detail_media_id, 1);
+        }
+        model
+            .as_mut()
+            .set_current_detail_image_key(QString::default());
+    }
+}
+
 fn file_stem_or_name(path: &str, name: &str) -> String {
     let file = path
         .trim_end_matches(['/', '\\'])
@@ -559,6 +719,13 @@ fn notify_cover_update(mut model: Pin<&mut ffi::RecentsModel>, key: &MediaKey) {
             let idx = model.index(row, 0, &parent);
             model.as_mut().data_changed(&idx, &idx, &roles);
         }
+    }
+    if model
+        .current_detail_media_key
+        .as_ref()
+        .is_some_and(|current| current == key)
+    {
+        sync_current_detail_image_key(model.as_mut());
     }
     // Tick the gate's pending set down. `remove` returns false if the
     // key wasn't gated (broadcast events fire for every cache update,

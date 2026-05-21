@@ -12,6 +12,10 @@ pub struct SystemInfo {
     pub name: String,
     #[serde(default)]
     pub category: String,
+    #[serde(default)]
+    pub release_date: Option<String>,
+    #[serde(default)]
+    pub manufacturer: Option<String>,
 }
 
 /// Parameters for `media.search`. Mirrors Core's `SearchParams`

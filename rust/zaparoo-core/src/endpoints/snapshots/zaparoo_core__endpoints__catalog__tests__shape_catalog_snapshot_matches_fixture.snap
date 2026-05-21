@@ -1,5 +1,6 @@
 ---
 source: zaparoo-core/src/endpoints/catalog.rs
+assertion_line: 140
 expression: shape_catalog(systems)
 ---
 CatalogData {
@@ -8,26 +9,36 @@ CatalogData {
             id: "Gameboy",
             name: "Game Boy",
             category: "Handhelds",
+            release_date: None,
+            manufacturer: None,
         },
         SystemInfo {
             id: "MAME",
             name: "MAME",
             category: "arcade",
+            release_date: None,
+            manufacturer: None,
         },
         SystemInfo {
             id: "NES",
             name: "Nintendo",
             category: "Consoles",
+            release_date: None,
+            manufacturer: None,
         },
         SystemInfo {
             id: "odd",
             name: "Odd One",
             category: "",
+            release_date: None,
+            manufacturer: None,
         },
         SystemInfo {
             id: "SNES",
             name: "Super Nintendo",
             category: "Consoles",
+            release_date: None,
+            manufacturer: None,
         },
     ],
     categories: [

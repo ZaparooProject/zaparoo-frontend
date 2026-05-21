@@ -90,38 +90,48 @@
         <translation type="unfinished">Cargando…</translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="43"/>
+        <location filename="../components/BrowseDetailPane.qml" line="44"/>
         <source>Year</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="45"/>
+        <location filename="../components/BrowseDetailPane.qml" line="46"/>
         <source>Genre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="47"/>
+        <location filename="../components/BrowseDetailPane.qml" line="48"/>
         <source>Players</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="49"/>
+        <location filename="../components/BrowseDetailPane.qml" line="50"/>
         <source>Developer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="51"/>
+        <location filename="../components/BrowseDetailPane.qml" line="52"/>
         <source>Publisher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="53"/>
+        <location filename="../components/BrowseDetailPane.qml" line="54"/>
         <source>Rating</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="55"/>
-        <source>Filename</source>
+        <location filename="../components/BrowseDetailPane.qml" line="56"/>
+        <source>Category</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/BrowseDetailPane.qml" line="58"/>
+        <source>Release date</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/BrowseDetailPane.qml" line="60"/>
+        <source>Manufacturer</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -253,12 +263,17 @@
         <translation>%1 entradas</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="309"/>
+        <location filename="../screens/FavoritesScreen.qml" line="190"/>
+        <source>%1 / %2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/FavoritesScreen.qml" line="280"/>
         <source>No favorites yet</source>
         <translation>Aún no hay favoritos</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="310"/>
+        <location filename="../screens/FavoritesScreen.qml" line="281"/>
         <source>Loading favorites…</source>
         <translation>Cargando favoritos…</translation>
     </message>
@@ -340,33 +355,35 @@
 <context>
     <name>GamesScreen</name>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="367"/>
-        <location filename="../screens/GamesScreen.qml" line="537"/>
+        <location filename="../screens/GamesScreen.qml" line="373"/>
+        <location filename="../screens/GamesScreen.qml" line="520"/>
         <source>%1 files</source>
         <translation>%1 archivos</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="437"/>
+        <location filename="../screens/GamesScreen.qml" line="409"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="554"/>
+        <location filename="../screens/GamesScreen.qml" line="382"/>
+        <location filename="../screens/GamesScreen.qml" line="537"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="570"/>
+        <location filename="../screens/GamesScreen.qml" line="553"/>
         <source>Loading games…</source>
         <translation>Cargando juegos…</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="592"/>
+        <location filename="../screens/GamesScreen.qml" line="378"/>
+        <location filename="../screens/GamesScreen.qml" line="575"/>
         <source>Loading more…</source>
         <translation>Cargando más…</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="569"/>
+        <location filename="../screens/GamesScreen.qml" line="552"/>
         <source>No games in this system</source>
         <translation>No hay juegos en este sistema</translation>
     </message>
@@ -688,12 +705,17 @@
         <translation>%1 entradas</translation>
     </message>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="312"/>
+        <location filename="../screens/RecentsScreen.qml" line="191"/>
+        <source>%1 / %2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/RecentsScreen.qml" line="283"/>
         <source>Loading recently played…</source>
         <translation>Cargando jugados recientemente…</translation>
     </message>
     <message>
-        <location filename="../screens/RecentsScreen.qml" line="311"/>
+        <location filename="../screens/RecentsScreen.qml" line="282"/>
         <source>Nothing played yet</source>
         <translation>No se ha jugado a nada todavía</translation>
     </message>
@@ -1015,22 +1037,23 @@
     <name>SystemsScreen</name>
     <message>
         <location filename="../screens/SystemsScreen.qml" line="185"/>
-        <location filename="../screens/SystemsScreen.qml" line="313"/>
+        <location filename="../screens/SystemsScreen.qml" line="285"/>
         <source>%1 systems</source>
         <translation>%1 sistemas</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="330"/>
+        <location filename="../screens/SystemsScreen.qml" line="189"/>
+        <location filename="../screens/SystemsScreen.qml" line="302"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="345"/>
+        <location filename="../screens/SystemsScreen.qml" line="317"/>
         <source>No systems in this category</source>
         <translation>No hay sistemas en esta categoría</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="346"/>
+        <location filename="../screens/SystemsScreen.qml" line="318"/>
         <source>Loading systems…</source>
         <translation>Cargando sistemas…</translation>
     </message>
@@ -1038,7 +1061,7 @@
 <context>
     <name>TopStatusStrip</name>
     <message>
-        <location filename="../components/TopStatusStrip.qml" line="90"/>
+        <location filename="../components/TopStatusStrip.qml" line="91"/>
         <source>Page %1 / %2</source>
         <translation>Página %1 / %2</translation>
     </message>

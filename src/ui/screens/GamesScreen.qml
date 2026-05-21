@@ -317,7 +317,7 @@ Item {
                     return;
                 games._scheduleSelectedPersist(Browse.GamesModel.path_at(idx));
                 games.flushSelectedPersist();
-                const rect = games._listLayout ? gamesList.currentCellRectIn(games) : games.gamesGrid.currentCellRectIn(games);
+                const rect = games._listLayout ? listCard.currentCellRectIn(games) : games.gamesGrid.currentCellRectIn(games);
                 games.requestContextMenu(idx, rect);
             }
         } else if (action === "cancel") {
@@ -383,7 +383,7 @@ Item {
         }
     }
 
-    Item {
+    BrowseListDetailView {
         id: listCard
 
         visible: !games.transitioning && !games.coverGateLoading && games._listLayout
@@ -395,68 +395,34 @@ Item {
         anchors.topMargin: Sizing.pctH(2)
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Sizing.pctH(8)
-
-        Rectangle {
-            anchors.fill: parent
-            color: Theme.surfaceCard
-            border.width: Sizing.stroke(1)
-            border.color: Theme.borderMid
-            radius: Sizing.cornerRadius
+        model: Browse.GamesModel
+        totalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
+        targetVisibleRowCount: games._listPageSize
+        showFileStem: true
+        currentIndex: gamesGrid.currentIndex
+        detailTitle: listCard.currentName
+        detailCoverKey: Browse.GamesModel.current_detail_image_key !== "" ? Browse.GamesModel.current_detail_image_key : listCard.currentCoverKey
+        detailShowDescription: false
+        detailShowTitle: false
+        detailTags: Browse.GamesModel.current_detail_tags
+        detailLoading: Browse.GamesModel.current_detail_loading
+        detailLoadingText: qsTr("Loading game…")
+        detailCanPreviousImage: Browse.GamesModel.current_detail_image_can_prev
+        detailCanNextImage: Browse.GamesModel.current_detail_image_can_next
+        onItemHovered: index => games._focusIndex(index)
+        onItemClicked: index => {
+            games._focusIndex(index);
+            games.handleAction("accept");
         }
-
-        CardDivider {
-            id: listDivider
-
-            x: Sizing.px(parent.width * 2 / 3)
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
+        onItemRightClicked: index => {
+            games._focusIndex(index);
+            games.handleAction("write_card");
         }
-
-        BrowseList {
-            id: gamesList
-
-            anchors.left: parent.left
-            anchors.right: listDivider.left
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            showChrome: false
-            model: Browse.GamesModel
-            totalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
-            targetVisibleRowCount: games._listPageSize
-            showFileStem: true
-            currentIndex: gamesGrid.currentIndex
-            onItemHovered: index => games._focusIndex(index)
-            onItemClicked: index => {
-                games._focusIndex(index);
-                games.handleAction("accept");
-            }
-            onItemRightClicked: index => {
-                games._focusIndex(index);
-                games.handleAction("write_card");
-            }
-            onEmptyRightClicked: games.handleAction("cancel")
-            onPageWheelRequested: delta => games.handleAction(delta > 0 ? "page_next" : "page_prev")
-        }
-
-        BrowseDetailPane {
-            anchors.left: listDivider.right
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            showChrome: false
-            title: gamesList.currentName
-            coverKey: Browse.GamesModel.current_detail_image_key !== "" ? Browse.GamesModel.current_detail_image_key : gamesList.currentCoverKey
-            showDescription: false
-            showTitle: false
-            detailTags: Browse.GamesModel.current_detail_tags
-            loading: Browse.GamesModel.current_detail_loading
-            loadingText: qsTr("Loading game…")
-            canPreviousImage: Browse.GamesModel.current_detail_image_can_prev
-            canNextImage: Browse.GamesModel.current_detail_image_can_next
-            onVisibleChanged: {
-                if (visible)
-                    Browse.GamesModel.load_description_at(gamesGrid.currentIndex);
-            }
+        onEmptyRightClicked: games.handleAction("cancel")
+        onPageWheelRequested: delta => games.handleAction(delta > 0 ? "page_next" : "page_prev")
+        onVisibleChanged: {
+            if (visible)
+                Browse.GamesModel.load_description_at(gamesGrid.currentIndex);
         }
     }
 

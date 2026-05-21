@@ -42,6 +42,7 @@ mod tests {
             id: id.into(),
             name: name.into(),
             category: category.into(),
+            ..SystemInfo::default()
         }
     }
 

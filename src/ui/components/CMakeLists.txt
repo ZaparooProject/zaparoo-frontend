@@ -13,6 +13,7 @@ qt_add_qml_module(
         BootOverlay.qml
         BrowseDetailPane.qml
         BrowseList.qml
+        BrowseListDetailView.qml
         CardDivider.qml
         CommercialNoticeModal.qml
         ContextMenu.qml
