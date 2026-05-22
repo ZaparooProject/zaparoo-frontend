@@ -51,6 +51,8 @@ MainLayout {
     property string _pendingResolutionSelection: ""
     property bool _discoverMenuPending: false
     property var _discoverParentEntries: []
+    property string _pendingLauncherSystemId: ""
+    property string _pendingLauncherSelectionId: ""
     property string cardWriteOwner: ""
     property string contextMenuMode: "main"
     property string contextMenuOwner: ""
@@ -745,14 +747,21 @@ MainLayout {
     // caller saw `entries.length === 0` despite the function pushing 3
     // items in. Plain `var` round-trips cleanly and silences the
     // "insufficiently annotated" coercion warning at the call site.
-    function buildContextMenuEntries(owner: string, entryType: string, hasNfc: bool, isFavorite: bool) {
+    function buildContextMenuEntries(owner: string, entryType: string, hasNfc: bool, isFavorite: bool, systemId: string) {
         if (owner === "systems") {
-            return [
+            const entries = [
                 {
                     id: "launch_system",
                     label: qsTr("Launch core")
                 }
             ];
+            if (!Browse.SystemLaunchers.loading && Browse.SystemLaunchers.error_message === "" && Browse.SystemLaunchers.launcher_count_for_system(systemId) > 0) {
+                entries.push({
+                    id: "change_launcher",
+                    label: qsTr("Change launcher")
+                });
+            }
+            return entries;
         }
         if (owner === "recents") {
             const entries = [
@@ -844,7 +853,12 @@ MainLayout {
             return;
         let entryType = "";
         let isFavorite = false;
-        if (owner === "games") {
+        let systemId = "";
+        if (owner === "systems") {
+            if (index >= Browse.SystemsModel.count)
+                return;
+            systemId = Browse.SystemsModel.system_id_at(index);
+        } else if (owner === "games") {
             if (index >= Browse.GamesModel.count)
                 return;
             entryType = Browse.GamesModel.entry_type_at(index);
@@ -857,7 +871,7 @@ MainLayout {
             if (index >= Browse.RecentsModel.count)
                 return;
         }
-        const entries = root.buildContextMenuEntries(owner, entryType, Browse.SystemStatus.has_nfc, isFavorite);
+        const entries = root.buildContextMenuEntries(owner, entryType, Browse.SystemStatus.has_nfc, isFavorite, systemId);
         if (entries.length === 0)
             return;
         root.contextMenuEntries = entries;
@@ -923,7 +937,23 @@ MainLayout {
             return;
         }
         root.closeContextMenu();
-        if (id.startsWith("alternate_version:")) {
+        if (id === "change_launcher") {
+            const systemId = Browse.SystemsModel.system_id_at(targetIndex);
+            if (systemId === "")
+                return;
+            Browse.SystemLaunchers.prepare_system(systemId);
+            const entries = [];
+            for (let i = 0; i < Browse.SystemLaunchers.picker_ids.length; i++) {
+                const launcherId = Browse.SystemLaunchers.picker_ids[i];
+                const label = Browse.SystemLaunchers.picker_labels[i];
+                entries.push({
+                    id: launcherId,
+                    label: launcherId === "__default__" ? qsTr("Default") : (label.indexOf("Current: ") === 0 ? qsTr("Current: %1").arg(launcherId) : label)
+                });
+            }
+            if (entries.length > 0)
+                root.openListPickerModal(qsTr("Change launcher"), entries, Browse.SystemLaunchers.current_launcher, "system_launcher:" + systemId);
+        } else if (id.startsWith("alternate_version:")) {
             const altIndex = Number(id.slice("alternate_version:".length));
             if (!Number.isNaN(altIndex))
                 Browse.AlternateVersions.launch_at(altIndex);
@@ -1191,7 +1221,72 @@ MainLayout {
         Qt.exit(1000);
     }
 
+    function beginSystemLauncherUpdate(systemId: string, selectedId: string): void {
+        root._pendingLauncherSystemId = systemId;
+        root._pendingLauncherSelectionId = selectedId;
+        root.listPickerTitle = qsTr("Saving launcher");
+        root.listPickerEntries = [
+            {
+                id: "saving",
+                label: qsTr("Saving…")
+            }
+        ];
+        root.listPickerInitialId = "saving";
+        root.listPickerFieldId = "system_launcher_pending";
+        Browse.SystemLaunchers.set_system_launcher(systemId, selectedId);
+    }
+
+    function clearPendingLauncherUpdate(): void {
+        root._pendingLauncherSystemId = "";
+        root._pendingLauncherSelectionId = "";
+    }
+
+    function showSystemLauncherUpdateError(): void {
+        root.listPickerTitle = qsTr("Launcher update failed");
+        root.listPickerEntries = [
+            {
+                id: "error",
+                label: qsTr("Error: %1").arg(Browse.SystemLaunchers.update_error)
+            },
+            {
+                id: "retry",
+                label: qsTr("Retry")
+            },
+            {
+                id: "cancel",
+                label: qsTr("Cancel")
+            }
+        ];
+        root.listPickerInitialId = "retry";
+        root.listPickerFieldId = "system_launcher_error";
+    }
+
+    function handleListPickerCloseRequested(): void {
+        if (root.listPickerFieldId === "system_launcher_pending")
+            return;
+        if (root.listPickerFieldId === "system_launcher_error")
+            root.clearPendingLauncherUpdate();
+        root.closeListPickerModal();
+    }
+
     onListPickerAccepted: (fieldId, selectedId) => {
+        if (fieldId === "system_launcher_pending")
+            return;
+        if (fieldId === "system_launcher_error") {
+            if (selectedId === "error")
+                return;
+            if (selectedId === "retry" && root._pendingLauncherSystemId !== "")
+                root.beginSystemLauncherUpdate(root._pendingLauncherSystemId, root._pendingLauncherSelectionId);
+            else {
+                root.clearPendingLauncherUpdate();
+                root.closeListPickerModal();
+            }
+            return;
+        }
+        if (fieldId.startsWith("system_launcher:")) {
+            root.beginSystemLauncherUpdate(fieldId.slice("system_launcher:".length), selectedId);
+            return;
+        }
         if (fieldId === "language") {
             root.closeListPickerModal();
             if (selectedId !== Browse.Settings.current_language)
@@ -1210,7 +1305,21 @@ MainLayout {
             Browse.Settings.set_screensaver_timeout(selectedId);
         root.closeListPickerModal();
     }
-    onListPickerCloseRequested: root.closeListPickerModal()
+    onListPickerCloseRequested: root.handleListPickerCloseRequested()
+
+    Connections {
+        target: Browse.SystemLaunchers
+        function onUpdate_pendingChanged(): void {
+            if (root._pendingLauncherSystemId === "" || Browse.SystemLaunchers.update_pending)
+                return;
+            if (Browse.SystemLaunchers.update_error === "") {
+                root.clearPendingLauncherUpdate();
+                root.closeListPickerModal();
+            } else {
+                root.showSystemLauncherUpdateError();
+            }
+        }
+    }
 
     Connections {
         target: Browse.AppStatus

@@ -9,11 +9,105 @@
 // into it.
 
 use serde_json::{json, Value};
+use std::sync::{Mutex, OnceLock};
+
+static SYSTEM_DEFAULTS: OnceLock<Mutex<Vec<SystemDefaultFixture>>> = OnceLock::new();
+
+#[derive(Clone)]
+struct SystemDefaultFixture {
+    system: String,
+    launcher: String,
+    before_exit: String,
+}
 
 pub fn version_response() -> Value {
     json!({
         "version": "mock-0.1.0",
         "platform": "mock",
+    })
+}
+
+pub fn launchers_response() -> Value {
+    json!({
+        "launchers": [
+            { "id": "nestopia",          "systemId": "NES",        "systemName": "Nintendo Entertainment System", "groups": ["libretro"] },
+            { "id": "fceumm",           "systemId": "NES",        "systemName": "Nintendo Entertainment System", "groups": ["libretro"] },
+            { "id": "snes9x",           "systemId": "SNES",       "systemName": "Super Nintendo",                "groups": ["libretro"] },
+            { "id": "bsnes",            "systemId": "SNES",       "systemName": "Super Nintendo",                "groups": ["libretro"] },
+            { "id": "genesis-plus-gx",  "systemId": "Genesis",    "systemName": "Sega Genesis",                  "groups": ["libretro"] },
+            { "id": "mupen64plus-next", "systemId": "Nintendo64", "systemName": "Nintendo 64",                   "groups": ["libretro"] },
+            { "id": "gambatte",         "systemId": "Gameboy",    "systemName": "Game Boy",                      "groups": ["libretro"] },
+            { "id": "mgba",             "systemId": "GBA",        "systemName": "Game Boy Advance",              "groups": ["libretro"] },
+            { "id": "mame",             "systemId": "MAME",       "systemName": "MAME",                          "groups": ["arcade"] },
+            { "id": "fbneo",            "systemId": "NeoGeo",     "systemName": "Neo Geo",                       "groups": ["arcade"] }
+        ]
+    })
+}
+
+pub fn settings_response() -> Value {
+    let defaults = system_defaults()
+        .lock()
+        .map(|defaults| defaults.clone())
+        .unwrap_or_default();
+    let system_defaults: Vec<Value> = defaults
+        .into_iter()
+        .map(|default| {
+            json!({
+                "system": default.system,
+                "launcher": default.launcher,
+                "beforeExit": default.before_exit,
+            })
+        })
+        .collect();
+    json!({
+        "runZapScript": true,
+        "debugLogging": false,
+        "audioScanFeedback": true,
+        "readersAutoDetect": true,
+        "readersScanMode": "tap",
+        "readersScanExitDelay": 0.0,
+        "readersScanIgnoreSystems": [],
+        "errorReporting": false,
+        "readersConnect": [],
+        "systemDefaults": system_defaults,
+    })
+}
+
+pub fn settings_update_response(params: &Value) -> Value {
+    if let Some(items) = params.get("systemDefaults").and_then(Value::as_array) {
+        let next = items
+            .iter()
+            .filter_map(|item| {
+                let system = item.get("system").and_then(Value::as_str)?;
+                Some(SystemDefaultFixture {
+                    system: system.to_string(),
+                    launcher: item
+                        .get("launcher")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    before_exit: item
+                        .get("beforeExit")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                })
+            })
+            .collect();
+        if let Ok(mut defaults) = system_defaults().lock() {
+            *defaults = next;
+        }
+    }
+    Value::Null
+}
+
+fn system_defaults() -> &'static Mutex<Vec<SystemDefaultFixture>> {
+    SYSTEM_DEFAULTS.get_or_init(|| {
+        Mutex::new(vec![SystemDefaultFixture {
+            system: "SNES".into(),
+            launcher: "snes9x".into(),
+            before_exit: String::new(),
+        }])
     })
 }
 

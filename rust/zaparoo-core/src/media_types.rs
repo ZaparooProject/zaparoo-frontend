@@ -812,6 +812,50 @@ pub struct ScrapersResult {
     pub scrapers: Vec<ScraperInfo>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemDefault {
+    pub system: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub launcher: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub before_exit: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsResult {
+    #[serde(default)]
+    pub system_defaults: Vec<SystemDefault>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSettingsParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_defaults: Option<Vec<SystemDefault>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherInfo {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub system_id: String,
+    #[serde(default)]
+    pub system_name: String,
+    #[serde(default)]
+    pub groups: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchersResult {
+    #[serde(default)]
+    pub launchers: Vec<LauncherInfo>,
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct RunParams {
     pub text: String,
@@ -892,13 +936,13 @@ mod tests {
     )]
 
     use super::{
-        BrowseEntry, IndexingStatusResponse, MediaBrowseParams, MediaBrowseResult,
+        BrowseEntry, IndexingStatusResponse, LaunchersResult, MediaBrowseParams, MediaBrowseResult,
         MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
         MediaImageBulkResult, MediaImageParams, MediaImageResult, MediaIndexParams,
         MediaLookupParams, MediaLookupResult, MediaMetaParams, MediaMetaResult, MediaResult,
         MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult,
-        ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse, SystemsResult,
-        VersionResult,
+        ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+        SystemDefault, SystemsResult, UpdateSettingsParams, VersionResult,
     };
 
     #[test]
@@ -1583,6 +1627,65 @@ mod tests {
     fn media_tags_result_handles_empty_envelope() {
         let result: MediaTagsResult = serde_json::from_str("{}").expect("parse");
         assert!(result.tags.is_empty());
+    }
+
+    #[test]
+    fn settings_result_parses_system_defaults() {
+        let json = r#"{
+            "systemDefaults": [
+                {"system":"SNES","launcher":"snes9x","beforeExit":"echo bye"},
+                {"system":"Genesis"}
+            ]
+        }"#;
+        let result: SettingsResult = serde_json::from_str(json).expect("parse");
+        assert_eq!(result.system_defaults.len(), 2);
+        assert_eq!(result.system_defaults[0].system, "SNES");
+        assert_eq!(result.system_defaults[0].launcher, "snes9x");
+        assert_eq!(result.system_defaults[0].before_exit, "echo bye");
+        assert_eq!(result.system_defaults[1].launcher, "");
+    }
+
+    #[test]
+    fn update_settings_params_serialises_system_defaults() {
+        let params = UpdateSettingsParams {
+            system_defaults: Some(vec![SystemDefault {
+                system: "SNES".into(),
+                launcher: "snes9x".into(),
+                before_exit: String::new(),
+            }]),
+        };
+        let json = serde_json::to_value(&params).expect("serialise");
+        let defaults = json
+            .get("systemDefaults")
+            .and_then(|v| v.as_array())
+            .expect("defaults array");
+        assert_eq!(defaults.len(), 1);
+        assert_eq!(
+            defaults[0].get("system").and_then(|v| v.as_str()),
+            Some("SNES")
+        );
+        assert_eq!(
+            defaults[0].get("launcher").and_then(|v| v.as_str()),
+            Some("snes9x")
+        );
+        assert!(!defaults[0]
+            .as_object()
+            .expect("object")
+            .contains_key("beforeExit"));
+    }
+
+    #[test]
+    fn launchers_result_parses_payload() {
+        let json = r#"{
+            "launchers": [
+                {"id":"snes9x","systemId":"SNES","systemName":"Super Nintendo","groups":["libretro"]}
+            ]
+        }"#;
+        let result: LaunchersResult = serde_json::from_str(json).expect("parse");
+        assert_eq!(result.launchers.len(), 1);
+        assert_eq!(result.launchers[0].id, "snes9x");
+        assert_eq!(result.launchers[0].system_id, "SNES");
+        assert_eq!(result.launchers[0].groups, vec!["libretro"]);
     }
 
     #[test]

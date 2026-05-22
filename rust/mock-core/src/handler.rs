@@ -58,6 +58,9 @@ pub fn dispatch(text: &str) -> String {
 
     let result = match req.method.as_str() {
         "systems" => Some(fixtures::systems_response()),
+        "launchers" => Some(fixtures::launchers_response()),
+        "settings" => Some(fixtures::settings_response()),
+        "settings.update" => Some(fixtures::settings_update_response(&req.params)),
         "media.search" => Some(fixtures::media_search_response(&req.params)),
         "media.browse" => Some(fixtures::media_browse_response(&req.params)),
         "media.history" => Some(fixtures::media_history_response(&req.params)),
@@ -132,6 +135,29 @@ mod tests {
         let resp = parse(&dispatch(req));
         let systems = resp["result"]["systems"].as_array().expect("array");
         assert_eq!(systems.len(), 10);
+    }
+
+    #[test]
+    fn launchers_returns_fixture_launchers() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"launchers","params":{}}"#;
+        let resp = parse(&dispatch(req));
+        let launchers = resp["result"]["launchers"].as_array().expect("array");
+        assert!(!launchers.is_empty());
+        assert!(launchers.iter().any(|l| l["systemId"] == "SNES"));
+    }
+
+    #[test]
+    fn settings_update_replaces_system_defaults() {
+        let update = r#"{"jsonrpc":"2.0","id":"1","method":"settings.update","params":{"systemDefaults":[{"system":"NES","launcher":"nestopia"}]}}"#;
+        let resp = parse(&dispatch(update));
+        assert!(resp["result"].is_null());
+
+        let req = r#"{"jsonrpc":"2.0","id":"2","method":"settings","params":{}}"#;
+        let resp = parse(&dispatch(req));
+        let defaults = resp["result"]["systemDefaults"].as_array().expect("array");
+        assert_eq!(defaults.len(), 1);
+        assert_eq!(defaults[0]["system"], "NES");
+        assert_eq!(defaults[0]["launcher"], "nestopia");
     }
 
     #[test]

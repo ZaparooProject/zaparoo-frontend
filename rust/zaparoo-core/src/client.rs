@@ -14,13 +14,14 @@
 // instead of disappearing into a queue.
 
 use crate::media_types::{
-    MediaBrowseParams, MediaBrowseResult, MediaHistoryParams, MediaHistoryResult,
+    LaunchersResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryParams, MediaHistoryResult,
     MediaHistoryTopParams, MediaHistoryTopResult, MediaImageBulkParams, MediaImageBulkResult,
     MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
     MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams,
     MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
     MediaTagsUpdateResult, ReadersResult, ReadersWriteParams, RunParams, ScrapersResult,
-    ScrapingStatusResponse, SystemsParams, SystemsResult, VersionResult,
+    ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, UpdateSettingsParams,
+    VersionResult,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -484,6 +485,29 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("readers", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError {
+            message: e.to_string(),
+        })
+    }
+
+    pub async fn settings(&self) -> Result<SettingsResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError {
+            message: e.to_string(),
+        })
+    }
+
+    pub async fn settings_update(&self, params: UpdateSettingsParams) -> Result<(), ClientError> {
+        self.call("settings.update", &params).await?;
+        Ok(())
+    }
+
+    pub async fn launchers(&self) -> Result<LaunchersResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("launchers", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
             message: e.to_string(),
         })

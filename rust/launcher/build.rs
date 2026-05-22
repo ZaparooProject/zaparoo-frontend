@@ -4,6 +4,35 @@
 
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
+const MODEL_FILES: &[&str] = &[
+    "src/models/alternate_versions.rs",
+    "src/models/categories.rs",
+    "src/models/systems.rs",
+    "src/models/game_info.rs",
+    "src/models/games.rs",
+    "src/models/favorites.rs",
+    "src/models/browse.rs",
+    "src/models/app_state.rs",
+    "src/models/build_info.rs",
+    "src/models/app_status.rs",
+    "src/models/hub_state.rs",
+    "src/models/systems_state.rs",
+    "src/models/games_state.rs",
+    "src/models/favorites_state.rs",
+    "src/models/input.rs",
+    "src/models/log_upload.rs",
+    "src/models/media_status.rs",
+    "src/models/notice.rs",
+    "src/models/platform.rs",
+    "src/models/qr_code.rs",
+    "src/models/recents.rs",
+    "src/models/recents_state.rs",
+    "src/models/runtime.rs",
+    "src/models/settings.rs",
+    "src/models/system_launchers.rs",
+    "src/models/system_status.rs",
+];
+
 fn main() {
     // cxx_qt_build compiles the CXX-Qt bridge code and registers the
     // Zaparoo.Browse QML module. Qt is located via the QMAKE env var
@@ -23,33 +52,7 @@ fn main() {
     .qt_module("Gui")
     .qt_module("Quick")
     .qt_module("QuickControls2")
-    .files([
-        "src/models/alternate_versions.rs",
-        "src/models/categories.rs",
-        "src/models/systems.rs",
-        "src/models/game_info.rs",
-        "src/models/games.rs",
-        "src/models/favorites.rs",
-        "src/models/browse.rs",
-        "src/models/app_state.rs",
-        "src/models/build_info.rs",
-        "src/models/app_status.rs",
-        "src/models/hub_state.rs",
-        "src/models/systems_state.rs",
-        "src/models/games_state.rs",
-        "src/models/favorites_state.rs",
-        "src/models/input.rs",
-        "src/models/log_upload.rs",
-        "src/models/media_status.rs",
-        "src/models/notice.rs",
-        "src/models/platform.rs",
-        "src/models/qr_code.rs",
-        "src/models/recents.rs",
-        "src/models/recents_state.rs",
-        "src/models/runtime.rs",
-        "src/models/settings.rs",
-        "src/models/system_status.rs",
-    ]);
+    .files(MODEL_FILES);
 
     // SAFETY: cc_builder is unsafe in 0.8 because cxx-qt makes no stability
     // guarantees about the cc::Build instance. We only adjust the include
