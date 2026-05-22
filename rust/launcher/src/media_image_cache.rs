@@ -43,7 +43,8 @@ use tokio::sync::{broadcast, Notify};
 use tracing::{debug, info, warn};
 
 use zaparoo_core::media_types::{
-    MediaImageBulkItem, MediaImageBulkItemResult, MediaImageBulkParams, MEDIA_IMAGE_BATCH_MAX,
+    MediaImageBulkItem, MediaImageBulkItemResult, MediaImageBulkParams, MediaImageResult,
+    MEDIA_IMAGE_BATCH_MAX,
 };
 use zaparoo_core::store::Store;
 
@@ -292,6 +293,12 @@ pub struct MediaImageUpdate {
     pub ext: Option<&'static str>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NoImagePolicy {
+    Memoize,
+    SoftMiss,
+}
+
 /// One slot in the LIFO fetch queue. Tracks the `page_size` of the
 /// caller that enqueued the key so the drain can ship one page's
 /// worth at a time (see `IMAGE_BATCH_PAGES`). `pending`/`map`/the
@@ -301,6 +308,7 @@ pub struct MediaImageUpdate {
 struct QueueEntry {
     key: MediaKey,
     page_size: u32,
+    no_image_policy: NoImagePolicy,
 }
 
 #[derive(Debug)]
@@ -342,6 +350,13 @@ impl NegativeMemo {
             }
         }
     }
+
+    fn remove(&mut self, key: &MediaKey) {
+        if !self.set.remove(key) {
+            return;
+        }
+        self.order.retain(|memo_key| memo_key != key);
+    }
 }
 
 #[derive(Debug)]
@@ -349,6 +364,8 @@ struct CacheState {
     map: HashMap<MediaKey, MediaImageEntry>,
     total_bytes: usize,
     negative: NegativeMemo,
+    soft_no_image: NegativeMemo,
+    search_seen: NegativeMemo,
     pending: HashSet<MediaKey>,
     /// Per-key retry counter for transient fetch failures. Bumped in
     /// the fetch driver before each re-enqueue; cleared on Success,
@@ -376,6 +393,8 @@ impl CacheState {
             map: HashMap::new(),
             total_bytes: 0,
             negative: NegativeMemo::default(),
+            soft_no_image: NegativeMemo::default(),
+            search_seen: NegativeMemo::default(),
             pending: HashSet::new(),
             attempts: HashMap::new(),
             media_ids: HashMap::new(),
@@ -536,6 +555,12 @@ impl MediaImageCache {
         guard.negative.contains(key)
     }
 
+    pub fn is_soft_no_image(&self, key: &MediaKey) -> bool {
+        #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
+        let guard = self.state.read().unwrap();
+        guard.soft_no_image.contains(key)
+    }
+
     /// Subscribe to cache updates. Used by `GamesModel` to bridge image
     /// completions onto `dataChanged(coverKey)` on the Qt thread.
     pub fn subscribe(&self) -> broadcast::Receiver<MediaImageUpdate> {
@@ -570,6 +595,32 @@ impl MediaImageCache {
     /// callers); otherwise the page that re-enqueued it triggers its
     /// own drain round, so the value can't go stale.
     pub fn enqueue_with_media_id(&self, key: MediaKey, media_id: Option<i64>, page_size: u32) {
+        self.enqueue_with_policy(key, media_id, page_size, NoImagePolicy::Memoize);
+    }
+
+    /// Schedule a search/history cover fetch whose "no image" result
+    /// should not poison the global negative memo. Favorites and
+    /// Recents are backed by `media.search`/`media.history`; their row
+    /// paths can fail `media.image` fallback even when the same game
+    /// has a valid cover through browse/detail paths. They still need
+    /// a broadcast so QML leaves the loading state, but the miss must
+    /// remain local to this fetch attempt.
+    pub fn enqueue_search_cover_with_media_id(
+        &self,
+        key: MediaKey,
+        media_id: Option<i64>,
+        page_size: u32,
+    ) {
+        self.enqueue_with_policy(key, media_id, page_size, NoImagePolicy::SoftMiss);
+    }
+
+    fn enqueue_with_policy(
+        &self,
+        key: MediaKey,
+        media_id: Option<i64>,
+        page_size: u32,
+        no_image_policy: NoImagePolicy,
+    ) {
         if key.system_id.is_empty() || key.path.is_empty() {
             return;
         }
@@ -584,10 +635,31 @@ impl MediaImageCache {
             if let Some(id) = media_id {
                 guard.media_ids.insert(key.clone(), id);
             }
-            if guard.map.contains_key(&key)
-                || guard.negative.contains(&key)
-                || guard.pending.contains(&key)
-            {
+            if no_image_policy == NoImagePolicy::SoftMiss {
+                guard.search_seen.insert(key.clone());
+            }
+            let cached = guard.map.contains_key(&key);
+            let negative = guard.negative.contains(&key);
+            let pending = guard.pending.contains(&key);
+            let soft_no_image = guard.soft_no_image.contains(&key);
+            let search_seen = guard.search_seen.contains(&key);
+            let blocked_by_soft_miss =
+                soft_no_image && (no_image_policy == NoImagePolicy::SoftMiss || search_seen);
+            debug!(
+                system_id = %key.system_id,
+                path = %key.path,
+                media_id = ?media_id,
+                page_size,
+                policy = ?no_image_policy,
+                cached,
+                negative,
+                pending,
+                soft_no_image,
+                search_seen,
+                blocked_by_soft_miss,
+                "media_image_cache: enqueue cover request"
+            );
+            if cached || negative || pending || blocked_by_soft_miss {
                 false
             } else {
                 // Reset the retry counter — a fresh user-driven
@@ -604,7 +676,11 @@ impl MediaImageCache {
         let dropped = {
             #[allow(clippy::unwrap_used, reason = "Mutex poisoning is unrecoverable")]
             let mut q = self.queue.lock().unwrap();
-            q.push_back(QueueEntry { key, page_size });
+            q.push_back(QueueEntry {
+                key,
+                page_size,
+                no_image_policy,
+            });
             // Keep only the freshest MAX_QUEUE_LEN entries; the rest
             // (oldest enqueues at the front) get dropped. The dropped
             // keys must also leave `pending` so a later `enqueue` can
@@ -752,7 +828,7 @@ fn process_batch_outcomes(
         let key = entry.key.clone();
         let is_transient = matches!(outcome, FetchOutcome::Transient);
         let is_connection_down = matches!(outcome, FetchOutcome::ConnectionDown);
-        let update = finish_fetch(state, cap_bytes, &key, outcome);
+        let update = finish_fetch(state, cap_bytes, &key, outcome, entry.no_image_policy);
         if is_connection_down {
             continue;
         }
@@ -840,11 +916,28 @@ fn process_batch_outcomes(
                     "media_image_cache: cached image",
                 );
             } else {
-                info!(
-                    system_id = %key.system_id,
-                    path = %key.path,
-                    "media_image_cache: no image (negative memo)",
-                );
+                #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
+                let guard = state.read().unwrap();
+                let negative = guard.negative.contains(&key);
+                let soft_no_image = guard.soft_no_image.contains(&key);
+                let search_seen = guard.search_seen.contains(&key);
+                if negative {
+                    info!(
+                        system_id = %key.system_id,
+                        path = %key.path,
+                        search_seen,
+                        "media_image_cache: no image (negative memo)",
+                    );
+                } else {
+                    info!(
+                        system_id = %key.system_id,
+                        path = %key.path,
+                        policy = ?entry.no_image_policy,
+                        soft_no_image,
+                        search_seen,
+                        "media_image_cache: no image (soft/protected miss)",
+                    );
+                }
             }
             let _ = updates_tx.send(update);
         }
@@ -857,9 +950,10 @@ enum FetchOutcome {
         bytes: Vec<u8>,
         ext: &'static str,
     },
-    /// Core gave a definitive "no image" answer for this `(system_id,
-    /// path)` — empty payload, unsupported format. Caller memoises so
-    /// page revisits do not re-issue a guaranteed-miss RPC.
+    /// Core gave a "no image" answer for this `(system_id, path)` —
+    /// empty payload, unsupported format, or per-item miss. The queue
+    /// entry's policy decides whether that answer is strong enough to
+    /// enter the shared negative memo.
     NoImage,
     /// Local or RPC-level failure that may not repeat while Core is
     /// still connected: stale `media_id`, base64 wire corruption, or a
@@ -912,6 +1006,19 @@ async fn fetch_batch(
             .collect()
     };
     let (items, id_hinted): (Vec<MediaImageBulkItem>, Vec<bool>) = paired.into_iter().unzip();
+    for (entry, (item, had_id_hint)) in batch.iter().zip(items.iter().zip(id_hinted.iter())) {
+        debug!(
+            system_id = %entry.key.system_id,
+            path = %entry.key.path,
+            media_id = ?item.media_id,
+            request_system = %item.system,
+            request_path = %item.path,
+            had_id_hint,
+            policy = ?entry.no_image_policy,
+            page_size = entry.page_size,
+            "media_image_cache: media.image request item"
+        );
+    }
     let params = MediaImageBulkParams {
         items,
         image_types: Vec::new(),
@@ -1015,7 +1122,7 @@ fn classify_bulk_item(
             );
             return FetchOutcome::Transient;
         }
-        info!(
+        debug!(
             system_id = %key.system_id,
             path = %key.path,
             "media_image_cache: media.image (bulk) per-item error: {err} (treating as no image)",
@@ -1033,6 +1140,10 @@ fn classify_bulk_item(
         );
         return FetchOutcome::NoImage;
     };
+    classify_media_image_result(key, &image)
+}
+
+fn classify_media_image_result(key: &MediaKey, image: &MediaImageResult) -> FetchOutcome {
     let bytes = match BASE64_STANDARD.decode(image.data.as_bytes()) {
         Ok(b) => b,
         Err(e) => {
@@ -1076,10 +1187,12 @@ fn finish_fetch(
     cap_bytes: usize,
     key: &MediaKey,
     outcome: FetchOutcome,
+    no_image_policy: NoImagePolicy,
 ) -> Option<MediaImageUpdate> {
     #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
     let mut guard = state.write().unwrap();
     guard.pending.remove(key);
+    let search_seen = guard.search_seen.contains(key);
     match outcome {
         FetchOutcome::Success { bytes, ext } => {
             if bytes.len() > cap_bytes {
@@ -1090,10 +1203,16 @@ fn finish_fetch(
                     cap_bytes,
                     "media_image_cache: payload exceeds cache cap, recording as negative",
                 );
-                if let Some(prev) = guard.map.remove(key) {
-                    guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
+                if no_image_policy == NoImagePolicy::Memoize && !search_seen {
+                    if let Some(prev) = guard.map.remove(key) {
+                        guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
+                        guard.media_ids.remove(key);
+                    }
+                    guard.soft_no_image.remove(key);
+                    guard.negative.insert(key.clone());
+                } else if !guard.map.contains_key(key) {
+                    guard.soft_no_image.insert(key.clone());
                 }
-                guard.negative.insert(key.clone());
                 return Some(MediaImageUpdate {
                     key: key.clone(),
                     ext: None,
@@ -1110,6 +1229,7 @@ fn finish_fetch(
             if let Some(prev) = guard.map.insert(key.clone(), entry) {
                 guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
             }
+            guard.soft_no_image.remove(key);
             guard.total_bytes = guard.total_bytes.saturating_add(bytes_len);
             guard.evict_until_fits(cap_bytes);
             Some(MediaImageUpdate {
@@ -1118,10 +1238,16 @@ fn finish_fetch(
             })
         }
         FetchOutcome::NoImage => {
-            if let Some(prev) = guard.map.remove(key) {
-                guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
+            if no_image_policy == NoImagePolicy::Memoize && !search_seen {
+                if let Some(prev) = guard.map.remove(key) {
+                    guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
+                    guard.media_ids.remove(key);
+                }
+                guard.soft_no_image.remove(key);
+                guard.negative.insert(key.clone());
+            } else if !guard.map.contains_key(key) {
+                guard.soft_no_image.insert(key.clone());
             }
-            guard.negative.insert(key.clone());
             Some(MediaImageUpdate {
                 key: key.clone(),
                 ext: None,
@@ -1242,7 +1368,8 @@ mod tests {
     use super::{
         drain_one_round, ext_for_content_type, ext_from_extension_field, finish_fetch,
         is_connection_down_error, CacheState, FetchOutcome, MediaImageCache, MediaImageUpdate,
-        MediaKey, NegativeMemo, QueueEntry, IMAGE_BATCH_PAGES, MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
+        MediaKey, NegativeMemo, NoImagePolicy, QueueEntry, IMAGE_BATCH_PAGES, MAX_QUEUE_LEN,
+        NEGATIVE_MEMO_CAP,
     };
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex, RwLock};
@@ -1363,7 +1490,11 @@ mod tests {
     fn finish_fetch_success_records_and_clears_pending() {
         let state = Arc::new(RwLock::new(CacheState::new()));
         let k = key("SNES", "/p");
-        state.write().unwrap().pending.insert(k.clone());
+        {
+            let mut guard = state.write().unwrap();
+            guard.pending.insert(k.clone());
+            guard.soft_no_image.insert(k.clone());
+        }
         let update = finish_fetch(
             &state,
             usize::MAX,
@@ -1372,6 +1503,7 @@ mod tests {
                 bytes: vec![1, 2, 3],
                 ext: "png",
             },
+            NoImagePolicy::Memoize,
         )
         .expect("Success returns Some(update)");
         assert_eq!(update.key, k);
@@ -1381,6 +1513,7 @@ mod tests {
         assert_eq!(guard.total_bytes, 3);
         assert!(!guard.pending.contains(&k));
         assert!(!guard.negative.contains(&k));
+        assert!(!guard.soft_no_image.contains(&k));
     }
 
     #[test]
@@ -1397,8 +1530,14 @@ mod tests {
         let state = Arc::new(RwLock::new(CacheState::new()));
         let k = key("SNES", "/empty");
         state.write().unwrap().pending.insert(k.clone());
-        let update = finish_fetch(&state, usize::MAX, &k, FetchOutcome::NoImage)
-            .expect("NoImage returns Some(update)");
+        let update = finish_fetch(
+            &state,
+            usize::MAX,
+            &k,
+            FetchOutcome::NoImage,
+            NoImagePolicy::Memoize,
+        )
+        .expect("NoImage returns Some(update)");
         assert_eq!(update.key, k);
         assert!(update.ext.is_none());
         let guard = state.read().unwrap();
@@ -1419,8 +1558,14 @@ mod tests {
         let state = Arc::new(RwLock::new(CacheState::new()));
         let k = key("SNES", "/p");
         state.write().unwrap().pending.insert(k.clone());
-        let update = finish_fetch(&state, usize::MAX, &k, FetchOutcome::NoImage)
-            .expect("NoImage returns Some(update)");
+        let update = finish_fetch(
+            &state,
+            usize::MAX,
+            &k,
+            FetchOutcome::NoImage,
+            NoImagePolicy::Memoize,
+        )
+        .expect("NoImage returns Some(update)");
         assert_eq!(update.key, k);
         assert!(update.ext.is_none());
         let guard = state.read().unwrap();
@@ -1430,11 +1575,147 @@ mod tests {
     }
 
     #[test]
+    fn memoized_no_image_removes_cached_bytes_and_media_id_hint() {
+        let state = Arc::new(RwLock::new(CacheState::new()));
+        let k = key("SNES", "/stale");
+        ok_png(&state, usize::MAX, &k, 4);
+        {
+            let mut guard = state.write().unwrap();
+            guard.media_ids.insert(k.clone(), 42);
+            guard.pending.insert(k.clone());
+        }
+        let update = finish_fetch(
+            &state,
+            usize::MAX,
+            &k,
+            FetchOutcome::NoImage,
+            NoImagePolicy::Memoize,
+        )
+        .expect("NoImage returns Some(update)");
+        assert_eq!(update.key, k);
+        assert!(update.ext.is_none());
+        let guard = state.read().unwrap();
+        assert!(!guard.map.contains_key(&k));
+        assert_eq!(guard.total_bytes, 0);
+        assert!(!guard.media_ids.contains_key(&k));
+        assert!(!guard.pending.contains(&k));
+        assert!(guard.negative.contains(&k));
+        assert!(!guard.soft_no_image.contains(&k));
+    }
+
+    #[test]
+    fn protected_memoized_no_image_records_soft_memo_without_global_negative() {
+        let state = Arc::new(RwLock::new(CacheState::new()));
+        let k = key("SNES", "/favorite-strict-miss");
+        {
+            let mut guard = state.write().unwrap();
+            guard.pending.insert(k.clone());
+            guard.search_seen.insert(k.clone());
+        }
+        let update = finish_fetch(
+            &state,
+            usize::MAX,
+            &k,
+            FetchOutcome::NoImage,
+            NoImagePolicy::Memoize,
+        )
+        .expect("protected strict NoImage returns Some(update)");
+        assert_eq!(update.key, k);
+        assert!(update.ext.is_none());
+        let guard = state.read().unwrap();
+        assert!(!guard.map.contains_key(&k));
+        assert!(!guard.pending.contains(&k));
+        assert!(!guard.negative.contains(&k));
+        assert!(guard.soft_no_image.contains(&k));
+        assert!(guard.search_seen.contains(&k));
+    }
+
+    #[test]
+    fn protected_memoized_no_image_preserves_cached_bytes() {
+        let state = Arc::new(RwLock::new(CacheState::new()));
+        let k = key("SNES", "/favorite-cached");
+        ok_png(&state, usize::MAX, &k, 4);
+        {
+            let mut guard = state.write().unwrap();
+            guard.pending.insert(k.clone());
+            guard.search_seen.insert(k.clone());
+        }
+        let update = finish_fetch(
+            &state,
+            usize::MAX,
+            &k,
+            FetchOutcome::NoImage,
+            NoImagePolicy::Memoize,
+        )
+        .expect("protected strict NoImage returns Some(update)");
+        assert_eq!(update.key, k);
+        assert!(update.ext.is_none());
+        let guard = state.read().unwrap();
+        assert!(guard.map.contains_key(&k));
+        assert_eq!(guard.total_bytes, 4);
+        assert!(!guard.pending.contains(&k));
+        assert!(!guard.negative.contains(&k));
+        assert!(!guard.soft_no_image.contains(&k));
+    }
+
+    #[test]
+    fn soft_no_image_records_soft_memo_without_global_negative() {
+        let state = Arc::new(RwLock::new(CacheState::new()));
+        let k = key("SNES", "/search-miss");
+        state.write().unwrap().pending.insert(k.clone());
+        let update = finish_fetch(
+            &state,
+            usize::MAX,
+            &k,
+            FetchOutcome::NoImage,
+            NoImagePolicy::SoftMiss,
+        )
+        .expect("soft NoImage returns Some(update)");
+        assert_eq!(update.key, k);
+        assert!(update.ext.is_none());
+        let guard = state.read().unwrap();
+        assert!(!guard.map.contains_key(&k));
+        assert!(!guard.pending.contains(&k));
+        assert!(!guard.negative.contains(&k));
+        assert!(guard.soft_no_image.contains(&k));
+    }
+
+    #[test]
+    fn soft_no_image_preserves_cached_bytes_and_skips_negative_memo() {
+        let state = Arc::new(RwLock::new(CacheState::new()));
+        let k = key("SNES", "/search-row");
+        ok_png(&state, usize::MAX, &k, 4);
+        state.write().unwrap().pending.insert(k.clone());
+        let update = finish_fetch(
+            &state,
+            usize::MAX,
+            &k,
+            FetchOutcome::NoImage,
+            NoImagePolicy::SoftMiss,
+        )
+        .expect("soft NoImage returns Some(update)");
+        assert_eq!(update.key, k);
+        assert!(update.ext.is_none());
+        let guard = state.read().unwrap();
+        assert!(guard.map.contains_key(&k));
+        assert_eq!(guard.total_bytes, 4);
+        assert!(!guard.pending.contains(&k));
+        assert!(!guard.negative.contains(&k));
+        assert!(!guard.soft_no_image.contains(&k));
+    }
+
+    #[test]
     fn connection_down_outcome_only_clears_pending() {
         let state = Arc::new(RwLock::new(CacheState::new()));
         let k = key("SNES", "/p");
         state.write().unwrap().pending.insert(k.clone());
-        let update = finish_fetch(&state, usize::MAX, &k, FetchOutcome::ConnectionDown);
+        let update = finish_fetch(
+            &state,
+            usize::MAX,
+            &k,
+            FetchOutcome::ConnectionDown,
+            NoImagePolicy::Memoize,
+        );
         assert!(update.is_none());
         let guard = state.read().unwrap();
         assert!(!guard.pending.contains(&k));
@@ -1463,6 +1744,7 @@ mod tests {
                 bytes: vec![0; n],
                 ext: "png",
             },
+            NoImagePolicy::Memoize,
         );
     }
 
@@ -1628,6 +1910,7 @@ mod tests {
                 bytes: vec![0; cap + 1],
                 ext: "png",
             },
+            NoImagePolicy::Memoize,
         )
         .expect("oversize Success returns Some(update) with ext=None");
         assert_eq!(update.key, k);
@@ -1655,7 +1938,13 @@ mod tests {
         let state = Arc::new(RwLock::new(CacheState::new()));
         let k = key("SNES", "/p");
         state.write().unwrap().pending.insert(k.clone());
-        let update = finish_fetch(&state, usize::MAX, &k, FetchOutcome::Transient);
+        let update = finish_fetch(
+            &state,
+            usize::MAX,
+            &k,
+            FetchOutcome::Transient,
+            NoImagePolicy::Memoize,
+        );
         assert!(update.is_none(), "Transient must not broadcast");
         let g = state.read().unwrap();
         assert!(!g.map.contains_key(&k), "no insert on Transient");
@@ -1678,14 +1967,17 @@ mod tests {
         q.push_back(QueueEntry {
             key: a.clone(),
             page_size: 15,
+            no_image_policy: NoImagePolicy::Memoize,
         });
         q.push_back(QueueEntry {
             key: b.clone(),
             page_size: 15,
+            no_image_policy: NoImagePolicy::Memoize,
         });
         q.push_back(QueueEntry {
             key: c.clone(),
             page_size: 15,
+            no_image_policy: NoImagePolicy::Memoize,
         });
         assert_eq!(q.pop_back().map(|e| e.key), Some(c));
         assert_eq!(q.pop_back().map(|e| e.key), Some(b));
@@ -1747,6 +2039,65 @@ mod tests {
             guard.pending.contains(&revived),
             "re-enqueued key must be pending again"
         );
+    }
+
+    #[test]
+    fn search_cover_enqueue_uses_soft_no_image_policy() {
+        let cache = cache_for_test();
+        let k = key("SNES", "/favorite");
+        cache.enqueue_search_cover_with_media_id(k.clone(), Some(7), 15);
+        let entry = cache
+            .queue
+            .lock()
+            .unwrap()
+            .pop_back()
+            .expect("search cover enqueue adds queue entry");
+        assert_eq!(entry.key, k);
+        assert_eq!(entry.no_image_policy, NoImagePolicy::SoftMiss);
+        let guard = cache.state.read().unwrap();
+        assert_eq!(guard.media_ids.get(&k), Some(&7));
+        assert!(guard.search_seen.contains(&k));
+    }
+
+    #[test]
+    fn search_cover_enqueue_skips_soft_no_image_keys() {
+        let cache = cache_for_test();
+        let k = key("SNES", "/soft-missed");
+        cache.state.write().unwrap().soft_no_image.insert(k.clone());
+        cache.enqueue_search_cover_with_media_id(k, Some(7), 15);
+        assert!(cache.queue.lock().unwrap().is_empty());
+        assert!(cache.state.read().unwrap().pending.is_empty());
+    }
+
+    #[test]
+    fn default_enqueue_allows_unprotected_soft_no_image_keys() {
+        let cache = cache_for_test();
+        let k = key("SNES", "/soft-missed");
+        cache.state.write().unwrap().soft_no_image.insert(k.clone());
+        cache.enqueue_with_media_id(k.clone(), Some(7), 15);
+        let entry = cache
+            .queue
+            .lock()
+            .unwrap()
+            .pop_back()
+            .expect("default enqueue is not blocked by unprotected soft miss");
+        assert_eq!(entry.key, k);
+        assert_eq!(entry.no_image_policy, NoImagePolicy::Memoize);
+        assert!(cache.state.read().unwrap().pending.contains(&k));
+    }
+
+    #[test]
+    fn default_enqueue_skips_protected_soft_no_image_keys() {
+        let cache = cache_for_test();
+        let k = key("SNES", "/protected-soft-missed");
+        {
+            let mut guard = cache.state.write().unwrap();
+            guard.soft_no_image.insert(k.clone());
+            guard.search_seen.insert(k.clone());
+        }
+        cache.enqueue_with_media_id(k, Some(7), 15);
+        assert!(cache.queue.lock().unwrap().is_empty());
+        assert!(cache.state.read().unwrap().pending.is_empty());
     }
 
     #[test]
@@ -1899,7 +2250,13 @@ mod tests {
             .unwrap()
             .pending
             .insert(memoised.clone());
-        let _ = finish_fetch(&cache.state, usize::MAX, &memoised, FetchOutcome::NoImage);
+        let _ = finish_fetch(
+            &cache.state,
+            usize::MAX,
+            &memoised,
+            FetchOutcome::NoImage,
+            NoImagePolicy::Memoize,
+        );
         assert!(
             cache.is_negative(&memoised),
             "NoImage outcome must populate the negative memo"

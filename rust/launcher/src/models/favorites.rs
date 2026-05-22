@@ -664,15 +664,18 @@ fn cover_key_for(entry: &MediaItem) -> String {
     let cache = global_media_image_cache();
     let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
     let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
-    if !cached && !negative {
+    let soft_no_image = media_key
+        .as_ref()
+        .is_some_and(|k| cache.is_soft_no_image(k));
+    if !cached && !negative && !soft_no_image {
         // Miss-driven re-enqueue, same rationale as GamesModel's
         // `cover_key_for`: tiles re-bound after LRU eviction or stale-
         // enqueue truncation will hit this branch and re-arm the fetch.
         if let Some(k) = media_key.as_ref() {
-            cache.enqueue_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
+            cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
         }
     }
-    cover_key_for_with(entry, media_key.as_ref(), cached, negative)
+    cover_key_for_with(entry, media_key.as_ref(), cached, negative || soft_no_image)
 }
 
 /// Build the canonical `(systemId, mediaPath)` identifier for a search
@@ -780,12 +783,12 @@ fn sync_current_detail_image_key(mut model: Pin<&mut ffi::FavoritesModel>) {
         model.as_mut().set_current_detail_image_key(QString::from(
             MediaImageCache::image_key_for(&key).as_str(),
         ));
-    } else if cache.is_negative(&key) {
+    } else if cache.is_negative(&key) || cache.is_soft_no_image(&key) {
         model
             .as_mut()
             .set_current_detail_image_key(QString::default());
     } else {
-        cache.enqueue_with_media_id(key, model.current_detail_media_id, 1);
+        cache.enqueue_search_cover_with_media_id(key, model.current_detail_media_id, 1);
         model
             .as_mut()
             .set_current_detail_image_key(QString::from("icons/Loading"));
@@ -865,10 +868,10 @@ fn cover_key_for_with(
 }
 
 /// Schedule a cover fetch for every search row with a non-empty
-/// `(systemId, mediaPath)`. `MediaImageCache::enqueue_with_media_id`
-/// is idempotent — already-cached, already-pending, or negatively-
-/// memoised keys are dropped — so spamming this from `apply_state` /
-/// `apply_append_page` is cheap.
+/// `(systemId, mediaPath)`. The cache enqueue is idempotent —
+/// already-cached, already-pending, or negatively-memoised keys are
+/// dropped — so spamming this from `apply_state` / `apply_append_page`
+/// is cheap.
 ///
 /// Iterates `entries` in reverse so the LIFO fetch queue drains in
 /// visual order: the last entry pushed is `entries[0]`, which the
@@ -877,7 +880,7 @@ fn enqueue_favorites_covers(results: &[MediaItem]) {
     let cache = global_media_image_cache();
     for entry in results.iter().rev() {
         if let Some(key) = media_key_for(entry) {
-            cache.enqueue_with_media_id(key, entry.media_id, PAGE_SIZE);
+            cache.enqueue_search_cover_with_media_id(key, entry.media_id, PAGE_SIZE);
         }
     }
 }
@@ -1106,5 +1109,42 @@ fn apply_append_page(
                 .set_error_message(QString::from(e.message.as_str()));
             model.as_mut().set_loading_more(false);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn favorite_entry() -> MediaItem {
+        MediaItem {
+            name: "Favorite".to_string(),
+            path: "/games/favorite.rom".to_string(),
+            system: zaparoo_core::media_types::System {
+                id: "SNES".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn soft_missed_favorite_cover_uses_system_fallback() {
+        let entry = favorite_entry();
+        let key = MediaKey::new("SNES", "/games/favorite.rom");
+        assert_eq!(
+            cover_key_for_with(&entry, Some(&key), false, true),
+            "systems/SNES"
+        );
+    }
+
+    #[test]
+    fn pending_favorite_cover_uses_loading_icon() {
+        let entry = favorite_entry();
+        let key = MediaKey::new("SNES", "/games/favorite.rom");
+        assert_eq!(
+            cover_key_for_with(&entry, Some(&key), false, false),
+            "icons/Loading"
+        );
     }
 }

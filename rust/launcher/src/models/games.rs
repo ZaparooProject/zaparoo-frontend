@@ -1118,7 +1118,7 @@ fn sync_current_detail_image_key_with_page_size(
         model.as_mut().set_current_detail_image_key(QString::from(
             MediaImageCache::image_key_for(&key).as_str(),
         ));
-    } else if cache.is_negative(&key) {
+    } else if cache.is_negative(&key) || cache.is_soft_no_image(&key) {
         model
             .as_mut()
             .set_current_detail_image_key(QString::default());
@@ -1146,7 +1146,10 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32) -> String {
     let cache = global_media_image_cache();
     let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
     let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
-    if !cached && !negative {
+    let soft_no_image = media_key
+        .as_ref()
+        .is_some_and(|k| cache.is_soft_no_image(k));
+    if !cached && !negative && !soft_no_image {
         // Miss-driven re-enqueue: when QML asks for the cover URL of
         // a media entry whose bytes aren't in the cache, kick a fetch
         // right here. This is the only implicit path covers reach the
@@ -1160,7 +1163,7 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32) -> String {
             cache.enqueue_with_media_id(k.clone(), entry.media_id, page_size);
         }
     }
-    cover_key_for_with(entry, media_key.as_ref(), cached, negative)
+    cover_key_for_with(entry, media_key.as_ref(), cached, negative || soft_no_image)
 }
 
 /// Build the canonical `(systemId, path)` identifier for a media
@@ -1296,14 +1299,14 @@ fn cover_key_for_with(
     entry: &BrowseEntry,
     key: Option<&MediaKey>,
     cached: bool,
-    negative: bool,
+    unavailable: bool,
 ) -> String {
     if entry.is_folder() {
         return "icons/Folder".to_string();
     }
     match key {
         Some(k) if cached => MediaImageCache::image_key_for(k),
-        Some(_) if !negative => "icons/Loading".to_string(),
+        Some(_) if !unavailable => "icons/Loading".to_string(),
         _ => "icons/File".to_string(),
     }
 }
@@ -2567,6 +2570,16 @@ mod tests {
         // Not cached, but negatively memoed → there is no image to
         // wait for, fall back to the plain file icon (no stuck
         // hourglass).
+        assert_eq!(
+            cover_key_for_with(&entry, Some(&key), false, true),
+            "icons/File"
+        );
+    }
+
+    #[test]
+    fn cover_key_for_media_soft_missed_returns_file_icon() {
+        let entry = media("smb", "/p/smb", "NES");
+        let key = media_key_for(&entry).expect("media has key");
         assert_eq!(
             cover_key_for_with(&entry, Some(&key), false, true),
             "icons/File"

@@ -536,15 +536,18 @@ fn cover_key_for(entry: &MediaHistoryEntry) -> String {
     let cache = global_media_image_cache();
     let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
     let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
-    if !cached && !negative {
+    let soft_no_image = media_key
+        .as_ref()
+        .is_some_and(|k| cache.is_soft_no_image(k));
+    if !cached && !negative && !soft_no_image {
         // Miss-driven re-enqueue, same rationale as GamesModel's
         // `cover_key_for`: tiles re-bound after LRU eviction or stale-
         // enqueue truncation will hit this branch and re-arm the fetch.
         if let Some(k) = media_key.as_ref() {
-            cache.enqueue_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
+            cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
         }
     }
-    cover_key_for_with(entry, media_key.as_ref(), cached, negative)
+    cover_key_for_with(entry, media_key.as_ref(), cached, negative || soft_no_image)
 }
 
 /// Build the canonical `(systemId, mediaPath)` identifier for a history
@@ -656,12 +659,12 @@ fn sync_current_detail_image_key(mut model: Pin<&mut ffi::RecentsModel>) {
         model.as_mut().set_current_detail_image_key(QString::from(
             MediaImageCache::image_key_for(&key).as_str(),
         ));
-    } else if cache.is_negative(&key) {
+    } else if cache.is_negative(&key) || cache.is_soft_no_image(&key) {
         model
             .as_mut()
             .set_current_detail_image_key(QString::default());
     } else {
-        cache.enqueue_with_media_id(key, model.current_detail_media_id, 1);
+        cache.enqueue_search_cover_with_media_id(key, model.current_detail_media_id, 1);
         model
             .as_mut()
             .set_current_detail_image_key(QString::from("icons/Loading"));
@@ -683,10 +686,10 @@ fn file_stem_or_name(path: &str, name: &str) -> String {
 }
 
 /// Schedule a cover fetch for every history row with a non-empty
-/// `(systemId, mediaPath)`. `MediaImageCache::enqueue_with_media_id`
-/// is idempotent — already-cached, already-pending, or negatively-
-/// memoised keys are dropped — so spamming this from `apply_state` /
-/// `apply_append_page` is cheap.
+/// `(systemId, mediaPath)`. The cache enqueue is idempotent —
+/// already-cached, already-pending, or negatively-memoised keys are
+/// dropped — so spamming this from `apply_state` / `apply_append_page`
+/// is cheap.
 ///
 /// Iterates `entries` in reverse so the LIFO fetch queue drains in
 /// visual order: the last entry pushed is `entries[0]`, which the
@@ -695,7 +698,7 @@ fn enqueue_recents_covers(entries: &[MediaHistoryEntry]) {
     let cache = global_media_image_cache();
     for entry in entries.iter().rev() {
         if let Some(key) = media_key_for(entry) {
-            cache.enqueue_with_media_id(key, entry.media_id, PAGE_SIZE);
+            cache.enqueue_search_cover_with_media_id(key, entry.media_id, PAGE_SIZE);
         }
     }
 }
@@ -996,6 +999,16 @@ mod tests {
         // Has a key, not cached, negatively memoed → no image to wait
         // for. Fall back to the system logo (friendlier than icons/File
         // for favorites/recents lists).
+        assert_eq!(
+            cover_key_for_with(&e, Some(&key), false, true),
+            "systems/NES"
+        );
+    }
+
+    #[test]
+    fn cover_key_falls_back_to_system_logo_when_soft_missed() {
+        let e = entry("smb", "/p/smb", "NES", "NES");
+        let key = media_key_for(&e).expect("media has key");
         assert_eq!(
             cover_key_for_with(&e, Some(&key), false, true),
             "systems/NES"
