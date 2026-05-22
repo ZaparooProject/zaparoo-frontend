@@ -643,8 +643,7 @@ impl MediaImageCache {
             let pending = guard.pending.contains(&key);
             let soft_no_image = guard.soft_no_image.contains(&key);
             let search_seen = guard.search_seen.contains(&key);
-            let blocked_by_soft_miss =
-                soft_no_image && (no_image_policy == NoImagePolicy::SoftMiss || search_seen);
+            let blocked_by_soft_miss = soft_no_image && no_image_policy == NoImagePolicy::SoftMiss;
             debug!(
                 system_id = %key.system_id,
                 path = %key.path,
@@ -2087,7 +2086,7 @@ mod tests {
     }
 
     #[test]
-    fn default_enqueue_skips_protected_soft_no_image_keys() {
+    fn default_enqueue_allows_protected_soft_no_image_keys() {
         let cache = cache_for_test();
         let k = key("SNES", "/protected-soft-missed");
         {
@@ -2095,9 +2094,16 @@ mod tests {
             guard.soft_no_image.insert(k.clone());
             guard.search_seen.insert(k.clone());
         }
-        cache.enqueue_with_media_id(k, Some(7), 15);
-        assert!(cache.queue.lock().unwrap().is_empty());
-        assert!(cache.state.read().unwrap().pending.is_empty());
+        cache.enqueue_with_media_id(k.clone(), Some(7), 15);
+        let entry = cache
+            .queue
+            .lock()
+            .unwrap()
+            .pop_back()
+            .expect("default enqueue is not blocked by protected soft miss");
+        assert_eq!(entry.key, k);
+        assert_eq!(entry.no_image_policy, NoImagePolicy::Memoize);
+        assert!(cache.state.read().unwrap().pending.contains(&k));
     }
 
     #[test]

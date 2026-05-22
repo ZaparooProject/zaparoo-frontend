@@ -757,10 +757,6 @@ MainLayout {
         if (owner === "recents") {
             const entries = [
                 {
-                    id: "more_info",
-                    label: qsTr("View details")
-                },
-                {
                     id: "launch_game",
                     label: qsTr("Launch game")
                 }
@@ -776,10 +772,6 @@ MainLayout {
             if (entryType === "directory" || entryType === "root")
                 return [];
             const entries = [];
-            entries.push({
-                id: "more_info",
-                label: qsTr("View details")
-            });
             entries.push({
                 id: "toggle_favorite",
                 label: isFavorite ? qsTr("Remove from favorites") : qsTr("Add to favorites")

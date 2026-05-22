@@ -400,35 +400,35 @@ TestCase {
     function test_context_menu_games_no_reader_omits_write_card(): void {
         // qmllint disable compiler
         const entries = main.buildContextMenuEntries("games", "media", false, false);
-        compare(_idsOf(entries), ["more_info", "toggle_favorite", "qr_code", "launch_game"], "Write to NFC token must be hidden when no reader is reported");
+        compare(_idsOf(entries), ["toggle_favorite", "qr_code", "launch_game"], "Write to NFC token must be hidden when no reader is reported");
     // qmllint enable compiler
     }
 
     function test_context_menu_games_with_reader_includes_write_card(): void {
         // qmllint disable compiler
         const entries = main.buildContextMenuEntries("games", "media", true, false);
-        compare(_idsOf(entries), ["more_info", "toggle_favorite", "write_card", "qr_code", "launch_game"]);
+        compare(_idsOf(entries), ["toggle_favorite", "write_card", "qr_code", "launch_game"]);
     // qmllint enable compiler
     }
 
     function test_context_menu_favorites_matches_games_media_entries(): void {
         // qmllint disable compiler
         const entries = main.buildContextMenuEntries("favorites", "", true, true);
-        compare(_idsOf(entries), ["more_info", "toggle_favorite", "write_card", "qr_code", "launch_game"]);
+        compare(_idsOf(entries), ["toggle_favorite", "write_card", "qr_code", "launch_game"]);
     // qmllint enable compiler
     }
 
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
         // qmllint disable compiler
         const entries = main.buildContextMenuEntries("favorites", "", false, true);
-        compare(_idsOf(entries), ["more_info", "toggle_favorite", "qr_code", "launch_game"]);
+        compare(_idsOf(entries), ["toggle_favorite", "qr_code", "launch_game"]);
     // qmllint enable compiler
     }
 
-    function test_context_menu_recents_includes_more_info(): void {
+    function test_context_menu_recents_omits_more_info(): void {
         // qmllint disable compiler
         const entries = main.buildContextMenuEntries("recents", "", false, false);
-        compare(_idsOf(entries), ["more_info", "launch_game"]);
+        compare(_idsOf(entries), ["launch_game"]);
     // qmllint enable compiler
     }
 
@@ -436,11 +436,11 @@ TestCase {
         // qmllint disable compiler
         const addEntries = main.buildContextMenuEntries("games", "media", false, false);
         const removeEntries = main.buildContextMenuEntries("games", "media", false, true);
-        compare(addEntries[1].id, "toggle_favorite");
-        compare(removeEntries[1].id, "toggle_favorite");
-        verify(addEntries[1].label.length > 0);
-        verify(removeEntries[1].label.length > 0);
-        verify(addEntries[1].label !== removeEntries[1].label);
+        compare(addEntries[0].id, "toggle_favorite");
+        compare(removeEntries[0].id, "toggle_favorite");
+        verify(addEntries[0].label.length > 0);
+        verify(removeEntries[0].label.length > 0);
+        verify(addEntries[0].label !== removeEntries[0].label);
     // qmllint enable compiler
     }
 

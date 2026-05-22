@@ -547,7 +547,7 @@ fn cover_key_for(entry: &MediaHistoryEntry) -> String {
             cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
         }
     }
-    cover_key_for_with(entry, media_key.as_ref(), cached, negative || soft_no_image)
+    cover_key_for_with(entry, media_key.as_ref(), cached, negative, soft_no_image)
 }
 
 /// Build the canonical `(systemId, mediaPath)` identifier for a history
@@ -575,13 +575,14 @@ fn cover_key_for_with(
     key: Option<&MediaKey>,
     cached: bool,
     negative: bool,
+    soft_no_image: bool,
 ) -> String {
     if entry.system_id.is_empty() {
         return "icons/File".to_string();
     }
     match key {
         Some(k) if cached => MediaImageCache::image_key_for(k),
-        Some(_) if !negative => "icons/Loading".to_string(),
+        Some(_) if !negative && !soft_no_image => "icons/Loading".to_string(),
         _ => format!("systems/{}", entry.system_id),
     }
 }
@@ -819,7 +820,7 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::RecentsModel>) {
     let unresolved = compute_unresolved_keys(
         &model.entries,
         |k| cache.is_cached(k),
-        |k| cache.is_negative(k),
+        |k| cache.is_negative(k) || cache.is_soft_no_image(k),
     );
     if unresolved.is_empty() {
         model.as_mut().rust_mut().pending_first_paint_keys.clear();
@@ -987,7 +988,7 @@ mod tests {
         // Has a key, not cached, not negative → fetch is in flight,
         // show the hourglass over the tile.
         assert_eq!(
-            cover_key_for_with(&e, Some(&key), false, false),
+            cover_key_for_with(&e, Some(&key), false, false, false),
             "icons/Loading"
         );
     }
@@ -1000,7 +1001,7 @@ mod tests {
         // for. Fall back to the system logo (friendlier than icons/File
         // for favorites/recents lists).
         assert_eq!(
-            cover_key_for_with(&e, Some(&key), false, true),
+            cover_key_for_with(&e, Some(&key), false, true, false),
             "systems/NES"
         );
     }
@@ -1010,7 +1011,7 @@ mod tests {
         let e = entry("smb", "/p/smb", "NES", "NES");
         let key = media_key_for(&e).expect("media has key");
         assert_eq!(
-            cover_key_for_with(&e, Some(&key), false, true),
+            cover_key_for_with(&e, Some(&key), false, false, true),
             "systems/NES"
         );
     }
@@ -1020,14 +1021,20 @@ mod tests {
         let e = entry("smb", "/p/smb", "NES", "NES");
         let key = media_key_for(&e).expect("media has key");
         let expected = MediaImageCache::image_key_for(&key);
-        assert_eq!(cover_key_for_with(&e, Some(&key), true, false), expected);
+        assert_eq!(
+            cover_key_for_with(&e, Some(&key), true, false, false),
+            expected
+        );
         assert!(expected.starts_with("media-image/"));
     }
 
     #[test]
     fn cover_key_falls_back_to_file_glyph_when_system_missing() {
         let e = entry("orphan", "/p/orphan", "", "");
-        assert_eq!(cover_key_for_with(&e, None, false, false), "icons/File");
+        assert_eq!(
+            cover_key_for_with(&e, None, false, false, false),
+            "icons/File"
+        );
     }
 
     #[test]
@@ -1210,6 +1217,19 @@ mod tests {
         ];
         let unresolved =
             compute_unresolved_keys(&entries, |_| false, |k| k.path.as_ref() == negative_path);
+        let expected: HashSet<MediaKey> = [MediaKey::new("NES", "/p/smb")].into_iter().collect();
+        assert_eq!(unresolved, expected);
+    }
+
+    #[test]
+    fn compute_unresolved_keys_excludes_soft_no_image() {
+        let soft_path = "/p/soft-no-image";
+        let entries = vec![
+            entry("smb", "/p/smb", "NES", "NES"),
+            entry("orphan", soft_path, "NES", "NES"),
+        ];
+        let unresolved =
+            compute_unresolved_keys(&entries, |_| false, |k| k.path.as_ref() == soft_path);
         let expected: HashSet<MediaKey> = [MediaKey::new("NES", "/p/smb")].into_iter().collect();
         assert_eq!(unresolved, expected);
     }

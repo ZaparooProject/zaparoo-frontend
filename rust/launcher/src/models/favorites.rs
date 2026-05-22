@@ -675,7 +675,7 @@ fn cover_key_for(entry: &MediaItem) -> String {
             cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
         }
     }
-    cover_key_for_with(entry, media_key.as_ref(), cached, negative || soft_no_image)
+    cover_key_for_with(entry, media_key.as_ref(), cached, negative, soft_no_image)
 }
 
 /// Build the canonical `(systemId, mediaPath)` identifier for a search
@@ -856,13 +856,14 @@ fn cover_key_for_with(
     key: Option<&MediaKey>,
     cached: bool,
     negative: bool,
+    soft_no_image: bool,
 ) -> String {
     if entry.system.id.is_empty() {
         return "icons/File".to_string();
     }
     match key {
         Some(k) if cached => MediaImageCache::image_key_for(k),
-        Some(_) if !negative => "icons/Loading".to_string(),
+        Some(_) if !negative && !soft_no_image => "icons/Loading".to_string(),
         _ => format!("systems/{}", entry.system.id),
     }
 }
@@ -1001,7 +1002,7 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::FavoritesModel>) {
     let unresolved = compute_unresolved_keys(
         &model.entries,
         |k| cache.is_cached(k),
-        |k| cache.is_negative(k),
+        |k| cache.is_negative(k) || cache.is_soft_no_image(k),
     );
     if unresolved.is_empty() {
         model.as_mut().rust_mut().pending_first_paint_keys.clear();
@@ -1133,7 +1134,7 @@ mod tests {
         let entry = favorite_entry();
         let key = MediaKey::new("SNES", "/games/favorite.rom");
         assert_eq!(
-            cover_key_for_with(&entry, Some(&key), false, true),
+            cover_key_for_with(&entry, Some(&key), false, false, true),
             "systems/SNES"
         );
     }
@@ -1143,8 +1144,28 @@ mod tests {
         let entry = favorite_entry();
         let key = MediaKey::new("SNES", "/games/favorite.rom");
         assert_eq!(
-            cover_key_for_with(&entry, Some(&key), false, false),
+            cover_key_for_with(&entry, Some(&key), false, false, false),
             "icons/Loading"
         );
+    }
+
+    #[test]
+    fn compute_unresolved_keys_excludes_soft_no_image() {
+        let soft_key = MediaKey::new("SNES", "/games/favorite.rom");
+        let mut pending_entry = favorite_entry();
+        pending_entry.path = "/games/pending.rom".to_string();
+        let entries = vec![favorite_entry(), pending_entry];
+        let unresolved = compute_unresolved_keys(
+            &entries,
+            |_| false,
+            |k| {
+                k.system_id.as_ref() == soft_key.system_id.as_ref()
+                    && k.path.as_ref() == soft_key.path.as_ref()
+            },
+        );
+        let expected: HashSet<MediaKey> = [MediaKey::new("SNES", "/games/pending.rom")]
+            .into_iter()
+            .collect();
+        assert_eq!(unresolved, expected);
     }
 }

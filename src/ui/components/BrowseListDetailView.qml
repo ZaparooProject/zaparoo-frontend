@@ -16,6 +16,7 @@ Item {
     property alias currentName: browseList.currentName
     property alias currentCoverKey: browseList.currentCoverKey
     property alias itemCount: browseList.itemCount
+    property alias visibleRowCount: browseList.visibleRowCount
 
     property alias detailTitle: detailPane.title
     property alias detailCoverKey: detailPane.coverKey

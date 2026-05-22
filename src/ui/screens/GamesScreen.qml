@@ -36,8 +36,7 @@ Item {
     property bool gridFocused: true
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
     readonly property int _listPageSize: 10
-    readonly property int _listOverlayBottomMargin: Sizing.pctH(6) + games._tileLayout.activeLabelBottomMargin + games._tileLayout.activeLabelHeight
-    readonly property int _browsePageSize: games._listLayout ? games._listPageSize : gamesGrid.pageSize
+    readonly property int _browsePageSize: games._listLayout ? Math.max(1, listCard.visibleRowCount) : gamesGrid.pageSize
     readonly property bool _crtGridLayout: Theme.crtNativePath && !games._listLayout
     readonly property var _tileLayout: games._crtGridLayout ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
     property bool _currentMoveIsRepeat: false
@@ -545,7 +544,7 @@ Item {
         x: games._listLayout ? listCard.x : gamesGrid.x
         y: games._listLayout ? listCard.y : gamesGrid.y
         width: games._listLayout ? listCard.width : gamesGrid.width
-        height: games._listLayout ? Math.max(0, games.height - listCard.y - games._listOverlayBottomMargin) : gamesGrid.height
+        height: games._listLayout ? listCard.height : gamesGrid.height
         loading: Browse.GamesModel.loading
         errorMessage: Browse.GamesModel.error_message ?? ""
         count: Browse.GamesModel.count
