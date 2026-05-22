@@ -200,6 +200,10 @@ Item {
     // post-move state-commit path as _performMove so the saved entry
     // tracks whichever item the user lands on.
     function _performPage(delta: int): void {
+        if (games._listLayout) {
+            games._performLinearMove(delta * games._browsePageSize, false);
+            return;
+        }
         if (games.gamesGrid.pageBy(delta))
             games._scheduleSelectedPersist(Browse.GamesModel.path_at(games.gamesGrid.currentIndex));
     }
