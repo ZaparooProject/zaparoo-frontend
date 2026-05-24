@@ -170,6 +170,7 @@ Item {
     readonly property int gutterGap: root.layoutProfile ? root.layoutProfile.gridGutterGap : Sizing.pctW(1.5)
     readonly property int scrollThumbWidth: root.layoutProfile ? root.layoutProfile.scrollThumbWidth : Sizing.pctW(1.2)
     readonly property int scrollThumbRightInset: root.layoutProfile ? root.layoutProfile.scrollThumbRightInset : 0
+    readonly property bool scrollThumbRightAligned: root.layoutProfile && root.layoutProfile.scrollThumbRightAligned !== undefined ? root.layoutProfile.scrollThumbRightAligned : false
     readonly property int scrollArrowSize: root.layoutProfile ? root.layoutProfile.scrollArrowSize : Math.min(gutterWidth, Sizing.pctH(4))
     readonly property int topInset: root.layoutProfile ? root.layoutProfile.gridTopInset : Sizing.pctH(2)
     readonly property int bottomInset: root.layoutProfile ? root.layoutProfile.gridBottomInset : Sizing.pctH(2)
@@ -717,8 +718,9 @@ Item {
             anchors.topMargin: root.scrollArrowSize + Sizing.pctH(1)
             anchors.bottom: parent.bottom
             anchors.bottomMargin: root.scrollArrowSize + Sizing.pctH(1)
-            anchors.right: parent.right
-            anchors.rightMargin: root.scrollThumbRightInset
+            anchors.right: root.scrollThumbRightAligned ? parent.right : undefined
+            anchors.rightMargin: root.scrollThumbRightAligned ? root.scrollThumbRightInset : 0
+            anchors.horizontalCenter: root.scrollThumbRightAligned ? undefined : parent.horizontalCenter
             width: root.scrollThumbWidth
 
             // Standard paginated-scrollbar formulas (cf. Qt
@@ -735,7 +737,8 @@ Item {
                 id: scrollThumb
                 width: root.scrollThumbWidth
                 height: scrollRegion._thumbHeight
-                anchors.right: parent.right
+                anchors.right: root.scrollThumbRightAligned ? parent.right : undefined
+                anchors.horizontalCenter: root.scrollThumbRightAligned ? undefined : parent.horizontalCenter
                 y: scrollRegion._thumbY
                 color: Theme.textPrimary
                 radius: Sizing.half(width)

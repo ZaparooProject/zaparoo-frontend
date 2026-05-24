@@ -24,6 +24,7 @@ QtObject {
         readonly property int gridRowGap: Sizing.pctH(4)
         readonly property int scrollThumbWidth: Sizing.pctW(1.2)
         readonly property int scrollThumbRightInset: 0
+        readonly property bool scrollThumbRightAligned: false
         readonly property int scrollArrowSize: Math.min(gridGutterWidth, Sizing.pctH(4))
         readonly property bool packHorizontalRemainderAfterGutter: false
         readonly property int activeLabelHeight: Sizing.pctH(7)
@@ -82,6 +83,7 @@ QtObject {
         readonly property int gridRowGap: 4
         readonly property int scrollThumbWidth: 4
         readonly property int scrollThumbRightInset: 2
+        readonly property bool scrollThumbRightAligned: false
         readonly property int scrollArrowSize: 8
         readonly property bool packHorizontalRemainderAfterGutter: true
         readonly property int activeLabelHeight: 8

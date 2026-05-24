@@ -39,6 +39,7 @@ Item {
     readonly property int _gutterGap: root.layoutProfile && root.layoutProfile.listScrollbarGap !== undefined ? root.layoutProfile.listScrollbarGap : (root.layoutProfile ? root.layoutProfile.gridGutterGap : Sizing.pctW(1.5))
     readonly property int _scrollThumbWidth: root.layoutProfile ? root.layoutProfile.scrollThumbWidth : Sizing.pctW(1.2)
     readonly property int _scrollThumbRightInset: root.layoutProfile ? root.layoutProfile.scrollThumbRightInset : 0
+    readonly property bool _scrollThumbRightAligned: root.layoutProfile && root.layoutProfile.scrollThumbRightAligned !== undefined ? root.layoutProfile.scrollThumbRightAligned : false
     readonly property int _scrollArrowSize: root.layoutProfile ? root.layoutProfile.scrollArrowSize : Math.min(root._gutterWidth, Sizing.pctH(4))
     readonly property int _selectionAccentWidth: root.layoutProfile && root.layoutProfile.listSelectionAccentWidth !== undefined ? root.layoutProfile.listSelectionAccentWidth : Sizing.pctW(0.45)
     readonly property int _rowTextLeftPadding: root.layoutProfile ? root.layoutProfile.listRowTextLeftPadding : Sizing.pctW(1.6)
@@ -279,8 +280,9 @@ Item {
             anchors.topMargin: root._scrollArrowSize + Sizing.pctH(1)
             anchors.bottom: parent.bottom
             anchors.bottomMargin: root._scrollArrowSize + Sizing.pctH(1)
-            anchors.right: parent.right
-            anchors.rightMargin: root._scrollThumbRightInset
+            anchors.right: root._scrollThumbRightAligned ? parent.right : undefined
+            anchors.rightMargin: root._scrollThumbRightAligned ? root._scrollThumbRightInset : 0
+            anchors.horizontalCenter: root._scrollThumbRightAligned ? undefined : parent.horizontalCenter
             width: root._scrollThumbWidth
 
             readonly property int _minThumbHeight: Sizing.pctH(4)
@@ -291,7 +293,8 @@ Item {
                 id: scrollThumb
                 width: root._scrollThumbWidth
                 height: scrollRegion._thumbHeight
-                anchors.right: parent.right
+                anchors.right: root._scrollThumbRightAligned ? parent.right : undefined
+                anchors.horizontalCenter: root._scrollThumbRightAligned ? undefined : parent.horizontalCenter
                 y: scrollRegion._thumbY
                 color: Theme.textPrimary
                 radius: Sizing.half(width)
