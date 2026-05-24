@@ -26,6 +26,7 @@ Item {
     property alias detailTags: detailPane.detailTags
     property alias detailLoading: detailPane.loading
     property alias detailLoadingText: detailPane.loadingText
+    property alias detailSuppressed: detailPane.detailSuppressed
     property alias detailCanPreviousImage: detailPane.canPreviousImage
     property alias detailCanNextImage: detailPane.canNextImage
 

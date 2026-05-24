@@ -34,12 +34,12 @@ Item {
     // Avoids the two-focus-ring read where the menu's selected entry
     // and the anchored tile both light up.
     property bool gridFocused: true
+    property bool detailRapidScrollActive: false
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
     readonly property int _listPageSize: 10
     readonly property int _browsePageSize: games._listLayout ? Math.max(1, listCard.visibleRowCount) : gamesGrid.pageSize
     readonly property bool _crtGridLayout: Theme.crtNativePath && !games._listLayout
     readonly property var _tileLayout: games._crtGridLayout ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
-    property bool _currentMoveIsRepeat: false
 
     // Cover-gate flag: true while `GamesModel` is holding `loading`
     // for the initial-page paint. Pagination uses a separate
@@ -122,17 +122,17 @@ Item {
     // success. Unlike HubScreen's _handleSystems, none of the games-grid
     // directions have a row-edge escape branch, so all four cardinal
     // actions share this exact body.
-    function _performMove(dx: int, dy: int, isRepeat): void {
+    function _performMove(dx: int, dy: int): void {
         if (games._listLayout) {
             if (dy !== 0)
-                games._performLinearMove(dy, isRepeat === true);
+                games._performLinearMove(dy);
             return;
         }
         if (games.gamesGrid.moveSelection(dx, dy))
             games._scheduleSelectedPersist(Browse.GamesModel.path_at(games.gamesGrid.currentIndex));
     }
 
-    function _performLinearMove(delta: int, isRepeat: bool): void {
+    function _performLinearMove(delta: int): void {
         const count = games.gamesGrid.itemCount;
         if (count <= 0)
             return;
@@ -152,9 +152,7 @@ Item {
                 Browse.GamesModel.fetch_more();
             return;
         }
-        games._currentMoveIsRepeat = isRepeat;
         games.gamesGrid.currentIndex = next;
-        games._currentMoveIsRepeat = false;
         games._scheduleSelectedPersist(Browse.GamesModel.path_at(games.gamesGrid.currentIndex));
         if (next >= count - 2 && Browse.GamesModel.has_next_page)
             Browse.GamesModel.fetch_more();
@@ -187,7 +185,7 @@ Item {
     // tracks whichever item the user lands on.
     function _performPage(delta: int): void {
         if (games._listLayout) {
-            games._performLinearMove(delta * games._browsePageSize, false);
+            games._performLinearMove(delta * games._browsePageSize);
             return;
         }
         if (games.gamesGrid.pageBy(delta))
@@ -197,9 +195,7 @@ Item {
     function _focusIndex(index: int): void {
         if (index < 0 || index >= games.gamesGrid.itemCount)
             return;
-        games._currentMoveIsRepeat = false;
         games.gamesGrid.currentIndex = index;
-        games._currentMoveIsRepeat = false;
         games._scheduleSelectedPersist(Browse.GamesModel.path_at(games.gamesGrid.currentIndex));
     }
 
@@ -221,24 +217,21 @@ Item {
         return Browse.GamesState.path_stack.length > 1;
     }
 
-    function handleAction(action: string, isRepeat): void {
-        if (games._listLayout && isRepeat === true && (action === "up" || action === "down")) {
-            focusedDetail.clearTransient();
-        }
+    function handleAction(action: string): void {
         if (action === "left") {
             if (games._listLayout)
                 Browse.GamesModel.cycle_detail_image(-1);
             else
-                games._performMove(-1, 0, isRepeat);
+                games._performMove(-1, 0);
         } else if (action === "right") {
             if (games._listLayout)
                 Browse.GamesModel.cycle_detail_image(1);
             else
-                games._performMove(1, 0, isRepeat);
+                games._performMove(1, 0);
         } else if (action === "up") {
-            games._performMove(0, -1, isRepeat);
+            games._performMove(0, -1);
         } else if (action === "down") {
-            games._performMove(0, 1, isRepeat);
+            games._performMove(0, 1);
         } else if (action === "page_prev") {
             // L shoulder. Ignored on non-Ready states — there's no
             // data to page through.
@@ -325,6 +318,7 @@ Item {
         enabled: !games.transitioning && !games.coverGateLoading && games._listLayout
         itemCount: gamesGrid.itemCount
         currentIndex: gamesGrid.currentIndex
+        rapidScrollActive: games.detailRapidScrollActive
         identityForIndex: function (index) {
             const entryType = Browse.GamesModel.entry_type_at(index);
             if (entryType === "directory" || entryType === "root")
@@ -405,6 +399,7 @@ Item {
         detailShowTitle: false
         detailTags: Browse.GamesModel.current_detail_tags
         detailLoading: Browse.GamesModel.current_detail_loading
+        detailSuppressed: games.detailRapidScrollActive
         detailLoadingText: qsTr("Loading game…")
         detailCanPreviousImage: Browse.GamesModel.current_detail_image_can_prev
         detailCanNextImage: Browse.GamesModel.current_detail_image_can_next
@@ -459,10 +454,6 @@ Item {
         // on the loaded last item rather than spinning forever.
         hasMorePages: Browse.GamesModel.has_next_page
         onLoadMoreRequested: Browse.GamesModel.fetch_more()
-        onCurrentIndexChanged: {
-            if (games._listLayout && games._currentMoveIsRepeat)
-                focusedDetail.clearTransient();
-        }
         // Cover prefetch is driven by what the user is looking at,
         // not by what metadata page Core happened to send back. Each
         // page turn re-anchors the queue so the visible page wins

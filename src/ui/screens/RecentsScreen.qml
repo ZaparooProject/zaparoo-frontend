@@ -37,6 +37,7 @@ Item {
     // `!ScreenManager.hasModal` so the focused tile's accent ring
     // hides while a modal (the context menu) is on top of the stack.
     property bool gridFocused: true
+    property bool detailRapidScrollActive: false
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
     readonly property int _listOverlayBottomMargin: Sizing.pctH(15)
 
@@ -109,6 +110,14 @@ Item {
             Browse.RecentsModel.fetch_more();
     }
 
+    function _performPage(delta: int): void {
+        if (recents._listLayout) {
+            recents._performLinearMove(delta * recents.recentsGrid.pageSize);
+            return;
+        }
+        recents.recentsGrid.pageBy(delta);
+    }
+
     function _state(): string {
         if (Browse.RecentsModel.loading)
             return "loading";
@@ -138,10 +147,10 @@ Item {
                 recents.recentsGrid.moveSelection(0, 1);
         } else if (action === "page_prev") {
             if (recents._state() === "ready")
-                recents.recentsGrid.pageBy(-1);
+                recents._performPage(-1);
         } else if (action === "page_next") {
             if (recents._state() === "ready")
-                recents.recentsGrid.pageBy(1);
+                recents._performPage(1);
         } else if (action === "accept") {
             // Loading swallows the press at the screen layer; Empty/Error
             // re-fires the current load by calling `fetch_more` (a stale
@@ -175,6 +184,7 @@ Item {
         enabled: !recents._gateHide && recents._listLayout
         itemCount: recentsGrid.itemCount
         currentIndex: recentsGrid.currentIndex
+        rapidScrollActive: recents.detailRapidScrollActive
         mediaModel: Browse.RecentsModel
     }
 
@@ -216,9 +226,10 @@ Item {
         model: Browse.RecentsModel
         currentIndex: recentsGrid.currentIndex
         detailTitle: listCard.currentName
-        detailCoverKey: Browse.RecentsModel.current_detail_image_key !== "" ? Browse.RecentsModel.current_detail_image_key : listCard.currentCoverKey
+        detailCoverKey: recents.detailRapidScrollActive ? "icons/File" : (Browse.RecentsModel.current_detail_image_key !== "" ? Browse.RecentsModel.current_detail_image_key : listCard.currentCoverKey)
         detailTags: Browse.RecentsModel.current_detail_tags
         detailLoading: Browse.RecentsModel.current_detail_loading
+        detailSuppressed: recents.detailRapidScrollActive
         onItemHovered: index => recents._focusIndex(index)
         onItemClicked: index => {
             recents._focusIndex(index);
@@ -254,9 +265,7 @@ Item {
         columnsOverride: Sizing.gamesGridColumns
         rowsOverride: Sizing.gamesGridRows
         onLoadMoreRequested: Browse.RecentsModel.fetch_more()
-        onCurrentIndexChanged: {
-            recents._persistFocus();
-        }
+        onCurrentIndexChanged: recents._persistFocus()
         onItemHovered: index => recents._focusIndex(index)
         onItemClicked: index => {
             recents._focusIndex(index);

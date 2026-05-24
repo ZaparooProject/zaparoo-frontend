@@ -37,6 +37,7 @@ Item {
     // `!ScreenManager.hasModal` so the focused tile's accent ring
     // hides while a modal (the context menu) is on top of the stack.
     property bool gridFocused: true
+    property bool detailRapidScrollActive: false
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
     readonly property int _listOverlayBottomMargin: Sizing.pctH(15)
 
@@ -108,6 +109,14 @@ Item {
             Browse.FavoritesModel.fetch_more();
     }
 
+    function _performPage(delta: int): void {
+        if (favorites._listLayout) {
+            favorites._performLinearMove(delta * favorites.favoritesGrid.pageSize);
+            return;
+        }
+        favorites.favoritesGrid.pageBy(delta);
+    }
+
     function _state(): string {
         if (Browse.FavoritesModel.loading)
             return "loading";
@@ -137,10 +146,10 @@ Item {
                 favorites.favoritesGrid.moveSelection(0, 1);
         } else if (action === "page_prev") {
             if (favorites._state() === "ready")
-                favorites.favoritesGrid.pageBy(-1);
+                favorites._performPage(-1);
         } else if (action === "page_next") {
             if (favorites._state() === "ready")
-                favorites.favoritesGrid.pageBy(1);
+                favorites._performPage(1);
         } else if (action === "accept") {
             // Loading swallows the press at the screen layer; Empty/Error
             // re-fires the current load by calling `fetch_more` (a stale
@@ -174,6 +183,7 @@ Item {
         enabled: !favorites._gateHide && favorites._listLayout
         itemCount: favoritesGrid.itemCount
         currentIndex: favoritesGrid.currentIndex
+        rapidScrollActive: favorites.detailRapidScrollActive
         mediaModel: Browse.FavoritesModel
     }
 
@@ -215,9 +225,10 @@ Item {
         model: Browse.FavoritesModel
         currentIndex: favoritesGrid.currentIndex
         detailTitle: listCard.currentName
-        detailCoverKey: Browse.FavoritesModel.current_detail_image_key !== "" ? Browse.FavoritesModel.current_detail_image_key : listCard.currentCoverKey
+        detailCoverKey: favorites.detailRapidScrollActive ? "icons/File" : (Browse.FavoritesModel.current_detail_image_key !== "" ? Browse.FavoritesModel.current_detail_image_key : listCard.currentCoverKey)
         detailTags: Browse.FavoritesModel.current_detail_tags
         detailLoading: Browse.FavoritesModel.current_detail_loading
+        detailSuppressed: favorites.detailRapidScrollActive
         onItemHovered: index => favorites._focusIndex(index)
         onItemClicked: index => {
             favorites._focusIndex(index);
@@ -253,9 +264,7 @@ Item {
         columnsOverride: Sizing.gamesGridColumns
         rowsOverride: Sizing.gamesGridRows
         onLoadMoreRequested: Browse.FavoritesModel.fetch_more()
-        onCurrentIndexChanged: {
-            favorites._persistFocus();
-        }
+        onCurrentIndexChanged: favorites._persistFocus()
         onItemHovered: index => favorites._focusIndex(index)
         onItemClicked: index => {
             favorites._focusIndex(index);

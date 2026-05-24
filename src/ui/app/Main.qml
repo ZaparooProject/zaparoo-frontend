@@ -1466,7 +1466,7 @@ MainLayout {
             return;
         }
         if (root.activeScreen === root.screenGames) {
-            root.gamesScreen.handleAction(action, root._dispatchingRepeat);
+            root.gamesScreen.handleAction(action);
         } else if (root.activeScreen === root.screenSystems) {
             root.systemsScreen.handleAction(action);
         } else if (root.activeScreen === root.screenFavorites) {
@@ -1495,7 +1495,7 @@ MainLayout {
     readonly property int _repeatTickMs: 90
     property string _heldAction: ""
     property int _heldKey: 0
-    property bool _dispatchingRepeat: false
+    readonly property bool _listDetailRapidScrollActive: root._repeatTicking && (root._heldAction === "up" || root._heldAction === "down")
     // Aliased so tst_navigation.qml can observe the repeat state machine
     // — child Timer ids are file-scoped and aren't reachable otherwise.
     property alias _repeatPending: repeatInitial.running
@@ -1514,6 +1514,24 @@ MainLayout {
         // No-op when no persist is pending or when another screen is
         // active.
         root.gamesScreen.flushSelectedPersist();
+    }
+
+    Binding {
+        target: root.gamesScreen
+        property: "detailRapidScrollActive"
+        value: root.activeScreen === root.screenGames && root._listDetailRapidScrollActive
+    }
+
+    Binding {
+        target: root.favoritesScreen
+        property: "detailRapidScrollActive"
+        value: root.activeScreen === root.screenFavorites && root._listDetailRapidScrollActive
+    }
+
+    Binding {
+        target: root.recentsScreen
+        property: "detailRapidScrollActive"
+        value: root.activeScreen === root.screenRecents && root._listDetailRapidScrollActive
     }
 
     function _isRepeatableAction(action: string): bool {
@@ -1665,9 +1683,7 @@ MainLayout {
     }
 
     function _handleRepeatAction(): void {
-        root._dispatchingRepeat = true;
         root.handleAction(root._heldAction);
-        root._dispatchingRepeat = false;
     }
 
     Timer {

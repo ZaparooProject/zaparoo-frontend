@@ -18,6 +18,7 @@ Item {
     property bool canPreviousImage: false
     property bool canNextImage: false
     property bool loading: false
+    property bool detailSuppressed: false
     property bool showChrome: true
     property string loadingText: qsTr("Loading…")
 
@@ -36,6 +37,8 @@ Item {
     readonly property bool _coverPending: coverKey === "icons/Loading"
     readonly property url _coverSource: _coverPending ? "" : Resources.coverUrl(coverKey)
     readonly property bool _paneLoading: root.loading
+    readonly property bool _detailVisible: !root._paneLoading && !root.detailSuppressed
+    readonly property bool _suppressedPlaceholderCover: root.detailSuppressed && coverKey.startsWith("icons/") && root._coverSource !== ""
 
     onDetailTagsChanged: root._labelColumnWidth = 0
 
@@ -114,7 +117,7 @@ Item {
                 sourceSize.width: 512
                 smooth: true
                 asynchronous: true
-                visible: !root._paneLoading && root._coverSource !== "" && status === Image.Ready
+                visible: !root._paneLoading && root._coverSource !== "" && status === Image.Ready && (!root.detailSuppressed || root._suppressedPlaceholderCover)
             }
 
             Image {
@@ -128,7 +131,7 @@ Item {
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 asynchronous: false
-                visible: !root._paneLoading && (root._coverPending || cover.status === Image.Loading || root._coverSource === "" || cover.status === Image.Error)
+                visible: !root._paneLoading && !root._suppressedPlaceholderCover && (root.detailSuppressed || root._coverPending || cover.status === Image.Loading || root._coverSource === "" || cover.status === Image.Error)
             }
         }
 
@@ -140,7 +143,7 @@ Item {
             anchors.verticalCenter: imageSlot.verticalCenter
             fillMode: Image.PreserveAspectFit
             smooth: true
-            visible: !root._paneLoading && root.canPreviousImage
+            visible: root._detailVisible && root.canPreviousImage
         }
 
         Image {
@@ -151,7 +154,7 @@ Item {
             anchors.verticalCenter: imageSlot.verticalCenter
             fillMode: Image.PreserveAspectFit
             smooth: true
-            visible: !root._paneLoading && root.canNextImage
+            visible: root._detailVisible && root.canNextImage
         }
 
         Text {
@@ -170,7 +173,7 @@ Item {
             elide: Text.ElideRight
             horizontalAlignment: Text.AlignLeft
             renderType: Text.NativeRendering
-            visible: !root._paneLoading && root.showTitle && root.title !== ""
+            visible: root._detailVisible && root.showTitle && root.title !== ""
         }
 
         Item {
@@ -187,7 +190,7 @@ Item {
             Column {
                 id: tagTable
 
-                visible: !root._paneLoading && root._detailRows.length > 0
+                visible: root._detailVisible && root._detailRows.length > 0
                 anchors.fill: parent
                 spacing: root._tagRowSpacing
                 clip: true
@@ -256,7 +259,7 @@ Item {
         }
 
         LoadingIndicator {
-            visible: root._paneLoading
+            visible: root._paneLoading && !root.detailSuppressed
             x: Sizing.center(parent.width, width)
             y: Sizing.center(parent.height, height)
             text: root.loadingText

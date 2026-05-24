@@ -16,6 +16,7 @@ TestCase {
     property int clearCount: 0
     property var identities: []
     property var loadedIndices: []
+    property bool rapidScrollActive: false
 
     FocusedMediaDetailController {
         id: controller
@@ -24,6 +25,7 @@ TestCase {
         debounceMs: 5
         itemCount: testCase.itemCount
         currentIndex: testCase.currentIndex
+        rapidScrollActive: testCase.rapidScrollActive
         identityForIndex: index => testCase.identities[index] ?? ""
         loadForIndex: index => {
             testCase.loadCount += 1;
@@ -42,6 +44,7 @@ TestCase {
         testCase.clearCount = 0;
         testCase.identities = [];
         testCase.loadedIndices = [];
+        testCase.rapidScrollActive = false;
         wait(10);
         testCase.clearCount = 0;
     }
@@ -124,5 +127,26 @@ TestCase {
 
         compare(testCase.clearCount, 1);
         compare(testCase.loadCount, 2);
+    }
+
+    function test_rapid_scroll_hides_detail_and_reloads_after_stop(): void {
+        testCase.identities = ["NES\n/a", "NES\n/b"];
+        testCase.itemCount = 2;
+        controller.enabled = true;
+        wait(20);
+
+        testCase.rapidScrollActive = true;
+        wait(1);
+        testCase.currentIndex = 1;
+        wait(20);
+
+        compare(testCase.loadCount, 1);
+        verify(testCase.clearCount >= 1);
+
+        testCase.rapidScrollActive = false;
+        wait(20);
+
+        compare(testCase.loadCount, 2);
+        compare(testCase.loadedIndices[1], 1);
     }
 }

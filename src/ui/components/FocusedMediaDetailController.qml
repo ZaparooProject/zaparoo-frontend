@@ -15,6 +15,7 @@ Item {
     property var loadForIndex: null
     property var clearDetail: null
     property bool clearOnDisable: true
+    property bool rapidScrollActive: false
 
     property string _requestedKey: ""
     property string _pendingKey: ""
@@ -27,12 +28,9 @@ Item {
     }
 
     function clearTransient(): void {
-        detailLoadDebounce.stop();
-        root._requestedKey = "";
-        root._pendingKey = "";
-        root._pendingIndex = -1;
-        root._clearDetail();
-        root._schedule(false);
+        root._resetTransientState(true);
+        if (!root.rapidScrollActive)
+            root._schedule(false);
     }
 
     function _identityAt(index: int): string {
@@ -56,16 +54,25 @@ Item {
             root.mediaModel.clear_current_detail();
     }
 
+    function _resetTransientState(clearDetail: bool): void {
+        detailLoadDebounce.stop();
+        root._requestedKey = "";
+        root._pendingKey = "";
+        root._pendingIndex = -1;
+        if (clearDetail)
+            root._clearDetail();
+    }
+
     function _schedule(force: bool): void {
         if (!root.enabled)
             return;
+        if (root.rapidScrollActive) {
+            root._resetTransientState(true);
+            return;
+        }
         const key = root._identityAt(root.currentIndex);
         if (key === "") {
-            detailLoadDebounce.stop();
-            root._requestedKey = "";
-            root._pendingKey = "";
-            root._pendingIndex = -1;
-            root._clearDetail();
+            root._resetTransientState(true);
             return;
         }
         if (!force && key === root._requestedKey)
@@ -92,13 +99,14 @@ Item {
         if (enabled) {
             root._schedule(false);
         } else {
-            detailLoadDebounce.stop();
-            root._requestedKey = "";
-            root._pendingKey = "";
-            root._pendingIndex = -1;
-            if (root.clearOnDisable)
-                root._clearDetail();
+            root._resetTransientState(root.clearOnDisable);
         }
+    }
+    onRapidScrollActiveChanged: {
+        if (rapidScrollActive)
+            root._resetTransientState(true);
+        else
+            root._schedule(false);
     }
     onCurrentIndexChanged: root._schedule(false)
     onItemCountChanged: root._schedule(false)
