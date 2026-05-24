@@ -1,11 +1,11 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // Canned fixture data for mock-core. Response shapes mirror the
 // upstream Core API: https://zaparoo.org/docs/core/api/methods/
 // 3 categories x 10 systems x 5 games each = 50 games total,
-// distributed so every system has content when the launcher drills
+// distributed so every system has content when the frontend drills
 // into it.
 
 use serde_json::{json, Value};
@@ -218,7 +218,7 @@ pub fn media_history_response(params: &Value) -> Value {
         })
         .collect();
     // Core's docs say `pagination` is only present when entries are
-    // returned; mirror that so the launcher's MediaHistoryResult
+    // returned; mirror that so the frontend's MediaHistoryResult
     // deserialiser hits the same edges in mock as on real Core.
     let has_entries = !entries.is_empty();
     let mut response = json!({ "entries": entries });

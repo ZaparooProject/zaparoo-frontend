@@ -1,13 +1,13 @@
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 cmake_minimum_required(VERSION 3.22)
 
 project(
-    zaparoo-launcher
+    zaparoo-frontend
     VERSION 0.1.0
-    DESCRIPTION "Zaparoo Core launcher frontend"
+    DESCRIPTION "Zaparoo Core frontend"
     HOMEPAGE_URL "https://zaparoo.org"
     LANGUAGES CXX
 )

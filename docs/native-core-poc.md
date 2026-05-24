@@ -1,17 +1,17 @@
 # Native Core POC
 
-This POC keeps the launcher on Qt's `linuxfb` backend, but lets a custom
+This POC keeps the frontend on Qt's `linuxfb` backend, but lets a custom
 MiSTer core own the real analog video path.
 
 ## Goal
 
-Prove that Zaparoo Launcher can render into a small Linux framebuffer while
+Prove that Zaparoo Frontend can render into a small Linux framebuffer while
 CRT output comes from a Menu-derived MiSTer core, not from MiSTer's framebuffer
 scaler path.
 
-## Launcher Config
+## Frontend Config
 
-On MiSTer, set `/media/fat/zaparoo/launcher.toml`:
+On MiSTer, set `/media/fat/zaparoo/frontend.toml`:
 
 ```toml
 [video]
@@ -19,14 +19,14 @@ width = 960
 height = 720
 ```
 
-The MiSTer wrapper must launch the launcher with `--crt` when the 3S-ARM core
+The MiSTer wrapper must launch the frontend with `--crt` when the 3S-ARM core
 owns analog output:
 
 ```sh
-/media/fat/zaparoo/launcher --crt
+/media/fat/zaparoo/frontend --crt
 ```
 
-When `--crt` is set, the launcher still uses:
+When `--crt` is set, the frontend still uses:
 
 - `QT_QPA_PLATFORM=linuxfb`
 - `QT_QUICK_BACKEND=software`
@@ -37,7 +37,7 @@ Before Qt starts, it also runs:
 vmode -r 960 720 rgb16
 ```
 
-After QML loads, the launcher also starts a native-video copy thread:
+After QML loads, the frontend also starts a native-video copy thread:
 
 - reads `/dev/fb0` as 24-bit RGB8888
 - requires `/dev/fb0` to be at least `320x240`
@@ -77,18 +77,18 @@ real CRT output:
 - do not call `set_vga_fb(1)` for the CRT path
 - do not call `video_fb_enable(1)` for the CRT path
 - leave the core video path selected so analog output comes from `VGA_R/G/B`
-- launch `/media/fat/zaparoo/launcher --crt`
+- launch `/media/fat/zaparoo/frontend --crt`
 
-The launcher will still paint `/dev/fb0`. The custom core can read the 3S-ARM
+The frontend will still paint `/dev/fb0`. The custom core can read the 3S-ARM
 DDR layout above while it drives CRT timing itself.
 
 ## Success Criteria
 
-1. Launcher starts and logs `--crt: applying linuxfb mode ... rgb16`.
+1. Frontend starts and logs `--crt: applying linuxfb mode ... rgb16`.
 2. `/dev/fb0` mode is the configured framebuffer size.
-3. Launcher logs `native video writer: copying top-left 320x240 RGB8888 from /dev/fb0 ...`.
+3. Frontend logs `native video writer: copying top-left 320x240 RGB8888 from /dev/fb0 ...`.
 4. Custom core produces analog video without MiSTer `vga_fb` scaler output.
-5. Navigation changes launcher pixels in the native-video DDR buffers.
+5. Navigation changes frontend pixels in the native-video DDR buffers.
 6. No regression when `--crt` is omitted; default remains the normal `linuxfb`
    path.
 

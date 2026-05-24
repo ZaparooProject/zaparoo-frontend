@@ -1,8 +1,8 @@
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-# Lint and format tooling for the Zaparoo Launcher. Used by every
+# Lint and format tooling for the Zaparoo Frontend. Used by every
 # `just *-docker` recipe so contributors can run the full lint surface
 # (rust + cpp + qml + format) without installing rustfmt, clippy,
 # cargo-deny, clang-format, clang-tidy, qmlformat, qmllint,

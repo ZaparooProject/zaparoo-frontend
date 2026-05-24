@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -15,7 +15,7 @@ pub struct Config {
     pub video_width: u32,
     pub video_height: u32,
     /// True when at least one of `[video] width` / `height` was present in
-    /// the loaded `launcher.toml`. The desktop CRT preview uses this to
+    /// the loaded `frontend.toml`. The desktop CRT preview uses this to
     /// distinguish "user wants the default 1920x1080" (in which case the
     /// preview canvas would be too large to upscale into a desktop window)
     /// from "user didn't write a [video] section at all" (in which case
@@ -32,11 +32,11 @@ pub struct Config {
     /// `[input.keyboard]` overrides onto `input_actions::default_bindings()`
     /// and inverting.
     pub key_to_action: HashMap<i32, String>,
-    /// Durable mirror of launcher-owned settings. These stay in
-    /// `launcher.toml` so they survive `MiSTer`'s `/tmp` lifecycle.
+    /// Durable mirror of frontend-owned settings. These stay in
+    /// `frontend.toml` so they survive `MiSTer`'s `/tmp` lifecycle.
     pub settings: SettingsConfig,
     /// First-run notices the user has acknowledged. Stored in
-    /// `launcher.toml` (not `state.toml`) because `MiSTer`'s `/tmp`
+    /// `frontend.toml` (not `state.toml`) because `MiSTer`'s `/tmp`
     /// state is wiped on reboot — using state would re-show the notice
     /// every cold boot.
     pub notice: NoticeConfig,
@@ -157,8 +157,8 @@ pub fn load_config(path: &Path) -> Config {
         },
         // Missing file is the first-run case. Don't early-return — the
         // env-var override below must still apply, otherwise an invocation
-        // like `ZAPAROO_CORE_ENDPOINT=… just run` with no launcher.toml
-        // silently falls back to the localhost default and the launcher
+        // like `ZAPAROO_CORE_ENDPOINT=… just run` with no frontend.toml
+        // silently falls back to the localhost default and the frontend
         // sits in CONNECTING forever.
         Err(_) => RawConfig::default(),
     };
@@ -175,9 +175,9 @@ pub fn load_config(path: &Path) -> Config {
         cfg.core_endpoint = ep;
     }
     // Env-var override wins over both the built-in default and any
-    // launcher.toml setting. Used by run-dev.sh to point the launcher at
+    // frontend.toml setting. Used by run-dev.sh to point the frontend at
     // mock-core (port 27497) without forcing the user to maintain a
-    // throwaway launcher.toml.
+    // throwaway frontend.toml.
     if let Ok(ep) = std::env::var("ZAPAROO_CORE_ENDPOINT") {
         if !ep.is_empty() {
             cfg.core_endpoint = ep;
@@ -311,7 +311,7 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         .map_err(|e| format!("could not write {}: {e}", path.display()))
 }
 
-/// Persist a first-run notice acknowledgement into `launcher.toml`.
+/// Persist a first-run notice acknowledgement into `frontend.toml`.
 /// Mirrors `save_settings_mirror`'s atomic-write + section-preserving
 /// pattern so unrelated keys in the file (core endpoint, video, input
 /// bindings) survive untouched.
@@ -594,7 +594,7 @@ mod tests {
     #[test]
     fn save_settings_mirror_creates_sections() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("launcher.toml");
+        let path = dir.path().join("frontend.toml");
         save_settings_mirror(
             &path,
             SettingsMirror {
@@ -708,14 +708,14 @@ mod tests {
 
         // Empty value is treated as unset so accidentally exporting an
         // empty ZAPAROO_CORE_ENDPOINT in a shell rc file doesn't blank
-        // out the user's launcher.toml.
+        // out the user's frontend.toml.
         std::env::set_var(KEY, "");
         assert_eq!(load_config(f.path()).core_endpoint, "ws://example.com/api");
 
         // Regression: missing file used to early-return defaults before
         // the env-var override applied, so a first-run invocation like
         // `ZAPAROO_CORE_ENDPOINT=… just run` silently fell back to the
-        // localhost default and the launcher sat in CONNECTING forever.
+        // localhost default and the frontend sat in CONNECTING forever.
         std::env::set_var(KEY, "ws://10.0.0.115:7497/api/v0.1");
         assert_eq!(
             load_config(std::path::Path::new("/definitely/does/not/exist.toml")).core_endpoint,

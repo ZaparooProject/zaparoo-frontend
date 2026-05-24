@@ -1,4 +1,4 @@
-// Design-time only. Not compiled into the launcher.
+// Design-time only. Not compiled into the frontend.
 // Mirrors the API surface of the Rust CategoriesModel singleton so
 // Qt Design Studio can render Main.qml without a running Rust plugin.
 pragma Singleton

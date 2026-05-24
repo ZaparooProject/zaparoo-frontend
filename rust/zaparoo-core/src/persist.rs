@@ -1,8 +1,8 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Persistent UI state. MiSTer's parent process kills the launcher binary
+// Persistent UI state. MiSTer's parent process kills the frontend binary
 // without notice; every user-visible navigation choice must round-trip
 // through disk so the next boot resumes where the user was.
 //
@@ -87,10 +87,10 @@ pub struct FavoritesState {
     pub selected_path: String,
 }
 
-/// Per-launcher Settings selections. `resolution` is `"WxH"` (e.g.
+/// Per-frontend Settings selections. `resolution` is `"WxH"` (e.g.
 /// `"1920x1080"`); empty means "no Settings override" and the value
-/// from `[mister.video_*]` in `launcher.toml` is left in place.
-/// `language` mirrors `[general].language` in `launcher.toml` so the UI
+/// from `[mister.video_*]` in `frontend.toml` is left in place.
+/// `language` mirrors `[general].language` in `frontend.toml` so the UI
 /// settings snapshot stays coherent with the config-backed startup path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]

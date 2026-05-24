@@ -70,4 +70,4 @@ docs/plans/
 rust/target/
 
 # cxx-qt 0.8 generates this with absolute paths for qmlls/qmllint
-rust/launcher/.qmlls.ini
+rust/frontend/.qmlls.ini

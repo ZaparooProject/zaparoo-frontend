@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -7,41 +7,41 @@ use std::path::PathBuf;
 
 pub fn config_file_path() -> PathBuf {
     if runtime::current().is_mister() {
-        PathBuf::from("/media/fat/zaparoo/launcher.toml")
+        PathBuf::from("/media/fat/zaparoo/frontend.toml")
     } else {
         dirs_next::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("zaparoo")
-            .join("launcher.toml")
+            .join("frontend.toml")
     }
 }
 
 pub fn log_file_path() -> PathBuf {
     if runtime::current().is_mister() {
-        PathBuf::from("/tmp/zaparoo/launcher.log")
+        PathBuf::from("/tmp/zaparoo/frontend.log")
     } else {
         dirs_next::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("zaparoo")
             .join("logs")
-            .join("launcher.log")
+            .join("frontend.log")
     }
 }
 
-/// Path to the raw stderr capture file. The launcher dup2's its own
+/// Path to the raw stderr capture file. The frontend dup2's its own
 /// `STDERR_FILENO` onto this file early in startup so that the chained
 /// default panic hook, libc `abort()` diagnostics, glibc backtraces, and
 /// any kernel signal-default output land in a durable location instead
 /// of `/dev/null` (which is where the `MiSTer` wrapper sends stderr).
 pub fn stderr_log_path() -> PathBuf {
     if runtime::current().is_mister() {
-        PathBuf::from("/tmp/zaparoo/launcher.stderr.log")
+        PathBuf::from("/tmp/zaparoo/frontend.stderr.log")
     } else {
         dirs_next::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("zaparoo")
             .join("logs")
-            .join("launcher.stderr.log")
+            .join("frontend.stderr.log")
     }
 }
 
@@ -80,19 +80,19 @@ mod tests {
         let cfg = config_file_path();
         assert_eq!(
             cfg.file_name().and_then(|n| n.to_str()),
-            Some("launcher.toml")
+            Some("frontend.toml")
         );
 
         let log = log_file_path();
         assert_eq!(
             log.file_name().and_then(|n| n.to_str()),
-            Some("launcher.log")
+            Some("frontend.log")
         );
 
         let stderr_log = stderr_log_path();
         assert_eq!(
             stderr_log.file_name().and_then(|n| n.to_str()),
-            Some("launcher.stderr.log")
+            Some("frontend.stderr.log")
         );
 
         let state = state_file_path();
@@ -109,29 +109,29 @@ mod tests {
         if runtime::current().is_mister() {
             assert_eq!(
                 config_file_path().to_str(),
-                Some("/media/fat/zaparoo/launcher.toml")
+                Some("/media/fat/zaparoo/frontend.toml")
             );
-            assert_eq!(log_file_path().to_str(), Some("/tmp/zaparoo/launcher.log"));
+            assert_eq!(log_file_path().to_str(), Some("/tmp/zaparoo/frontend.log"));
             assert_eq!(
                 stderr_log_path().to_str(),
-                Some("/tmp/zaparoo/launcher.stderr.log")
+                Some("/tmp/zaparoo/frontend.stderr.log")
             );
             assert_eq!(state_file_path().to_str(), Some("/tmp/zaparoo/state.toml"));
         } else {
             let cfg = config_file_path();
             assert!(
-                cfg.ends_with("zaparoo/launcher.toml"),
-                "config path did not end with zaparoo/launcher.toml: {cfg:?}"
+                cfg.ends_with("zaparoo/frontend.toml"),
+                "config path did not end with zaparoo/frontend.toml: {cfg:?}"
             );
             let log = log_file_path();
             assert!(
-                log.ends_with("zaparoo/logs/launcher.log"),
-                "log path did not end with zaparoo/logs/launcher.log: {log:?}"
+                log.ends_with("zaparoo/logs/frontend.log"),
+                "log path did not end with zaparoo/logs/frontend.log: {log:?}"
             );
             let stderr_log = stderr_log_path();
             assert!(
-                stderr_log.ends_with("zaparoo/logs/launcher.stderr.log"),
-                "stderr log path did not end with zaparoo/logs/launcher.stderr.log: {stderr_log:?}"
+                stderr_log.ends_with("zaparoo/logs/frontend.stderr.log"),
+                "stderr log path did not end with zaparoo/logs/frontend.stderr.log: {stderr_log:?}"
             );
             let state = state_file_path();
             assert!(
@@ -151,7 +151,7 @@ mod tests {
         assert_eq!(
             cfg.parent(),
             state.parent(),
-            "state.toml must be a sibling of launcher.toml: cfg={cfg:?} state={state:?}"
+            "state.toml must be a sibling of frontend.toml: cfg={cfg:?} state={state:?}"
         );
     }
 }

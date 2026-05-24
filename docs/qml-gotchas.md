@@ -38,7 +38,7 @@ fact; avoiding them is faster.
 
 ## Integer-pixel rules
 
-These apply to every screen in the launcher, not just CRT-targeted code
+These apply to every screen in the frontend, not just CRT-targeted code
 paths. The whole app must render cleanly at 240p; fractional geometry is
 a bug everywhere. If a control looks fine on desktop but soft on MiSTer
 CRT, assume fractional geometry first — but the fix belongs in the
@@ -137,7 +137,7 @@ For a screen-wide cross-fade you'd want the structural fix:
 to bitmaps, hide the live content, fade between two single-image blits.
 Async grab adds a frame or two of startup latency, snapshot lifetime
 needs careful management, and the win still depends on partial updates
-being active. The launcher currently sidesteps the problem entirely with
+being active. The frontend currently sidesteps the problem entirely with
 instant cuts.
 
 ### Fractional DPR silently disables partial updates entirely

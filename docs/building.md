@@ -41,11 +41,11 @@ sudo apt install qt6-declarative-dev qt6-quick-controls2-dev \
 ```
 
 Install Rust via rustup, then run `just install-tools` after cloning the
-launcher to install `cargo-nextest`:
+frontend to install `cargo-nextest`:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-# After cloning the launcher repo:
+# After cloning the frontend repo:
 just install-tools
 ```
 
@@ -76,7 +76,7 @@ just build           # debug build (default)
 just build-release   # release build
 just build-dev       # dev preset (relwithdebinfo + extra checks)
 just build-san       # ASan + UBSan
-just run             # build then ./build/bin/launcher
+just run             # build then ./build/bin/frontend
 ```
 
 The first build pulls and compiles the Rust and Qt dependencies. Incremental
@@ -102,7 +102,7 @@ repository:
 This pulls
 `ghcr.io/zaparooproject/qt6-arm32-mister:<scripts/toolchain/VERSION>` if it is not
 already cached locally, builds the application in Docker, and writes the MiSTer
-binary to `output/launcher`. It does not require `just`, Qt, CMake, Rust, or
+binary to `output/frontend`. It does not require `just`, Qt, CMake, Rust, or
 the ARM toolchain on the host.
 
 If GHCR asks for authentication, authorize the GitHub CLI with package-read
@@ -142,7 +142,7 @@ DOCKER_PLATFORM=linux/amd64 ./scripts/build-arm32.sh
 Check the ARM binary:
 
 ```bash
-file output/launcher
+file output/frontend
 # Should report: ELF 32-bit LSB executable, ARM, EABI5 ...
 ```
 
@@ -214,7 +214,7 @@ so non-amd64 hosts have a native pull available too.
 ```bash
 just build
 ./packaging/deploy-desktop.sh
-./deploy/launcher/run.sh
+./deploy/frontend/run.sh
 ```
 
 The deploy script copies Qt shared libraries next to the binary. Qt must be on
@@ -227,7 +227,7 @@ echo 'MISTER_IP=<your-mister-ip>' > .env
 ./scripts/deploy-mister.sh
 ```
 
-To copy and restart an already-built `output/launcher` without rebuilding:
+To copy and restart an already-built `output/frontend` without rebuilding:
 
 ```bash
 ./scripts/deploy-mister.sh --skip-build
@@ -238,7 +238,7 @@ The MiSTer binary is self-contained. It sets `QT_QPA_PLATFORM=linuxfb` and
 width and height (default `1920×1080`), and starts
 `/media/fat/Scripts/zaparoo.sh -service start`. No wrapper script is needed.
 
-User-editable config lives at `/media/fat/zaparoo/launcher.toml`.
+User-editable config lives at `/media/fat/zaparoo/frontend.toml`.
 Example:
 
 ```toml
@@ -255,7 +255,7 @@ debug = true
 Use this to reproduce the MiSTer rendering path on a desktop:
 
 ```bash
-QT_QPA_PLATFORM=linuxfb QT_QUICK_BACKEND=software ./build/bin/launcher
+QT_QPA_PLATFORM=linuxfb QT_QUICK_BACKEND=software ./build/bin/frontend
 ```
 
 ## Underlying mechanics

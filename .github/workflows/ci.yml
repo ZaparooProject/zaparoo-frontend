@@ -1,4 +1,4 @@
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -174,7 +174,7 @@ jobs:
           workspaces: rust
           prefix-key: "v0-desktop-${{ needs.ensure-lint-image.outputs.version }}"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUST"
-      # ccache wraps clang/gcc invocations; CMake's launcher hooks pick it up
+      # ccache wraps clang/gcc invocations; CMake's compiler-launcher hooks pick it up
       # via CMAKE_{C,CXX}_COMPILER_LAUNCHER set on the configure command line
       # below. Lint image version is part of the cache key because Qt
       # include paths are baked into preprocessed translation units.
@@ -194,11 +194,11 @@ jobs:
         run: ctest --preset desktop-debug
       - name: Lint (clang-format + clang-tidy + qmllint)
         run: cmake --build build --target lint
-      - name: Upload launcher binary
+      - name: Upload frontend binary
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: launcher-debug-${{ github.run_id }}
-          path: build/bin/launcher
+          name: frontend-debug-${{ github.run_id }}
+          path: build/bin/frontend
           if-no-files-found: warn
           retention-days: 7

@@ -1,7 +1,7 @@
 # cxx-qt Bridge Gotchas
 
 Read this before writing Rust QML models with cxx-qt 0.8 in
-`rust/launcher/src/models/`.
+`rust/frontend/src/models/`.
 
 - **`cxx = "1"` must be a direct dependency.** The `#[cxx_qt::bridge]` macro
   expands to `#[cxx::bridge]`. Rust resolves proc-macro attributes in the
@@ -26,7 +26,7 @@ Read this before writing Rust QML models with cxx-qt 0.8 in
   async watcher, the first frame can see the QObject's `Default::default()`
   placeholder values.
 
-  The macro at `rust/launcher/src/bind.rs` emits the full
+  The macro at `rust/frontend/src/bind.rs` emits the full
   `cxx_qt::Initialize` impl. It subscribes the singleton to the store-cached
   `RemoteResource<E::Output>` for the endpoint, reads the current
   `ResourceStatus` *synchronously* before returning, and only then spawns the

@@ -1,4 +1,4 @@
-# Contributing to Zaparoo Launcher
+# Contributing to Zaparoo Frontend
 
 Thanks for taking the time to contribute. This guide covers the parts that
 matter before a pull request: the CLA, local setup, and the checks we expect
@@ -23,7 +23,7 @@ automatically.
 ## Development setup
 
 Use [`docs/quickstart.md`](docs/quickstart.md) to get from a fresh clone to a
-running launcher. You do not need MiSTer hardware. The repo includes a mock
+running frontend. You do not need MiSTer hardware. The repo includes a mock
 Zaparoo Core you can start with `just mock-core`.
 
 For the MiSTer ARM32 cross-build, sanitizer builds, and deployment, see
@@ -95,8 +95,8 @@ Force-pushing and direct pushes to `main` are blocked.
 
 Open a GitHub issue. For bugs, include repro steps, expected behavior, actual
 behavior, whether it reproduces on desktop and/or MiSTer, and a log excerpt
-(`~/.local/share/zaparoo/logs/launcher.log` on desktop;
-`/tmp/zaparoo/launcher.log` on MiSTer). For feature requests, say what you want
+(`~/.local/share/zaparoo/logs/frontend.log` on desktop;
+`/tmp/zaparoo/frontend.log` on MiSTer). For feature requests, say what you want
 and why. If you plan to implement it, say that too so we can agree on scope
 first.
 

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.6
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
@@ -97,7 +97,7 @@ RUN git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtbase.git
     git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtsvg.git
 
 # Stage 1: Qt6 host build (provides native tools: moc, rcc, qmllint, etc.)
-# PrintSupport is intentionally enabled here even though the launcher itself
+# PrintSupport is intentionally enabled here even though the frontend itself
 # doesn't print: Qt's `linguist` feature has condition `TARGET Qt::PrintSupport`,
 # and qttools/src/linguist/CMakeLists.txt returns early when that feature is
 # off — taking lupdate/lrelease/lconvert and the Qt6LinguistTools CMake
@@ -142,7 +142,7 @@ RUN mkdir qtdeclarative-host-build && cd qtdeclarative-host-build && \
 # GUI tools (assistant, designer) and CLI utilities we don't ship; pulling
 # them in would either drag QtWidgets/Network into a host build that doesn't
 # need them or build code we never invoke. Not cross-compiled for ARM32 —
-# the launcher only needs .qm files at runtime, which are architecture-
+# the frontend only needs .qm files at runtime, which are architecture-
 # independent.
 RUN mkdir qttools-host-build && cd qttools-host-build && \
     /opt/qt6-host/bin/qt-configure-module ../qttools \
@@ -242,13 +242,13 @@ RUN mkdir qtwebsockets-arm-build && cd qtwebsockets-arm-build && \
 
 # qtsvg (ARM32 cross-build): provides Qt6Svg + the QSvgPlugin image-format
 # plugin that QImageReader uses to load `.svg` Image sources. Static-linked
-# into the launcher via Qt6::QSvgPlugin in cmake/ZaparooRust.cmake.
+# into the frontend via Qt6::QSvgPlugin in cmake/ZaparooRust.cmake.
 RUN mkdir qtsvg-arm-build && cd qtsvg-arm-build && \
     /opt/qt6-arm32/bin/qt-configure-module ../qtsvg \
     && cmake --build . --parallel $(nproc) \
     && cmake --install .
 
-# Rust toolchain for cross-compiling launcher-rs to ARM32.
+# Rust toolchain for cross-compiling frontend-rs to ARM32.
 # Added AFTER the Qt builds so changes here don't invalidate the Qt layer cache.
 # Installs stable with minimal profile plus the ARM32 cross-compile target.
 # Uses wget (already installed) since curl is not in the base image.

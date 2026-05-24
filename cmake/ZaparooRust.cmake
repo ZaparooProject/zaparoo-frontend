@@ -1,9 +1,9 @@
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
-# Rust/Cargo integration via Corrosion. Builds zaparoo_launcher_rs as a
-# staticlib and links it into a thin C++ executable (launcher) so that Qt's
+# Rust/Cargo integration via Corrosion. Builds zaparoo_frontend_rs as a
+# staticlib and links it into a thin C++ executable (frontend) so that Qt's
 # CMake machinery (qt_import_qml_plugins) handles all static-plugin and
 # qmldir-resource-init wiring correctly — the documented CXX-Qt static-Qt
 # topology (topology B: C++ exe + Rust staticlib).
@@ -32,9 +32,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Corrosion)
 
 # Import the Rust workspace staticlib. Corrosion creates a CMake IMPORTED STATIC LIBRARY target
-# named "zaparoo_launcher_rs" (the [lib] name).
+# named "zaparoo_frontend_rs" (the [lib] name).
 corrosion_import_crate(
-    MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust/Cargo.toml" CRATES zaparoo-launcher-rs
+    MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust/Cargo.toml" CRATES zaparoo-frontend-rs
 )
 
 # ── Environment variables for cxx_qt_build's build.rs ─────────────────────── QMAKE: cxx_qt_build
@@ -47,19 +47,19 @@ else()
     find_program(_rs_qmake NAMES qmake6 qmake REQUIRED)
 endif()
 
-corrosion_set_env_vars(zaparoo_launcher_rs "QMAKE=${_rs_qmake}")
+corrosion_set_env_vars(zaparoo_frontend_rs "QMAKE=${_rs_qmake}")
 if(_rs_qt6_core_type STREQUAL "STATIC_LIBRARY")
-    corrosion_set_env_vars(zaparoo_launcher_rs "ZAPAROO_RUNTIME=mister")
+    corrosion_set_env_vars(zaparoo_frontend_rs "ZAPAROO_RUNTIME=mister")
 endif()
 if(ZAPAROO_DEV)
-    corrosion_set_env_vars(zaparoo_launcher_rs "ZAPAROO_DEV_BUILD=1")
+    corrosion_set_env_vars(zaparoo_frontend_rs "ZAPAROO_DEV_BUILD=1")
 endif()
 
 # ── C++ executable ─────────────────────────────────────────────────────────── Using
 # qt_add_executable (not add_executable) so that Qt's CMake sets up the target with all the
 # properties needed by qt_import_qml_plugins.
 qt_add_executable(
-    launcher
+    frontend
     "${CMAKE_SOURCE_DIR}/src/app/main.cpp"
     "${CMAKE_SOURCE_DIR}/src/app/media_image_provider.h"
     "${CMAKE_SOURCE_DIR}/src/app/media_image_provider.cpp"
@@ -67,21 +67,21 @@ qt_add_executable(
     "${CMAKE_SOURCE_DIR}/src/app/native_video_writer.cpp"
 )
 target_include_directories(
-    launcher
+    frontend
     PRIVATE "${CMAKE_SOURCE_DIR}/src/app"
 )
 
-target_compile_definitions(launcher PRIVATE ZAPAROO_VERSION="${CMAKE_PROJECT_VERSION}")
+target_compile_definitions(frontend PRIVATE ZAPAROO_VERSION="${CMAKE_PROJECT_VERSION}")
 
 # For static Qt (ARM32): define QT_STATIC so main.cpp's #ifdef fires. Qt itself defines this in its
 # headers, but the compiler may not see it before the first #include unless we make it explicit here
 # too.
 if(_rs_qt6_core_type STREQUAL "STATIC_LIBRARY")
-    target_compile_definitions(launcher PRIVATE QT_STATIC)
+    target_compile_definitions(frontend PRIVATE QT_STATIC)
 endif()
 
 if(ZAPAROO_DEV)
-    target_compile_definitions(launcher PRIVATE ZAPAROO_DEV_BUILD)
+    target_compile_definitions(frontend PRIVATE ZAPAROO_DEV_BUILD)
 endif()
 
 # Load Qt QML plugin CMake configs so that qt_import_qml_plugins can find and link the correct
@@ -105,14 +105,14 @@ if(_rs_qt6_core_type STREQUAL "STATIC_LIBRARY")
 endif()
 
 target_link_libraries(
-    launcher
-    PRIVATE zaparoo_launcher_rs zaparoo_ui_appplugin Qt6::Quick Qt6::QuickControls2
+    frontend
+    PRIVATE zaparoo_frontend_rs zaparoo_ui_appplugin Qt6::Quick Qt6::QuickControls2
 )
 
 # Dummy CMake target satisfying qmlimportscanner's lookup for the cxx-qt plugin.
 # build/qml/Zaparoo/Browse/qmldir declares `optional plugin Zaparoo_Browse`, and
 # qt_import_qml_plugins() warns when that name has no matching CMake target. The real plugin code is
-# baked into zaparoo_launcher_rs (already linked above); the INTERFACE target here is a no-op
+# baked into zaparoo_frontend_rs (already linked above); the INTERFACE target here is a no-op
 # link-wise but silences the "plugin will not be linked" warning. Defined at global scope so
 # tests/ui sees it too.
 if(NOT TARGET Zaparoo_Browse)
@@ -122,7 +122,7 @@ endif()
 # Critical: documented Qt static-plugin machinery. Runs qmlimportscanner, traverses the QML module
 # dependency graph, and emits correct Q_IMPORT_QML_PLUGIN calls + --whole-archive link lines for
 # every Qt static QML plugin and qmldir resource init .o.
-qt_import_qml_plugins(launcher)
+qt_import_qml_plugins(frontend)
 
 # For static Qt (ARM32): the Controls chain _init OBJECT targets carry the Q_IMPORT_QML_PLUGIN
 # static-init factories. Not propagated automatically from a cross-compiled Qt toolchain, so link
@@ -132,52 +132,52 @@ qt_import_qml_plugins(launcher)
 if(_rs_qt6_core_type STREQUAL "STATIC_LIBRARY")
     if(TARGET Qt6::QLinuxFbIntegrationPlugin)
         target_link_libraries(
-            launcher PRIVATE Qt6::QLinuxFbIntegrationPlugin Qt6::QLinuxFbIntegrationPlugin_init
+            frontend PRIVATE Qt6::QLinuxFbIntegrationPlugin Qt6::QLinuxFbIntegrationPlugin_init
         )
     endif()
     if(TARGET Qt6::QSvgPlugin)
-        target_link_libraries(launcher PRIVATE Qt6::QSvgPlugin Qt6::QSvgPlugin_init)
+        target_link_libraries(frontend PRIVATE Qt6::QSvgPlugin Qt6::QSvgPlugin_init)
     endif()
     foreach(_rs_qml_plugin IN ITEMS qtquickcontrols2plugin qtquickcontrols2basicstyleplugin
                                     qtquickcontrols2implplugin qtquicktemplates2plugin quickwindow
     )
         if(TARGET Qt6::${_rs_qml_plugin})
             target_link_libraries(
-                launcher PRIVATE Qt6::${_rs_qml_plugin} Qt6::${_rs_qml_plugin}_init
+                frontend PRIVATE Qt6::${_rs_qml_plugin} Qt6::${_rs_qml_plugin}_init
             )
         endif()
     endforeach()
 endif()
 
-set_target_properties(launcher PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set_target_properties(frontend PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 # ── Translations ───────────────────────────────────────────────────────────── lrelease compiles
-# .ts → .qm and qt_add_translations embeds them into the launcher binary under qrc:/i18n/ (the
+# .ts → .qm and qt_add_translations embeds them into the frontend binary under qrc:/i18n/ (the
 # default RESOURCE_PREFIX). main.cpp loads the locale-matching .qm with `QTranslator::load(locale,
-# "launcher", "_", ":/i18n")` before the QML engine runs.
+# "frontend", "_", ":/i18n")` before the QML engine runs.
 #
 # IMMEDIATE_CALL runs source collection inline instead of deferring to the end of the top-level
 # directory scope. Without it, qt_add_translations defers until CMake finalises PROJECT_SOURCE_DIR
 # and the generated resource targets land after link-time, producing missing-dependency errors on
 # parallel builds (Corrosion-provided staticlibs are visited out of order).
 qt_add_translations(
-    launcher
+    frontend
     TS_FILES
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_en.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_it.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_es.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_de.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_el.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_ja.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_ko.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_nl.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_ro.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_sk.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_uk.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_zh_CN.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_he.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_ar.ts"
-    "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_hi.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_en.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_it.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_es.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_de.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_el.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_ja.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_ko.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_nl.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_ro.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_sk.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_uk.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_zh_CN.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_he.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_ar.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_hi.ts"
     RESOURCE_PREFIX
     "/i18n"
     IMMEDIATE_CALL
@@ -194,7 +194,7 @@ add_custom_target(
         ${CMAKE_COMMAND} -DCARGO_DIR=${CMAKE_BINARY_DIR}/cargo
         -DDEST_QML_DIR=${CMAKE_BINARY_DIR}/qml -P
         ${CMAKE_SOURCE_DIR}/cmake/SyncCxxqtQmlModules.cmake
-    DEPENDS cargo-build_zaparoo_launcher_rs
+    DEPENDS cargo-build_zaparoo_frontend_rs
     COMMENT "Syncing cxx-qt QML module manifests into ${CMAKE_BINARY_DIR}/qml"
     VERBATIM
 )

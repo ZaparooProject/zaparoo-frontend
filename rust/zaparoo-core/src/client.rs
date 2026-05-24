@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
@@ -60,7 +60,7 @@ const BOOT_WINDOW: Duration = Duration::from_secs(45);
 /// Retry interval inside the boot window. A connect-refused on a
 /// not-yet-bound port is one TCP SYN + RST, so 250 ms × 180 attempts
 /// across the window is negligible CPU/network on `MiSTer` and lets the
-/// launcher pick up Core within a quarter-second of HTTP bind instead
+/// frontend pick up Core within a quarter-second of HTTP bind instead
 /// of waiting up to 16 s for the next exponential backoff slot.
 const BOOT_RETRY: Duration = Duration::from_millis(250);
 
@@ -330,7 +330,7 @@ impl Client {
 
                 // tungstenite's default 16 MiB frame / 64 MiB message
                 // caps exist to "prevent memory eating by a malicious
-                // user". The launcher connects to exactly one trusted
+                // user". The frontend connects to exactly one trusted
                 // Core on the LAN, so that threat model doesn't apply —
                 // and a legitimate bulk `media.image` response can
                 // exceed 16 MiB, which kills the session and cascades
@@ -644,7 +644,7 @@ impl Client {
     }
 
     /// Lists the available tag index, optionally scoped to a system
-    /// filter. Useful for any future filter UI; the launcher does not
+    /// filter. Useful for any future filter UI; the frontend does not
     /// currently call this, but the wrapper is here so it's available.
     pub async fn media_tags(
         &self,
@@ -668,7 +668,7 @@ impl Client {
     }
 
     /// Snapshot of Core's media state — database build status plus the
-    /// active-media list. The launcher uses the `database` block to seed
+    /// active-media list. The frontend uses the `database` block to seed
     /// the status pill / first-run gate; later notifications
     /// (`media.indexing`) supersede the seed.
     pub async fn media(&self) -> Result<MediaResult, ClientError> {
@@ -717,7 +717,7 @@ impl Client {
 
     /// One-shot scraper status. Mirrors the TUI's `getScrapeStatus` —
     /// the `media.scraping` notification stream only fires while a scrape
-    /// is running, so a fresh launcher seeing an idle Core has no other
+    /// is running, so a fresh frontend seeing an idle Core has no other
     /// way to learn the cumulative `total_scraped`.
     pub async fn media_scrape_status(&self) -> Result<ScrapingStatusResponse, ClientError> {
         #[derive(Serialize)]
@@ -768,7 +768,7 @@ impl Client {
 /// Two regimes:
 ///
 /// - **Boot window** (`boot_window == true`): fixed [`BOOT_RETRY`].
-///   Used while the launcher has never successfully connected and the
+///   Used while the frontend has never successfully connected and the
 ///   process is younger than [`BOOT_WINDOW`]. Lets us pick up Core
 ///   within ~250 ms of its HTTP bind on cold `MiSTer` boots, instead of
 ///   waiting up to 16 s for the next exponential slot.
@@ -824,7 +824,7 @@ mod tests {
     fn backoff_uses_boot_retry_inside_boot_window_regardless_of_failures() {
         // While `boot_window` is true, the failure count is ignored and
         // we always return the fast-retry interval. This is what lets
-        // the launcher pick up Core within ~250 ms of HTTP bind on a
+        // the frontend pick up Core within ~250 ms of HTTP bind on a
         // cold MiSTer boot, instead of being stuck in a 16 s
         // exponential slot.
         assert_eq!(backoff_delay(0, true), BOOT_RETRY);
@@ -992,7 +992,7 @@ mod tests {
     fn boot_window_then_successful_connect_is_clean() {
         // The expected MiSTer cold-boot path: a burst of refused
         // connects while Core's HTTP server is still binding, then a
-        // successful connect once it's up. The launcher should publish
+        // successful connect once it's up. The frontend should publish
         // exactly Connecting → Connected with no Unreachable in
         // between.
         let mut script: Vec<(bool, Result<(), &str>)> =

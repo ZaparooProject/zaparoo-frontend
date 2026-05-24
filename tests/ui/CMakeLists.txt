@@ -1,4 +1,4 @@
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -36,7 +36,7 @@ target_link_libraries(
     tst_ui
     PRIVATE
         Zaparoo::CompileOptions
-        zaparoo_launcher_rs
+        zaparoo_frontend_rs
         zaparoo_ui_appplugin
         zaparoo_ui_componentsplugin
         zaparoo_ui_screensplugin

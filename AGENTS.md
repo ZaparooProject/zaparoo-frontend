@@ -1,6 +1,6 @@
-# Zaparoo Launcher Agent Guide
+# Zaparoo Frontend Agent Guide
 
-Zaparoo Launcher is a Qt/QML frontend for Zaparoo Core. It runs on desktop
+Zaparoo Frontend is a Qt/QML frontend for Zaparoo Core. It runs on desktop
 Linux and on MiSTer FPGA (ARM32, Linux framebuffer, software rendering). The
 MiSTer target is the hard constraint: assume no GPU, process kills without
 notice, and a small ARM CPU.
@@ -117,9 +117,9 @@ raw cargo as the default path; the justfile carries the expected environment.
   "Loading…" overlay is a transparent `Item` with one `Text` child.
 - Do not persist Core metadata (cover art, scraped properties, descriptions,
   etc.) to disk or any user-visible cache. Zaparoo Core is the canonical store;
-  the launcher caches in process memory only and re-fetches what it needs after
+  the frontend caches in process memory only and re-fetches what it needs after
   a cold start. Any in-memory cache must enforce a strict bytes cap with LRU
-  eviction — MiSTer has under 512 MB of shared system RAM and the launcher
+  eviction — MiSTer has under 512 MB of shared system RAM and the frontend
   competes with Core, the FPGA wrapper, and the active core for it.
 
 ## Project Map
@@ -132,8 +132,8 @@ raw cargo as the default path; the justfile carries the expected environment.
 | `src/ui/screens/` | `Zaparoo.Screens`: `ScreenManager`, `HubScreen`, `SystemsScreen`, `GamesScreen` |
 | `src/ui/components/` | `Zaparoo.Ui`: `Tile`, `TileLoader`, `PagedGrid`, `ActiveLabel`, `LoadingIndicator`, `StatusIcon`, `TopStatusStrip`, `Modal`, `ScreenStateOverlay` |
 | `src/ui/theme/` | `Zaparoo.Theme`: `Theme`, `Sizing` singletons |
-| `rust/launcher/src/models/` | `Zaparoo.Browse` cxx-qt singletons: `AppStatus`, `CategoriesModel`, `SystemsModel`, `GamesModel`, `AppState`, `HubState`, `SystemsState`, `GamesState`, `Input`, `Runtime` |
-| `rust/launcher/src/bind.rs` | Endpoint-to-QML binding macro with synchronous seed |
+| `rust/frontend/src/models/` | `Zaparoo.Browse` cxx-qt singletons: `AppStatus`, `CategoriesModel`, `SystemsModel`, `GamesModel`, `AppState`, `HubState`, `SystemsState`, `GamesState`, `Input`, `Runtime` |
+| `rust/frontend/src/bind.rs` | Endpoint-to-QML binding macro with synchronous seed |
 | `rust/zaparoo-core/src/client.rs` | WebSocket JSON-RPC client for Zaparoo Core |
 | `rust/zaparoo-core/src/store/` | Endpoint cache, tags, mutations, invalidation |
 | `rust/zaparoo-core/src/persist.rs` | Atomic persisted UI state (`HubState`, `SystemsState`, `GamesState`, `AppState`) |
@@ -146,7 +146,7 @@ in `build/` by default.
 
 ## Screens and routing
 
-The launcher has three peer root screens — `Hub`, `Systems`, `Games` — plus a
+The frontend has three peer root screens — `Hub`, `Systems`, `Games` — plus a
 modal stack. Screens are **pure input dispatchers**: `handleAction` translates
 a key/button to a single `requestAccept(payload)` (forward) or a back signal
 (`requestHubScreen`, `requestSystemsScreen`, `requestQuit`). All forward
@@ -188,13 +188,13 @@ state to go stale because there is no cross-screen state.
 
 ## Runtime Notes
 
-- `Runtime` answers where the launcher binary is running. `Platform` answers
+- `Runtime` answers where the frontend binary is running. `Platform` answers
   where Zaparoo Core is running. Do not collapse them.
-- Desktop config: `~/.config/zaparoo/launcher.toml`.
+- Desktop config: `~/.config/zaparoo/frontend.toml`.
 - Desktop state: `~/.config/zaparoo/state.toml`.
-- Desktop log: `~/.local/share/zaparoo/logs/launcher.log`.
-- MiSTer config: `/media/fat/zaparoo/launcher.toml`.
-- MiSTer state/log: `/tmp/zaparoo/state.toml`, `/tmp/zaparoo/launcher.log`.
+- Desktop log: `~/.local/share/zaparoo/logs/frontend.log`.
+- MiSTer config: `/media/fat/zaparoo/frontend.toml`.
+- MiSTer state/log: `/tmp/zaparoo/state.toml`, `/tmp/zaparoo/frontend.log`.
 - `ZAPAROO_CORE_ENDPOINT` overrides `[core] endpoint`; `ZAPAROO_STATE_FILE`
   redirects state for tests and ad-hoc runs.
 - Debug logging is enabled with `[logging] debug = true` or `ZAPAROO_DEBUG=1`.
@@ -202,11 +202,11 @@ state to go stale because there is no cross-screen state.
 ## MiSTer Deploy
 
 `just deploy-mister` reads `MISTER_IP` from `.env`, builds the ARM32 binary,
-copies it to `/media/fat/zaparoo/launcher`, restarts `/media/fat/MiSTer_Zaparoo`,
-and clears `/tmp/zaparoo/launcher.log`.
+copies it to `/media/fat/zaparoo/frontend`, restarts `/media/fat/MiSTer_Zaparoo`,
+and clears `/tmp/zaparoo/frontend.log`.
 
 `/media/fat/MiSTer_Zaparoo` is the integration binary shipped with MiSTer. It
-starts our `launcher`; do not replace that flow with a new wrapper script.
+starts our `frontend`; do not replace that flow with a new wrapper script.
 
 ## Further Reading
 

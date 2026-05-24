@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
@@ -23,7 +23,7 @@ pub mod actions {
     pub const QUIT: &str = "quit";
 }
 
-/// Resolves a `Qt::Key` name as found in `launcher.toml` (e.g. `"Left"`,
+/// Resolves a `Qt::Key` name as found in `frontend.toml` (e.g. `"Left"`,
 /// `"Return"`) to the numeric key code Qt emits at runtime. Returns None
 /// for unknown names so the caller can warn and skip.
 #[must_use]
@@ -48,7 +48,7 @@ pub fn qt_key_code(name: &str) -> Option<i32> {
 }
 
 /// Default action → Qt-key-name list. Merged with `[input.keyboard]`
-/// overrides from `launcher.toml`: a user-provided list replaces the
+/// overrides from `frontend.toml`: a user-provided list replaces the
 /// default for that action (not merged), so emptying a list unbinds it.
 #[must_use]
 pub fn default_bindings() -> HashMap<String, Vec<String>> {

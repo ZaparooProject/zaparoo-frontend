@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
@@ -6,7 +6,7 @@
 // runtime, hands out shared `RemoteResource`s keyed by (endpoint, args),
 // and routes mutations through to the same client. In RTK-Query terms
 // this is the `api` slice's reducer + dispatcher. One `Store` per
-// launcher process; QML singletons subscribe through it.
+// frontend process; QML singletons subscribe through it.
 //
 // Responsibilities: cache `(endpoint NAME, args hash) → RemoteResource`,
 // hand back shared subscriptions, route mutations through to the same
@@ -36,7 +36,7 @@ use tokio::sync::broadcast;
 /// `NAME` with a hash of its `Args`. Endpoints are expected to choose
 /// unique names, so cross-endpoint collisions are a programmer error;
 /// within an endpoint a 64-bit `Args` hash collision is astronomically
-/// unlikely for the cardinalities this launcher sees (one catalog,
+/// unlikely for the cardinalities this frontend sees (one catalog,
 /// tens of system ids).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 struct CacheKey {
@@ -79,7 +79,7 @@ pub struct Store {
     runtime: Handle,
     inner: Arc<Mutex<Inner>>,
     /// Singleton media-status publisher. Eagerly constructed on
-    /// `Store::new` so the seeding task starts as soon as the launcher
+    /// `Store::new` so the seeding task starts as soon as the frontend
     /// has a `Client`, even if no QML side has subscribed yet.
     media_status: Arc<MediaStatusResource>,
 }
@@ -193,7 +193,7 @@ impl Store {
             );
         }
         // Cache entries live for the lifetime of the `Store` (which is
-        // the lifetime of the launcher process). No reclamation path:
+        // the lifetime of the frontend process). No reclamation path:
         // total cardinality is bounded by `endpoints × distinct args` —
         // a handful of endpoints times a few dozen system IDs in the
         // worst case — and each entry holds one `tokio::sync::watch`

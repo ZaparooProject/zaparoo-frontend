@@ -1,11 +1,11 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // Platform: what is the connected Zaparoo Core server running on?
 //
 // Populated by the `version` RPC after each successful connect. Independent
-// of `runtime` (which describes the launcher binary's host).
+// of `runtime` (which describes the frontend binary's host).
 // See docs/architecture.md for the gating rules.
 
 use crate::client::{Client, ConnectionState};

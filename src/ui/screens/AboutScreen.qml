@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 pragma ComponentBehavior: Bound
@@ -150,7 +150,7 @@ Item {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     horizontalAlignment: Text.AlignHCenter
-                    text: qsTr("Zaparoo Launcher")
+                    text: qsTr("Zaparoo Frontend")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
                     font.pixelSize: Sizing.fontSize(4)

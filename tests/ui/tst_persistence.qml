@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -101,7 +101,7 @@ TestCase {
 
     // Screen flips are user-visible intent, not selection state. On Hub
     // they should persist even when the underlying model is empty (so
-    // the launcher resumes on the right screen next boot). Systems and
+    // the frontend resumes on the right screen next boot). Systems and
     // Games own a [OK] RETRY contract on non-Ready accept, so Enter on
     // an empty Systems grid re-fires the current load instead of
     // flipping forward — the screen-flip-on-empty rule is Hub-only.

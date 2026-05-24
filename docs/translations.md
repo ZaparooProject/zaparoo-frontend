@@ -1,14 +1,14 @@
 # Translations
 
-Zaparoo Launcher sends every user-visible string through Qt's `QTranslator`.
+Zaparoo Frontend sends every user-visible string through Qt's `QTranslator`.
 Non-English builds should not need code changes. The pipeline has three parts:
 
 1. `qsTr()` in QML and `tr()` in C++ at every user-visible call site.
-2. `src/ui/translations/launcher_<tag>.ts` as the canonical catalog
+2. `src/ui/translations/frontend_<tag>.ts` as the canonical catalog
    (one per locale, XML, checked into git).
 3. `qt_add_translations` in `cmake/ZaparooRust.cmake`, which runs
    `lrelease` at build time and bundles the resulting `.qm` files
-   under `qrc:/i18n/` inside the launcher binary.
+   under `qrc:/i18n/` inside the frontend binary.
 
 At runtime, `src/app/main.cpp` installs a `QTranslator` before the QML engine
 loads, then picks the `.qm` file for the configured locale.
@@ -17,7 +17,7 @@ loads, then picks the `.qm` file for the configured locale.
 
 | Source | Precedence |
 |---|---|
-| `[general] language = "ja_JP"` in `launcher.toml` | 1: explicit override |
+| `[general] language = "ja_JP"` in `frontend.toml` | 1: explicit override |
 | `[general] language = "auto"` or unset | 2: `QLocale::system()` |
 
 The Rust config loader (`rust/zaparoo-core/src/config.rs`) normalizes `"auto"`
@@ -29,7 +29,7 @@ The config-to-C++ handoff goes through FFI. `zaparoo_rust_language_code()`
 returns a `'static` NUL-terminated UTF-8 pointer cached in
 `LANGUAGE_CODE: OnceLock<CString>`. The main thread reads it once before
 constructing the QML engine. There is no reload path; changing the locale takes
-a relaunch, like any other `launcher.toml` edit.
+a relaunch, like any other `frontend.toml` edit.
 
 ## Writing translatable strings
 
@@ -57,12 +57,12 @@ names, and similar. If it could appear in a screenshot, wrap it.
 
 1. Copy the English catalog:
 
-        cp src/ui/translations/launcher_en.ts src/ui/translations/launcher_de.ts
+        cp src/ui/translations/frontend_en.ts src/ui/translations/frontend_de.ts
 
 2. Run `lupdate-qt6` against the full source tree so every `qsTr()`
    call site populates the new catalog:
 
-        lupdate-qt6 src/ -ts src/ui/translations/launcher_de.ts
+        lupdate-qt6 src/ -ts src/ui/translations/frontend_de.ts
 
    `lupdate` is idempotent. Re-running it adds new strings and marks removed
    strings without clobbering existing translations.
@@ -72,12 +72,12 @@ names, and similar. If it could appear in a screenshot, wrap it.
    Qt Linguist highlights these in the editor UI.
 
 4. Add the file path to the `TS_FILES` list in
-   `cmake/ZaparooRust.cmake`'s `qt_add_translations(launcher ...)`
+   `cmake/ZaparooRust.cmake`'s `qt_add_translations(frontend ...)`
    call. CMake will pick up the `.qm` on the next build.
 
-5. Configure a dev launcher to test it:
+5. Configure a dev frontend to test it:
 
-        # launcher.toml
+        # frontend.toml
         [general]
         language = "de"
 
@@ -85,7 +85,7 @@ names, and similar. If it could appear in a screenshot, wrap it.
 
 After adding or changing any `qsTr()` call, re-run `lupdate-qt6`:
 
-    lupdate-qt6 src/ -ts src/ui/translations/launcher_en.ts
+    lupdate-qt6 src/ -ts src/ui/translations/frontend_en.ts
 
 Review the diff. New strings appear with empty `<translation>` elements,
 changed strings are flagged `type="unfinished"`, and removed strings are marked
@@ -95,11 +95,11 @@ triggered them so translators get a clean incremental diff.
 ## Build-time mechanics
 
 `qt_add_translations` is called in `cmake/ZaparooRust.cmake` right
-after the `launcher` target is created:
+after the `frontend` target is created:
 
 ```cmake
-qt_add_translations(launcher
-    TS_FILES "${CMAKE_SOURCE_DIR}/src/ui/translations/launcher_en.ts"
+qt_add_translations(frontend
+    TS_FILES "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_en.ts"
     RESOURCE_PREFIX "/i18n"
     IMMEDIATE_CALL
 )
@@ -109,7 +109,7 @@ The build does this:
 
 - `lrelease` runs per `.ts` to produce `<name>.qm` in the build tree.
 - The `.qm` files are packed into a Qt resource bound to the
-  `launcher` target at `qrc:/i18n/`.
+  `frontend` target at `qrc:/i18n/`.
 - An `update_translations` target is registered for `cmake --build .
   --target update_translations`, which runs `lupdate` on demand.
 - A `release_translations` target is also registered and wired into
@@ -129,14 +129,14 @@ produce missing-dependency errors.
 const QString langCode = QString::fromUtf8(zaparoo_rust_language_code());
 const QLocale locale = langCode.isEmpty() ? QLocale::system() : QLocale(langCode);
 QTranslator translator;
-if (translator.load(locale, "launcher", "_", ":/i18n")) {
+if (translator.load(locale, "frontend", "_", ":/i18n")) {
     QCoreApplication::installTranslator(&translator);
 }
 ```
 
 `QTranslator::load` uses Qt's normal fallback chain: exact `ja_JP` match, then
 `ja`, then the base name. A missing `.qm` is logged at info level, not error
-level. English-only builds ship one passthrough catalog (`launcher_en.qm`), and
+level. English-only builds ship one passthrough catalog (`frontend_en.qm`), and
 other locales fall through to the source strings.
 
 ## Requirements

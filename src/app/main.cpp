@@ -1,9 +1,9 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Thin C++ entry point for the Rust launcher. Domain logic lives in the
-// zaparoo_launcher_rs staticlib; Qt plugin wiring is handled here so that
+// Thin C++ entry point for the Rust frontend. Domain logic lives in the
+// zaparoo_frontend_rs staticlib; Qt plugin wiring is handled here so that
 // Qt's CMake (qt_import_qml_plugins) can emit the correct link flags.
 
 #include "media_image_provider.h"
@@ -80,7 +80,7 @@ Q_IMPORT_PLUGIN(QSvgPlugin)
 #endif
 
 // Forward all Qt log messages to the Rust tracing registry (same sinks as
-// Rust-side log output: stderr + launcher.log). Installed after
+// Rust-side log output: stderr + frontend.log). Installed after
 // zaparoo_rust_init() so the tracing subscriber is already alive.
 static void qtMessageHandler(QtMsgType type, const QMessageLogContext& /*ctx*/, const QString& msg)
 {
@@ -109,12 +109,13 @@ static ParsedArguments extractCrtArgument(int argc, char* argv[])
 
     for (size_t i = 1; i < parsed.argv.size(); ++i)
     {
-        if (std::strcmp(parsed.argv[i], "--crt") == 0)
+        char* arg = parsed.argv.at(i);
+        if (std::strcmp(arg, "--crt") == 0)
         {
             parsed.crtNativePathForced = true;
             continue;
         }
-        filtered.push_back(parsed.argv[i]);
+        filtered.push_back(arg);
     }
 
     parsed.argv = std::move(filtered);
@@ -148,7 +149,7 @@ int main(int argc, char* argv[]) // NOLINT
             Qt::HighDpiScaleFactorRoundingPolicy::Floor);
     }
 
-    QGuiApplication::setApplicationName("Zaparoo Launcher");
+    QGuiApplication::setApplicationName("Zaparoo Frontend");
     QGuiApplication::setApplicationVersion("0.1.0");
     QGuiApplication::setOrganizationName("Zaparoo");
     QGuiApplication::setOrganizationDomain("zaparoo.org");
@@ -224,20 +225,20 @@ int main(int argc, char* argv[]) // NOLINT
 
     // Install the locale .qm translator before constructing the QML engine
     // so qsTr() lookups in Main.qml's initial bindings see translated text.
-    // The Rust side resolves `[general] language` from launcher.toml into a
+    // The Rust side resolves `[general] language` from frontend.toml into a
     // BCP-47 tag ("ja", "de_DE") or an empty string (follow system locale).
     // Stack lifetime is fine — `translator` outlives app.exec() and all QML.
     const QString langCode = QString::fromUtf8(zaparoo_rust_language_code());
     const QLocale locale = langCode.isEmpty() ? QLocale::system() : QLocale(langCode);
     QTranslator translator;
-    if (translator.load(locale, "launcher", "_", ":/i18n"))
+    if (translator.load(locale, "frontend", "_", ":/i18n"))
     {
         QCoreApplication::installTranslator(&translator);
     }
     else
     {
         // Not an error on first run (English-only build ships a passthrough
-        // launcher_en.qm). Log at info so the sink records the resolved
+        // frontend_en.qm). Log at info so the sink records the resolved
         // locale for bug reports without spamming at warn level.
         qInfo("No translation catalog for %s in :/i18n; using source strings",
               qUtf8Printable(locale.name()));
@@ -321,7 +322,7 @@ int main(int argc, char* argv[]) // NOLINT
     // type fails to resolve or compile. Individual QML errors are already
     // routed through qtMessageHandler → tracing; this handler adds the
     // tying narrative ("the root object for Zaparoo.App.Main failed") so
-    // a reader of launcher.log doesn't have to infer the connection.
+    // a reader of frontend.log doesn't have to infer the connection.
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed, &engine, [](const QUrl& url)
         { qCritical("QML object creation failed for %s", qUtf8Printable(url.toString())); });
@@ -402,7 +403,7 @@ int main(int argc, char* argv[]) // NOLINT
     // OnceLock-backed runtime/store singletons.
     const char* programPath = parsedArgs.argv.front();
     ::execvp(programPath, qtArgv);
-    std::fprintf(stderr, "Failed to restart launcher via execvp(%s): %s\n", programPath,
+    std::fprintf(stderr, "Failed to restart frontend via execvp(%s): %s\n", programPath,
                  std::strerror(errno));
     return EXIT_FAILURE;
 }

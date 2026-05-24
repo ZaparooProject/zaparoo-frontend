@@ -1,7 +1,7 @@
-# Zaparoo Launcher — Designer Guide
+# Zaparoo Frontend — Designer Guide
 
-This directory lets a UX designer open the launcher UI in **Qt Design Studio**.
-Nothing under `design/` is compiled into the launcher binary; it exists only
+This directory lets a UX designer open the frontend UI in **Qt Design Studio**.
+Nothing under `design/` is compiled into the frontend binary; it exists only
 for design-time previews.
 
 ## Setup
@@ -10,7 +10,7 @@ for design-time previews.
    the Qt online installer (<https://www.qt.io/download-qt-installer>); select
    *Qt Design Studio*. Some Linux package managers ship it as
    `qt-design-studio`.
-2. **Build the launcher once** from the repo root so the generated
+2. **Build the frontend once** from the repo root so the generated
    QML modules exist:
 
    ```sh
@@ -23,12 +23,12 @@ for design-time previews.
 3. **Open the project** in Qt Design Studio:
 
    ```text
-   design/launcher.qmlproject
+   design/frontend.qmlproject
    ```
 
    The 2D view should render `MainPreview.qml` at 1280×720 with the
    populated categories row and systems grid driven by the mock
-   singletons. If they are empty, rebuild the launcher and reopen the
+   singletons. If they are empty, rebuild the frontend and reopen the
    project.
 
 ## Editable files
@@ -45,7 +45,7 @@ for design-time previews.
 
 ## Software rendering only
 
-The launcher runs on MiSTer FPGA, which has **no GPU**. Anything shader-backed
+The frontend runs on MiSTer FPGA, which has **no GPU**. Anything shader-backed
 can crash or render as a grey box. Stay within this set:
 
 Allowed:
@@ -67,7 +67,7 @@ If an effect seems necessary, talk to an engineer first. A flat `Rectangle` or
 
 ## Sizing
 
-The launcher scales from 240p CRT output to 1080p. Use the helpers on the
+The frontend scales from 240p CRT output to 1080p. Use the helpers on the
 `Sizing` singleton (`import Zaparoo.Theme`). Do not hardcode pixel values or
 element counts:
 
@@ -100,7 +100,7 @@ not Creator.
   `just build` populates those too.
 - **Tile row/grid is empty** — the mock ListModels seed four entries. If
   the categories row or the systems/games grid renders empty, `mocks/`
-  is not being resolved. Check that `importPaths` in `launcher.qmlproject`
+  is not being resolved. Check that `importPaths` in `frontend.qmlproject`
   still lists `mocks` first.
 - **"Cannot find type XYZ"** — probably a Qt Quick Studio Component. Do not
   use it; see the banned list above.

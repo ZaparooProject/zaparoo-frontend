@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
@@ -29,7 +29,7 @@ use tokio::sync::{broadcast, watch};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, warn};
 
-/// Snapshot of every field the launcher renders from `media`,
+/// Snapshot of every field the frontend renders from `media`,
 /// `media.indexing`, and `media.scraping`. Cloned out of the watch
 /// channel by the QML projection function — keep field counts modest
 /// and types cheap to clone (no nested `Vec`s of large payloads).
@@ -248,7 +248,7 @@ async fn seed_now(client: &Arc<Client>, state: &Arc<watch::Sender<MediaStatusSta
     }
     // Scrape state has its own one-shot endpoint — `media.scraping`
     // notifications only fire while a scrape is running, so without
-    // this call a fresh launcher seeing an idle Core would always
+    // this call a fresh frontend seeing an idle Core would always
     // report `total_scraped = 0`. Mirrors the TUI's `getScrapeStatus`.
     match client.media_scrape_status().await {
         Ok(status) => {

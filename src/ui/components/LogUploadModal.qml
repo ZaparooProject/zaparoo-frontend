@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 pragma ComponentBehavior: Bound
@@ -56,7 +56,7 @@ Item {
     }
 
     // Generate the QR matrix as soon as we have a URL. `Browse.QrCode`
-    // is shared across the launcher; the next consumer (a future flow)
+    // is shared across the frontend; the next consumer (a future flow)
     // will overwrite it with their own content, so generate eagerly
     // rather than relying on a previously cached matrix.
     Connections {

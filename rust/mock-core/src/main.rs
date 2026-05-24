@@ -1,12 +1,12 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // Mock Zaparoo Core server. WebSocket JSON-RPC 2.0. Binds a dev-only
 // port (ws://127.0.0.1:27497/api/v0.1) deliberately offset from the
 // real Core's 7497 so a developer running both side-by-side never
-// collides. The launcher's dev preset (run-dev) and `ZAPAROO_CORE_ENDPOINT`
-// override point at this address; production launcher.toml still
+// collides. The frontend's dev preset (run-dev) and `ZAPAROO_CORE_ENDPOINT`
+// override point at this address; production frontend.toml still
 // defaults to 7497.
 
 mod fixtures;

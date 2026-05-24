@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -25,7 +25,7 @@ pub struct SystemInfo {
 /// the same shape it would for a hand-rolled minimal request.
 //
 // Core also accepts a `fuzzySystem` boolean for LLM clients that may
-// misspell system ids; the launcher composes ids from canonical Core
+// misspell system ids; the frontend composes ids from canonical Core
 // data so a mismatch would be a bug, and we deliberately do not
 // surface that flag here.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -157,8 +157,8 @@ impl MediaSearchResult {
 
 // Core's `media.browse` also accepts a `fuzzySystem` boolean that lets
 // LLM clients route a misspelt system id through fuzzy matching. The
-// launcher composes its system ids from canonical Core data (the
-// `systems` RPC), so a mismatch here would be a launcher bug — we
+// frontend composes its system ids from canonical Core data (the
+// `systems` RPC), so a mismatch here would be a frontend bug — we
 // deliberately do not surface that flag, to keep bugs visible rather
 // than papered over.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -249,7 +249,7 @@ impl MediaBrowseResult {
 /// `skip_serializing_if` keeps the on-the-wire object minimal.
 //
 // Core also accepts a `fuzzySystem` boolean for LLM clients that may
-// misspell system ids; the launcher composes ids from canonical Core
+// misspell system ids; the frontend composes ids from canonical Core
 // data so a mismatch would be a bug, and we deliberately do not
 // surface that flag here.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -522,10 +522,10 @@ pub struct MediaMetaProperty {
 }
 
 /// Parameters for `media.lookup` — fuzzy title resolution against the
-/// scraped catalog. `system` and `name` are required; the launcher
+/// scraped catalog. `system` and `name` are required; the frontend
 /// composes both from canonical Core data, so we deliberately do not
 /// expose Core's `fuzzySystem` flag (it exists for LLM clients that may
-/// misspell ids; a launcher mismatch is a bug to fix, not paper over).
+/// misspell ids; a frontend mismatch is a bug to fix, not paper over).
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaLookupParams {
@@ -574,7 +574,7 @@ pub struct MediaLookupMatch {
 /// returned entry count.
 //
 // Core also accepts a `fuzzySystem` boolean for LLM clients; the
-// launcher composes ids from canonical Core data so a mismatch would
+// frontend composes ids from canonical Core data so a mismatch would
 // be a bug, and we deliberately do not surface that flag here.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -621,7 +621,7 @@ pub struct MediaHistoryTopResult {
 /// scoped to a system filter. Core's handler reuses `SearchParams` on
 /// the wire but only consults `systems`/`fuzzySystem`, so we expose a
 /// trimmed type here. (As elsewhere, `fuzzySystem` is intentionally
-/// omitted; the launcher composes canonical ids.)
+/// omitted; the frontend composes canonical ids.)
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaTagsParams {
@@ -659,7 +659,7 @@ pub struct MediaTagsUpdateResult {
 /// Parameters for `media.generate` — triggers a (re)build of Core's media
 /// database. `systems` optionally narrows the scope; `None` indexes every
 /// configured system. `fuzzySystem` is intentionally omitted: it exists
-/// in Core for LLM clients that may misspell ids, and the launcher
+/// in Core for LLM clients that may misspell ids, and the frontend
 /// composes ids from canonical Core data so a mismatch would be a bug
 /// to fix rather than paper over.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -671,7 +671,7 @@ pub struct MediaIndexParams {
 
 /// Parameters for `media.scrape` — runs the named scraper across the
 /// indexed media database. `scraper_id` is required server-side
-/// (validated as `min=1`); the launcher resolves it from the `scrapers`
+/// (validated as `min=1`); the frontend resolves it from the `scrapers`
 /// RPC. `systems` optionally narrows the run; `force` re-scrapes media
 /// already attached to a title slug.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -748,7 +748,7 @@ pub struct ScrapingStatusResponse {
     pub paused: bool,
 }
 
-/// Currently-active media as reported by `media`. The launcher does not
+/// Currently-active media as reported by `media`. The frontend does not
 /// surface this surface yet, but the field is part of the documented
 /// `media` envelope so we deserialise it for forward-compatibility —
 /// trimming it would mean the next consumer has to re-extend the wire

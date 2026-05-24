@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -12,9 +12,9 @@ import Zaparoo.Browse as Browse
 // suppress the compiler category file-wide.
 // qmllint disable compiler
 
-// Blocking first-run modal. Shown once per session when the launcher
+// Blocking first-run modal. Shown once per session when the frontend
 // first connects to a Core whose media database doesn't exist yet.
-// The launcher refuses to drill into Systems / Games until an initial
+// The frontend refuses to drill into Systems / Games until an initial
 // scan has run, so this modal owns input and only releases when the
 // scan completes (auto-dismiss after a short "Done" beat) or — after
 // a cancel — when the user presses Start again and lets it finish.
@@ -133,7 +133,7 @@ Item {
             Text {
                 width: parent.width
                 visible: modal.phase === "idle"
-                text: qsTr("Zaparoo needs to scan your games before you can use the launcher. This usually takes a few minutes.")
+                text: qsTr("Zaparoo needs to scan your games before you can use the frontend. This usually takes a few minutes.")
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontSize(2.6)
                 color: Theme.textPrimary

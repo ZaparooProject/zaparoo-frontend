@@ -1,8 +1,8 @@
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
-# Cross-compiles the zaparoo-launcher application for ARM32 / MiSTer FPGA.
+# Cross-compiles the zaparoo-frontend application for ARM32 / MiSTer FPGA.
 #
 # Requires the prebuilt toolchain image to exist locally — the tag is
 # derived from scripts/toolchain/VERSION (e.g. zaparoo/qt6-arm32-mister:6.10.3-1).
@@ -70,4 +70,4 @@ RUN mkdir build && cd build && \
 
 # Output stage — extracts the binary into the host output directory
 FROM scratch AS export
-COPY --from=app-build /src/build/bin/launcher /launcher
+COPY --from=app-build /src/build/bin/frontend /frontend

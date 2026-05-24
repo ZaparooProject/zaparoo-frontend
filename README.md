@@ -1,7 +1,15 @@
-# Zaparoo Launcher
+# Zaparoo Frontend
 
-Zaparoo Launcher is the game launcher frontend for
+Zaparoo Frontend is the game frontend for
 [Zaparoo Core](https://zaparoo.org).
+
+## Early beta rename
+
+This project was renamed from Zaparoo Launcher to Zaparoo Frontend.
+The repository slug is now `zaparoo-frontend`, the binary is `frontend`,
+the config file is `frontend.toml`, and the log file is `frontend.log`.
+No automatic migration is provided for old beta installs; copy any settings
+from `launcher.toml` to `frontend.toml` manually if needed.
 
 ## Build
 

@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 // cxx-qt 0.8 patches `isFinal: true` on singleton properties but the
@@ -24,7 +24,7 @@ import Zaparoo.Theme
 Item {
     id: pill
 
-    // Link-state constants mirror rust/launcher/src/models/app_status.rs:
+    // Link-state constants mirror rust/frontend/src/models/app_status.rs:
     //   0 DISCONNECTED · 1 CONNECTING · 2 CONNECTED · 3 RECONNECTING · 4 UNREACHABLE.
     // Catalog connection_state constants:
     //   0 DISCONNECTED · 1 CONNECTING · 2 READY · 3 ERROR.

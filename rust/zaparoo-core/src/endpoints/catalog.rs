@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
@@ -41,7 +41,7 @@ impl Endpoint for CatalogEndpoint {
 
     /// Declares the cross-endpoint `Tag::MEDIA_DB` so the catalog is
     /// refetched whenever the store sees an indexing/optimizing run
-    /// finish. Without this, the launcher's startup catalog query
+    /// finish. Without this, the frontend's startup catalog query
     /// (which races Core's first-run DB build) sticks at zero systems
     /// for the rest of the session.
     fn provides(_args: &Self::Args, _output: &Self::Output) -> Vec<Tag> {

@@ -1,4 +1,4 @@
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -36,14 +36,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: .github/contributors/signatures.json
-          path-to-document: https://github.com/ZaparooProject/zaparoo-launcher/blob/main/.github/CLA.md
+          path-to-document: https://github.com/ZaparooProject/zaparoo-frontend/blob/main/.github/CLA.md
           branch: main
           # Bots never sign. Keep this list tight — human contributors
           # must sign once via the magic-comment flow.
           allowlist: dependabot[bot],github-actions[bot]
           custom-pr-sign-comment: I have read the CLA Document and I hereby sign the CLA
           custom-notsigned-prcomment: |
-            Thanks for opening this pull request. Before it can be merged, please read and sign the [Contributor License Agreement](https://github.com/ZaparooProject/zaparoo-launcher/blob/main/.github/CLA.md).
+            Thanks for opening this pull request. Before it can be merged, please read and sign the [Contributor License Agreement](https://github.com/ZaparooProject/zaparoo-frontend/blob/main/.github/CLA.md).
 
             It takes about 30 seconds. Post the exact comment below on this PR to sign:
           custom-allsigned-prcomment: All contributors have signed the CLA. Thank you.

@@ -1,6 +1,6 @@
 # UI Style
 
-The Zaparoo Launcher's design language. `Theme.qml` owns the colour and
+Zaparoo Frontend's design language. `Theme.qml` owns the colour and
 font tokens; `Sizing.qml` owns the percentage helpers and the corner
 radius. Anything not covered here defers to those two singletons.
 
@@ -12,7 +12,7 @@ from `Rectangle` + `Text` + `Image`.
 
 A *card* is any selectable, pressable surface in the app. Cards are
 the design's keystone — once a reader has the card recipe, every
-focusable surface in the launcher reads the same way:
+focusable surface in the frontend reads the same way:
 
 | Property | Value |
 |---|---|
@@ -301,7 +301,7 @@ these tokens were introduced to solve.
 ## Integer-pixel drawing
 
 These rules apply to every screen, not just CRT-targeted code paths.
-The whole app must render cleanly at 240p; the launcher has one
+The whole app must render cleanly at 240p; the frontend has one
 rendering path, not two.
 
 - Geometry lands on integer pixels (`Sizing.px()`, `Sizing.center()`,

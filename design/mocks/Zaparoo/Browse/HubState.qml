@@ -1,4 +1,4 @@
-// Design-time only. Not compiled into the launcher.
+// Design-time only. Not compiled into the frontend.
 // Mirrors the HubState persistence singleton exposed from Rust.
 pragma Singleton
 import QtQuick

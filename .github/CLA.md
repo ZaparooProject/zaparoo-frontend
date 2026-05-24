@@ -1,8 +1,8 @@
-# Zaparoo Launcher Contributor License Agreement
+# Zaparoo Frontend Contributor License Agreement
 
 **Version:** 1.0 · effective 2026-04-25
 
-Thank you for contributing to Zaparoo Launcher.
+Thank you for contributing to Zaparoo Frontend.
 
 This Contributor License Agreement ("CLA") records the rights you grant to
 **Wizzo Pty Ltd** (the "Company") when you contribute code, documentation,
@@ -11,7 +11,7 @@ first contribution, and it covers every contribution you make afterward.
 
 ## Why we ask for this
 
-Zaparoo Launcher is published under the PolyForm Noncommercial License 1.0.0.
+Zaparoo Frontend is published under the PolyForm Noncommercial License 1.0.0.
 The Company separately grants commercial licenses to partners who want to use
 the software commercially. To grant those licenses without renegotiating with
 every past contributor, the Company needs broad licensing rights to each

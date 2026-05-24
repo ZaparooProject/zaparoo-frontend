@@ -1,9 +1,9 @@
 #!/bin/bash
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
-# Cross-compiles the launcher for ARM32 / MiSTer FPGA using Docker.
+# Cross-compiles the frontend for ARM32 / MiSTer FPGA using Docker.
 # Uses the official prebuilt toolchain image by default; builds the application
 # layer only (~1 min after the image is cached).
 #
@@ -74,7 +74,7 @@ if [[ "${TOOLCHAIN_IMAGE}" == "${LOCAL_TOOLCHAIN_IMAGE}" ]] \
     "${SCRIPT_DIR}/build-toolchain.sh"
 fi
 
-echo "=== Cross-compiling launcher for ARM32 ==="
+echo "=== Cross-compiling frontend for ARM32 ==="
 echo "Using toolchain image: ${TOOLCHAIN_IMAGE}"
 echo "Docker platform: ${DOCKER_PLATFORM}"
 mkdir -p "${OUTPUT_DIR}"
@@ -97,10 +97,10 @@ docker buildx build \
     --target export \
     "${PROJECT_ROOT}"
 
-if [ -f "${OUTPUT_DIR}/launcher" ]; then
+if [ -f "${OUTPUT_DIR}/frontend" ]; then
     echo ""
     echo "=== Build successful! ==="
-    file "${OUTPUT_DIR}/launcher"
+    file "${OUTPUT_DIR}/frontend"
 else
     echo "Build failed — binary not found in ${OUTPUT_DIR}"
     exit 1

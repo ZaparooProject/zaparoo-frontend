@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -126,7 +126,7 @@ ApplicationWindow {
     // FB layout — Component.onCompleted fires after the first frame,
     // so an imperative override there leaves a wrong-size first
     // frame on screen (visible as a zoomed top-left slice on CRT,
-    // where the launcher's writer thread copies that slice into the
+    // where the frontend's writer thread copies that slice into the
     // FPGA's 320x240 scan-out region). For windowed/preview builds
     // the binding only evaluates once at construction (Screen.width
     // is constant per session) so it doesn't fight user resizes.
@@ -138,7 +138,7 @@ ApplicationWindow {
     maximumHeight: _crtPreviewActive ? root.videoHeight * (root.crtPreviewScale > 0 ? root._clampCrtPreviewScale(root.crtPreviewScale) : root._crtPreviewMaxScale) : 16777215
     visible: true
     visibility: root.fullScreen ? Window.FullScreen : Window.Windowed
-    title: qsTr("Zaparoo Launcher")
+    title: qsTr("Zaparoo Frontend")
 
     onWidthChanged: {
         if (root._crtPreviewActive && root.crtPreviewScale === 0 && !root._crtPreviewResizeGuard)
@@ -245,7 +245,7 @@ ApplicationWindow {
     // position, so adding/removing entries can't silently re-map actions.
     // TODO: `Browse.SystemStatus.has_nfc` (used by Main.qml when building
     // the games-tile entries) is only updated when Core runs locally
-    // (rust/launcher/src/models/system_status.rs:88). Remote-Core readers
+    // (rust/frontend/src/models/system_status.rs:88). Remote-Core readers
     // aren't tracked yet — wire a Core-driven reader-status feed before
     // showing "Write to NFC token" in remote-Core configs.
     property var contextMenuEntries: []
@@ -452,7 +452,7 @@ ApplicationWindow {
         // instantly, the screen body swaps, and the user just pressed
         // OK or Esc — the action is deliberate and the feedback is
         // immediate. The page-dot pulse inside `PagedGrid` is the only
-        // animated transition cue in the launcher.
+        // animated transition cue in the frontend.
         //
         // The wrapper `Item` stays for grouping clarity; with no fade
         // machinery it carries no buffered state. Model bindings stay
@@ -553,8 +553,8 @@ ApplicationWindow {
 
             open: root.settingNeedsRestartModalVisible
             kind: "confirm"
-            title: qsTr("Quit and restart Zaparoo Launcher?")
-            body: qsTr("In order to apply this setting we need to restart the launcher.")
+            title: qsTr("Quit and restart Zaparoo Frontend?")
+            body: qsTr("In order to apply this setting we need to restart the frontend.")
             onConfirmed: root.acceptRestart()
             onCancelRequested: root.cancelRestart()
         }
@@ -629,7 +629,7 @@ ApplicationWindow {
 
             open: root.quitConfirmModalVisible
             kind: "confirm"
-            title: qsTr("Quit Zaparoo Launcher?")
+            title: qsTr("Quit Zaparoo Frontend?")
             body: qsTr("Are you sure you want to exit?")
             onConfirmed: root.quitConfirmAccepted()
             onCancelRequested: root.closeQuitConfirmRequested()

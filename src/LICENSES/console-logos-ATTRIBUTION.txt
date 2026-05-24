@@ -19,4 +19,4 @@ The MIT license covers the redrawing and compilation work. The platform
 names and logos themselves remain trademarks of their respective owners
 (Nintendo, Sega, Sony, Microsoft, Atari, Commodore, Apple, etc.). They are
 included on a nominative-use basis to identify the platforms whose content
-the launcher organises; no endorsement or affiliation is implied or claimed.
+the frontend organizes; no endorsement or affiliation is implied or claimed.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
@@ -11,7 +11,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="${PROJECT_ROOT}/build"
-DEPLOY_DIR="${PROJECT_ROOT}/deploy/launcher"
+DEPLOY_DIR="${PROJECT_ROOT}/deploy/frontend"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,7 +22,7 @@ info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-BINARY="${BUILD_DIR}/bin/launcher"
+BINARY="${BUILD_DIR}/bin/frontend"
 if [ ! -f "${BINARY}" ]; then
     error "Binary not found at ${BINARY}. Run 'cmake --build build' first."
 fi
@@ -117,7 +117,7 @@ cp "${PROJECT_ROOT}/src/LICENSES/OFL.txt" "${DEPLOY_DIR}/"
 cp "${PROJECT_ROOT}/src/LICENSES/PressStart2P-ATTRIBUTION.txt" "${DEPLOY_DIR}/"
 cp "${PROJECT_ROOT}/COPYING" "${DEPLOY_DIR}/"
 
-info "Creating launcher script..."
+info "Creating frontend script..."
 cat > "${DEPLOY_DIR}/run.sh" << 'EOF'
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -131,7 +131,7 @@ if [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
     export QT_QUICK_BACKEND="${QT_QUICK_BACKEND:-software}"
 fi
 
-exec "${SCRIPT_DIR}/launcher" "$@"
+exec "${SCRIPT_DIR}/frontend" "$@"
 EOF
 chmod +x "${DEPLOY_DIR}/run.sh"
 

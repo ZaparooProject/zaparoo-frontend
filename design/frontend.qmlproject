@@ -1,0 +1,32 @@
+// Zaparoo Frontend — Qt Design Studio project file.
+// Designer-facing only; the CMake build ignores this entirely.
+// The designer must run `just build` once so the real Zaparoo.App /
+// Zaparoo.Ui / Zaparoo.Theme modules exist under ../build/qml.
+
+import QmlProject
+
+Project {
+    mainFile: "previews/MainPreview.qml"
+
+    // Order matters: the Zaparoo.Browse mocks are listed before the real
+    // build/qml tree, so Design Studio resolves Browse.* to the design-time
+    // stubs (plain QML) instead of the Rust cxx-qt plugin (which it cannot
+    // load).
+    importPaths: [
+        "mocks",
+        "../build/qml"
+    ]
+
+    mockImports: [ "mocks" ]
+
+    Files { directory: "previews";             filter: "*.qml" }
+    Files { directory: "mocks";                filter: "*.qml;qmldir" }
+    Files { directory: "../src/ui/app";        filter: "*.qml" }
+    Files { directory: "../src/ui/components"; filter: "*.qml" }
+    Files { directory: "../src/ui/theme";      filter: "*.qml" }
+    Files { directory: "../resources";         filter: "*.png;*.ttf" }
+
+    qtForMCUs: false
+    widthOverride: 1280
+    heightOverride: 720
+}

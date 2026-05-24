@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -12,9 +12,9 @@ import Zaparoo.Browse as Browse
 // suppress the compiler category file-wide.
 // qmllint disable compiler
 
-// Blocking first-run notice. Shown once per install before the launcher
+// Blocking first-run notice. Shown once per install before the frontend
 // becomes usable, then never again — `Browse.Notice.commercial_ack`
-// persists in `launcher.toml` (not `state.toml`, which is tmpfs on
+// persists in `frontend.toml` (not `state.toml`, which is tmpfs on
 // MiSTer). Routed in front of the media-DB first-run modal so the user
 // sees this prose first, then the indexing prompt.
 //
@@ -48,7 +48,7 @@ Item {
     // No cancel path. The notice is informational, not a license
     // condition — but it must be acknowledged once so the user has
     // demonstrably seen the non-commercial-use message before the
-    // launcher becomes interactive.
+    // frontend becomes interactive.
     }
 
     Modal {
@@ -56,7 +56,7 @@ Item {
 
         open: modal.open
         kind: "shell"
-        title: qsTr("Welcome to Zaparoo Launcher")
+        title: qsTr("Welcome to Zaparoo Frontend")
         panelMaxWidth: Sizing.pctH(110)
 
         Column {

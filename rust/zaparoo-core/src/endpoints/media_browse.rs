@@ -1,10 +1,10 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // `MediaBrowseEndpoint` — directory listing for the games view. Cache key
 // is `(path, sorted systems)` so two singletons asking for the same
-// scoped path share one fetch task. The launcher only uses this Endpoint
+// scoped path share one fetch task. The frontend only uses this Endpoint
 // for the *initial* page of a browse target; cursor-driven follow-up
 // pages bypass the cache and call `Client::media_browse` directly,
 // because each follow-up has a different cursor.

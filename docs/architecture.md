@@ -4,11 +4,11 @@
 
 ```
 src/app/main.cpp
-  launcher (executable)
+  frontend (executable)
     │   Thin C++ entry point: constructs QGuiApplication + QQmlApplicationEngine,
     │   installs Qt message handler, calls zaparoo_rust_init() from the Rust staticlib.
     │
-    ├── rust/launcher/  [zaparoo_launcher_rs staticlib]
+    ├── rust/frontend/  [zaparoo_frontend_rs staticlib]
     │     ├── src/lib.rs
     │     │     zaparoo_rust_init()      — tokio runtime, logger, WebSocket client,
     │     │                               Store, model globals
@@ -37,9 +37,9 @@ src/app/main.cpp
     │     systems_catalog.rs  — CatalogData payload + by-category filter
     │     input_actions.rs    — action names + Qt key-code mapping
     │     persist.rs          — write-through persisted UI state
-    │     config.rs           — TOML config (launcher.toml)
+    │     config.rs           — TOML config (frontend.toml)
     │     logger.rs           — tracing-subscriber: stderr + JSONL file sinks
-    │     runtime.rs          — Runtime enum: what device the launcher runs on
+    │     runtime.rs          — Runtime enum: what device the frontend runs on
     │     platform.rs         — Platform enum: what Zaparoo Core is running on
     │     platform_paths.rs   — log/config paths routed through runtime
     │     media_types.rs      — file-extension → media-type lookup
@@ -68,7 +68,7 @@ src/app/main.cpp
 
 | Target | URI | Load path |
 |---|---|---|
-| zaparoo_launcher_rs (plugin) | `Zaparoo.Browse` | `qrc:/qt/qml/Zaparoo/Browse/` |
+| zaparoo_frontend_rs (plugin) | `Zaparoo.Browse` | `qrc:/qt/qml/Zaparoo/Browse/` |
 | zaparoo_ui_app | `Zaparoo.App` | `qrc:/qt/qml/Zaparoo/App/` |
 | zaparoo_ui_screens | `Zaparoo.Screens` | `qrc:/qt/qml/Zaparoo/Screens/` |
 | zaparoo_ui_components | `Zaparoo.Ui` | `qrc:/qt/qml/Zaparoo/Ui/` |
@@ -94,21 +94,21 @@ src/app/main.cpp
 
 ## Runtime vs Platform
 
-The launcher tracks two separate facts. Do not collapse them; that is how old
+The frontend tracks two separate facts. Do not collapse them; that is how old
 runtime/platform bugs come back.
 
 | Concept | Source of truth | Question answered |
 |---|---|---|
-| **Runtime** | `zaparoo_core::runtime::current()` (filesystem-cached) | What device is the **launcher binary** running on? |
+| **Runtime** | `zaparoo_core::runtime::current()` (filesystem-cached) | What device is the **frontend binary** running on? |
 | **Platform** | `zaparoo_core::platform::subscribe()` (from `version` RPC) | What OS/device is **Zaparoo Core** running on? |
 
-`Runtime == Mister` does **not** imply `Platform == Mister`. The launcher
+`Runtime == Mister` does **not** imply `Platform == Mister`. The frontend
 can run on a desktop while talking to Core on a MiSTer on the network,
 or vice-versa.
 
 ### When to use which
 
-- **Runtime gate** — use this when the launcher's host device changes the
+- **Runtime gate** — use this when the frontend's host device changes the
   behavior. Read `runtime::current()`. Prefer runtime gating for behavior.
 - **Build-time cfg `#[cfg(zaparoo_runtime = "mister")]`** — use this only for
   code that should not compile into desktop binaries: system calls,
@@ -136,14 +136,14 @@ License texts live in `src/LICENSES/`.
 The data layer follows the RTK Query shape. A single `Store` owns the `Client`,
 hands out shared `RemoteResource<T>` values keyed by `(endpoint NAME, args
 hash)`, and routes mutations through the same client. QML singletons subscribe
-by binding to an `Endpoint`; `rust/launcher/src/bind.rs` emits the bridge code
+by binding to an `Endpoint`; `rust/frontend/src/bind.rs` emits the bridge code
 for the sync seed, the `qt_thread` watcher, and the property apply step.
 
 ```
 zaparoo_rust_init()
     │
     ├── logger::install()          — tracing-subscriber (stderr + JSONL file)
-    ├── Config::load()             — launcher.toml
+    ├── Config::load()             — frontend.toml
     ├── tokio::Runtime::new()      — multi-thread executor
     ├── Client::new(endpoint)      — WebSocket JSON-RPC, auto-reconnects
     └── Store::new(client, runtime)
@@ -178,7 +178,7 @@ Core can connect before QML loads and the first screen never updates.
 
 The Qt message handler (`qInstallMessageHandler`) forwards Qt log output to
 `zaparoo_log_qt()` in the Rust staticlib. From there it goes through the same
-tracing registry as Rust logs. Both end up in stderr and `launcher.log`.
+tracing registry as Rust logs. Both end up in stderr and `frontend.log`.
 
 ### Navigation state
 
@@ -203,7 +203,7 @@ Persisted state is split across Rust-backed QML singletons:
 | `Browse.GamesState` | `system_id`, `game_path` | games-screen grid selection |
 
 State is loaded before the first QML frame and written through on user actions.
-That is deliberate: MiSTer's parent process can kill and relaunch the launcher
+That is deliberate: MiSTer's parent process can kill and relaunch the frontend
 without warning. Each screen writes its own `*State` singleton on directional
 moves; the router writes `AppState.active_screen` when the screen flips.
 

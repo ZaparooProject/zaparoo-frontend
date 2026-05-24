@@ -1,11 +1,11 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 import QtQuick
 import Zaparoo.Theme
 
-// Screen-burn protection. After an idle timeout the launcher paints a
+// Screen-burn protection. After an idle timeout the frontend paints a
 // solid-black backstop and bounces a single copy of the Zaparoo logo
 // across it. Black is the only background that fully removes the
 // burn-in load on OLED (pixels off = zero degradation) and gives CRT

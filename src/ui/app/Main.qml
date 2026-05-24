@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -44,7 +44,7 @@ MainLayout {
     readonly property string modalSettingNeedsRestart: "restart_confirm"
 
     // One-shot session flag: the first-run modal is shown at most
-    // once per launcher process, even if the WS link drops and the
+    // once per frontend process, even if the WS link drops and the
     // mediadb-empty condition would otherwise be satisfied again.
     property bool _firstRunIndexShown: false
     property string _pendingLanguageSelection: ""
@@ -98,7 +98,7 @@ MainLayout {
         }
         Browse.GamesModel.page_size = root._gamesPageSize;
         // Restore screen synchronously before first paint. The parent
-        // process on MiSTer kills the launcher without notice, so we
+        // process on MiSTer kills the frontend without notice, so we
         // resume exactly where we left off. Selection restore happens
         // asynchronously in the modelReset handlers below as catalog
         // data arrives.
@@ -670,7 +670,7 @@ MainLayout {
         //  back through Systems "for consistency". Do not introduce a
         //  per-session flag and forget to persist it. Do not gate on
         //  Runtime instead of Platform — Platform is where Core runs;
-        //  Runtime is where the launcher runs; a desktop launcher
+        //  Runtime is where the frontend runs; a desktop frontend
         //  pointed at a remote MiSTer Core MUST still bypass.
         //
         //  Why this is a live eval and not a stored flag: a stored
@@ -811,7 +811,7 @@ MainLayout {
 
     // Pure helper — wrap a zapscript in the zaparoo.app deep-link template.
     // The QR code points the scanning device at this URL; the web app
-    // hands the scanned zapscript back to a Core/launcher pairing.
+    // hands the scanned zapscript back to a Core/frontend pairing.
     function _buildQrPayload(zapscript: string): string {
         return "https://zaparoo.app/write?v=" + encodeURIComponent(zapscript);
     }
@@ -1043,7 +1043,7 @@ MainLayout {
     // moment the catalog resolves Ready and reports zero systems
     // (`CategoriesModel.loaded === true && count === 0`). 0 visible
     // categories implies a 0-system response from `media.systems` — a
-    // mediadb that's missing or never indexed — and the launcher has
+    // mediadb that's missing or never indexed — and the frontend has
     // no UI to render past the hub. The `loaded` gate is critical:
     // the singleton's Default state has `count: 0` before the catalog
     // fetch lands, so without it we'd fire the modal on cold launch
@@ -1078,7 +1078,7 @@ MainLayout {
     }
 
     // Commercial-use first-run notice. Persisted ack lives in
-    // `launcher.toml` (not state.toml — MiSTer's tmpfs would re-show
+    // `frontend.toml` (not state.toml — MiSTer's tmpfs would re-show
     // the notice on every reboot). The router opens the modal on first
     // paint when the flag is false, and the modal's close handler is
     // what advances to the next first-run gate (mediadb index).
@@ -1089,7 +1089,7 @@ MainLayout {
             return;
         // Defer until the cold-launch curtain has lifted. Otherwise
         // the modal paints over the BootOverlay's "Connecting…" cue,
-        // and the user perceives the launcher as stuck — they can't
+        // and the user perceives the frontend as stuck — they can't
         // tell whether dismissing the notice will reveal a working
         // app or an actual connection failure. Waiting for boot means
         // every "I understand" press lands on a hub that's already
@@ -1135,7 +1135,7 @@ MainLayout {
 
     // Quit-confirm lifecycle. Hub's cancel signal lands on
     // `openQuitConfirmModal` instead of `Qt.quit()` so a stray B / Esc
-    // can't kill the launcher; the modal owns the actual decision.
+    // can't kill the frontend; the modal owns the actual decision.
     function openQuitConfirmModal(): void {
         root.quitConfirmModalVisible = true;
         if (ScreenManager.topModal !== root.modalQuitConfirm)
@@ -1568,7 +1568,7 @@ MainLayout {
     }
 
     // Screen-burn protection. After `_idleScreensaverMs` of input
-    // silence (key, gamepad, mouse motion or click) the launcher
+    // silence (key, gamepad, mouse motion or click) the frontend
     // captures the live scene with an 80%-black scrim baked in once
     // and bounces a copy of the brand mark across the window. Any
     // further input dismisses the overlay; the dismissing press is

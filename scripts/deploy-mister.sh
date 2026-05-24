@@ -1,10 +1,10 @@
 #!/bin/bash
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
 # Builds the ARM32 binary and deploys it to a MiSTer FPGA over SSH/SCP.
-# Pass --skip-build to deploy an existing output/launcher without rebuilding.
+# Pass --skip-build to deploy an existing output/frontend without rebuilding.
 # Reads MISTER_IP from a .env file in the project root.
 
 set -e
@@ -12,8 +12,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="${PROJECT_ROOT}/.env"
-REMOTE_PATH="/media/fat/zaparoo/launcher"
-BINARY="${PROJECT_ROOT}/output/launcher"
+REMOTE_PATH="/media/fat/zaparoo/frontend"
+BINARY="${PROJECT_ROOT}/output/frontend"
 SKIP_BUILD=0
 
 while [ "$#" -gt 0 ]; do
@@ -25,8 +25,8 @@ while [ "$#" -gt 0 ]; do
         -h|--help)
             echo "Usage: $0 [--skip-build]"
             echo ""
-            echo "Builds output/launcher and deploys it to MiSTer."
-            echo "  --skip-build  Deploy existing output/launcher without rebuilding"
+            echo "Builds output/frontend and deploys it to MiSTer."
+            echo "  --skip-build  Deploy existing output/frontend without rebuilding"
             exit 0
             ;;
         *)
@@ -78,11 +78,11 @@ scp "${BINARY}" "root@${MISTER_IP}:${REMOTE_PATH}"
 echo "Deployed ${BINARY} → root@${MISTER_IP}:${REMOTE_PATH}"
 
 ssh "root@${MISTER_IP}" "
-    rm -f /tmp/zaparoo/launcher.log
-    # SIGKILL the running launcher; MiSTer's alt_launcher_poll respawns it
+    rm -f /tmp/zaparoo/frontend.log
+    # SIGKILL the running frontend; MiSTer's wrapper respawns it
     # ~1s later with the new binary. SIGTERM here would be misclassified as
     # an 'escape' and MiSTer would refuse to respawn. Note: counts as a crash
     # toward the 3-strike give-up limit, so if you deploy 3 times without
-    # cleanly exiting the launcher in between, killall MiSTer_Zaparoo to reset.
-    killall -KILL launcher 2>/dev/null && echo 'Killed running launcher; MiSTer will respawn it' || echo 'No running launcher to kill'
+    # cleanly exiting the frontend in between, killall MiSTer_Zaparoo to reset.
+    killall -KILL frontend 2>/dev/null && echo 'Killed running frontend; MiSTer will respawn it' || echo 'No running frontend to kill'
 "

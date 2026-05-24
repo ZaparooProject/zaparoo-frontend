@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 pragma ComponentBehavior: Bound
@@ -16,7 +16,7 @@ import Zaparoo.Browse as Browse
 // qmllint disable compiler
 
 // Settings screen — gamepad-driven vertical form. Resolution is MiSTer-only
-// because it changes launcher startup video config and applies on restart.
+// because it changes frontend startup video config and applies on restart.
 // Button style is cross-platform and selects the resource directory for
 // help-bar button glyphs (Style A/B/C/D → resources/images/buttons/{a,b,c,d}/).
 // Mouse support is cross-platform and controls cursor visibility plus mouse
@@ -315,7 +315,7 @@ Item {
     }
 
     function _resolutionDisplay(value: string): string {
-        // Empty resolution means "fall back to launcher.toml defaults",
+        // Empty resolution means "fall back to frontend.toml defaults",
         // which the Settings model treats as the platform default. Render
         // it as a translated label rather than an empty cell so the user
         // sees something selectable.

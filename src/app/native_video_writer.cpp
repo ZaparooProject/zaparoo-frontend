@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -107,7 +107,7 @@ void initNativeVideoWriter()
     // Single-memcpy precondition: fb0 must be exactly the 320x240 RGB8888
     // surface the Menu fork core scans, with a tight stride and no pan
     // offsets, so one bulk copy reaches every pixel. MiSTer_Zaparoo's
-    // wrapper sets fb0 up before the launcher starts; any deviation here
+    // wrapper sets fb0 up before the frontend starts; any deviation here
     // means the host configured the framebuffer differently than the
     // Menu fork core expects, and silently copying the top-left slice
     // would mask that misconfiguration.

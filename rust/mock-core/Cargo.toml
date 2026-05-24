@@ -1,10 +1,10 @@
-# Zaparoo Launcher
+# Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 [package]
 name         = "mock-core"
-description  = "Mock Zaparoo Core WebSocket server for local launcher development."
+description  = "Mock Zaparoo Core WebSocket server for local frontend development."
 version      = { workspace = true }
 edition      = { workspace = true }
 rust-version = { workspace = true }

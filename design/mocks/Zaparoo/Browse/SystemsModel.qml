@@ -1,4 +1,4 @@
-// Design-time only. Not compiled into the launcher.
+// Design-time only. Not compiled into the frontend.
 // Mirrors the API surface of the Rust SystemsModel singleton.
 pragma Singleton
 

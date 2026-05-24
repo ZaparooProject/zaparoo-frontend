@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-macos}"
-APP_DIR="${APP_DIR:-$ROOT_DIR/output/macos/Zaparoo Launcher.app}"
-EXECUTABLE="$BUILD_DIR/bin/launcher"
+APP_DIR="${APP_DIR:-$ROOT_DIR/output/macos/Zaparoo Frontend.app}"
+EXECUTABLE="$BUILD_DIR/bin/frontend"
 MACDEPLOYQT="${MACDEPLOYQT:-macdeployqt}"
 
 if [[ ! -x "$EXECUTABLE" ]]; then
@@ -16,7 +16,7 @@ fi
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 
-cp "$EXECUTABLE" "$APP_DIR/Contents/MacOS/launcher"
+cp "$EXECUTABLE" "$APP_DIR/Contents/MacOS/frontend"
 
 cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -27,13 +27,13 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>Zaparoo Launcher</string>
+  <string>Zaparoo Frontend</string>
   <key>CFBundleExecutable</key>
-  <string>launcher</string>
+  <string>frontend</string>
   <key>CFBundleIdentifier</key>
-  <string>org.zaparoo.launcher</string>
+  <string>org.zaparoo.frontend</string>
   <key>CFBundleName</key>
-  <string>Zaparoo Launcher</string>
+  <string>Zaparoo Frontend</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

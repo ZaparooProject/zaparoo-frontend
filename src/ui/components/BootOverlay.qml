@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -12,7 +12,7 @@ import Zaparoo.Theme
 // suppress the compiler category file-wide.
 // qmllint disable compiler
 
-// Cold-launch curtain. The launcher process starts before Core finishes
+// Cold-launch curtain. The frontend process starts before Core finishes
 // listening, and the very first frames of the Hub paint with a still-
 // loading catalog (categories empty, status icons stale). Rather than
 // expose that mid-construction frame to the user we keep the screens
@@ -34,7 +34,7 @@ import Zaparoo.Theme
 Item {
     id: overlay
 
-    // Link-state constants mirror rust/launcher/src/models/app_status.rs:
+    // Link-state constants mirror rust/frontend/src/models/app_status.rs:
     //   0 DISCONNECTED · 1 CONNECTING · 2 CONNECTED · 3 RECONNECTING · 4 UNREACHABLE.
     readonly property int _linkDisconnected: 0
     readonly property int _linkConnecting: 1

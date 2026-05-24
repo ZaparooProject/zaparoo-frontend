@@ -28,7 +28,7 @@ sudo apt install qt6-declarative-dev qt6-quick-controls2-dev \
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-After cloning the launcher repo (step 2), run `just install-tools` to install
+After cloning the frontend repo (step 2), run `just install-tools` to install
 the optional cargo extensions (`cargo-nextest`, `cargo-deny`) used by the
 lint and test recipes.
 
@@ -41,8 +41,8 @@ setup. Windows is not tested; use WSL2.
 ## 2. Clone and build
 
 ```bash
-git clone https://github.com/ZaparooProject/zaparoo-launcher.git
-cd zaparoo-launcher
+git clone https://github.com/ZaparooProject/zaparoo-frontend.git
+cd zaparoo-frontend
 just build
 ```
 
@@ -64,13 +64,13 @@ mock-core listening on ws://127.0.0.1:27497/api/v0.1
 ```
 
 The mock serves three categories (Consoles, Handhelds, Arcade), ten systems,
-and fifty games. That is enough data to exercise every launcher screen.
+and fifty games. That is enough data to exercise every frontend screen.
 
 `27497` is offset from the real Core's `7497` so a real Core, or another Core
 test instance, can run on the same machine without colliding with the mock. The
-launcher still defaults to `7497` in production. `just run-dev` points it at
+frontend still defaults to `7497` in production. `just run-dev` points it at
 the mock through `ZAPAROO_CORE_ENDPOINT`; `just run` reads
-`~/.config/zaparoo/launcher.toml` as usual.
+`~/.config/zaparoo/frontend.toml` as usual.
 
 ### Pick a different port
 
@@ -81,9 +81,9 @@ MOCK_CORE_ADDR=127.0.0.1:9000 just mock-core
 ZAPAROO_CORE_ENDPOINT=ws://127.0.0.1:9000/api/v0.1 just run-dev
 ```
 
-`ZAPAROO_CORE_ENDPOINT` always wins over `~/.config/zaparoo/launcher.toml`.
+`ZAPAROO_CORE_ENDPOINT` always wins over `~/.config/zaparoo/frontend.toml`.
 
-## 4. Run the launcher
+## 4. Run the frontend
 
 In a second terminal:
 
@@ -92,12 +92,12 @@ just run-dev
 ```
 
 `run-dev` points at the mock through `ZAPAROO_CORE_ENDPOINT`. `just run` is
-the production-style runner: it reads `~/.config/zaparoo/launcher.toml`
+the production-style runner: it reads `~/.config/zaparoo/frontend.toml`
 instead.
 
 ## 5. Check the result
 
-- The launcher window opens.
+- The frontend window opens.
 - A static **categories row** of tiles fills with "Favorites",
   "Arcade", "Consoles", "Handhelds". Left/Right cycles between them.
   ("Favorites" is a placeholder until a real Favorites endpoint
@@ -108,10 +108,10 @@ instead.
 - Pressing Enter on a system opens the **paged games grid** (five
   entries per system).
 - Pressing Enter on a game sends a `run` RPC to the mock. The mock logs the
-  selected game's ZapScript, but the launcher keeps running because nothing is
+  selected game's ZapScript, but the frontend keeps running because nothing is
   actually launched.
 - Pressing Tab on a system or game sends a `readers.write` RPC with the
-  selected entry's ZapScript. The launcher shows a card-write modal while the
+  selected entry's ZapScript. The frontend shows a card-write modal while the
   request is pending; the mock logs the write request.
 - Escape backs out; Escape on the top level opens a quit-confirm modal —
   confirm to exit.

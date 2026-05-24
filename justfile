@@ -1,4 +1,4 @@
-# Zaparoo Launcher dev commands.
+# Zaparoo Frontend dev commands.
 # `just --list` for the full menu.
 
 # Use sccache as the rustc wrapper when it's installed. sccache caches
@@ -21,12 +21,12 @@ build-release:
     cmake --build --preset desktop-release
 
 # Release build with provenance markers baked in. Sets
-# ZAPAROO_OFFICIAL_BUILD=1 so the launcher reports
+# ZAPAROO_OFFICIAL_BUILD=1 so the frontend reports
 # `channel = "official"` in About / License and the startup log,
 # distinguishing distributed packages from local dev builds. Use this
 # (not `build-release`) when producing binaries you intend to ship.
 # Produces both shippable artifacts: desktop release in build-release/bin
-# and the MiSTer ARM32 binary in output/launcher.
+# and the MiSTer ARM32 binary in output/frontend.
 release:
     ZAPAROO_OFFICIAL_BUILD=1 cmake --preset desktop-release
     ZAPAROO_OFFICIAL_BUILD=1 cmake --build --preset desktop-release
@@ -45,14 +45,14 @@ arm32:
 
 # --- run ---
 run *args: build
-    ./build/bin/launcher {{args}}
+    ./build/bin/frontend {{args}}
 
 run-dev *args: build-dev
-    ZAPAROO_CORE_ENDPOINT=ws://127.0.0.1:27497/api/v0.1 ./build-dev/bin/launcher {{args}}
+    ZAPAROO_CORE_ENDPOINT=ws://127.0.0.1:27497/api/v0.1 ./build-dev/bin/frontend {{args}}
 
 # Run a local mock Zaparoo Core (ws://127.0.0.1:27497/api/v0.1).
 # Deliberately offset from the real Core's 7497 so dev never collides
-# with a running Core. `just run-dev` automatically points the launcher
+# with a running Core. `just run-dev` automatically points the frontend
 # here via ZAPAROO_CORE_ENDPOINT. See docs/quickstart.md.
 mock-core:
     cd rust && cargo run --bin mock-core

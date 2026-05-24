@@ -1,4 +1,4 @@
-// Zaparoo Launcher
+// Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
@@ -34,10 +34,10 @@ class UiSetup : public QObject
         QFile::remove(tmpState);
         qputenv("ZAPAROO_STATE_FILE", tmpState.toUtf8());
 
-        // Match the real launcher's style selection. Also forces the test
+        // Match the real frontend's style selection. Also forces the test
         // binary to reference QQuickStyle, which keeps libQt6QuickControls2
         // on the link line under GNU ld --as-needed (cxx-qt-lib's
-        // quickcontrols feature inside zaparoo_launcher_rs is the sole
+        // quickcontrols feature inside zaparoo_frontend_rs is the sole
         // other consumer and appears later on the command line).
         QQuickStyle::setStyle("Basic");
         zaparoo_rust_init();

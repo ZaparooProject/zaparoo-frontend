@@ -1648,7 +1648,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zaparoo-launcher-rs"
+name = "zaparoo-frontend-rs"
 version = "0.1.0"
 dependencies = [
  "base64",
