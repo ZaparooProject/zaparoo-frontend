@@ -224,6 +224,13 @@ The shared contract covers:
   list mode, metadata and screenshots stay hidden; title may continue to follow
   selection, and detail reload resumes after repeat stops
 
+`MediaListScreen.qml` is the shared list/detail shell for media browse
+screens. Favorites and Recently Played use it directly; Games layers its
+folder-navigation, per-level persisted selection, and pagination rules on
+top of the same shell instead of duplicating the list/detail render tree.
+New media list screens should extend that component first and only add
+screen-specific hooks where the data model or navigation semantics differ.
+
 #### Screen flow
 
 - **Hub** (`HubScreen.qml`) — static centered row of category tiles.

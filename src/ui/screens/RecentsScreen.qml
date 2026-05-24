@@ -12,9 +12,9 @@ import Zaparoo.Browse as Browse
 // `run` endpoint).
 //
 // History is a flat list — no folder navigation, no card-write flow —
-// so it reuses the shared `MediaHistoryScreen` shell with the
+// so it reuses the shared `MediaListScreen` shell with the
 // recents-specific model, persisted selection state, and copy.
-MediaHistoryScreen {
+MediaListScreen {
     id: recents
 
     property alias recentsGrid: recents.mediaGrid
