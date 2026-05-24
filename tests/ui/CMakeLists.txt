@@ -15,6 +15,7 @@ qt_add_qml_module(
         tst_sizing.qml
         tst_persistence.qml
         tst_paged_grid.qml
+        tst_focused_media_detail_controller.qml
         tst_list_picker_modal.qml
     IMPORTS
         Zaparoo.App

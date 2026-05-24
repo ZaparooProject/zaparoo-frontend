@@ -57,7 +57,7 @@ Item {
     on_ListLayoutChanged: {
         if (games._listLayout) {
             games._fillListPage();
-            games._scheduleMetadataLoad(false);
+            focusedDetail.requestNow();
         }
     }
 
@@ -161,20 +161,6 @@ Item {
         games._prefetchListTail(next);
     }
 
-    function _scheduleMetadataLoad(isRepeat): void {
-        if (!games._listLayout)
-            return;
-        if (isRepeat === true)
-            Browse.GamesModel.clear_current_detail();
-        metadataLoadDebounce.restart();
-    }
-
-    function _loadSelectedMetadata(): void {
-        if (!games._listLayout || games.gamesGrid.itemCount <= 0)
-            return;
-        Browse.GamesModel.load_description_at(gamesGrid.currentIndex);
-    }
-
     function _fillListPage(): void {
         if (!games._listLayout)
             return;
@@ -237,8 +223,7 @@ Item {
 
     function handleAction(action: string, isRepeat): void {
         if (games._listLayout && isRepeat === true && (action === "up" || action === "down")) {
-            Browse.GamesModel.clear_current_detail();
-            metadataLoadDebounce.restart();
+            focusedDetail.clearTransient();
         }
         if (action === "left") {
             if (games._listLayout)
@@ -334,11 +319,22 @@ Item {
 
     // ── Visual tree ───────────────────────────────────────────────────────────
 
-    Timer {
-        id: metadataLoadDebounce
-        interval: 220
-        repeat: false
-        onTriggered: games._loadSelectedMetadata()
+    FocusedMediaDetailController {
+        id: focusedDetail
+
+        enabled: !games.transitioning && !games.coverGateLoading && games._listLayout
+        itemCount: gamesGrid.itemCount
+        currentIndex: gamesGrid.currentIndex
+        identityForIndex: function (index) {
+            const entryType = Browse.GamesModel.entry_type_at(index);
+            if (entryType === "directory" || entryType === "root")
+                return "";
+            const systemId = Browse.GamesModel.system_id_at(index);
+            const path = Browse.GamesModel.path_at(index);
+            return systemId !== "" && path !== "" ? systemId + "\n" + path : "";
+        }
+        loadForIndex: index => Browse.GamesModel.load_description_at(index)
+        clearDetail: () => Browse.GamesModel.clear_current_detail()
     }
 
     // Top status strip — page counter (left), system title (center),
@@ -423,10 +419,6 @@ Item {
         }
         onEmptyRightClicked: games.handleAction("cancel")
         onPageWheelRequested: delta => games.handleAction(delta > 0 ? "page_next" : "page_prev")
-        onVisibleChanged: {
-            if (visible)
-                Browse.GamesModel.load_description_at(gamesGrid.currentIndex);
-        }
     }
 
     // Grid fills the safe zone between the top strip and the active
@@ -468,8 +460,8 @@ Item {
         hasMorePages: Browse.GamesModel.has_next_page
         onLoadMoreRequested: Browse.GamesModel.fetch_more()
         onCurrentIndexChanged: {
-            if (games._listLayout)
-                games._scheduleMetadataLoad(games._currentMoveIsRepeat);
+            if (games._listLayout && games._currentMoveIsRepeat)
+                focusedDetail.clearTransient();
         }
         // Cover prefetch is driven by what the user is looking at,
         // not by what metadata page Core happened to send back. Each

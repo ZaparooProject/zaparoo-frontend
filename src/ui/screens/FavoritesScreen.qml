@@ -47,7 +47,6 @@ Item {
     // during cold-launch / model-reset, matching `GamesScreen.qml`.
     // Pagination uses a separate `loading_more` flag and is unaffected.
     readonly property bool _gateHide: favorites.transitioning || Browse.FavoritesModel.loading
-    property string _detailRequestKey: ""
 
     signal requestHubScreen
     signal requestContextMenu(int index, var anchorRect)
@@ -87,31 +86,6 @@ Item {
             return;
         favorites.favoritesGrid.currentIndex = index;
         favorites._persistFocus();
-    }
-
-    function _selectedDetailKey(): string {
-        if (favorites.favoritesGrid.itemCount <= 0)
-            return "";
-        const idx = favoritesGrid.currentIndex;
-        const systemId = Browse.FavoritesModel.system_id_at(idx);
-        const path = Browse.FavoritesModel.path_at(idx);
-        return systemId !== "" && path !== "" ? systemId + "\n" + path : "";
-    }
-
-    function _scheduleDetailLoad(): void {
-        if (!favorites._listLayout)
-            return;
-        const key = favorites._selectedDetailKey();
-        if (key === "" || key === favorites._detailRequestKey)
-            return;
-        favorites._detailRequestKey = key;
-        detailLoadDebounce.restart();
-    }
-
-    function _loadSelectedDetail(): void {
-        if (!favorites._listLayout || favorites.favoritesGrid.itemCount <= 0)
-            return;
-        Browse.FavoritesModel.load_detail_at(favoritesGrid.currentIndex);
     }
 
     function _performLinearMove(delta: int): void {
@@ -194,20 +168,13 @@ Item {
 
     // ── Visual tree ───────────────────────────────────────────────────────────
 
-    Timer {
-        id: detailLoadDebounce
-        interval: 220
-        repeat: false
-        onTriggered: favorites._loadSelectedDetail()
-    }
+    FocusedMediaDetailController {
+        id: focusedDetail
 
-    Connections {
-        target: Browse.FavoritesModel
-        function onCountChanged(): void {
-            if (Browse.FavoritesModel.current_detail_tags === "")
-                favorites._detailRequestKey = "";
-            favorites._scheduleDetailLoad();
-        }
+        enabled: !favorites._gateHide && favorites._listLayout
+        itemCount: favoritesGrid.itemCount
+        currentIndex: favoritesGrid.currentIndex
+        mediaModel: Browse.FavoritesModel
     }
 
     // Top status strip — page counter, screen title, total entries.
@@ -250,6 +217,7 @@ Item {
         detailTitle: listCard.currentName
         detailCoverKey: Browse.FavoritesModel.current_detail_image_key !== "" ? Browse.FavoritesModel.current_detail_image_key : listCard.currentCoverKey
         detailTags: Browse.FavoritesModel.current_detail_tags
+        detailLoading: Browse.FavoritesModel.current_detail_loading
         onItemHovered: index => favorites._focusIndex(index)
         onItemClicked: index => {
             favorites._focusIndex(index);
@@ -261,14 +229,6 @@ Item {
         }
         onEmptyRightClicked: favorites.handleAction("cancel")
         onPageWheelRequested: delta => favorites.handleAction(delta > 0 ? "page_next" : "page_prev")
-        onVisibleChanged: {
-            if (visible)
-                favorites._scheduleDetailLoad();
-            else {
-                favorites._detailRequestKey = "";
-                Browse.FavoritesModel.clear_current_detail();
-            }
-        }
     }
 
     PagedGrid {
@@ -295,7 +255,6 @@ Item {
         onLoadMoreRequested: Browse.FavoritesModel.fetch_more()
         onCurrentIndexChanged: {
             favorites._persistFocus();
-            favorites._scheduleDetailLoad();
         }
         onItemHovered: index => favorites._focusIndex(index)
         onItemClicked: index => {

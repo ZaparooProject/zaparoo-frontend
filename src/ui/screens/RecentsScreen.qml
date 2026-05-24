@@ -47,7 +47,6 @@ Item {
     // during cold-launch / model-reset, matching `GamesScreen.qml`.
     // Pagination uses a separate `loading_more` flag and is unaffected.
     readonly property bool _gateHide: recents.transitioning || Browse.RecentsModel.loading
-    property string _detailRequestKey: ""
 
     signal requestHubScreen
     signal requestContextMenu(int index, var anchorRect)
@@ -88,31 +87,6 @@ Item {
             return;
         recents.recentsGrid.currentIndex = index;
         recents._persistFocus();
-    }
-
-    function _selectedDetailKey(): string {
-        if (recents.recentsGrid.itemCount <= 0)
-            return "";
-        const idx = recentsGrid.currentIndex;
-        const systemId = Browse.RecentsModel.system_id_at(idx);
-        const path = Browse.RecentsModel.path_at(idx);
-        return systemId !== "" && path !== "" ? systemId + "\n" + path : "";
-    }
-
-    function _scheduleDetailLoad(): void {
-        if (!recents._listLayout)
-            return;
-        const key = recents._selectedDetailKey();
-        if (key === "" || key === recents._detailRequestKey)
-            return;
-        recents._detailRequestKey = key;
-        detailLoadDebounce.restart();
-    }
-
-    function _loadSelectedDetail(): void {
-        if (!recents._listLayout || recents.recentsGrid.itemCount <= 0)
-            return;
-        Browse.RecentsModel.load_detail_at(recentsGrid.currentIndex);
     }
 
     function _performLinearMove(delta: int): void {
@@ -195,20 +169,13 @@ Item {
 
     // ── Visual tree ───────────────────────────────────────────────────────────
 
-    Timer {
-        id: detailLoadDebounce
-        interval: 220
-        repeat: false
-        onTriggered: recents._loadSelectedDetail()
-    }
+    FocusedMediaDetailController {
+        id: focusedDetail
 
-    Connections {
-        target: Browse.RecentsModel
-        function onCountChanged(): void {
-            if (Browse.RecentsModel.current_detail_tags === "")
-                recents._detailRequestKey = "";
-            recents._scheduleDetailLoad();
-        }
+        enabled: !recents._gateHide && recents._listLayout
+        itemCount: recentsGrid.itemCount
+        currentIndex: recentsGrid.currentIndex
+        mediaModel: Browse.RecentsModel
     }
 
     // Top status strip — page counter, screen title, total entries.
@@ -251,6 +218,7 @@ Item {
         detailTitle: listCard.currentName
         detailCoverKey: Browse.RecentsModel.current_detail_image_key !== "" ? Browse.RecentsModel.current_detail_image_key : listCard.currentCoverKey
         detailTags: Browse.RecentsModel.current_detail_tags
+        detailLoading: Browse.RecentsModel.current_detail_loading
         onItemHovered: index => recents._focusIndex(index)
         onItemClicked: index => {
             recents._focusIndex(index);
@@ -262,14 +230,6 @@ Item {
         }
         onEmptyRightClicked: recents.handleAction("cancel")
         onPageWheelRequested: delta => recents.handleAction(delta > 0 ? "page_next" : "page_prev")
-        onVisibleChanged: {
-            if (visible)
-                recents._scheduleDetailLoad();
-            else {
-                recents._detailRequestKey = "";
-                Browse.RecentsModel.clear_current_detail();
-            }
-        }
     }
 
     PagedGrid {
@@ -296,7 +256,6 @@ Item {
         onLoadMoreRequested: Browse.RecentsModel.fetch_more()
         onCurrentIndexChanged: {
             recents._persistFocus();
-            recents._scheduleDetailLoad();
         }
         onItemHovered: index => recents._focusIndex(index)
         onItemClicked: index => {
