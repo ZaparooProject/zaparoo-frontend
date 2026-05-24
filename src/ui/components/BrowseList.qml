@@ -17,22 +17,33 @@ Item {
     property int targetVisibleRowCount: 0
     property bool showFileStem: false
     property bool showChrome: true
+    property var layoutProfile: null
     readonly property int itemCount: listView.count
     readonly property int totalItems: totalItemsOverride >= 0 ? totalItemsOverride : itemCount
-    readonly property int cardPaddingX: Sizing.pctW(2)
-    readonly property int cardPaddingY: Sizing.pctH(2)
-    readonly property int rowSpacing: Sizing.pctH(0.7)
-    readonly property int contentHeight: Math.max(0, height - (2 * cardPaddingY))
-    readonly property int rowHeight: targetVisibleRowCount > 0 ? Math.max(Sizing.pctH(3), Math.floor((contentHeight - (rowSpacing * (targetVisibleRowCount - 1))) / targetVisibleRowCount)) : Sizing.pctH(6)
+    readonly property int _selectionRadius: root.layoutProfile ? root.layoutProfile.tileCornerRadius : Sizing.cornerRadius
+    readonly property int cardPaddingLeft: root.layoutProfile ? root.layoutProfile.listCardPaddingLeft : Sizing.pctW(2)
+    readonly property int cardPaddingRight: root.layoutProfile ? root.layoutProfile.listCardPaddingRight : Sizing.pctW(2)
+    readonly property int cardPaddingTop: root.layoutProfile ? root.layoutProfile.listCardPaddingTop : Sizing.pctH(2)
+    readonly property int cardPaddingBottom: root.layoutProfile ? root.layoutProfile.listCardPaddingBottom : Sizing.pctH(2)
+    readonly property int rowSpacing: root.layoutProfile ? root.layoutProfile.listRowSpacing : Sizing.pctH(0.7)
+    readonly property int contentHeight: Math.max(0, height - cardPaddingTop - cardPaddingBottom)
+    readonly property int rowHeight: root.layoutProfile && root.layoutProfile.listRowHeight > 0 ? root.layoutProfile.listRowHeight : (targetVisibleRowCount > 0 ? Math.max(Sizing.pctH(3), Math.floor((contentHeight - (rowSpacing * (targetVisibleRowCount - 1))) / targetVisibleRowCount)) : Sizing.pctH(6))
     readonly property int rowStride: rowHeight + rowSpacing
     readonly property int visibleRowCount: targetVisibleRowCount > 0 ? targetVisibleRowCount : Math.max(1, Math.floor((contentHeight + rowSpacing) / rowStride))
-    readonly property int _centerSlot: Math.max(0, Math.floor((visibleRowCount - 1) / 2))
+    readonly property int _centerSlot: root.layoutProfile && root.layoutProfile.listCenterSlot >= 0 ? Math.max(0, Math.min(visibleRowCount - 1, root.layoutProfile.listCenterSlot)) : Math.max(0, Math.floor((visibleRowCount - 1) / 2))
     readonly property int _maxViewTopIndex: Math.max(0, itemCount - visibleRowCount)
     readonly property int _viewTopIndex: Math.max(0, Math.min(_maxViewTopIndex, currentIndex - _centerSlot))
     readonly property int _targetContentY: _viewTopIndex * rowStride
     readonly property int _maxScrollTopIndex: Math.max(0, totalItems - visibleRowCount)
-    readonly property int _gutterWidth: Sizing.pctW(3)
-    readonly property int _gutterGap: Sizing.pctW(1.5)
+    readonly property int _gutterWidth: root.layoutProfile ? root.layoutProfile.gridGutterWidth : Sizing.pctW(3)
+    readonly property int _gutterGap: root.layoutProfile && root.layoutProfile.listScrollbarGap !== undefined ? root.layoutProfile.listScrollbarGap : (root.layoutProfile ? root.layoutProfile.gridGutterGap : Sizing.pctW(1.5))
+    readonly property int _scrollThumbWidth: root.layoutProfile ? root.layoutProfile.scrollThumbWidth : Sizing.pctW(1.2)
+    readonly property int _scrollThumbRightInset: root.layoutProfile ? root.layoutProfile.scrollThumbRightInset : 0
+    readonly property int _scrollArrowSize: root.layoutProfile ? root.layoutProfile.scrollArrowSize : Math.min(root._gutterWidth, Sizing.pctH(4))
+    readonly property int _selectionAccentWidth: root.layoutProfile && root.layoutProfile.listSelectionAccentWidth !== undefined ? root.layoutProfile.listSelectionAccentWidth : Sizing.pctW(0.45)
+    readonly property int _rowTextLeftPadding: root.layoutProfile ? root.layoutProfile.listRowTextLeftPadding : Sizing.pctW(1.6)
+    readonly property int _rowTextRightPadding: root.layoutProfile ? root.layoutProfile.listRowTextRightPadding : Sizing.pctW(1.6)
+    readonly property int _favoriteRightPadding: root.layoutProfile ? root.layoutProfile.listFavoriteRightPadding : Sizing.pctW(1.6)
 
     signal itemHovered(int index)
     signal itemClicked(int index)
@@ -87,13 +98,13 @@ Item {
         id: listView
 
         anchors.left: parent.left
-        anchors.leftMargin: root.cardPaddingX
+        anchors.leftMargin: root.cardPaddingLeft
         anchors.top: parent.top
-        anchors.topMargin: root.cardPaddingY
+        anchors.topMargin: root.cardPaddingTop
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.cardPaddingY
+        anchors.bottomMargin: root.cardPaddingBottom
         anchors.right: parent.right
-        anchors.rightMargin: root.totalItems > root.visibleRowCount ? root._gutterWidth + root._gutterGap + root.cardPaddingX : root.cardPaddingX
+        anchors.rightMargin: root.totalItems > root.visibleRowCount ? root._gutterWidth + root._gutterGap + root.cardPaddingRight : root.cardPaddingRight
         model: root.model
         currentIndex: root.currentIndex
         contentY: Math.min(root._targetContentY, Math.max(0, contentHeight - height))
@@ -139,14 +150,14 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     color: Theme.selectionSurface
-                    radius: Sizing.cornerRadius
+                    radius: root._selectionRadius
                 }
 
                 Rectangle {
                     anchors.left: parent.left
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    width: Sizing.cornerRadius
+                    width: root._selectionRadius
                     color: Theme.selectionSurface
                 }
             }
@@ -155,7 +166,7 @@ Item {
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: Sizing.pctW(0.45)
+                width: root._selectionAccentWidth
                 color: Theme.accent
                 visible: row.selected
                 radius: Math.max(0, Sizing.px(width / 3))
@@ -163,9 +174,9 @@ Item {
 
             Text {
                 anchors.left: parent.left
-                anchors.leftMargin: Sizing.pctW(1.6)
+                anchors.leftMargin: root._rowTextLeftPadding
                 anchors.right: parent.right
-                anchors.rightMargin: row.favorite !== 0 ? Sizing.pctW(5.2) : Sizing.pctW(1.6)
+                anchors.rightMargin: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) + root._rowTextRightPadding : root._rowTextRightPadding
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.showFileStem && row.fileStem !== "" ? row.fileStem : row.name
                 color: row.selected ? Theme.textPrimary : Theme.textLabel
@@ -178,7 +189,7 @@ Item {
 
             Image {
                 anchors.right: parent.right
-                anchors.rightMargin: Sizing.pctW(1.6)
+                anchors.rightMargin: root._favoriteRightPadding
                 anchors.verticalCenter: parent.verticalCenter
                 width: Sizing.pctH(3.2)
                 height: width
@@ -214,21 +225,19 @@ Item {
         id: scrollGutter
 
         anchors.right: parent.right
-        anchors.rightMargin: root.cardPaddingX
+        anchors.rightMargin: root.cardPaddingRight
         anchors.top: parent.top
-        anchors.topMargin: root.cardPaddingY
+        anchors.topMargin: root.cardPaddingTop
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.cardPaddingY
+        anchors.bottomMargin: root.cardPaddingBottom
         width: root._gutterWidth
         visible: root.totalItems > root.visibleRowCount
-
-        readonly property int arrowSize: Math.min(width, Sizing.pctH(4))
 
         Image {
             id: upArrow
             source: Resources.iconUrl("ScrollUp")
-            width: scrollGutter.arrowSize
-            height: scrollGutter.arrowSize
+            width: root._scrollArrowSize
+            height: root._scrollArrowSize
             anchors.top: parent.top
             anchors.horizontalCenter: parent.horizontalCenter
             fillMode: Image.PreserveAspectFit
@@ -247,8 +256,8 @@ Item {
         Image {
             id: downArrow
             source: Resources.iconUrl("ScrollDown")
-            width: scrollGutter.arrowSize
-            height: scrollGutter.arrowSize
+            width: root._scrollArrowSize
+            height: root._scrollArrowSize
             anchors.bottom: parent.bottom
             anchors.horizontalCenter: parent.horizontalCenter
             fillMode: Image.PreserveAspectFit
@@ -267,10 +276,12 @@ Item {
         Item {
             id: scrollRegion
             anchors.top: parent.top
-            anchors.topMargin: scrollGutter.arrowSize + Sizing.pctH(1)
+            anchors.topMargin: root._scrollArrowSize + Sizing.pctH(1)
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: scrollGutter.arrowSize + Sizing.pctH(1)
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottomMargin: root._scrollArrowSize + Sizing.pctH(1)
+            anchors.right: parent.right
+            anchors.rightMargin: root._scrollThumbRightInset
+            width: root._scrollThumbWidth
 
             readonly property int _minThumbHeight: Sizing.pctH(4)
             readonly property int _thumbHeight: root.totalItems <= 0 ? 0 : Math.min(scrollRegion.height, Math.max(_minThumbHeight, Math.round(scrollRegion.height * root.visibleRowCount / root.totalItems)))
@@ -278,9 +289,9 @@ Item {
 
             Rectangle {
                 id: scrollThumb
-                width: Sizing.pctW(1.2)
+                width: root._scrollThumbWidth
                 height: scrollRegion._thumbHeight
-                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.right: parent.right
                 y: scrollRegion._thumbY
                 color: Theme.textPrimary
                 radius: Sizing.half(width)

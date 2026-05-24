@@ -24,4 +24,5 @@ MediaListScreen {
     screenTitle: qsTr("Recently Played")
     emptyText: qsTr("Nothing played yet")
     loadingText: qsTr("Loading recently played…")
+    detailShowTitle: false
 }

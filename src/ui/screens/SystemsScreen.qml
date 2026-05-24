@@ -38,7 +38,8 @@ Item {
     property bool gridFocused: true
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
     readonly property bool _crtGridLayout: Theme.crtNativePath && !systems._listLayout
-    readonly property var _tileLayout: systems._crtGridLayout ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
+    readonly property bool _crtListStrip: Theme.crtNativePath && systems._listLayout
+    readonly property var _tileLayout: Theme.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
     readonly property int _listOverlayBottomMargin: Sizing.pctH(6) + systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight
 
     signal requestAccept(systemId: string)
@@ -178,17 +179,14 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.topMargin: Sizing.headerBottom + Sizing.pctH(1)
-        height: systems._tileLayout.showTopStrip ? Sizing.pctH(7) : 0
+        height: systems._crtListStrip ? systems._tileLayout.listStripHeight : (systems._tileLayout.showTopStrip ? Sizing.pctH(7) : 0)
+        slotMargin: systems._crtListStrip ? systems._tileLayout.listStripSlotMargin : Sizing.pctW(5)
         title: systems._tileLayout.showHeaderTitleInHeader ? "" : Browse.SystemsModel.current_category
         currentPage: systemsGrid.currentPage
         totalPages: systems._tileLayout.showBottomStatusRow ? 1 : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
-        totalText: systems._listLayout || systems._tileLayout.showBottomStatusRow ? "" : (Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "")
-        rightTextOverride: {
-            if (!systems._listLayout || systemsGrid.itemCount <= 0)
-                return "";
-            return qsTr("%1 / %2").arg(systemsGrid.currentIndex + 1).arg(Math.max(1, Browse.SystemsModel.count));
-        }
-        visible: !systems.transitioning && systems._tileLayout.showTopStrip
+        totalText: Theme.crtNativePath ? "" : (Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "")
+        rightTextOverride: !systems._listLayout || systemsGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(systemsGrid.currentIndex + 1).arg(Math.max(1, Browse.SystemsModel.count))
+        visible: !systems.transitioning && (systems._tileLayout.showTopStrip || systems._crtListStrip)
     }
 
     BrowseListDetailView {
@@ -196,9 +194,9 @@ Item {
 
         visible: !systems.transitioning && systems._listLayout
         anchors.left: parent.left
-        anchors.leftMargin: Sizing.pctW(5)
+        anchors.leftMargin: systems._tileLayout.listCardSideMargin
         anchors.right: parent.right
-        anchors.rightMargin: Sizing.pctW(5)
+        anchors.rightMargin: systems._tileLayout.listCardSideMargin
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(2)
         anchors.bottom: parent.bottom

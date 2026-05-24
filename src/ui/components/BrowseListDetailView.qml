@@ -17,6 +17,7 @@ Item {
     property alias currentCoverKey: browseList.currentCoverKey
     property alias itemCount: browseList.itemCount
     property alias visibleRowCount: browseList.visibleRowCount
+    property var layoutProfile: null
 
     property alias detailTitle: detailPane.title
     property alias detailCoverKey: detailPane.coverKey
@@ -29,6 +30,8 @@ Item {
     property alias detailSuppressed: detailPane.detailSuppressed
     property alias detailCanPreviousImage: detailPane.canPreviousImage
     property alias detailCanNextImage: detailPane.canNextImage
+    readonly property int _cardRadius: root.layoutProfile ? root.layoutProfile.tileCornerRadius : Sizing.cornerRadius
+    readonly property int _dividerOffsetX: root.layoutProfile && root.layoutProfile.listDividerOffsetX !== undefined ? root.layoutProfile.listDividerOffsetX : 0
 
     signal itemHovered(int index)
     signal itemClicked(int index)
@@ -45,13 +48,13 @@ Item {
         color: Theme.surfaceCard
         border.width: Sizing.stroke(1)
         border.color: Theme.borderMid
-        radius: Sizing.cornerRadius
+        radius: root._cardRadius
     }
 
     CardDivider {
         id: listDivider
 
-        x: Sizing.px(parent.width * 2 / 3)
+        x: Sizing.px(parent.width * 2 / 3) + root._dividerOffsetX
         anchors.top: parent.top
         anchors.bottom: parent.bottom
     }
@@ -63,6 +66,7 @@ Item {
         anchors.right: listDivider.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
+        layoutProfile: root.layoutProfile
         showChrome: false
         onItemHovered: index => root.itemHovered(index)
         onItemClicked: index => root.itemClicked(index)
@@ -78,6 +82,7 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
+        layoutProfile: root.layoutProfile
         showChrome: false
     }
 }

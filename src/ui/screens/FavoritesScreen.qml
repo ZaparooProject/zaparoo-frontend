@@ -24,4 +24,5 @@ MediaListScreen {
     screenTitle: qsTr("Favorites")
     emptyText: qsTr("No favorites yet")
     loadingText: qsTr("Loading favorites…")
+    detailShowTitle: false
 }

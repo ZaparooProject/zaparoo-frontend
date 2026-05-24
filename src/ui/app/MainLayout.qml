@@ -287,7 +287,7 @@ ApplicationWindow {
 
     readonly property string recentsScreenState: Browse.RecentsModel.loading ? "loading" : ((Browse.RecentsModel.error_message ?? "") !== "" ? "error" : (Browse.RecentsModel.count === 0 ? "empty" : "ready"))
     readonly property bool _crtGridBrowseLayout: root.crtNativePath && Browse.Settings.current_browse_layout !== "list"
-    readonly property var _browseTileLayout: root._crtGridBrowseLayout ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
+    readonly property var _browseTileLayout: root.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
     readonly property var _contextMenuLayout: root.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
     readonly property string _crtGamesHeaderTitle: {
         const sid = Browse.GamesModel.current_system_id;
@@ -297,12 +297,21 @@ ApplicationWindow {
         return idx >= 0 ? Browse.SystemsModel.system_name_at(idx) : sid;
     }
     readonly property string browseHeaderTitle: {
-        if (!root._crtGridBrowseLayout)
+        if (!root.crtNativePath)
+            return "";
+        if (Browse.Settings.current_browse_layout === "list")
             return "";
         if (root.activeScreen === root.screenSystems)
             return Browse.SystemsModel.current_category;
         if (root.activeScreen === root.screenGames)
             return root._crtGamesHeaderTitle;
+        if (root.activeScreen === root.screenFavorites)
+            return qsTr("Favorites");
+        if (root.activeScreen === root.screenRecents)
+            return qsTr("Recently Played");
+        return "";
+    }
+    readonly property string browseHeaderProgressText: {
         return "";
     }
 
@@ -427,6 +436,7 @@ ApplicationWindow {
             anchors.topMargin: Sizing.headerTopMargin
             layoutProfile: root._browseTileLayout
             browseTitle: root.browseHeaderTitle
+            browseProgressText: root.browseHeaderProgressText
             z: 200
         }
 

@@ -26,6 +26,7 @@ Item {
     property alias logoItem: logo
     property var layoutProfile: null
     property string browseTitle: ""
+    property string browseProgressText: ""
 
     height: Sizing.headerHeight
 
@@ -42,6 +43,25 @@ Item {
         fillMode: Image.PreserveAspectFit
         horizontalAlignment: Image.AlignLeft
         source: "qrc:/qt/qml/Zaparoo/App/resources/images/logo.png"
+    }
+
+    Text {
+        id: browseProgressLabel
+
+        visible: header.browseProgressText !== ""
+        anchors.left: logo.right
+        anchors.leftMargin: Sizing.pctW(1)
+        anchors.verticalCenter: logo.verticalCenter
+        width: Math.max(0, Math.floor(parent.width / 4))
+        height: Sizing.headerRowHeight
+        elide: Text.ElideRight
+        horizontalAlignment: Text.AlignLeft
+        verticalAlignment: Text.AlignVCenter
+        text: header.browseProgressText
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontSize(2.9)
+        color: Theme.textPrimary
+        renderType: Text.NativeRendering
     }
 
     TextMetrics {

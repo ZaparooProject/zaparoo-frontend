@@ -21,17 +21,20 @@ Item {
     property bool detailSuppressed: false
     property bool showChrome: true
     property string loadingText: qsTr("Loading…")
+    property var layoutProfile: null
 
-    readonly property int _cardPaddingX: Sizing.pctW(2)
-    readonly property int _cardPaddingY: Sizing.pctH(2)
+    readonly property int _cardPaddingLeft: root.layoutProfile && root.layoutProfile.detailPanePaddingLeft !== undefined ? root.layoutProfile.detailPanePaddingLeft : Sizing.pctW(2)
+    readonly property int _cardPaddingRight: root.layoutProfile && root.layoutProfile.detailPanePaddingRight !== undefined ? root.layoutProfile.detailPanePaddingRight : Sizing.pctW(2)
+    readonly property int _cardPaddingTop: root.layoutProfile && root.layoutProfile.detailPanePaddingTop !== undefined ? root.layoutProfile.detailPanePaddingTop : Sizing.pctH(2)
+    readonly property int _cardPaddingBottom: root.layoutProfile && root.layoutProfile.detailPanePaddingBottom !== undefined ? root.layoutProfile.detailPanePaddingBottom : Sizing.pctH(2)
     readonly property int _carouselGutter: (canPreviousImage || canNextImage) ? Sizing.pctW(4) : 0
     property int _labelColumnWidth: 0
     readonly property int _tagTextSize: Sizing.fontSize(2.2)
     readonly property int _tagLabelGap: Sizing.pctW(1.4)
     readonly property var _detailRows: _parseDetailTags(detailTags)
     readonly property int _tagRowCount: _detailRows.length
-    readonly property int _tagRowHeight: Sizing.pctH(3)
-    readonly property int _tagRowSpacing: Sizing.pctH(0.55)
+    readonly property int _tagRowHeight: root.layoutProfile && root.layoutProfile.detailTagRowHeight !== undefined ? root.layoutProfile.detailTagRowHeight : Sizing.pctH(3)
+    readonly property int _tagRowSpacing: root.layoutProfile && root.layoutProfile.detailTagRowSpacing !== undefined ? root.layoutProfile.detailTagRowSpacing : Sizing.pctH(0.55)
     readonly property int _metadataNaturalHeight: _tagRowCount <= 0 ? 0 : (_tagRowCount * _tagRowHeight) + ((_tagRowCount - 1) * _tagRowSpacing)
     readonly property int _compactDetailHeight: Math.min(Sizing.px(content.height * 0.38), _metadataNaturalHeight)
     readonly property bool _coverPending: coverKey === "icons/Loading"
@@ -39,6 +42,16 @@ Item {
     readonly property bool _paneLoading: root.loading
     readonly property bool _detailVisible: !root._paneLoading && !root.detailSuppressed
     readonly property bool _suppressedPlaceholderCover: root.detailSuppressed && coverKey.startsWith("icons/") && root._coverSource !== ""
+    readonly property int _metadataYOffset: root.layoutProfile && root.layoutProfile.detailMetadataYOffset !== undefined ? root.layoutProfile.detailMetadataYOffset : 0
+    readonly property int _metadataExtraHeight: root.layoutProfile && root.layoutProfile.detailMetadataExtraHeight !== undefined ? root.layoutProfile.detailMetadataExtraHeight : 0
+    readonly property int _metadataLeftInset: root.layoutProfile && root.layoutProfile.detailMetadataLeftInset !== undefined ? root.layoutProfile.detailMetadataLeftInset : 0
+    readonly property int _metadataRightInset: root.layoutProfile && root.layoutProfile.detailMetadataRightInset !== undefined ? root.layoutProfile.detailMetadataRightInset : 0
+    readonly property int _imageXOffset: root.layoutProfile && root.layoutProfile.detailImageXOffset !== undefined ? root.layoutProfile.detailImageXOffset : 0
+    readonly property int _imageLeftInset: root.layoutProfile && root.layoutProfile.detailImageLeftInset !== undefined ? root.layoutProfile.detailImageLeftInset : 0
+    readonly property int _imageRightInset: root.layoutProfile && root.layoutProfile.detailImageRightInset !== undefined ? root.layoutProfile.detailImageRightInset : 0
+    readonly property int _imageExtraWidth: root.layoutProfile && root.layoutProfile.detailImageExtraWidth !== undefined ? root.layoutProfile.detailImageExtraWidth : 0
+    readonly property int _imageExtraHeight: root.layoutProfile && root.layoutProfile.detailImageExtraHeight !== undefined ? root.layoutProfile.detailImageExtraHeight : 0
+    readonly property int _imageBottomGap: root.layoutProfile && root.layoutProfile.detailImageBottomGap !== undefined ? root.layoutProfile.detailImageBottomGap : 0
 
     onDetailTagsChanged: root._labelColumnWidth = 0
 
@@ -91,23 +104,24 @@ Item {
         id: content
 
         anchors.fill: parent
-        anchors.leftMargin: root._cardPaddingX
-        anchors.rightMargin: root._cardPaddingX
-        anchors.topMargin: root._cardPaddingY
-        anchors.bottomMargin: root._cardPaddingY
+        anchors.leftMargin: root._cardPaddingLeft
+        anchors.rightMargin: root._cardPaddingRight
+        anchors.topMargin: root._cardPaddingTop
+        anchors.bottomMargin: root._cardPaddingBottom
         clip: true
 
         Item {
             id: imageSlot
 
-            readonly property int availableWidth: Math.max(0, parent.width - (2 * root._carouselGutter))
-            readonly property int availableHeight: Math.max(0, root.showTitle ? Sizing.px(parent.height * 0.48) : detailBody.y - Sizing.pctH(1))
-            readonly property int slotSize: Math.min(availableWidth, availableHeight)
+            readonly property int availableWidth: Math.max(0, parent.width - root._imageLeftInset - root._imageRightInset - (2 * root._carouselGutter))
+            readonly property int availableHeight: Math.max(0, root.showTitle ? Sizing.px(parent.height * 0.48) : detailBody.y - root._imageBottomGap)
+            readonly property int slotWidth: Math.min(parent.width - root._imageLeftInset - root._imageRightInset, availableWidth + root._imageExtraWidth)
+            readonly property int slotHeight: Math.min(parent.height, Math.min(availableWidth, availableHeight) + root._imageExtraHeight)
 
-            x: root._carouselGutter + Sizing.center(availableWidth, width)
+            x: root._imageLeftInset + root._carouselGutter + root._imageXOffset
             anchors.top: parent.top
-            width: slotSize
-            height: slotSize
+            width: Math.max(0, slotWidth)
+            height: slotHeight
 
             Image {
                 id: cover
@@ -181,10 +195,10 @@ Item {
 
             readonly property int _bodyY: Math.round(root.showTitle ? (titleText.visible ? titleText.y + titleText.height : imageSlot.y + imageSlot.height) + Sizing.pctH(2) : parent.height - height)
 
-            x: 0
-            y: _bodyY
-            width: parent.width
-            height: root.showTitle ? Math.round(Math.max(0, parent.height - _bodyY)) : root._compactDetailHeight
+            x: root._metadataLeftInset
+            y: _bodyY + root._metadataYOffset
+            width: Math.max(0, parent.width - root._metadataLeftInset - root._metadataRightInset)
+            height: root.showTitle ? Math.round(Math.max(0, parent.height - y + root._metadataExtraHeight)) : root._compactDetailHeight
             clip: true
 
             Column {

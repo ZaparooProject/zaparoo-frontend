@@ -24,8 +24,8 @@ Item {
     property int totalPages: 1
     property string totalText: "" // formatted; empty hides the slot
     property string rightTextOverride: "" // formatted; non-empty replaces Page N / M
+    property int slotMargin: Sizing.pctW(5)
     readonly property int _slotWidth: Sizing.px(status.width / 3)
-    readonly property int _slotMargin: Sizing.pctW(5)
     readonly property int _textMeasureSlack: Theme.crtNativePath ? 0 : 2
     readonly property int _titleMeasuredWidth: Math.ceil(Math.max(titleMetrics.advanceWidth, titleMetrics.boundingRect.width) + status._textMeasureSlack)
     readonly property int _titleTextWidth: Math.min(status._slotWidth, status._titleMeasuredWidth)
@@ -40,9 +40,9 @@ Item {
 
         visible: status.totalText !== ""
         anchors.left: parent.left
-        anchors.leftMargin: status._slotMargin
+        anchors.leftMargin: status.slotMargin
         anchors.bottom: titleText.bottom
-        width: status._slotWidth - status._slotMargin
+        width: status._slotWidth - status.slotMargin
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
         text: status.totalText
@@ -83,9 +83,9 @@ Item {
 
         visible: status.rightTextOverride !== "" || status.totalPages > 1
         anchors.right: parent.right
-        anchors.rightMargin: status._slotMargin
+        anchors.rightMargin: status.slotMargin
         anchors.bottom: titleText.bottom
-        width: status._slotWidth - status._slotMargin
+        width: status._slotWidth - status.slotMargin
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight
         text: status.rightTextOverride !== "" ? status.rightTextOverride : qsTr("Page %1 / %2").arg(status.currentPage + 1).arg(status.totalPages)
