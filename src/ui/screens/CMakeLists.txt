@@ -18,6 +18,7 @@ qt_add_qml_module(
         HubScreen.qml
         SystemsScreen.qml
         GamesScreen.qml
+        MediaHistoryScreen.qml
         FavoritesScreen.qml
         RecentsScreen.qml
         SettingsScreen.qml
