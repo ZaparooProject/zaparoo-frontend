@@ -74,7 +74,7 @@ use zaparoo_core::runtime;
 /// empty leading entry is the "use `frontend.toml` defaults" sentinel;
 /// the form renders it as `qsTr("Default")` so users can cycle back
 /// to no-override after picking a custom value.
-const MISTER_RESOLUTIONS: &[&str] = &["", "1280x720", "1920x1080", "640x480", "1920x1440"];
+const MISTER_RESOLUTIONS: &[&str] = &["", "1280x720", "1920x1080", "1920x1200", "1920x1440", "640x480", "2048x1536"];
 const LANGUAGES: &[&str] = &[
     "auto", "en", "it_IT", "de", "el", "ja", "ko", "nl", "ro", "sk", "uk", "zh_CN", "he", "ar",
     "hi",
