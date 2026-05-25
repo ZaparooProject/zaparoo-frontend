@@ -15,13 +15,12 @@
 
 use crate::media_types::{
     LaunchersResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryParams, MediaHistoryResult,
-    MediaHistoryTopParams, MediaHistoryTopResult, MediaImageBulkParams, MediaImageBulkResult,
-    MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
-    MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams,
-    MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
-    MediaTagsUpdateResult, ReadersResult, ReadersWriteParams, RunParams, ScrapersResult,
-    ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, UpdateSettingsParams,
-    VersionResult,
+    MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams, MediaImageResult,
+    MediaIndexParams, MediaLookupParams, MediaLookupResult, MediaMetaParams, MediaMetaResult,
+    MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams,
+    MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, ReadersResult,
+    ReadersWriteParams, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+    SystemsParams, SystemsResult, UpdateSettingsParams, VersionResult,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -549,31 +548,16 @@ impl Client {
     }
 
     /// Fetches a single best-match cover image for the given media row.
-    /// Identified by `(system, path)` — `path` is the canonical indexed
-    /// media path returned by `media.search` or `media.browse`. Returns
-    /// the `media.image` payload: content type, file extension (when
+    /// Identified by `mediaId` when available, otherwise `(system,
+    /// path)` where `path` is the canonical indexed media path returned
+    /// by `media.search` or `media.browse`. Returns the `media.image`
+    /// payload: content type, file extension (when
     /// derivable), base64 image bytes, and the resolved property type
     /// tag.
     pub async fn media_image(
         &self,
         params: MediaImageParams,
     ) -> Result<MediaImageResult, ClientError> {
-        let val = self.call("media.image", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
-    }
-
-    /// Batched `media.image`: resolves up to `MEDIA_IMAGE_BATCH_MAX`
-    /// (50) covers in a single JSON-RPC call. Core dispatches by
-    /// request shape, so the wire method name is the same as the
-    /// single-shot wrapper. Per-item failures (system not found, no
-    /// image) come back inside the response as an `error` string —
-    /// the call itself only fails on transport / RPC-level errors.
-    pub async fn media_image_bulk(
-        &self,
-        params: MediaImageBulkParams,
-    ) -> Result<MediaImageBulkResult, ClientError> {
         let val = self.call("media.image", &params).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
             message: e.to_string(),

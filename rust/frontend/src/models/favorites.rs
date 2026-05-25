@@ -578,7 +578,10 @@ impl ffi::FavoritesModel {
             clear_current_detail_state(self.as_mut());
             return;
         }
-        let detail_key = MediaKey::new(system.clone(), path.clone());
+        let detail_key = match media_id {
+            Some(id) => MediaKey::with_media_id(system.clone(), path.clone(), id),
+            None => MediaKey::new(system.clone(), path.clone()),
+        };
         self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
         self.as_mut().rust_mut().current_detail_media_id = media_id;
         sync_current_detail_image_key(self.as_mut());
@@ -684,7 +687,14 @@ fn media_key_for(entry: &MediaItem) -> Option<MediaKey> {
     if entry.system.id.is_empty() || entry.path.is_empty() {
         return None;
     }
-    Some(MediaKey::new(entry.system.id.clone(), entry.path.clone()))
+    match entry.media_id {
+        Some(media_id) => Some(MediaKey::with_media_id(
+            entry.system.id.clone(),
+            entry.path.clone(),
+            media_id,
+        )),
+        None => Some(MediaKey::new(entry.system.id.clone(), entry.path.clone())),
+    }
 }
 
 fn has_favorite_tag(tags: &[TagInfo]) -> bool {
@@ -900,7 +910,10 @@ fn notify_cover_update(mut model: Pin<&mut ffi::FavoritesModel>, key: &MediaKey)
         .entries
         .iter()
         .enumerate()
-        .filter(|(_, e)| e.path == *key.path && e.system.id == *key.system_id)
+        .filter(|(_, e)| match (key.media_id, e.media_id) {
+            (Some(a), Some(b)) => a == b,
+            _ => e.path == *key.path && e.system.id == *key.system_id,
+        })
         .filter_map(|(i, _)| i32::try_from(i).ok())
         .collect();
     if !rows.is_empty() {

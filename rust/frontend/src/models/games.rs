@@ -1177,7 +1177,14 @@ fn media_key_for(entry: &BrowseEntry) -> Option<MediaKey> {
     if system_id.is_empty() {
         return None;
     }
-    Some(MediaKey::new(system_id, entry.path.clone()))
+    match entry.media_id {
+        Some(media_id) => Some(MediaKey::with_media_id(
+            system_id,
+            entry.path.clone(),
+            media_id,
+        )),
+        None => Some(MediaKey::new(system_id, entry.path.clone())),
+    }
 }
 
 /// Pure ordering helper for `prefetch_around`. Returns the
@@ -1328,8 +1335,10 @@ fn notify_cover_update(mut model: Pin<&mut ffi::GamesModel>, key: &MediaKey) {
         .filter(|(_, e)| {
             key.image_type.is_none()
                 && !e.is_folder()
-                && e.path == *key.path
-                && entry_system_id(e) == *key.system_id
+                && match (key.media_id, e.media_id) {
+                    (Some(a), Some(b)) => a == b,
+                    _ => e.path == *key.path && entry_system_id(e) == *key.system_id,
+                }
         })
         .filter_map(|(i, _)| i32::try_from(i).ok())
         .collect();

@@ -118,7 +118,7 @@ MediaListScreen {
         return qsTr("%1 / %2").arg(games.gamesGrid.currentIndex + 1).arg(total);
     }
     gridLayoutProfile: games._tileLayout
-    gridBottomMargin: Sizing.pctH(6) + games._tileLayout.activeLabelBottomMargin + games._tileLayout.activeLabelHeight
+    gridBottomMargin: games._tileLayout.activeLabelBottomMargin + games._tileLayout.activeLabelHeight
     gridTotalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
     gridHasMorePages: Browse.GamesModel.has_next_page
     gridLoadMoreAction: () => Browse.GamesModel.fetch_more()

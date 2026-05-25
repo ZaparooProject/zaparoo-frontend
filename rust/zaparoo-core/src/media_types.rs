@@ -317,16 +317,19 @@ impl MediaHistoryResult {
     }
 }
 
-/// Parameters for `media.image`. Core identifies the media row by
-/// `(system, path)` — `path` is the canonical indexed media path
-/// returned by `media.search`/`media.browse`. `image_types` is an
-/// optional preference list documented in methods.md (defaults to
-/// `image`, `boxart`, `screenshot`, `wheel`, `titleshot`, `map`,
-/// `marquee`, `fanart`).
+/// Parameters for single-image `media.image`. Core identifies the
+/// media row by `media_id` when available, otherwise by `(system,
+/// path)` where `path` is the canonical indexed media path returned by
+/// `media.search`/`media.browse`. `image_types` is an optional
+/// preference list documented in methods.md.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaImageParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<i64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub system: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub path: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub image_types: Vec<String>,
@@ -335,8 +338,18 @@ pub struct MediaImageParams {
 impl MediaImageParams {
     pub fn for_media(system: impl Into<String>, path: impl Into<String>) -> Self {
         Self {
+            media_id: None,
             system: system.into(),
             path: path.into(),
+            image_types: Vec::new(),
+        }
+    }
+
+    pub fn for_media_id(media_id: i64) -> Self {
+        Self {
+            media_id: Some(media_id),
+            system: String::new(),
+            path: String::new(),
             image_types: Vec::new(),
         }
     }
@@ -358,77 +371,6 @@ pub struct MediaImageResult {
     pub data: String,
     #[serde(default)]
     pub type_tag: String,
-}
-
-/// Maximum number of items Core accepts in a single batched
-/// `media.image` request. Documented in `methods.md`; enforced server
-/// side, so callers must split larger fetches across multiple batches.
-pub const MEDIA_IMAGE_BATCH_MAX: usize = 50;
-
-/// Batch parameters for `media.image`. Core dispatches by request
-/// shape — the JSON-RPC method name stays `media.image`. Items address
-/// a media row by `media_id` **or** `(system, path)` (never both on
-/// the same item). A top-level `image_types` preference list applies
-/// to every item unless an item supplies its own override.
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaImageBulkParams {
-    pub items: Vec<MediaImageBulkItem>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub image_types: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaImageBulkItem {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub media_id: Option<i64>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub system: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub path: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub image_types: Vec<String>,
-}
-
-impl MediaImageBulkItem {
-    pub fn for_media(system: impl Into<String>, path: impl Into<String>) -> Self {
-        Self {
-            media_id: None,
-            system: system.into(),
-            path: path.into(),
-            image_types: Vec::new(),
-        }
-    }
-
-    pub fn for_media_id(media_id: i64) -> Self {
-        Self {
-            media_id: Some(media_id),
-            system: String::new(),
-            path: String::new(),
-            image_types: Vec::new(),
-        }
-    }
-}
-
-/// Batch result from `media.image`. `items` is matched by index to the
-/// request items. Each entry contains either `image` (success) **or**
-/// `error` (per-item failure) — partial failure is allowed and does
-/// not fail the batch.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaImageBulkResult {
-    #[serde(default)]
-    pub items: Vec<MediaImageBulkItemResult>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaImageBulkItemResult {
-    #[serde(default)]
-    pub image: Option<MediaImageResult>,
-    #[serde(default)]
-    pub error: Option<String>,
 }
 
 /// Parameters for `media.meta`. Identifies the media row by `(system,
@@ -501,9 +443,9 @@ pub struct MediaMetaTitle {
     pub properties: HashMap<String, MediaMetaProperty>,
 }
 
-/// One scraped property attached to a media row or title. Text-only
-/// values populate `text`; binary values (artwork, manuals) populate
-/// `data` (base64-encoded) along with `content_type` and `extension`.
+/// One scraped property attached to a media row or title. Binary
+/// payloads are not included in `media.meta`; use `media.image` for
+/// image bytes. `blob_size` is present when Core has binary metadata.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaMetaProperty {
@@ -516,9 +458,8 @@ pub struct MediaMetaProperty {
     /// properties or when Core could not derive an extension.
     #[serde(default)]
     pub extension: Option<String>,
-    /// Base64-encoded binary payload. `None` for text-only properties.
     #[serde(default)]
-    pub data: Option<String>,
+    pub blob_size: i64,
 }
 
 /// Parameters for `media.lookup` — fuzzy title resolution against the
@@ -938,11 +879,11 @@ mod tests {
     use super::{
         BrowseEntry, IndexingStatusResponse, LaunchersResult, MediaBrowseParams, MediaBrowseResult,
         MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
-        MediaImageBulkResult, MediaImageParams, MediaImageResult, MediaIndexParams,
-        MediaLookupParams, MediaLookupResult, MediaMetaParams, MediaMetaResult, MediaResult,
-        MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult,
-        ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse, SettingsResult,
-        SystemDefault, SystemsResult, UpdateSettingsParams, VersionResult,
+        MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
+        MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams,
+        MediaSearchResult, MediaTagsParams, MediaTagsResult, ReaderInfo, ReadersResult,
+        ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsResult,
+        UpdateSettingsParams, VersionResult,
     };
 
     #[test]
@@ -1346,6 +1287,29 @@ mod tests {
     }
 
     #[test]
+    fn media_image_params_for_media_id_serialises_id_only() {
+        let params = MediaImageParams {
+            image_types: vec!["boxart".into(), "image".into()],
+            ..MediaImageParams::for_media_id(42)
+        };
+        let json = serde_json::to_value(&params).expect("serialise");
+        let object = json.as_object().expect("object");
+        assert_eq!(
+            object.get("mediaId").and_then(serde_json::Value::as_i64),
+            Some(42),
+        );
+        assert!(!object.contains_key("system"));
+        assert!(!object.contains_key("path"));
+        assert_eq!(
+            object
+                .get("imageTypes")
+                .and_then(|v| v.as_array())
+                .map(Vec::len),
+            Some(2),
+        );
+    }
+
+    #[test]
     fn media_image_result_parses_extension_and_payload() {
         let json = r#"{
             "contentType":"image/png",
@@ -1397,7 +1361,7 @@ mod tests {
                         "text": "/scrape/smw.png",
                         "contentType": "image/png",
                         "extension": "png",
-                        "data": "iVBORw0KGgo="
+                        "blobSize": 1234
                     }
                 },
                 "title": {
@@ -1428,7 +1392,7 @@ mod tests {
             .expect("boxart property");
         assert_eq!(boxart.content_type, "image/png");
         assert_eq!(boxart.extension.as_deref(), Some("png"));
-        assert_eq!(boxart.data.as_deref(), Some("iVBORw0KGgo="));
+        assert_eq!(boxart.blob_size, 1234);
         assert_eq!(result.media.title.slug, "super mario world");
         assert_eq!(result.media.title.slug_length, 17);
         assert_eq!(result.media.title.system.id, "SNES");
@@ -1439,10 +1403,7 @@ mod tests {
             .get("property:description")
             .expect("description property");
         assert_eq!(description.text, "A platformer.");
-        // `data` is omitted in the documented payload for text-only
-        // properties; the JSON has `extension: ""` so we explicitly
-        // assert that maps to `None` (Core sends `*string omitempty`).
-        assert!(description.data.is_none());
+        assert_eq!(description.blob_size, 0);
         assert!(description.extension.is_none());
     }
 
@@ -1701,45 +1662,6 @@ mod tests {
         let result: VersionResult = serde_json::from_str("{}").expect("parse");
         assert_eq!(result.version, "");
         assert_eq!(result.platform, "");
-    }
-
-    #[test]
-    fn media_image_bulk_result_decodes_partial_failure_in_request_order() {
-        // Index N of `items` aligns with request item N — Core docs
-        // call out that response order matches request order, and a
-        // per-item `error` is a partial failure (HTTP 200, batch ok).
-        let json = r#"{
-            "items": [
-                {
-                    "image": {
-                        "contentType": "image/png",
-                        "extension": "png",
-                        "data": "iVBORw0KG",
-                        "typeTag": "boxart"
-                    }
-                },
-                { "error": "media not found" }
-            ]
-        }"#;
-        let result: MediaImageBulkResult = serde_json::from_str(json).expect("parse");
-        assert_eq!(result.items.len(), 2);
-        let first = result.items[0]
-            .image
-            .as_ref()
-            .expect("first item carries image");
-        assert!(result.items[0].error.is_none());
-        assert_eq!(first.content_type, "image/png");
-        assert_eq!(first.extension.as_deref(), Some("png"));
-        assert_eq!(first.data, "iVBORw0KG");
-        assert_eq!(first.type_tag, "boxart");
-        assert!(result.items[1].image.is_none());
-        assert_eq!(result.items[1].error.as_deref(), Some("media not found"));
-    }
-
-    #[test]
-    fn media_image_bulk_result_defaults_to_empty_items() {
-        let result: MediaImageBulkResult = serde_json::from_str("{}").expect("parse");
-        assert!(result.items.is_empty());
     }
 
     #[test]
