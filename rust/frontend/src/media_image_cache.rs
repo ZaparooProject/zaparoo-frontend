@@ -2009,25 +2009,32 @@ mod tests {
     fn search_cover_enqueue_uses_soft_no_image_policy() {
         let cache = cache_for_test();
         let k = key("SNES", "/favorite");
-        cache.enqueue_search_cover_with_media_id(k.clone(), Some(7), 15);
+        let id_key = MediaKey::with_media_id("SNES", "/favorite", 7);
+        cache.enqueue_search_cover_with_media_id(k, Some(7), 15);
         let entry = cache
             .queue
             .lock()
             .unwrap()
             .pop_back()
             .expect("search cover enqueue adds queue entry");
-        assert_eq!(entry.key, k);
+        assert_eq!(entry.key, id_key);
         assert_eq!(entry.no_image_policy, NoImagePolicy::SoftMiss);
         let guard = cache.state.read().unwrap();
-        assert_eq!(guard.media_ids.get(&k), Some(&7));
-        assert!(guard.search_seen.contains(&k));
+        assert_eq!(guard.media_ids.get(&id_key), Some(&7));
+        assert!(guard.search_seen.contains(&id_key));
     }
 
     #[test]
     fn search_cover_enqueue_skips_soft_no_image_keys() {
         let cache = cache_for_test();
         let k = key("SNES", "/soft-missed");
-        cache.state.write().unwrap().soft_no_image.insert(k.clone());
+        let id_key = MediaKey::with_media_id("SNES", "/soft-missed", 7);
+        cache
+            .state
+            .write()
+            .unwrap()
+            .soft_no_image
+            .insert(id_key.clone());
         cache.enqueue_search_cover_with_media_id(k, Some(7), 15);
         assert!(cache.queue.lock().unwrap().is_empty());
         assert!(cache.state.read().unwrap().pending.is_empty());
