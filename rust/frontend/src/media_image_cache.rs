@@ -2045,9 +2045,10 @@ mod tests {
             .unwrap()
             .pop_back()
             .expect("default enqueue is not blocked by unprotected soft miss");
-        assert_eq!(entry.key, k);
+        let id_key = MediaKey::with_media_id("SNES", "/soft-missed", 7);
+        assert_eq!(entry.key, id_key);
         assert_eq!(entry.no_image_policy, NoImagePolicy::Memoize);
-        assert!(cache.state.read().unwrap().pending.contains(&k));
+        assert!(cache.state.read().unwrap().pending.contains(&id_key));
     }
 
     #[test]
@@ -2066,9 +2067,10 @@ mod tests {
             .unwrap()
             .pop_back()
             .expect("default enqueue is not blocked by protected soft miss");
-        assert_eq!(entry.key, k);
+        let id_key = MediaKey::with_media_id("SNES", "/protected-soft-missed", 7);
+        assert_eq!(entry.key, id_key);
         assert_eq!(entry.no_image_policy, NoImagePolicy::Memoize);
-        assert!(cache.state.read().unwrap().pending.contains(&k));
+        assert!(cache.state.read().unwrap().pending.contains(&id_key));
     }
 
     #[test]
