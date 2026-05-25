@@ -52,13 +52,13 @@ TestCase {
         compare(main.systemsScreen.systemsGrid.scrollArrowSize, 8);
     }
 
-    function test_list_mode_uses_default_tile_profile(): void {
+    function test_crt_list_uses_crt_header_and_profile(): void {
         main.crtNativePath = true;
         Browse.Settings.current_browse_layout = "list";
 
-        compare(main.headerBar.layoutProfile.showHeaderTitleInHeader, false);
-        compare(main.systemsScreen.systemsGrid.layoutProfile.tileCornerRadius, Sizing.cornerRadius);
-        compare(main.systemsScreen.systemsGrid.leftInset, Sizing.pctW(5));
-        compare(main.systemsScreen.systemsGrid.gutterWidth, Sizing.pctW(3));
+        compare(main.headerBar.layoutProfile.showHeaderTitleInHeader, true);
+        compare(main.systemsScreen.systemsGrid.layoutProfile.tileCornerRadius, 4);
+        compare(main.systemsScreen.systemsGrid.leftInset, 4);
+        compare(main.systemsScreen.systemsGrid.gutterWidth, 8);
     }
 }
