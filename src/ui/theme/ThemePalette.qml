@@ -21,8 +21,8 @@ QtObject {
         return ThemePalette.themeData(ThemePalette.currentThemeId);
     }
 
-    function colorValue(path: string, fallback: color): color {
-        const resolved = ThemePalette._lookup(ThemePalette.currentTheme(), path);
+    function colorValue(themeId: string, path: string, fallback: color): color {
+        const resolved = ThemePalette._lookup(ThemePalette.themeData(themeId), path);
         return typeof resolved === "string" && resolved !== "" ? resolved : fallback;
     }
 
@@ -34,14 +34,13 @@ QtObject {
     }
 
     function _loadTheme(themeId: string): var {
-        if (ThemePalette._themeCache[themeId] !== undefined)
-            return ThemePalette._themeCache[themeId];
-
         const url = ThemePalette._themeUrl(themeId);
-        if (url === "") {
-            ThemePalette._themeCache[themeId] = null;
+        const cached = ThemePalette._themeCache[themeId];
+        if (cached !== undefined && cached.url === url)
+            return cached.data;
+
+        if (url === "")
             return null;
-        }
 
         const req = new XMLHttpRequest();
         req.open("GET", url, false);
@@ -49,18 +48,27 @@ QtObject {
 
         if (req.status !== 0 && (req.status < 200 || req.status >= 300)) {
             console.warn("ThemePalette: failed to load theme '" + themeId + "' from " + url + " (status " + req.status + ")");
-            ThemePalette._themeCache[themeId] = null;
+            ThemePalette._themeCache[themeId] = {
+                url: url,
+                data: null
+            };
             return null;
         }
 
         try {
-            ThemePalette._themeCache[themeId] = JSON.parse(req.responseText);
+            ThemePalette._themeCache[themeId] = {
+                url: url,
+                data: JSON.parse(req.responseText)
+            };
         } catch (err) {
             console.warn("ThemePalette: invalid JSON in theme '" + themeId + "': " + err);
-            ThemePalette._themeCache[themeId] = null;
+            ThemePalette._themeCache[themeId] = {
+                url: url,
+                data: null
+            };
         }
 
-        return ThemePalette._themeCache[themeId];
+        return ThemePalette._themeCache[themeId].data;
     }
 
     function _lookup(themeData: var, path: string): var {

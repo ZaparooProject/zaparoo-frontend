@@ -199,6 +199,54 @@ ApplicationWindow {
     }
 
     Binding {
+        target: Theme
+        property: "bgDeep"
+        value: ThemePalette.colorValue(ThemePalette.currentThemeId, "palette.bgDeep", "#0f0f23")
+    }
+
+    Binding {
+        target: Theme
+        property: "bgPanel"
+        value: ThemePalette.colorValue(ThemePalette.currentThemeId, "palette.bgPanel", "#1a1a35")
+    }
+
+    Binding {
+        target: Theme
+        property: "bgBar"
+        value: ThemePalette.colorValue(ThemePalette.currentThemeId, "palette.bgBar", "#0a0a15")
+    }
+
+    Binding {
+        target: Theme
+        property: "surfaceCard"
+        value: ThemePalette.colorValue(ThemePalette.currentThemeId, "palette.surfaceCard", "#2a2a45")
+    }
+
+    Binding {
+        target: Theme
+        property: "selectionSurface"
+        value: ThemePalette.colorValue(ThemePalette.currentThemeId, "palette.selectionSurface", "#3a3a66")
+    }
+
+    Binding {
+        target: Theme
+        property: "borderSubtle"
+        value: ThemePalette.colorValue(ThemePalette.currentThemeId, "palette.borderSubtle", "#1a1a2e")
+    }
+
+    Binding {
+        target: Theme
+        property: "borderMid"
+        value: ThemePalette.colorValue(ThemePalette.currentThemeId, "palette.borderMid", "#404060")
+    }
+
+    Binding {
+        target: Theme
+        property: "accent"
+        value: ThemePalette.colorValue(ThemePalette.currentThemeId, "palette.accent", "#FFB347")
+    }
+
+    Binding {
         target: Sizing
         property: "crtNativePath"
         value: root.crtNativePath || Browse.Settings.current_theme === "crt"
