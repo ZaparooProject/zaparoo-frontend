@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // In-memory cache of media images (boxart, screenshot, wheel, titleshot,
-// map, marquee, fanart, generic image) keyed by `(systemId, path)` —
-// the canonical `(system, path)` pair Core uses to identify a media row
+// map, marquee, fanart, generic image) keyed by `mediaId` when Core
+// provides one, otherwise by the canonical `(systemId, path)` pair used
 // across `media.search`/`media.browse`/`media.image`/`media.meta`.
 //
 // Owns a single fetch driver task so concurrent enqueues (e.g. a
@@ -29,8 +29,8 @@
 // QML reaches the cache through a `QQuickImageProvider` registered on
 // the QML engine under the `media-image` scheme: a `coverKey` of
 // `media-image/<base64url-no-pad>` becomes the URL
-// `image://media-image/<...>`, which `requestImage` decodes back to
-// `(systemId, path)` and looks up in the in-memory map.
+// `image://media-image/<...>`, which `requestImage` decodes back to a
+// `MediaKey` and looks up in the in-memory map.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::{c_char, c_void};
@@ -42,10 +42,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{broadcast, Notify};
 use tracing::{debug, info, warn};
 
-use zaparoo_core::media_types::{
-    MediaImageBulkItem, MediaImageBulkItemResult, MediaImageBulkParams, MediaImageResult,
-    MEDIA_IMAGE_BATCH_MAX,
-};
+use zaparoo_core::media_types::{MediaImageParams, MediaImageResult};
 use zaparoo_core::store::Store;
 
 /// Field separator used inside the encoded key. Unit Separator (US,
@@ -99,23 +96,6 @@ const FETCH_DRIVER_WORKERS: usize = 1;
 /// current page without dropping anything.
 const MAX_QUEUE_LEN: usize = 60;
 
-/// How many pages of headroom each drain round ships in one
-/// `media.image` request. A drain pops the first queued entry, takes
-/// its `page_size` as the round's target, and drains up to
-/// `IMAGE_BATCH_PAGES * page_size` more entries with the same
-/// `page_size`. Keeping this expressed as a multiple of the caller's
-/// page size — never a hardcoded "8" or "50" — means the wire batch
-/// scales with whatever page size the screen requested: a Games page
-/// of 15 ships as one 15-item batch; Favorites/Recents of 25 ship as
-/// 25; if a user later configures Games at 30 it becomes 30, and so on.
-/// `MEDIA_IMAGE_BATCH_MAX` is still applied as a final clamp so a
-/// future page size that exceeds Core's cap can't blow it.
-///
-/// Today this is a structural constant rather than a config knob.
-/// When per-screen `page_size` becomes user-tunable, this graduates
-/// to a config field at the same time so the two stay coherent.
-const IMAGE_BATCH_PAGES: u32 = 1;
-
 /// MIME content-type → on-disk extension for the formats we are willing
 /// to cache. Falls back to inspecting `MediaImageResult.extension` when
 /// `content_type` is missing or unknown — Core started populating the
@@ -162,6 +142,7 @@ fn ext_from_extension_field(raw: &str) -> Option<&'static str> {
 pub struct MediaKey {
     pub system_id: Arc<str>,
     pub path: Arc<str>,
+    pub media_id: Option<i64>,
     pub image_type: Option<Arc<str>>,
 }
 
@@ -170,6 +151,20 @@ impl MediaKey {
         Self {
             system_id: system_id.into(),
             path: path.into(),
+            media_id: None,
+            image_type: None,
+        }
+    }
+
+    pub fn with_media_id(
+        system_id: impl Into<Arc<str>>,
+        path: impl Into<Arc<str>>,
+        media_id: i64,
+    ) -> Self {
+        Self {
+            system_id: system_id.into(),
+            path: path.into(),
+            media_id: Some(media_id),
             image_type: None,
         }
     }
@@ -182,14 +177,55 @@ impl MediaKey {
         Self {
             system_id: system_id.into(),
             path: path.into(),
+            media_id: None,
             image_type: Some(image_type.into()),
         }
     }
 
-    /// Encode `(system_id, path)` as a single URL path segment using
-    /// base64url-no-pad over `system_id || 0x1F || path`. Reversible
-    /// via `decode`; lossless even for paths containing slashes.
+    #[cfg(test)]
+    pub fn with_media_id_and_image_type(
+        system_id: impl Into<Arc<str>>,
+        path: impl Into<Arc<str>>,
+        media_id: i64,
+        image_type: impl Into<Arc<str>>,
+    ) -> Self {
+        Self {
+            system_id: system_id.into(),
+            path: path.into(),
+            media_id: Some(media_id),
+            image_type: Some(image_type.into()),
+        }
+    }
+
+    /// Encode this key as a single URL path segment using
+    /// base64url-no-pad. New keys include `media_id` when available;
+    /// legacy `(system_id, path)` and v2 typed keys still decode.
     pub fn encode(&self) -> String {
+        if let Some(media_id) = self.media_id {
+            let sys = self.system_id.as_bytes();
+            let typ = self.image_type.as_deref().unwrap_or("").as_bytes();
+            let path = self.path.as_bytes();
+            let sys_len = sys.len().to_string();
+            let typ_len = typ.len().to_string();
+            let id = media_id.to_string();
+            let mut buf = Vec::with_capacity(
+                6 + sys_len.len() + typ_len.len() + id.len() + sys.len() + typ.len() + path.len(),
+            );
+            buf.extend_from_slice(b"v3");
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(id.as_bytes());
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(sys_len.as_bytes());
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(sys);
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(typ_len.as_bytes());
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(typ);
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(path);
+            return URL_SAFE_NO_PAD.encode(&buf);
+        }
         if let Some(image_type) = self.image_type.as_ref() {
             let sys = self.system_id.as_bytes();
             let typ = image_type.as_bytes();
@@ -221,6 +257,9 @@ impl MediaKey {
 
     pub fn decode(encoded: &str) -> Option<Self> {
         let bytes = URL_SAFE_NO_PAD.decode(encoded.as_bytes()).ok()?;
+        if bytes.starts_with(b"v3") && bytes.get(2) == Some(&KEY_SEPARATOR) {
+            return Self::decode_v3(&bytes);
+        }
         if bytes.starts_with(b"v2") && bytes.get(2) == Some(&KEY_SEPARATOR) {
             return Self::decode_v2(&bytes);
         }
@@ -264,19 +303,71 @@ impl MediaKey {
             image_type.to_string(),
         ))
     }
+
+    fn decode_v3(bytes: &[u8]) -> Option<Self> {
+        let mut pos = 3; // "v3" + separator
+        let id_end = bytes[pos..].iter().position(|b| *b == KEY_SEPARATOR)? + pos;
+        let media_id = std::str::from_utf8(&bytes[pos..id_end])
+            .ok()?
+            .parse::<i64>()
+            .ok()?;
+        pos = id_end + 1;
+        let sys_len_end = bytes[pos..].iter().position(|b| *b == KEY_SEPARATOR)? + pos;
+        let sys_len = std::str::from_utf8(&bytes[pos..sys_len_end])
+            .ok()?
+            .parse::<usize>()
+            .ok()?;
+        pos = sys_len_end + 1;
+        let sys_end = pos.checked_add(sys_len)?;
+        let system_id = std::str::from_utf8(bytes.get(pos..sys_end)?).ok()?;
+        if bytes.get(sys_end) != Some(&KEY_SEPARATOR) {
+            return None;
+        }
+        pos = sys_end + 1;
+        let type_len_end = bytes[pos..].iter().position(|b| *b == KEY_SEPARATOR)? + pos;
+        let type_len = std::str::from_utf8(&bytes[pos..type_len_end])
+            .ok()?
+            .parse::<usize>()
+            .ok()?;
+        pos = type_len_end + 1;
+        let type_end = pos.checked_add(type_len)?;
+        let image_type = std::str::from_utf8(bytes.get(pos..type_end)?).ok()?;
+        if bytes.get(type_end) != Some(&KEY_SEPARATOR) {
+            return None;
+        }
+        let path = std::str::from_utf8(bytes.get(type_end + 1..)?).ok()?;
+        let image_type = (!image_type.is_empty()).then(|| Arc::<str>::from(image_type));
+        Some(Self {
+            system_id: Arc::from(system_id),
+            path: Arc::from(path),
+            media_id: Some(media_id),
+            image_type,
+        })
+    }
 }
 
 impl PartialEq for MediaKey {
     fn eq(&self, other: &Self) -> bool {
-        *self.system_id == *other.system_id
-            && *self.path == *other.path
-            && self.image_type == other.image_type
+        match (self.media_id, other.media_id) {
+            (Some(a), Some(b)) => a == b && self.image_type == other.image_type,
+            (None, None) => {
+                *self.system_id == *other.system_id
+                    && *self.path == *other.path
+                    && self.image_type == other.image_type
+            }
+            _ => false,
+        }
     }
 }
 impl Eq for MediaKey {}
 
 impl std::hash::Hash for MediaKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        if let Some(media_id) = self.media_id {
+            media_id.hash(state);
+            self.image_type.hash(state);
+            return;
+        }
         (*self.system_id).hash(state);
         (*self.path).hash(state);
         self.image_type.hash(state);
@@ -299,11 +390,9 @@ enum NoImagePolicy {
     SoftMiss,
 }
 
-/// One slot in the LIFO fetch queue. Tracks the `page_size` of the
-/// caller that enqueued the key so the drain can ship one page's
-/// worth at a time (see `IMAGE_BATCH_PAGES`). `pending`/`map`/the
-/// negative memo continue to key on `MediaKey` only — `page_size` is
-/// transport metadata, not part of cache identity.
+/// One slot in the LIFO fetch queue. `page_size` is retained as
+/// caller metadata for logging/backward-compatible enqueue signatures;
+/// Core now receives one `media.image` request per queue entry.
 #[derive(Clone, Debug)]
 struct QueueEntry {
     key: MediaKey,
@@ -578,22 +667,13 @@ impl MediaImageCache {
     /// past, and a future role-data lookup (or an explicit re-enqueue)
     /// can re-add them if they become relevant again.
     ///
-    /// The optional `media_id` is a wire hint that the fetch driver
-    /// passes to Core in place of `(system, path)` on the next batched
-    /// request. Cache identity stays `(systemId, path)` and any failure
-    /// path still falls back to the canonical pair, so a stale id
-    /// (Core restart) self-heals on the next attempt. Safe to call
-    /// repeatedly: the latest non-`None` hint wins, and `None` leaves
-    /// any prior hint untouched.
+    /// The optional `media_id` is preferred for Core requests because
+    /// it bypasses path resolution. `(system, path)` stays on the key
+    /// as fallback when a stale ID is rejected. Safe to call
+    /// repeatedly: the latest non-`None` hint wins.
     ///
-    /// `page_size` is the page size of the screen that enqueued this
-    /// key. The drain uses it to ship batches in multiples of the
-    /// page (`IMAGE_BATCH_PAGES * page_size`) so the wire batch
-    /// always tracks whatever the caller asked Core for. If a key is
-    /// already enqueued the new `page_size` is ignored (the existing
-    /// entry's round will fire the broadcast that satisfies both
-    /// callers); otherwise the page that re-enqueued it triggers its
-    /// own drain round, so the value can't go stale.
+    /// `page_size` is retained only for call-site compatibility and
+    /// logging. Core receives one `media.image` request per queue entry.
     pub fn enqueue_with_media_id(&self, key: MediaKey, media_id: Option<i64>, page_size: u32) {
         self.enqueue_with_policy(key, media_id, page_size, NoImagePolicy::Memoize);
     }
@@ -616,11 +696,16 @@ impl MediaImageCache {
 
     fn enqueue_with_policy(
         &self,
-        key: MediaKey,
+        mut key: MediaKey,
         media_id: Option<i64>,
         page_size: u32,
         no_image_policy: NoImagePolicy,
     ) {
+        if key.media_id.is_none() {
+            if let Some(id) = media_id {
+                key.media_id = Some(id);
+            }
+        }
         if key.system_id.is_empty() || key.path.is_empty() {
             return;
         }
@@ -632,7 +717,7 @@ impl MediaImageCache {
         let should_send = {
             #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
             let mut guard = self.state.write().unwrap();
-            if let Some(id) = media_id {
+            if let Some(id) = media_id.or(key.media_id) {
                 guard.media_ids.insert(key.clone(), id);
             }
             if no_image_policy == NoImagePolicy::SoftMiss {
@@ -716,55 +801,12 @@ impl MediaImageCache {
     }
 }
 
-/// Drain one batch round from the LIFO queue. The first popped entry
-/// sets the round's target `page_size`; subsequent pops are taken
-/// only while their `page_size` matches and the running total is
-/// under `IMAGE_BATCH_PAGES * target` (further clamped by
-/// `MEDIA_IMAGE_BATCH_MAX` so a future page size larger than Core's
-/// per-request cap can't blow it). Entries with a different
-/// `page_size` are left alone at the front of the queue so the next
-/// round picks them up — never mixed into a round that doesn't
-/// belong to them.
-///
-/// Mismatched entries are detected by popping and re-inserting at
-/// the front rather than peeking, because `VecDeque` doesn't expose
-/// a "peek the back" through the `Mutex` ergonomically. The
-/// rotate-back is one element per round in the worst case.
-///
-/// Returns an empty Vec when the queue is empty, signalling the
-/// driver to park on `queue_notify`.
-fn drain_one_round(queue: &Arc<Mutex<VecDeque<QueueEntry>>>) -> Vec<QueueEntry> {
+/// Pop one entry from the LIFO queue. Core now accepts only one
+/// `media.image` item per JSON-RPC call, so batching stays out of the
+/// frontend fetch driver entirely.
+fn pop_one(queue: &Arc<Mutex<VecDeque<QueueEntry>>>) -> Option<QueueEntry> {
     #[allow(clippy::unwrap_used, reason = "Mutex poisoning is unrecoverable")]
-    let mut q = queue.lock().unwrap();
-    let Some(first) = q.pop_back() else {
-        return Vec::new();
-    };
-    let target = first.page_size.max(1);
-    let cap = usize::min(
-        // `IMAGE_BATCH_PAGES * target` cannot overflow at any
-        // realistic page size; saturating math here is belt-and-
-        // braces against a future config knob.
-        (IMAGE_BATCH_PAGES as usize).saturating_mul(target as usize),
-        MEDIA_IMAGE_BATCH_MAX,
-    )
-    .max(1);
-    let mut out = Vec::with_capacity(cap);
-    out.push(first);
-    while out.len() < cap {
-        let Some(next) = q.pop_back() else { break };
-        if next.page_size == target {
-            out.push(next);
-        } else {
-            // Different page size — put it back at the *back* (where
-            // it was) and stop draining. The next round's `pop_back`
-            // will pick it up and use its `page_size` as the new
-            // target. Pushing to the front would starve it forever
-            // if the user keeps appending same-page-size enqueues.
-            q.push_back(next);
-            break;
-        }
-    }
-    out
+    queue.lock().unwrap().pop_back()
 }
 
 fn spawn_fetch_driver<F>(
@@ -790,20 +832,19 @@ fn spawn_fetch_driver<F>(
         let store_factory = store_factory.clone();
         runtime.spawn(async move {
             loop {
-                let batch = drain_one_round(&queue);
-                if batch.is_empty() {
+                let Some(entry) = pop_one(&queue) else {
                     queue_notify.notified().await;
                     continue;
-                }
+                };
                 let store = store_factory();
-                let outcomes = fetch_batch(&store, &state, &batch).await;
+                let outcome = fetch_one(&store, &state, entry).await;
                 process_batch_outcomes(
                     &state,
                     cap_bytes,
                     &updates_tx,
                     &queue,
                     &queue_notify,
-                    outcomes,
+                    vec![outcome],
                 );
             }
         });
@@ -965,181 +1006,96 @@ enum FetchOutcome {
     ConnectionDown,
 }
 
-/// Fetch a batch of media images in a single bulk JSON-RPC. Returns
-/// one outcome per input key, in the same order. A batch-level RPC
-/// failure tags every key as `Transient` so the existing retry path
-/// applies uniformly. Per-item `error` strings from Core are
-/// definitive negatives (`NoImage`) — Core only returns errors here
-/// for "system not found", "media not found", and "no image", which
-/// are all stable answers for `(systemId, path)`.
-async fn fetch_batch(
+/// Fetch one media image with one `media.image` JSON-RPC call. Core no
+/// longer accepts batched `items`, so queue fan-out happens entirely in
+/// this single-flight driver.
+async fn fetch_one(
     store: &Arc<Store>,
     state: &Arc<RwLock<CacheState>>,
-    batch: &[QueueEntry],
-) -> Vec<(QueueEntry, FetchOutcome)> {
-    // Build the request, preferring `media_id` from the sidecar when
-    // we have one — Core resolves the row directly without a path
-    // lookup. Falls back to `(system, path)` on any key without a
-    // hint or on Cores that don't recognise the id. Captures the
-    // `had_id_hint` boolean from the same guard snapshot so the
-    // post-RPC classification can't disagree with the request shape
-    // it was built from (a concurrent batch's `media_ids.remove`
-    // between two read locks would otherwise re-classify a hinted
-    // item as un-hinted).
-    let paired: Vec<(MediaImageBulkItem, bool)> = {
+    entry: QueueEntry,
+) -> (QueueEntry, FetchOutcome) {
+    let key = entry.key.clone();
+    let (mut params, had_id_hint) = {
         #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
         let guard = state.read().unwrap();
-        batch
-            .iter()
-            .map(|entry| {
-                let k = &entry.key;
-                let mut item = match guard.media_ids.get(k) {
-                    Some(id) => MediaImageBulkItem::for_media_id(*id),
-                    None => MediaImageBulkItem::for_media(k.system_id.as_ref(), k.path.as_ref()),
-                };
-                if let Some(image_type) = k.image_type.as_ref() {
-                    item.image_types.push(image_type.to_string());
-                }
-                (item, guard.media_ids.contains_key(k))
-            })
-            .collect()
-    };
-    let (items, id_hinted): (Vec<MediaImageBulkItem>, Vec<bool>) = paired.into_iter().unzip();
-    for (entry, (item, had_id_hint)) in batch.iter().zip(items.iter().zip(id_hinted.iter())) {
-        debug!(
-            system_id = %entry.key.system_id,
-            path = %entry.key.path,
-            media_id = ?item.media_id,
-            request_system = %item.system,
-            request_path = %item.path,
-            had_id_hint,
-            policy = ?entry.no_image_policy,
-            page_size = entry.page_size,
-            "media_image_cache: media.image request item"
-        );
-    }
-    let params = MediaImageBulkParams {
-        items,
-        image_types: Vec::new(),
-    };
-    let result = store.client().media_image_bulk(params).await;
-    let response = match result {
-        Ok(r) => r,
-        Err(e) => {
-            let connection_down = is_connection_down_error(&e.message);
-            info!(
-                batch_size = batch.len(),
-                "media_image_cache: media.image (bulk) failed: {} ({})",
-                e.message,
-                if connection_down {
-                    "connection down, cleared pending without immediate retry"
-                } else {
-                    "transient, will retry within attempt budget"
-                },
-            );
-            return batch
-                .iter()
-                .cloned()
-                .map(|entry| {
-                    (
-                        entry,
-                        if connection_down {
-                            FetchOutcome::ConnectionDown
-                        } else {
-                            FetchOutcome::Transient
-                        },
-                    )
-                })
-                .collect();
+        match guard.media_ids.get(&key).copied() {
+            Some(id) => (MediaImageParams::for_media_id(id), true),
+            None => (
+                MediaImageParams::for_media(key.system_id.as_ref(), key.path.as_ref()),
+                false,
+            ),
         }
     };
-    if response.items.len() != batch.len() {
-        // Core's batch contract guarantees one response item per
-        // request item. A length mismatch is an upstream regression
-        // we can't usefully recover from at the per-key level, so
-        // mark the whole batch as transient — the retry will either
-        // self-correct on a fresh Core build or burn through the
-        // attempt budget and stop spamming.
-        warn!(
-            requested = batch.len(),
-            received = response.items.len(),
-            "media_image_cache: media.image (bulk) length mismatch, retrying as transient",
-        );
-        return batch
-            .iter()
-            .cloned()
-            .map(|entry| (entry, FetchOutcome::Transient))
-            .collect();
+    if let Some(image_type) = key.image_type.as_ref() {
+        params.image_types.push(image_type.to_string());
     }
-    // The `id_hinted` snapshot captured alongside `items` above
-    // tells us, for each response slot, whether we sent a
-    // `media_id` hint. A per-item error against a hinted request
-    // falls back to `(system, path)` on retry instead of burning
-    // the row into the negative memo — Core treats `media_id` as
-    // session-ephemeral, so a stale hint after a Core restart can
-    // surface as "media not found", and we want to drop the
-    // sidecar entry and retry transiently rather than mark the row
-    // as a permanent miss.
-    batch
-        .iter()
-        .cloned()
-        .zip(response.items)
-        .zip(id_hinted)
-        .map(|((entry, item), had_id_hint)| {
-            let outcome = classify_bulk_item(&entry.key, item, had_id_hint);
+    debug!(
+        system_id = %key.system_id,
+        path = %key.path,
+        media_id = ?params.media_id,
+        had_id_hint,
+        policy = ?entry.no_image_policy,
+        page_size = entry.page_size,
+        "media_image_cache: media.image request"
+    );
+    match store.client().media_image(params).await {
+        Ok(image) => (entry, classify_media_image_result(&key, &image)),
+        Err(e) => {
+            let outcome = classify_single_media_image_error(&key, &e.message, had_id_hint);
             if matches!(outcome, FetchOutcome::Transient) && had_id_hint {
-                // Drop the suspect hint so the retry sends
-                // `(system, path)` instead. Self-heals the rare case
-                // where Core was restarted and the id we cached
-                // points at a different (or no) row.
                 #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
-                state.write().unwrap().media_ids.remove(&entry.key);
+                state.write().unwrap().media_ids.remove(&key);
             }
             (entry, outcome)
-        })
-        .collect()
+        }
+    }
 }
 
-/// Map a single batched response entry onto a `FetchOutcome`. Mirrors
-/// the single-shot decode path: empty payload / unsupported format /
-/// per-item error → `NoImage`; base64 decode failure → `Transient`;
-/// otherwise `Success`. When the request item carried a stale
-/// `media_id` hint, a per-item error becomes `Transient` so the retry
-/// can fall back to `(system, path)` — the per-batch driver drops the
-/// sidecar hint before the retry runs.
-fn classify_bulk_item(
+fn classify_single_media_image_error(
     key: &MediaKey,
-    item: MediaImageBulkItemResult,
+    message: &str,
     had_id_hint: bool,
 ) -> FetchOutcome {
-    if let Some(err) = item.error {
-        if had_id_hint {
-            info!(
-                system_id = %key.system_id,
-                path = %key.path,
-                "media_image_cache: media.image (bulk) error with media_id hint: {err} (transient, will retry with (system, path))",
-            );
-            return FetchOutcome::Transient;
-        }
+    if is_connection_down_error(message) {
+        info!(
+            system_id = %key.system_id,
+            path = %key.path,
+            "media_image_cache: media.image failed while connection down: {message}",
+        );
+        return FetchOutcome::ConnectionDown;
+    }
+    if had_id_hint && !key.system_id.is_empty() && !key.path.is_empty() {
+        info!(
+            system_id = %key.system_id,
+            path = %key.path,
+            media_id = ?key.media_id,
+            "media_image_cache: media.image error with media_id hint: {message} (transient, will retry with system/path)",
+        );
+        return FetchOutcome::Transient;
+    }
+    if is_stable_media_image_miss(message) {
         debug!(
             system_id = %key.system_id,
             path = %key.path,
-            "media_image_cache: media.image (bulk) per-item error: {err} (treating as no image)",
+            "media_image_cache: media.image stable miss: {message}",
         );
         return FetchOutcome::NoImage;
     }
-    let Some(image) = item.image else {
-        // Defensive: Core's contract is one of `image`/`error`. An
-        // item with neither is a regression — treat it as no image so
-        // we don't loop on a phantom transient.
-        warn!(
-            system_id = %key.system_id,
-            path = %key.path,
-            "media_image_cache: media.image (bulk) item missing both image and error, treating as no image",
-        );
-        return FetchOutcome::NoImage;
-    };
-    classify_media_image_result(key, &image)
+    info!(
+        system_id = %key.system_id,
+        path = %key.path,
+        "media_image_cache: media.image failed: {message} (transient, will retry within attempt budget)",
+    );
+    FetchOutcome::Transient
+}
+
+fn is_stable_media_image_miss(message: &str) -> bool {
+    message.contains("no image found for media")
+        || message.contains("system not found:")
+        || message.contains("media not found:")
+        || message.contains("media.image: image file too large")
+        || message.contains("media.image: image blob too large")
+        || (message.contains("media binary") && message.contains("is too large"))
 }
 
 fn classify_media_image_result(key: &MediaKey, image: &MediaImageResult) -> FetchOutcome {
@@ -1365,10 +1321,9 @@ mod tests {
     )]
 
     use super::{
-        drain_one_round, ext_for_content_type, ext_from_extension_field, finish_fetch,
-        is_connection_down_error, CacheState, FetchOutcome, MediaImageCache, MediaImageUpdate,
-        MediaKey, NegativeMemo, NoImagePolicy, QueueEntry, IMAGE_BATCH_PAGES, MAX_QUEUE_LEN,
-        NEGATIVE_MEMO_CAP,
+        ext_for_content_type, ext_from_extension_field, finish_fetch, is_connection_down_error,
+        pop_one, CacheState, FetchOutcome, MediaImageCache, MediaImageUpdate, MediaKey,
+        NegativeMemo, NoImagePolicy, QueueEntry, MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
     };
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex, RwLock};
@@ -1481,6 +1436,17 @@ mod tests {
         assert_eq!(decoded.image_type.as_deref(), Some("screenshot"));
     }
 
+    #[test]
+    fn media_key_round_trips_media_id_and_image_type() {
+        let key = MediaKey::with_media_id_and_image_type("SNES", "/p", 42, "boxart");
+        let decoded = MediaKey::decode(&key.encode()).expect("round-trip");
+        assert_eq!(decoded, key);
+        assert_eq!(decoded.media_id, Some(42));
+        assert_eq!(decoded.system_id.as_ref(), "SNES");
+        assert_eq!(decoded.path.as_ref(), "/p");
+        assert_eq!(decoded.image_type.as_deref(), Some("boxart"));
+    }
+
     fn key(s: &str, p: &str) -> MediaKey {
         MediaKey::new(s, p)
     }
@@ -1517,11 +1483,10 @@ mod tests {
 
     #[test]
     fn no_image_outcome_records_negative_without_map_entry() {
-        // The bulk decode path (`classify_bulk_item`) short-circuits
-        // to `FetchOutcome::NoImage` when base64 decoding yields zero
-        // bytes — a defensive guard against any future Core
-        // regression that lets empty payloads through. We can't drive
-        // the decoder directly without a live Store, so exercise the
+        // The decode path short-circuits to `FetchOutcome::NoImage`
+        // when base64 decoding yields zero bytes — a defensive guard
+        // against any future Core regression that lets empty payloads
+        // through. We can't drive the decoder directly without a live Store, so exercise the
         // downstream contract: `NoImage` → negative memo, no map
         // entry, pending cleared. This locks in the behaviour that
         // empty payloads do not pollute the cache and the
@@ -2044,25 +2009,32 @@ mod tests {
     fn search_cover_enqueue_uses_soft_no_image_policy() {
         let cache = cache_for_test();
         let k = key("SNES", "/favorite");
-        cache.enqueue_search_cover_with_media_id(k.clone(), Some(7), 15);
+        let id_key = MediaKey::with_media_id("SNES", "/favorite", 7);
+        cache.enqueue_search_cover_with_media_id(k, Some(7), 15);
         let entry = cache
             .queue
             .lock()
             .unwrap()
             .pop_back()
             .expect("search cover enqueue adds queue entry");
-        assert_eq!(entry.key, k);
+        assert_eq!(entry.key, id_key);
         assert_eq!(entry.no_image_policy, NoImagePolicy::SoftMiss);
         let guard = cache.state.read().unwrap();
-        assert_eq!(guard.media_ids.get(&k), Some(&7));
-        assert!(guard.search_seen.contains(&k));
+        assert_eq!(guard.media_ids.get(&id_key), Some(&7));
+        assert!(guard.search_seen.contains(&id_key));
     }
 
     #[test]
     fn search_cover_enqueue_skips_soft_no_image_keys() {
         let cache = cache_for_test();
         let k = key("SNES", "/soft-missed");
-        cache.state.write().unwrap().soft_no_image.insert(k.clone());
+        let id_key = MediaKey::with_media_id("SNES", "/soft-missed", 7);
+        cache
+            .state
+            .write()
+            .unwrap()
+            .soft_no_image
+            .insert(id_key.clone());
         cache.enqueue_search_cover_with_media_id(k, Some(7), 15);
         assert!(cache.queue.lock().unwrap().is_empty());
         assert!(cache.state.read().unwrap().pending.is_empty());
@@ -2080,9 +2052,10 @@ mod tests {
             .unwrap()
             .pop_back()
             .expect("default enqueue is not blocked by unprotected soft miss");
-        assert_eq!(entry.key, k);
+        let id_key = MediaKey::with_media_id("SNES", "/soft-missed", 7);
+        assert_eq!(entry.key, id_key);
         assert_eq!(entry.no_image_policy, NoImagePolicy::Memoize);
-        assert!(cache.state.read().unwrap().pending.contains(&k));
+        assert!(cache.state.read().unwrap().pending.contains(&id_key));
     }
 
     #[test]
@@ -2101,107 +2074,32 @@ mod tests {
             .unwrap()
             .pop_back()
             .expect("default enqueue is not blocked by protected soft miss");
-        assert_eq!(entry.key, k);
+        let id_key = MediaKey::with_media_id("SNES", "/protected-soft-missed", 7);
+        assert_eq!(entry.key, id_key);
         assert_eq!(entry.no_image_policy, NoImagePolicy::Memoize);
-        assert!(cache.state.read().unwrap().pending.contains(&k));
+        assert!(cache.state.read().unwrap().pending.contains(&id_key));
     }
 
     #[test]
-    #[allow(
-        clippy::items_after_statements,
-        reason = "test-local imports stay near use sites"
-    )]
-    fn drain_batches_in_multiples_of_page_size() {
-        // The invariant: every drain round ships
-        // `IMAGE_BATCH_PAGES * page_size` of *one* page size at a
-        // time. A magic constant like "8" or "50" is a regression —
-        // page size is the only knob that scales with the screen the
-        // batch belongs to. This test enqueues two distinct page
-        // sizes and asserts each drain round either matches that
-        // size's `K * page_size` or shrinks to whatever remainder
-        // that page size has left, and never mixes pages from the
-        // two cohorts.
+    fn pop_one_drains_lifo_one_entry_at_a_time() {
         let cache = cache_for_test();
-        // 30 keys at page_size=15 (Games-style), then 25 at
-        // page_size=25 (Favorites/Recents-style). Use distinct system
-        // ids so the two cohorts can't collide on key equality.
-        let games_count = 30usize;
-        let fav_count = 25usize;
-        for i in 0..games_count {
-            cache.enqueue_with_media_id(key("GAMES", &format!("/g/{i}")), None, 15);
-        }
-        for i in 0..fav_count {
-            cache.enqueue_with_media_id(key("FAVS", &format!("/f/{i}")), None, 25);
-        }
-        let mut all_drained: Vec<MediaKey> = Vec::new();
-        loop {
-            let round = drain_one_round(&cache.queue);
-            if round.is_empty() {
-                break;
-            }
-            // Every entry in a round shares the round's page_size.
-            let target = round[0].page_size;
-            for entry in &round {
-                assert_eq!(
-                    entry.page_size, target,
-                    "drain round mixed page sizes ({} vs {target})",
-                    entry.page_size,
-                );
-            }
-            // The round size is K * page_size, OR — when we've
-            // drained the trailing partial — strictly less than that
-            // ceiling because that page-size cohort ran out.
-            let cap = usize::min(
-                (IMAGE_BATCH_PAGES as usize).saturating_mul(target as usize),
-                super::MEDIA_IMAGE_BATCH_MAX,
-            );
-            assert!(
-                round.len() <= cap,
-                "round of size {} exceeds cap {} for page_size={}",
-                round.len(),
-                cap,
-                target,
-            );
-            for entry in round {
-                all_drained.push(entry.key);
-            }
-        }
-        // Union of every round equals the union of every enqueue.
-        // Use a HashSet for set equality independent of order.
-        use std::collections::HashSet;
-        let drained: HashSet<MediaKey> = all_drained.into_iter().collect();
-        let mut expected: HashSet<MediaKey> = HashSet::new();
-        for i in 0..games_count {
-            expected.insert(key("GAMES", &format!("/g/{i}")));
-        }
-        for i in 0..fav_count {
-            expected.insert(key("FAVS", &format!("/f/{i}")));
-        }
-        assert_eq!(
-            drained, expected,
-            "every enqueued key must show up in exactly one drain round",
-        );
-    }
+        cache.enqueue_with_media_id(key("NES", "/first"), None, 15);
+        cache.enqueue_with_media_id(key("NES", "/second"), None, 15);
+        cache.enqueue_with_media_id(key("NES", "/third"), None, 25);
 
-    #[test]
-    fn drain_round_never_exceeds_core_cap() {
-        // A future page size that exceeds Core's per-request cap
-        // (`MEDIA_IMAGE_BATCH_MAX`) must still clamp at the cap so a
-        // single round can't blow the bulk-RPC contract. Lock that in
-        // by enqueuing more keys than the cap with an oversized
-        // page_size and asserting the first round caps at exactly
-        // `MEDIA_IMAGE_BATCH_MAX`.
-        let cache = cache_for_test();
-        let oversized = (super::MEDIA_IMAGE_BATCH_MAX as u32) * 4;
-        for i in 0..(super::MEDIA_IMAGE_BATCH_MAX + 5) {
-            cache.enqueue_with_media_id(key("BIG", &format!("/b/{i}")), None, oversized);
-        }
-        let round = drain_one_round(&cache.queue);
         assert_eq!(
-            round.len(),
-            super::MEDIA_IMAGE_BATCH_MAX,
-            "round must clamp at Core's per-request cap",
+            pop_one(&cache.queue).expect("third").key,
+            key("NES", "/third")
         );
+        assert_eq!(
+            pop_one(&cache.queue).expect("second").key,
+            key("NES", "/second")
+        );
+        assert_eq!(
+            pop_one(&cache.queue).expect("first").key,
+            key("NES", "/first")
+        );
+        assert!(pop_one(&cache.queue).is_none());
     }
 
     #[test]
