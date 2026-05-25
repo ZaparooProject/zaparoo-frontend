@@ -60,10 +60,11 @@ use crate::models::{with_persist_mut, with_persist_read};
 use cxx_qt::{CxxQtType, Initialize};
 use cxx_qt_lib::{QString, QStringList};
 use std::pin::Pin;
+use std::path::Path;
 use tracing::warn;
 use zaparoo_core::config::{load_config, save_settings_mirror, Config, SettingsMirror};
 use zaparoo_core::persist::{self, SettingsState};
-use zaparoo_core::platform_paths::config_file_path;
+use zaparoo_core::platform_paths::{config_file_path, themes_dir_path};
 use zaparoo_core::runtime;
 
 /// Curated `MiSTer` resolution choices. Order is the left/right cycle
@@ -88,6 +89,8 @@ const LANGUAGES: &[&str] = &[
     "hi",
 ];
 const DEFAULT_LANGUAGE: &str = "auto";
+const BUILTIN_THEMES: &[&str] = &["default", "crt"];
+const DEFAULT_THEME: &str = "default";
 const BROWSE_LAYOUTS: &[&str] = &["grid", "list"];
 const DEFAULT_BROWSE_LAYOUT: &str = "grid";
 const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
@@ -118,6 +121,9 @@ pub struct SettingsRust {
     current_resolution: QString,
     available_languages: QStringList,
     current_language: QString,
+    available_themes: QStringList,
+    current_theme: QString,
+    themes_directory_url: QString,
     available_browse_layouts: QStringList,
     current_browse_layout: QString,
     available_button_layouts: QStringList,
@@ -147,6 +153,9 @@ pub mod ffi {
         #[qproperty(QString, current_resolution, READ, WRITE = set_resolution, NOTIFY)]
         #[qproperty(QStringList, available_languages, READ, CONSTANT)]
         #[qproperty(QString, current_language, READ, WRITE = set_language, NOTIFY)]
+        #[qproperty(QStringList, available_themes, READ, CONSTANT)]
+        #[qproperty(QString, current_theme, READ, WRITE = set_theme, NOTIFY)]
+        #[qproperty(QString, themes_directory_url, READ, CONSTANT)]
         #[qproperty(QStringList, available_browse_layouts, READ, CONSTANT)]
         #[qproperty(QString, current_browse_layout, READ, WRITE = set_browse_layout, NOTIFY)]
         #[qproperty(QStringList, available_button_layouts, READ, CONSTANT)]
@@ -163,6 +172,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_language(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_theme(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_browse_layout(self: Pin<&mut Settings>, value: QString);
@@ -192,7 +204,8 @@ impl Initialize for ffi::Settings {
         let config_path = config_file_path();
         let is_mister = runtime::current().is_mister();
         let config = load_config(&config_path);
-        let merged = merge_settings(&snapshot, &config);
+        let available_themes_vec = discover_themes(is_mister);
+        let merged = merge_settings(&snapshot, &config, &available_themes_vec);
         persist_if_changed(&snapshot, &merged);
         mirror_settings_to_config(&config_path, &merged);
         self.as_mut().rust_mut().is_mister = is_mister;
@@ -204,6 +217,10 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().current_resolution = QString::from(merged.resolution.as_str());
         self.as_mut().rust_mut().available_languages = languages();
         self.as_mut().rust_mut().current_language = QString::from(merged.language.as_str());
+        self.as_mut().rust_mut().available_themes = qstring_list(&available_themes_vec);
+        self.as_mut().rust_mut().current_theme = QString::from(merged.theme.as_str());
+        self.as_mut().rust_mut().themes_directory_url =
+            QString::from(path_to_directory_url(&themes_dir_path()).as_str());
         self.as_mut().rust_mut().available_browse_layouts = browse_layouts();
         self.as_mut().rust_mut().current_browse_layout =
             QString::from(merged.browse_layout.as_str());
@@ -248,6 +265,22 @@ impl ffi::Settings {
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
         self.as_mut().rust_mut().current_language = QString::from(value_str.as_str());
         self.as_mut().current_language_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_theme(mut self: Pin<&mut Self>, value: QString) {
+        let available = self.available_themes.iter().map(String::from).collect::<Vec<_>>();
+        let value_str = normalize_theme(&value.to_string(), &available);
+        if self.current_theme.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.theme.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_theme = QString::from(value_str.as_str());
+        self.as_mut().current_theme_changed();
     }
 
     #[allow(
@@ -349,12 +382,13 @@ fn persist_if_changed(current: &SettingsState, merged: &SettingsState) {
     persist::save(&snapshot);
 }
 
-fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsState) {
+fn mirror_settings_to_config(config_path: &Path, settings: &SettingsState) {
     if let Err(e) = save_settings_mirror(
         config_path,
         SettingsMirror {
             resolution: settings.resolution.as_str(),
             language: settings.language.as_str(),
+            theme: settings.theme.as_str(),
             browse_layout: settings.browse_layout.as_str(),
             button_layout: settings.button_layout.as_str(),
             mouse_enabled: settings.mouse_enabled,
@@ -370,7 +404,7 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
     }
 }
 
-fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
+fn merge_settings(snapshot: &SettingsState, config: &Config, available_themes: &[String]) -> SettingsState {
     SettingsState {
         resolution: if config.video_explicit {
             format!("{}x{}", config.video_width, config.video_height)
@@ -378,6 +412,14 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
             String::new()
         },
         language: normalize_language(&config.language).to_string(),
+        theme: normalize_theme(
+            config
+                .settings
+                .theme
+                .as_deref()
+                .unwrap_or(snapshot.theme.as_str()),
+            available_themes,
+        ),
         browse_layout: normalize_browse_layout(
             config
                 .settings
@@ -414,6 +456,90 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
         )
         .to_string(),
     }
+}
+
+fn qstring_list(values: &[String]) -> QStringList {
+    let mut list = QStringList::default();
+    for value in values {
+        list.append(QString::from(value.as_str()));
+    }
+    list
+}
+
+fn discover_themes(is_mister: bool) -> Vec<String> {
+    let mut themes = BUILTIN_THEMES
+        .iter()
+        .map(|value| (*value).to_string())
+        .collect::<Vec<_>>();
+    if is_mister {
+        return themes;
+    }
+
+    let dir = themes_dir_path();
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return themes;
+    };
+
+    let mut external = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                return None;
+            }
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(str::trim)
+                .filter(|stem| !stem.is_empty())
+                .map(ToOwned::to_owned)
+        })
+        .filter(|theme| !themes.iter().any(|builtin| builtin == theme))
+        .collect::<Vec<_>>();
+    external.sort_unstable();
+    themes.extend(external);
+    themes
+}
+
+fn normalize_theme(value: &str, available_themes: &[String]) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return DEFAULT_THEME.to_string();
+    }
+    if available_themes.iter().any(|theme| theme == trimmed) {
+        return trimmed.to_string();
+    }
+    DEFAULT_THEME.to_string()
+}
+
+fn path_to_directory_url(path: &Path) -> String {
+    let mut url = path_to_file_url(path);
+    if !url.ends_with('/') {
+        url.push('/');
+    }
+    url
+}
+
+fn path_to_file_url(path: &Path) -> String {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| ".".into())
+            .join(path)
+    };
+    let path_text = absolute.to_string_lossy();
+    let mut encoded = String::with_capacity(path_text.len() + 8);
+    for byte in path_text.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                encoded.push(char::from(*byte));
+            }
+            _ => {
+                let _ = std::fmt::Write::write_fmt(&mut encoded, format_args!("%{:02X}", byte));
+            }
+        }
+    }
+    format!("file://{encoded}")
 }
 
 fn curated_resolutions() -> QStringList {

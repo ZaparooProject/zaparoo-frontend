@@ -30,8 +30,8 @@ Item {
     property alias detailSuppressed: detailPane.detailSuppressed
     property alias detailCanPreviousImage: detailPane.canPreviousImage
     property alias detailCanNextImage: detailPane.canNextImage
-    readonly property int _cardRadius: root.layoutProfile ? root.layoutProfile.tileCornerRadius : Sizing.cornerRadius
-    readonly property int _dividerOffsetX: root.layoutProfile && root.layoutProfile.listDividerOffsetX !== undefined ? root.layoutProfile.listDividerOffsetX : 0
+    readonly property int _cardRadius: BrowseLayouts.numberValue(root.layoutProfile, "surface.cornerRadius", Sizing.cornerRadius)
+    readonly property int _dividerOffsetX: BrowseLayouts.numberValue(root.layoutProfile, "list.dividerOffsetX", 0)
 
     signal itemHovered(int index)
     signal itemClicked(int index)

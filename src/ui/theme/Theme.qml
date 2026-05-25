@@ -7,6 +7,7 @@ import QtQuick
 // Project-wide color and font constants.
 // Never hardcode colors or font families inline — use these instead.
 QtObject {
+    property string currentThemeId: "default"
     property bool crtNativePath: false
 
     // Backgrounds

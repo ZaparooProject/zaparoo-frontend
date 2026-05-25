@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 import QtQuick
-import Zaparoo.Theme
 import Zaparoo.Ui
 import Zaparoo.Browse as Browse
 
@@ -37,10 +36,16 @@ Item {
     // times. The ring restores automatically when the modal pops.
     property bool gridFocused: true
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
-    readonly property bool _crtGridLayout: Theme.crtNativePath && !systems._listLayout
-    readonly property bool _crtListStrip: Theme.crtNativePath && systems._listLayout
-    readonly property var _tileLayout: Theme.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
-    readonly property int _listOverlayBottomMargin: Sizing.pctH(6) + systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight
+    readonly property string _profileKey: systems._listLayout ? "systemsList" : "systemsGrid"
+    readonly property var _viewProfile: BrowseLayouts.currentProfile(systems._profileKey)
+    readonly property var _gridProfile: BrowseLayouts.currentProfile("systemsGrid")
+    readonly property int _activeLabelHeight: BrowseLayouts.numberValue(systems._gridProfile, "footer.activeLabelHeight", Sizing.pctH(7))
+    readonly property int _activeLabelBottomMargin: BrowseLayouts.numberValue(systems._gridProfile, "footer.activeLabelBottomMargin", 0)
+    readonly property bool _bottomStatusVisible: BrowseLayouts.boolValue(systems._gridProfile, "footer.bottomStatusVisible", false)
+    readonly property int _bottomStatusLeftMargin: BrowseLayouts.numberValue(systems._gridProfile, "footer.bottomStatusLeftMargin", 0)
+    readonly property int _bottomStatusRightMargin: BrowseLayouts.numberValue(systems._gridProfile, "footer.bottomStatusRightMargin", 0)
+    readonly property int _gridBottomMargin: systems._bottomStatusVisible ? systems._activeLabelBottomMargin + systems._activeLabelHeight : Sizing.pctH(6) + systems._activeLabelBottomMargin + systems._activeLabelHeight
+    readonly property int _listOverlayBottomMargin: systems._gridBottomMargin
 
     signal requestAccept(systemId: string)
     signal requestHubScreen
@@ -179,14 +184,14 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.topMargin: Sizing.headerBottom + Sizing.pctH(1)
-        height: systems._crtListStrip ? systems._tileLayout.listStripHeight : (systems._tileLayout.showTopStrip ? Sizing.pctH(7) : 0)
-        slotMargin: systems._crtListStrip ? systems._tileLayout.listStripSlotMargin : Sizing.pctW(5)
-        title: systems._tileLayout.showHeaderTitleInHeader ? "" : Browse.SystemsModel.current_category
+        height: BrowseLayouts.numberValue(systems._viewProfile, "status.stripHeight", Sizing.pctH(7))
+        slotMargin: BrowseLayouts.numberValue(systems._viewProfile, "status.slotMargin", Sizing.pctW(5))
+        title: BrowseLayouts.boolValue(systems._viewProfile, "header.titleInHeader", false) ? "" : Browse.SystemsModel.current_category
         currentPage: systemsGrid.currentPage
-        totalPages: systems._tileLayout.showBottomStatusRow ? 1 : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
-        totalText: Theme.crtNativePath ? "" : (Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "")
+        totalPages: systems._bottomStatusVisible ? 1 : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
+        totalText: systems._bottomStatusVisible ? "" : (Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "")
         rightTextOverride: !systems._listLayout || systemsGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(systemsGrid.currentIndex + 1).arg(Math.max(1, Browse.SystemsModel.count))
-        visible: !systems.transitioning && (systems._tileLayout.showTopStrip || systems._crtListStrip)
+        visible: !systems.transitioning && BrowseLayouts.boolValue(systems._viewProfile, "status.topStripVisible", true)
     }
 
     BrowseListDetailView {
@@ -194,13 +199,14 @@ Item {
 
         visible: !systems.transitioning && systems._listLayout
         anchors.left: parent.left
-        anchors.leftMargin: systems._tileLayout.listCardSideMargin
+        anchors.leftMargin: BrowseLayouts.numberValue(systems._viewProfile, "list.cardSideMargin", Sizing.pctW(5))
         anchors.right: parent.right
-        anchors.rightMargin: systems._tileLayout.listCardSideMargin
+        anchors.rightMargin: BrowseLayouts.numberValue(systems._viewProfile, "list.cardSideMargin", Sizing.pctW(5))
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(2)
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Sizing.pctH(8)
+        layoutProfile: systems._viewProfile
         model: Browse.SystemsModel
         currentIndex: systemsGrid.currentIndex
         detailTitle: listCard.currentName
@@ -230,12 +236,12 @@ Item {
         anchors.right: parent.right
         anchors.top: topStrip.bottom
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: systems._tileLayout.showBottomStatusRow ? systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight : Sizing.pctH(6) + systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight
+        anchors.bottomMargin: systems._gridBottomMargin
         focused: systems.gridFocused
         model: Browse.SystemsModel
-        layoutProfile: systems._tileLayout
+        layoutProfile: systems._gridProfile
         delegate: Tile {
-            layoutProfile: systems._tileLayout
+            layoutProfile: systems._gridProfile
         }
         onItemHovered: index => systems._focusIndex(index)
         onItemClicked: index => {
@@ -264,18 +270,18 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: systems._tileLayout.activeLabelBottomMargin
-        height: systems._tileLayout.activeLabelHeight
+        anchors.bottomMargin: systems._activeLabelBottomMargin
+        height: systems._activeLabelHeight
         text: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_name_at(systemsGrid.currentIndex) : ""
         visible: !systems.transitioning && !systems._listLayout
     }
 
     Text {
-        visible: systems._tileLayout.showBottomStatusRow && !systems.transitioning && !systems._listLayout && Browse.SystemsModel.count > 0
+        visible: systems._bottomStatusVisible && !systems.transitioning && !systems._listLayout && Browse.SystemsModel.count > 0
         anchors.left: parent.left
-        anchors.leftMargin: systems._tileLayout.bottomStatusLeftMargin
+        anchors.leftMargin: systems._bottomStatusLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - systems._tileLayout.bottomStatusLeftMargin
+        width: Sizing.px(parent.width / 3) - systems._bottomStatusLeftMargin
         height: Sizing.fontSize(2.9)
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
@@ -288,11 +294,11 @@ Item {
     }
 
     Text {
-        visible: systems._tileLayout.showBottomStatusRow && !systems.transitioning && !systems._listLayout && Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize) > 1
+        visible: systems._bottomStatusVisible && !systems.transitioning && !systems._listLayout && Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize) > 1
         anchors.right: parent.right
-        anchors.rightMargin: systems._tileLayout.bottomStatusRightMargin
+        anchors.rightMargin: systems._bottomStatusRightMargin
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - systems._tileLayout.bottomStatusRightMargin
+        width: Sizing.px(parent.width / 3) - systems._bottomStatusRightMargin
         height: Sizing.fontSize(2.9)
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight

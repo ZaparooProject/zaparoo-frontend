@@ -23,18 +23,18 @@ Item {
     property string loadingText: qsTr("Loading…")
     property var layoutProfile: null
 
-    readonly property int _cardPaddingLeft: root.layoutProfile && root.layoutProfile.detailPanePaddingLeft !== undefined ? root.layoutProfile.detailPanePaddingLeft : Sizing.pctW(2)
-    readonly property int _cardPaddingRight: root.layoutProfile && root.layoutProfile.detailPanePaddingRight !== undefined ? root.layoutProfile.detailPanePaddingRight : Sizing.pctW(2)
-    readonly property int _cardPaddingTop: root.layoutProfile && root.layoutProfile.detailPanePaddingTop !== undefined ? root.layoutProfile.detailPanePaddingTop : Sizing.pctH(2)
-    readonly property int _cardPaddingBottom: root.layoutProfile && root.layoutProfile.detailPanePaddingBottom !== undefined ? root.layoutProfile.detailPanePaddingBottom : Sizing.pctH(2)
+    readonly property int _cardPaddingLeft: BrowseLayouts.numberValue(root.layoutProfile, "detail.panePaddingLeft", Sizing.pctW(2))
+    readonly property int _cardPaddingRight: BrowseLayouts.numberValue(root.layoutProfile, "detail.panePaddingRight", Sizing.pctW(2))
+    readonly property int _cardPaddingTop: BrowseLayouts.numberValue(root.layoutProfile, "detail.panePaddingTop", Sizing.pctH(2))
+    readonly property int _cardPaddingBottom: BrowseLayouts.numberValue(root.layoutProfile, "detail.panePaddingBottom", Sizing.pctH(2))
     readonly property int _carouselGutter: (canPreviousImage || canNextImage) ? Sizing.pctW(4) : 0
     property int _labelColumnWidth: 0
     readonly property int _tagTextSize: Sizing.fontSize(2.2)
     readonly property int _tagLabelGap: Sizing.pctW(1.4)
     readonly property var _detailRows: _parseDetailTags(detailTags)
     readonly property int _tagRowCount: _detailRows.length
-    readonly property int _tagRowHeight: root.layoutProfile && root.layoutProfile.detailTagRowHeight !== undefined ? root.layoutProfile.detailTagRowHeight : Sizing.pctH(3)
-    readonly property int _tagRowSpacing: root.layoutProfile && root.layoutProfile.detailTagRowSpacing !== undefined ? root.layoutProfile.detailTagRowSpacing : Sizing.pctH(0.55)
+    readonly property int _tagRowHeight: BrowseLayouts.numberValue(root.layoutProfile, "detail.tagRowHeight", Sizing.pctH(3))
+    readonly property int _tagRowSpacing: BrowseLayouts.numberValue(root.layoutProfile, "detail.tagRowSpacing", Sizing.pctH(0.55))
     readonly property int _metadataNaturalHeight: _tagRowCount <= 0 ? 0 : (_tagRowCount * _tagRowHeight) + ((_tagRowCount - 1) * _tagRowSpacing)
     readonly property int _compactDetailHeight: Math.min(Sizing.px(content.height * 0.38), _metadataNaturalHeight)
     readonly property bool _coverPending: coverKey === "icons/Loading"
@@ -42,16 +42,16 @@ Item {
     readonly property bool _paneLoading: root.loading
     readonly property bool _detailVisible: !root._paneLoading && !root.detailSuppressed
     readonly property bool _suppressedPlaceholderCover: root.detailSuppressed && coverKey.startsWith("icons/") && root._coverSource !== ""
-    readonly property int _metadataYOffset: root.layoutProfile && root.layoutProfile.detailMetadataYOffset !== undefined ? root.layoutProfile.detailMetadataYOffset : 0
-    readonly property int _metadataExtraHeight: root.layoutProfile && root.layoutProfile.detailMetadataExtraHeight !== undefined ? root.layoutProfile.detailMetadataExtraHeight : 0
-    readonly property int _metadataLeftInset: root.layoutProfile && root.layoutProfile.detailMetadataLeftInset !== undefined ? root.layoutProfile.detailMetadataLeftInset : 0
-    readonly property int _metadataRightInset: root.layoutProfile && root.layoutProfile.detailMetadataRightInset !== undefined ? root.layoutProfile.detailMetadataRightInset : 0
-    readonly property int _imageXOffset: root.layoutProfile && root.layoutProfile.detailImageXOffset !== undefined ? root.layoutProfile.detailImageXOffset : 0
-    readonly property int _imageLeftInset: root.layoutProfile && root.layoutProfile.detailImageLeftInset !== undefined ? root.layoutProfile.detailImageLeftInset : 0
-    readonly property int _imageRightInset: root.layoutProfile && root.layoutProfile.detailImageRightInset !== undefined ? root.layoutProfile.detailImageRightInset : 0
-    readonly property int _imageExtraWidth: root.layoutProfile && root.layoutProfile.detailImageExtraWidth !== undefined ? root.layoutProfile.detailImageExtraWidth : 0
-    readonly property int _imageExtraHeight: root.layoutProfile && root.layoutProfile.detailImageExtraHeight !== undefined ? root.layoutProfile.detailImageExtraHeight : 0
-    readonly property int _imageBottomGap: root.layoutProfile && root.layoutProfile.detailImageBottomGap !== undefined ? root.layoutProfile.detailImageBottomGap : 0
+    readonly property int _metadataYOffset: BrowseLayouts.numberValue(root.layoutProfile, "detail.metadataYOffset", 0)
+    readonly property int _metadataExtraHeight: BrowseLayouts.numberValue(root.layoutProfile, "detail.metadataExtraHeight", 0)
+    readonly property int _metadataLeftInset: BrowseLayouts.numberValue(root.layoutProfile, "detail.metadataLeftInset", 0)
+    readonly property int _metadataRightInset: BrowseLayouts.numberValue(root.layoutProfile, "detail.metadataRightInset", 0)
+    readonly property int _imageXOffset: BrowseLayouts.numberValue(root.layoutProfile, "detail.imageXOffset", 0)
+    readonly property int _imageLeftInset: BrowseLayouts.numberValue(root.layoutProfile, "detail.imageLeftInset", 0)
+    readonly property int _imageRightInset: BrowseLayouts.numberValue(root.layoutProfile, "detail.imageRightInset", 0)
+    readonly property int _imageExtraWidth: BrowseLayouts.numberValue(root.layoutProfile, "detail.imageExtraWidth", 0)
+    readonly property int _imageExtraHeight: BrowseLayouts.numberValue(root.layoutProfile, "detail.imageExtraHeight", 0)
+    readonly property int _imageBottomGap: BrowseLayouts.numberValue(root.layoutProfile, "detail.imageBottomGap", 0)
 
     onDetailTagsChanged: root._labelColumnWidth = 0
 

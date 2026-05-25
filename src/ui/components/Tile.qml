@@ -87,7 +87,7 @@ Item {
     readonly property int _captionHeight: Sizing.pctH(5.5)
     readonly property int _captionGap: Sizing.pctH(0.4)
     readonly property int _captionTextSize: Sizing.fontSize(2.2)
-    readonly property int _tileCornerRadius: root.layoutProfile ? root.layoutProfile.tileCornerRadius : Sizing.cornerRadius
+    readonly property int _tileCornerRadius: BrowseLayouts.numberValue(root.layoutProfile, "surface.cornerRadius", Sizing.cornerRadius)
     readonly property int _captionTextMaxWidth: Math.max(0, root.width - 2 * root._tileCornerRadius)
     readonly property int _textMeasureSlack: Theme.crtNativePath ? 0 : 2
     readonly property int _captionMeasuredWidth: Math.ceil(Math.max(captionMetrics.advanceWidth, captionMetrics.boundingRect.width) + root._textMeasureSlack)

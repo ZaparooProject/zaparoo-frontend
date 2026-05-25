@@ -66,26 +66,31 @@ Item {
     property bool gridFocused: true
     property bool detailRapidScrollActive: false
     property bool forceListLayout: false
+    property string gridProfileKey: "gamesGrid"
+    property string listProfileKey: "gamesList"
     property bool renderGridLayout: true
-    property bool showTopStrip: true
-    property bool showBottomStatusRow: false
-    property bool showHeaderTitleInHeader: false
     property bool activeLabelAtBottom: false
-    property int gridBottomMargin: Sizing.pctH(15)
-    property int activeLabelBottomMargin: 0
-    property int activeLabelHeight: Sizing.pctH(7)
-    property int bottomStatusLeftMargin: 0
-    property int bottomStatusRightMargin: 0
+    property int gridBottomMargin: 0
     property int pageLoadingLeftMargin: 0
     property bool pageLoadingVisible: false
     property string bottomStatusLeftText: ""
     property string bottomStatusRightText: ""
-    property var gridLayoutProfile: null
     property int gridTotalItemsOverride: -1
     property bool gridHasMorePages: false
     readonly property bool _listLayout: root.forceListLayout || Browse.Settings.current_browse_layout === "list"
-    readonly property bool _crtListStrip: Theme.crtNativePath && root._listLayout
-    readonly property var _listLayoutProfile: Theme.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
+    readonly property var _gridProfile: BrowseLayouts.currentProfile(root.gridProfileKey)
+    readonly property var _listProfile: BrowseLayouts.currentProfile(root.listProfileKey)
+    readonly property var _viewProfile: root._listLayout ? root._listProfile : root._gridProfile
+    readonly property int _activeLabelHeight: BrowseLayouts.numberValue(root._gridProfile, "footer.activeLabelHeight", Sizing.pctH(7))
+    readonly property int _activeLabelBottomMargin: BrowseLayouts.numberValue(root._gridProfile, "footer.activeLabelBottomMargin", 0)
+    readonly property bool _bottomStatusVisible: BrowseLayouts.boolValue(root._gridProfile, "footer.bottomStatusVisible", false)
+    readonly property int _bottomStatusLeftMargin: BrowseLayouts.numberValue(root._gridProfile, "footer.bottomStatusLeftMargin", 0)
+    readonly property int _bottomStatusRightMargin: BrowseLayouts.numberValue(root._gridProfile, "footer.bottomStatusRightMargin", 0)
+    readonly property bool _topStripVisible: BrowseLayouts.boolValue(root._viewProfile, "status.topStripVisible", true)
+    readonly property int _topStripHeight: BrowseLayouts.numberValue(root._viewProfile, "status.stripHeight", Sizing.pctH(7))
+    readonly property int _topStripSlotMargin: BrowseLayouts.numberValue(root._viewProfile, "status.slotMargin", Sizing.pctW(5))
+    readonly property int _defaultGridBottomMargin: root._bottomStatusVisible ? root._activeLabelBottomMargin + root._activeLabelHeight : Sizing.pctH(6) + root._activeLabelBottomMargin + root._activeLabelHeight
+    readonly property int _effectiveGridBottomMargin: root.gridBottomMargin > 0 ? root.gridBottomMargin : root._defaultGridBottomMargin
     readonly property int _listOverlayBottomMargin: Sizing.pctH(15)
     readonly property bool _gateHide: root.transitioning || root._loading()
 
@@ -285,13 +290,13 @@ Item {
 
     TopStatusStrip {
         id: topStrip
-        visible: !root._gateHide && (root.showTopStrip || root._crtListStrip)
+        visible: !root._gateHide && root._topStripVisible
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.topMargin: Sizing.headerBottom + Sizing.pctH(1)
-        height: root._crtListStrip ? root._listLayoutProfile.listStripHeight : (root.showTopStrip ? Sizing.pctH(7) : 0)
-        slotMargin: root._crtListStrip ? root._listLayoutProfile.listStripSlotMargin : Sizing.pctW(5)
+        height: root._topStripHeight
+        slotMargin: root._topStripSlotMargin
         title: typeof root.topStripTitleProvider === "function" ? root.topStripTitleProvider() : root.screenTitle
         currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : mediaGrid.currentPage
         totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize))
@@ -304,14 +309,14 @@ Item {
 
         visible: !root._gateHide && root._listLayout
         anchors.left: parent.left
-        anchors.leftMargin: root._listLayoutProfile.listCardSideMargin
+        anchors.leftMargin: BrowseLayouts.numberValue(root._listProfile, "list.cardSideMargin", Sizing.pctW(5))
         anchors.right: parent.right
-        anchors.rightMargin: root._listLayoutProfile.listCardSideMargin
+        anchors.rightMargin: BrowseLayouts.numberValue(root._listProfile, "list.cardSideMargin", Sizing.pctW(5))
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(2)
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Sizing.pctH(8)
-        layoutProfile: root._listLayoutProfile
+        layoutProfile: root._listProfile
         model: root.mediaModel
         totalItemsOverride: root.totalItemsOverride
         targetVisibleRowCount: root.targetVisibleRowCount
@@ -348,14 +353,14 @@ Item {
         anchors.right: parent.right
         anchors.top: topStrip.bottom
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.gridBottomMargin
+        anchors.bottomMargin: root._effectiveGridBottomMargin
         focused: root.gridFocused
         model: root.mediaModel
         delegate: Tile {
-            layoutProfile: root.gridLayoutProfile
+            layoutProfile: root._gridProfile
             showCaption: true
         }
-        layoutProfile: root.gridLayoutProfile
+        layoutProfile: root._gridProfile
         columnsOverride: Sizing.gamesGridColumns
         rowsOverride: Sizing.gamesGridRows
         totalItemsOverride: root.gridTotalItemsOverride
@@ -395,18 +400,18 @@ Item {
         anchors.right: parent.right
         anchors.top: root.activeLabelAtBottom ? undefined : mediaGrid.bottom
         anchors.bottom: root.activeLabelAtBottom ? parent.bottom : undefined
-        anchors.bottomMargin: root.activeLabelAtBottom ? root.activeLabelBottomMargin : 0
-        height: root.activeLabelHeight
+        anchors.bottomMargin: root.activeLabelAtBottom ? root._activeLabelBottomMargin : 0
+        height: root._activeLabelHeight
         text: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
     }
 
     Text {
         id: bottomTotalText
-        visible: root.showBottomStatusRow && !root._gateHide && !root._listLayout && root.bottomStatusLeftText !== ""
+        visible: root._bottomStatusVisible && !root._gateHide && !root._listLayout && root.bottomStatusLeftText !== ""
         anchors.left: parent.left
-        anchors.leftMargin: root.bottomStatusLeftMargin
+        anchors.leftMargin: root._bottomStatusLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - root.bottomStatusLeftMargin
+        width: Sizing.px(parent.width / 3) - root._bottomStatusLeftMargin
         height: Sizing.fontSize(2.9)
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
@@ -419,11 +424,11 @@ Item {
     }
 
     Text {
-        visible: root.showBottomStatusRow && !root._gateHide && !root._listLayout && root.bottomStatusRightText !== ""
+        visible: root._bottomStatusVisible && !root._gateHide && !root._listLayout && root.bottomStatusRightText !== ""
         anchors.right: parent.right
-        anchors.rightMargin: root.bottomStatusRightMargin
+        anchors.rightMargin: root._bottomStatusRightMargin
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - root.bottomStatusRightMargin
+        width: Sizing.px(parent.width / 3) - root._bottomStatusRightMargin
         height: Sizing.fontSize(2.9)
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight

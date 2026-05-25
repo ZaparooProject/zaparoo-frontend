@@ -44,6 +44,7 @@ pub struct Config {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SettingsConfig {
+    pub theme: Option<String>,
     pub browse_layout: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
@@ -55,6 +56,7 @@ pub struct SettingsConfig {
 pub struct SettingsMirror<'a> {
     pub resolution: &'a str,
     pub language: &'a str,
+    pub theme: &'a str,
     pub browse_layout: &'a str,
     pub button_layout: &'a str,
     pub mouse_enabled: bool,
@@ -131,6 +133,7 @@ struct RawInput {
 
 #[derive(Deserialize, Default)]
 struct RawSettings {
+    theme: Option<String>,
     browse_layout: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
@@ -201,6 +204,7 @@ pub fn load_config(path: &Path) -> Config {
         cfg.key_to_action = input_actions::invert(&merged);
     }
     cfg.settings = SettingsConfig {
+        theme: raw.settings.theme.map(|value| value.trim().to_string()),
         browse_layout: raw
             .settings
             .browse_layout
@@ -273,6 +277,10 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
             path.display()
         ));
     };
+    settings.insert(
+        "theme".into(),
+        toml::Value::String(mirror.theme.trim().to_string()),
+    );
     settings.insert(
         "browse_layout".into(),
         toml::Value::String(mirror.browse_layout.trim().to_string()),
@@ -600,6 +608,7 @@ mod tests {
             SettingsMirror {
                 resolution: "1280x720",
                 language: "it_IT",
+                theme: "crt",
                 browse_layout: "list",
                 button_layout: "b",
                 mouse_enabled: false,
@@ -614,6 +623,7 @@ mod tests {
         assert_eq!(cfg.video_width, 1280);
         assert_eq!(cfg.video_height, 720);
         assert!(cfg.video_explicit);
+        assert_eq!(cfg.settings.theme.as_deref(), Some("crt"));
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
@@ -632,6 +642,7 @@ mod tests {
             SettingsMirror {
                 resolution: "1280x720",
                 language: "en",
+                theme: "default",
                 browse_layout: "grid",
                 button_layout: "a",
                 mouse_enabled: true,
@@ -648,6 +659,7 @@ mod tests {
         assert_eq!(cfg.core_endpoint, "ws://example.com/api");
         assert_eq!(cfg.video_width, 1280);
         assert_eq!(cfg.video_height, 720);
+        assert_eq!(cfg.settings.theme.as_deref(), Some("default"));
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("grid"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("a"));
         assert_eq!(cfg.settings.mouse_enabled, Some(true));
@@ -664,6 +676,7 @@ mod tests {
             SettingsMirror {
                 resolution: "",
                 language: "",
+                theme: "crt",
                 browse_layout: "list",
                 button_layout: "c",
                 mouse_enabled: false,
@@ -675,6 +688,7 @@ mod tests {
         .expect("save");
         let written = std::fs::read_to_string(f.path()).expect("read");
         assert!(written.contains("language = \"auto\""));
+        assert!(written.contains("theme = \"crt\""));
         assert!(written.contains("browse_layout = \"list\""));
         assert!(written.contains("button_layout = \"c\""));
         assert!(written.contains("mouse_enabled = false"));

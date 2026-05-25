@@ -20,31 +20,33 @@ Item {
     property var layoutProfile: null
     readonly property int itemCount: listView.count
     readonly property int totalItems: totalItemsOverride >= 0 ? totalItemsOverride : itemCount
-    readonly property int _selectionRadius: root.layoutProfile ? root.layoutProfile.tileCornerRadius : Sizing.cornerRadius
-    readonly property int cardPaddingLeft: root.layoutProfile ? root.layoutProfile.listCardPaddingLeft : Sizing.pctW(2)
-    readonly property int cardPaddingRight: root.layoutProfile ? root.layoutProfile.listCardPaddingRight : Sizing.pctW(2)
-    readonly property int cardPaddingTop: root.layoutProfile ? root.layoutProfile.listCardPaddingTop : Sizing.pctH(2)
-    readonly property int cardPaddingBottom: root.layoutProfile ? root.layoutProfile.listCardPaddingBottom : Sizing.pctH(2)
-    readonly property int rowSpacing: root.layoutProfile ? root.layoutProfile.listRowSpacing : Sizing.pctH(0.7)
+    readonly property int _selectionRadius: BrowseLayouts.numberValue(root.layoutProfile, "surface.cornerRadius", Sizing.cornerRadius)
+    readonly property int cardPaddingLeft: BrowseLayouts.numberValue(root.layoutProfile, "list.cardPaddingLeft", Sizing.pctW(2))
+    readonly property int cardPaddingRight: BrowseLayouts.numberValue(root.layoutProfile, "list.cardPaddingRight", Sizing.pctW(2))
+    readonly property int cardPaddingTop: BrowseLayouts.numberValue(root.layoutProfile, "list.cardPaddingTop", Sizing.pctH(2))
+    readonly property int cardPaddingBottom: BrowseLayouts.numberValue(root.layoutProfile, "list.cardPaddingBottom", Sizing.pctH(2))
+    readonly property int rowSpacing: BrowseLayouts.numberValue(root.layoutProfile, "list.rowSpacing", Sizing.pctH(0.7))
     readonly property int contentHeight: Math.max(0, height - cardPaddingTop - cardPaddingBottom)
-    readonly property int rowHeight: root.layoutProfile && root.layoutProfile.listRowHeight > 0 ? root.layoutProfile.listRowHeight : (targetVisibleRowCount > 0 ? Math.max(Sizing.pctH(3), Math.floor((contentHeight - (rowSpacing * (targetVisibleRowCount - 1))) / targetVisibleRowCount)) : Sizing.pctH(6))
+    readonly property int _profileRowHeight: BrowseLayouts.numberValue(root.layoutProfile, "list.rowHeight", 0)
+    readonly property int rowHeight: _profileRowHeight > 0 ? _profileRowHeight : (targetVisibleRowCount > 0 ? Math.max(Sizing.pctH(3), Math.floor((contentHeight - (rowSpacing * (targetVisibleRowCount - 1))) / targetVisibleRowCount)) : Sizing.pctH(6))
     readonly property int rowStride: rowHeight + rowSpacing
     readonly property int visibleRowCount: targetVisibleRowCount > 0 ? targetVisibleRowCount : Math.max(1, Math.floor((contentHeight + rowSpacing) / rowStride))
-    readonly property int _centerSlot: root.layoutProfile && root.layoutProfile.listCenterSlot >= 0 ? Math.max(0, Math.min(visibleRowCount - 1, root.layoutProfile.listCenterSlot)) : Math.max(0, Math.floor((visibleRowCount - 1) / 2))
+    readonly property int _profileCenterSlot: BrowseLayouts.numberValue(root.layoutProfile, "list.centerSlot", -1)
+    readonly property int _centerSlot: _profileCenterSlot >= 0 ? Math.max(0, Math.min(visibleRowCount - 1, _profileCenterSlot)) : Math.max(0, Math.floor((visibleRowCount - 1) / 2))
     readonly property int _maxViewTopIndex: Math.max(0, itemCount - visibleRowCount)
     readonly property int _viewTopIndex: Math.max(0, Math.min(_maxViewTopIndex, currentIndex - _centerSlot))
     readonly property int _targetContentY: _viewTopIndex * rowStride
     readonly property int _maxScrollTopIndex: Math.max(0, totalItems - visibleRowCount)
-    readonly property int _gutterWidth: root.layoutProfile ? root.layoutProfile.gridGutterWidth : Sizing.pctW(3)
-    readonly property int _gutterGap: root.layoutProfile && root.layoutProfile.listScrollbarGap !== undefined ? root.layoutProfile.listScrollbarGap : (root.layoutProfile ? root.layoutProfile.gridGutterGap : Sizing.pctW(1.5))
-    readonly property int _scrollThumbWidth: root.layoutProfile ? root.layoutProfile.scrollThumbWidth : Sizing.pctW(1.2)
-    readonly property int _scrollThumbRightInset: root.layoutProfile ? root.layoutProfile.scrollThumbRightInset : 0
-    readonly property bool _scrollThumbRightAligned: root.layoutProfile && root.layoutProfile.scrollThumbRightAligned !== undefined ? root.layoutProfile.scrollThumbRightAligned : false
-    readonly property int _scrollArrowSize: root.layoutProfile ? root.layoutProfile.scrollArrowSize : Math.min(root._gutterWidth, Sizing.pctH(4))
-    readonly property int _selectionAccentWidth: root.layoutProfile && root.layoutProfile.listSelectionAccentWidth !== undefined ? root.layoutProfile.listSelectionAccentWidth : Sizing.pctW(0.45)
-    readonly property int _rowTextLeftPadding: root.layoutProfile ? root.layoutProfile.listRowTextLeftPadding : Sizing.pctW(1.6)
-    readonly property int _rowTextRightPadding: root.layoutProfile ? root.layoutProfile.listRowTextRightPadding : Sizing.pctW(1.6)
-    readonly property int _favoriteRightPadding: root.layoutProfile ? root.layoutProfile.listFavoriteRightPadding : Sizing.pctW(1.6)
+    readonly property int _gutterWidth: BrowseLayouts.numberValue(root.layoutProfile, "grid.gutterWidth", Sizing.pctW(3))
+    readonly property int _gutterGap: BrowseLayouts.numberValue(root.layoutProfile, "list.scrollbarGap", BrowseLayouts.numberValue(root.layoutProfile, "grid.gutterGap", Sizing.pctW(1.5)))
+    readonly property int _scrollThumbWidth: BrowseLayouts.numberValue(root.layoutProfile, "grid.scrollThumbWidth", Sizing.pctW(1.2))
+    readonly property int _scrollThumbRightInset: BrowseLayouts.numberValue(root.layoutProfile, "grid.scrollThumbRightInset", 0)
+    readonly property bool _scrollThumbRightAligned: BrowseLayouts.boolValue(root.layoutProfile, "grid.scrollThumbRightAligned", false)
+    readonly property int _scrollArrowSize: BrowseLayouts.numberValue(root.layoutProfile, "grid.scrollArrowSize", Math.min(root._gutterWidth, Sizing.pctH(4)))
+    readonly property int _selectionAccentWidth: BrowseLayouts.numberValue(root.layoutProfile, "list.selectionAccentWidth", Sizing.pctW(0.45))
+    readonly property int _rowTextLeftPadding: BrowseLayouts.numberValue(root.layoutProfile, "list.rowTextLeftPadding", Sizing.pctW(1.6))
+    readonly property int _rowTextRightPadding: BrowseLayouts.numberValue(root.layoutProfile, "list.rowTextRightPadding", Sizing.pctW(1.6))
+    readonly property int _favoriteRightPadding: BrowseLayouts.numberValue(root.layoutProfile, "list.favoriteRightPadding", Sizing.pctW(1.6))
 
     signal itemHovered(int index)
     signal itemClicked(int index)

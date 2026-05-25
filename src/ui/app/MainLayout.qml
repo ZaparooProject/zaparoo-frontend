@@ -182,14 +182,26 @@ ApplicationWindow {
 
     Binding {
         target: Theme
+        property: "currentThemeId"
+        value: root.crtNativePath ? "crt" : Browse.Settings.current_theme
+    }
+
+    Binding {
+        target: ThemePalette
         property: "crtNativePath"
         value: root.crtNativePath
     }
 
     Binding {
+        target: Theme
+        property: "crtNativePath"
+        value: root.crtNativePath || Browse.Settings.current_theme === "crt"
+    }
+
+    Binding {
         target: Sizing
         property: "crtNativePath"
-        value: root.crtNativePath
+        value: root.crtNativePath || Browse.Settings.current_theme === "crt"
     }
 
     // Screen plumbing exposed for Main.qml's orchestration. Anything
@@ -286,9 +298,17 @@ ApplicationWindow {
     readonly property string hubScreenState: (Browse.CategoriesModel.error_message ?? "") !== "" ? "error" : (Browse.CategoriesModel.count === 0 ? "empty" : "ready")
 
     readonly property string recentsScreenState: Browse.RecentsModel.loading ? "loading" : ((Browse.RecentsModel.error_message ?? "") !== "" ? "error" : (Browse.RecentsModel.count === 0 ? "empty" : "ready"))
-    readonly property bool _crtGridBrowseLayout: root.crtNativePath && Browse.Settings.current_browse_layout !== "list"
-    readonly property var _browseTileLayout: root.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
-    readonly property var _contextMenuLayout: root.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
+    readonly property bool _listBrowseLayout: Browse.Settings.current_browse_layout === "list"
+    readonly property string _activeBrowseProfileKey: {
+        if (root.activeScreen === root.screenSystems)
+            return root._listBrowseLayout ? "systemsList" : "systemsGrid";
+        if (root.activeScreen === root.screenGames)
+            return root._listBrowseLayout ? "gamesList" : "gamesGrid";
+        if (root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents)
+            return root._listBrowseLayout ? "gamesList" : "gamesGrid";
+        return root._listBrowseLayout ? "systemsList" : "systemsGrid";
+    }
+    readonly property var _browseViewProfile: BrowseLayouts.currentProfile(root._activeBrowseProfileKey)
     readonly property string _crtGamesHeaderTitle: {
         const sid = Browse.GamesModel.current_system_id;
         if (sid === "")
@@ -434,7 +454,7 @@ ApplicationWindow {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.topMargin: Sizing.headerTopMargin
-            layoutProfile: root._browseTileLayout
+            layoutProfile: root._browseViewProfile
             browseTitle: root.browseHeaderTitle
             browseProgressText: root.browseHeaderProgressText
             z: 200
@@ -575,7 +595,7 @@ ApplicationWindow {
             open: root.contextMenuVisible
             anchorRect: root.contextMenuAnchor
             entries: root.contextMenuEntries
-            bottomUnsafeHeight: root._contextMenuLayout.bottomUnsafeHeight
+            bottomUnsafeHeight: BrowseLayouts.numberValue(root._browseViewProfile, "footer.bottomUnsafeHeight", Sizing.pctH(8))
             onAccepted: id => root.contextMenuAccepted(id)
             onCloseRequested: root.contextMenuCloseRequested()
         }

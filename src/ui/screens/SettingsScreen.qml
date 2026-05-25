@@ -72,6 +72,13 @@ Item {
             id: "language",
             label: qsTr("Language")
         });
+        if (!Browse.Runtime.is_mister) {
+            out.push({
+                kind: "field",
+                id: "theme",
+                label: qsTr("Theme")
+            });
+        }
         out.push({
             kind: "field",
             id: "browseLayout",
@@ -242,7 +249,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "language" || id === "browseLayout" || id === "buttonLayout" || id === "resolution";
+        return id === "language" || id === "theme" || id === "browseLayout" || id === "buttonLayout" || id === "resolution";
     }
     // True when the focused field is an action button (updateMediaDb,
     // runScraper, uploadLog, aboutLicense). Drives the help-bar Accept
@@ -332,6 +339,11 @@ Item {
         return raw === undefined || raw === null ? [] : raw;
     }
 
+    function _themeList(): list<string> {
+        const raw = Browse.Settings.available_themes;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
     function _languageList(): list<string> {
         const raw = Browse.Settings.available_languages;
         return raw === undefined || raw === null ? [] : raw;
@@ -373,6 +385,19 @@ Item {
         if (value === "list")
             return qsTr("Detailed list view");
         return qsTr("Grid view");
+    }
+
+    function _themeDisplay(value: string): string {
+        if (value === "crt")
+            return qsTr("CRT");
+        if (value === "default" || value === "")
+            return qsTr("Default");
+        const words = value.replace(/[-_]+/g, " ").split(" ");
+        for (let i = 0; i < words.length; i++) {
+            if (words[i].length > 0)
+                words[i] = words[i][0].toUpperCase() + words[i].slice(1);
+        }
+        return words.join(" ");
     }
 
     function _buttonLayoutDisplay(value: string): string {
@@ -437,6 +462,15 @@ Item {
                     label: settings._languageDisplay(list[i])
                 });
             initialId = Browse.Settings.current_language;
+        } else if (id === "theme") {
+            title = qsTr("Theme");
+            const list = settings._themeList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._themeDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_theme;
         } else if (id === "browseLayout") {
             title = qsTr("Browsing layout");
             const list = settings._browseLayoutList();
@@ -667,7 +701,7 @@ Item {
                         // `_triggerIndex`/`_triggerScrape`.
                         enabled: row.modelData.id === "updateMediaDb" ? !settings._scrapeBusy : row.modelData.id === "runScraper" ? !settings._indexBusy : true
                         label: row.modelData.label
-                        value: row.modelData.id === "resolution" ? settings._resolutionDisplay(Browse.Settings.current_resolution) : row.modelData.id === "language" ? settings._languageDisplay(Browse.Settings.current_language) : row.modelData.id === "browseLayout" ? settings._browseLayoutDisplay(Browse.Settings.current_browse_layout) : row.modelData.id === "buttonLayout" ? settings._buttonLayoutDisplay(Browse.Settings.current_button_layout) : row.modelData.id === "screensaverTimeout" ? settings._screensaverTimeoutDisplay(Browse.Settings.current_screensaver_timeout) : ""
+                        value: row.modelData.id === "resolution" ? settings._resolutionDisplay(Browse.Settings.current_resolution) : row.modelData.id === "language" ? settings._languageDisplay(Browse.Settings.current_language) : row.modelData.id === "theme" ? settings._themeDisplay(Browse.Settings.current_theme) : row.modelData.id === "browseLayout" ? settings._browseLayoutDisplay(Browse.Settings.current_browse_layout) : row.modelData.id === "buttonLayout" ? settings._buttonLayoutDisplay(Browse.Settings.current_button_layout) : row.modelData.id === "screensaverTimeout" ? settings._screensaverTimeoutDisplay(Browse.Settings.current_screensaver_timeout) : ""
                         control: row.modelData.id === "mouseEnabled" || row.modelData.id === "discoverArcadeAlternateVersions" || row.modelData.id === "debugLogging" ? "toggle" : row.modelData.id === "aboutLicense" ? "navigate" : (row.modelData.id === "updateMediaDb" || row.modelData.id === "runScraper" || row.modelData.id === "uploadLog") ? "action" : "picker"
                         checked: row.modelData.id === "debugLogging" ? Browse.Settings.current_debug_logging : row.modelData.id === "discoverArcadeAlternateVersions" ? Browse.Settings.current_discover_arcade_alternate_versions : Browse.Settings.current_mouse_enabled
                         actionStatus: row.modelData.id === "updateMediaDb" ? settings._indexActionStatus() : row.modelData.id === "runScraper" ? settings._scrapeActionStatus() : ""

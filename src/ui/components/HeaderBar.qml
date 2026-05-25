@@ -80,8 +80,8 @@ Item {
     Row {
         id: topHud
 
-        anchors.top: header.layoutProfile && header.layoutProfile.headerHudBottomAligned ? undefined : parent.top
-        anchors.bottom: header.layoutProfile && header.layoutProfile.headerHudBottomAligned ? parent.bottom : undefined
+        anchors.top: BrowseLayouts.boolValue(header.layoutProfile, "header.hudBottomAligned", false) ? undefined : parent.top
+        anchors.bottom: BrowseLayouts.boolValue(header.layoutProfile, "header.hudBottomAligned", false) ? parent.bottom : undefined
         anchors.right: parent.right
         anchors.rightMargin: Sizing.headerSideMargin
         spacing: Sizing.pctW(1)
@@ -161,7 +161,7 @@ Item {
     Text {
         id: crtTitleLabel
 
-        visible: header.layoutProfile && header.layoutProfile.showHeaderTitleInHeader && header.browseTitle !== ""
+        visible: BrowseLayouts.boolValue(header.layoutProfile, "header.titleInHeader", false) && header.browseTitle !== ""
         x: Sizing.center(parent.width, width)
         y: parent.height - height
         width: Math.min(Math.floor(parent.width / 3), Math.ceil(Math.max(crtTitleMetrics.advanceWidth, crtTitleMetrics.boundingRect.width)))
@@ -183,8 +183,8 @@ Item {
     // idle, but its slot stays reserved by the header's fixed height
     // so the logo and the surrounding layout don't shift.
     CoreStatusPill {
-        anchors.top: header.layoutProfile && header.layoutProfile.headerStatusPillPinnedTop ? parent.top : topHud.bottom
+        anchors.top: BrowseLayouts.boolValue(header.layoutProfile, "header.statusPillPinnedTop", false) ? parent.top : topHud.bottom
         anchors.right: topHud.right
-        anchors.topMargin: header.layoutProfile && header.layoutProfile.headerStatusPillPinnedTop ? 0 : Sizing.headerStackGap
+        anchors.topMargin: BrowseLayouts.boolValue(header.layoutProfile, "header.statusPillPinnedTop", false) ? 0 : Sizing.headerStackGap
     }
 }

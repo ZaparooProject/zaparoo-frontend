@@ -97,6 +97,8 @@ pub struct FavoritesState {
 pub struct SettingsState {
     pub resolution: String,
     pub language: String,
+    #[serde(default = "default_theme")]
+    pub theme: String,
     #[serde(default = "default_browse_layout")]
     pub browse_layout: String,
     #[serde(default = "default_button_layout")]
@@ -116,6 +118,7 @@ impl Default for SettingsState {
         Self {
             resolution: String::new(),
             language: String::new(),
+            theme: default_theme(),
             browse_layout: default_browse_layout(),
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
@@ -124,6 +127,10 @@ impl Default for SettingsState {
             screensaver_timeout: default_screensaver_timeout(),
         }
     }
+}
+
+fn default_theme() -> String {
+    "default".into()
 }
 
 fn default_browse_layout() -> String {
@@ -270,6 +277,7 @@ mod tests {
             settings: SettingsState {
                 resolution: "1920x1080".into(),
                 language: "it_IT".into(),
+                theme: "crt".into(),
                 browse_layout: "list".into(),
                 button_layout: "b".into(),
                 mouse_enabled: false,

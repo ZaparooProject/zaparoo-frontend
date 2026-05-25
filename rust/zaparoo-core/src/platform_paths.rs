@@ -63,6 +63,14 @@ pub fn state_file_path() -> PathBuf {
     }
 }
 
+pub fn themes_dir_path() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("themes")
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
