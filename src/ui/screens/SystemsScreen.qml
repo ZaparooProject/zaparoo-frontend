@@ -230,7 +230,7 @@ Item {
         anchors.right: parent.right
         anchors.top: topStrip.bottom
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.pctH(6) + systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight
+        anchors.bottomMargin: systems._tileLayout.showBottomStatusRow ? systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight : Sizing.pctH(6) + systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight
         focused: systems.gridFocused
         model: Browse.SystemsModel
         layoutProfile: systems._tileLayout
@@ -271,7 +271,7 @@ Item {
     }
 
     Text {
-        visible: systems._tileLayout.showBottomStatusRow && !systems.transitioning && Browse.SystemsModel.count > 0
+        visible: systems._tileLayout.showBottomStatusRow && !systems.transitioning && !systems._listLayout && Browse.SystemsModel.count > 0
         anchors.left: parent.left
         anchors.leftMargin: systems._tileLayout.bottomStatusLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
@@ -288,7 +288,7 @@ Item {
     }
 
     Text {
-        visible: systems._tileLayout.showBottomStatusRow && !systems.transitioning && Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize) > 1
+        visible: systems._tileLayout.showBottomStatusRow && !systems.transitioning && !systems._listLayout && Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize) > 1
         anchors.right: parent.right
         anchors.rightMargin: systems._tileLayout.bottomStatusRightMargin
         anchors.verticalCenter: activeLabel.verticalCenter
