@@ -34,10 +34,11 @@ MediaListScreen {
     readonly property string _tateListViewId: "gamesListTate"
     readonly property string _activeViewId: games._listLayout ? (games._tateListLayout ? games._tateListViewId : games._listViewId) : games._gridViewId
     readonly property string _browseThemeId: BrowseLayouts.currentThemeId
+    readonly property var _gridProfile: BrowseLayouts.themeProfile(games._browseThemeId, games._gridViewId)
     readonly property var _viewProfile: BrowseLayouts.themeProfile(games._browseThemeId, games._activeViewId)
     readonly property var _headerProfile: games._viewProfile && games._viewProfile.header ? games._viewProfile.header : null
     readonly property var _statusProfile: games._viewProfile && games._viewProfile.status ? games._viewProfile.status : null
-    readonly property var _footerProfile: games._viewProfile && games._viewProfile.footer ? games._viewProfile.footer : null
+    readonly property var _footerProfile: games._gridProfile && games._gridProfile.footer ? games._gridProfile.footer : null
 
     mediaModel: Browse.GamesModel
     emptyText: qsTr("No games in this system")

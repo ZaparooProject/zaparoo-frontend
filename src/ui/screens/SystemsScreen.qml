@@ -42,9 +42,10 @@ Item {
     readonly property bool _tateListLayout: systems._listLayout && Browse.Settings.current_orientation !== "horizontal"
     readonly property string _viewId: systems._listLayout ? (systems._tateListLayout ? "systemsListTate" : "systemsList") : "systemsGrid"
     readonly property string _browseThemeId: BrowseLayouts.currentThemeId
+    readonly property var _gridProfile: BrowseLayouts.themeProfile(systems._browseThemeId, "systemsGrid")
     readonly property var _viewProfile: BrowseLayouts.themeProfile(systems._browseThemeId, systems._viewId)
     readonly property var _statusProfile: systems._viewProfile && systems._viewProfile.status ? systems._viewProfile.status : null
-    readonly property var _footerProfile: systems._viewProfile && systems._viewProfile.footer ? systems._viewProfile.footer : null
+    readonly property var _footerProfile: systems._gridProfile && systems._gridProfile.footer ? systems._gridProfile.footer : null
     readonly property var _listProfile: systems._viewProfile && systems._viewProfile.list ? systems._viewProfile.list : null
     readonly property int _listOverlayBottomMargin: systems._listProfile ? systems._listProfile.overlayBottomMargin : Sizing.pctH(15)
 
