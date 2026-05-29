@@ -27,6 +27,7 @@ Item {
     id: systems
 
     property alias systemsGrid: systemsGrid
+    property alias listCard: listCard
     property bool transitioning: false
     // Router-driven flag: `MainLayout` writes this to
     // `!ScreenManager.hasModal` so the focused tile's accent ring
