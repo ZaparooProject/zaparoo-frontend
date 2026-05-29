@@ -45,8 +45,8 @@ TestCase {
         main.crtNativePath = true;
         Browse.Settings.current_browse_layout = "grid";
 
-        compare(main.headerBar.layoutProfile.showHeaderTitleInHeader, true);
-        compare(main.systemsScreen.systemsGrid.layoutProfile.tileCornerRadius, 4);
+        compare(main.headerBar.layoutProfile.header.titleInHeader, true);
+        compare(main.systemsScreen.systemsGrid.layoutProfile.surface.cornerRadius, 4);
         compare(main.systemsScreen.systemsGrid.leftInset, 4);
         compare(main.systemsScreen.systemsGrid.gutterWidth, 8);
         compare(main.systemsScreen.systemsGrid.scrollArrowSize, 8);
@@ -56,9 +56,9 @@ TestCase {
         main.crtNativePath = true;
         Browse.Settings.current_browse_layout = "list";
 
-        compare(main.headerBar.layoutProfile.showHeaderTitleInHeader, true);
-        compare(main.systemsScreen.systemsGrid.layoutProfile.tileCornerRadius, 4);
-        compare(main.systemsScreen.systemsGrid.leftInset, 4);
-        compare(main.systemsScreen.systemsGrid.gutterWidth, 8);
+        compare(main.headerBar.layoutProfile.header.titleInHeader, true);
+        compare(main.systemsScreen.listCard.layoutProfile.surface.cornerRadius, 4);
+        compare(main.systemsScreen.listCard.layoutProfile.list.rowHeight, 12);
+        compare(main.systemsScreen.listCard.layoutProfile.list.scrollbarGap, 2);
     }
 }
