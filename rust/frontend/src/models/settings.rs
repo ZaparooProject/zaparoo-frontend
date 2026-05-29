@@ -22,6 +22,11 @@
 //   * `current_language` — READ + NOTIFY. Mirrors `[general].language`
 //     from frontend.toml and is also recorded in persisted state so the
 //     settings snapshot stays coherent.
+//   * `available_orientations` — CONSTANT. Three display transforms:
+//     horizontal (default), rotated clockwise, rotated counter-clockwise.
+//   * `current_orientation` — READ + NOTIFY, persisted. Applied live by
+//     the QML scene wrapper while also mirrored into frontend.toml so
+//     MiSTer survives `/tmp` resets.
 //   * `available_browse_layouts` — CONSTANT. The browsing layout picker
 //     choices. "grid" is the existing layout; "list" is the detailed list
 //     placeholder until the new browsing screen is built.
@@ -88,6 +93,8 @@ const LANGUAGES: &[&str] = &[
     "hi",
 ];
 const DEFAULT_LANGUAGE: &str = "auto";
+const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
+const DEFAULT_ORIENTATION: &str = "horizontal";
 const BROWSE_LAYOUTS: &[&str] = &["grid", "list"];
 const DEFAULT_BROWSE_LAYOUT: &str = "grid";
 const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
@@ -118,6 +125,8 @@ pub struct SettingsRust {
     current_resolution: QString,
     available_languages: QStringList,
     current_language: QString,
+    available_orientations: QStringList,
+    current_orientation: QString,
     available_browse_layouts: QStringList,
     current_browse_layout: QString,
     available_button_layouts: QStringList,
@@ -147,6 +156,8 @@ pub mod ffi {
         #[qproperty(QString, current_resolution, READ, WRITE = set_resolution, NOTIFY)]
         #[qproperty(QStringList, available_languages, READ, CONSTANT)]
         #[qproperty(QString, current_language, READ, WRITE = set_language, NOTIFY)]
+        #[qproperty(QStringList, available_orientations, READ, CONSTANT)]
+        #[qproperty(QString, current_orientation, READ, WRITE = set_orientation, NOTIFY)]
         #[qproperty(QStringList, available_browse_layouts, READ, CONSTANT)]
         #[qproperty(QString, current_browse_layout, READ, WRITE = set_browse_layout, NOTIFY)]
         #[qproperty(QStringList, available_button_layouts, READ, CONSTANT)]
@@ -163,6 +174,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_language(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_orientation(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_browse_layout(self: Pin<&mut Settings>, value: QString);
@@ -204,6 +218,8 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().current_resolution = QString::from(merged.resolution.as_str());
         self.as_mut().rust_mut().available_languages = languages();
         self.as_mut().rust_mut().current_language = QString::from(merged.language.as_str());
+        self.as_mut().rust_mut().available_orientations = orientations();
+        self.as_mut().rust_mut().current_orientation = QString::from(merged.orientation.as_str());
         self.as_mut().rust_mut().available_browse_layouts = browse_layouts();
         self.as_mut().rust_mut().current_browse_layout =
             QString::from(merged.browse_layout.as_str());
@@ -248,6 +264,21 @@ impl ffi::Settings {
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
         self.as_mut().rust_mut().current_language = QString::from(value_str.as_str());
         self.as_mut().current_language_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_orientation(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_orientation(&value.to_string()).to_string();
+        if self.current_orientation.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.orientation.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_orientation = QString::from(value_str.as_str());
+        self.as_mut().current_orientation_changed();
     }
 
     #[allow(
@@ -355,6 +386,7 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
         SettingsMirror {
             resolution: settings.resolution.as_str(),
             language: settings.language.as_str(),
+            orientation: settings.orientation.as_str(),
             browse_layout: settings.browse_layout.as_str(),
             button_layout: settings.button_layout.as_str(),
             mouse_enabled: settings.mouse_enabled,
@@ -378,6 +410,14 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
             String::new()
         },
         language: normalize_language(&config.language).to_string(),
+        orientation: normalize_orientation(
+            config
+                .settings
+                .orientation
+                .as_deref()
+                .unwrap_or(snapshot.orientation.as_str()),
+        )
+        .to_string(),
         browse_layout: normalize_browse_layout(
             config
                 .settings
@@ -440,6 +480,14 @@ fn browse_layouts() -> QStringList {
     list
 }
 
+fn orientations() -> QStringList {
+    let mut list = QStringList::default();
+    for orientation in ORIENTATIONS {
+        list.append(QString::from(*orientation));
+    }
+    list
+}
+
 fn languages() -> QStringList {
     let mut list = QStringList::default();
     for language in LANGUAGES {
@@ -470,6 +518,15 @@ fn normalize_language(value: &str) -> &str {
         .copied()
         .find(|language| *language == trimmed)
         .unwrap_or(DEFAULT_LANGUAGE)
+}
+
+fn normalize_orientation(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    ORIENTATIONS
+        .iter()
+        .copied()
+        .find(|orientation| *orientation == trimmed)
+        .unwrap_or(DEFAULT_ORIENTATION)
 }
 
 fn normalize_browse_layout(value: &str) -> &'static str {
@@ -520,9 +577,9 @@ fn normalize_button_layout(value: &str) -> &'static str {
 mod tests {
     use super::{
         browse_layouts, button_layouts, curated_resolutions, languages, normalize_browse_layout,
-        normalize_button_layout, normalize_language, BROWSE_LAYOUTS, BUTTON_LAYOUTS,
-        DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT, DEFAULT_LANGUAGE, LANGUAGES,
-        MISTER_RESOLUTIONS,
+        normalize_button_layout, normalize_language, normalize_orientation, orientations,
+        BROWSE_LAYOUTS, BUTTON_LAYOUTS, DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT,
+        DEFAULT_LANGUAGE, DEFAULT_ORIENTATION, LANGUAGES, MISTER_RESOLUTIONS, ORIENTATIONS,
     };
 
     #[test]
@@ -562,6 +619,14 @@ mod tests {
     }
 
     #[test]
+    fn orientations_preserve_order() {
+        let list = orientations();
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        let expected: Vec<String> = ORIENTATIONS.iter().map(|s| (*s).to_string()).collect();
+        assert_eq!(collected, expected);
+    }
+
+    #[test]
     fn browse_layouts_preserve_order() {
         let list = browse_layouts();
         let collected: Vec<String> = list.iter().map(String::from).collect();
@@ -575,6 +640,15 @@ mod tests {
         assert_eq!(normalize_browse_layout("detail"), DEFAULT_BROWSE_LAYOUT);
         assert_eq!(normalize_browse_layout("grid"), "grid");
         assert_eq!(normalize_browse_layout("list"), "list");
+    }
+
+    #[test]
+    fn orientation_normalization_defaults_to_horizontal() {
+        assert_eq!(normalize_orientation(""), DEFAULT_ORIENTATION);
+        assert_eq!(normalize_orientation("sideways"), DEFAULT_ORIENTATION);
+        assert_eq!(normalize_orientation("horizontal"), "horizontal");
+        assert_eq!(normalize_orientation("cw"), "cw");
+        assert_eq!(normalize_orientation("ccw"), "ccw");
     }
 
     #[test]

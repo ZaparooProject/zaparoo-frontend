@@ -74,6 +74,11 @@ Item {
         });
         out.push({
             kind: "field",
+            id: "orientation",
+            label: qsTr("Orientation")
+        });
+        out.push({
+            kind: "field",
             id: "browseLayout",
             label: qsTr("Browsing layout")
         });
@@ -242,7 +247,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "language" || id === "browseLayout" || id === "buttonLayout" || id === "resolution";
+        return id === "language" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout";
     }
     // True when the focused field is an action button (updateMediaDb,
     // runScraper, uploadLog, aboutLicense). Drives the help-bar Accept
@@ -337,6 +342,11 @@ Item {
         return raw === undefined || raw === null ? [] : raw;
     }
 
+    function _orientationList(): list<string> {
+        const raw = Browse.Settings.available_orientations;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
     function _languageDisplay(value: string): string {
         if (value === "en")
             return qsTr("English");
@@ -367,6 +377,14 @@ Item {
         if (value === "hi")
             return qsTr("Hindi");
         return qsTr("Auto");
+    }
+
+    function _orientationDisplay(value: string): string {
+        if (value === "cw")
+            return qsTr("Rotated CW");
+        if (value === "ccw")
+            return qsTr("Rotated CCW");
+        return qsTr("Horizontal");
     }
 
     function _browseLayoutDisplay(value: string): string {
@@ -437,6 +455,15 @@ Item {
                     label: settings._languageDisplay(list[i])
                 });
             initialId = Browse.Settings.current_language;
+        } else if (id === "orientation") {
+            title = qsTr("Orientation");
+            const list = settings._orientationList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._orientationDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_orientation;
         } else if (id === "browseLayout") {
             title = qsTr("Browsing layout");
             const list = settings._browseLayoutList();
@@ -667,7 +694,7 @@ Item {
                         // `_triggerIndex`/`_triggerScrape`.
                         enabled: row.modelData.id === "updateMediaDb" ? !settings._scrapeBusy : row.modelData.id === "runScraper" ? !settings._indexBusy : true
                         label: row.modelData.label
-                        value: row.modelData.id === "resolution" ? settings._resolutionDisplay(Browse.Settings.current_resolution) : row.modelData.id === "language" ? settings._languageDisplay(Browse.Settings.current_language) : row.modelData.id === "browseLayout" ? settings._browseLayoutDisplay(Browse.Settings.current_browse_layout) : row.modelData.id === "buttonLayout" ? settings._buttonLayoutDisplay(Browse.Settings.current_button_layout) : row.modelData.id === "screensaverTimeout" ? settings._screensaverTimeoutDisplay(Browse.Settings.current_screensaver_timeout) : ""
+                        value: row.modelData.id === "resolution" ? settings._resolutionDisplay(Browse.Settings.current_resolution) : row.modelData.id === "language" ? settings._languageDisplay(Browse.Settings.current_language) : row.modelData.id === "orientation" ? settings._orientationDisplay(Browse.Settings.current_orientation) : row.modelData.id === "browseLayout" ? settings._browseLayoutDisplay(Browse.Settings.current_browse_layout) : row.modelData.id === "buttonLayout" ? settings._buttonLayoutDisplay(Browse.Settings.current_button_layout) : row.modelData.id === "screensaverTimeout" ? settings._screensaverTimeoutDisplay(Browse.Settings.current_screensaver_timeout) : ""
                         control: row.modelData.id === "mouseEnabled" || row.modelData.id === "discoverArcadeAlternateVersions" || row.modelData.id === "debugLogging" ? "toggle" : row.modelData.id === "aboutLicense" ? "navigate" : (row.modelData.id === "updateMediaDb" || row.modelData.id === "runScraper" || row.modelData.id === "uploadLog") ? "action" : "picker"
                         checked: row.modelData.id === "debugLogging" ? Browse.Settings.current_debug_logging : row.modelData.id === "discoverArcadeAlternateVersions" ? Browse.Settings.current_discover_arcade_alternate_versions : Browse.Settings.current_mouse_enabled
                         actionStatus: row.modelData.id === "updateMediaDb" ? settings._indexActionStatus() : row.modelData.id === "runScraper" ? settings._scrapeActionStatus() : ""

@@ -1292,6 +1292,8 @@ MainLayout {
             if (selectedId !== Browse.Settings.current_language)
                 root.stageSettingRestart(fieldId, selectedId);
             return;
+        } else if (fieldId === "orientation") {
+            Browse.Settings.set_orientation(selectedId);
         } else if (fieldId === "browseLayout")
             Browse.Settings.set_browse_layout(selectedId);
         else if (fieldId === "buttonLayout")

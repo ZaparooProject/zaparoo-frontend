@@ -14,6 +14,7 @@ QtObject {
     property real screenWidth: 640
     property real screenHeight: 480
     property bool crtNativePath: false
+    property bool swapPercentageAxes: false
 
     // Visible tile-row covers: fewer at very low resolution to avoid crowding.
     readonly property int visibleCovers: screenHeight < 300 ? 3 : 5
@@ -47,11 +48,11 @@ QtObject {
     readonly property int headerBottom: headerTopMargin + headerHeight
 
     function pctH(percent: real): int {
-        return Math.round(screenHeight * percent / 100);
+        return Math.round((swapPercentageAxes ? screenWidth : screenHeight) * percent / 100);
     }
 
     function pctW(percent: real): int {
-        return Math.round(screenWidth * percent / 100);
+        return Math.round((swapPercentageAxes ? screenHeight : screenWidth) * percent / 100);
     }
 
     function px(value: real): int {

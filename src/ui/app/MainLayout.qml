@@ -192,6 +192,12 @@ ApplicationWindow {
         value: root.crtNativePath
     }
 
+    Binding {
+        target: Sizing
+        property: "swapPercentageAxes"
+        value: root._sceneRotated
+    }
+
     // Screen plumbing exposed for Main.qml's orchestration. Anything
     // inside the screens (categories row, systems/games grids) is
     // reached via root.hubScreen.* / root.systemsScreen.* /
@@ -214,10 +220,8 @@ ApplicationWindow {
     property alias headerBar: headerBar
     property alias screensaverOverlay: screensaverOverlay
     // Exposed so Main.qml binds Sizing.screenWidth/Height to the
-    // (logical) scene dimensions in CRT preview mode rather than the
-    // (physical) ApplicationWindow dimensions. Outside preview the
-    // scene fills the window, so the bindings produce the same values
-    // they did before this wrapper existed.
+    // logical scene dimensions. In rotated mode this is the swapped
+    // B x A layout space while the outer framebuffer still stays A x B.
     property alias scene: scene
 
     property bool cardWriteModalVisible: false
@@ -286,6 +290,8 @@ ApplicationWindow {
     readonly property string hubScreenState: (Browse.CategoriesModel.error_message ?? "") !== "" ? "error" : (Browse.CategoriesModel.count === 0 ? "empty" : "ready")
 
     readonly property string recentsScreenState: Browse.RecentsModel.loading ? "loading" : ((Browse.RecentsModel.error_message ?? "") !== "" ? "error" : (Browse.RecentsModel.count === 0 ? "empty" : "ready"))
+    readonly property string displayOrientation: Browse.Settings.current_orientation
+    readonly property bool _sceneRotated: root.displayOrientation === "cw" || root.displayOrientation === "ccw"
     readonly property bool _crtGridBrowseLayout: root.crtNativePath && Browse.Settings.current_browse_layout !== "list"
     readonly property var _browseTileLayout: root.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
     readonly property var _contextMenuLayout: root.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
@@ -362,12 +368,13 @@ ApplicationWindow {
     // and the GL backend's final logical-to-physical present step is
     // a no-op (no bilinear filtering smearing the integer upscale).
     Item {
-        id: scene
+        id: framebufferScene
 
         x: 0
         y: 0
         width: root._crtPreviewActive ? root.videoWidth : root.width
         height: root._crtPreviewActive ? root.videoHeight : root.height
+        clip: false
         transformOrigin: Item.TopLeft
         scale: root._crtPreviewActive ? root._crtPreviewEffectiveScale : 1
         // smooth/layer.smooth control the integer-upscale sampling on
@@ -393,6 +400,17 @@ ApplicationWindow {
         layer.enabled: root._crtPreviewActive
         layer.smooth: false
         layer.textureSize: root._crtPreviewActive ? Qt.size(root.videoWidth, root.videoHeight) : Qt.size(0, 0)
+
+        Item {
+            id: scene
+
+            x: Sizing.center(framebufferScene.width, width)
+            y: Sizing.center(framebufferScene.height, height)
+            width: root._sceneRotated ? framebufferScene.height : framebufferScene.width
+            height: root._sceneRotated ? framebufferScene.width : framebufferScene.height
+            clip: false
+            transformOrigin: Item.Center
+            rotation: root.displayOrientation === "cw" ? 90 : root.displayOrientation === "ccw" ? -90 : 0
 
         // ── Background ────────────────────────────────────────────────────────────
 
@@ -1114,6 +1132,7 @@ ApplicationWindow {
 
             anchors.fill: parent
             z: 500
+        }
         }
     }
 }
