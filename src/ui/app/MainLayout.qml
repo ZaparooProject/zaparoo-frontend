@@ -292,9 +292,17 @@ ApplicationWindow {
     readonly property string recentsScreenState: Browse.RecentsModel.loading ? "loading" : ((Browse.RecentsModel.error_message ?? "") !== "" ? "error" : (Browse.RecentsModel.count === 0 ? "empty" : "ready"))
     readonly property string displayOrientation: Browse.Settings.current_orientation
     readonly property bool _sceneRotated: root.displayOrientation === "cw" || root.displayOrientation === "ccw"
-    readonly property bool _crtGridBrowseLayout: root.crtNativePath && Browse.Settings.current_browse_layout !== "list"
-    readonly property var _browseTileLayout: root.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
-    readonly property var _contextMenuLayout: root.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
+    readonly property bool _browseListLayout: Browse.Settings.current_browse_layout === "list"
+    readonly property bool _browseTateListLayout: root._browseListLayout && root.displayOrientation !== "horizontal"
+    readonly property string _browseViewId: {
+        if (root.activeScreen === root.screenSystems)
+            return root._browseListLayout ? (root._browseTateListLayout ? "systemsListTate" : "systemsList") : "systemsGrid";
+        if (root.activeScreen === root.screenGames || root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents)
+            return root._browseListLayout ? (root._browseTateListLayout ? "gamesListTate" : "gamesList") : "gamesGrid";
+        return "gamesGrid";
+    }
+    readonly property string _browseThemeId: BrowseLayouts.currentThemeId
+    readonly property var _browseViewProfile: BrowseLayouts.themeProfile(root._browseThemeId, root._browseViewId)
     readonly property string _crtGamesHeaderTitle: {
         const sid = Browse.GamesModel.current_system_id;
         if (sid === "")
@@ -452,7 +460,7 @@ ApplicationWindow {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.topMargin: Sizing.headerTopMargin
-            layoutProfile: root._browseTileLayout
+            layoutProfile: root._browseViewProfile
             browseTitle: root.browseHeaderTitle
             browseProgressText: root.browseHeaderProgressText
             z: 200
@@ -593,7 +601,7 @@ ApplicationWindow {
             open: root.contextMenuVisible
             anchorRect: root.contextMenuAnchor
             entries: root.contextMenuEntries
-            bottomUnsafeHeight: root._contextMenuLayout.bottomUnsafeHeight
+            bottomUnsafeHeight: BrowseLayouts.numberValue(root._browseViewProfile, "footer.bottomUnsafeHeight", Sizing.pctH(6) + Sizing.pctH(2))
             onAccepted: id => root.contextMenuAccepted(id)
             onCloseRequested: root.contextMenuCloseRequested()
         }

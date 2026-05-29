@@ -1,0 +1,370 @@
+{
+  "systemsGrid": {
+    "header": {
+      "titleInHeader": true,
+      "hudBottomAligned": true,
+      "statusPillPinnedTop": true
+    },
+    "status": {
+      "topStripVisible": false,
+      "stripHeight": 0,
+      "slotMargin": "headerSideMargin",
+      "topMargin": "pctH:1"
+    },
+    "grid": {
+      "leftInset": 4,
+      "rightInset": 0,
+      "gutterWidth": 8,
+      "gutterGap": 4,
+      "columnGap": 4,
+      "topInset": 2,
+      "bottomInset": 4,
+      "rowGap": 4,
+      "scrollThumbWidth": 4,
+      "scrollThumbRightInset": 2,
+      "scrollThumbRightAligned": false,
+      "scrollArrowSize": 8,
+      "gutterFollowsContentWidth": true
+    },
+    "footer": {
+      "activeLabelHeight": 8,
+      "activeLabelBottomMargin": "pctH:6",
+      "bottomStatusVisible": true,
+      "bottomStatusLeftMargin": 4,
+      "bottomStatusRightMargin": "pctW:5",
+      "gridBottomMargin": "sum(pctH:6,8)",
+      "bottomUnsafeHeight": 16
+    },
+    "surface": {
+      "cornerRadius": 4
+    }
+  },
+  "systemsList": {
+    "header": {
+      "titleInHeader": true,
+      "hudBottomAligned": true,
+      "statusPillPinnedTop": true
+    },
+    "status": {
+      "topStripVisible": true,
+      "stripHeight": 8,
+      "slotMargin": "headerSideMargin",
+      "topMargin": "pctH:1"
+    },
+    "list": {
+      "contentAxis": "horizontal",
+      "listShare": 2,
+      "detailShare": 1,
+      "dividerWidth": 1,
+      "dividerMargin": -16,
+      "cardSideMargin": 4,
+      "cardTopMargin": "pctH:2",
+      "cardBottomMargin": "pctH:8",
+      "cardPaddingLeft": 3,
+      "cardPaddingRight": 2,
+      "cardPaddingTop": 3,
+      "cardPaddingBottom": 2,
+      "rowHeight": 12,
+      "rowSpacing": 0,
+      "centerSlot": 7,
+      "scrollbarGap": 2,
+      "selectionAccentWidth": 2,
+      "rowTextLeftPadding": 4,
+      "rowTextRightPadding": 2,
+      "favoriteRightPadding": 2,
+      "overlayBottomMargin": "pctH:14"
+    },
+    "detail": {
+      "contentAxis": "vertical",
+      "sectionGap": 2,
+      "imageShare": 58,
+      "metadataShare": 42,
+      "imageHeightRatioWithTitle": 48,
+      "imageReservedWidth": 16,
+      "imageReservedHeight": 0,
+      "imageBottomMargin": 2,
+      "panePaddingLeft": 1,
+      "panePaddingRight": 1,
+      "panePaddingTop": 3,
+      "panePaddingBottom": 2,
+      "imagePaddingLeft": 2,
+      "imagePaddingRight": 2,
+      "imagePaddingTop": 0,
+      "imagePaddingBottom": 2,
+      "metadataPaddingLeft": 2,
+      "metadataPaddingRight": 1,
+      "metadataPaddingTop": 0,
+      "metadataPaddingBottom": 0,
+      "metadataTopMargin": -14,
+      "metadataLeftMargin": 2,
+      "metadataRightMargin": 1,
+      "metadataHeightAdjustment": 2,
+      "metadataBottomAligned": false,
+      "titleBottomMargin": 2,
+      "tagRowHeight": 9,
+      "tagRowSpacing": 0
+    },
+    "footer": {
+      "bottomUnsafeHeight": 16
+    },
+    "surface": {
+      "cornerRadius": 4
+    }
+  },
+  "systemsListTate": {
+    "header": {
+      "titleInHeader": true,
+      "hudBottomAligned": true,
+      "statusPillPinnedTop": true
+    },
+    "status": {
+      "topStripVisible": true,
+      "stripHeight": 8,
+      "slotMargin": "headerSideMargin",
+      "topMargin": "pctH:1"
+    },
+    "list": {
+      "contentAxis": "vertical",
+      "listShare": 9,
+      "detailShare": 7,
+      "dividerWidth": 1,
+      "dividerMargin": 0,
+      "cardSideMargin": 4,
+      "cardTopMargin": "pctH:2",
+      "cardBottomMargin": "pctH:8",
+      "cardPaddingLeft": 3,
+      "cardPaddingRight": 2,
+      "cardPaddingTop": 3,
+      "cardPaddingBottom": 2,
+      "rowHeight": 12,
+      "rowSpacing": 0,
+      "centerSlot": 7,
+      "scrollbarGap": 2,
+      "selectionAccentWidth": 2,
+      "rowTextLeftPadding": 4,
+      "rowTextRightPadding": 2,
+      "favoriteRightPadding": 2,
+      "overlayBottomMargin": "pctH:14"
+    },
+    "detail": {
+      "contentAxis": "horizontal",
+      "sectionGap": 2,
+      "imageShare": 5,
+      "metadataShare": 7,
+      "imageHeightRatioWithTitle": 48,
+      "imageReservedWidth": 16,
+      "imageReservedHeight": 0,
+      "imageBottomMargin": 2,
+      "panePaddingLeft": 1,
+      "panePaddingRight": 1,
+      "panePaddingTop": 3,
+      "panePaddingBottom": 2,
+      "imagePaddingLeft": 2,
+      "imagePaddingRight": 2,
+      "imagePaddingTop": 0,
+      "imagePaddingBottom": 2,
+      "metadataPaddingLeft": 2,
+      "metadataPaddingRight": 1,
+      "metadataPaddingTop": 0,
+      "metadataPaddingBottom": 0,
+      "metadataTopMargin": 0,
+      "metadataLeftMargin": 0,
+      "metadataRightMargin": 0,
+      "metadataHeightAdjustment": 0,
+      "metadataBottomAligned": false,
+      "titleBottomMargin": 2,
+      "tagRowHeight": 9,
+      "tagRowSpacing": 0
+    },
+    "footer": {
+      "bottomUnsafeHeight": 16
+    },
+    "surface": {
+      "cornerRadius": 4
+    }
+  },
+  "gamesGrid": {
+    "header": {
+      "titleInHeader": true,
+      "hudBottomAligned": true,
+      "statusPillPinnedTop": true
+    },
+    "status": {
+      "topStripVisible": false,
+      "stripHeight": 0,
+      "slotMargin": "headerSideMargin",
+      "topMargin": "pctH:1"
+    },
+    "grid": {
+      "leftInset": 4,
+      "rightInset": 0,
+      "gutterWidth": 8,
+      "gutterGap": 4,
+      "columnGap": 4,
+      "topInset": 2,
+      "bottomInset": 4,
+      "rowGap": 4,
+      "scrollThumbWidth": 4,
+      "scrollThumbRightInset": 2,
+      "scrollThumbRightAligned": false,
+      "scrollArrowSize": 8,
+      "gutterFollowsContentWidth": true
+    },
+    "footer": {
+      "activeLabelHeight": 8,
+      "activeLabelBottomMargin": "pctH:6",
+      "bottomStatusVisible": true,
+      "bottomStatusLeftMargin": 4,
+      "bottomStatusRightMargin": "pctW:5",
+      "gridBottomMargin": "sum(pctH:6,8)",
+      "bottomUnsafeHeight": 16
+    },
+    "surface": {
+      "cornerRadius": 4
+    }
+  },
+  "gamesList": {
+    "header": {
+      "titleInHeader": true,
+      "hudBottomAligned": true,
+      "statusPillPinnedTop": true
+    },
+    "status": {
+      "topStripVisible": true,
+      "stripHeight": 8,
+      "slotMargin": "headerSideMargin",
+      "topMargin": "pctH:1"
+    },
+    "list": {
+      "contentAxis": "horizontal",
+      "listShare": 2,
+      "detailShare": 1,
+      "dividerWidth": 1,
+      "dividerMargin": -16,
+      "cardSideMargin": 4,
+      "cardTopMargin": "pctH:2",
+      "cardBottomMargin": "pctH:8",
+      "cardPaddingLeft": 3,
+      "cardPaddingRight": 2,
+      "cardPaddingTop": 3,
+      "cardPaddingBottom": 2,
+      "rowHeight": 12,
+      "rowSpacing": 0,
+      "centerSlot": 7,
+      "scrollbarGap": 2,
+      "selectionAccentWidth": 2,
+      "rowTextLeftPadding": 4,
+      "rowTextRightPadding": 2,
+      "favoriteRightPadding": 2,
+      "overlayBottomMargin": "pctH:14"
+    },
+    "detail": {
+      "contentAxis": "vertical",
+      "sectionGap": 2,
+      "imageShare": 62,
+      "metadataShare": 38,
+      "imageHeightRatioWithTitle": 48,
+      "imageReservedWidth": 16,
+      "imageReservedHeight": 0,
+      "imageBottomMargin": 2,
+      "panePaddingLeft": 1,
+      "panePaddingRight": 1,
+      "panePaddingTop": 3,
+      "panePaddingBottom": 2,
+      "imagePaddingLeft": 2,
+      "imagePaddingRight": 2,
+      "imagePaddingTop": 0,
+      "imagePaddingBottom": 2,
+      "metadataPaddingLeft": 2,
+      "metadataPaddingRight": 1,
+      "metadataPaddingTop": 0,
+      "metadataPaddingBottom": 0,
+      "metadataTopMargin": -14,
+      "metadataLeftMargin": 2,
+      "metadataRightMargin": 1,
+      "metadataHeightAdjustment": 2,
+      "metadataBottomAligned": true,
+      "titleBottomMargin": 2,
+      "tagRowHeight": 9,
+      "tagRowSpacing": 0
+    },
+    "footer": {
+      "bottomUnsafeHeight": 16
+    },
+    "surface": {
+      "cornerRadius": 4
+    }
+  },
+  "gamesListTate": {
+    "header": {
+      "titleInHeader": true,
+      "hudBottomAligned": true,
+      "statusPillPinnedTop": true
+    },
+    "status": {
+      "topStripVisible": true,
+      "stripHeight": 8,
+      "slotMargin": "headerSideMargin",
+      "topMargin": "pctH:1"
+    },
+    "list": {
+      "contentAxis": "vertical",
+      "listShare": 9,
+      "detailShare": 7,
+      "dividerWidth": 1,
+      "dividerMargin": 0,
+      "cardSideMargin": 4,
+      "cardTopMargin": "pctH:2",
+      "cardBottomMargin": "pctH:8",
+      "cardPaddingLeft": 3,
+      "cardPaddingRight": 2,
+      "cardPaddingTop": 3,
+      "cardPaddingBottom": 2,
+      "rowHeight": 12,
+      "rowSpacing": 0,
+      "centerSlot": 7,
+      "scrollbarGap": 2,
+      "selectionAccentWidth": 2,
+      "rowTextLeftPadding": 4,
+      "rowTextRightPadding": 2,
+      "favoriteRightPadding": 2,
+      "overlayBottomMargin": "pctH:14"
+    },
+    "detail": {
+      "contentAxis": "horizontal",
+      "sectionGap": 2,
+      "imageShare": 5,
+      "metadataShare": 7,
+      "imageHeightRatioWithTitle": 48,
+      "imageReservedWidth": 16,
+      "imageReservedHeight": 0,
+      "imageBottomMargin": 2,
+      "panePaddingLeft": 1,
+      "panePaddingRight": 1,
+      "panePaddingTop": 3,
+      "panePaddingBottom": 2,
+      "imagePaddingLeft": 2,
+      "imagePaddingRight": 2,
+      "imagePaddingTop": 0,
+      "imagePaddingBottom": 2,
+      "metadataPaddingLeft": 2,
+      "metadataPaddingRight": 1,
+      "metadataPaddingTop": 0,
+      "metadataPaddingBottom": 0,
+      "metadataTopMargin": 0,
+      "metadataLeftMargin": 0,
+      "metadataRightMargin": 0,
+      "metadataHeightAdjustment": 0,
+      "metadataBottomAligned": false,
+      "titleBottomMargin": 2,
+      "tagRowHeight": 9,
+      "tagRowSpacing": 0
+    },
+    "footer": {
+      "bottomUnsafeHeight": 16
+    },
+    "surface": {
+      "cornerRadius": 4
+    }
+  }
+}

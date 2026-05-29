@@ -56,6 +56,9 @@ Item {
     property var gridCurrentPageChangedAction: null
     property var gridCurrentIndexChangedAction: null
     property var gridLoadMoreAction: null
+    property string gridViewId: "gamesGrid"
+    property string listViewId: "gamesList"
+    property string tateListViewId: "gamesListTate"
 
     property alias mediaGrid: mediaGrid
     property alias topStrip: topStrip
@@ -69,7 +72,6 @@ Item {
     property bool renderGridLayout: true
     property bool showTopStrip: true
     property bool showBottomStatusRow: false
-    property bool showHeaderTitleInHeader: false
     property bool activeLabelAtBottom: false
     property int gridBottomMargin: Sizing.pctH(15)
     property int activeLabelBottomMargin: 0
@@ -80,13 +82,19 @@ Item {
     property bool pageLoadingVisible: false
     property string bottomStatusLeftText: ""
     property string bottomStatusRightText: ""
-    property var gridLayoutProfile: null
     property int gridTotalItemsOverride: -1
     property bool gridHasMorePages: false
     readonly property bool _listLayout: root.forceListLayout || Browse.Settings.current_browse_layout === "list"
+    readonly property bool _tateListLayout: root._listLayout && Browse.Settings.current_orientation !== "horizontal"
+    readonly property string _activeListViewId: root._tateListLayout ? root.tateListViewId : root.listViewId
+    readonly property string _browseThemeId: BrowseLayouts.currentThemeId
+    readonly property var _gridLayoutProfile: BrowseLayouts.themeProfile(root._browseThemeId, root.gridViewId)
+    readonly property var _listLayoutProfile: BrowseLayouts.themeProfile(root._browseThemeId, root._activeListViewId)
+    readonly property var _activeViewProfile: root._listLayout ? root._listLayoutProfile : root._gridLayoutProfile
+    readonly property var _statusProfile: root._activeViewProfile && root._activeViewProfile.status ? root._activeViewProfile.status : null
+    readonly property var _footerProfile: root._gridLayoutProfile && root._gridLayoutProfile.footer ? root._gridLayoutProfile.footer : null
     readonly property bool _crtListStrip: Theme.crtNativePath && root._listLayout
-    readonly property var _listLayoutProfile: Theme.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
-    readonly property int _listOverlayBottomMargin: Sizing.pctH(15)
+    readonly property int _listOverlayBottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.overlayBottomMargin : Sizing.pctH(15)
     readonly property bool _gateHide: root.transitioning || root._loading()
 
     signal requestHubScreen
@@ -285,13 +293,13 @@ Item {
 
     TopStatusStrip {
         id: topStrip
-        visible: !root._gateHide && (root.showTopStrip || root._crtListStrip)
+        visible: !root._gateHide && (root._statusProfile ? root._statusProfile.topStripVisible : root.showTopStrip)
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: Sizing.headerBottom + Sizing.pctH(1)
-        height: root._crtListStrip ? root._listLayoutProfile.listStripHeight : (root.showTopStrip ? Sizing.pctH(7) : 0)
-        slotMargin: root._crtListStrip ? root._listLayoutProfile.listStripSlotMargin : Sizing.pctW(5)
+        anchors.topMargin: Sizing.headerBottom + (root._statusProfile ? root._statusProfile.topMargin : Sizing.pctH(1))
+        height: root._statusProfile ? root._statusProfile.stripHeight : (root.showTopStrip ? Sizing.pctH(7) : 0)
+        slotMargin: root._statusProfile ? root._statusProfile.slotMargin : Sizing.pctW(5)
         title: typeof root.topStripTitleProvider === "function" ? root.topStripTitleProvider() : root.screenTitle
         currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : mediaGrid.currentPage
         totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize))
@@ -304,13 +312,13 @@ Item {
 
         visible: !root._gateHide && root._listLayout
         anchors.left: parent.left
-        anchors.leftMargin: root._listLayoutProfile.listCardSideMargin
+        anchors.leftMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(5)
         anchors.right: parent.right
-        anchors.rightMargin: root._listLayoutProfile.listCardSideMargin
+        anchors.rightMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(5)
         anchors.top: topStrip.bottom
-        anchors.topMargin: Sizing.pctH(2)
+        anchors.topMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardTopMargin : Sizing.pctH(2)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.pctH(8)
+        anchors.bottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardBottomMargin : Sizing.pctH(8)
         layoutProfile: root._listLayoutProfile
         model: root.mediaModel
         totalItemsOverride: root.totalItemsOverride
@@ -352,10 +360,10 @@ Item {
         focused: root.gridFocused
         model: root.mediaModel
         delegate: Tile {
-            layoutProfile: root.gridLayoutProfile
+            layoutProfile: root._gridLayoutProfile
             showCaption: true
         }
-        layoutProfile: root.gridLayoutProfile
+        layoutProfile: root._gridLayoutProfile
         columnsOverride: Sizing.gamesGridColumns
         rowsOverride: Sizing.gamesGridRows
         totalItemsOverride: root.gridTotalItemsOverride

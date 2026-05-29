@@ -28,7 +28,16 @@ MediaListScreen {
     readonly property int _listPageSize: games._portraitNonCrtList ? 16 : 10
     readonly property int _browsePageSize: games._listLayout ? Math.max(1, games.listCard.visibleRowCount) : games.gamesGrid.pageSize
     readonly property bool _crtGridLayout: Theme.crtNativePath && !games._listLayout
-    readonly property var _tileLayout: games._crtGridLayout ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
+    readonly property bool _tateListLayout: Browse.Settings.current_orientation !== "horizontal"
+    readonly property string _gridViewId: "gamesGrid"
+    readonly property string _listViewId: "gamesList"
+    readonly property string _tateListViewId: "gamesListTate"
+    readonly property string _activeViewId: games._listLayout ? (games._tateListLayout ? games._tateListViewId : games._listViewId) : games._gridViewId
+    readonly property string _browseThemeId: BrowseLayouts.currentThemeId
+    readonly property var _viewProfile: BrowseLayouts.themeProfile(games._browseThemeId, games._activeViewId)
+    readonly property var _headerProfile: games._viewProfile && games._viewProfile.header ? games._viewProfile.header : null
+    readonly property var _statusProfile: games._viewProfile && games._viewProfile.status ? games._viewProfile.status : null
+    readonly property var _footerProfile: games._viewProfile && games._viewProfile.footer ? games._viewProfile.footer : null
 
     mediaModel: Browse.GamesModel
     emptyText: qsTr("No games in this system")
@@ -60,6 +69,9 @@ MediaListScreen {
     linearMoveAction: delta => games._performLinearMove(delta)
     pageAction: delta => games._performPage(delta)
     onListLayoutEntered: () => games._fillListPage()
+    gridViewId: games._gridViewId
+    listViewId: games._listViewId
+    tateListViewId: games._tateListViewId
     listLeftAction: () => Browse.GamesModel.cycle_detail_image(-1)
     listRightAction: () => Browse.GamesModel.cycle_detail_image(1)
     contextMenuEnabledAt: index => {
@@ -95,10 +107,8 @@ MediaListScreen {
         else
             games.requestSystemsScreen();
     }
-    showTopStrip: games._tileLayout.showTopStrip
+    showTopStrip: games._statusProfile ? games._statusProfile.topStripVisible : true
     topStripTitleProvider: () => {
-        if (games._tileLayout.showHeaderTitleInHeader)
-            return "";
         const sid = Browse.GamesModel.current_system_id;
         if (sid === "")
             return "";
@@ -106,8 +116,8 @@ MediaListScreen {
         return idx >= 0 ? Browse.SystemsModel.system_name_at(idx) : sid;
     }
     topStripCurrentPageProvider: () => Math.floor(games.gamesGrid.currentIndex / games._browsePageSize)
-    topStripTotalPagesProvider: () => games._tileLayout.showBottomStatusRow ? 1 : Math.max(1, Math.ceil((Browse.GamesModel.dir_count + Browse.GamesModel.total_files) / games._browsePageSize))
-    topStripTotalTextProvider: () => games._listLayout || games._tileLayout.showBottomStatusRow ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : "")
+    topStripTotalPagesProvider: () => games._footerProfile && games._footerProfile.bottomStatusVisible ? 1 : Math.max(1, Math.ceil((Browse.GamesModel.dir_count + Browse.GamesModel.total_files) / games._browsePageSize))
+    topStripTotalTextProvider: () => games._listLayout || (games._footerProfile && games._footerProfile.bottomStatusVisible) ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : "")
     topStripRightTextProvider: () => {
         if (!games._listLayout)
             return "";
@@ -118,8 +128,7 @@ MediaListScreen {
         const total = Math.max(1, Browse.GamesModel.dir_count + Browse.GamesModel.total_files);
         return qsTr("%1 / %2").arg(games.gamesGrid.currentIndex + 1).arg(total);
     }
-    gridLayoutProfile: games._tileLayout
-    gridBottomMargin: games._tileLayout.showBottomStatusRow ? games._tileLayout.activeLabelBottomMargin + games._tileLayout.activeLabelHeight : Sizing.pctH(6) + games._tileLayout.activeLabelBottomMargin + games._tileLayout.activeLabelHeight
+    gridBottomMargin: games._footerProfile ? games._footerProfile.gridBottomMargin : (Sizing.pctH(6) + Sizing.pctH(8) + Sizing.pctH(7))
     gridTotalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
     gridHasMorePages: Browse.GamesModel.has_next_page
     gridLoadMoreAction: () => Browse.GamesModel.fetch_more()
@@ -131,15 +140,15 @@ MediaListScreen {
     }
     activeLabelTextProvider: () => games.gamesGrid.itemCount > 0 ? Browse.GamesModel.name_at(games.gamesGrid.currentIndex) : ""
     activeLabelAtBottom: true
-    activeLabelBottomMargin: games._tileLayout.activeLabelBottomMargin
-    activeLabelHeight: games._tileLayout.activeLabelHeight
-    showBottomStatusRow: games._tileLayout.showBottomStatusRow
-    bottomStatusLeftMargin: games._tileLayout.bottomStatusLeftMargin
-    bottomStatusRightMargin: games._tileLayout.bottomStatusRightMargin
-    bottomStatusLeftText: games._tileLayout.showBottomStatusRow && Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : ""
-    bottomStatusRightText: games._tileLayout.showBottomStatusRow && Math.ceil((Browse.GamesModel.dir_count + Browse.GamesModel.total_files) / games._browsePageSize) > 1 ? qsTr("%1 / %2").arg(Math.floor(games.gamesGrid.currentIndex / games._browsePageSize) + 1).arg(Math.max(1, Math.ceil((Browse.GamesModel.dir_count + Browse.GamesModel.total_files) / games._browsePageSize))) : ""
+    activeLabelBottomMargin: games._footerProfile ? games._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
+    activeLabelHeight: games._footerProfile ? games._footerProfile.activeLabelHeight : Sizing.pctH(7)
+    showBottomStatusRow: games._footerProfile ? games._footerProfile.bottomStatusVisible : false
+    bottomStatusLeftMargin: games._footerProfile ? games._footerProfile.bottomStatusLeftMargin : 0
+    bottomStatusRightMargin: games._footerProfile ? games._footerProfile.bottomStatusRightMargin : 0
+    bottomStatusLeftText: games._footerProfile && games._footerProfile.bottomStatusVisible && Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : ""
+    bottomStatusRightText: games._footerProfile && games._footerProfile.bottomStatusVisible && Math.ceil((Browse.GamesModel.dir_count + Browse.GamesModel.total_files) / games._browsePageSize) > 1 ? qsTr("%1 / %2").arg(Math.floor(games.gamesGrid.currentIndex / games._browsePageSize) + 1).arg(Math.max(1, Math.ceil((Browse.GamesModel.dir_count + Browse.GamesModel.total_files) / games._browsePageSize))) : ""
     pageLoadingVisible: !games._listLayout && Browse.GamesModel.loading_more && games.gamesGrid.hasPendingTarget
-    pageLoadingLeftMargin: games._tileLayout.showBottomStatusRow && games.bottomStatusLeftText !== "" ? Sizing.px(games.width / 3) : games.gamesGrid.leftInset
+    pageLoadingLeftMargin: games._footerProfile && games._footerProfile.bottomStatusVisible && games.bottomStatusLeftText !== "" ? Sizing.px(games.width / 3) : games.gamesGrid.leftInset
 
     Binding {
         target: Browse.GamesModel

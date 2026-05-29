@@ -39,8 +39,14 @@ Item {
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
     readonly property bool _crtGridLayout: Theme.crtNativePath && !systems._listLayout
     readonly property bool _crtListStrip: Theme.crtNativePath && systems._listLayout
-    readonly property var _tileLayout: Theme.crtNativePath ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
-    readonly property int _listOverlayBottomMargin: Sizing.pctH(6) + systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight
+    readonly property bool _tateListLayout: systems._listLayout && Browse.Settings.current_orientation !== "horizontal"
+    readonly property string _viewId: systems._listLayout ? (systems._tateListLayout ? "systemsListTate" : "systemsList") : "systemsGrid"
+    readonly property string _browseThemeId: BrowseLayouts.currentThemeId
+    readonly property var _viewProfile: BrowseLayouts.themeProfile(systems._browseThemeId, systems._viewId)
+    readonly property var _statusProfile: systems._viewProfile && systems._viewProfile.status ? systems._viewProfile.status : null
+    readonly property var _footerProfile: systems._viewProfile && systems._viewProfile.footer ? systems._viewProfile.footer : null
+    readonly property var _listProfile: systems._viewProfile && systems._viewProfile.list ? systems._viewProfile.list : null
+    readonly property int _listOverlayBottomMargin: systems._listProfile ? systems._listProfile.overlayBottomMargin : Sizing.pctH(15)
 
     signal requestAccept(systemId: string)
     signal requestHubScreen
@@ -178,15 +184,15 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: Sizing.headerBottom + Sizing.pctH(1)
-        height: systems._crtListStrip ? systems._tileLayout.listStripHeight : (systems._tileLayout.showTopStrip ? Sizing.pctH(7) : 0)
-        slotMargin: systems._crtListStrip ? systems._tileLayout.listStripSlotMargin : Sizing.pctW(5)
-        title: systems._tileLayout.showHeaderTitleInHeader ? "" : Browse.SystemsModel.current_category
+        anchors.topMargin: Sizing.headerBottom + (systems._statusProfile ? systems._statusProfile.topMargin : Sizing.pctH(1))
+        height: systems._statusProfile ? systems._statusProfile.stripHeight : Sizing.pctH(7)
+        slotMargin: systems._statusProfile ? systems._statusProfile.slotMargin : Sizing.pctW(5)
+        title: Browse.SystemsModel.current_category
         currentPage: systemsGrid.currentPage
-        totalPages: systems._tileLayout.showBottomStatusRow ? 1 : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
+        totalPages: systems._footerProfile && systems._footerProfile.bottomStatusVisible ? 1 : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
         totalText: Theme.crtNativePath ? "" : (Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "")
         rightTextOverride: !systems._listLayout || systemsGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(systemsGrid.currentIndex + 1).arg(Math.max(1, Browse.SystemsModel.count))
-        visible: !systems.transitioning && (systems._tileLayout.showTopStrip || systems._crtListStrip)
+        visible: !systems.transitioning && (!systems._statusProfile || systems._statusProfile.topStripVisible)
     }
 
     BrowseListDetailView {
@@ -194,15 +200,16 @@ Item {
 
         visible: !systems.transitioning && systems._listLayout
         anchors.left: parent.left
-        anchors.leftMargin: systems._tileLayout.listCardSideMargin
+        anchors.leftMargin: systems._listProfile ? systems._listProfile.cardSideMargin : Sizing.pctW(5)
         anchors.right: parent.right
-        anchors.rightMargin: systems._tileLayout.listCardSideMargin
+        anchors.rightMargin: systems._listProfile ? systems._listProfile.cardSideMargin : Sizing.pctW(5)
         anchors.top: topStrip.bottom
-        anchors.topMargin: Sizing.pctH(2)
+        anchors.topMargin: systems._listProfile ? systems._listProfile.cardTopMargin : Sizing.pctH(2)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.pctH(8)
+        anchors.bottomMargin: systems._listProfile ? systems._listProfile.cardBottomMargin : Sizing.pctH(8)
         model: Browse.SystemsModel
         currentIndex: systemsGrid.currentIndex
+        layoutProfile: systems._viewProfile
         detailTitle: listCard.currentName
         detailCoverKey: listCard.currentCoverKey
         detailTags: Browse.SystemsModel.count > 0 ? Browse.SystemsModel.detail_tags_at(systemsGrid.currentIndex) : ""
@@ -230,12 +237,12 @@ Item {
         anchors.right: parent.right
         anchors.top: topStrip.bottom
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: systems._tileLayout.showBottomStatusRow ? systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight : Sizing.pctH(6) + systems._tileLayout.activeLabelBottomMargin + systems._tileLayout.activeLabelHeight
+        anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.gridBottomMargin : (Sizing.pctH(6) + Sizing.pctH(8) + Sizing.pctH(7))
         focused: systems.gridFocused
         model: Browse.SystemsModel
-        layoutProfile: systems._tileLayout
+        layoutProfile: systems._viewProfile
         delegate: Tile {
-            layoutProfile: systems._tileLayout
+            layoutProfile: systems._viewProfile
         }
         onItemHovered: index => systems._focusIndex(index)
         onItemClicked: index => {
@@ -264,18 +271,18 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: systems._tileLayout.activeLabelBottomMargin
-        height: systems._tileLayout.activeLabelHeight
+        anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
+        height: systems._footerProfile ? systems._footerProfile.activeLabelHeight : Sizing.pctH(7)
         text: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_name_at(systemsGrid.currentIndex) : ""
         visible: !systems.transitioning && !systems._listLayout
     }
 
     Text {
-        visible: systems._tileLayout.showBottomStatusRow && !systems.transitioning && !systems._listLayout && Browse.SystemsModel.count > 0
+        visible: systems._footerProfile && systems._footerProfile.bottomStatusVisible && !systems.transitioning && !systems._listLayout && Browse.SystemsModel.count > 0
         anchors.left: parent.left
-        anchors.leftMargin: systems._tileLayout.bottomStatusLeftMargin
+        anchors.leftMargin: systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - systems._tileLayout.bottomStatusLeftMargin
+        width: Sizing.px(parent.width / 3) - (systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0)
         height: Sizing.fontSize(2.9)
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
@@ -288,11 +295,11 @@ Item {
     }
 
     Text {
-        visible: systems._tileLayout.showBottomStatusRow && !systems.transitioning && !systems._listLayout && Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize) > 1
+        visible: systems._footerProfile && systems._footerProfile.bottomStatusVisible && !systems.transitioning && !systems._listLayout && Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize) > 1
         anchors.right: parent.right
-        anchors.rightMargin: systems._tileLayout.bottomStatusRightMargin
+        anchors.rightMargin: systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - systems._tileLayout.bottomStatusRightMargin
+        width: Sizing.px(parent.width / 3) - (systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0)
         height: Sizing.fontSize(2.9)
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight

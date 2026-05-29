@@ -30,8 +30,18 @@ Item {
     property alias detailSuppressed: detailPane.detailSuppressed
     property alias detailCanPreviousImage: detailPane.canPreviousImage
     property alias detailCanNextImage: detailPane.canNextImage
-    readonly property int _cardRadius: root.layoutProfile ? root.layoutProfile.tileCornerRadius : Sizing.cornerRadius
-    readonly property int _dividerOffsetX: root.layoutProfile && root.layoutProfile.listDividerOffsetX !== undefined ? root.layoutProfile.listDividerOffsetX : 0
+
+    property var _listProfile: root.layoutProfile && root.layoutProfile.list ? root.layoutProfile.list : null
+    property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
+    readonly property bool _verticalSplit: root._listProfile && root._listProfile.contentAxis === "vertical"
+    readonly property int _dividerWidth: root._listProfile && root._listProfile.dividerWidth !== undefined ? root._listProfile.dividerWidth : Sizing.stroke(1)
+    readonly property int _dividerMargin: root._listProfile && root._listProfile.dividerMargin !== undefined ? root._listProfile.dividerMargin : 0
+    readonly property real _listShare: root._listProfile && root._listProfile.listShare !== undefined ? root._listProfile.listShare : 2
+    readonly property real _detailShare: root._listProfile && root._listProfile.detailShare !== undefined ? root._listProfile.detailShare : 1
+    readonly property real _shareTotal: Math.max(1, root._listShare + root._detailShare)
+    readonly property int _listSpan: root._verticalSplit ? Math.max(0, Math.floor((height - root._dividerWidth) * root._listShare / root._shareTotal) + root._dividerMargin) : Math.max(0, Math.floor((width - root._dividerWidth) * root._listShare / root._shareTotal) + root._dividerMargin)
+    readonly property int _detailSpan: root._verticalSplit ? Math.max(0, height - root._listSpan - root._dividerWidth) : Math.max(0, width - root._listSpan - root._dividerWidth)
+    readonly property int _cardRadius: root._surfaceProfile ? root._surfaceProfile.cornerRadius : Sizing.cornerRadius
 
     signal itemHovered(int index)
     signal itemClicked(int index)
@@ -51,21 +61,13 @@ Item {
         radius: root._cardRadius
     }
 
-    CardDivider {
-        id: listDivider
-
-        x: Sizing.px(parent.width * 2 / 3) + root._dividerOffsetX
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-    }
-
     BrowseList {
         id: browseList
 
-        anchors.left: parent.left
-        anchors.right: listDivider.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
+        x: 0
+        y: 0
+        width: root._verticalSplit ? parent.width : root._listSpan
+        height: root._verticalSplit ? root._listSpan : parent.height
         layoutProfile: root.layoutProfile
         showChrome: false
         onItemHovered: index => root.itemHovered(index)
@@ -75,13 +77,21 @@ Item {
         onPageWheelRequested: delta => root.pageWheelRequested(delta)
     }
 
+    Rectangle {
+        x: root._verticalSplit ? 0 : browseList.width
+        y: root._verticalSplit ? browseList.height : 0
+        width: root._verticalSplit ? parent.width : root._dividerWidth
+        height: root._verticalSplit ? root._dividerWidth : parent.height
+        color: Theme.borderMid
+    }
+
     BrowseDetailPane {
         id: detailPane
 
-        anchors.left: listDivider.right
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
+        x: root._verticalSplit ? 0 : browseList.width + root._dividerWidth
+        y: root._verticalSplit ? browseList.height + root._dividerWidth : 0
+        width: root._verticalSplit ? parent.width : root._detailSpan
+        height: root._verticalSplit ? root._detailSpan : parent.height
         layoutProfile: root.layoutProfile
         showChrome: false
     }

@@ -18,34 +18,37 @@ Item {
     property bool showFileStem: false
     property bool showChrome: true
     property var layoutProfile: null
+    readonly property var _list: root.layoutProfile && root.layoutProfile.list ? root.layoutProfile.list : null
+    readonly property var _grid: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
+    readonly property var _surface: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
     readonly property int itemCount: listView.count
     readonly property int totalItems: totalItemsOverride >= 0 ? totalItemsOverride : itemCount
     readonly property bool _portraitNonCrt: !Theme.crtNativePath && Sizing.screenWidth < Sizing.screenHeight
-    readonly property int _selectionRadius: root.layoutProfile ? root.layoutProfile.tileCornerRadius : Sizing.cornerRadius
-    readonly property int cardPaddingLeft: root.layoutProfile ? root.layoutProfile.listCardPaddingLeft : Sizing.pctW(2)
-    readonly property int cardPaddingRight: root.layoutProfile ? root.layoutProfile.listCardPaddingRight : Sizing.pctW(2)
-    readonly property int cardPaddingTop: root.layoutProfile ? root.layoutProfile.listCardPaddingTop : Sizing.pctH(2)
-    readonly property int cardPaddingBottom: root.layoutProfile ? root.layoutProfile.listCardPaddingBottom : Sizing.pctH(2)
-    readonly property int rowSpacing: root.layoutProfile ? root.layoutProfile.listRowSpacing : (root._portraitNonCrt ? Sizing.pctH(0.3) : Sizing.pctH(0.7))
+    readonly property int _selectionRadius: root._surface ? root._surface.cornerRadius : Sizing.cornerRadius
+    readonly property int cardPaddingLeft: root._list ? root._list.cardPaddingLeft : Sizing.pctW(2)
+    readonly property int cardPaddingRight: root._list ? root._list.cardPaddingRight : Sizing.pctW(2)
+    readonly property int cardPaddingTop: root._list ? root._list.cardPaddingTop : Sizing.pctH(2)
+    readonly property int cardPaddingBottom: root._list ? root._list.cardPaddingBottom : Sizing.pctH(2)
+    readonly property int rowSpacing: root._list ? root._list.rowSpacing : (root._portraitNonCrt ? Sizing.pctH(0.3) : Sizing.pctH(0.7))
     readonly property int contentHeight: Math.max(0, height - cardPaddingTop - cardPaddingBottom)
-    readonly property int rowHeight: root.layoutProfile && root.layoutProfile.listRowHeight > 0 ? root.layoutProfile.listRowHeight : (targetVisibleRowCount > 0 ? Math.max(Sizing.pctH(3), Math.floor((contentHeight - (rowSpacing * (targetVisibleRowCount - 1))) / targetVisibleRowCount)) : Sizing.pctH(6))
+    readonly property int rowHeight: root._list && root._list.rowHeight > 0 ? root._list.rowHeight : (targetVisibleRowCount > 0 ? Math.max(Sizing.pctH(3), Math.floor((contentHeight - (rowSpacing * (targetVisibleRowCount - 1))) / targetVisibleRowCount)) : Sizing.pctH(6))
     readonly property int rowStride: rowHeight + rowSpacing
     readonly property int visibleRowCount: targetVisibleRowCount > 0 ? targetVisibleRowCount : Math.max(1, Math.floor((contentHeight + rowSpacing) / rowStride))
-    readonly property int _centerSlot: root.layoutProfile && root.layoutProfile.listCenterSlot >= 0 ? Math.max(0, Math.min(visibleRowCount - 1, root.layoutProfile.listCenterSlot)) : Math.max(0, Math.floor((visibleRowCount - 1) / 2))
+    readonly property int _centerSlot: root._list && root._list.centerSlot >= 0 ? Math.max(0, Math.min(visibleRowCount - 1, root._list.centerSlot)) : Math.max(0, Math.floor((visibleRowCount - 1) / 2))
     readonly property int _maxViewTopIndex: Math.max(0, itemCount - visibleRowCount)
     readonly property int _viewTopIndex: Math.max(0, Math.min(_maxViewTopIndex, currentIndex - _centerSlot))
     readonly property int _targetContentY: _viewTopIndex * rowStride
     readonly property int _maxScrollTopIndex: Math.max(0, totalItems - visibleRowCount)
-    readonly property int _gutterWidth: root.layoutProfile ? root.layoutProfile.gridGutterWidth : Sizing.pctW(3)
-    readonly property int _gutterGap: root.layoutProfile && root.layoutProfile.listScrollbarGap !== undefined ? root.layoutProfile.listScrollbarGap : (root.layoutProfile ? root.layoutProfile.gridGutterGap : Sizing.pctW(1.5))
-    readonly property int _scrollThumbWidth: root.layoutProfile ? root.layoutProfile.scrollThumbWidth : Sizing.pctW(1.2)
-    readonly property int _scrollThumbRightInset: root.layoutProfile ? root.layoutProfile.scrollThumbRightInset : 0
-    readonly property bool _scrollThumbRightAligned: root.layoutProfile && root.layoutProfile.scrollThumbRightAligned !== undefined ? root.layoutProfile.scrollThumbRightAligned : false
-    readonly property int _scrollArrowSize: root.layoutProfile ? root.layoutProfile.scrollArrowSize : Math.min(root._gutterWidth, Sizing.pctH(4))
-    readonly property int _selectionAccentWidth: root.layoutProfile && root.layoutProfile.listSelectionAccentWidth !== undefined ? root.layoutProfile.listSelectionAccentWidth : Sizing.pctW(0.45)
-    readonly property int _rowTextLeftPadding: root.layoutProfile ? root.layoutProfile.listRowTextLeftPadding : Sizing.pctW(1.6)
-    readonly property int _rowTextRightPadding: root.layoutProfile ? root.layoutProfile.listRowTextRightPadding : Sizing.pctW(1.6)
-    readonly property int _favoriteRightPadding: root.layoutProfile ? root.layoutProfile.listFavoriteRightPadding : Sizing.pctW(1.6)
+    readonly property int _gutterWidth: root._grid ? root._grid.gutterWidth : Sizing.pctW(3)
+    readonly property int _gutterGap: root._list && root._list.scrollbarGap !== undefined ? root._list.scrollbarGap : (root._grid ? root._grid.gutterGap : Sizing.pctW(1.5))
+    readonly property int _scrollThumbWidth: root._grid ? root._grid.scrollThumbWidth : Sizing.pctW(1.2)
+    readonly property int _scrollThumbRightInset: root._grid ? root._grid.scrollThumbRightInset : 0
+    readonly property bool _scrollThumbRightAligned: root._grid && root._grid.scrollThumbRightAligned !== undefined ? root._grid.scrollThumbRightAligned : false
+    readonly property int _scrollArrowSize: root._grid ? root._grid.scrollArrowSize : Math.min(root._gutterWidth, Sizing.pctH(4))
+    readonly property int _selectionAccentWidth: root._list && root._list.selectionAccentWidth !== undefined ? root._list.selectionAccentWidth : Sizing.pctW(0.45)
+    readonly property int _rowTextLeftPadding: root._list ? root._list.rowTextLeftPadding : Sizing.pctW(1.6)
+    readonly property int _rowTextRightPadding: root._list ? root._list.rowTextRightPadding : Sizing.pctW(1.6)
+    readonly property int _favoriteRightPadding: root._list ? root._list.favoriteRightPadding : Sizing.pctW(1.6)
 
     signal itemHovered(int index)
     signal itemClicked(int index)
@@ -78,7 +81,7 @@ Item {
         color: Theme.surfaceCard
         border.width: Sizing.stroke(1)
         border.color: Theme.borderMid
-        radius: Sizing.cornerRadius
+        radius: root._selectionRadius
         visible: root.showChrome
     }
 

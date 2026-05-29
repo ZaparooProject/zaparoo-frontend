@@ -51,6 +51,7 @@ Item {
     // untouched.
     property bool focused: true
     property var layoutProfile: null
+    readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
 
     // Emitted when the user is sitting on the last loaded page after a
     // selection move. Models with more data fetch the next page in
@@ -164,20 +165,20 @@ Item {
     // not as another cell, so a full inter-cell gap looks like wasted
     // space next to it. The gutter stays reserved on a single page
     // (just hidden) so cells don't reflow when paging activates.
-    readonly property int leftInset: root.layoutProfile ? root.layoutProfile.gridLeftInset : Sizing.pctW(5)
-    readonly property int rightInset: root.layoutProfile ? root.layoutProfile.gridRightInset : Sizing.pctW(5)
-    readonly property int gutterWidth: root.layoutProfile ? root.layoutProfile.gridGutterWidth : Sizing.pctW(3)
-    readonly property int gutterGap: root.layoutProfile ? root.layoutProfile.gridGutterGap : Sizing.pctW(1.5)
-    readonly property int scrollThumbWidth: root.layoutProfile ? root.layoutProfile.scrollThumbWidth : Sizing.pctW(1.2)
-    readonly property int scrollThumbRightInset: root.layoutProfile ? root.layoutProfile.scrollThumbRightInset : 0
-    readonly property bool scrollThumbRightAligned: root.layoutProfile && root.layoutProfile.scrollThumbRightAligned !== undefined ? root.layoutProfile.scrollThumbRightAligned : false
-    readonly property int scrollArrowSize: root.layoutProfile ? root.layoutProfile.scrollArrowSize : Math.min(gutterWidth, Sizing.pctH(4))
-    readonly property int topInset: root.layoutProfile ? root.layoutProfile.gridTopInset : Sizing.pctH(2)
-    readonly property int bottomInset: root.layoutProfile ? root.layoutProfile.gridBottomInset : Sizing.pctH(2)
-    readonly property int cellSpacingX: root.layoutProfile ? root.layoutProfile.gridColumnGap : Sizing.pctW(3)
-    readonly property int cellSpacingY: root.layoutProfile ? root.layoutProfile.gridRowGap : Sizing.pctH(4)
+    readonly property int leftInset: root._gridProfile ? root._gridProfile.leftInset : Sizing.pctW(5)
+    readonly property int rightInset: root._gridProfile ? root._gridProfile.rightInset : Sizing.pctW(5)
+    readonly property int gutterWidth: root._gridProfile ? root._gridProfile.gutterWidth : Sizing.pctW(3)
+    readonly property int gutterGap: root._gridProfile ? root._gridProfile.gutterGap : Sizing.pctW(1.5)
+    readonly property int scrollThumbWidth: root._gridProfile ? root._gridProfile.scrollThumbWidth : Sizing.pctW(1.2)
+    readonly property int scrollThumbRightInset: root._gridProfile ? root._gridProfile.scrollThumbRightInset : 0
+    readonly property bool scrollThumbRightAligned: root._gridProfile && root._gridProfile.scrollThumbRightAligned !== undefined ? root._gridProfile.scrollThumbRightAligned : false
+    readonly property int scrollArrowSize: root._gridProfile ? root._gridProfile.scrollArrowSize : Math.min(gutterWidth, Sizing.pctH(4))
+    readonly property int topInset: root._gridProfile ? root._gridProfile.topInset : Sizing.pctH(2)
+    readonly property int bottomInset: root._gridProfile ? root._gridProfile.bottomInset : Sizing.pctH(2)
+    readonly property int cellSpacingX: root._gridProfile ? root._gridProfile.columnGap : Sizing.pctW(3)
+    readonly property int cellSpacingY: root._gridProfile ? root._gridProfile.rowGap : Sizing.pctH(4)
     readonly property int _contentWidth: root.columns * root.cellWidth + (root.columns - 1) * root.cellSpacingX
-    readonly property int _scrollGutterX: root.layoutProfile && root.layoutProfile.packHorizontalRemainderAfterGutter ? root.leftInset + root._contentWidth + root.gutterGap : width - root.rightInset - root.gutterWidth
+    readonly property int _scrollGutterX: root._gridProfile && root._gridProfile.gutterFollowsContentWidth ? root.leftInset + root._contentWidth + root.gutterGap : width - root.rightInset - root.gutterWidth
 
     // Computed cell dimensions — fill the available area, divided by
     // gridColumns × gridRows. Callers don't override. The cell area
