@@ -20,12 +20,13 @@ Item {
     property var layoutProfile: null
     readonly property int itemCount: listView.count
     readonly property int totalItems: totalItemsOverride >= 0 ? totalItemsOverride : itemCount
+    readonly property bool _portraitNonCrt: !Theme.crtNativePath && Sizing.screenWidth < Sizing.screenHeight
     readonly property int _selectionRadius: root.layoutProfile ? root.layoutProfile.tileCornerRadius : Sizing.cornerRadius
     readonly property int cardPaddingLeft: root.layoutProfile ? root.layoutProfile.listCardPaddingLeft : Sizing.pctW(2)
     readonly property int cardPaddingRight: root.layoutProfile ? root.layoutProfile.listCardPaddingRight : Sizing.pctW(2)
     readonly property int cardPaddingTop: root.layoutProfile ? root.layoutProfile.listCardPaddingTop : Sizing.pctH(2)
     readonly property int cardPaddingBottom: root.layoutProfile ? root.layoutProfile.listCardPaddingBottom : Sizing.pctH(2)
-    readonly property int rowSpacing: root.layoutProfile ? root.layoutProfile.listRowSpacing : Sizing.pctH(0.7)
+    readonly property int rowSpacing: root.layoutProfile ? root.layoutProfile.listRowSpacing : (root._portraitNonCrt ? Sizing.pctH(0.3) : Sizing.pctH(0.7))
     readonly property int contentHeight: Math.max(0, height - cardPaddingTop - cardPaddingBottom)
     readonly property int rowHeight: root.layoutProfile && root.layoutProfile.listRowHeight > 0 ? root.layoutProfile.listRowHeight : (targetVisibleRowCount > 0 ? Math.max(Sizing.pctH(3), Math.floor((contentHeight - (rowSpacing * (targetVisibleRowCount - 1))) / targetVisibleRowCount)) : Sizing.pctH(6))
     readonly property int rowStride: rowHeight + rowSpacing

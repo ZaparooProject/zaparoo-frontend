@@ -24,7 +24,8 @@ MediaListScreen {
 
     property alias gamesGrid: games.mediaGrid
 
-    readonly property int _listPageSize: 10
+    readonly property bool _portraitNonCrtList: !Theme.crtNativePath && Browse.Settings.current_orientation !== "horizontal"
+    readonly property int _listPageSize: games._portraitNonCrtList ? 16 : 10
     readonly property int _browsePageSize: games._listLayout ? Math.max(1, games.listCard.visibleRowCount) : games.gamesGrid.pageSize
     readonly property bool _crtGridLayout: Theme.crtNativePath && !games._listLayout
     readonly property var _tileLayout: games._crtGridLayout ? BrowseLayouts.crtTile : BrowseLayouts.defaultTile
