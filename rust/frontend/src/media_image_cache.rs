@@ -123,7 +123,7 @@ const CORE_DEFAULT_IMAGE_TYPES: &[&str] = &[
 const COVER_PREF_PREFIX: &str = "__pref:";
 
 fn current_cover_preference_marker() -> Option<Arc<str>> {
-    let value = crate::models::with_persist_read(|s| s.settings.media_image_type.clone());
+    let value = crate::models::try_with_persist_read(|s| s.settings.media_image_type.clone())?;
     let trimmed = value.trim();
     if trimmed.is_empty() || trimmed == "auto" {
         return None;

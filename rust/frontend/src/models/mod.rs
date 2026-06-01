@@ -157,6 +157,15 @@ pub fn persist_state() -> Arc<Mutex<PersistedState>> {
         .clone()
 }
 
+pub fn try_with_persist_read<R>(f: impl FnOnce(&PersistedState) -> R) -> Option<R> {
+    let shared = PERSIST_STATE.get()?.clone();
+    let guard = shared
+        .lock()
+        .inspect_err(|e| error!("persist mutex poisoned: {e}"))
+        .expect("persist mutex poisoned");
+    Some(f(&guard))
+}
+
 /// Read the persisted state under a closure. Centralises the
 /// lock + log + panic-on-poison chain so the 5+ persist call sites
 /// can't drift in their error message or skip the log breadcrumb.
