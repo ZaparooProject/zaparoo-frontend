@@ -68,6 +68,11 @@ pub struct MediaStatusState {
     pub scrape_total_scraped: i32,
     pub scrape_system_id: String,
     pub scrape_scraper_id: String,
+    pub scrape_state: String,
+    pub scrape_error: String,
+    pub scrape_current_step: i32,
+    pub scrape_total_steps: i32,
+    pub scrape_current_step_display: String,
 }
 
 impl MediaStatusState {
@@ -98,6 +103,15 @@ impl MediaStatusState {
         self.scrape_total_scraped = status.total_scraped;
         self.scrape_system_id.clone_from(&status.system_id);
         self.scrape_scraper_id.clone_from(&status.scraper_id);
+        self.scrape_state.clone_from(&status.state);
+        self.scrape_error.clone_from(&status.error);
+        self.scrape_current_step = status.current_step.unwrap_or(0);
+        self.scrape_total_steps = status.total_steps.unwrap_or(0);
+        status
+            .current_step_display
+            .as_deref()
+            .unwrap_or_default()
+            .clone_into(&mut self.scrape_current_step_display);
     }
 }
 
@@ -359,6 +373,8 @@ mod tests {
         let tx = Arc::new(tx);
         let payload = json!({
             "scraperId": "screenscraper", "systemId": "SNES",
+            "state": "running", "currentStep": 2, "totalSteps": 5,
+            "currentStepDisplay": "Super Nintendo",
             "processed": 12, "total": 200, "matched": 10, "skipped": 2,
             "totalScraped": 50, "scraping": true, "done": false, "paused": false
         });
@@ -374,6 +390,10 @@ mod tests {
         assert_eq!(snapshot.scrape_processed, 12);
         assert_eq!(snapshot.scrape_total, 200);
         assert_eq!(snapshot.scrape_system_id, "SNES");
+        assert_eq!(snapshot.scrape_state, "running");
+        assert_eq!(snapshot.scrape_current_step, 2);
+        assert_eq!(snapshot.scrape_total_steps, 5);
+        assert_eq!(snapshot.scrape_current_step_display, "Super Nintendo");
         // `scraped`-side notifications must not flip the indexing
         // `seeded` flag — that's the `media` query's job.
         assert!(!snapshot.seeded);

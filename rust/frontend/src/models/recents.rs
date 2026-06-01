@@ -535,7 +535,7 @@ fn cover_key_for(entry: &MediaHistoryEntry) -> String {
     if entry.system_id.is_empty() {
         return "icons/File".to_string();
     }
-    let media_key = media_key_for(entry);
+    let media_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
     let cache = global_media_image_cache();
     let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
     let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
@@ -728,9 +728,12 @@ fn notify_cover_update(mut model: Pin<&mut ffi::RecentsModel>, key: &MediaKey) {
         .entries
         .iter()
         .enumerate()
-        .filter(|(_, e)| match (key.media_id, e.media_id) {
-            (Some(a), Some(b)) => a == b,
-            _ => e.media_path == *key.path && e.system_id == *key.system_id,
+        .filter(|(_, e)| {
+            key.is_cover_key()
+                && match (key.media_id, e.media_id) {
+                    (Some(a), Some(b)) => a == b,
+                    _ => e.media_path == *key.path && e.system_id == *key.system_id,
+                }
         })
         .filter_map(|(i, _)| i32::try_from(i).ok())
         .collect();
@@ -887,32 +890,11 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::RecentsModel>) {
 }
 
 /// Build the `text` payload sent to Core's `run` for a history entry.
-/// History entries don't carry a synthesised `zap_script` (Core surfaces
-/// only the raw fields), so compose `**launch:"<path>"` from the row's
-/// `mediaPath`, with `?launcher=<id>` appended when `launcherId` is known
-/// so Core picks the same launcher the entry originally ran under. An
-/// empty path yields an empty string, suppressing the run entirely —
-/// `**launch.system:<id>` would just boot the core without a game.
-///
-/// The path is always wrapped in double quotes so spaces and shell
-/// metacharacters (parens, commas) survive Core's argument parsing —
-/// real-world paths like
-/// `/media/fat/cifs/games/Genesis/1 US - A-F/B.O.B. (USA,Europe) (Rev A).md`
-/// fail to launch unquoted. Embedded backslashes and double quotes are
-/// escaped per `ZapScript`'s `parseQuotedArg` rules (backslash first so
-/// the quote-escape's leading `\` doesn't get re-escaped) — Windows-host
-/// paths and the rare filename containing a literal `"` would otherwise
-/// produce a malformed token.
+/// Runtime relaunches prefer the exact path Core recorded; portable
+/// `ZapScript` is not available on history rows and launcher affinity is
+/// less important than avoiding title-resolution ambiguity.
 fn launch_text_for(entry: &MediaHistoryEntry) -> String {
-    if entry.media_path.is_empty() {
-        return String::new();
-    }
-    let escaped = entry.media_path.replace('\\', "\\\\").replace('"', "\\\"");
-    if entry.launcher_id.is_empty() {
-        format!("**launch:\"{escaped}\"")
-    } else {
-        format!("**launch:\"{escaped}\"?launcher={}", entry.launcher_id)
-    }
+    entry.media_path.clone()
 }
 
 fn position_of_path(entries: &[MediaHistoryEntry], needle: &str) -> i32 {

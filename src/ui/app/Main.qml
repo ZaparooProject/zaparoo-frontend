@@ -739,7 +739,7 @@ MainLayout {
         }
     }
 
-    // Pure helper — owner/entryType/hasNfc/isFavorite → list of `{id,label}` entries.
+    // Pure helper — owner/entryType/mediaCapable/hasNfc/isFavorite → list of `{id,label}` entries.
     // Empty list = no menu (caller bails out of openContextMenu).
     //
     // Annotated as `: var` (not `list<var>`): MiSTer's AOT-compiled
@@ -747,7 +747,7 @@ MainLayout {
     // caller saw `entries.length === 0` despite the function pushing 3
     // items in. Plain `var` round-trips cleanly and silences the
     // "insufficiently annotated" coercion warning at the call site.
-    function buildContextMenuEntries(owner: string, entryType: string, hasNfc: bool, isFavorite: bool, systemId: string) {
+    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string) {
         if (owner === "systems") {
             const entries = [
                 {
@@ -778,7 +778,7 @@ MainLayout {
             return entries;
         }
         if (owner === "games" || owner === "favorites") {
-            if (entryType === "directory" || entryType === "root")
+            if ((entryType === "directory" || entryType === "root") && !mediaCapable)
                 return [];
             const entries = [];
             entries.push({
@@ -854,6 +854,7 @@ MainLayout {
         let entryType = "";
         let isFavorite = false;
         let systemId = "";
+        let mediaCapable = false;
         if (owner === "systems") {
             if (index >= Browse.SystemsModel.count)
                 return;
@@ -862,16 +863,18 @@ MainLayout {
             if (index >= Browse.GamesModel.count)
                 return;
             entryType = Browse.GamesModel.entry_type_at(index);
+            mediaCapable = Browse.GamesModel.is_media_capable_at(index);
             isFavorite = Browse.GamesModel.is_favorite_at(index);
         } else if (owner === "favorites") {
             if (index >= Browse.FavoritesModel.count)
                 return;
+            mediaCapable = true;
             isFavorite = Browse.FavoritesModel.is_favorite_at(index);
         } else if (owner === "recents") {
             if (index >= Browse.RecentsModel.count)
                 return;
         }
-        const entries = root.buildContextMenuEntries(owner, entryType, Browse.SystemStatus.has_nfc, isFavorite, systemId);
+        const entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId);
         if (entries.length === 0)
             return;
         root.contextMenuEntries = entries;
@@ -1305,6 +1308,8 @@ MainLayout {
             return;
         } else if (fieldId === "screensaverTimeout")
             Browse.Settings.set_screensaver_timeout(selectedId);
+        else if (fieldId === "mediaImageType")
+            Browse.Settings.set_media_image_type(selectedId);
         root.closeListPickerModal();
     }
     onListPickerCloseRequested: root.handleListPickerCloseRequested()

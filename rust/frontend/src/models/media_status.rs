@@ -59,6 +59,11 @@ pub struct MediaStatusRust {
     scrape_total_scraped: i32,
     scrape_system_id: QString,
     scrape_scraper_id: QString,
+    scrape_state: QString,
+    scrape_error: QString,
+    scrape_current_step: i32,
+    scrape_total_steps: i32,
+    scrape_current_step_display: QString,
 }
 
 #[cxx_qt::bridge]
@@ -93,6 +98,11 @@ pub mod ffi {
         #[qproperty(i32, scrape_total_scraped)]
         #[qproperty(QString, scrape_system_id)]
         #[qproperty(QString, scrape_scraper_id)]
+        #[qproperty(QString, scrape_state)]
+        #[qproperty(QString, scrape_error)]
+        #[qproperty(i32, scrape_current_step)]
+        #[qproperty(i32, scrape_total_steps)]
+        #[qproperty(QString, scrape_current_step_display)]
         type MediaStatus = super::MediaStatusRust;
 
         #[qinvokable]
@@ -102,7 +112,7 @@ pub mod ffi {
         fn cancel_index(self: Pin<&mut MediaStatus>);
 
         #[qinvokable]
-        fn start_scrape(self: Pin<&mut MediaStatus>);
+        fn start_scrape(self: Pin<&mut MediaStatus>, force: bool);
 
         #[qinvokable]
         fn cancel_scrape(self: Pin<&mut MediaStatus>);
@@ -142,6 +152,11 @@ struct Snapshot {
     scrape_total_scraped: i32,
     scrape_system_id: QString,
     scrape_scraper_id: QString,
+    scrape_state: QString,
+    scrape_error: QString,
+    scrape_current_step: i32,
+    scrape_total_steps: i32,
+    scrape_current_step_display: QString,
 }
 
 fn project(state: &MediaStatusState) -> Snapshot {
@@ -166,6 +181,11 @@ fn project(state: &MediaStatusState) -> Snapshot {
         scrape_total_scraped: state.scrape_total_scraped,
         scrape_system_id: QString::from(state.scrape_system_id.as_str()),
         scrape_scraper_id: QString::from(state.scrape_scraper_id.as_str()),
+        scrape_state: QString::from(state.scrape_state.as_str()),
+        scrape_error: QString::from(state.scrape_error.as_str()),
+        scrape_current_step: state.scrape_current_step,
+        scrape_total_steps: state.scrape_total_steps,
+        scrape_current_step_display: QString::from(state.scrape_current_step_display.as_str()),
     }
 }
 
@@ -204,10 +224,11 @@ impl ffi::MediaStatus {
         });
     }
 
-    fn start_scrape(self: Pin<&mut Self>) {
+    fn start_scrape(self: Pin<&mut Self>, force: bool) {
         let resource = crate::models::global_store().media_status();
         crate::models::global_handle().spawn(async move {
-            // ES gamelist.xml across every indexed system, no re-scrape.
+            // ES gamelist.xml across every indexed system. `force` is
+            // a one-shot UI toggle for re-scraping existing metadata.
             // Core ships this scraper in-tree (see `pkg/api/server.go`
             // wiring `gamelistxml.NewGamelistXMLScraper`) and validates
             // `scraperId` as `min=1` — there is no server-side "default"
@@ -218,7 +239,7 @@ impl ffi::MediaStatus {
             let params = MediaScrapeParams {
                 scraper_id: "gamelist.xml".into(),
                 systems: Vec::new(),
-                force: false,
+                force,
             };
             if let Err(e) = resource.start_scrape(params).await {
                 warn!("media_status: start_scrape failed: {}", e.message);
@@ -305,6 +326,25 @@ fn apply(mut model: Pin<&mut ffi::MediaStatus>, s: Snapshot) {
     if model.scrape_scraper_id != s.scrape_scraper_id {
         model.as_mut().set_scrape_scraper_id(s.scrape_scraper_id);
     }
+    if model.scrape_state != s.scrape_state {
+        model.as_mut().set_scrape_state(s.scrape_state);
+    }
+    if model.scrape_error != s.scrape_error {
+        model.as_mut().set_scrape_error(s.scrape_error);
+    }
+    if model.scrape_current_step != s.scrape_current_step {
+        model
+            .as_mut()
+            .set_scrape_current_step(s.scrape_current_step);
+    }
+    if model.scrape_total_steps != s.scrape_total_steps {
+        model.as_mut().set_scrape_total_steps(s.scrape_total_steps);
+    }
+    if model.scrape_current_step_display != s.scrape_current_step_display {
+        model
+            .as_mut()
+            .set_scrape_current_step_display(s.scrape_current_step_display);
+    }
 }
 
 #[cfg(test)]
@@ -336,6 +376,11 @@ mod tests {
             scrape_total_scraped: 0,
             scrape_system_id: String::new(),
             scrape_scraper_id: String::new(),
+            scrape_state: String::new(),
+            scrape_error: String::new(),
+            scrape_current_step: 0,
+            scrape_total_steps: 0,
+            scrape_current_step_display: String::new(),
         };
         let snapshot = project(&state);
         assert!(snapshot.seeded);
@@ -362,6 +407,10 @@ mod tests {
             scrape_total_scraped: 50,
             scrape_system_id: "SNES".into(),
             scrape_scraper_id: "screenscraper".into(),
+            scrape_state: "running".into(),
+            scrape_current_step: 2,
+            scrape_total_steps: 5,
+            scrape_current_step_display: "Super Nintendo".into(),
             ..MediaStatusState::default()
         };
         let snapshot = project(&state);
@@ -373,6 +422,13 @@ mod tests {
         assert_eq!(snapshot.scrape_total_scraped, 50);
         assert_eq!(snapshot.scrape_system_id, QString::from("SNES"));
         assert_eq!(snapshot.scrape_scraper_id, QString::from("screenscraper"));
+        assert_eq!(snapshot.scrape_state, QString::from("running"));
+        assert_eq!(snapshot.scrape_current_step, 2);
+        assert_eq!(snapshot.scrape_total_steps, 5);
+        assert_eq!(
+            snapshot.scrape_current_step_display,
+            QString::from("Super Nintendo"),
+        );
     }
 
     #[test]

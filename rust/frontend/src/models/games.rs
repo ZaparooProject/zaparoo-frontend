@@ -379,6 +379,9 @@ pub mod ffi {
         fn entry_type_at(self: &GamesModel, index: i32) -> QString;
 
         #[qinvokable]
+        fn is_media_capable_at(self: &GamesModel, index: i32) -> bool;
+
+        #[qinvokable]
         fn index_for_game_path(self: &GamesModel, path: &QString) -> i32;
 
         #[inherit]
@@ -605,10 +608,10 @@ impl ffi::GamesModel {
             return;
         }
         let entry = &self.entries[index as usize];
-        if entry.zap_script.is_empty() {
+        let text = run_text_for_entry(entry);
+        if text.is_empty() {
             return;
         }
-        let text = entry.zap_script.clone();
         let name = entry.name.clone();
         let store = global_store();
         global_handle().spawn(async move {
@@ -622,7 +625,7 @@ impl ffi::GamesModel {
         if index < 0 || index >= self.count {
             return QString::default();
         }
-        QString::from(self.entries[index as usize].zap_script.as_str())
+        QString::from(portable_text_for_entry(&self.entries[index as usize]).as_str())
     }
 
     fn write_card_at(mut self: Pin<&mut Self>, index: i32) {
@@ -633,13 +636,13 @@ impl ffi::GamesModel {
             return;
         }
         let entry = &self.entries[index as usize];
-        if entry.zap_script.is_empty() {
+        let text = portable_text_for_entry(entry);
+        if text.is_empty() {
             self.as_mut()
-                .set_card_write_error(QString::from("missing zap script"));
+                .set_card_write_error(QString::from("missing launch payload"));
             self.as_mut().set_card_write_pending(false);
             return;
         }
-        let text = entry.zap_script.clone();
         let name = entry.name.clone();
         let store = global_store();
         let seq = self.rust().card_write_seq.clone();
@@ -673,7 +676,7 @@ impl ffi::GamesModel {
             return;
         }
         let entry = &self.entries[index as usize];
-        if entry.is_folder() {
+        if !is_media_capable_entry(entry) {
             return;
         }
         let Some(params) = favorite_params_for_entry(entry, !has_favorite_tag(&entry.tags)) else {
@@ -756,7 +759,7 @@ impl ffi::GamesModel {
         }
 
         let entry = &self.entries[index as usize];
-        if entry.is_folder() {
+        if !is_media_capable_entry(entry) {
             self.as_mut().set_current_detail_loading(false);
             self.as_mut().set_current_description(QString::default());
             self.as_mut().set_current_detail_tags(QString::default());
@@ -819,6 +822,13 @@ impl ffi::GamesModel {
             return QString::default();
         }
         QString::from(self.entries[index as usize].entry_type.as_str())
+    }
+
+    fn is_media_capable_at(&self, index: i32) -> bool {
+        if index < 0 || index >= self.count {
+            return false;
+        }
+        is_media_capable_entry(&self.entries[index as usize])
     }
 
     fn index_for_game_path(&self, path: &QString) -> i32 {
@@ -990,6 +1000,28 @@ fn entry_system_id(entry: &BrowseEntry) -> String {
     entry.system_ids.first().cloned().unwrap_or_default()
 }
 
+fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
+    entry.entry_type == "media"
+        || (entry.entry_type == "directory"
+            && (entry.media_id.is_some()
+                || !entry.zap_script.is_empty()
+                || !entry.system_id.is_empty()))
+}
+
+fn run_text_for_entry(entry: &BrowseEntry) -> String {
+    if !entry.path.trim().is_empty() {
+        return entry.path.clone();
+    }
+    entry.zap_script.clone()
+}
+
+fn portable_text_for_entry(entry: &BrowseEntry) -> String {
+    if !entry.zap_script.trim().is_empty() {
+        return entry.zap_script.clone();
+    }
+    entry.path.clone()
+}
+
 fn detail_tags_from_entry(entry: &BrowseEntry) -> String {
     detail_tags_from_tags(entry.tags.as_slice())
 }
@@ -1131,7 +1163,7 @@ fn sync_current_detail_image_key_with_page_size(
 }
 
 fn cover_placeholder_for(entry: &BrowseEntry) -> String {
-    if entry.is_folder() {
+    if !is_media_capable_entry(entry) && entry.is_folder() {
         "icons/Folder".to_string()
     } else {
         "icons/File".to_string()
@@ -1139,10 +1171,10 @@ fn cover_placeholder_for(entry: &BrowseEntry) -> String {
 }
 
 fn cover_key_for(entry: &BrowseEntry, page_size: u32) -> String {
-    if entry.is_folder() {
+    if !is_media_capable_entry(entry) && entry.is_folder() {
         return "icons/Folder".to_string();
     }
-    let media_key = media_key_for(entry);
+    let media_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
     let cache = global_media_image_cache();
     let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
     let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
@@ -1170,7 +1202,7 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32) -> String {
 /// entry. Returns `None` for entries the cache cannot key on (folder
 /// roots, unattributed entries, browse roots without a path).
 fn media_key_for(entry: &BrowseEntry) -> Option<MediaKey> {
-    if entry.is_folder() || entry.path.is_empty() {
+    if !is_media_capable_entry(entry) || entry.path.is_empty() {
         return None;
     }
     let system_id = entry_system_id(entry);
@@ -1218,11 +1250,11 @@ fn prefetch_around_plan(
             return;
         }
         let entry = &entries[idx];
-        if entry.is_folder() {
+        if !is_media_capable_entry(entry) {
             return;
         }
         if let Some(key) = media_key_for(entry) {
-            plan.push((key, entry.media_id));
+            plan.push((key.with_current_cover_preference(), entry.media_id));
         }
     };
     for row in (next_start..next_end).rev() {
@@ -1308,7 +1340,7 @@ fn cover_key_for_with(
     cached: bool,
     unavailable: bool,
 ) -> String {
-    if entry.is_folder() {
+    if !is_media_capable_entry(entry) && entry.is_folder() {
         return "icons/Folder".to_string();
     }
     match key {
@@ -1333,8 +1365,8 @@ fn notify_cover_update(mut model: Pin<&mut ffi::GamesModel>, key: &MediaKey) {
         .iter()
         .enumerate()
         .filter(|(_, e)| {
-            key.image_type.is_none()
-                && !e.is_folder()
+            key.is_cover_key()
+                && is_media_capable_entry(e)
                 && match (key.media_id, e.media_id) {
                     (Some(a), Some(b)) => a == b,
                     _ => e.path == *key.path && entry_system_id(e) == *key.system_id,

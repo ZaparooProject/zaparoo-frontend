@@ -52,8 +52,7 @@ MediaListScreen {
     detailCanPreviousImage: Browse.GamesModel.current_detail_image_can_prev
     detailCanNextImage: Browse.GamesModel.current_detail_image_can_next
     detailIdentityForIndex: function (index) {
-        const entryType = Browse.GamesModel.entry_type_at(index);
-        if (entryType === "directory" || entryType === "root")
+        if (!Browse.GamesModel.is_media_capable_at(index))
             return "";
         const systemId = Browse.GamesModel.system_id_at(index);
         const path = Browse.GamesModel.path_at(index);
@@ -75,10 +74,7 @@ MediaListScreen {
     tateListViewId: games._tateListViewId
     listLeftAction: () => Browse.GamesModel.cycle_detail_image(-1)
     listRightAction: () => Browse.GamesModel.cycle_detail_image(1)
-    contextMenuEnabledAt: index => {
-        const entryType = Browse.GamesModel.entry_type_at(index);
-        return entryType !== "directory" && entryType !== "root";
-    }
+    contextMenuEnabledAt: index => Browse.GamesModel.is_media_capable_at(index)
     retryAction: () => {
         if (games._atFolderLevel()) {
             const stack = Browse.GamesState.path_stack;
@@ -92,7 +88,7 @@ MediaListScreen {
     }
     acceptAction: index => {
         const entryType = Browse.GamesModel.entry_type_at(index);
-        if (entryType === "directory" || entryType === "root") {
+        if ((entryType === "directory" || entryType === "root") && !Browse.GamesModel.is_media_capable_at(index)) {
             games.flushSelectedPersist();
             games.requestNavigateIntoFolder(Browse.GamesModel.path_at(index));
             return;

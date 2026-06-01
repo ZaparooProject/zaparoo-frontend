@@ -138,10 +138,14 @@ impl ffi::AlternateVersions {
             return;
         }
         let entry = &self.entries[index as usize];
-        if entry.zap_script.is_empty() {
+        let text = if entry.path.trim().is_empty() {
+            entry.zap_script.clone()
+        } else {
+            entry.path.clone()
+        };
+        if text.is_empty() {
             return;
         }
-        let text = entry.zap_script.clone();
         let name = entry.name.clone();
         let store = global_store();
         global_handle().spawn(async move {

@@ -90,47 +90,47 @@
         <translation type="unfinished">Φόρτωση…</translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="47"/>
+        <location filename="../components/BrowseDetailPane.qml" line="77"/>
         <source>Year</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="49"/>
+        <location filename="../components/BrowseDetailPane.qml" line="79"/>
         <source>Genre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="51"/>
+        <location filename="../components/BrowseDetailPane.qml" line="81"/>
         <source>Players</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="53"/>
+        <location filename="../components/BrowseDetailPane.qml" line="83"/>
         <source>Developer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="55"/>
+        <location filename="../components/BrowseDetailPane.qml" line="85"/>
         <source>Publisher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="57"/>
+        <location filename="../components/BrowseDetailPane.qml" line="87"/>
         <source>Rating</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="59"/>
+        <location filename="../components/BrowseDetailPane.qml" line="89"/>
         <source>Category</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="61"/>
+        <location filename="../components/BrowseDetailPane.qml" line="91"/>
         <source>Release date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="63"/>
+        <location filename="../components/BrowseDetailPane.qml" line="93"/>
         <source>Manufacturer</source>
         <translation type="unfinished"></translation>
     </message>
@@ -329,34 +329,34 @@
 <context>
     <name>GamesScreen</name>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="109"/>
-        <location filename="../screens/GamesScreen.qml" line="138"/>
+        <location filename="../screens/GamesScreen.qml" line="117"/>
+        <location filename="../screens/GamesScreen.qml" line="145"/>
         <source>%1 files</source>
         <translation>%1 αρχεία</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="40"/>
+        <location filename="../screens/GamesScreen.qml" line="51"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="118"/>
-        <location filename="../screens/GamesScreen.qml" line="139"/>
+        <location filename="../screens/GamesScreen.qml" line="126"/>
+        <location filename="../screens/GamesScreen.qml" line="146"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="34"/>
+        <location filename="../screens/GamesScreen.qml" line="45"/>
         <source>Loading games…</source>
         <translation>Φόρτωση παιχνιδιών…</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="114"/>
+        <location filename="../screens/GamesScreen.qml" line="122"/>
         <source>Loading more…</source>
         <translation>Φόρτωση περισσότερων…</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="33"/>
+        <location filename="../screens/GamesScreen.qml" line="44"/>
         <source>No games in this system</source>
         <translation>Δεν υπάρχουν παιχνίδια σε αυτό το σύστημα</translation>
     </message>
@@ -434,7 +434,7 @@
     </message>
     <message>
         <location filename="../app/Main.qml" line="761"/>
-        <location filename="../app/Main.qml" line="955"/>
+        <location filename="../app/Main.qml" line="958"/>
         <source>Change launcher</source>
         <translation type="unfinished"></translation>
     </message>
@@ -465,67 +465,67 @@
         <translation>Εκκίνηση παιχνιδιού</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1769"/>
+        <location filename="../app/Main.qml" line="1776"/>
         <source>Loading systems…</source>
         <translation>Φόρτωση συστημάτων…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1773"/>
+        <location filename="../app/Main.qml" line="1780"/>
         <source>Loading favorites…</source>
         <translation>Φόρτωση αγαπημένων…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1771"/>
+        <location filename="../app/Main.qml" line="1778"/>
         <source>Loading games…</source>
         <translation>Φόρτωση παιχνιδιών…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="951"/>
+        <location filename="../app/Main.qml" line="954"/>
         <source>Default</source>
         <translation type="unfinished">Προεπιλογή</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="951"/>
+        <location filename="../app/Main.qml" line="954"/>
         <source>Current: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1227"/>
+        <location filename="../app/Main.qml" line="1230"/>
         <source>Saving launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1231"/>
+        <location filename="../app/Main.qml" line="1234"/>
         <source>Saving…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1245"/>
+        <location filename="../app/Main.qml" line="1248"/>
         <source>Launcher update failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1249"/>
+        <location filename="../app/Main.qml" line="1252"/>
         <source>Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1253"/>
+        <location filename="../app/Main.qml" line="1256"/>
         <source>Retry</source>
         <translation type="unfinished">Επανάληψη</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1257"/>
+        <location filename="../app/Main.qml" line="1260"/>
         <source>Cancel</source>
         <translation type="unfinished">Ακύρωση</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1775"/>
+        <location filename="../app/Main.qml" line="1782"/>
         <source>Loading recently played…</source>
         <translation>Φόρτωση πρόσφατα παιγμένων…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1777"/>
+        <location filename="../app/Main.qml" line="1784"/>
         <source>Loading…</source>
         <translation>Φόρτωση…</translation>
     </message>
@@ -533,71 +533,71 @@
 <context>
     <name>MainLayout</name>
     <message>
-        <location filename="../app/MainLayout.qml" line="545"/>
+        <location filename="../app/MainLayout.qml" line="581"/>
         <source>Writing failed</source>
         <translation>Αποτυχία εγγραφής</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="545"/>
+        <location filename="../app/MainLayout.qml" line="581"/>
         <source>Put a writable card near the reader</source>
         <translation>Τοποθετήστε μια εγγράψιμη κάρτα κοντά στον αναγνώστη</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="633"/>
+        <location filename="../app/MainLayout.qml" line="669"/>
         <source>Are you sure you want to exit?</source>
         <translation>Είστε σίγουροι ότι θέλετε να βγείτε;</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="709"/>
-        <location filename="../app/MainLayout.qml" line="781"/>
+        <location filename="../app/MainLayout.qml" line="745"/>
+        <location filename="../app/MainLayout.qml" line="817"/>
         <source>Select</source>
         <translation>Επιλογή</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="713"/>
-        <location filename="../app/MainLayout.qml" line="717"/>
-        <location filename="../app/MainLayout.qml" line="731"/>
-        <location filename="../app/MainLayout.qml" line="744"/>
-        <location filename="../app/MainLayout.qml" line="755"/>
+        <location filename="../app/MainLayout.qml" line="749"/>
+        <location filename="../app/MainLayout.qml" line="753"/>
+        <location filename="../app/MainLayout.qml" line="767"/>
+        <location filename="../app/MainLayout.qml" line="780"/>
+        <location filename="../app/MainLayout.qml" line="791"/>
         <source>Close</source>
         <translation>Κλείσιμο</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="724"/>
-        <location filename="../app/MainLayout.qml" line="762"/>
-        <location filename="../app/MainLayout.qml" line="785"/>
-        <location filename="../app/MainLayout.qml" line="796"/>
+        <location filename="../app/MainLayout.qml" line="760"/>
+        <location filename="../app/MainLayout.qml" line="798"/>
+        <location filename="../app/MainLayout.qml" line="821"/>
+        <location filename="../app/MainLayout.qml" line="832"/>
         <source>Cancel</source>
         <translation>Ακύρωση</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="740"/>
+        <location filename="../app/MainLayout.qml" line="776"/>
         <source>Done</source>
         <translation>Ολοκληρώθηκε</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="770"/>
+        <location filename="../app/MainLayout.qml" line="806"/>
         <source>I understand</source>
         <translation>Κατανοώ</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="804"/>
+        <location filename="../app/MainLayout.qml" line="840"/>
         <source>Start</source>
         <translation>Έναρξη</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="973"/>
+        <location filename="../app/MainLayout.qml" line="1009"/>
         <source>Scroll</source>
         <translation>Κύλιση</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="705"/>
-        <location filename="../app/MainLayout.qml" line="777"/>
-        <location filename="../app/MainLayout.qml" line="820"/>
-        <location filename="../app/MainLayout.qml" line="849"/>
-        <location filename="../app/MainLayout.qml" line="896"/>
-        <location filename="../app/MainLayout.qml" line="937"/>
-        <location filename="../app/MainLayout.qml" line="1001"/>
+        <location filename="../app/MainLayout.qml" line="741"/>
+        <location filename="../app/MainLayout.qml" line="813"/>
+        <location filename="../app/MainLayout.qml" line="856"/>
+        <location filename="../app/MainLayout.qml" line="885"/>
+        <location filename="../app/MainLayout.qml" line="932"/>
+        <location filename="../app/MainLayout.qml" line="973"/>
+        <location filename="../app/MainLayout.qml" line="1037"/>
         <source>Move</source>
         <translation>Μετακίνηση</translation>
     </message>
@@ -607,77 +607,87 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="556"/>
+        <location filename="../app/MainLayout.qml" line="323"/>
+        <source>Favorites</source>
+        <translation type="unfinished">Αγαπημένα</translation>
+    </message>
+    <message>
+        <location filename="../app/MainLayout.qml" line="325"/>
+        <source>Recently Played</source>
+        <translation type="unfinished">Πρόσφατα Παιγμένα</translation>
+    </message>
+    <message>
+        <location filename="../app/MainLayout.qml" line="592"/>
         <source>Quit and restart Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="557"/>
+        <location filename="../app/MainLayout.qml" line="593"/>
         <source>In order to apply this setting we need to restart the frontend.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="632"/>
+        <location filename="../app/MainLayout.qml" line="668"/>
         <source>Quit Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="824"/>
-        <location filename="../app/MainLayout.qml" line="859"/>
-        <location filename="../app/MainLayout.qml" line="906"/>
-        <location filename="../app/MainLayout.qml" line="1011"/>
+        <location filename="../app/MainLayout.qml" line="860"/>
+        <location filename="../app/MainLayout.qml" line="895"/>
+        <location filename="../app/MainLayout.qml" line="942"/>
+        <location filename="../app/MainLayout.qml" line="1047"/>
         <source>Open</source>
         <translation>Άνοιγμα</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="828"/>
+        <location filename="../app/MainLayout.qml" line="864"/>
         <source>Quit</source>
         <translation>Έξοδος</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="837"/>
-        <location filename="../app/MainLayout.qml" line="865"/>
-        <location filename="../app/MainLayout.qml" line="876"/>
-        <location filename="../app/MainLayout.qml" line="888"/>
-        <location filename="../app/MainLayout.qml" line="915"/>
-        <location filename="../app/MainLayout.qml" line="926"/>
-        <location filename="../app/MainLayout.qml" line="961"/>
-        <location filename="../app/MainLayout.qml" line="977"/>
-        <location filename="../app/MainLayout.qml" line="986"/>
-        <location filename="../app/MainLayout.qml" line="1020"/>
-        <location filename="../app/MainLayout.qml" line="1031"/>
+        <location filename="../app/MainLayout.qml" line="873"/>
+        <location filename="../app/MainLayout.qml" line="901"/>
+        <location filename="../app/MainLayout.qml" line="912"/>
+        <location filename="../app/MainLayout.qml" line="924"/>
+        <location filename="../app/MainLayout.qml" line="951"/>
+        <location filename="../app/MainLayout.qml" line="962"/>
+        <location filename="../app/MainLayout.qml" line="997"/>
+        <location filename="../app/MainLayout.qml" line="1013"/>
+        <location filename="../app/MainLayout.qml" line="1022"/>
+        <location filename="../app/MainLayout.qml" line="1056"/>
+        <location filename="../app/MainLayout.qml" line="1067"/>
         <source>Back</source>
         <translation>Πίσω</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="855"/>
-        <location filename="../app/MainLayout.qml" line="902"/>
-        <location filename="../app/MainLayout.qml" line="1007"/>
+        <location filename="../app/MainLayout.qml" line="891"/>
+        <location filename="../app/MainLayout.qml" line="938"/>
+        <location filename="../app/MainLayout.qml" line="1043"/>
         <source>Page</source>
         <translation>Σελίδα</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="862"/>
-        <location filename="../app/MainLayout.qml" line="911"/>
-        <location filename="../app/MainLayout.qml" line="1016"/>
+        <location filename="../app/MainLayout.qml" line="898"/>
+        <location filename="../app/MainLayout.qml" line="947"/>
+        <location filename="../app/MainLayout.qml" line="1052"/>
         <source>Options</source>
         <translation>Επιλογές</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="751"/>
-        <location filename="../app/MainLayout.qml" line="872"/>
-        <location filename="../app/MainLayout.qml" line="922"/>
-        <location filename="../app/MainLayout.qml" line="1027"/>
+        <location filename="../app/MainLayout.qml" line="787"/>
+        <location filename="../app/MainLayout.qml" line="908"/>
+        <location filename="../app/MainLayout.qml" line="958"/>
+        <location filename="../app/MainLayout.qml" line="1063"/>
         <source>Retry</source>
         <translation>Επανάληψη</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="946"/>
+        <location filename="../app/MainLayout.qml" line="982"/>
         <source>Change</source>
         <translation>Αλλαγή</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="952"/>
+        <location filename="../app/MainLayout.qml" line="988"/>
         <source>Toggle</source>
         <translation>Εναλλαγή</translation>
     </message>
@@ -690,12 +700,12 @@
         <translation type="unfinished">Φόρτωση…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="295"/>
+        <location filename="../screens/MediaListScreen.qml" line="306"/>
         <source>%1 entries</source>
         <translation type="unfinished">%1 εγγραφές</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="296"/>
+        <location filename="../screens/MediaListScreen.qml" line="307"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -763,23 +773,23 @@
     <name>SettingsScreen</name>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="73"/>
-        <location filename="../screens/SettingsScreen.qml" line="432"/>
+        <location filename="../screens/SettingsScreen.qml" line="498"/>
         <source>Language</source>
         <translation>Γλώσσα</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="78"/>
-        <location filename="../screens/SettingsScreen.qml" line="441"/>
+        <location filename="../screens/SettingsScreen.qml" line="83"/>
+        <location filename="../screens/SettingsScreen.qml" line="516"/>
         <source>Browsing layout</source>
         <translation>Διάταξη περιήγησης</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="116"/>
+        <location filename="../screens/SettingsScreen.qml" line="131"/>
         <source>Mouse support</source>
         <translation>Υποστήριξη ποντικιού</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="102"/>
+        <location filename="../screens/SettingsScreen.qml" line="112"/>
         <source>Update media database</source>
         <translation>Ενημέρωση βάσης δεδομένων</translation>
     </message>
@@ -789,267 +799,360 @@
         <translation>Γενικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="83"/>
-        <location filename="../screens/SettingsScreen.qml" line="450"/>
+        <location filename="../screens/SettingsScreen.qml" line="78"/>
+        <location filename="../screens/SettingsScreen.qml" line="507"/>
+        <source>Orientation</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="88"/>
+        <location filename="../screens/SettingsScreen.qml" line="525"/>
         <source>Button style</source>
         <translation>Στυλ κουμπιών</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="88"/>
-        <location filename="../screens/SettingsScreen.qml" line="459"/>
+        <location filename="../screens/SettingsScreen.qml" line="93"/>
+        <location filename="../screens/SettingsScreen.qml" line="534"/>
         <source>Screensaver</source>
         <translation>Προφύλαξη οθόνης</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="92"/>
+        <location filename="../screens/SettingsScreen.qml" line="97"/>
         <source>Library</source>
         <translation>Βιβλιοθήκη</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="97"/>
+        <location filename="../screens/SettingsScreen.qml" line="102"/>
         <source>Discover arcade alternate versions</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="107"/>
+        <location filename="../screens/SettingsScreen.qml" line="543"/>
+        <source>Preferred artwork</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="117"/>
         <source>Scrape metadata</source>
         <translation>Ανάκτηση μεταδεδομένων</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="111"/>
+        <location filename="../screens/SettingsScreen.qml" line="122"/>
+        <source>Re-scrape existing</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="126"/>
         <source>Advanced</source>
         <translation>Για προχωρημένους</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="121"/>
+        <location filename="../screens/SettingsScreen.qml" line="136"/>
         <source>Debug logging</source>
         <translation>Καταγραφή εντοπισμού σφαλμάτων</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="126"/>
+        <location filename="../screens/SettingsScreen.qml" line="141"/>
         <source>Upload log file</source>
         <translation>Αποστολή αρχείου καταγραφής</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="131"/>
+        <location filename="../screens/SettingsScreen.qml" line="146"/>
         <source>About / License</source>
         <translation>Σχετικά / Άδεια</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="147"/>
+        <location filename="../screens/SettingsScreen.qml" line="162"/>
         <source>Optimizing</source>
         <translation>Βελτιστοποίηση</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="149"/>
-        <location filename="../screens/SettingsScreen.qml" line="158"/>
+        <location filename="../screens/SettingsScreen.qml" line="164"/>
+        <location filename="../screens/SettingsScreen.qml" line="173"/>
         <source>Paused</source>
         <translation>Σε παύση</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="149"/>
-        <location filename="../screens/SettingsScreen.qml" line="158"/>
+        <location filename="../screens/SettingsScreen.qml" line="164"/>
+        <location filename="../screens/SettingsScreen.qml" line="173"/>
         <source>In progress</source>
         <translation>Σε εξέλιξη</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="152"/>
+        <location filename="../screens/SettingsScreen.qml" line="167"/>
         <source>%1 indexed</source>
         <translation>%1 ευρετηριάστηκαν</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="161"/>
+        <location filename="../screens/SettingsScreen.qml" line="176"/>
         <source>%1 scraped</source>
         <translation>%1 συλλέχθηκαν</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="266"/>
+        <location filename="../screens/SettingsScreen.qml" line="284"/>
         <source>Cancel</source>
         <translation>Ακύρωση</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="266"/>
+        <location filename="../screens/SettingsScreen.qml" line="284"/>
         <source>Start</source>
         <translation>Έναρξη</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="268"/>
+        <location filename="../screens/SettingsScreen.qml" line="286"/>
         <source>Upload</source>
         <translation>Μεταφόρτωση</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="270"/>
+        <location filename="../screens/SettingsScreen.qml" line="288"/>
         <source>Open</source>
         <translation>Άνοιγμα</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="342"/>
+        <location filename="../screens/SettingsScreen.qml" line="365"/>
         <source>English</source>
         <translation>Αγγλικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="344"/>
+        <location filename="../screens/SettingsScreen.qml" line="367"/>
         <source>Italian</source>
         <translation>Ιταλικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="346"/>
+        <location filename="../screens/SettingsScreen.qml" line="369"/>
         <source>German</source>
         <translation>Γερμανικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="348"/>
+        <location filename="../screens/SettingsScreen.qml" line="371"/>
         <source>Greek</source>
         <translation>Ελληνικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="350"/>
+        <location filename="../screens/SettingsScreen.qml" line="373"/>
         <source>Japanese</source>
         <translation>Ιαπωνικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="352"/>
+        <location filename="../screens/SettingsScreen.qml" line="375"/>
         <source>Korean</source>
         <translation>Κορεατικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="354"/>
+        <location filename="../screens/SettingsScreen.qml" line="377"/>
         <source>Dutch</source>
         <translation>Ολλανδικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="356"/>
+        <location filename="../screens/SettingsScreen.qml" line="379"/>
         <source>Romanian</source>
         <translation>Ρουμανικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="358"/>
+        <location filename="../screens/SettingsScreen.qml" line="381"/>
         <source>Slovak</source>
         <translation>Σλοβακικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="360"/>
+        <location filename="../screens/SettingsScreen.qml" line="383"/>
         <source>Ukrainian</source>
         <translation>Ουκρανικά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="362"/>
+        <location filename="../screens/SettingsScreen.qml" line="385"/>
         <source>Chinese (Simplified)</source>
         <translation>Κινεζικά (Απλοποιημένα)</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="364"/>
+        <location filename="../screens/SettingsScreen.qml" line="387"/>
         <source>Hebrew</source>
         <translation>Εβραϊκά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="366"/>
+        <location filename="../screens/SettingsScreen.qml" line="389"/>
         <source>Arabic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="368"/>
+        <location filename="../screens/SettingsScreen.qml" line="391"/>
         <source>Hindi</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="369"/>
+        <location filename="../screens/SettingsScreen.qml" line="392"/>
+        <location filename="../screens/SettingsScreen.qml" line="451"/>
         <source>Auto</source>
         <translation>Αυτόματο</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="374"/>
+        <location filename="../screens/SettingsScreen.qml" line="397"/>
+        <source>Rotated CW</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="399"/>
+        <source>Rotated CCW</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="400"/>
+        <source>Horizontal</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="405"/>
         <source>Detailed list view</source>
         <translation>Λεπτομερής προβολή λίστας</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="375"/>
+        <location filename="../screens/SettingsScreen.qml" line="406"/>
         <source>Grid view</source>
         <translation>Προβολή πλέγματος</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="380"/>
+        <location filename="../screens/SettingsScreen.qml" line="411"/>
         <source>Style B</source>
         <translation>Στυλ B</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="382"/>
+        <location filename="../screens/SettingsScreen.qml" line="413"/>
         <source>Style C</source>
         <translation>Στυλ C</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="384"/>
+        <location filename="../screens/SettingsScreen.qml" line="415"/>
         <source>Style D</source>
         <translation>Στυλ D</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="385"/>
+        <location filename="../screens/SettingsScreen.qml" line="416"/>
         <source>Style A</source>
         <translation>Στυλ A</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="322"/>
+        <location filename="../screens/SettingsScreen.qml" line="340"/>
         <source>Default</source>
         <translation>Προεπιλογή</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="395"/>
+        <location filename="../screens/SettingsScreen.qml" line="431"/>
         <source>Off</source>
         <translation>Απενεργοποιημένο</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="397"/>
+        <location filename="../screens/SettingsScreen.qml" line="433"/>
         <source>1 second (testing)</source>
         <translation>1 δευτερόλεπτο (δοκιμή)</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="399"/>
+        <location filename="../screens/SettingsScreen.qml" line="435"/>
         <source>1 minute</source>
         <translation>1 λεπτό</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="401"/>
+        <location filename="../screens/SettingsScreen.qml" line="437"/>
         <source>2 minutes</source>
         <translation>2 λεπτά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="403"/>
+        <location filename="../screens/SettingsScreen.qml" line="439"/>
         <source>5 minutes</source>
         <translation>5 λεπτά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="405"/>
+        <location filename="../screens/SettingsScreen.qml" line="441"/>
         <source>10 minutes</source>
         <translation>10 λεπτά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="407"/>
+        <location filename="../screens/SettingsScreen.qml" line="443"/>
         <source>15 minutes</source>
         <translation>15 λεπτά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="409"/>
+        <location filename="../screens/SettingsScreen.qml" line="445"/>
         <source>30 minutes</source>
         <translation>30 λεπτά</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="410"/>
+        <location filename="../screens/SettingsScreen.qml" line="446"/>
         <source>%1 seconds</source>
         <translation>%1 δευτερόλεπτα</translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="67"/>
-        <location filename="../screens/SettingsScreen.qml" line="423"/>
+        <location filename="../screens/SettingsScreen.qml" line="489"/>
         <source>Resolution</source>
         <translation>Ανάλυση</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="563"/>
+        <location filename="../screens/SettingsScreen.qml" line="453"/>
+        <source>Image</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="455"/>
+        <source>Thumbnail</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="457"/>
+        <source>Box art</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="459"/>
+        <source>3D box art</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="461"/>
+        <source>Screenshot</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="463"/>
+        <source>Wheel</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="465"/>
+        <source>Title screen</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="467"/>
+        <source>Map</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="469"/>
+        <source>Marquee</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="471"/>
+        <source>Fan art</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="473"/>
+        <source>Box side</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="475"/>
+        <source>Box back</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="663"/>
         <source>Settings</source>
         <translation>Ρυθμίσεις</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="755"/>
+        <location filename="../screens/SettingsScreen.qml" line="857"/>
         <source>No settings available on this platform</source>
         <translation>Δεν υπάρχουν διαθέσιμες ρυθμίσεις για αυτή την πλατφόρμα</translation>
     </message>
@@ -1057,24 +1160,24 @@
 <context>
     <name>SystemsScreen</name>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="185"/>
-        <location filename="../screens/SystemsScreen.qml" line="285"/>
+        <location filename="../screens/SystemsScreen.qml" line="195"/>
+        <location filename="../screens/SystemsScreen.qml" line="292"/>
         <source>%1 systems</source>
         <translation>%1 συστήματα</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="189"/>
-        <location filename="../screens/SystemsScreen.qml" line="302"/>
+        <location filename="../screens/SystemsScreen.qml" line="196"/>
+        <location filename="../screens/SystemsScreen.qml" line="309"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="317"/>
+        <location filename="../screens/SystemsScreen.qml" line="324"/>
         <source>No systems in this category</source>
         <translation>Δεν υπάρχουν συστήματα σε αυτή την κατηγορία</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="318"/>
+        <location filename="../screens/SystemsScreen.qml" line="325"/>
         <source>Loading systems…</source>
         <translation>Φόρτωση συστημάτων…</translation>
     </message>

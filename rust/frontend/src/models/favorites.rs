@@ -19,7 +19,8 @@
 //
 // Search is flat (no folder navigation, no auto-nav) so this model
 // stays a fraction of the size of `GamesModel`. Card-write isn't wired
-// here yet — favorites launches by `run`-ing the entry's ZapScript.
+// here yet — runtime launches prefer the exact indexed path, while
+// QR/card-write payloads prefer Core's portable ZapScript.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
 use crate::models::{global_handle, global_store};
@@ -435,7 +436,7 @@ impl ffi::FavoritesModel {
         if index < 0 || index >= self.count {
             return QString::default();
         }
-        QString::from(self.entries[index as usize].zap_script.as_str())
+        QString::from(portable_text_for_entry(&self.entries[index as usize]).as_str())
     }
 
     fn write_card_at(mut self: Pin<&mut Self>, index: i32) {
@@ -446,13 +447,13 @@ impl ffi::FavoritesModel {
             return;
         }
         let entry = &self.entries[index as usize];
-        if entry.zap_script.is_empty() {
+        let text = portable_text_for_entry(entry);
+        if text.is_empty() {
             self.as_mut()
-                .set_card_write_error(QString::from("missing zap script"));
+                .set_card_write_error(QString::from("missing launch payload"));
             self.as_mut().set_card_write_pending(false);
             return;
         }
-        let text = entry.zap_script.clone();
         let name = entry.name.clone();
         let store = global_store();
         let seq = self.rust().card_write_seq.clone();
@@ -663,7 +664,7 @@ fn cover_key_for(entry: &MediaItem) -> String {
     if entry.system.id.is_empty() {
         return "icons/File".to_string();
     }
-    let media_key = media_key_for(entry);
+    let media_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
     let cache = global_media_image_cache();
     let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
     let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
@@ -910,9 +911,12 @@ fn notify_cover_update(mut model: Pin<&mut ffi::FavoritesModel>, key: &MediaKey)
         .entries
         .iter()
         .enumerate()
-        .filter(|(_, e)| match (key.media_id, e.media_id) {
-            (Some(a), Some(b)) => a == b,
-            _ => e.path == *key.path && e.system.id == *key.system_id,
+        .filter(|(_, e)| {
+            key.is_cover_key()
+                && match (key.media_id, e.media_id) {
+                    (Some(a), Some(b)) => a == b,
+                    _ => e.path == *key.path && e.system.id == *key.system_id,
+                }
         })
         .filter_map(|(i, _)| i32::try_from(i).ok())
         .collect();
@@ -1069,10 +1073,20 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::FavoritesModel>) {
 }
 
 /// Build the `text` payload sent to Core's `run` for a search entry.
-/// Search entries carry a Core-built `ZapScript` command, so use it
-/// directly and suppress the run when it is empty.
+/// Runtime launches prefer exact paths to avoid title/ZapScript
+/// ambiguity; portable write/QR paths prefer Core's `ZapScript`.
 fn launch_text_for(entry: &MediaItem) -> String {
+    if !entry.path.trim().is_empty() {
+        return entry.path.clone();
+    }
     entry.zap_script.clone()
+}
+
+fn portable_text_for_entry(entry: &MediaItem) -> String {
+    if !entry.zap_script.trim().is_empty() {
+        return entry.zap_script.clone();
+    }
+    entry.path.clone()
 }
 
 fn position_of_path(entries: &[MediaItem], needle: &str) -> i32 {

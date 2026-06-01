@@ -105,6 +105,22 @@ const DEFAULT_BUTTON_LAYOUT: &str = "a";
 // is long enough that idle browsing does not trip it.
 const SCREENSAVER_TIMEOUTS: &[&str] = &["off", "60", "120", "300", "600", "900", "1800"];
 const DEFAULT_SCREENSAVER_TIMEOUT: &str = "300";
+const MEDIA_IMAGE_TYPES: &[&str] = &[
+    "auto",
+    "image",
+    "thumbnail",
+    "boxart",
+    "boxart3d",
+    "screenshot",
+    "wheel",
+    "titleshot",
+    "map",
+    "marquee",
+    "fanart",
+    "boxartside",
+    "boxartback",
+];
+const DEFAULT_MEDIA_IMAGE_TYPE: &str = "auto";
 
 // Debug-only QA shortcut so the activation path can be exercised
 // without waiting for the production timer. Only appears in debug
@@ -136,6 +152,8 @@ pub struct SettingsRust {
     current_debug_logging: bool,
     available_screensaver_timeouts: QStringList,
     current_screensaver_timeout: QString,
+    available_media_image_types: QStringList,
+    current_media_image_type: QString,
 }
 
 #[cxx_qt::bridge]
@@ -167,6 +185,8 @@ pub mod ffi {
         #[qproperty(bool, current_debug_logging, READ, WRITE = set_debug_logging, NOTIFY)]
         #[qproperty(QStringList, available_screensaver_timeouts, READ, CONSTANT)]
         #[qproperty(QString, current_screensaver_timeout, READ, WRITE = set_screensaver_timeout, NOTIFY)]
+        #[qproperty(QStringList, available_media_image_types, READ, CONSTANT)]
+        #[qproperty(QString, current_media_image_type, READ, WRITE = set_media_image_type, NOTIFY)]
         type Settings = super::SettingsRust;
 
         #[qinvokable]
@@ -195,6 +215,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_screensaver_timeout(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_media_image_type(self: Pin<&mut Settings>, value: QString);
     }
 
     impl cxx_qt::Initialize for Settings {}
@@ -234,6 +257,9 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().available_screensaver_timeouts = screensaver_timeouts();
         self.as_mut().rust_mut().current_screensaver_timeout =
             QString::from(merged.screensaver_timeout.as_str());
+        self.as_mut().rust_mut().available_media_image_types = media_image_types();
+        self.as_mut().rust_mut().current_media_image_type =
+            QString::from(merged.media_image_type.as_str());
     }
 }
 
@@ -358,6 +384,21 @@ impl ffi::Settings {
         self.as_mut().rust_mut().current_screensaver_timeout = QString::from(value_str.as_str());
         self.as_mut().current_screensaver_timeout_changed();
     }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_media_image_type(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_media_image_type(&value.to_string()).to_string();
+        if self.current_media_image_type.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.media_image_type.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_media_image_type = QString::from(value_str.as_str());
+        self.as_mut().current_media_image_type_changed();
+    }
 }
 
 fn persist_settings<F: FnOnce(&mut SettingsState)>(mutator: F) -> persist::PersistedState {
@@ -393,6 +434,7 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
             discover_arcade_alternate_versions: settings.discover_arcade_alternate_versions,
             debug_logging: settings.debug_logging,
             screensaver_timeout: settings.screensaver_timeout.as_str(),
+            media_image_type: settings.media_image_type.as_str(),
         },
     ) {
         warn!(
@@ -453,6 +495,14 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
                 .unwrap_or(snapshot.screensaver_timeout.as_str()),
         )
         .to_string(),
+        media_image_type: normalize_media_image_type(
+            config
+                .settings
+                .media_image_type
+                .as_deref()
+                .unwrap_or(snapshot.media_image_type.as_str()),
+        )
+        .to_string(),
     }
 }
 
@@ -508,6 +558,14 @@ fn screensaver_timeouts() -> QStringList {
     list
 }
 
+fn media_image_types() -> QStringList {
+    let mut list = QStringList::default();
+    for value in MEDIA_IMAGE_TYPES {
+        list.append(QString::from(*value));
+    }
+    list
+}
+
 fn normalize_language(value: &str) -> &str {
     let trimmed = value.trim();
     if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
@@ -553,6 +611,15 @@ fn normalize_screensaver_timeout(value: &str) -> &'static str {
         .copied()
         .find(|v| *v == trimmed)
         .unwrap_or(DEFAULT_SCREENSAVER_TIMEOUT)
+}
+
+fn normalize_media_image_type(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    MEDIA_IMAGE_TYPES
+        .iter()
+        .copied()
+        .find(|v| *v == trimmed)
+        .unwrap_or(DEFAULT_MEDIA_IMAGE_TYPE)
 }
 
 fn normalize_button_layout(value: &str) -> &'static str {
