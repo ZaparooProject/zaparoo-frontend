@@ -374,22 +374,35 @@ pub struct MediaImageResult {
     pub type_tag: String,
 }
 
-/// Parameters for `media.meta`. Identifies the media row by `(system,
-/// path)`. The result includes ROM-level and title-level metadata —
-/// tags, properties (text or binary with `extension` + `contentType`),
-/// and the shared title block.
+/// Parameters for `media.meta`. Identifies the media row by `media_id`
+/// when available, otherwise by `(system, path)`. The result includes
+/// ROM-level and title-level metadata — tags, properties (text or
+/// binary with `extension` + `contentType`), and the shared title block.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaMetaParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<i64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub system: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub path: String,
 }
 
 impl MediaMetaParams {
     pub fn for_media(system: impl Into<String>, path: impl Into<String>) -> Self {
         Self {
+            media_id: None,
             system: system.into(),
             path: path.into(),
+        }
+    }
+
+    pub fn for_media_id(media_id: i64) -> Self {
+        Self {
+            media_id: Some(media_id),
+            system: String::new(),
+            path: String::new(),
         }
     }
 }
@@ -1376,6 +1389,20 @@ mod tests {
             object.get("path").and_then(|v| v.as_str()),
             Some("/roms/snes/x.sfc")
         );
+        assert!(!object.contains_key("mediaId"));
+    }
+
+    #[test]
+    fn media_meta_params_for_media_id_serialises_id_only() {
+        let params = MediaMetaParams::for_media_id(42);
+        let json = serde_json::to_value(&params).expect("serialise");
+        let object = json.as_object().expect("object");
+        assert_eq!(
+            object.get("mediaId").and_then(serde_json::Value::as_i64),
+            Some(42),
+        );
+        assert!(!object.contains_key("system"));
+        assert!(!object.contains_key("path"));
     }
 
     #[test]
