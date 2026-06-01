@@ -582,7 +582,8 @@ impl ffi::FavoritesModel {
         let detail_key = match media_id {
             Some(id) => MediaKey::with_media_id(system.clone(), path.clone(), id),
             None => MediaKey::new(system.clone(), path.clone()),
-        };
+        }
+        .with_current_cover_preference();
         self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
         self.as_mut().rust_mut().current_detail_media_id = media_id;
         sync_current_detail_image_key(self.as_mut());
@@ -891,7 +892,7 @@ fn cover_key_for_with(
 fn enqueue_favorites_covers(results: &[MediaItem]) {
     let cache = global_media_image_cache();
     for entry in results.iter().rev() {
-        if let Some(key) = media_key_for(entry) {
+        if let Some(key) = media_key_for(entry).map(MediaKey::with_current_cover_preference) {
             cache.enqueue_search_cover_with_media_id(key, entry.media_id, PAGE_SIZE);
         }
     }
@@ -996,7 +997,7 @@ where
 {
     entries
         .iter()
-        .filter_map(media_key_for)
+        .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
         .filter(|k| !is_cached(k) && !is_negative(k))
         .collect()
 }

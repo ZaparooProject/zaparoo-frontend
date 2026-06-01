@@ -212,6 +212,54 @@ Item {
         }
     }
 
+    function _fieldEnabled(id: string): bool {
+        if (id === "updateMediaDb")
+            return !settings._scrapeBusy;
+        if (id === "runScraper")
+            return !settings._indexBusy;
+        if (id === "rescrapeExisting")
+            return !settings._indexBusy && !settings._scrapeBusy;
+        return true;
+    }
+
+    function _fieldValue(id: string): string {
+        if (id === "resolution")
+            return settings._resolutionDisplay(Browse.Settings.current_resolution);
+        if (id === "language")
+            return settings._languageDisplay(Browse.Settings.current_language);
+        if (id === "orientation")
+            return settings._orientationDisplay(Browse.Settings.current_orientation);
+        if (id === "browseLayout")
+            return settings._browseLayoutDisplay(Browse.Settings.current_browse_layout);
+        if (id === "buttonLayout")
+            return settings._buttonLayoutDisplay(Browse.Settings.current_button_layout);
+        if (id === "screensaverTimeout")
+            return settings._screensaverTimeoutDisplay(Browse.Settings.current_screensaver_timeout);
+        if (id === "mediaImageType")
+            return settings._mediaImageTypeDisplay(Browse.Settings.current_media_image_type);
+        return "";
+    }
+
+    function _fieldControl(id: string): string {
+        if (id === "mouseEnabled" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting")
+            return "toggle";
+        if (id === "aboutLicense")
+            return "navigate";
+        if (id === "updateMediaDb" || id === "runScraper" || id === "uploadLog")
+            return "action";
+        return "picker";
+    }
+
+    function _fieldChecked(id: string): bool {
+        if (id === "debugLogging")
+            return Browse.Settings.current_debug_logging;
+        if (id === "discoverArcadeAlternateVersions")
+            return Browse.Settings.current_discover_arcade_alternate_versions;
+        if (id === "rescrapeExisting")
+            return settings.rescrapeExisting;
+        return Browse.Settings.current_mouse_enabled;
+    }
+
     readonly property int fieldCount: settings.fields.length
 
     // True iff `idx` points at a focusable field row (not a header,
@@ -765,11 +813,11 @@ Item {
                         // dims and its MouseArea stops responding.
                         // Keyboard Accept is separately gated in
                         // `_triggerIndex`/`_triggerScrape`.
-                        enabled: row.modelData.id === "updateMediaDb" ? !settings._scrapeBusy : row.modelData.id === "runScraper" ? !settings._indexBusy : row.modelData.id === "rescrapeExisting" ? !settings._indexBusy && !settings._scrapeBusy : true
+                        enabled: settings._fieldEnabled(row.modelData.id)
                         label: row.modelData.label
-                        value: row.modelData.id === "resolution" ? settings._resolutionDisplay(Browse.Settings.current_resolution) : row.modelData.id === "language" ? settings._languageDisplay(Browse.Settings.current_language) : row.modelData.id === "orientation" ? settings._orientationDisplay(Browse.Settings.current_orientation) : row.modelData.id === "browseLayout" ? settings._browseLayoutDisplay(Browse.Settings.current_browse_layout) : row.modelData.id === "buttonLayout" ? settings._buttonLayoutDisplay(Browse.Settings.current_button_layout) : row.modelData.id === "screensaverTimeout" ? settings._screensaverTimeoutDisplay(Browse.Settings.current_screensaver_timeout) : row.modelData.id === "mediaImageType" ? settings._mediaImageTypeDisplay(Browse.Settings.current_media_image_type) : ""
-                        control: row.modelData.id === "mouseEnabled" || row.modelData.id === "discoverArcadeAlternateVersions" || row.modelData.id === "debugLogging" || row.modelData.id === "rescrapeExisting" ? "toggle" : row.modelData.id === "aboutLicense" ? "navigate" : (row.modelData.id === "updateMediaDb" || row.modelData.id === "runScraper" || row.modelData.id === "uploadLog") ? "action" : "picker"
-                        checked: row.modelData.id === "debugLogging" ? Browse.Settings.current_debug_logging : row.modelData.id === "discoverArcadeAlternateVersions" ? Browse.Settings.current_discover_arcade_alternate_versions : row.modelData.id === "rescrapeExisting" ? settings.rescrapeExisting : Browse.Settings.current_mouse_enabled
+                        value: settings._fieldValue(row.modelData.id)
+                        control: settings._fieldControl(row.modelData.id)
+                        checked: settings._fieldChecked(row.modelData.id)
                         actionStatus: row.modelData.id === "updateMediaDb" ? settings._indexActionStatus() : row.modelData.id === "runScraper" ? settings._scrapeActionStatus() : ""
                         onHovered: settings.currentIndex = row.index
                         onClicked: {

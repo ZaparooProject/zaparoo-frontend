@@ -1072,7 +1072,7 @@ fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
         || (entry.entry_type == "directory"
             && (entry.media_id.is_some()
                 || !entry.zap_script.is_empty()
-                || !entry.system_id.is_empty()))
+                || !entry_system_id(entry).is_empty()))
 }
 
 fn run_text_for_entry(entry: &BrowseEntry) -> String {
@@ -1598,7 +1598,7 @@ where
 {
     entries
         .iter()
-        .filter_map(media_key_for)
+        .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
         .filter(|k| !is_cached(k) && !is_negative(k))
         .collect()
 }
