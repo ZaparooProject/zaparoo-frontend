@@ -21,24 +21,22 @@ QtObject {
     // Shared browse-grid bounds. Systems and games both solve the same
     // viewport-fit problem now, so the common limits live here and the
     // per-surface configs only override what is materially different.
-    readonly property int browseGridMinCellWidth: crtNativePath ? 72 : 160
-    readonly property int browseGridPreferredPageSize: crtNativePath ? 6 : 10
-    readonly property int browseGridMinColumns: 2
-    readonly property int browseGridMaxColumns: crtNativePath ? 3 : 5
-    readonly property int browseGridMinRows: 2
-    readonly property int browseGridMaxRows: crtNativePath ? 3 : 5
+    readonly property var _browseGridBaseConfig: ({
+        "minCellWidth": crtNativePath ? 72 : 160,
+        "preferredPageSize": crtNativePath ? 6 : 10,
+        "minColumns": 2,
+        "maxColumns": crtNativePath ? 3 : 5,
+        "minRows": 2,
+        "maxRows": crtNativePath ? 3 : 5
+    })
     // Systems grid uses the same viewport-driven shape selection as
     // games so both browse screens present a similar amount of content.
     // Systems tiles are squarer than box-art tiles, so they target a
     // slightly wider aspect while keeping the same preferred page size.
-    readonly property int systemsGridMinCellWidth: browseGridMinCellWidth
-    readonly property int systemsGridMinCellHeight: crtNativePath ? 72 : 160
-    readonly property real systemsGridTargetAspect: 1.0
-    readonly property int systemsGridPreferredPageSize: browseGridPreferredPageSize
-    readonly property int systemsGridMinColumns: browseGridMinColumns
-    readonly property int systemsGridMaxColumns: browseGridMaxColumns
-    readonly property int systemsGridMinRows: browseGridMinRows
-    readonly property int systemsGridMaxRows: browseGridMaxRows
+    readonly property var _systemsGridConfig: _gridConfig(_browseGridBaseConfig, {
+        "minCellHeight": crtNativePath ? 72 : 160,
+        "targetAspect": 1.0
+    })
     readonly property var _systemsGridShape: systemsGridShape(screenWidth, screenHeight)
     readonly property int systemsGridColumns: _systemsGridShape.columns
     readonly property int systemsGridRows: _systemsGridShape.rows
@@ -47,14 +45,10 @@ QtObject {
     // tile aspect while respecting a minimum readable tile size, so
     // rotating the scene changes how many tiles fit without stretching
     // the cards into a different shape.
-    readonly property int gamesGridMinCellWidth: browseGridMinCellWidth
-    readonly property int gamesGridMinCellHeight: crtNativePath ? 96 : 210
-    readonly property real gamesGridTargetAspect: crtNativePath ? 0.78 : 0.71
-    readonly property int gamesGridPreferredPageSize: browseGridPreferredPageSize
-    readonly property int gamesGridMinColumns: browseGridMinColumns
-    readonly property int gamesGridMaxColumns: browseGridMaxColumns
-    readonly property int gamesGridMinRows: browseGridMinRows
-    readonly property int gamesGridMaxRows: browseGridMaxRows
+    readonly property var _gamesGridConfig: _gridConfig(_browseGridBaseConfig, {
+        "minCellHeight": crtNativePath ? 96 : 210,
+        "targetAspect": crtNativePath ? 0.78 : 0.71
+    })
     readonly property var _gamesGridShape: gamesGridShape(screenWidth, screenHeight)
     readonly property int gamesGridColumns: _gamesGridShape.columns
     readonly property int gamesGridRows: _gamesGridShape.rows
@@ -101,29 +95,20 @@ QtObject {
     }
 
     function gamesGridShape(viewportWidth: int, viewportHeight: int): var {
-        return root._selectGridShape(viewportWidth, viewportHeight, {
-            "minCellWidth": root.gamesGridMinCellWidth,
-            "minCellHeight": root.gamesGridMinCellHeight,
-            "targetAspect": root.gamesGridTargetAspect,
-            "preferredPageSize": root.gamesGridPreferredPageSize,
-            "minColumns": root.gamesGridMinColumns,
-            "maxColumns": root.gamesGridMaxColumns,
-            "minRows": root.gamesGridMinRows,
-            "maxRows": root.gamesGridMaxRows
-        });
+        return root._selectGridShape(viewportWidth, viewportHeight, root._gamesGridConfig);
     }
 
     function systemsGridShape(viewportWidth: int, viewportHeight: int): var {
-        return root._selectGridShape(viewportWidth, viewportHeight, {
-            "minCellWidth": root.systemsGridMinCellWidth,
-            "minCellHeight": root.systemsGridMinCellHeight,
-            "targetAspect": root.systemsGridTargetAspect,
-            "preferredPageSize": root.systemsGridPreferredPageSize,
-            "minColumns": root.systemsGridMinColumns,
-            "maxColumns": root.systemsGridMaxColumns,
-            "minRows": root.systemsGridMinRows,
-            "maxRows": root.systemsGridMaxRows
-        });
+        return root._selectGridShape(viewportWidth, viewportHeight, root._systemsGridConfig);
+    }
+
+    function _gridConfig(base: var, overrides: var): var {
+        const merged = {};
+        for (const key in base)
+            merged[key] = base[key];
+        for (const key in overrides)
+            merged[key] = overrides[key];
+        return merged;
     }
 
     function _selectGridShape(viewportWidth: int, viewportHeight: int, options: var): var {
