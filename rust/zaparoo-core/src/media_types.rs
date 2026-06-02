@@ -185,8 +185,9 @@ pub struct MediaBrowseParams {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowseEntry {
-    /// Opaque media database row ID. Present on `media` entries only.
-    /// Treat as ephemeral — valid only for the current Core session.
+    /// Opaque media database row ID. Present on `media` entries and
+    /// singleton media-container `directory` entries on zip-as-directory
+    /// platforms. Treat as ephemeral — valid only for the current Core session.
     #[serde(default)]
     pub media_id: Option<i64>,
     pub name: String,
@@ -207,8 +208,8 @@ pub struct BrowseEntry {
     pub group: String,
     #[serde(default)]
     pub description: String,
-    /// Tags attached to a media entry. Empty for non-media (`directory`,
-    /// `root`) entries. Core only populates this on media leaves.
+    /// Tags attached to media-capable entries. Empty for normal folders;
+    /// Core can populate this on singleton media-container directories.
     #[serde(default)]
     pub tags: Vec<TagInfo>,
 }
@@ -373,22 +374,35 @@ pub struct MediaImageResult {
     pub type_tag: String,
 }
 
-/// Parameters for `media.meta`. Identifies the media row by `(system,
-/// path)`. The result includes ROM-level and title-level metadata —
-/// tags, properties (text or binary with `extension` + `contentType`),
-/// and the shared title block.
+/// Parameters for `media.meta`. Identifies the media row by `media_id`
+/// when available, otherwise by `(system, path)`. The result includes
+/// ROM-level and title-level metadata — tags, properties (text or
+/// binary with `extension` + `contentType`), and the shared title block.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaMetaParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<i64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub system: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub path: String,
 }
 
 impl MediaMetaParams {
     pub fn for_media(system: impl Into<String>, path: impl Into<String>) -> Self {
         Self {
+            media_id: None,
             system: system.into(),
             path: path.into(),
+        }
+    }
+
+    pub fn for_media_id(media_id: i64) -> Self {
+        Self {
+            media_id: Some(media_id),
+            system: String::new(),
+            path: String::new(),
         }
     }
 }
@@ -414,6 +428,8 @@ pub struct MediaMeta {
     /// `property:description`, `property:image-boxart`).
     #[serde(default)]
     pub properties: HashMap<String, MediaMetaProperty>,
+    #[serde(default)]
+    pub available_image_types: Vec<String>,
     #[serde(default)]
     pub title: MediaMetaTitle,
 }
@@ -441,6 +457,8 @@ pub struct MediaMetaTitle {
     /// title slug.
     #[serde(default)]
     pub properties: HashMap<String, MediaMetaProperty>,
+    #[serde(default)]
+    pub available_image_types: Vec<String>,
 }
 
 /// One scraped property attached to a media row or title. Binary
@@ -661,16 +679,46 @@ pub struct IndexingStatusResponse {
     pub paused: bool,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeSystemProgressResponse {
+    #[serde(default)]
+    pub system_id: String,
+    #[serde(default)]
+    pub system_name: String,
+    #[serde(default)]
+    pub processed: i32,
+    #[serde(default)]
+    pub total: i32,
+    #[serde(default)]
+    pub matched: i32,
+    #[serde(default)]
+    pub skipped: i32,
+}
+
 /// Snapshot of Core's scraper progress. Mirrors `ScrapingStatusResponse`
-/// from upstream. `scraper_id` and `system_id` carry the in-flight job's
-/// identifiers; the counters are cumulative for the run.
+/// from upstream. `total_steps` / `current_step` carry whole-run system
+/// progress; flat counters remain the per-current-system compatibility
+/// surface.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScrapingStatusResponse {
     #[serde(default)]
+    pub current_step: Option<i32>,
+    #[serde(default)]
+    pub current_step_display: Option<String>,
+    #[serde(default)]
+    pub total_steps: Option<i32>,
+    #[serde(default)]
+    pub current_system: Option<ScrapeSystemProgressResponse>,
+    #[serde(default)]
     pub scraper_id: String,
     #[serde(default)]
     pub system_id: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub error: String,
     #[serde(default)]
     pub processed: i32,
     #[serde(default)]
@@ -1341,6 +1389,20 @@ mod tests {
             object.get("path").and_then(|v| v.as_str()),
             Some("/roms/snes/x.sfc")
         );
+        assert!(!object.contains_key("mediaId"));
+    }
+
+    #[test]
+    fn media_meta_params_for_media_id_serialises_id_only() {
+        let params = MediaMetaParams::for_media_id(42);
+        let json = serde_json::to_value(&params).expect("serialise");
+        let object = json.as_object().expect("object");
+        assert_eq!(
+            object.get("mediaId").and_then(serde_json::Value::as_i64),
+            Some(42),
+        );
+        assert!(!object.contains_key("system"));
+        assert!(!object.contains_key("path"));
     }
 
     #[test]
@@ -1780,6 +1842,11 @@ mod tests {
         let json = r#"{
             "scraperId": "screenscraper",
             "systemId": "SNES",
+            "state": "running",
+            "totalSteps": 5,
+            "currentStep": 2,
+            "currentStepDisplay": "Super Nintendo",
+            "currentSystem": {"systemId": "SNES", "systemName": "Super Nintendo", "processed": 12, "total": 200, "matched": 10, "skipped": 2},
             "processed": 12,
             "total": 200,
             "matched": 10,
@@ -1792,6 +1859,17 @@ mod tests {
         let result: ScrapingStatusResponse = serde_json::from_str(json).expect("parse");
         assert_eq!(result.scraper_id, "screenscraper");
         assert_eq!(result.system_id, "SNES");
+        assert_eq!(result.state, "running");
+        assert_eq!(result.total_steps, Some(5));
+        assert_eq!(result.current_step, Some(2));
+        assert_eq!(
+            result.current_step_display.as_deref(),
+            Some("Super Nintendo")
+        );
+        let current = result.current_system.as_ref().expect("current system");
+        assert_eq!(current.system_id, "SNES");
+        assert_eq!(current.system_name, "Super Nintendo");
+        assert_eq!(current.processed, 12);
         assert_eq!(result.processed, 12);
         assert_eq!(result.total, 200);
         assert_eq!(result.matched, 10);

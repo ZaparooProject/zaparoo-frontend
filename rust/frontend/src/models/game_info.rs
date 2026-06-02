@@ -303,21 +303,32 @@ fn image_type_from_property_key(key: &str) -> Option<String> {
 }
 
 fn detail_image_keys_from_meta(meta: &MediaMeta, system: &str, path: &str) -> Vec<MediaKey> {
-    let mut types = BTreeSet::<String>::new();
-    for key in meta
-        .title
-        .properties
-        .keys()
-        .chain(meta.properties.keys())
-        .filter_map(|key| image_type_from_property_key(key))
+    let mut seen = BTreeSet::<String>::new();
+    let mut ordered = Vec::<String>::new();
+    for image_type in meta
+        .available_image_types
+        .iter()
+        .chain(meta.title.available_image_types.iter())
     {
-        types.insert(key);
+        if !image_type.trim().is_empty() && seen.insert(image_type.clone()) {
+            ordered.push(image_type.clone());
+        }
     }
-    let mut ordered = Vec::new();
-    if types.remove("image") {
-        ordered.push("image".to_string());
+    if ordered.is_empty() {
+        for key in meta
+            .title
+            .properties
+            .keys()
+            .chain(meta.properties.keys())
+            .filter_map(|key| image_type_from_property_key(key))
+        {
+            seen.insert(key);
+        }
+        if seen.remove("image") {
+            ordered.push("image".to_string());
+        }
+        ordered.extend(seen);
     }
-    ordered.extend(types);
     ordered
         .into_iter()
         .map(|image_type| MediaKey::with_image_type(system, path, image_type))

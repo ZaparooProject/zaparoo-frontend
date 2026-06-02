@@ -108,6 +108,39 @@ const SUPPORTED_EXTS: &[(&str, &str)] = &[
 ];
 
 const SUPPORTED_PLAIN_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp"];
+const CORE_DEFAULT_IMAGE_TYPES: &[&str] = &[
+    "image",
+    "thumbnail",
+    "boxart",
+    "boxart3d",
+    "screenshot",
+    "wheel",
+    "titleshot",
+    "map",
+    "marquee",
+    "fanart",
+];
+const COVER_PREF_PREFIX: &str = "__pref:";
+
+fn current_cover_preference_marker() -> Option<Arc<str>> {
+    let value = crate::models::try_with_persist_read(|s| s.settings.media_image_type.clone())?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed == "auto" {
+        return None;
+    }
+    Some(Arc::from(format!("{COVER_PREF_PREFIX}{trimmed}")))
+}
+
+fn preferred_image_types(preference: &str) -> Vec<String> {
+    let mut out = Vec::with_capacity(CORE_DEFAULT_IMAGE_TYPES.len() + 1);
+    out.push(preference.to_string());
+    for image_type in CORE_DEFAULT_IMAGE_TYPES {
+        if *image_type != preference {
+            out.push((*image_type).to_string());
+        }
+    }
+    out
+}
 
 fn ext_for_content_type(content_type: &str) -> Option<&'static str> {
     let head = content_type.split(';').next()?.trim().to_ascii_lowercase();
@@ -167,6 +200,24 @@ impl MediaKey {
             media_id: Some(media_id),
             image_type: None,
         }
+    }
+
+    pub fn with_current_cover_preference(mut self) -> Self {
+        if let Some(pref) = current_cover_preference_marker() {
+            self.image_type = Some(pref);
+        }
+        self
+    }
+
+    fn cover_preference(&self) -> Option<&str> {
+        self.image_type
+            .as_deref()
+            .and_then(|t| t.strip_prefix(COVER_PREF_PREFIX))
+            .filter(|t| !t.is_empty())
+    }
+
+    pub fn is_cover_key(&self) -> bool {
+        self.image_type.is_none() || self.cover_preference().is_some()
     }
 
     pub fn with_image_type(
@@ -1026,7 +1077,9 @@ async fn fetch_one(
             ),
         }
     };
-    if let Some(image_type) = key.image_type.as_ref() {
+    if let Some(preference) = key.cover_preference() {
+        params.image_types = preferred_image_types(preference);
+    } else if let Some(image_type) = key.image_type.as_ref() {
         params.image_types.push(image_type.to_string());
     }
     debug!(

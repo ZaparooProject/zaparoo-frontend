@@ -50,6 +50,7 @@ pub struct SettingsConfig {
     pub mouse_enabled: Option<bool>,
     pub discover_arcade_alternate_versions: Option<bool>,
     pub screensaver_timeout: Option<String>,
+    pub media_image_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +64,7 @@ pub struct SettingsMirror<'a> {
     pub discover_arcade_alternate_versions: bool,
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
+    pub media_image_type: &'a str,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -139,6 +141,7 @@ struct RawSettings {
     mouse_enabled: Option<bool>,
     discover_arcade_alternate_versions: Option<bool>,
     screensaver_timeout: Option<String>,
+    media_image_type: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -222,6 +225,10 @@ pub fn load_config(path: &Path) -> Config {
             .settings
             .screensaver_timeout
             .map(|value| value.trim().to_string()),
+        media_image_type: raw
+            .settings
+            .media_image_type
+            .map(|value| value.trim().to_string()),
     };
     cfg.notice = NoticeConfig {
         commercial_ack: raw.notice.commercial_ack.unwrap_or(false),
@@ -303,6 +310,10 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     settings.insert(
         "screensaver_timeout".into(),
         toml::Value::String(mirror.screensaver_timeout.trim().to_string()),
+    );
+    settings.insert(
+        "media_image_type".into(),
+        toml::Value::String(mirror.media_image_type.trim().to_string()),
     );
 
     let logging_value = table
@@ -621,6 +632,7 @@ mod tests {
                 discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "300",
+                media_image_type: "auto",
             },
         )
         .expect("save");
@@ -655,6 +667,7 @@ mod tests {
                 discover_arcade_alternate_versions: false,
                 debug_logging: false,
                 screensaver_timeout: "60",
+                media_image_type: "auto",
             },
         )
         .expect("save");
@@ -689,6 +702,7 @@ mod tests {
                 discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "off",
+                media_image_type: "auto",
             },
         )
         .expect("save");

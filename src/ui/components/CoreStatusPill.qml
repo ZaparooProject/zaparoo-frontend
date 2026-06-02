@@ -76,17 +76,17 @@ Item {
         }
         // Priority 3 — scraper.
         if (Browse.MediaStatus.scraping) {
-            const proc = Browse.MediaStatus.scrape_processed;
-            const total = Browse.MediaStatus.scrape_total;
-            const sys = Browse.MediaStatus.scrape_system_id;
+            const cur = Browse.MediaStatus.scrape_current_step;
+            const tot = Browse.MediaStatus.scrape_total_steps;
+            const display = Browse.MediaStatus.scrape_current_step_display;
             if (Browse.MediaStatus.scrape_paused)
                 return qsTr("Scrape paused");
 
-            if (total > 0 && sys !== "")
-                return qsTr("Scraping %1/%2 - %3").arg(proc).arg(total).arg(sys);
+            if (tot > 0 && display !== "")
+                return qsTr("Scraping %1/%2 - %3").arg(cur).arg(tot).arg(display);
 
-            if (total > 0)
-                return qsTr("Scraping %1/%2").arg(proc).arg(total);
+            if (tot > 0)
+                return qsTr("Scraping %1/%2").arg(cur).arg(tot);
 
             return qsTr("Scraping…");
         }

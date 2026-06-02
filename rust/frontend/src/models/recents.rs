@@ -453,7 +453,8 @@ impl ffi::RecentsModel {
         let detail_key = match media_id {
             Some(id) => MediaKey::with_media_id(system.clone(), path.clone(), id),
             None => MediaKey::new(system.clone(), path.clone()),
-        };
+        }
+        .with_current_cover_preference();
         self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
         self.as_mut().rust_mut().current_detail_media_id = media_id;
         sync_current_detail_image_key(self.as_mut());
@@ -535,7 +536,7 @@ fn cover_key_for(entry: &MediaHistoryEntry) -> String {
     if entry.system_id.is_empty() {
         return "icons/File".to_string();
     }
-    let media_key = media_key_for(entry);
+    let media_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
     let cache = global_media_image_cache();
     let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
     let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
@@ -708,7 +709,7 @@ fn file_stem_or_name(path: &str, name: &str) -> String {
 fn enqueue_recents_covers(entries: &[MediaHistoryEntry]) {
     let cache = global_media_image_cache();
     for entry in entries.iter().rev() {
-        if let Some(key) = media_key_for(entry) {
+        if let Some(key) = media_key_for(entry).map(MediaKey::with_current_cover_preference) {
             cache.enqueue_search_cover_with_media_id(key, entry.media_id, PAGE_SIZE);
         }
     }
@@ -728,9 +729,12 @@ fn notify_cover_update(mut model: Pin<&mut ffi::RecentsModel>, key: &MediaKey) {
         .entries
         .iter()
         .enumerate()
-        .filter(|(_, e)| match (key.media_id, e.media_id) {
-            (Some(a), Some(b)) => a == b,
-            _ => e.media_path == *key.path && e.system_id == *key.system_id,
+        .filter(|(_, e)| {
+            key.is_cover_key()
+                && match (key.media_id, e.media_id) {
+                    (Some(a), Some(b)) => a == b,
+                    _ => e.media_path == *key.path && e.system_id == *key.system_id,
+                }
         })
         .filter_map(|(i, _)| i32::try_from(i).ok())
         .collect();
@@ -810,7 +814,7 @@ where
 {
     entries
         .iter()
-        .filter_map(media_key_for)
+        .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
         .filter(|k| !is_cached(k) && !is_negative(k))
         .collect()
 }
@@ -887,32 +891,11 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::RecentsModel>) {
 }
 
 /// Build the `text` payload sent to Core's `run` for a history entry.
-/// History entries don't carry a synthesised `zap_script` (Core surfaces
-/// only the raw fields), so compose `**launch:"<path>"` from the row's
-/// `mediaPath`, with `?launcher=<id>` appended when `launcherId` is known
-/// so Core picks the same launcher the entry originally ran under. An
-/// empty path yields an empty string, suppressing the run entirely —
-/// `**launch.system:<id>` would just boot the core without a game.
-///
-/// The path is always wrapped in double quotes so spaces and shell
-/// metacharacters (parens, commas) survive Core's argument parsing —
-/// real-world paths like
-/// `/media/fat/cifs/games/Genesis/1 US - A-F/B.O.B. (USA,Europe) (Rev A).md`
-/// fail to launch unquoted. Embedded backslashes and double quotes are
-/// escaped per `ZapScript`'s `parseQuotedArg` rules (backslash first so
-/// the quote-escape's leading `\` doesn't get re-escaped) — Windows-host
-/// paths and the rare filename containing a literal `"` would otherwise
-/// produce a malformed token.
+/// Runtime relaunches prefer the exact path Core recorded; portable
+/// `ZapScript` is not available on history rows and launcher affinity is
+/// less important than avoiding title-resolution ambiguity.
 fn launch_text_for(entry: &MediaHistoryEntry) -> String {
-    if entry.media_path.is_empty() {
-        return String::new();
-    }
-    let escaped = entry.media_path.replace('\\', "\\\\").replace('"', "\\\"");
-    if entry.launcher_id.is_empty() {
-        format!("**launch:\"{escaped}\"")
-    } else {
-        format!("**launch:\"{escaped}\"?launcher={}", entry.launcher_id)
-    }
+    entry.media_path.clone()
 }
 
 fn position_of_path(entries: &[MediaHistoryEntry], needle: &str) -> i32 {
@@ -1063,52 +1046,35 @@ mod tests {
     }
 
     #[test]
-    fn launch_text_uses_launch_with_launcher_override_when_known() {
+    fn launch_text_uses_raw_media_path_when_launcher_known() {
         let e = entry("smb", "/p/smb.nes", "NES", "NES");
-        assert_eq!(launch_text_for(&e), "**launch:\"/p/smb.nes\"?launcher=NES");
+        assert_eq!(launch_text_for(&e), "/p/smb.nes");
     }
 
     #[test]
-    fn launch_text_falls_back_to_bare_launch_when_launcher_missing() {
+    fn launch_text_uses_raw_media_path_when_launcher_missing() {
         let e = entry("smb", "/p/smb.nes", "NES", "");
-        assert_eq!(launch_text_for(&e), "**launch:\"/p/smb.nes\"");
+        assert_eq!(launch_text_for(&e), "/p/smb.nes");
     }
 
     #[test]
-    fn launch_text_quotes_path_with_spaces_and_metacharacters() {
-        // Real-world path that fails to launch unquoted because of
-        // spaces, parens, and commas — exactly the regression the
-        // user reported when running from Recently Played.
-        let e = entry(
-            "bob",
-            "/media/fat/cifs/games/Genesis/1 US - A-F/B.O.B. (USA,Europe) (Rev A).md",
-            "Genesis",
-            "Genesis",
-        );
-        assert_eq!(
-            launch_text_for(&e),
-            "**launch:\"/media/fat/cifs/games/Genesis/1 US - A-F/B.O.B. (USA,Europe) (Rev A).md\"?launcher=Genesis"
-        );
+    fn launch_text_preserves_path_with_spaces_and_metacharacters() {
+        let path = "/media/fat/cifs/games/Genesis/1 US - A-F/B.O.B. (USA,Europe) (Rev A).md";
+        let e = entry("bob", path, "Genesis", "Genesis");
+        assert_eq!(launch_text_for(&e), path);
     }
 
     #[test]
-    fn launch_text_escapes_backslashes_and_quotes_in_path() {
-        // Windows-host paths reach Core with backslash separators, and
-        // a stray `"` in a filename would otherwise close the quoted
-        // arg early. Both must be ZapScript-escaped so
-        // `parseQuotedArg` decodes them back to the original path.
-        let e = entry("weird", r#"C:\Games\say "hi".rom"#, "DOS", "DOS");
-        assert_eq!(
-            launch_text_for(&e),
-            r#"**launch:"C:\\Games\\say \"hi\".rom"?launcher=DOS"#
-        );
+    fn launch_text_preserves_backslashes_and_quotes_in_path() {
+        let path = r#"C:\Games\say "hi".rom"#;
+        let e = entry("weird", path, "DOS", "DOS");
+        assert_eq!(launch_text_for(&e), path);
     }
 
     #[test]
     fn launch_text_is_empty_when_path_missing_and_launcher_present() {
-        // A history row with a launcher id but no path is malformed —
-        // `**launch:?launcher=NES` would just confuse Core. Empty here
-        // suppresses the run entirely.
+        // A history row with a launcher id but no path is malformed.
+        // Empty here suppresses the run entirely.
         let e = entry("ghost", "", "NES", "NES");
         assert_eq!(launch_text_for(&e), "");
     }

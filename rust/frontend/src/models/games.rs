@@ -36,7 +36,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant,
 };
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -50,8 +50,8 @@ use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
 use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::media_types::{
-    BrowseEntry, MediaBrowseParams, MediaBrowseResult, MediaTagsUpdateParams, ReadersWriteParams,
-    RunParams, TagInfo,
+    BrowseEntry, MediaBrowseParams, MediaBrowseResult, MediaMeta, MediaMetaParams,
+    MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
 };
 use zaparoo_core::platform::{self, Platform};
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -379,6 +379,9 @@ pub mod ffi {
         fn entry_type_at(self: &GamesModel, index: i32) -> QString;
 
         #[qinvokable]
+        fn is_media_capable_at(self: &GamesModel, index: i32) -> bool;
+
+        #[qinvokable]
         fn index_for_game_path(self: &GamesModel, path: &QString) -> i32;
 
         #[inherit]
@@ -605,13 +608,31 @@ impl ffi::GamesModel {
             return;
         }
         let entry = &self.entries[index as usize];
-        if entry.zap_script.is_empty() {
+        let fallback_text = run_text_for_entry(entry);
+        if fallback_text.is_empty() {
             return;
         }
-        let text = entry.zap_script.clone();
+        let params = singleton_directory_needs_launch_resolution(entry)
+            .then(|| meta_params_for_entry(entry))
+            .flatten();
         let name = entry.name.clone();
         let store = global_store();
         global_handle().spawn(async move {
+            let text = if let Some(params) = params {
+                match store.client().media_meta(params).await {
+                    Ok(result) if !result.media.path.trim().is_empty() => result.media.path,
+                    Ok(_) => fallback_text.clone(),
+                    Err(e) => {
+                        warn!(
+                            "singleton launch path resolve failed for {name}: {}",
+                            e.message
+                        );
+                        fallback_text.clone()
+                    }
+                }
+            } else {
+                fallback_text.clone()
+            };
             if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
                 warn!("run failed for {name}: {}", e.message);
             }
@@ -622,7 +643,7 @@ impl ffi::GamesModel {
         if index < 0 || index >= self.count {
             return QString::default();
         }
-        QString::from(self.entries[index as usize].zap_script.as_str())
+        QString::from(portable_text_for_entry(&self.entries[index as usize]).as_str())
     }
 
     fn write_card_at(mut self: Pin<&mut Self>, index: i32) {
@@ -633,13 +654,13 @@ impl ffi::GamesModel {
             return;
         }
         let entry = &self.entries[index as usize];
-        if entry.zap_script.is_empty() {
+        let text = portable_text_for_entry(entry);
+        if text.is_empty() {
             self.as_mut()
-                .set_card_write_error(QString::from("missing zap script"));
+                .set_card_write_error(QString::from("missing launch payload"));
             self.as_mut().set_card_write_pending(false);
             return;
         }
-        let text = entry.zap_script.clone();
         let name = entry.name.clone();
         let store = global_store();
         let seq = self.rust().card_write_seq.clone();
@@ -673,7 +694,7 @@ impl ffi::GamesModel {
             return;
         }
         let entry = &self.entries[index as usize];
-        if entry.is_folder() {
+        if !is_media_capable_entry(entry) {
             return;
         }
         let Some(params) = favorite_params_for_entry(entry, !has_favorite_tag(&entry.tags)) else {
@@ -743,10 +764,12 @@ impl ffi::GamesModel {
     }
 
     fn load_description_at(mut self: Pin<&mut Self>, index: i32) {
-        self.as_mut()
+        let ticket = self
+            .as_mut()
             .rust_mut()
             .description_seq
-            .fetch_add(1, Ordering::SeqCst);
+            .fetch_add(1, Ordering::SeqCst)
+            + 1;
         if index < 0 || index >= self.count {
             self.as_mut().set_current_detail_loading(false);
             self.as_mut().set_current_description(QString::default());
@@ -756,7 +779,7 @@ impl ffi::GamesModel {
         }
 
         let entry = &self.entries[index as usize];
-        if entry.is_folder() {
+        if !is_media_capable_entry(entry) {
             self.as_mut().set_current_detail_loading(false);
             self.as_mut().set_current_description(QString::default());
             self.as_mut().set_current_detail_tags(QString::default());
@@ -767,14 +790,61 @@ impl ffi::GamesModel {
         let description = entry.description.clone();
         let detail_tags = detail_tags_from_entry(entry);
         let detail_image_key = media_key_for(entry);
+        let Some(params) = meta_params_for_entry(entry) else {
+            self.as_mut().set_current_detail_loading(false);
+            self.as_mut()
+                .set_current_description(QString::from(description.as_str()));
+            self.as_mut()
+                .set_current_detail_tags(QString::from(detail_tags.as_str()));
+            set_single_detail_image_key(self.as_mut(), detail_image_key);
+            return;
+        };
 
         self.as_mut().set_current_detail_loading(true);
         self.as_mut()
             .set_current_description(QString::from(description.as_str()));
         self.as_mut()
             .set_current_detail_tags(QString::from(detail_tags.as_str()));
-        set_detail_image_keys(self.as_mut(), detail_image_key);
-        self.as_mut().set_current_detail_loading(false);
+        set_single_detail_image_key(self.as_mut(), detail_image_key);
+
+        let seq = self.rust().description_seq.clone();
+        let qt_thread = self.qt_thread();
+        let store = global_store();
+        global_handle().spawn(async move {
+            let result = store.client().media_meta(params).await;
+            let _ = qt_thread.queue(move |mut model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                match result {
+                    Ok(result) => {
+                        let meta = result.media;
+                        let description = description_from_meta(&meta);
+                        if !description.is_empty() {
+                            model
+                                .as_mut()
+                                .set_current_description(QString::from(description.as_str()));
+                        }
+                        model.as_mut().set_current_detail_tags(QString::from(
+                            detail_tags_from_meta(&meta).as_str(),
+                        ));
+                        let mut detail_keys = detail_image_keys_from_meta(
+                            &meta,
+                            meta.title.system.id.as_str(),
+                            meta.path.as_str(),
+                        );
+                        if detail_keys.is_empty() {
+                            if let Some(key) = media_key_for(&model.entries[index as usize]) {
+                                detail_keys.push(key);
+                            }
+                        }
+                        set_detail_image_keys(model.as_mut(), detail_keys);
+                    }
+                    Err(e) => warn!("games detail fetch failed: {}", e.message),
+                }
+                model.as_mut().set_current_detail_loading(false);
+            });
+        });
     }
 
     fn clear_current_detail(mut self: Pin<&mut Self>) {
@@ -819,6 +889,13 @@ impl ffi::GamesModel {
             return QString::default();
         }
         QString::from(self.entries[index as usize].entry_type.as_str())
+    }
+
+    fn is_media_capable_at(&self, index: i32) -> bool {
+        if index < 0 || index >= self.count {
+            return false;
+        }
+        is_media_capable_entry(&self.entries[index as usize])
     }
 
     fn index_for_game_path(&self, path: &QString) -> i32 {
@@ -990,6 +1067,103 @@ fn entry_system_id(entry: &BrowseEntry) -> String {
     entry.system_ids.first().cloned().unwrap_or_default()
 }
 
+fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
+    entry.entry_type == "media"
+        || (entry.entry_type == "directory"
+            && (entry.media_id.is_some()
+                || !entry.zap_script.is_empty()
+                || !entry_system_id(entry).is_empty()))
+}
+
+fn run_text_for_entry(entry: &BrowseEntry) -> String {
+    if !entry.path.trim().is_empty() {
+        return entry.path.clone();
+    }
+    entry.zap_script.clone()
+}
+
+fn meta_params_for_entry(entry: &BrowseEntry) -> Option<MediaMetaParams> {
+    if let Some(media_id) = entry.media_id {
+        return Some(MediaMetaParams::for_media_id(media_id));
+    }
+    let system_id = entry_system_id(entry);
+    if system_id.trim().is_empty() || entry.path.trim().is_empty() {
+        return None;
+    }
+    Some(MediaMetaParams::for_media(system_id, entry.path.clone()))
+}
+
+fn singleton_directory_needs_launch_resolution(entry: &BrowseEntry) -> bool {
+    entry.entry_type == "directory" && entry.media_id.is_some()
+}
+
+fn description_from_meta(meta: &MediaMeta) -> String {
+    meta.title
+        .properties
+        .get("property:description")
+        .or_else(|| meta.properties.get("property:description"))
+        .map(|property| property.text.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .unwrap_or_default()
+}
+
+fn detail_tags_from_meta(meta: &MediaMeta) -> String {
+    let source = if meta.title.tags.is_empty() {
+        meta.tags.as_slice()
+    } else {
+        meta.title.tags.as_slice()
+    };
+    detail_tags_from_tags(source)
+}
+
+fn image_type_from_property_key(key: &str) -> Option<String> {
+    let suffix = key.strip_prefix("property:image")?;
+    if suffix.is_empty() {
+        return Some("image".to_string());
+    }
+    Some(suffix.trim_start_matches('-').to_string()).filter(|image_type| !image_type.is_empty())
+}
+
+fn detail_image_keys_from_meta(meta: &MediaMeta, system: &str, path: &str) -> Vec<MediaKey> {
+    let mut seen = BTreeSet::<String>::new();
+    let mut ordered = Vec::<String>::new();
+    for image_type in meta
+        .available_image_types
+        .iter()
+        .chain(meta.title.available_image_types.iter())
+    {
+        if !image_type.trim().is_empty() && seen.insert(image_type.clone()) {
+            ordered.push(image_type.clone());
+        }
+    }
+    if ordered.is_empty() {
+        for key in meta
+            .title
+            .properties
+            .keys()
+            .chain(meta.properties.keys())
+            .filter_map(|key| image_type_from_property_key(key))
+        {
+            seen.insert(key);
+        }
+        if seen.remove("image") {
+            ordered.push("image".to_string());
+        }
+        ordered.extend(seen);
+    }
+    ordered
+        .into_iter()
+        .map(|image_type| MediaKey::with_image_type(system, path, image_type))
+        .collect()
+}
+
+fn portable_text_for_entry(entry: &BrowseEntry) -> String {
+    if !entry.zap_script.trim().is_empty() {
+        return entry.zap_script.clone();
+    }
+    entry.path.clone()
+}
+
 fn detail_tags_from_entry(entry: &BrowseEntry) -> String {
     detail_tags_from_tags(entry.tags.as_slice())
 }
@@ -1060,17 +1234,18 @@ fn clear_detail_images(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().set_current_detail_image_can_next(false);
 }
 
-fn set_detail_image_keys(mut model: Pin<&mut ffi::GamesModel>, key: Option<MediaKey>) {
-    model.as_mut().rust_mut().detail_image_keys.clear();
-    if let Some(key) = key {
-        model.as_mut().rust_mut().detail_image_keys.push(key);
-    }
+fn set_detail_image_keys(mut model: Pin<&mut ffi::GamesModel>, keys: Vec<MediaKey>) {
+    model.as_mut().rust_mut().detail_image_keys = keys;
     model.as_mut().set_current_detail_image_index(0);
     let count = i32::try_from(model.detail_image_keys.len()).unwrap_or(i32::MAX);
     model.as_mut().set_current_detail_image_count(count);
     model.as_mut().set_current_detail_image_can_prev(false);
     model.as_mut().set_current_detail_image_can_next(count > 1);
     sync_current_detail_image_key_with_page_size(model, 1);
+}
+
+fn set_single_detail_image_key(model: Pin<&mut ffi::GamesModel>, key: Option<MediaKey>) {
+    set_detail_image_keys(model, key.into_iter().collect());
 }
 
 fn set_detail_image_index(mut model: Pin<&mut ffi::GamesModel>, index: i32) {
@@ -1131,7 +1306,7 @@ fn sync_current_detail_image_key_with_page_size(
 }
 
 fn cover_placeholder_for(entry: &BrowseEntry) -> String {
-    if entry.is_folder() {
+    if !is_media_capable_entry(entry) && entry.is_folder() {
         "icons/Folder".to_string()
     } else {
         "icons/File".to_string()
@@ -1139,10 +1314,10 @@ fn cover_placeholder_for(entry: &BrowseEntry) -> String {
 }
 
 fn cover_key_for(entry: &BrowseEntry, page_size: u32) -> String {
-    if entry.is_folder() {
+    if !is_media_capable_entry(entry) && entry.is_folder() {
         return "icons/Folder".to_string();
     }
-    let media_key = media_key_for(entry);
+    let media_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
     let cache = global_media_image_cache();
     let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
     let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
@@ -1170,7 +1345,7 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32) -> String {
 /// entry. Returns `None` for entries the cache cannot key on (folder
 /// roots, unattributed entries, browse roots without a path).
 fn media_key_for(entry: &BrowseEntry) -> Option<MediaKey> {
-    if entry.is_folder() || entry.path.is_empty() {
+    if !is_media_capable_entry(entry) || entry.path.is_empty() {
         return None;
     }
     let system_id = entry_system_id(entry);
@@ -1218,11 +1393,11 @@ fn prefetch_around_plan(
             return;
         }
         let entry = &entries[idx];
-        if entry.is_folder() {
+        if !is_media_capable_entry(entry) {
             return;
         }
         if let Some(key) = media_key_for(entry) {
-            plan.push((key, entry.media_id));
+            plan.push((key.with_current_cover_preference(), entry.media_id));
         }
     };
     for row in (next_start..next_end).rev() {
@@ -1308,7 +1483,7 @@ fn cover_key_for_with(
     cached: bool,
     unavailable: bool,
 ) -> String {
-    if entry.is_folder() {
+    if !is_media_capable_entry(entry) && entry.is_folder() {
         return "icons/Folder".to_string();
     }
     match key {
@@ -1333,8 +1508,8 @@ fn notify_cover_update(mut model: Pin<&mut ffi::GamesModel>, key: &MediaKey) {
         .iter()
         .enumerate()
         .filter(|(_, e)| {
-            key.image_type.is_none()
-                && !e.is_folder()
+            key.is_cover_key()
+                && is_media_capable_entry(e)
                 && match (key.media_id, e.media_id) {
                     (Some(a), Some(b)) => a == b,
                     _ => e.path == *key.path && entry_system_id(e) == *key.system_id,
@@ -1423,7 +1598,7 @@ where
 {
     entries
         .iter()
-        .filter_map(media_key_for)
+        .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
         .filter(|k| !is_cached(k) && !is_negative(k))
         .collect()
 }
@@ -2135,7 +2310,8 @@ mod tests {
         chunk_for_subbatching, compute_unresolved_keys, cover_key_for_with, cover_placeholder_for,
         decide_initial, dedup_roots_drop_ancestors, detail_tags_from_tags, display_name,
         entry_system_id, is_strict_ancestor_path, leading_dir_count, media_key_for,
-        position_of_game_path, prefetch_around_plan, project_status, transform_entries,
+        meta_params_for_entry, position_of_game_path, prefetch_around_plan, project_status,
+        run_text_for_entry, singleton_directory_needs_launch_resolution, transform_entries,
         InitialAction, Projection,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -2637,6 +2813,35 @@ mod tests {
         let key = media_key_for(&media("smb", "/p/smb", "NES")).expect("ok");
         assert_eq!(key.system_id.as_ref(), "NES");
         assert_eq!(key.path.as_ref(), "/p/smb");
+    }
+
+    #[test]
+    fn singleton_directory_uses_media_id_for_meta_but_container_as_fallback_run_text() {
+        let entry = BrowseEntry {
+            media_id: Some(42),
+            name: "Archive".into(),
+            path: "/roms/NES/archive.zip".into(),
+            entry_type: "directory".into(),
+            system_id: "NES".into(),
+            zap_script: "@NES/Super Mario Bros.".into(),
+            ..BrowseEntry::default()
+        };
+        assert!(singleton_directory_needs_launch_resolution(&entry));
+        let params = meta_params_for_entry(&entry).expect("meta params");
+        assert_eq!(params.media_id, Some(42));
+        assert!(params.system.is_empty());
+        assert!(params.path.is_empty());
+        assert_eq!(run_text_for_entry(&entry), "/roms/NES/archive.zip");
+    }
+
+    #[test]
+    fn normal_media_does_not_need_launch_resolution() {
+        let entry = BrowseEntry {
+            media_id: Some(7),
+            ..media("smb", "/roms/NES/smb.nes", "NES")
+        };
+        assert!(!singleton_directory_needs_launch_resolution(&entry));
+        assert_eq!(run_text_for_entry(&entry), "/roms/NES/smb.nes");
     }
 
     #[test]

@@ -566,8 +566,9 @@ impl Client {
 
     /// Fetches the full metadata graph for a single media row —
     /// ROM-level + title-level tags and scraped properties. Identified
-    /// by `(system, path)`; the canonical indexed media path from
-    /// `media.search`/`media.browse` is required. Property values
+    /// by `mediaId` when available, otherwise `(system, path)` with the
+    /// canonical indexed media path from `media.search`/`media.browse`.
+    /// Property values
     /// surface their MIME type and extension when binary-backed, so
     /// callers can render or cache them without sniffing.
     pub async fn media_meta(

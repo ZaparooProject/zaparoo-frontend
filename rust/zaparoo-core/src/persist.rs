@@ -111,6 +111,8 @@ pub struct SettingsState {
     pub debug_logging: bool,
     #[serde(default = "default_screensaver_timeout")]
     pub screensaver_timeout: String,
+    #[serde(default = "default_media_image_type")]
+    pub media_image_type: String,
 }
 
 impl Default for SettingsState {
@@ -125,6 +127,7 @@ impl Default for SettingsState {
             discover_arcade_alternate_versions: false,
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
+            media_image_type: default_media_image_type(),
         }
     }
 }
@@ -150,6 +153,10 @@ fn default_mouse_enabled() -> bool {
 
 fn default_screensaver_timeout() -> String {
     "300".into()
+}
+
+fn default_media_image_type() -> String {
+    "auto".into()
 }
 
 pub fn load() -> PersistedState {
@@ -284,6 +291,7 @@ mod tests {
                 discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
+                media_image_type: "auto".into(),
             },
         };
         save_to(&path, &original);
