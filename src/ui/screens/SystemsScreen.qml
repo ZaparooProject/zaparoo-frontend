@@ -49,6 +49,7 @@ Item {
     readonly property var _footerProfile: systems._gridProfile && systems._gridProfile.footer ? systems._gridProfile.footer : null
     readonly property var _listProfile: systems._viewProfile && systems._viewProfile.list ? systems._viewProfile.list : null
     readonly property int _listOverlayBottomMargin: systems._listProfile ? systems._listProfile.overlayBottomMargin : Sizing.pctH(15)
+    readonly property var _gridShape: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight)
 
     signal requestAccept(systemId: string)
     signal requestHubScreen
@@ -243,6 +244,8 @@ Item {
         focused: systems.gridFocused
         model: Browse.SystemsModel
         layoutProfile: systems._viewProfile
+        columnsOverride: systems._gridShape.columns
+        rowsOverride: systems._gridShape.rows
         delegate: Tile {
             layoutProfile: systems._viewProfile
         }

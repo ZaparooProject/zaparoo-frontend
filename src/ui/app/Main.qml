@@ -25,56 +25,6 @@ import Zaparoo.Browse as Browse
 MainLayout {
     id: root
 
-    function _selectGamesGridShape(): var {
-        if (root.crtNativePath) {
-            if (Browse.Settings.current_orientation !== "horizontal")
-                return {
-                    "columns": 2,
-                    "rows": 3
-                };
-            return {
-                "columns": Sizing.gamesGridColumns,
-                "rows": Sizing.gamesGridRows
-            };
-        }
-        if (Browse.Settings.current_orientation === "horizontal") {
-            return {
-                "columns": Sizing.gamesGridColumns,
-                "rows": Sizing.gamesGridRows
-            };
-        }
-
-        const landscapeWidth = Math.max(Sizing.screenWidth, Sizing.screenHeight);
-        const landscapeHeight = Math.min(Sizing.screenWidth, Sizing.screenHeight);
-        const baseColumns = landscapeHeight < 300 ? 3 : landscapeHeight < 600 ? 4 : 5;
-        const baseRows = Sizing.gamesGridRows;
-        const targetAspect = (landscapeWidth / baseColumns) / (landscapeHeight / baseRows);
-        let bestColumns = baseColumns;
-        let bestRows = baseRows;
-        let bestScore = Number.MAX_VALUE;
-
-        for (let columns = 2; columns <= 5; columns++) {
-            for (let rows = 2; rows <= 5; rows++) {
-                if (rows < columns)
-                    continue;
-                const aspect = (Sizing.screenWidth / columns) / (Sizing.screenHeight / rows);
-                const aspectError = Math.abs(Math.log(aspect / targetAspect));
-                const pagePenalty = Math.abs((columns * rows) - (baseColumns * baseRows)) * 0.04;
-                const score = aspectError + pagePenalty;
-                if (score < bestScore) {
-                    bestScore = score;
-                    bestColumns = columns;
-                    bestRows = rows;
-                }
-            }
-        }
-
-        return {
-            "columns": bestColumns,
-            "rows": bestRows
-        };
-    }
-
     // Fullscreen builds (MiSTer) fill the screen; desktop windowed
     // builds inherit MainLayout's 1280x720 design defaults so the user
     // can resize freely. MainLayout binds width/height to Screen.* when
@@ -118,7 +68,7 @@ MainLayout {
     // visual grid pageSize and produced half-loaded pages on every
     // subsequent cursor advance.
     readonly property int _gamesListFetchSize: 30
-    readonly property var _gamesGridShape: root._selectGamesGridShape()
+    readonly property var _gamesGridShape: Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight)
     readonly property int _gamesGridColumns: root._gamesGridShape.columns
     readonly property int _gamesGridRows: root._gamesGridShape.rows
     readonly property int _gamesPageSize: Browse.Settings.current_browse_layout === "list" ? root._gamesListFetchSize : root._gamesGridColumns * root._gamesGridRows

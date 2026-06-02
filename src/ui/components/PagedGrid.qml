@@ -68,15 +68,13 @@ Item {
     signal emptyRightClicked
     signal pageWheelRequested(int delta)
 
-    // Per-instance shape overrides. -1 means "use the global Sizing
-    // default" — Systems screen leaves these alone so the systems grid
-    // stays at gridColumns × gridRows; Games screen wires them to
-    // gamesGridColumns × gamesGridRows so its taller cover art gets the
-    // vertical room a 3-row layout would starve.
+    // Per-instance shape overrides. -1 means "use the shared browse-grid
+    // default". Real browse screens now override explicitly, but the
+    // fallback stays useful for generic callers and tests.
     property int columnsOverride: -1
     property int rowsOverride: -1
-    readonly property int columns: columnsOverride > 0 ? columnsOverride : Sizing.gridColumns
-    readonly property int rows: rowsOverride > 0 ? rowsOverride : Sizing.gridRows
+    readonly property int columns: columnsOverride > 0 ? columnsOverride : Sizing.systemsGridColumns
+    readonly property int rows: rowsOverride > 0 ? rowsOverride : Sizing.systemsGridRows
 
     // Pages of buffer to keep ahead of the user's current page before
     // firing `loadMoreRequested`. With `loadAheadPages: 2` the trigger
@@ -181,7 +179,7 @@ Item {
     readonly property int _scrollGutterX: root._gridProfile && root._gridProfile.gutterFollowsContentWidth ? root.leftInset + root._contentWidth + root.gutterGap : width - root.rightInset - root.gutterWidth
 
     // Computed cell dimensions — fill the available area, divided by
-    // gridColumns × gridRows. Callers don't override. The cell area
+    // columns × rows. The cell area
     // also reserves `gutterGap + gutterWidth` on the right for the
     // tight-gap-then-scrollbar layout described above.
     readonly property int _availableWidth: Math.max(0, width - leftInset - rightInset - gutterGap - gutterWidth)
