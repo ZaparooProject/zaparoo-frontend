@@ -79,6 +79,8 @@ Item {
     property int bottomStatusLeftMargin: 0
     property int bottomStatusRightMargin: 0
     property int pageLoadingLeftMargin: 0
+    property int gridColumnsOverride: Sizing.gamesGridColumns
+    property int gridRowsOverride: Sizing.gamesGridRows
     property bool pageLoadingVisible: false
     property string bottomStatusLeftText: ""
     property string bottomStatusRightText: ""
@@ -364,8 +366,8 @@ Item {
             showCaption: true
         }
         layoutProfile: root._gridLayoutProfile
-        columnsOverride: Sizing.gamesGridColumns
-        rowsOverride: Sizing.gamesGridRows
+        columnsOverride: root.gridColumnsOverride
+        rowsOverride: root.gridRowsOverride
         totalItemsOverride: root.gridTotalItemsOverride
         hasMorePages: root.gridHasMorePages
         onLoadMoreRequested: {

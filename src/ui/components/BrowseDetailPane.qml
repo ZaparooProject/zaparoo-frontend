@@ -256,15 +256,20 @@ Item {
                 Item {
                     id: detailBody
 
+                    readonly property int _bodyTopOffset: titleText.visible ? titleText.y + titleText.height + root._titleBottomMargin : 0
+                    readonly property bool _bottomAlignedCompactMetadata: !titleText.visible && !root._horizontalSections && root._metadataBottomAligned
+
                     x: 0
-                    y: titleText.visible ? titleText.y + titleText.height + root._titleBottomMargin + root._metadataTopMargin : (root._horizontalSections ? 0 : root._metadataTopMargin)
+                    y: _bodyTopOffset + (_bottomAlignedCompactMetadata ? 0 : root._metadataTopMargin)
                     width: parent.width
                     height: {
                         if (root._horizontalSections)
                             return Math.max(0, parent.height - y);
                         if (titleText.visible)
                             return Math.max(0, parent.height - y + root._metadataHeightAdjustment);
-                        return root._compactMetadataHeight;
+                        if (_bottomAlignedCompactMetadata)
+                            return Math.max(0, Math.min(root._compactMetadataHeight + root._metadataTopMargin, parent.height));
+                        return Math.max(0, Math.min(root._compactMetadataHeight, parent.height - y));
                     }
                     clip: true
 

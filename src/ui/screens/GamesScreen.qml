@@ -24,11 +24,65 @@ MediaListScreen {
 
     property alias gamesGrid: games.mediaGrid
 
+    function _selectGridShape(): var {
+        if (Theme.crtNativePath) {
+            if (games._tateOrientation)
+                return {
+                    "columns": 2,
+                    "rows": 3
+                };
+            return {
+                "columns": Sizing.gamesGridColumns,
+                "rows": Sizing.gamesGridRows
+            };
+        }
+        if (!games._tateOrientation) {
+            return {
+                "columns": Sizing.gamesGridColumns,
+                "rows": Sizing.gamesGridRows
+            };
+        }
+
+        const landscapeWidth = Math.max(Sizing.screenWidth, Sizing.screenHeight);
+        const landscapeHeight = Math.min(Sizing.screenWidth, Sizing.screenHeight);
+        const baseColumns = landscapeHeight < 300 ? 3 : landscapeHeight < 600 ? 4 : 5;
+        const baseRows = Sizing.gamesGridRows;
+        const targetAspect = (landscapeWidth / baseColumns) / (landscapeHeight / baseRows);
+        let bestColumns = baseColumns;
+        let bestRows = baseRows;
+        let bestScore = Number.MAX_VALUE;
+
+        for (let columns = 2; columns <= 5; columns++) {
+            for (let rows = 2; rows <= 5; rows++) {
+                if (rows < columns)
+                    continue;
+                const aspect = (Sizing.screenWidth / columns) / (Sizing.screenHeight / rows);
+                const aspectError = Math.abs(Math.log(aspect / targetAspect));
+                const pagePenalty = Math.abs((columns * rows) - (baseColumns * baseRows)) * 0.04;
+                const score = aspectError + pagePenalty;
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestColumns = columns;
+                    bestRows = rows;
+                }
+            }
+        }
+
+        return {
+            "columns": bestColumns,
+            "rows": bestRows
+        };
+    }
+
     readonly property bool _portraitNonCrtList: !Theme.crtNativePath && Browse.Settings.current_orientation !== "horizontal"
     readonly property int _listPageSize: games._portraitNonCrtList ? 16 : 10
+    readonly property bool _tateOrientation: Browse.Settings.current_orientation !== "horizontal"
+    readonly property var _gridShape: games._selectGridShape()
+    readonly property int _gridColumns: games._gridShape.columns
+    readonly property int _gridRows: games._gridShape.rows
     readonly property int _browsePageSize: games._listLayout ? Math.max(1, games.listCard.visibleRowCount) : games.gamesGrid.pageSize
     readonly property bool _crtGridLayout: Theme.crtNativePath && !games._listLayout
-    readonly property bool _tateListLayout: Browse.Settings.current_orientation !== "horizontal"
+    readonly property bool _tateListLayout: games._tateOrientation
     readonly property string _gridViewId: "gamesGrid"
     readonly property string _listViewId: "gamesList"
     readonly property string _tateListViewId: "gamesListTate"
@@ -130,6 +184,8 @@ MediaListScreen {
         return qsTr("%1 / %2").arg(games.gamesGrid.currentIndex + 1).arg(total);
     }
     gridBottomMargin: games._footerProfile ? games._footerProfile.gridBottomMargin : (Sizing.pctH(6) + Sizing.pctH(8) + Sizing.pctH(7))
+    gridColumnsOverride: games._gridColumns
+    gridRowsOverride: games._gridRows
     gridTotalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
     gridHasMorePages: Browse.GamesModel.has_next_page
     gridLoadMoreAction: () => Browse.GamesModel.fetch_more()
