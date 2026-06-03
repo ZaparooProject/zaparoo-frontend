@@ -48,7 +48,7 @@ QtObject {
                         "bottomStatusVisible": false,
                         "bottomStatusLeftMargin": "pctW:5",
                         "bottomStatusRightMargin": "pctW:5",
-                        "gridBottomMargin": "sum(pctH:6,pctH:8,pctH:7)",
+                        "gridBottomMargin": "sum(pctH:8,pctH:7)",
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
@@ -232,7 +232,7 @@ QtObject {
                         "bottomStatusVisible": false,
                         "bottomStatusLeftMargin": "pctW:5",
                         "bottomStatusRightMargin": "pctW:5",
-                        "gridBottomMargin": "sum(pctH:6,pctH:8,pctH:7)",
+                        "gridBottomMargin": "sum(pctH:8,pctH:7)",
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {

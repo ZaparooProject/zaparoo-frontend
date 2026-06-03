@@ -39,8 +39,12 @@ Item {
     readonly property int rowHeight: Sizing.pctH(6)
     readonly property int rowSpacing: Sizing.pctH(1)
     readonly property int horizontalPadding: Sizing.pctW(2)
+    readonly property int panelSideMargin: Sizing.pctW(1)
+    readonly property string _longestLabel: _longestEntryLabel(entries)
     readonly property int _usableBottom: Math.max(menu.margin, height - menu.bottomUnsafeHeight - menu.margin)
-    readonly property int panelWidth: Math.min(Math.max(Sizing.pctW(42), Sizing.pctH(56)), Math.max(0, width - 2 * margin))
+    readonly property int _minPanelWidth: Math.max(Sizing.pctW(24), Sizing.pctH(32))
+    readonly property int _desiredPanelWidth: Math.ceil(labelMetrics.advanceWidth) + 2 * horizontalPadding + 2 * panelSideMargin + 2 * Sizing.stroke(2)
+    readonly property int panelWidth: Math.min(Math.max(_minPanelWidth, _desiredPanelWidth), Math.max(0, width - 2 * margin))
     // Top/bottom margins inside the panel are sized to the panel
     // radius so a focused row's accent ring never intersects the
     // rounded corners — see the panel `Rectangle` below.
@@ -72,6 +76,18 @@ Item {
             currentIndex = menu.entries.length - 1;
     }
 
+    function _longestEntryLabel(source: var): string {
+        let longest = "";
+        if (source === null || source === undefined)
+            return longest;
+        for (let i = 0; i < source.length; ++i) {
+            const label = source[i] && source[i].label !== undefined ? String(source[i].label) : "";
+            if (label.length > longest.length)
+                longest = label;
+        }
+        return longest;
+    }
+
     function move(delta: int): void {
         if (menu.entries.length <= 0)
             return;
@@ -88,6 +104,13 @@ Item {
                 menu.accepted(menu.entries[menu.currentIndex].id);
         } else if (action === "cancel" || action === "write_card")
             menu.closeRequested();
+    }
+
+    TextMetrics {
+        id: labelMetrics
+        text: menu._longestLabel
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontSize(2.4)
     }
 
     // Catches dismiss-clicks on the dimmed area around the anchor.
@@ -163,8 +186,8 @@ Item {
             anchors.fill: parent
             anchors.topMargin: menu.panelRadius
             anchors.bottomMargin: menu.panelRadius
-            anchors.leftMargin: Sizing.pctW(1)
-            anchors.rightMargin: Sizing.pctW(1)
+            anchors.leftMargin: menu.panelSideMargin
+            anchors.rightMargin: menu.panelSideMargin
             spacing: menu.rowSpacing
 
             Repeater {

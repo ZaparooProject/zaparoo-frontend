@@ -230,9 +230,8 @@ Item {
     }
 
     // Grid fills the safe zone between the top strip and the active
-    // label. bottomMargin = MainLayout's instructionsBar height
-    // (pctH(6)) + pctH(2) gap + the active label's pctH(7). If you
-    // change the help-bar height or the label height, update this too.
+    // label. The bottom margin reserves the label's own bottom margin
+    // plus its height; the global help bar is handled separately.
     PagedGrid {
         id: systemsGrid
 
@@ -240,7 +239,7 @@ Item {
         anchors.right: parent.right
         anchors.top: topStrip.bottom
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.gridBottomMargin : (Sizing.pctH(6) + Sizing.pctH(8) + Sizing.pctH(7))
+        anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.gridBottomMargin : (Sizing.pctH(8) + Sizing.pctH(7))
         focused: systems.gridFocused
         model: Browse.SystemsModel
         layoutProfile: systems._viewProfile
