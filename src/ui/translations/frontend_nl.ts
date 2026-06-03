@@ -365,6 +365,16 @@
     <name>HubScreen</name>
     <message>
         <location filename="../screens/HubScreen.qml" line="91"/>
+        <source>Resume: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/HubScreen.qml" line="91"/>
+        <source>Resume Game</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/HubScreen.qml" line="91"/>
         <source>Favorites</source>
         <translation>Favorieten</translation>
     </message>

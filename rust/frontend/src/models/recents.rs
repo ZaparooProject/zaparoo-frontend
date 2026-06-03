@@ -33,6 +33,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use time::{format_description::well_known::Rfc3339, Duration as TimeDuration, OffsetDateTime};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
@@ -59,6 +60,8 @@ const FILE_STEM_ROLE: i32 = 256 + 7;
 // over-the-wire payload. Bumping this only saves a round trip — it
 // doesn't change the UI cap.
 const PAGE_SIZE: u32 = 25;
+const RESUME_MAX_AGE_DAYS: i64 = 7;
+const RESUME_FALLBACK_COVER_KEY: &str = "icons/PlayOutline";
 
 #[derive(Default)]
 #[allow(
@@ -76,6 +79,9 @@ pub struct RecentsModelRust {
     error_message: QString,
     has_next_page: bool,
     next_cursor: Option<String>,
+    resume_available: bool,
+    resume_name: QString,
+    resume_cover_key: QString,
     current_detail_loading: bool,
     current_detail_tags: QString,
     current_detail_image_key: QString,
@@ -136,6 +142,9 @@ pub mod ffi {
         #[qproperty(bool, loading_more)]
         #[qproperty(QString, error_message)]
         #[qproperty(bool, has_next_page)]
+        #[qproperty(bool, resume_available)]
+        #[qproperty(QString, resume_name)]
+        #[qproperty(QString, resume_cover_key)]
         #[qproperty(bool, current_detail_loading)]
         #[qproperty(QString, current_detail_tags)]
         #[qproperty(QString, current_detail_image_key)]
@@ -147,6 +156,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn launch_at(self: Pin<&mut RecentsModel>, index: i32);
+
+        #[qinvokable]
+        fn launch_resume(self: Pin<&mut RecentsModel>);
 
         #[qinvokable]
         fn name_at(self: &RecentsModel, index: i32) -> QString;
@@ -273,6 +285,7 @@ fn apply_state(
         model.as_mut().rust_mut().next_cursor = next_cursor;
         model.as_mut().end_reset_model();
         model.as_mut().count_changed();
+        sync_resume_state(model.as_mut());
         if model.has_next_page != has_next_page {
             model.as_mut().set_has_next_page(has_next_page);
         }
@@ -304,6 +317,7 @@ fn apply_state(
         clear_current_detail_state(model.as_mut());
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().rust_mut().next_cursor = None;
+        sync_resume_state(model.as_mut());
         if !model.loading {
             model.as_mut().set_loading(true);
         }
@@ -319,6 +333,7 @@ fn apply_state(
         clear_current_detail_state(model.as_mut());
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().rust_mut().next_cursor = None;
+        sync_resume_state(model.as_mut());
         if model.loading {
             model.as_mut().set_loading(false);
         }
@@ -416,18 +431,14 @@ impl ffi::RecentsModel {
         if index < 0 || index >= self.count {
             return;
         }
-        let entry = &self.entries[index as usize];
-        let text = launch_text_for(entry);
-        if text.is_empty() {
+        launch_entry(&self.entries[index as usize]);
+    }
+
+    fn launch_resume(self: Pin<&mut Self>) {
+        let Some(entry) = resume_entry(&self.entries) else {
             return;
-        }
-        let name = entry.media_name.clone();
-        let store = global_store();
-        global_handle().spawn(async move {
-            if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
-                warn!("run failed for {name}: {}", e.message);
-            }
-        });
+        };
+        launch_entry(entry);
     }
 
     fn name_at(&self, index: i32) -> QString {
@@ -578,6 +589,53 @@ fn cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
         negative,
         soft_no_image || !requests_enabled,
     )
+}
+
+fn resume_cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
+    let media_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
+    let cache = global_media_image_cache();
+    let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
+    let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
+    let soft_no_image = media_key
+        .as_ref()
+        .is_some_and(|k| cache.is_soft_no_image(k));
+    if requests_enabled && !cached && !negative && !soft_no_image {
+        if let Some(k) = media_key.as_ref() {
+            cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
+        }
+    }
+    resume_cover_key_for_with(media_key.as_ref(), cached)
+}
+
+fn resume_cover_key_for_with(key: Option<&MediaKey>, cached: bool) -> String {
+    match key {
+        Some(k) if cached => MediaImageCache::image_key_for(k),
+        _ => RESUME_FALLBACK_COVER_KEY.to_string(),
+    }
+}
+
+fn sync_resume_state(mut model: Pin<&mut ffi::RecentsModel>) {
+    let (available, name, cover_key) = match resume_entry(&model.entries) {
+        Some(entry) => (
+            true,
+            QString::from(entry.media_name.as_str()),
+            QString::from(resume_cover_key_for(entry, !model.cover_requests_paused).as_str()),
+        ),
+        None => (
+            false,
+            QString::default(),
+            QString::from(RESUME_FALLBACK_COVER_KEY),
+        ),
+    };
+    if model.resume_available != available {
+        model.as_mut().set_resume_available(available);
+    }
+    if model.resume_name != name {
+        model.as_mut().set_resume_name(name);
+    }
+    if model.resume_cover_key != cover_key {
+        model.as_mut().set_resume_cover_key(cover_key);
+    }
 }
 
 fn emit_cover_key_range(mut model: Pin<&mut ffi::RecentsModel>, first_row: i32, count: i32) {
@@ -799,6 +857,14 @@ fn notify_cover_update(mut model: Pin<&mut ffi::RecentsModel>, key: &MediaKey) {
     {
         sync_current_detail_image_key(model.as_mut());
     }
+    if resume_entry(&model.entries)
+        .and_then(media_key_for)
+        .map(MediaKey::with_current_cover_preference)
+        .as_ref()
+        .is_some_and(|current| current == key)
+    {
+        sync_resume_state(model.as_mut());
+    }
     // Tick the gate's pending set down. `remove` returns false if the
     // key wasn't gated (broadcast events fire for every cache update,
     // including miss-recovery enqueues from `cover_key_for`); we only
@@ -935,12 +1001,49 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::RecentsModel>) {
     }
 }
 
+fn launch_entry(entry: &MediaHistoryEntry) {
+    let text = launch_text_for(entry);
+    if text.is_empty() {
+        return;
+    }
+    let name = entry.media_name.clone();
+    let store = global_store();
+    global_handle().spawn(async move {
+        if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
+            warn!("run failed for {name}: {}", e.message);
+        }
+    });
+}
+
 /// Build the `text` payload sent to Core's `run` for a history entry.
 /// Runtime relaunches prefer the exact path Core recorded; portable
 /// `ZapScript` is not available on history rows and launcher affinity is
 /// less important than avoiding title-resolution ambiguity.
 fn launch_text_for(entry: &MediaHistoryEntry) -> String {
     entry.media_path.clone()
+}
+
+fn resume_entry(entries: &[MediaHistoryEntry]) -> Option<&MediaHistoryEntry> {
+    let entry = entries.first()?;
+    if launch_text_for(entry).is_empty() || !resume_entry_is_fresh(entry, OffsetDateTime::now_utc())
+    {
+        return None;
+    }
+    Some(entry)
+}
+
+fn resume_entry_is_fresh(entry: &MediaHistoryEntry, now: OffsetDateTime) -> bool {
+    let timestamp = entry
+        .ended_at
+        .as_deref()
+        .unwrap_or(entry.started_at.as_str());
+    if timestamp.trim().is_empty() {
+        return true;
+    }
+    let Ok(played_at) = OffsetDateTime::parse(timestamp, &Rfc3339) else {
+        return true;
+    };
+    now - played_at <= TimeDuration::days(RESUME_MAX_AGE_DAYS)
 }
 
 fn position_of_path(entries: &[MediaHistoryEntry], needle: &str) -> i32 {
@@ -981,6 +1084,7 @@ fn apply_append_page(
                 model.as_mut().rust_mut().count = first.saturating_add(new_count);
                 model.as_mut().end_insert_rows();
                 model.as_mut().count_changed();
+                sync_resume_state(model.as_mut());
             }
             model.as_mut().rust_mut().next_cursor = next_cursor;
             model.as_mut().set_has_next_page(has_next_page);
@@ -1007,10 +1111,12 @@ mod tests {
 
     use super::{
         compute_unresolved_keys, cover_key_for_with, launch_text_for, media_key_for,
-        position_of_path, project,
+        position_of_path, project, resume_cover_key_for_with, resume_entry, resume_entry_is_fresh,
+        RESUME_FALLBACK_COVER_KEY,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
     use std::collections::HashSet;
+    use time::macros::datetime;
     use zaparoo_core::media_types::{MediaHistoryEntry, MediaHistoryResult, Pagination};
     use zaparoo_core::remote_resource::ResourceStatus;
 
@@ -1022,6 +1128,70 @@ mod tests {
             launcher_id: launcher_id.into(),
             ..MediaHistoryEntry::default()
         }
+    }
+
+    #[test]
+    fn resume_entry_requires_launchable_first_entry() {
+        assert!(resume_entry(&[]).is_none());
+        let e = entry("ghost", "", "NES", "NES");
+        assert!(resume_entry(&[e]).is_none());
+    }
+
+    #[test]
+    fn resume_entry_accepts_launchable_entry_with_missing_timestamp() {
+        let e = entry("smb", "/p/smb", "NES", "NES");
+        assert_eq!(
+            resume_entry(&[e]).map(|entry| entry.media_name.as_str()),
+            Some("smb")
+        );
+    }
+
+    #[test]
+    fn resume_entry_freshness_accepts_recent_started_at() {
+        let mut e = entry("smb", "/p/smb", "NES", "NES");
+        e.started_at = "2026-06-01T00:00:00Z".into();
+        assert!(resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
+    }
+
+    #[test]
+    fn resume_entry_freshness_rejects_old_started_at() {
+        let mut e = entry("smb", "/p/smb", "NES", "NES");
+        e.started_at = "2026-05-01T00:00:00Z".into();
+        assert!(!resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
+    }
+
+    #[test]
+    fn resume_entry_freshness_prefers_ended_at() {
+        let mut e = entry("smb", "/p/smb", "NES", "NES");
+        e.started_at = "2026-05-01T00:00:00Z".into();
+        e.ended_at = Some("2026-06-01T00:00:00Z".into());
+        assert!(resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
+    }
+
+    #[test]
+    fn resume_entry_freshness_accepts_missing_or_malformed_timestamp() {
+        let mut e = entry("smb", "/p/smb", "NES", "NES");
+        assert!(resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
+        e.started_at = "not-a-date".into();
+        assert!(resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
+    }
+
+    #[test]
+    fn resume_cover_key_uses_play_outline_unless_cached() {
+        let e = entry("smb", "/p/smb", "NES", "NES");
+        let key = media_key_for(&e).expect("media has key");
+        assert_eq!(
+            resume_cover_key_for_with(Some(&key), false),
+            RESUME_FALLBACK_COVER_KEY
+        );
+        assert_eq!(
+            resume_cover_key_for_with(None, false),
+            RESUME_FALLBACK_COVER_KEY
+        );
+        assert_eq!(
+            resume_cover_key_for_with(Some(&key), true),
+            MediaImageCache::image_key_for(&key)
+        );
     }
 
     #[test]

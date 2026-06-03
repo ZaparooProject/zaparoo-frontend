@@ -115,6 +115,8 @@ MainLayout {
         // Connection below fires it on first delivery.
         if (Browse.CategoriesModel.count > 0)
             root.hubScreen.restoreFromCategoriesReset();
+        if (root.activeScreen === root.screenHub && Browse.RecentsModel.resume_available)
+            root.hubScreen.focusResumeIfAvailable();
         // Warm-start into Favorites/Recents needs the same
         // restore-on-ready dance the navigate helpers perform,
         // otherwise the grid lands on index 0 and ignores persisted
@@ -583,6 +585,9 @@ MainLayout {
         }
         function onRequestQuit(): void {
             root.openQuitConfirmModal();
+        }
+        function onRequestResumeGame(): void {
+            Browse.RecentsModel.launch_resume();
         }
         function onRequestFavoritesScreen(): void {
             root._navigateToFavorites();

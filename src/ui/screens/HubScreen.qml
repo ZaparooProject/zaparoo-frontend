@@ -20,7 +20,8 @@ import Zaparoo.Browse as Browse
 //
 //   * Top row: dynamic categories from Browse.CategoriesModel (Arcade,
 //     Computer, Console, Handheld).
-//   * Bottom row: fixed actions — Favorites, Recently Played and Settings.
+//   * Bottom row: actions — optional Resume Game, Favorites,
+//     Recently Played and Settings.
 //
 // Both rows wrap left/right modulo their own count, and Up/Down flip
 // between rows in a closed loop (Up from top wraps to bottom, Down
@@ -37,8 +38,8 @@ import Zaparoo.Browse as Browse
 // generalizes for any (topCount, bottomCount); see `_mapCrossRow`.
 //
 // Pure input dispatcher: emits one of `requestAccept(category)`,
-// `requestFavoritesScreen`, `requestRecentsScreen`,
-// `requestSettingsScreen`, or `requestQuit`.
+// `requestResumeGame`, `requestFavoritesScreen`,
+// `requestRecentsScreen`, `requestSettingsScreen`, or `requestQuit`.
 //
 // All cross-screen orchestration (model fills, deferred set_category,
 // cover prefetch, transition overlay, screen flip) lives in Main.qml.
@@ -64,6 +65,7 @@ Item {
 
     signal requestAccept(category: string)
     signal requestQuit
+    signal requestResumeGame
     signal requestFavoritesScreen
     signal requestRecentsScreen
     signal requestSettingsScreen
@@ -78,29 +80,36 @@ Item {
     readonly property int _blockHeight: 2 * (categoriesRow.cellHeight + 2 * categoriesRow.verticalPadding) + (categoriesRow.spacing - categoriesRow.verticalPadding - actionsRow.verticalPadding) + Sizing.pctH(3) + Sizing.pctH(7)
     readonly property int _blockY: Math.round((Sizing.headerBottom + hub.height - Sizing.pctH(6) - hub._blockHeight) / 2)
 
-    // Static action-row data. Three fixed entries; order matches
-    // left-to-right reading. The `qsTr()` calls live directly in this
-    // binding so a `LanguageChange` event re-evaluates `actionEntries`
-    // and rebuilds the array with newly-translated strings — consumers
-    // bound to `actionEntries[i].text` pick up the new values
-    // automatically.
-    readonly property var actionEntries: [
-        {
+    // Action-row data. Resume is prepended only when Core history has
+    // a fresh launchable row; the rest keep stable ids so persisted
+    // focus can remap across insertion/removal.
+    readonly property var actionEntries: {
+        const entries = [];
+        if (Browse.RecentsModel.resume_available) {
+            const resumeName = Browse.RecentsModel.resume_name;
+            entries.push({
+                id: "resume",
+                coverKey: Browse.RecentsModel.resume_cover_key || "icons/PlayOutline",
+                text: resumeName.length > 0 ? qsTr("Resume: %1").arg(resumeName) : qsTr("Resume Game")
+            });
+        }
+        entries.push({
             id: "favorites",
             coverKey: "icons/HeartOutline",
             text: qsTr("Favorites")
-        },
-        {
+        });
+        entries.push({
             id: "recents",
             coverKey: "icons/History",
             text: qsTr("Recently Played")
-        },
-        {
+        });
+        entries.push({
             id: "settings",
             coverKey: "icons/Settings",
             text: qsTr("Settings")
-        }
-    ]
+        });
+        return entries;
+    }
 
     function _actionIndexForId(id: string): int {
         for (let i = 0; i < hub.actionEntries.length; i++)
@@ -108,6 +117,24 @@ Item {
                 return i;
         return 0;
     }
+
+    function _remapActionFocus(): void {
+        if (hub.currentRow !== 1)
+            return;
+        hub.currentIndex = hub._actionIndexForId(Browse.HubState.selected_action);
+    }
+
+    function focusResumeIfAvailable(): void {
+        const resumeIndex = hub._actionIndexForId("resume");
+        if (!Browse.RecentsModel.resume_available || hub.actionEntries[resumeIndex].id !== "resume")
+            return;
+        hub.currentRow = 1;
+        hub.currentIndex = resumeIndex;
+        hub._crossSavedIndex = -1;
+        hub._commitActionSelection();
+    }
+
+    onActionEntriesChanged: hub._remapActionFocus()
 
     // Test-harness hook so `tst_navigation.qml` can reset both focus
     // axes between cases without poking individual properties through
@@ -295,7 +322,9 @@ Item {
         }
 
         const id = hub.actionEntries[hub.currentIndex].id;
-        if (id === "favorites")
+        if (id === "resume")
+            hub.requestResumeGame();
+        else if (id === "favorites")
             hub.requestFavoritesScreen();
         else if (id === "recents")
             hub.requestRecentsScreen();
@@ -418,7 +447,7 @@ Item {
 
     // Action row. Same cell geometry and centring formula as
     // categoriesRow so the two rows visually read as one grid; the
-    // only difference is a static three-entry array model. Positioned
+    // only difference is a small array model with optional Resume. Positioned
     // directly below categoriesRow with a vertical gap equal to
     // categoriesRow.spacing so the visual gutter between rows matches
     // the gutter between tiles within a row.
