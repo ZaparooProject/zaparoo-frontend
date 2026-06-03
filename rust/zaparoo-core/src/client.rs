@@ -14,13 +14,14 @@
 // instead of disappearing into a queue.
 
 use crate::media_types::{
-    LaunchersResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryParams, MediaHistoryResult,
-    MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams, MediaImageResult,
-    MediaIndexParams, MediaLookupParams, MediaLookupResult, MediaMetaParams, MediaMetaResult,
-    MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams,
-    MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, ReadersResult,
-    ReadersWriteParams, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
-    SystemsParams, SystemsResult, UpdateSettingsParams, VersionResult,
+    HealthResult, LaunchersResult, LogDownloadResult, MediaBrowseParams, MediaBrowseResult,
+    MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
+    MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
+    MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams,
+    MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
+    MediaTagsUpdateResult, ReadersResult, ReadersWriteParams, RunParams, ScrapersResult,
+    ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult,
+    TokensResult, UpdateSettingsParams, VersionResult,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -489,6 +490,33 @@ impl Client {
         })
     }
 
+    pub async fn health(&self) -> Result<HealthResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("health", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError {
+            message: e.to_string(),
+        })
+    }
+
+    pub async fn tokens(&self) -> Result<TokensResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("tokens", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError {
+            message: e.to_string(),
+        })
+    }
+
+    pub async fn tokens_history(&self) -> Result<TokensHistoryResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("tokens.history", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError {
+            message: e.to_string(),
+        })
+    }
+
     pub async fn settings(&self) -> Result<SettingsResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
@@ -501,6 +529,15 @@ impl Client {
     pub async fn settings_update(&self, params: UpdateSettingsParams) -> Result<(), ClientError> {
         self.call("settings.update", &params).await?;
         Ok(())
+    }
+
+    pub async fn settings_logs_download(&self) -> Result<LogDownloadResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.logs.download", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError {
+            message: e.to_string(),
+        })
     }
 
     pub async fn launchers(&self) -> Result<LaunchersResult, ClientError> {

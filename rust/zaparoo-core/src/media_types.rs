@@ -818,6 +818,69 @@ pub struct SettingsResult {
     pub system_defaults: Vec<SystemDefault>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct LogDownloadResult {
+    #[serde(default)]
+    pub filename: String,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct HealthResult {
+    #[serde(default)]
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenInfo {
+    #[serde(default, rename = "type")]
+    pub token_type: String,
+    #[serde(default)]
+    pub uid: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub data: String,
+    #[serde(default)]
+    pub scan_time: String,
+    #[serde(default)]
+    pub reader_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct TokensResult {
+    #[serde(default)]
+    pub active: Vec<TokenInfo>,
+    #[serde(default)]
+    pub last: Option<TokenInfo>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct LaunchEntry {
+    #[serde(default, rename = "type")]
+    pub token_type: String,
+    #[serde(default)]
+    pub uid: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub data: String,
+    #[serde(default)]
+    pub success: bool,
+    #[serde(default)]
+    pub time: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct TokensHistoryResult {
+    #[serde(default)]
+    pub entries: Vec<LaunchEntry>,
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSettingsParams {
@@ -925,12 +988,13 @@ mod tests {
     )]
 
     use super::{
-        BrowseEntry, IndexingStatusResponse, LaunchersResult, MediaBrowseParams, MediaBrowseResult,
-        MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
-        MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
-        MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams,
-        MediaSearchResult, MediaTagsParams, MediaTagsResult, ReaderInfo, ReadersResult,
-        ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsResult,
+        BrowseEntry, HealthResult, IndexingStatusResponse, LaunchersResult, LogDownloadResult,
+        MediaBrowseParams, MediaBrowseResult, MediaHistoryParams, MediaHistoryResult,
+        MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams, MediaImageResult,
+        MediaIndexParams, MediaLookupParams, MediaLookupResult, MediaMetaParams, MediaMetaResult,
+        MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams,
+        MediaTagsResult, ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse,
+        SettingsResult, SystemDefault, SystemsResult, TokensHistoryResult, TokensResult,
         UpdateSettingsParams, VersionResult,
     };
 
@@ -1666,6 +1730,70 @@ mod tests {
         assert_eq!(result.system_defaults[0].launcher, "snes9x");
         assert_eq!(result.system_defaults[0].before_exit, "echo bye");
         assert_eq!(result.system_defaults[1].launcher, "");
+    }
+
+    #[test]
+    fn log_download_result_parses_documented_example() {
+        let json = r#"{
+            "filename": "zaparoo.log",
+            "size": 1024,
+            "content": "MjAyNC0wOS0yNFQxNzowMDowMC4wMDBaIElORk8="
+        }"#;
+
+        let result: LogDownloadResult = serde_json::from_str(json).expect("parse");
+
+        assert_eq!(result.filename, "zaparoo.log");
+        assert_eq!(result.size, 1024);
+        assert_eq!(result.content, "MjAyNC0wOS0yNFQxNzowMDowMC4wMDBaIElORk8=");
+    }
+
+    #[test]
+    fn health_result_parses_documented_example() {
+        let result: HealthResult = serde_json::from_str(r#"{"status":"ok"}"#).expect("parse");
+        assert_eq!(result.status, "ok");
+    }
+
+    #[test]
+    fn tokens_result_parses_documented_example() {
+        let json = r#"{
+            "active": [],
+            "last": {
+                "type": "",
+                "uid": "",
+                "text": "**launch.system:snes",
+                "data": "",
+                "scanTime": "2024-09-24T17:49:42.938167429+08:00"
+            }
+        }"#;
+
+        let result: TokensResult = serde_json::from_str(json).expect("parse");
+
+        assert!(result.active.is_empty());
+        let last = result.last.expect("last token");
+        assert_eq!(last.text, "**launch.system:snes");
+        assert_eq!(last.scan_time, "2024-09-24T17:49:42.938167429+08:00");
+    }
+
+    #[test]
+    fn tokens_history_result_parses_documented_example() {
+        let json = r#"{
+            "entries": [
+                {
+                    "data": "",
+                    "success": true,
+                    "text": "**launch.system:snes",
+                    "time": "2024-09-24T17:49:42.938167429+08:00",
+                    "type": "",
+                    "uid": ""
+                }
+            ]
+        }"#;
+
+        let result: TokensHistoryResult = serde_json::from_str(json).expect("parse");
+
+        assert_eq!(result.entries.len(), 1);
+        assert!(result.entries[0].success);
+        assert_eq!(result.entries[0].text, "**launch.system:snes");
     }
 
     #[test]

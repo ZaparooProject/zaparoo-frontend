@@ -163,6 +163,23 @@ fn apply_local_status(mut model: Pin<&mut ffi::SystemStatus>, status: LocalStatu
     }
 }
 
+pub fn support_summary_lines() -> Vec<String> {
+    let status = probe_local_status();
+    vec![
+        format!("Wi-Fi internet: {}", yes_no(status.has_wifi_internet)),
+        format!("LAN internet: {}", yes_no(status.has_lan_internet)),
+        format!("Bluetooth: {}", yes_no(status.has_bluetooth)),
+    ]
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
+}
+
 fn probe_local_status() -> LocalStatus {
     let network = default_network_kind()
         .filter(|_| internet_reachable())
