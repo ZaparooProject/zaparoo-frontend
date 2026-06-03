@@ -11,8 +11,10 @@ import Zaparoo.Ui
 // (within-row Left/Right wrap, vertical page advance/retreat, partial
 // last-page hole clamps), so each branch needs its own explicit case.
 //
-// Test geometry pinned to 1280×480, which makes Sizing yield a 4×3
-// grid (pageSize=12). All test indices below assume that layout.
+// Test geometry pinned to 1280×480 with an explicit 4×3 grid
+// (pageSize=12). The production browse screens now choose rows/columns
+// from viewport-aware sizing, so the test pins its shape directly and
+// keeps the navigation assertions stable.
 TestCase {
     id: testCase
     name: "UiPagedGrid"
@@ -33,10 +35,11 @@ TestCase {
     Component {
         id: cellDelegate
         Item {
-            required property string name
-            required property string coverKey
-            required property bool isSelected
-            required property bool isFocused
+            property string name: ""
+            property string coverKey: ""
+            property bool isSelected: false
+            property bool isFocused: false
+            property int favorite: 0
         }
     }
 
@@ -45,6 +48,8 @@ TestCase {
         anchors.fill: parent
         model: model
         delegate: cellDelegate
+        columnsOverride: 4
+        rowsOverride: 3
     }
 
     SignalSpy {
