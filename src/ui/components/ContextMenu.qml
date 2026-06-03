@@ -40,10 +40,10 @@ Item {
     readonly property int rowSpacing: Sizing.pctH(1)
     readonly property int horizontalPadding: Sizing.pctW(2)
     readonly property int panelSideMargin: Sizing.pctW(1)
-    readonly property string _longestLabel: _longestEntryLabel(entries)
+    readonly property int _widestLabelWidth: _widestEntryLabelWidth(entries)
     readonly property int _usableBottom: Math.max(menu.margin, height - menu.bottomUnsafeHeight - menu.margin)
     readonly property int _minPanelWidth: Math.max(Sizing.pctW(24), Sizing.pctH(32))
-    readonly property int _desiredPanelWidth: Math.ceil(labelMetrics.advanceWidth) + 2 * horizontalPadding + 2 * panelSideMargin + 2 * Sizing.stroke(2)
+    readonly property int _desiredPanelWidth: _widestLabelWidth + 2 * horizontalPadding + 2 * panelSideMargin + 2 * Sizing.stroke(2)
     readonly property int panelWidth: Math.min(Math.max(_minPanelWidth, _desiredPanelWidth), Math.max(0, width - 2 * margin))
     // Top/bottom margins inside the panel are sized to the panel
     // radius so a focused row's accent ring never intersects the
@@ -76,16 +76,15 @@ Item {
             currentIndex = menu.entries.length - 1;
     }
 
-    function _longestEntryLabel(source: var): string {
-        let longest = "";
+    function _widestEntryLabelWidth(source: var): int {
+        let widest = 0;
         if (source === null || source === undefined)
-            return longest;
+            return widest;
         for (let i = 0; i < source.length; ++i) {
             const label = source[i] && source[i].label !== undefined ? String(source[i].label) : "";
-            if (label.length > longest.length)
-                longest = label;
+            widest = Math.max(widest, Math.ceil(labelMetrics.advanceWidth(label)));
         }
-        return longest;
+        return widest;
     }
 
     function move(delta: int): void {
@@ -106,9 +105,8 @@ Item {
             menu.closeRequested();
     }
 
-    TextMetrics {
+    FontMetrics {
         id: labelMetrics
-        text: menu._longestLabel
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontSize(2.4)
     }
