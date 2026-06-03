@@ -800,7 +800,9 @@ impl MediaImageCache {
             queued = queued_len,
             "media_image_cache: replaced queued cover requests"
         );
-        self.queue_notify.notify_one();
+        for _ in 0..FETCH_DRIVER_WORKERS {
+            self.queue_notify.notify_one();
+        }
     }
 
     fn drain_queue(&self) -> Vec<MediaKey> {
@@ -1005,13 +1007,11 @@ fn process_batch_outcomes(
                 *counter
             };
             if attempts < MAX_FETCH_ATTEMPTS {
-                // Re-enter `pending` and re-enqueue at the back,
-                // preserving the original `page_size` so the retry
-                // batches alongside its own page. The next batch
-                // picks it up alongside whatever the user has
-                // enqueued in the meantime; LIFO drain order means
-                // the fresh page lands first while this retry tags
-                // along behind it.
+                // Re-enter `pending` and re-enqueue at the front,
+                // preserving the original `page_size` while keeping
+                // retries behind any freshly-installed ordered page
+                // window. The driver pops from the back, so front-side
+                // retries cannot jump ahead of current-page work.
                 {
                     #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
                     let mut s = state.write().unwrap();
@@ -1020,7 +1020,7 @@ fn process_batch_outcomes(
                 let dropped = {
                     #[allow(clippy::unwrap_used, reason = "Mutex poisoning is unrecoverable")]
                     let mut q = queue.lock().unwrap();
-                    q.push_back(entry);
+                    q.push_front(entry);
                     // Mirror the `enqueue_with_media_id` cap: a
                     // long-running burst of transient failures can
                     // push the queue past `MAX_QUEUE_LEN` if we
@@ -1448,8 +1448,9 @@ mod tests {
 
     use super::{
         ext_for_content_type, ext_from_extension_field, finish_fetch, is_connection_down_error,
-        pop_one, CacheState, FetchOutcome, MediaImageCache, MediaImageUpdate, MediaKey,
-        NegativeMemo, NoImagePolicy, QueueEntry, MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
+        pop_one, process_batch_outcomes, CacheState, FetchOutcome, MediaImageCache,
+        MediaImageUpdate, MediaKey, NegativeMemo, NoImagePolicy, QueueEntry, MAX_QUEUE_LEN,
+        NEGATIVE_MEMO_CAP,
     };
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex, RwLock};
@@ -2091,6 +2092,48 @@ mod tests {
         assert!(!g.negative.contains(&k), "no negative memo on Transient");
         assert!(!g.pending.contains(&k), "pending must be cleared");
         assert_eq!(g.total_bytes, 0);
+    }
+
+    #[test]
+    fn transient_retry_queues_behind_ordered_window() {
+        let state = Arc::new(RwLock::new(CacheState::new()));
+        let queue: Arc<Mutex<VecDeque<QueueEntry>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let queue_notify = Arc::new(Notify::new());
+        let (updates_tx, _) = broadcast::channel::<MediaImageUpdate>(64);
+        let first = key("NES", "/first");
+        let second = key("NES", "/second");
+        let retry = QueueEntry {
+            key: key("NES", "/retry"),
+            page_size: 15,
+            no_image_policy: NoImagePolicy::Memoize,
+        };
+        {
+            let mut q = queue.lock().unwrap();
+            q.push_back(QueueEntry {
+                key: second.clone(),
+                page_size: 15,
+                no_image_policy: NoImagePolicy::Memoize,
+            });
+            q.push_back(QueueEntry {
+                key: first.clone(),
+                page_size: 15,
+                no_image_policy: NoImagePolicy::Memoize,
+            });
+        }
+        state.write().unwrap().pending.insert(retry.key.clone());
+
+        process_batch_outcomes(
+            &state,
+            usize::MAX,
+            &updates_tx,
+            &queue,
+            &queue_notify,
+            vec![(retry.clone(), FetchOutcome::Transient)],
+        );
+
+        assert_eq!(pop_one(&queue).expect("first").key, first);
+        assert_eq!(pop_one(&queue).expect("second").key, second);
+        assert_eq!(pop_one(&queue).expect("retry").key, retry.key);
     }
 
     #[test]

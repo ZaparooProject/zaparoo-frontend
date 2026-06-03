@@ -581,7 +581,7 @@ fn cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
 }
 
 fn emit_cover_key_range(mut model: Pin<&mut ffi::RecentsModel>, first_row: i32, count: i32) {
-    if model.count <= 0 || count <= 0 {
+    if model.count <= 0 || count <= 0 || first_row >= model.count {
         return;
     }
     let first = first_row.clamp(0, model.count - 1);

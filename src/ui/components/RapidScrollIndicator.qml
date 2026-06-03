@@ -29,7 +29,7 @@ Item {
 
         x: Sizing.center(parent.width, width)
         y: Sizing.center(parent.height, height)
-        width: Math.min(parent.width, Math.ceil(letterMetrics.advanceWidth) + 2)
+        width: Math.min(parent.width, Math.ceil(letterMetrics.advanceWidth) + Sizing.px(2))
         height: Sizing.fontSize(10)
         text: root._letter
         color: Theme.textPrimary
