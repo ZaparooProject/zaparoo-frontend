@@ -50,6 +50,7 @@ Item {
     // Defaults to true so call sites that don't care keep working
     // untouched.
     property bool focused: true
+    property bool coverLoadingPaused: false
     property var layoutProfile: null
     readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
 
@@ -522,11 +523,10 @@ Item {
                 // row at construction. Two-tier gate, both anchored on
                 // distance from `root.currentPage`:
                 //
-                //   - request range (±2 pages): cells inside this
-                //     radius fire image-provider requests. Bounds the
-                //     initial fanout to a fixed ~50 covers while still
-                //     pre-decoding pages N+1 and N+2 so a forward PgDn
-                //     lands on already-cached pixmaps.
+                //   - request range (current page only): visible cells
+                //     fire image-provider requests. Rust owns ordered
+                //     current/next/previous page prefetch so hidden QML
+                //     delegates do not fight the explicit queue.
                 //   - retention range (±5 pages): cells inside this
                 //     radius keep their TileLoader.active=true so the
                 //     Tile delegate stays materialised, AND cells that
@@ -553,8 +553,8 @@ Item {
                 // after crossing past the retention edge runs at
                 // nice +10 (see media_image_provider.cpp) and is
                 // invisible to the renderer.
-                readonly property bool _coverInRange: Math.abs(cellPage - root.currentPage) <= 2
-                readonly property bool _coverInRetentionRange: Math.abs(cellPage - root.currentPage) <= 5
+                readonly property bool _coverInRange: cellPage === root.currentPage
+                readonly property bool _coverInRetentionRange: Math.abs(cellPage - root.currentPage) <= (root.coverLoadingPaused ? 1 : 5)
                 property bool _coverEverRequested: false
                 Binding on _coverEverRequested {
                     when: cellItem._coverInRange

@@ -159,6 +159,7 @@ pub struct GamesModelRust {
     current_detail_image_can_prev: bool,
     current_detail_image_can_next: bool,
     cover_key_roles_enabled: bool,
+    cover_requests_paused: bool,
     detail_image_keys: Vec<MediaKey>,
     // Watcher for the current initial-page subscription. Aborted on
     // every path swap so the prior watcher stops enqueuing callbacks
@@ -261,6 +262,7 @@ impl Default for GamesModelRust {
             current_detail_image_can_prev: false,
             current_detail_image_can_next: false,
             cover_key_roles_enabled: true,
+            cover_requests_paused: false,
             detail_image_keys: Vec::new(),
             watcher: None,
             seq: Arc::new(AtomicU64::new(0)),
@@ -321,6 +323,7 @@ pub mod ffi {
         #[qproperty(bool, current_detail_image_can_prev)]
         #[qproperty(bool, current_detail_image_can_next)]
         #[qproperty(bool, cover_key_roles_enabled)]
+        #[qproperty(bool, cover_requests_paused)]
         #[qproperty(i32, visible_first_row)]
         type GamesModel = super::GamesModelRust;
 
@@ -335,6 +338,12 @@ pub mod ffi {
 
         #[qinvokable]
         fn prefetch_around(self: Pin<&mut GamesModel>, first_visible_row: i32);
+
+        #[qinvokable]
+        fn refresh_cover_keys(self: Pin<&mut GamesModel>, first_row: i32, count: i32);
+
+        #[qinvokable]
+        fn clear_pending_cover_requests(self: Pin<&mut GamesModel>);
 
         #[qinvokable]
         fn launch_at(self: Pin<&mut GamesModel>, index: i32);
@@ -454,7 +463,11 @@ impl ffi::GamesModel {
             SYSTEM_ID_ROLE => QVariant::from(&QString::from(entry_system_id(entry).as_str())),
             COVER_KEY_ROLE => QVariant::from(&QString::from(
                 if self.cover_key_roles_enabled {
-                    cover_key_for(entry, u32::try_from(self.page_size.max(1)).unwrap_or(1))
+                    cover_key_for(
+                        entry,
+                        u32::try_from(self.page_size.max(1)).unwrap_or(1),
+                        !self.cover_requests_paused,
+                    )
                 } else {
                     cover_placeholder_for(entry)
                 }
@@ -576,31 +589,27 @@ impl ffi::GamesModel {
         });
     }
 
-    /// Enqueue covers for the visible page and the next page, with the
-    /// visible page winning LIFO drain order.
+    /// Rebuild the cover queue around the current visual page.
     ///
     /// `first_visible_row` is the row index of the topmost visible
     /// tile (`gamesGrid.currentPage * gamesGrid.pageSize` from QML).
-    /// We push the next page's rows in reverse order first, then the
-    /// current page's rows in reverse, so the LIFO queue drains the
-    /// current page top-to-bottom before any next-page cover starts.
-    ///
-    /// Idempotent: already-cached rows skip via the cache's existing
-    /// dedupe; folders and entries without a `media_key` skip too.
-    /// Uncached rows that are not currently visible are not touched
-    /// here — `cover_key_for` enqueues those on demand when QML
-    /// materialises a tile and reads its `coverKey` role.
+    /// The replacement queue drains current page first, then next
+    /// page, then previous page. Queued stale requests are dropped so
+    /// a page change immediately makes the new visible page win.
     fn prefetch_around(self: Pin<&mut Self>, first_visible_row: i32) {
         let plan =
             prefetch_around_plan(&self.entries, self.count, self.page_size, first_visible_row);
-        if plan.is_empty() {
-            return;
-        }
         let cache = global_media_image_cache();
         let ps = u32::try_from(self.page_size.max(1)).unwrap_or(1);
-        for (key, media_id) in plan {
-            cache.enqueue_with_media_id(key, media_id, ps);
-        }
+        cache.replace_pending_requests_ordered(plan, ps);
+    }
+
+    fn refresh_cover_keys(mut self: Pin<&mut Self>, first_row: i32, count: i32) {
+        emit_cover_key_range(self.as_mut(), first_row, count);
+    }
+
+    fn clear_pending_cover_requests(self: Pin<&mut Self>) {
+        global_media_image_cache().clear_pending_requests();
     }
 
     fn launch_at(self: Pin<&mut Self>, index: i32) {
@@ -1070,9 +1079,7 @@ fn entry_system_id(entry: &BrowseEntry) -> String {
 fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
     entry.entry_type == "media"
         || (entry.entry_type == "directory"
-            && (entry.media_id.is_some()
-                || !entry.zap_script.is_empty()
-                || !entry_system_id(entry).is_empty()))
+            && (entry.media_id.is_some() || !entry.zap_script.is_empty()))
 }
 
 fn run_text_for_entry(entry: &BrowseEntry) -> String {
@@ -1313,7 +1320,7 @@ fn cover_placeholder_for(entry: &BrowseEntry) -> String {
     }
 }
 
-fn cover_key_for(entry: &BrowseEntry, page_size: u32) -> String {
+fn cover_key_for(entry: &BrowseEntry, page_size: u32, requests_enabled: bool) -> String {
     if !is_media_capable_entry(entry) && entry.is_folder() {
         return "icons/Folder".to_string();
     }
@@ -1324,7 +1331,7 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32) -> String {
     let soft_no_image = media_key
         .as_ref()
         .is_some_and(|k| cache.is_soft_no_image(k));
-    if !cached && !negative && !soft_no_image {
+    if requests_enabled && !cached && !negative && !soft_no_image {
         // Miss-driven re-enqueue: when QML asks for the cover URL of
         // a media entry whose bytes aren't in the cache, kick a fetch
         // right here. This is the only implicit path covers reach the
@@ -1338,7 +1345,31 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32) -> String {
             cache.enqueue_with_media_id(k.clone(), entry.media_id, page_size);
         }
     }
-    cover_key_for_with(entry, media_key.as_ref(), cached, negative || soft_no_image)
+    cover_key_for_with(
+        entry,
+        media_key.as_ref(),
+        cached,
+        negative || soft_no_image || !requests_enabled,
+    )
+}
+
+fn emit_cover_key_range(mut model: Pin<&mut ffi::GamesModel>, first_row: i32, count: i32) {
+    if model.count <= 0 || count <= 0 {
+        return;
+    }
+    let first = first_row.clamp(0, model.count - 1);
+    let last = first.saturating_add(count - 1).min(model.count - 1);
+    if last < first {
+        return;
+    }
+    let mut roles = QList::<i32>::default();
+    roles.append(COVER_KEY_ROLE);
+    let parent = QModelIndex::default();
+    let top_left = model.index(first, 0, &parent);
+    let bottom_right = model.index(last, 0, &parent);
+    model
+        .as_mut()
+        .data_changed(&top_left, &bottom_right, &roles);
 }
 
 /// Build the canonical `(systemId, path)` identifier for a media
@@ -1362,15 +1393,10 @@ fn media_key_for(entry: &BrowseEntry) -> Option<MediaKey> {
     }
 }
 
-/// Pure ordering helper for `prefetch_around`. Returns the
-/// (`MediaKey`, `media_id`) pairs to push onto the cover cache's
-/// LIFO queue, in push order.
-///
-/// Push order: next-page rows in reverse, then current-page rows in
-/// reverse. The LIFO drain (`pop_back`) then pops current-page row 0
-/// first, then row 1, ..., row N-1, then next-page row 0, ..., so
-/// the visible page wins drain order with the next page warming
-/// behind it. Folders and entries without a `media_key` are skipped.
+/// Pure ordering helper for `prefetch_around`. Returns
+/// (`MediaKey`, `media_id`) pairs in desired fetch order: current page
+/// top-to-bottom, then next page, then previous page. Folders and
+/// entries without a `media_key` are skipped.
 fn prefetch_around_plan(
     entries: &[BrowseEntry],
     count: i32,
@@ -1382,28 +1408,28 @@ fn prefetch_around_plan(
     }
     let page_size = page_size.max(1);
     let first = first_visible_row.clamp(0, count.saturating_sub(1));
-    let next_start = first.saturating_add(page_size).min(count);
-    let next_end = first.saturating_add(page_size.saturating_mul(2)).min(count);
-    let cur_end = next_start;
+    let current_end = first.saturating_add(page_size).min(count);
+    let next_end = current_end.saturating_add(page_size).min(count);
+    let previous_start = first.saturating_sub(page_size);
     let mut plan: Vec<(MediaKey, Option<i64>)> =
-        Vec::with_capacity(((next_end - first) as usize).min(entries.len()));
+        Vec::with_capacity(((next_end - previous_start) as usize).min(entries.len()));
     let push = |row: i32, plan: &mut Vec<(MediaKey, Option<i64>)>| {
         let idx = row as usize;
         if idx >= entries.len() {
             return;
         }
         let entry = &entries[idx];
-        if !is_media_capable_entry(entry) {
-            return;
-        }
         if let Some(key) = media_key_for(entry) {
             plan.push((key.with_current_cover_preference(), entry.media_id));
         }
     };
-    for row in (next_start..next_end).rev() {
+    for row in first..current_end {
         push(row, &mut plan);
     }
-    for row in (first..cur_end).rev() {
+    for row in current_end..next_end {
+        push(row, &mut plan);
+    }
+    for row in previous_start..first {
         push(row, &mut plan);
     }
     plan
@@ -2064,26 +2090,11 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     if !model.error_message.is_empty() {
         model.as_mut().set_error_message(QString::default());
     }
-    // Look-ahead prefetch: keep the user one page ahead of the highlight
-    // so a page advance never triggers a visible "Loading more…" pause.
-    // `fetch_more` is itself guarded by `has_next_page` and
-    // `loading_more`, so a no-op call is cheap and safe.
-    //
-    // Look-ahead intentionally enqueues onto the same LIFO queue as
-    // the visible page at the same priority. Core serializes
-    // `media.image` responses at ~one per 250–400 ms; with that
-    // cadence, the LIFO drain order (newest-pushed pops first) ends
-    // up servicing page N+1's covers *between* page N's first burst
-    // and its tail. By the time the user navigates forward, page N+1
-    // is warm, while the bottom couple of tiles on page N — which
-    // the user is least likely to dwell on before paginating —
-    // continue to land in the background. Treating look-ahead as a
-    // low-priority lane that drains *after* the visible page strictly
-    // worsens this: page N then consumes the entire serial throughput
-    // before page N+1 begins, which is exactly what shipped briefly
-    // and looked like "covers loading slowly one at a time" with the
-    // next page no longer instant on navigate. See the doc comment on
-    // `MediaImageCache::queue` for the full rationale.
+    // Metadata look-ahead: keep rows one chunk ahead of the highlight
+    // so a page advance does not pause on "Loading more…". Cover
+    // prefetch is separate: `prefetch_around` rebuilds the queue in
+    // current → next → previous order whenever rows land or the page
+    // changes.
     if will_lookahead {
         model.as_mut().fetch_more();
     }
@@ -2309,10 +2320,10 @@ mod tests {
     use super::{
         chunk_for_subbatching, compute_unresolved_keys, cover_key_for_with, cover_placeholder_for,
         decide_initial, dedup_roots_drop_ancestors, detail_tags_from_tags, display_name,
-        entry_system_id, is_strict_ancestor_path, leading_dir_count, media_key_for,
-        meta_params_for_entry, position_of_game_path, prefetch_around_plan, project_status,
-        run_text_for_entry, singleton_directory_needs_launch_resolution, transform_entries,
-        InitialAction, Projection,
+        entry_system_id, is_media_capable_entry, is_strict_ancestor_path, leading_dir_count,
+        media_key_for, meta_params_for_entry, position_of_game_path, prefetch_around_plan,
+        project_status, run_text_for_entry, singleton_directory_needs_launch_resolution,
+        transform_entries, InitialAction, Projection,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
     use std::collections::HashSet;
@@ -2349,6 +2360,43 @@ mod tests {
             zap_script: format!("@{system_id}/{name}"),
             ..BrowseEntry::default()
         }
+    }
+
+    #[test]
+    fn media_entry_is_media_capable() {
+        assert!(is_media_capable_entry(&media(
+            "smb",
+            "/games/NES/smb.nes",
+            "NES"
+        )));
+    }
+
+    #[test]
+    fn directory_with_only_system_id_is_not_media_capable() {
+        let mut entry = folder("Archive", "/games/GB/archive.zip");
+        entry.system_id = "Gameboy".into();
+        assert!(!is_media_capable_entry(&entry));
+    }
+
+    #[test]
+    fn directory_with_media_id_is_media_capable() {
+        let mut entry = folder("Single", "/games/GB/single.zip");
+        entry.system_id = "Gameboy".into();
+        entry.media_id = Some(42);
+        assert!(is_media_capable_entry(&entry));
+    }
+
+    #[test]
+    fn directory_with_zap_script_is_media_capable() {
+        let mut entry = folder("Single", "/games/GB/single.zip");
+        entry.system_id = "Gameboy".into();
+        entry.zap_script = "@Gameboy/Single".into();
+        assert!(is_media_capable_entry(&entry));
+    }
+
+    #[test]
+    fn root_with_system_id_is_not_media_capable() {
+        assert!(!is_media_capable_entry(&root("GB", "/games/GB", "Gameboy")));
     }
 
     #[test]
@@ -3025,18 +3073,15 @@ mod tests {
     }
 
     #[test]
-    fn prefetch_around_plan_pushes_next_page_then_current_in_reverse() {
-        // Visible page: rows 15..30 (15 rows). Next page: 30..45.
-        // Push next first reversed: 44, 43, ..., 30.
-        // Push current next reversed: 29, 28, ..., 15.
-        // pop_back order: 15, 16, ..., 29, 30, 31, ..., 44.
+    fn prefetch_around_plan_orders_current_next_previous() {
         let entries: Vec<BrowseEntry> = (0..45)
             .map(|i| media(&format!("g{i}"), &format!("/g/{i}"), "NES"))
             .collect();
         let plan = prefetch_around_plan(&entries, 45, 15, 15);
         let paths: Vec<String> = plan.iter().map(|(k, _)| k.path.to_string()).collect();
-        let mut expected: Vec<String> = (30..45).rev().map(|i| format!("/g/{i}")).collect();
-        expected.extend((15..30).rev().map(|i| format!("/g/{i}")));
+        let mut expected: Vec<String> = (15..30).map(|i| format!("/g/{i}")).collect();
+        expected.extend((30..45).map(|i| format!("/g/{i}")));
+        expected.extend((0..15).map(|i| format!("/g/{i}")));
         assert_eq!(paths, expected);
     }
 
@@ -3052,22 +3097,20 @@ mod tests {
         ];
         let plan = prefetch_around_plan(&entries, 4, 4, 0);
         let paths: Vec<String> = plan.iter().map(|(k, _)| k.path.to_string()).collect();
-        // Only media rows; reverse push order across the visible page.
-        assert_eq!(paths, vec!["/g/1".to_string(), "/g/0".to_string()]);
+        assert_eq!(paths, vec!["/g/0".to_string(), "/g/1".to_string()]);
     }
 
     #[test]
     fn prefetch_around_plan_handles_short_tail() {
-        // 20 rows, page 1 visible (15..20). Next page would be 30..45
-        // but count clamps it: next_start=30 -> clamped to 20,
-        // next_end=45 -> 20. Plan only contains the partial visible
-        // page rows 15..20 in reverse.
+        // 20 rows, page 1 visible (15..20). No next page; previous
+        // page follows the visible tail.
         let entries: Vec<BrowseEntry> = (0..20)
             .map(|i| media(&format!("g{i}"), &format!("/g/{i}"), "NES"))
             .collect();
         let plan = prefetch_around_plan(&entries, 20, 15, 15);
         let paths: Vec<String> = plan.iter().map(|(k, _)| k.path.to_string()).collect();
-        let expected: Vec<String> = (15..20).rev().map(|i| format!("/g/{i}")).collect();
+        let mut expected: Vec<String> = (15..20).map(|i| format!("/g/{i}")).collect();
+        expected.extend((0..15).map(|i| format!("/g/{i}")));
         assert_eq!(paths, expected);
     }
 
@@ -3086,8 +3129,8 @@ mod tests {
         let plan = prefetch_around_plan(&entries, 30, 15, -100);
         let paths: Vec<String> = plan.iter().map(|(k, _)| k.path.to_string()).collect();
         // Clamped to 0: visible rows 0..15, next 15..30.
-        let mut expected: Vec<String> = (15..30).rev().map(|i| format!("/g/{i}")).collect();
-        expected.extend((0..15).rev().map(|i| format!("/g/{i}")));
+        let mut expected: Vec<String> = (0..15).map(|i| format!("/g/{i}")).collect();
+        expected.extend((15..30).map(|i| format!("/g/{i}")));
         assert_eq!(paths, expected);
     }
 

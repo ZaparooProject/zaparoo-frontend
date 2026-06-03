@@ -76,25 +76,17 @@ const CACHE_CAP_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FETCH_ATTEMPTS: u8 = 3;
 
 /// Number of fetch worker tasks pulling from the shared LIFO queue.
-/// Keep this single-flight against Core: fast list scrolling on `MiSTer`
-/// can otherwise stack multiple large `media.image` bulk requests on
-/// top of Core's image handler and reset the WebSocket. The queue is
-/// already LIFO and capped, so one in-flight batch is enough to keep
-/// the visible work moving without turning cover fetches into a Core
-/// `DoS` vector.
-const FETCH_DRIVER_WORKERS: usize = 1;
+/// Two workers let visible pages fill more than one cover at a time
+/// while keeping Core/WebSocket pressure low on `MiSTer`. If runtime
+/// logs show resets or media.image rate-limit errors, drop this back
+/// to one before trying any broader queue changes.
+const FETCH_DRIVER_WORKERS: usize = 2;
 
-/// Hard cap on pending enqueues in the LIFO fetch queue. New pushes
-/// spill the **oldest** entry off the front, on the assumption that
-/// whatever the user enqueued ~2 pages ago is no longer interesting
-/// (re-fetch on scroll-back is cheap, and the model's role-data path
-/// re-enqueues uncached visible tiles automatically). Combined with
-/// LIFO drain, this means the queue always reflects the user's recent
-/// navigation, not their entire session — older requests neither
-/// block the wire nor accumulate memory. Sized at 2× a typical
-/// 30-tile page so a full look-ahead prefetch can overlap the
-/// current page without dropping anything.
-const MAX_QUEUE_LEN: usize = 60;
+/// Hard cap on pending enqueues in the fetch queue. Sized for three
+/// dense visual pages (current, next, previous) plus margin, so an
+/// explicit page-window rebuild does not drop the previous-page warm
+/// on a 30-tile layout while still bounding stale queue memory.
+const MAX_QUEUE_LEN: usize = 96;
 
 /// MIME content-type → on-disk extension for the formats we are willing
 /// to cache. Falls back to inspecting `MediaImageResult.extension` when
@@ -596,29 +588,13 @@ impl CacheState {
 pub struct MediaImageCache {
     state: Arc<RwLock<CacheState>>,
     /// LIFO queue of pending fetches. `enqueue` pushes to the back,
-    /// the fetch driver pops from the back: newest enqueues drain
-    /// first, while enqueues from a page the user has already
-    /// navigated past wait at the front rather than blocking the
-    /// work the user can see. Plain `std::sync::Mutex` because every
-    /// critical section is a single `push_back`/`pop_back` with no
+    /// the fetch driver pops from the back: newest ad-hoc enqueues
+    /// drain first. Games page prefetch uses
+    /// `replace_pending_requests_ordered`, which clears queued stale
+    /// work and pushes the supplied page window in reverse so public
+    /// order is still drain order. Plain `std::sync::Mutex` because
+    /// every critical section is a bounded queue mutation with no
     /// awaits in between.
-    ///
-    /// **Look-ahead intentionally rides the same queue at the same
-    /// priority.** Under Core's current ~250–400 ms serial cadence
-    /// for `media.image`, the LIFO drain order ends up servicing
-    /// page N+1's prefetched covers between page N's first burst
-    /// (the visual top of the page, enqueued in reverse so it pops
-    /// first) and page N's tail (the bottom rows the user is least
-    /// likely to read before paginating). By the time the user
-    /// navigates forward, page N+1 is warm; the few unfilled tiles
-    /// at the bottom of page N continue to land in the background.
-    /// Treating look-ahead as a "low priority" lane that drains
-    /// *after* the visible page strictly worsens the experience: the
-    /// visible page consumes the entire serial throughput in front
-    /// of the user (which reads as "covers loading slowly one at a
-    /// time"), and page N+1 doesn't start until the visible page is
-    /// fully cached, which is well after a fast-moving user has
-    /// already paginated. Don't reintroduce a priority split here.
     queue: Arc<Mutex<VecDeque<QueueEntry>>>,
     /// Single-permit signal that wakes the driver when a fresh key
     /// hits the queue. Drained by `notified().await` and rearmed by
@@ -743,6 +719,103 @@ impl MediaImageCache {
         page_size: u32,
     ) {
         self.enqueue_with_policy(key, media_id, page_size, NoImagePolicy::SoftMiss);
+    }
+
+    /// Drop queued-but-not-in-flight cover requests. Cached bytes,
+    /// negative memos, and the single request currently being fetched
+    /// stay untouched. Drained keys leave `pending` so final-page
+    /// prefetch after rapid navigation can re-enqueue them.
+    pub fn clear_pending_requests(&self) {
+        let drained = self.drain_queue();
+        if drained.is_empty() {
+            return;
+        }
+        self.release_drained_pending(&drained);
+        debug!(
+            dropped = drained.len(),
+            "media_image_cache: cleared queued cover requests"
+        );
+    }
+
+    /// Replace queued-but-not-in-flight cover requests with an explicit
+    /// ordered page window. `entries` is public drain order: the first
+    /// key supplied is the next key the driver should fetch after any
+    /// current in-flight request finishes.
+    pub fn replace_pending_requests_ordered(
+        &self,
+        entries: Vec<(MediaKey, Option<i64>)>,
+        page_size: u32,
+    ) {
+        let drained = self.drain_queue();
+        if !drained.is_empty() {
+            self.release_drained_pending(&drained);
+        }
+
+        let page_size = page_size.max(1);
+        let mut queued = Vec::new();
+        let mut seen = HashSet::new();
+        {
+            #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
+            let mut guard = self.state.write().unwrap();
+            for (mut key, media_id) in entries.into_iter().take(MAX_QUEUE_LEN) {
+                if key.media_id.is_none() {
+                    if let Some(id) = media_id {
+                        key.media_id = Some(id);
+                    }
+                }
+                if key.system_id.is_empty() || key.path.is_empty() || !seen.insert(key.clone()) {
+                    continue;
+                }
+                if let Some(id) = media_id.or(key.media_id) {
+                    guard.media_ids.insert(key.clone(), id);
+                }
+                if guard.map.contains_key(&key)
+                    || guard.negative.contains(&key)
+                    || guard.pending.contains(&key)
+                {
+                    continue;
+                }
+                guard.attempts.remove(&key);
+                guard.pending.insert(key.clone());
+                queued.push(QueueEntry {
+                    key,
+                    page_size,
+                    no_image_policy: NoImagePolicy::Memoize,
+                });
+            }
+        }
+        if queued.is_empty() {
+            return;
+        }
+        let queued_len = queued.len();
+        {
+            #[allow(clippy::unwrap_used, reason = "Mutex poisoning is unrecoverable")]
+            let mut q = self.queue.lock().unwrap();
+            for entry in queued.into_iter().rev() {
+                q.push_back(entry);
+            }
+        }
+        debug!(
+            dropped = drained.len(),
+            queued = queued_len,
+            "media_image_cache: replaced queued cover requests"
+        );
+        self.queue_notify.notify_one();
+    }
+
+    fn drain_queue(&self) -> Vec<MediaKey> {
+        #[allow(clippy::unwrap_used, reason = "Mutex poisoning is unrecoverable")]
+        let mut q = self.queue.lock().unwrap();
+        q.drain(..).map(|entry| entry.key).collect::<Vec<_>>()
+    }
+
+    fn release_drained_pending(&self, drained: &[MediaKey]) {
+        #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
+        let mut guard = self.state.write().unwrap();
+        for key in drained {
+            guard.pending.remove(key);
+            guard.attempts.remove(key);
+        }
     }
 
     fn enqueue_with_policy(
@@ -1398,6 +1471,56 @@ mod tests {
             queue_notify,
             updates_tx,
         }
+    }
+
+    #[test]
+    fn clear_pending_requests_drops_queue_and_releases_pending_keys() {
+        let cache = cache_for_test();
+        let first = key("SNES", "/old");
+        let second = key("NES", "/new");
+        cache.enqueue_with_media_id(first.clone(), None, 1);
+        cache.enqueue_with_media_id(second.clone(), None, 1);
+
+        cache.clear_pending_requests();
+
+        assert!(cache.queue.lock().unwrap().is_empty());
+        let guard = cache.state.read().unwrap();
+        assert!(!guard.pending.contains(&first));
+        assert!(!guard.pending.contains(&second));
+        drop(guard);
+        cache.enqueue_with_media_id(first.clone(), None, 1);
+        assert_eq!(cache.queue.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn replace_pending_requests_ordered_drops_stale_and_preserves_public_order() {
+        let cache = cache_for_test();
+        let stale = key("NES", "/stale");
+        let first = key("NES", "/first");
+        let second = key("NES", "/second");
+        let third = key("NES", "/third");
+        cache.enqueue_with_media_id(stale.clone(), None, 1);
+
+        cache.replace_pending_requests_ordered(
+            vec![
+                (first.clone(), None),
+                (second.clone(), None),
+                (third.clone(), None),
+            ],
+            1,
+        );
+
+        let guard = cache.state.read().unwrap();
+        assert!(!guard.pending.contains(&stale));
+        assert!(guard.pending.contains(&first));
+        assert!(guard.pending.contains(&second));
+        assert!(guard.pending.contains(&third));
+        drop(guard);
+
+        assert_eq!(pop_one(&cache.queue).expect("first").key, first);
+        assert_eq!(pop_one(&cache.queue).expect("second").key, second);
+        assert_eq!(pop_one(&cache.queue).expect("third").key, third);
+        assert!(pop_one(&cache.queue).is_none());
     }
 
     #[test]

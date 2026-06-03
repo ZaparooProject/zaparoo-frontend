@@ -53,6 +53,7 @@ MediaListScreen {
     detailShowDescription: false
     detailShowTitle: false
     detailLoadingText: qsTr("Loading game…")
+    pauseCoverRequestsDuringRapid: false
     detailCanPreviousImage: Browse.GamesModel.current_detail_image_can_prev
     detailCanNextImage: Browse.GamesModel.current_detail_image_can_next
     detailIdentityForIndex: function (index) {

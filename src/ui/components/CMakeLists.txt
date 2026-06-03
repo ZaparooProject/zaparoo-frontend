@@ -28,6 +28,7 @@ qt_add_qml_module(
         Modal.qml
         PagedGrid.qml
         QrCodeModal.qml
+        RapidScrollIndicator.qml
         ScreensaverOverlay.qml
         ScreenStateOverlay.qml
         SettingsField.qml

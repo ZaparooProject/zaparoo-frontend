@@ -1475,6 +1475,7 @@ MainLayout {
             // above rather than leak it to the root screen.
             return;
         }
+        root._noteRapidNavigationAction(action, false);
         if (root.activeScreen === root.screenGames) {
             root.gamesScreen.handleAction(action);
         } else if (root.activeScreen === root.screenSystems) {
@@ -1492,20 +1493,22 @@ MainLayout {
         }
     }
 
-    // Hold-to-repeat for dpad directions. Qt's OS-level auto-repeat is
+    // Hold-to-repeat for navigation actions. Qt's OS-level auto-repeat is
     // dropped (see Keys.onPressed below) because it bursts unpredictably
     // on heavy UI loads and isn't tunable on MiSTer's framebuffer build.
-    // Instead, on a real press of one of the four dpad actions we start
-    // an initial-delay timer; on its first fire we hand over to a steady
+    // Instead, on a real press of a repeatable action we start an
+    // initial-delay timer; on its first fire we hand over to a steady
     // tick. Both fire `handleAction(heldAction)`, which means the existing
     // transition gate, modal routing, and screen dispatch all apply
     // unchanged — repeats land on whichever screen / modal is currently
     // active, just like fresh presses.
     readonly property int _repeatInitialMs: 350
     readonly property int _repeatTickMs: 90
+    readonly property int _rapidNavigationQuietMs: 260
     property string _heldAction: ""
     property int _heldKey: 0
-    readonly property bool _listDetailRapidScrollActive: root._repeatTicking && (root._heldAction === "up" || root._heldAction === "down")
+    property bool rapidNavigationActive: false
+    property string rapidNavigationAction: ""
     // Aliased so tst_navigation.qml can observe the repeat state machine
     // — child Timer ids are file-scoped and aren't reachable otherwise.
     property alias _repeatPending: repeatInitial.running
@@ -1529,23 +1532,60 @@ MainLayout {
     Binding {
         target: root.gamesScreen
         property: "detailRapidScrollActive"
-        value: root.activeScreen === root.screenGames && root._listDetailRapidScrollActive
+        value: root.activeScreen === root.screenGames && root.rapidNavigationActive
+    }
+
+    Binding {
+        target: root.gamesScreen
+        property: "detailRapidScrollAction"
+        value: root.activeScreen === root.screenGames ? root.rapidNavigationAction : ""
     }
 
     Binding {
         target: root.favoritesScreen
         property: "detailRapidScrollActive"
-        value: root.activeScreen === root.screenFavorites && root._listDetailRapidScrollActive
+        value: root.activeScreen === root.screenFavorites && root.rapidNavigationActive
+    }
+
+    Binding {
+        target: root.favoritesScreen
+        property: "detailRapidScrollAction"
+        value: root.activeScreen === root.screenFavorites ? root.rapidNavigationAction : ""
     }
 
     Binding {
         target: root.recentsScreen
         property: "detailRapidScrollActive"
-        value: root.activeScreen === root.screenRecents && root._listDetailRapidScrollActive
+        value: root.activeScreen === root.screenRecents && root.rapidNavigationActive
+    }
+
+    Binding {
+        target: root.recentsScreen
+        property: "detailRapidScrollAction"
+        value: root.activeScreen === root.screenRecents ? root.rapidNavigationAction : ""
+    }
+
+    function _isRapidNavigationAction(action: string): bool {
+        return action === "up" || action === "down" || action === "page_prev" || action === "page_next";
+    }
+
+    function _noteRapidNavigationAction(action: string, forceActive: bool): void {
+        if (!root._isRapidNavigationAction(action))
+            return;
+        root.rapidNavigationAction = action;
+        if (forceActive || rapidNavigationQuiet.running)
+            root.rapidNavigationActive = true;
+        rapidNavigationQuiet.restart();
+    }
+
+    function _resetRapidNavigation(): void {
+        rapidNavigationQuiet.stop();
+        root.rapidNavigationActive = false;
+        root.rapidNavigationAction = "";
     }
 
     function _isRepeatableAction(action: string): bool {
-        return action === "up" || action === "down" || action === "left" || action === "right";
+        return action === "up" || action === "down" || action === "left" || action === "right" || action === "page_prev" || action === "page_next";
     }
 
     // State-machine half of handleKey: records the held key/action and
@@ -1693,6 +1733,7 @@ MainLayout {
     }
 
     function _handleRepeatAction(): void {
+        root._noteRapidNavigationAction(root._heldAction, true);
         root.handleAction(root._heldAction);
     }
 
@@ -1701,6 +1742,16 @@ MainLayout {
         interval: 1500
         repeat: false
         onTriggered: root.hideCardWriteModal()
+    }
+
+    Timer {
+        id: rapidNavigationQuiet
+        interval: root._rapidNavigationQuietMs
+        repeat: false
+        onTriggered: {
+            root.rapidNavigationActive = false;
+            root.rapidNavigationAction = "";
+        }
     }
 
     Timer {

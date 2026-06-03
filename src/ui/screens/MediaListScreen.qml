@@ -68,6 +68,8 @@ Item {
     property bool transitioning: false
     property bool gridFocused: true
     property bool detailRapidScrollActive: false
+    property string detailRapidScrollAction: ""
+    property bool pauseCoverRequestsDuringRapid: true
     property bool forceListLayout: false
     property bool renderGridLayout: true
     property bool showTopStrip: true
@@ -86,6 +88,8 @@ Item {
     property string bottomStatusRightText: ""
     property int gridTotalItemsOverride: -1
     property bool gridHasMorePages: false
+    readonly property bool _listRapidLineMove: root._listLayout && (root.detailRapidScrollAction === "up" || root.detailRapidScrollAction === "down")
+    readonly property bool _showRapidScrollIndicator: root.detailRapidScrollActive && !root._listRapidLineMove
     readonly property bool _listLayout: root.forceListLayout || Browse.Settings.current_browse_layout === "list"
     readonly property bool _tateListLayout: root._listLayout && Browse.Settings.current_orientation !== "horizontal"
     readonly property string _activeListViewId: root._tateListLayout ? root.tateListViewId : root.listViewId
@@ -189,6 +193,44 @@ Item {
         root._persistFocus();
         if (next >= count - 2)
             root.mediaModel.fetch_more();
+    }
+
+    function _coverRefreshFirstRow(): int {
+        if (!root._listLayout)
+            return mediaGrid.currentPage * mediaGrid.pageSize;
+        return Math.max(0, mediaGrid.currentIndex - listCard.visibleRowCount);
+    }
+
+    function _coverRefreshRowCount(): int {
+        if (!root._listLayout)
+            return mediaGrid.pageSize * 2;
+        return Math.max(1, listCard.visibleRowCount * 3);
+    }
+
+    function _resumeCoverRequests(): void {
+        if (root.mediaModel === null)
+            return;
+        if (root.pauseCoverRequestsDuringRapid)
+            root.mediaModel.cover_requests_paused = false;
+        if (typeof root.mediaModel.refresh_cover_keys === "function")
+            root.mediaModel.refresh_cover_keys(root._coverRefreshFirstRow(), root._coverRefreshRowCount());
+        if (!root._listLayout && typeof root.gridCurrentPageChangedAction === "function")
+            root.gridCurrentPageChangedAction();
+    }
+
+    function _pauseCoverRequests(): void {
+        if (root.mediaModel === null || !root.pauseCoverRequestsDuringRapid)
+            return;
+        root.mediaModel.cover_requests_paused = true;
+        if (typeof root.mediaModel.clear_pending_cover_requests === "function")
+            root.mediaModel.clear_pending_cover_requests();
+    }
+
+    onDetailRapidScrollActiveChanged: {
+        if (root.detailRapidScrollActive)
+            root._pauseCoverRequests();
+        else
+            root._resumeCoverRequests();
     }
 
     function _performPage(delta: int): void {
@@ -370,6 +412,7 @@ Item {
         rowsOverride: root.gridRowsOverride
         totalItemsOverride: root.gridTotalItemsOverride
         hasMorePages: root.gridHasMorePages
+        coverLoadingPaused: root.detailRapidScrollActive
         onLoadMoreRequested: {
             if (typeof root.gridLoadMoreAction === "function")
                 root.gridLoadMoreAction();
@@ -450,6 +493,14 @@ Item {
         anchors.left: activeLabel.left
         anchors.leftMargin: root.pageLoadingLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
+    }
+
+    RapidScrollIndicator {
+        visible: !root._gateHide && root._showRapidScrollIndicator && mediaGrid.itemCount > 0
+        x: Sizing.center(parent.width, width)
+        y: root._listLayout ? Sizing.center(parent.height, height) : Sizing.center(mediaGrid.height, height) + mediaGrid.y
+        title: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 && root.mediaModel !== null ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
+        z: 20
     }
 
     ScreenStateOverlay {

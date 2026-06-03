@@ -40,6 +40,7 @@ TestCase {
         // run in microseconds, so the pending fire would land on the
         // next test if we didn't reset it here.
         main._stopRepeat();
+        main._resetRapidNavigation();
     }
 
     function test_initial_state_is_hub(): void {
@@ -289,6 +290,8 @@ TestCase {
         compare(main._isRepeatableAction("down"), true);
         compare(main._isRepeatableAction("left"), true);
         compare(main._isRepeatableAction("right"), true);
+        compare(main._isRepeatableAction("page_prev"), true);
+        compare(main._isRepeatableAction("page_next"), true);
     // qmllint enable compiler
     }
 
@@ -296,8 +299,6 @@ TestCase {
         // qmllint disable compiler
         compare(main._isRepeatableAction("accept"), false);
         compare(main._isRepeatableAction("cancel"), false);
-        compare(main._isRepeatableAction("page_prev"), false);
-        compare(main._isRepeatableAction("page_next"), false);
         compare(main._isRepeatableAction("write_card"), false);
         compare(main._isRepeatableAction(""), false);
     // qmllint enable compiler
@@ -311,7 +312,7 @@ TestCase {
         compare(main._repeatTicking, false, "Steady tick must not start before the initial delay");
     }
 
-    function test_arm_repeat_with_non_dpad_action_is_noop(): void {
+    function test_arm_repeat_with_non_repeatable_action_is_noop(): void {
         main._armRepeat("accept", Qt.Key_Return);
         compare(main._heldAction, "");
         compare(main._heldKey, 0);
@@ -355,6 +356,38 @@ TestCase {
         compare(main._heldAction, "right");
         compare(main._heldKey, Qt.Key_Right);
         compare(main._repeatPending, true, "Re-arm restarts the initial-delay timer");
+    }
+
+    function test_rapid_navigation_taps_activate_on_second_press(): void {
+        // qmllint disable compiler
+        main._noteRapidNavigationAction("down", false);
+        compare(main.rapidNavigationAction, "down", "rapid action tracks latest rapid input even before active mode");
+        compare(main.rapidNavigationActive, false, "single isolated press should not enter rapid mode");
+        main._noteRapidNavigationAction("down", false);
+        compare(main.rapidNavigationActive, true, "second press inside quiet window enters rapid mode");
+        wait(main._rapidNavigationQuietMs + 40);
+        compare(main.rapidNavigationActive, false, "rapid mode clears after quiet window");
+        compare(main.rapidNavigationAction, "", "quiet reset clears rapid action");
+    // qmllint enable compiler
+    }
+
+    function test_rapid_navigation_ignores_non_rapid_action(): void {
+        // qmllint disable compiler
+        main._noteRapidNavigationAction("accept", true);
+        compare(main.rapidNavigationActive, false);
+        compare(main.rapidNavigationAction, "");
+    // qmllint enable compiler
+    }
+
+    function test_repeat_tick_forces_rapid_navigation_active(): void {
+        // qmllint disable compiler
+        main._armRepeat("page_next", Qt.Key_R);
+        main._handleRepeatAction();
+        compare(main.rapidNavigationActive, true, "held page action should enter rapid mode on first repeat tick");
+        main._stopRepeat();
+        wait(main._rapidNavigationQuietMs + 40);
+        compare(main.rapidNavigationActive, false);
+    // qmllint enable compiler
     }
 
     // Context-menu builder. Drives the pure helper directly per the QML

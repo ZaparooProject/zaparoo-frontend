@@ -79,6 +79,7 @@ pub struct RecentsModelRust {
     current_detail_loading: bool,
     current_detail_tags: QString,
     current_detail_image_key: QString,
+    cover_requests_paused: bool,
     current_detail_media_key: Option<MediaKey>,
     current_detail_media_id: Option<i64>,
     detail_seq: Arc<AtomicU64>,
@@ -138,6 +139,7 @@ pub mod ffi {
         #[qproperty(bool, current_detail_loading)]
         #[qproperty(QString, current_detail_tags)]
         #[qproperty(QString, current_detail_image_key)]
+        #[qproperty(bool, cover_requests_paused)]
         type RecentsModel = super::RecentsModelRust;
 
         #[qinvokable]
@@ -160,6 +162,12 @@ pub mod ffi {
 
         #[qinvokable]
         fn clear_current_detail(self: Pin<&mut RecentsModel>);
+
+        #[qinvokable]
+        fn refresh_cover_keys(self: Pin<&mut RecentsModel>, first_row: i32, count: i32);
+
+        #[qinvokable]
+        fn clear_pending_cover_requests(self: Pin<&mut RecentsModel>);
 
         #[qinvokable]
         fn index_for_path(self: &RecentsModel, path: &QString) -> i32;
@@ -254,7 +262,9 @@ fn apply_state(
         // any in-flight `fetch_more` sees a stale ticket and bails.
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().ensure_cover_subscription();
-        enqueue_recents_covers(&entries);
+        if !model.cover_requests_paused {
+            enqueue_recents_covers(&entries);
+        }
         let count = i32::try_from(entries.len()).unwrap_or(i32::MAX);
         clear_current_detail_state(model.as_mut());
         model.as_mut().begin_reset_model();
@@ -340,7 +350,9 @@ impl ffi::RecentsModel {
             NAME_ROLE => QVariant::from(&QString::from(entry.media_name.as_str())),
             PATH_ROLE => QVariant::from(&QString::from(entry.media_path.as_str())),
             SYSTEM_ID_ROLE => QVariant::from(&QString::from(entry.system_id.as_str())),
-            COVER_KEY_ROLE => QVariant::from(&QString::from(cover_key_for(entry).as_str())),
+            COVER_KEY_ROLE => QVariant::from(&QString::from(
+                cover_key_for(entry, !self.cover_requests_paused).as_str(),
+            )),
             LAUNCHER_ID_ROLE => QVariant::from(&QString::from(entry.launcher_id.as_str())),
             FAVORITE_ROLE => QVariant::from(&0_i32),
             FILE_STEM_ROLE => QVariant::from(&QString::from(file_stem_or_name(
@@ -390,6 +402,14 @@ impl ffi::RecentsModel {
                 apply_append_page(model, result, expected_prev_cursor.as_deref());
             });
         });
+    }
+
+    fn refresh_cover_keys(mut self: Pin<&mut Self>, first_row: i32, count: i32) {
+        emit_cover_key_range(self.as_mut(), first_row, count);
+    }
+
+    fn clear_pending_cover_requests(self: Pin<&mut Self>) {
+        global_media_image_cache().clear_pending_requests();
     }
 
     fn launch_at(self: Pin<&mut Self>, index: i32) {
@@ -532,7 +552,7 @@ impl ffi::RecentsModel {
 /// `QQuickImageProvider` resolves to RAM bytes; otherwise we enqueue a
 /// fetch (carrying the optional `mediaId` hint) and fall back to the
 /// system logo as a nicer placeholder than the generic file glyph.
-fn cover_key_for(entry: &MediaHistoryEntry) -> String {
+fn cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
     if entry.system_id.is_empty() {
         return "icons/File".to_string();
     }
@@ -543,7 +563,7 @@ fn cover_key_for(entry: &MediaHistoryEntry) -> String {
     let soft_no_image = media_key
         .as_ref()
         .is_some_and(|k| cache.is_soft_no_image(k));
-    if !cached && !negative && !soft_no_image {
+    if requests_enabled && !cached && !negative && !soft_no_image {
         // Miss-driven re-enqueue, same rationale as GamesModel's
         // `cover_key_for`: tiles re-bound after LRU eviction or stale-
         // enqueue truncation will hit this branch and re-arm the fetch.
@@ -551,7 +571,32 @@ fn cover_key_for(entry: &MediaHistoryEntry) -> String {
             cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
         }
     }
-    cover_key_for_with(entry, media_key.as_ref(), cached, negative, soft_no_image)
+    cover_key_for_with(
+        entry,
+        media_key.as_ref(),
+        cached,
+        negative,
+        soft_no_image || !requests_enabled,
+    )
+}
+
+fn emit_cover_key_range(mut model: Pin<&mut ffi::RecentsModel>, first_row: i32, count: i32) {
+    if model.count <= 0 || count <= 0 {
+        return;
+    }
+    let first = first_row.clamp(0, model.count - 1);
+    let last = first.saturating_add(count - 1).min(model.count - 1);
+    if last < first {
+        return;
+    }
+    let mut roles = QList::<i32>::default();
+    roles.append(COVER_KEY_ROLE);
+    let parent = QModelIndex::default();
+    let top_left = model.index(first, 0, &parent);
+    let bottom_right = model.index(last, 0, &parent);
+    model
+        .as_mut()
+        .data_changed(&top_left, &bottom_right, &roles);
 }
 
 /// Build the canonical `(systemId, mediaPath)` identifier for a history
@@ -924,7 +969,9 @@ fn apply_append_page(
             let has_next_page = result.has_next_page();
             let next_cursor = result.next_cursor();
             let new_count = i32::try_from(result.entries.len()).unwrap_or(i32::MAX - model.count);
-            enqueue_recents_covers(&result.entries);
+            if !model.cover_requests_paused {
+                enqueue_recents_covers(&result.entries);
+            }
             if new_count > 0 {
                 let first = model.count;
                 let last = first.saturating_add(new_count).saturating_sub(1);

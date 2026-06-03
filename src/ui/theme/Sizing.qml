@@ -21,14 +21,7 @@ QtObject {
     // Shared browse-grid bounds. Systems and games both solve the same
     // viewport-fit problem now, so the common limits live here and the
     // per-surface configs only override what is materially different.
-    readonly property var _browseGridBaseConfig: ({
-        "minCellWidth": crtNativePath ? 72 : 160,
-        "preferredPageSize": crtNativePath ? 6 : 10,
-        "minColumns": 2,
-        "maxColumns": crtNativePath ? 3 : 5,
-        "minRows": 2,
-        "maxRows": crtNativePath ? 3 : 5
-    })
+    readonly property var _browseGridBaseConfig: _browseGridBaseConfigForTheme()
     // Systems grid uses the same viewport-driven shape selection as
     // games so both browse screens present a similar amount of content.
     // Systems tiles are squarer than box-art tiles, so they target a
@@ -69,6 +62,17 @@ QtObject {
     readonly property int headerSideMargin: pctW(2)
     readonly property int headerHeight: 2 * headerRowHeight + headerStackGap
     readonly property int headerBottom: headerTopMargin + headerHeight
+
+    function _browseGridBaseConfigForTheme(): var {
+        return {
+            "minCellWidth": crtNativePath ? 72 : 160,
+            "preferredPageSize": crtNativePath ? 6 : 10,
+            "minColumns": 2,
+            "maxColumns": crtNativePath ? 3 : 5,
+            "minRows": 2,
+            "maxRows": crtNativePath ? 3 : 5
+        };
+    }
 
     function pctH(percent: real): int {
         return Math.round((swapPercentageAxes ? screenWidth : screenHeight) * percent / 100);
