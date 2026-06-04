@@ -30,8 +30,8 @@
     </message>
     <message>
         <location filename="../screens/AboutScreen.qml" line="196"/>
-        <source>Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use or redistribution requires a separate license.</source>
-        <translation>Sursa este disponibilă sub licența PolyForm Noncommercial License 1.0.0. Gratuit pentru uz personal, necomercial. Utilizarea comercială sau redistribuirea necesită o licență separată.</translation>
+        <source>Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license.</source>
+        <translation>Sursa este disponibilă sub licența PolyForm Noncommercial License 1.0.0. Gratuit pentru uz personal, necomercial. Utilizarea comercială necesită o licență separată.</translation>
     </message>
     <message>
         <location filename="../screens/AboutScreen.qml" line="207"/>
@@ -149,8 +149,8 @@
     </message>
     <message>
         <location filename="../components/CommercialNoticeModal.qml" line="79"/>
-        <source>This free source-available build is for personal and non-commercial use only. Commercial use or redistribution requires a license.</source>
-        <translation>Această versiune gratuită cu sursă disponibilă este destinată exclusiv utilizării personale și necomerciale. Utilizarea comercială sau redistribuirea necesită o licență.</translation>
+        <source>This free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.</source>
+        <translation>Această versiune gratuită cu sursă disponibilă este destinată exclusiv utilizării personale și necomerciale. Utilizarea comercială necesită o licență separată.</translation>
     </message>
     <message>
         <location filename="../components/CommercialNoticeModal.qml" line="90"/>

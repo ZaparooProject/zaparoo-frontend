@@ -33,12 +33,10 @@
 //   * `current_browse_layout` — READ + NOTIFY, persisted. Defaults to
 //     "grid" so existing installs keep current behavior.
 //   * `available_button_layouts` — CONSTANT. Single-letter ids used to
-//     compose resources/images/buttons/<layout>/Button*.png. Style A is
-//     the legacy Nintendo-style glyph set, B is the Xbox-style set, C
-//     is the Sony-style set, and D is the alternate internal set; the
-//     user-facing labels are "Style A/B/C/D"
-//     (see `SettingsScreen.qml::_buttonLayoutDisplay`) so the picker
-//     reads as a neutral aesthetic choice rather than a vendor pick.
+//     compose resources/images/buttons/<layout>/Button*.png. User-facing
+//     labels are "Style A/B/C/D" (see
+//     `SettingsScreen.qml::_buttonLayoutDisplay`) so the picker stays a
+//     neutral aesthetic choice and avoids implying platform affiliation.
 //   * `current_button_layout` — READ + NOTIFY, persisted. Defaults to
 //     "a" — the new id for the previous "nintendo" asset directory.
 //     `normalize_button_layout` migrates legacy persisted values

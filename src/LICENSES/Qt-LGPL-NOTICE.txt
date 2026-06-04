@@ -6,11 +6,17 @@ GNU Lesser General Public License version 3 (LGPLv3).
 
 Qt Modules Used
 ---------------
-- Qt Core
-- Qt GUI
-- Qt QML
-- Qt Quick
-- Qt Quick Controls 2
+The application directly links Qt Core, Qt GUI, Qt QML, Qt Quick,
+Qt Quick Controls 2, Qt Quick Templates 2, Qt Quick Layouts, and Qt Svg.
+Desktop deployment may also copy supporting Qt libraries/plugins such as
+Qt Network, Qt OpenGL, Qt QmlModels, Qt DBus, platform plugins, image format
+plugins, and QML module plugins required by the selected Qt installation.
+
+Static MiSTer Qt builds are configured to use Qt's bundled copies of zlib,
+libpng, libjpeg, FreeType, PCRE2, and HarfBuzz where selected by
+Dockerfile.toolchain. These components are brought in through Qt's build and
+remain under their upstream licenses as documented by Qt's own source tree and
+license-attribution tooling.
 
 License Compliance
 ------------------
@@ -26,10 +32,20 @@ In accordance with the LGPLv3:
      application's compiled object files — is available on request at
      legal@zaparoo.org, per LGPLv3 §4(d)(1).
 
-2. The complete source code for Qt is available at:
+2. Release artifact procedure for static Qt builds:
+   - Keep the exact Qt version and toolchain tag used for the release.
+   - Keep the Qt configure flags from Dockerfile.toolchain.
+   - Keep or publish the application object files/static libraries needed
+     to re-link the frontend with a modified Qt build.
+   - Ship COPYING, LGPLv3.txt, this notice, and all files under src/LICENSES/
+     with release bundles.
+   - Fulfil object-file requests through legal@zaparoo.org for as long as the
+     corresponding binary is distributed.
+
+3. The complete source code for Qt is available at:
    https://code.qt.io/
 
-3. The full text of the LGPLv3 license is included in this distribution
+4. The full text of the LGPLv3 license is included in this distribution
    as "LGPLv3.txt".
 
 Qt Copyright Notice

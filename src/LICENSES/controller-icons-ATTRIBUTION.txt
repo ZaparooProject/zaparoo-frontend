@@ -1,11 +1,9 @@
 Controller Input Icons Attribution
 ==================================
 
-This software bundles controller-button glyphs under
-resources/images/buttons/a/ (ButtonA.png, ButtonB.png,
-ButtonX.png, ButtonY.png, ButtonL.png, ButtonR.png — the "Style A"
-picker option) and resources/images/icons/ (Dpad.png and directional
-D-pad glyphs) derived from:
+This software bundles controller-button and D-pad glyphs under
+resources/images/buttons/ and resources/images/icons/ (Dpad.png and
+directional D-pad glyphs) derived from:
 
   Controller Input Icons
   by ElDuderino

@@ -117,9 +117,10 @@ the page when a modal is up, bar (`bgBar`) is the help-strip footer.
 
 ## Fonts
 
-`Theme.fontUi` is **Atkinson Hyperlegible** for every UI string.
-`Theme.fontMono` is `monospace` and is reserved for diagnostic /
-log views.
+`Theme.fontUi` is **Noto Sans** for normal UI rendering and
+**MxPlus HP 100LX 6x8** on the CRT native path. `Theme.fontMono` is
+`monospace` normally and **MxPlus HP 100LX 6x8** on the CRT native path;
+it is reserved for diagnostic / log views.
 
 ### Font-size ladder
 

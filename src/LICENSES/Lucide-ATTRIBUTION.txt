@@ -15,7 +15,10 @@ Licensed under the ISC License.
 Bundled icons (identifiable by the `class="lucide lucide-..."`
 attribute on the SVG root):
 
+  resources/images/icons/Heart.svg
+  resources/images/icons/HeartOutline.svg
   resources/images/icons/History.svg
+  resources/images/icons/PlayOutline.svg
   resources/images/status/NFC.svg
 
 The ISC license text from the upstream project follows.

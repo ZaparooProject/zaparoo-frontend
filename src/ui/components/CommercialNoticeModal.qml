@@ -76,7 +76,7 @@ Item {
 
             Text {
                 width: parent.width
-                text: qsTr("This free source-available build is for personal and non-commercial use only. Commercial use or redistribution requires a license.")
+                text: qsTr("This free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.")
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontSize(2.6)
                 color: Theme.textPrimary

@@ -13,7 +13,7 @@ import QtQuick
 QtObject {
     // Build a cover image URL from a `coverKey`.
     // Extension/scheme is chosen by directory:
-    //   * `systems/<id>` — the 144-asset curated PNG set under
+    //   * `systems/<id>` — the curated PNG set under
     //     resources/images/systems/, ships as PNG.
     //   * `media-image/<encoded>` — media images (boxart, screenshot,
     //     wheel, titleshot, map, marquee, fanart, generic image)
@@ -32,7 +32,7 @@ QtObject {
     // Single-letter directory under resources/images/buttons/ — "a"/"b"/"c"/"d"
     // back the user-facing "Style A/B/C/D" picker. MainLayout binds this to
     // Browse.Settings.current_button_layout; the default keeps early
-    // evaluation on Style A (the legacy Nintendo-style glyph set).
+    // evaluation on Style A (the legacy glyph set).
     property string buttonLayout: "a"
 
     // Empty key returns an empty URL so the caller can use it as a

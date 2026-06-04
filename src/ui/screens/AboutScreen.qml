@@ -193,7 +193,7 @@ Item {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
-                    text: qsTr("Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use or redistribution requires a separate license.")
+                    text: qsTr("Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license.")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
                     font.pixelSize: Sizing.fontSize(2.6)

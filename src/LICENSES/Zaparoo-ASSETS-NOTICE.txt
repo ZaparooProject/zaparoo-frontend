@@ -1,0 +1,15 @@
+Zaparoo Project Asset Notice
+============================
+
+The following bundled visual assets are original Zaparoo Project assets or
+Zaparoo trademarks used with permission from the trademark owner. They are
+covered by this repository's project license or trademark notice, not by a
+third-party asset license:
+
+  resources/images/logo.png
+  resources/images/logo-crt.png
+  resources/images/bg-circuit.svg
+  resources/images/bg-circuit.png
+
+Redistributors or downstream projects should review README.md's trademark
+section before reusing Zaparoo marks.

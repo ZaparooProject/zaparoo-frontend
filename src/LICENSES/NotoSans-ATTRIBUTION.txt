@@ -1,0 +1,27 @@
+Noto Sans Font Attribution
+==========================
+
+This software bundles Noto Sans font files under resources/fonts/:
+
+  resources/fonts/NotoSans.ttf
+  resources/fonts/NotoSansArabic.ttf
+  resources/fonts/NotoSansDevanagari.ttf
+  resources/fonts/NotoSansHebrew.ttf
+  resources/fonts/NotoSansJP.ttf
+  resources/fonts/NotoSansKR.ttf
+  resources/fonts/NotoSansTC.ttf
+
+Sources:
+
+  Noto Sans / Noto Sans Arabic / Devanagari / Hebrew
+  https://github.com/notofonts/
+
+  Noto Sans CJK (JP, KR, TC)
+  https://github.com/notofonts/noto-cjk
+
+Copyright 2022 The Noto Project Authors and contributors.
+Licensed under the SIL Open Font License, Version 1.1.
+
+The full license text follows in NotoSans-OFL.txt alongside this file.
+Per OFL 1.1, modified versions of these fonts must not use any upstream
+Reserved Font Names unless the copyright holder permits it.

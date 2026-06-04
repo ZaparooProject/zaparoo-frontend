@@ -30,7 +30,7 @@
     </message>
     <message>
         <location filename="../screens/AboutScreen.qml" line="196"/>
-        <source>Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use or redistribution requires a separate license.</source>
+        <source>Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license.</source>
         <translation>Вихідний код доступний за ліцензією PolyForm Noncommercial License 1.0.0. Безкоштовно для особистого некомерційного використання. Комерційне використання або розповсюдження потребує окремої ліцензії.</translation>
     </message>
     <message>
@@ -149,7 +149,7 @@
     </message>
     <message>
         <location filename="../components/CommercialNoticeModal.qml" line="79"/>
-        <source>This free source-available build is for personal and non-commercial use only. Commercial use or redistribution requires a license.</source>
+        <source>This free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.</source>
         <translation>Ця безкоштовна збірка призначена лише для особистого та некомерційного використання. Комерційне використання або розповсюдження потребує ліцензії.</translation>
     </message>
     <message>

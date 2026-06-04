@@ -10,11 +10,10 @@ Core line-icon set:
   https://streamlinehq.com/
 
 Streamline assets are © Webalys LLC. The bundled icon is used under the
-Streamline Free License, which permits use in open-source projects with
-attribution and a link to https://streamlinehq.com.
+Streamline Free License with attribution and a link to https://streamlinehq.com.
 
-The Streamline Free License is summarised at:
+The Streamline Free License is summarized at:
   https://help.streamlinehq.com/en/articles/5354376-streamline-free-license
 
-The icon remains the property of Webalys LLC and is licensed for use only
-in the context of this open-source project.
+The icon remains the property of Webalys LLC. No endorsement or affiliation is
+implied.

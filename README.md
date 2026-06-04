@@ -55,12 +55,14 @@ Third-party components:
   linked on MiSTer ARM32. Object files for re-linking against a modified Qt
   are available on request at
   [legal@zaparoo.org](mailto:legal@zaparoo.org).
-  See [`src/LICENSES/`](src/LICENSES/).
-- **Atkinson Hyperlegible** font: SIL Open Font License 1.1, © 2020 Braille
-  Institute of America, Inc. See
-  [`src/LICENSES/AtkinsonHyperlegible-OFL.txt`](src/LICENSES/AtkinsonHyperlegible-OFL.txt)
-  and
-  [`src/LICENSES/AtkinsonHyperlegible-ATTRIBUTION.txt`](src/LICENSES/AtkinsonHyperlegible-ATTRIBUTION.txt).
+  See [`src/LICENSES/Qt-LGPL-NOTICE.txt`](src/LICENSES/Qt-LGPL-NOTICE.txt)
+  and [`src/LICENSES/LGPLv3.txt`](src/LICENSES/LGPLv3.txt).
+- **Noto Sans** fonts: SIL Open Font License 1.1, © The Noto Project Authors.
+  See [`src/LICENSES/NotoSans-ATTRIBUTION.txt`](src/LICENSES/NotoSans-ATTRIBUTION.txt)
+  and [`src/LICENSES/NotoSans-OFL.txt`](src/LICENSES/NotoSans-OFL.txt).
+- **MxPlus HP 100LX 6x8** font: Creative Commons Attribution-ShareAlike 4.0
+  International, © VileR. See
+  [`src/LICENSES/MxPlus-ATTRIBUTION.txt`](src/LICENSES/MxPlus-ATTRIBUTION.txt).
 - **Iconoir** UI icons: MIT License, © Luca Burgio and contributors.
   See [`src/LICENSES/Iconoir-ATTRIBUTION.txt`](src/LICENSES/Iconoir-ATTRIBUTION.txt).
 - **Lucide** UI icons: ISC License, © 2024 Lucide Contributors (fork of Feather
@@ -74,3 +76,5 @@ Third-party components:
 - **Console logos** redrawn by Dan Patrick (MIT-licensed compilation; platform
   marks remain trademarks of their respective owners). See
   [`src/LICENSES/console-logos-ATTRIBUTION.txt`](src/LICENSES/console-logos-ATTRIBUTION.txt).
+
+See all bundled asset and third-party notices in [`src/LICENSES/`](src/LICENSES/).
