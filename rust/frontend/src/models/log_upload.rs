@@ -20,13 +20,12 @@
 // is plain text plus a QR code generated through `Browse.QrCode`.
 
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use base64::Engine as _;
 use cxx_qt::Threading;
 use cxx_qt_lib::QString;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::pin::Pin;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use tracing::{error, info, warn};
 use zaparoo_core::client::Client;
@@ -161,14 +160,16 @@ fn run_upload(runtime: &tokio::runtime::Handle, client: &Client) -> UploadOutcom
     let (support_summary, core_log) = runtime.block_on(async {
         let summary = gather_support_summary(client).await;
         let core_log = match client.settings_logs_download().await {
-            Ok(result) => match BASE64_STANDARD.decode(result.content.as_bytes()) {
-                Ok(bytes) => CoreLogSource::Available(bytes),
-                Err(e) => {
-                    let message = format!("core log decode failed: {e}");
-                    warn!("{message}");
-                    CoreLogSource::Unavailable(message)
+            Ok(result) => {
+                match decode_base64_tail(result.content.as_bytes(), PER_LOG_LIMIT_BYTES) {
+                    Ok(bytes) => CoreLogSource::Available(bytes),
+                    Err(e) => {
+                        let message = format!("core log decode failed: {e}");
+                        warn!("{message}");
+                        CoreLogSource::Unavailable(message)
+                    }
                 }
-            },
+            }
             Err(e) => {
                 let message = format!("core log download failed: {e}");
                 warn!("{message}");
@@ -214,6 +215,26 @@ fn tail_bytes(bytes: &[u8], max_bytes: usize) -> &[u8] {
     } else {
         &bytes[bytes.len() - max_bytes..]
     }
+}
+
+fn decode_base64_tail(encoded: &[u8], max_bytes: usize) -> Result<Vec<u8>, std::io::Error> {
+    let mut reader = base64::read::DecoderReader::new(encoded, &BASE64_STANDARD);
+    let mut tail = Vec::with_capacity(max_bytes.min(8 * 1024));
+    let mut chunk = [0_u8; 8 * 1024];
+
+    loop {
+        let read = reader.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        tail.extend_from_slice(&chunk[..read]);
+        if tail.len() > max_bytes {
+            let excess = tail.len() - max_bytes;
+            tail.drain(..excess);
+        }
+    }
+
+    Ok(tail)
 }
 
 async fn gather_support_summary(client: &Client) -> String {
@@ -392,12 +413,8 @@ fn yes_no(value: bool) -> &'static str {
 
 fn upload_payload(payload: &[u8]) -> UploadOutcome {
     let timeout_arg = UPLOAD_TIMEOUT_SECS.to_string();
-    // `--insecure` skips TLS verification. MiSTer ships with an outdated
-    // CA bundle and a clock that's wrong until NTP syncs minutes after
-    // boot, both of which make standard verification fail. The frontend
-    // is uploading a log to a known endpoint owned by the project — the
-    // payload is not sensitive and the destination is hard-coded — so
-    // accepting any cert is the right trade-off.
+    // MiSTer commonly has an outdated CA bundle and incorrect clock before NTP sync.
+    // Keep support log upload usable there.
     let mut child = match Command::new("curl")
         .args([
             "--silent",
@@ -421,9 +438,12 @@ fn upload_payload(payload: &[u8]) -> UploadOutcome {
 
     if let Some(mut stdin) = child.stdin.take() {
         if let Err(e) = stdin.write_all(payload) {
+            drop(stdin);
+            reap_child_after_stdin_failure(&mut child);
             return UploadOutcome::Error(format!("curl upload write failed: {e}"));
         }
     } else {
+        reap_child_after_stdin_failure(&mut child);
         return UploadOutcome::Error("curl stdin was not available".into());
     }
 
@@ -452,6 +472,15 @@ fn upload_payload(payload: &[u8]) -> UploadOutcome {
     UploadOutcome::Success(url)
 }
 
+fn reap_child_after_stdin_failure(child: &mut Child) {
+    if let Err(e) = child.kill() {
+        warn!("failed to stop curl after stdin failure: {e}");
+    }
+    if let Err(e) = child.wait() {
+        warn!("failed to reap curl after stdin failure: {e}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -461,9 +490,10 @@ mod tests {
     )]
 
     use super::{
-        build_upload_payload, read_file_tail, CoreLogSource, PAYLOAD_LIMIT_BYTES,
-        PER_LOG_LIMIT_BYTES, SUPPORT_SUMMARY_LIMIT_BYTES,
+        build_upload_payload, decode_base64_tail, read_file_tail, CoreLogSource,
+        PAYLOAD_LIMIT_BYTES, PER_LOG_LIMIT_BYTES, SUPPORT_SUMMARY_LIMIT_BYTES,
     };
+    use base64::Engine as _;
     use std::io::Write;
 
     #[test]
@@ -525,5 +555,14 @@ mod tests {
 
         assert!(text.contains("front"));
         assert!(text.contains("core.log unavailable: not connected"));
+    }
+
+    #[test]
+    fn decode_base64_tail_keeps_only_capped_decoded_tail() {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(b"0123456789");
+
+        let bytes = decode_base64_tail(encoded.as_bytes(), 4).expect("decode tail");
+
+        assert_eq!(bytes, b"6789");
     }
 }

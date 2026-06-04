@@ -283,14 +283,20 @@ Item {
     }
 
     // Walk from `from` in `direction` (±1) until we hit a focusable
-    // row or run off the registry. Headers are transparent — Up/Down
-    // skip across them so the user feels a single flat list.
+    // row. Headers are transparent, and edges wrap so Up on the first
+    // field lands on the last field (and vice versa).
     function _seekNavigable(from: int, direction: int): int {
-        let i = from + direction;
-        while (i >= 0 && i < settings.fieldCount) {
+        if (settings.fieldCount <= 0)
+            return from;
+        let i = from;
+        for (let steps = 0; steps < settings.fieldCount; steps++) {
+            i += direction;
+            if (i < 0)
+                i = settings.fieldCount - 1;
+            else if (i >= settings.fieldCount)
+                i = 0;
             if (settings.fields[i].kind === "field")
                 return i;
-            i += direction;
         }
         return from;
     }
