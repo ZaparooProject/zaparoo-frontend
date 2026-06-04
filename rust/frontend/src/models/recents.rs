@@ -1006,11 +1006,10 @@ fn launch_entry(entry: &MediaHistoryEntry) {
     if text.is_empty() {
         return;
     }
-    let name = entry.media_name.clone();
     let store = global_store();
     global_handle().spawn(async move {
         if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
-            warn!("run failed for {name}: {}", e.message);
+            warn!("run failed: {}", e.message);
         }
     });
 }
@@ -1024,12 +1023,10 @@ fn launch_text_for(entry: &MediaHistoryEntry) -> String {
 }
 
 fn resume_entry(entries: &[MediaHistoryEntry]) -> Option<&MediaHistoryEntry> {
-    let entry = entries.first()?;
-    if launch_text_for(entry).is_empty() || !resume_entry_is_fresh(entry, OffsetDateTime::now_utc())
-    {
-        return None;
-    }
-    Some(entry)
+    let now = OffsetDateTime::now_utc();
+    entries
+        .iter()
+        .find(|entry| !launch_text_for(entry).is_empty() && resume_entry_is_fresh(entry, now))
 }
 
 fn resume_entry_is_fresh(entry: &MediaHistoryEntry, now: OffsetDateTime) -> bool {
@@ -1038,10 +1035,10 @@ fn resume_entry_is_fresh(entry: &MediaHistoryEntry, now: OffsetDateTime) -> bool
         .as_deref()
         .unwrap_or(entry.started_at.as_str());
     if timestamp.trim().is_empty() {
-        return true;
+        return false;
     }
     let Ok(played_at) = OffsetDateTime::parse(timestamp, &Rfc3339) else {
-        return true;
+        return false;
     };
     now - played_at <= TimeDuration::days(RESUME_MAX_AGE_DAYS)
 }
@@ -1131,17 +1128,22 @@ mod tests {
     }
 
     #[test]
-    fn resume_entry_requires_launchable_first_entry() {
+    fn resume_entry_requires_launchable_entry() {
         assert!(resume_entry(&[]).is_none());
         let e = entry("ghost", "", "NES", "NES");
         assert!(resume_entry(&[e]).is_none());
     }
 
     #[test]
-    fn resume_entry_accepts_launchable_entry_with_missing_timestamp() {
-        let e = entry("smb", "/p/smb", "NES", "NES");
+    fn resume_entry_skips_stale_or_malformed_entries() {
+        let mut stale = entry("old", "/p/old", "NES", "NES");
+        stale.started_at = "2026-05-01T00:00:00Z".into();
+        let mut malformed = entry("bad", "/p/bad", "NES", "NES");
+        malformed.started_at = "not-a-date".into();
+        let mut recent = entry("smb", "/p/smb", "NES", "NES");
+        recent.started_at = "2026-06-01T00:00:00Z".into();
         assert_eq!(
-            resume_entry(&[e]).map(|entry| entry.media_name.as_str()),
+            resume_entry(&[stale, malformed, recent]).map(|entry| entry.media_name.as_str()),
             Some("smb")
         );
     }
@@ -1169,11 +1171,11 @@ mod tests {
     }
 
     #[test]
-    fn resume_entry_freshness_accepts_missing_or_malformed_timestamp() {
+    fn resume_entry_freshness_rejects_missing_or_malformed_timestamp() {
         let mut e = entry("smb", "/p/smb", "NES", "NES");
-        assert!(resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
+        assert!(!resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
         e.started_at = "not-a-date".into();
-        assert!(resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
+        assert!(!resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
     }
 
     #[test]

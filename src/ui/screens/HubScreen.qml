@@ -37,9 +37,9 @@ import Zaparoo.Browse as Browse
 // clamped into the destination row. The formula is symmetric and
 // generalizes for any (topCount, bottomCount); see `_mapCrossRow`.
 //
-// Pure input dispatcher: emits one of `requestAccept(category)`,
-// `requestResumeGame`, `requestFavoritesScreen`,
-// `requestRecentsScreen`, `requestSettingsScreen`, or `requestQuit`.
+// Pure input dispatcher: emits one of `requestAccept(payload)`,
+// `requestFavoritesScreen`, `requestRecentsScreen`,
+// `requestSettingsScreen`, or `requestQuit`.
 //
 // All cross-screen orchestration (model fills, deferred set_category,
 // cover prefetch, transition overlay, screen flip) lives in Main.qml.
@@ -65,7 +65,6 @@ Item {
 
     signal requestAccept(category: string)
     signal requestQuit
-    signal requestResumeGame
     signal requestFavoritesScreen
     signal requestRecentsScreen
     signal requestSettingsScreen
@@ -323,7 +322,7 @@ Item {
 
         const id = hub.actionEntries[hub.currentIndex].id;
         if (id === "resume")
-            hub.requestResumeGame();
+            hub.requestAccept("resume");
         else if (id === "favorites")
             hub.requestFavoritesScreen();
         else if (id === "recents")

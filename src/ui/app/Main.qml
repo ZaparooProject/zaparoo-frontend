@@ -435,14 +435,20 @@ MainLayout {
 
     // Hub Accept routing. Empty-row passthrough preserves the committed
     // "Enter on empty hub goes to Systems" behaviour and
-    // keeps the navigation test synchronous. Otherwise: tentatively
-    // pin the destination to Systems, fill the chosen category, then
-    // either bypass to Games (MiSTer Arcade singleton) or fall
-    // through to Systems with a cover-prefetch warmup so the
-    // destination paints with logos already in QPixmapCache.
+    // keeps the navigation test synchronous. The Resume action is a
+    // hub payload rather than a category and launches the latest
+    // resumable history row. Otherwise: tentatively pin the
+    // destination to Systems, fill the chosen category, then either
+    // bypass to Games (MiSTer Arcade singleton) or fall through to
+    // Systems with a cover-prefetch warmup so the destination paints
+    // with logos already in QPixmapCache.
     function _navigateFromHub(category: string): void {
         if (category === "") {
             root._goto(root.screenSystems);
+            return;
+        }
+        if (category === "resume") {
+            Browse.RecentsModel.launch_resume();
             return;
         }
         Browse.HubState.category = category;
@@ -585,9 +591,6 @@ MainLayout {
         }
         function onRequestQuit(): void {
             root.openQuitConfirmModal();
-        }
-        function onRequestResumeGame(): void {
-            Browse.RecentsModel.launch_resume();
         }
         function onRequestFavoritesScreen(): void {
             root._navigateToFavorites();
