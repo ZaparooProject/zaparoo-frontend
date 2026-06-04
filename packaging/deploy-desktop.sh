@@ -112,7 +112,12 @@ done
 
 info "Copying licenses..."
 cp "${PROJECT_ROOT}/COPYING" "${DEPLOY_DIR}/"
-cp "${PROJECT_ROOT}/src/LICENSES/"* "${DEPLOY_DIR}/"
+LICENSE_FILES=("${PROJECT_ROOT}/src/LICENSES/"*)
+if [ "${#LICENSE_FILES[@]}" -gt 0 ] && [ -e "${LICENSE_FILES[0]}" ]; then
+    cp "${LICENSE_FILES[@]}" "${DEPLOY_DIR}/"
+else
+    warn "No license files found in ${PROJECT_ROOT}/src/LICENSES"
+fi
 
 info "Creating frontend script..."
 cat > "${DEPLOY_DIR}/run.sh" << 'EOF'
