@@ -183,6 +183,10 @@ Item {
     readonly property bool _indexBusy: Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing
     readonly property bool _scrapeBusy: Browse.MediaStatus.scraping
     property bool rescrapeExisting: false
+    // Keep the one-shot force flag visible while the scrape it started
+    // is active; clear it only after Core reports the scrape stopped.
+    property bool _activeScrapeUsedRescrape: false
+    readonly property bool _visibleRescrapeExisting: settings._scrapeBusy && Browse.MediaStatus.scrape_force_known ? Browse.MediaStatus.scrape_force : settings.rescrapeExisting
 
     // Drive the top/bottom scroll chevrons. Mirrors PagedGrid's
     // `hasPagesAbove`/`hasPagesBelow` recipe, but for a continuous
@@ -207,8 +211,15 @@ Item {
         if (settings._scrapeBusy)
             Browse.MediaStatus.cancel_scrape();
         else {
+            settings._activeScrapeUsedRescrape = settings.rescrapeExisting;
             Browse.MediaStatus.start_scrape(settings.rescrapeExisting);
+        }
+    }
+
+    on_ScrapeBusyChanged: {
+        if (!settings._scrapeBusy && settings._activeScrapeUsedRescrape) {
             settings.rescrapeExisting = false;
+            settings._activeScrapeUsedRescrape = false;
         }
     }
 
@@ -256,7 +267,7 @@ Item {
         if (id === "discoverArcadeAlternateVersions")
             return Browse.Settings.current_discover_arcade_alternate_versions;
         if (id === "rescrapeExisting")
-            return settings.rescrapeExisting;
+            return settings._visibleRescrapeExisting;
         return Browse.Settings.current_mouse_enabled;
     }
 

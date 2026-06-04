@@ -700,6 +700,10 @@ pub struct ScrapeSystemProgressResponse {
 /// from upstream. `total_steps` / `current_step` carry whole-run system
 /// progress; flat counters remain the per-current-system compatibility
 /// surface.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "wire-faithful mirror of Core's ScrapingStatusResponse"
+)]
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScrapingStatusResponse {
@@ -729,6 +733,8 @@ pub struct ScrapingStatusResponse {
     pub skipped: i32,
     #[serde(default)]
     pub total_scraped: i32,
+    #[serde(default)]
+    pub force: Option<bool>,
     #[serde(default)]
     pub scraping: bool,
     #[serde(default)]
@@ -1980,6 +1986,7 @@ mod tests {
             "matched": 10,
             "skipped": 2,
             "totalScraped": 50,
+            "force": true,
             "scraping": true,
             "done": false,
             "paused": false
@@ -2003,6 +2010,7 @@ mod tests {
         assert_eq!(result.matched, 10);
         assert_eq!(result.skipped, 2);
         assert_eq!(result.total_scraped, 50);
+        assert_eq!(result.force, Some(true));
         assert!(result.scraping);
         assert!(!result.done);
     }

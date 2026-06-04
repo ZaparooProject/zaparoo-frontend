@@ -66,6 +66,8 @@ pub struct MediaStatusState {
     pub scrape_matched: i32,
     pub scrape_skipped: i32,
     pub scrape_total_scraped: i32,
+    pub scrape_force: bool,
+    pub scrape_force_known: bool,
     pub scrape_system_id: String,
     pub scrape_scraper_id: String,
     pub scrape_state: String,
@@ -101,6 +103,8 @@ impl MediaStatusState {
         self.scrape_matched = status.matched;
         self.scrape_skipped = status.skipped;
         self.scrape_total_scraped = status.total_scraped;
+        self.scrape_force = status.force.unwrap_or(false);
+        self.scrape_force_known = status.force.is_some();
         self.scrape_system_id.clone_from(&status.system_id);
         self.scrape_scraper_id.clone_from(&status.scraper_id);
         self.scrape_state.clone_from(&status.state);
@@ -376,7 +380,7 @@ mod tests {
             "state": "running", "currentStep": 2, "totalSteps": 5,
             "currentStepDisplay": "Super Nintendo",
             "processed": 12, "total": 200, "matched": 10, "skipped": 2,
-            "totalScraped": 50, "scraping": true, "done": false, "paused": false
+            "totalScraped": 50, "force": true, "scraping": true, "done": false, "paused": false
         });
         fold_notification(
             &Notification {
@@ -389,6 +393,8 @@ mod tests {
         assert!(snapshot.scraping);
         assert_eq!(snapshot.scrape_processed, 12);
         assert_eq!(snapshot.scrape_total, 200);
+        assert!(snapshot.scrape_force);
+        assert!(snapshot.scrape_force_known);
         assert_eq!(snapshot.scrape_system_id, "SNES");
         assert_eq!(snapshot.scrape_state, "running");
         assert_eq!(snapshot.scrape_current_step, 2);
@@ -397,6 +403,26 @@ mod tests {
         // `scraped`-side notifications must not flip the indexing
         // `seeded` flag — that's the `media` query's job.
         assert!(!snapshot.seeded);
+    }
+
+    #[test]
+    fn fold_notification_keeps_scrape_force_unknown_when_missing() {
+        let (tx, rx) = watch::channel(MediaStatusState::default());
+        let tx = Arc::new(tx);
+        fold_notification(
+            &Notification {
+                method: "media.scraping".into(),
+                params: json!({
+                    "scraperId": "screenscraper", "scraping": true,
+                    "done": false, "paused": false
+                }),
+            },
+            &tx,
+        );
+        let snapshot = rx.borrow().clone();
+        assert!(snapshot.scraping);
+        assert!(!snapshot.scrape_force);
+        assert!(!snapshot.scrape_force_known);
     }
 
     #[test]

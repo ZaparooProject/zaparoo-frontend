@@ -57,6 +57,8 @@ pub struct MediaStatusRust {
     scrape_matched: i32,
     scrape_skipped: i32,
     scrape_total_scraped: i32,
+    scrape_force: bool,
+    scrape_force_known: bool,
     scrape_system_id: QString,
     scrape_scraper_id: QString,
     scrape_state: QString,
@@ -96,6 +98,8 @@ pub mod ffi {
         #[qproperty(i32, scrape_matched)]
         #[qproperty(i32, scrape_skipped)]
         #[qproperty(i32, scrape_total_scraped)]
+        #[qproperty(bool, scrape_force)]
+        #[qproperty(bool, scrape_force_known)]
         #[qproperty(QString, scrape_system_id)]
         #[qproperty(QString, scrape_scraper_id)]
         #[qproperty(QString, scrape_state)]
@@ -150,6 +154,8 @@ struct Snapshot {
     scrape_matched: i32,
     scrape_skipped: i32,
     scrape_total_scraped: i32,
+    scrape_force: bool,
+    scrape_force_known: bool,
     scrape_system_id: QString,
     scrape_scraper_id: QString,
     scrape_state: QString,
@@ -179,6 +185,8 @@ fn project(state: &MediaStatusState) -> Snapshot {
         scrape_matched: state.scrape_matched,
         scrape_skipped: state.scrape_skipped,
         scrape_total_scraped: state.scrape_total_scraped,
+        scrape_force: state.scrape_force,
+        scrape_force_known: state.scrape_force_known,
         scrape_system_id: QString::from(state.scrape_system_id.as_str()),
         scrape_scraper_id: QString::from(state.scrape_scraper_id.as_str()),
         scrape_state: QString::from(state.scrape_state.as_str()),
@@ -320,6 +328,12 @@ fn apply(mut model: Pin<&mut ffi::MediaStatus>, s: Snapshot) {
             .as_mut()
             .set_scrape_total_scraped(s.scrape_total_scraped);
     }
+    if model.scrape_force != s.scrape_force {
+        model.as_mut().set_scrape_force(s.scrape_force);
+    }
+    if model.scrape_force_known != s.scrape_force_known {
+        model.as_mut().set_scrape_force_known(s.scrape_force_known);
+    }
     if model.scrape_system_id != s.scrape_system_id {
         model.as_mut().set_scrape_system_id(s.scrape_system_id);
     }
@@ -374,6 +388,8 @@ mod tests {
             scrape_matched: 0,
             scrape_skipped: 0,
             scrape_total_scraped: 0,
+            scrape_force: false,
+            scrape_force_known: false,
             scrape_system_id: String::new(),
             scrape_scraper_id: String::new(),
             scrape_state: String::new(),
@@ -405,6 +421,8 @@ mod tests {
             scrape_matched: 10,
             scrape_skipped: 2,
             scrape_total_scraped: 50,
+            scrape_force: true,
+            scrape_force_known: true,
             scrape_system_id: "SNES".into(),
             scrape_scraper_id: "screenscraper".into(),
             scrape_state: "running".into(),
@@ -420,6 +438,8 @@ mod tests {
         assert_eq!(snapshot.scrape_matched, 10);
         assert_eq!(snapshot.scrape_skipped, 2);
         assert_eq!(snapshot.scrape_total_scraped, 50);
+        assert!(snapshot.scrape_force);
+        assert!(snapshot.scrape_force_known);
         assert_eq!(snapshot.scrape_system_id, QString::from("SNES"));
         assert_eq!(snapshot.scrape_scraper_id, QString::from("screenscraper"));
         assert_eq!(snapshot.scrape_state, QString::from("running"));
