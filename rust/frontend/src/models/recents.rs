@@ -1040,6 +1040,9 @@ fn resume_entry_is_fresh(entry: &MediaHistoryEntry, now: OffsetDateTime) -> bool
     let Ok(played_at) = OffsetDateTime::parse(timestamp, &Rfc3339) else {
         return false;
     };
+    if played_at > now {
+        return false;
+    }
     now - played_at <= TimeDuration::days(RESUME_MAX_AGE_DAYS)
 }
 
@@ -1113,7 +1116,10 @@ mod tests {
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
     use std::collections::HashSet;
-    use time::macros::datetime;
+    use time::{
+        format_description::well_known::Rfc3339, macros::datetime, Duration as TimeDuration,
+        OffsetDateTime,
+    };
     use zaparoo_core::media_types::{MediaHistoryEntry, MediaHistoryResult, Pagination};
     use zaparoo_core::remote_resource::ResourceStatus;
 
@@ -1136,12 +1142,13 @@ mod tests {
 
     #[test]
     fn resume_entry_skips_stale_or_malformed_entries() {
+        let now = OffsetDateTime::now_utc();
         let mut stale = entry("old", "/p/old", "NES", "NES");
-        stale.started_at = "2026-05-01T00:00:00Z".into();
+        stale.started_at = (now - TimeDuration::days(30)).format(&Rfc3339).unwrap();
         let mut malformed = entry("bad", "/p/bad", "NES", "NES");
         malformed.started_at = "not-a-date".into();
         let mut recent = entry("smb", "/p/smb", "NES", "NES");
-        recent.started_at = "2026-06-01T00:00:00Z".into();
+        recent.started_at = (now - TimeDuration::days(1)).format(&Rfc3339).unwrap();
         assert_eq!(
             resume_entry(&[stale, malformed, recent]).map(|entry| entry.media_name.as_str()),
             Some("smb")
@@ -1175,6 +1182,13 @@ mod tests {
         let mut e = entry("smb", "/p/smb", "NES", "NES");
         assert!(!resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
         e.started_at = "not-a-date".into();
+        assert!(!resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
+    }
+
+    #[test]
+    fn resume_entry_freshness_rejects_future_timestamp() {
+        let mut e = entry("smb", "/p/smb", "NES", "NES");
+        e.started_at = "2026-06-04T00:00:00Z".into();
         assert!(!resume_entry_is_fresh(&e, datetime!(2026-06-03 00:00 UTC)));
     }
 

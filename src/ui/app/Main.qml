@@ -50,6 +50,7 @@ MainLayout {
     property string _pendingLanguageSelection: ""
     property string _pendingResolutionSelection: ""
     property bool _discoverMenuPending: false
+    property bool _resumeStartupFocusPending: false
     property var _discoverParentEntries: []
     property string _pendingLauncherSystemId: ""
     property string _pendingLauncherSelectionId: ""
@@ -115,8 +116,12 @@ MainLayout {
         // Connection below fires it on first delivery.
         if (Browse.CategoriesModel.count > 0)
             root.hubScreen.restoreFromCategoriesReset();
-        if (root.activeScreen === root.screenHub && Browse.RecentsModel.resume_available)
-            root.hubScreen.focusResumeIfAvailable();
+        if (root.activeScreen === root.screenHub) {
+            if (Browse.RecentsModel.resume_available)
+                root.hubScreen.focusResumeIfAvailable();
+            else
+                root._resumeStartupFocusPending = true;
+        }
         // Warm-start into Favorites/Recents needs the same
         // restore-on-ready dance the navigate helpers perform,
         // otherwise the grid lands on index 0 and ignores persisted
@@ -377,6 +382,13 @@ MainLayout {
                 return;
             root._recentsReadyCallback = null;
             cb();
+        }
+        function onResume_availableChanged(): void {
+            if (!root._resumeStartupFocusPending || !Browse.RecentsModel.resume_available)
+                return;
+            root._resumeStartupFocusPending = false;
+            if (root.activeScreen === root.screenHub)
+                root.hubScreen.focusResumeIfAvailable();
         }
     }
     Connections {
