@@ -19,8 +19,10 @@
 //     and the seq ticket that disarms stale callbacks.
 //
 // History is flat (no folder navigation, no auto-nav) so this model
-// stays a fraction of the size of `GamesModel`. Card-write isn't wired
-// here yet — recents launches by `run`-ing the entry's launcher route.
+// stays a fraction of the size of `GamesModel`. Rows are deduplicated
+// by exact `mediaPath`; Core returns newest-first history, so the first
+// row for a path is the one shown. Card-write isn't wired here yet —
+// recents launches by `run`-ing the entry's launcher route.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
 use crate::models::{global_handle, global_store};
@@ -274,6 +276,7 @@ fn apply_state(
         // any in-flight `fetch_more` sees a stale ticket and bails.
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().ensure_cover_subscription();
+        let entries = dedupe_latest_by_path(entries);
         if !model.cover_requests_paused {
             enqueue_recents_covers(&entries);
         }
@@ -1056,6 +1059,38 @@ fn position_of_path(entries: &[MediaHistoryEntry], needle: &str) -> i32 {
         .map_or(-1, |i| i as i32)
 }
 
+/// Keep the newest history row for each exact, non-empty path. Core
+/// returns history newest-first, so preserving the first occurrence
+/// implements latest-wins without parsing timestamps. Empty paths are
+/// malformed/unlaunchable and stay as-is instead of all collapsing into
+/// one bucket.
+fn dedupe_latest_by_path(entries: Vec<MediaHistoryEntry>) -> Vec<MediaHistoryEntry> {
+    filter_entries_by_path(std::iter::empty::<&MediaHistoryEntry>(), entries)
+}
+
+fn filter_entries_by_path<'a, I>(
+    existing_entries: I,
+    incoming_entries: Vec<MediaHistoryEntry>,
+) -> Vec<MediaHistoryEntry>
+where
+    I: IntoIterator<Item = &'a MediaHistoryEntry>,
+{
+    let mut seen = existing_entries
+        .into_iter()
+        .filter_map(|entry| {
+            if entry.media_path.is_empty() {
+                None
+            } else {
+                Some(entry.media_path.clone())
+            }
+        })
+        .collect::<HashSet<_>>();
+    incoming_entries
+        .into_iter()
+        .filter(|entry| entry.media_path.is_empty() || seen.insert(entry.media_path.clone()))
+        .collect()
+}
+
 fn apply_append_page(
     mut model: Pin<&mut ffi::RecentsModel>,
     result: Result<MediaHistoryResult, ClientError>,
@@ -1071,16 +1106,17 @@ fn apply_append_page(
         Ok(result) => {
             let has_next_page = result.has_next_page();
             let next_cursor = result.next_cursor();
-            let new_count = i32::try_from(result.entries.len()).unwrap_or(i32::MAX - model.count);
+            let entries = filter_entries_by_path(model.entries.iter(), result.entries);
+            let new_count = i32::try_from(entries.len()).unwrap_or(i32::MAX - model.count);
             if !model.cover_requests_paused {
-                enqueue_recents_covers(&result.entries);
+                enqueue_recents_covers(&entries);
             }
             if new_count > 0 {
                 let first = model.count;
                 let last = first.saturating_add(new_count).saturating_sub(1);
                 let parent = QModelIndex::default();
                 model.as_mut().begin_insert_rows(&parent, first, last);
-                model.as_mut().rust_mut().entries.extend(result.entries);
+                model.as_mut().rust_mut().entries.extend(entries);
                 model.as_mut().rust_mut().count = first.saturating_add(new_count);
                 model.as_mut().end_insert_rows();
                 model.as_mut().count_changed();
@@ -1110,9 +1146,9 @@ mod tests {
     )]
 
     use super::{
-        compute_unresolved_keys, cover_key_for_with, launch_text_for, media_key_for,
-        position_of_path, project, resume_cover_key_for_with, resume_entry, resume_entry_is_fresh,
-        RESUME_FALLBACK_COVER_KEY,
+        compute_unresolved_keys, cover_key_for_with, dedupe_latest_by_path, filter_entries_by_path,
+        launch_text_for, media_key_for, position_of_path, project, resume_cover_key_for_with,
+        resume_entry, resume_entry_is_fresh, RESUME_FALLBACK_COVER_KEY,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
     use std::collections::HashSet;
@@ -1310,6 +1346,55 @@ mod tests {
         // Empty here suppresses the run entirely.
         let e = entry("ghost", "", "NES", "NES");
         assert_eq!(launch_text_for(&e), "");
+    }
+
+    #[test]
+    fn dedupe_latest_by_path_keeps_first_matching_path() {
+        let entries = dedupe_latest_by_path(vec![
+            entry("latest smb", "/p/smb", "NES", "NES"),
+            entry("zelda", "/p/zelda", "NES", "NES"),
+            entry("older smb", "/p/smb", "NES", "NES"),
+            entry("metroid", "/p/metroid", "NES", "NES"),
+        ]);
+        let names = entries
+            .iter()
+            .map(|entry| entry.media_name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["latest smb", "zelda", "metroid"]);
+    }
+
+    #[test]
+    fn filter_entries_by_path_skips_existing_and_later_incoming_duplicates() {
+        let existing = [entry("latest smb", "/p/smb", "NES", "NES")];
+        let entries = filter_entries_by_path(
+            existing.iter(),
+            vec![
+                entry("older smb", "/p/smb", "NES", "NES"),
+                entry("latest zelda", "/p/zelda", "NES", "NES"),
+                entry("older zelda", "/p/zelda", "NES", "NES"),
+                entry("metroid", "/p/metroid", "NES", "NES"),
+            ],
+        );
+        let names = entries
+            .iter()
+            .map(|entry| entry.media_name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["latest zelda", "metroid"]);
+    }
+
+    #[test]
+    fn dedupe_latest_by_path_preserves_empty_paths() {
+        let entries = dedupe_latest_by_path(vec![
+            entry("ghost one", "", "NES", "NES"),
+            entry("smb", "/p/smb", "NES", "NES"),
+            entry("ghost two", "", "NES", "NES"),
+            entry("older smb", "/p/smb", "NES", "NES"),
+        ]);
+        let names = entries
+            .iter()
+            .map(|entry| entry.media_name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["ghost one", "smb", "ghost two"]);
     }
 
     #[test]
