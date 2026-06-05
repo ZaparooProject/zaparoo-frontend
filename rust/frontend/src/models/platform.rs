@@ -44,6 +44,8 @@ pub mod ffi {
 
 impl Initialize for ffi::Platform {
     fn initialize(mut self: Pin<&mut Self>) {
+        let started = std::time::Instant::now();
+        crate::startup_trace("rust:model Platform init start");
         let mut rx = platform::subscribe();
         apply_state(self.as_mut(), project(rx.borrow_and_update().as_ref()));
 
@@ -54,6 +56,10 @@ impl Initialize for ffi::Platform {
                 let _ = qt_thread.queue(move |m| apply_state(m, next));
             }
         });
+        crate::startup_trace(format!(
+            "rust:model Platform init end dur_ms={}",
+            started.elapsed().as_millis()
+        ));
     }
 }
 

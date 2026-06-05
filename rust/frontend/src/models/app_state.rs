@@ -42,11 +42,17 @@ pub mod ffi {
 
 impl Initialize for ffi::AppState {
     fn initialize(mut self: Pin<&mut Self>) {
+        let started = std::time::Instant::now();
+        crate::startup_trace("rust:model AppState init start");
         let snapshot = with_persist_read(|s| s.active_screen.clone());
         self.as_mut().rust_mut().active_screen = QString::from(snapshot.as_str());
         // No *_changed emits here: QML bindings haven't attached yet
         // during Initialize, and Main.qml reads the property directly
         // in Component.onCompleted.
+        crate::startup_trace(format!(
+            "rust:model AppState init end dur_ms={}",
+            started.elapsed().as_millis()
+        ));
     }
 }
 

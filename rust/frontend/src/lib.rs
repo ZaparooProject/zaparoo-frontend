@@ -39,11 +39,11 @@ use std::io::Write as _;
 use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use zaparoo_core::{
     client::Client,
     config::load_config,
-    logger::install,
+    logger::{debug_logging_enabled, install},
     persist, platform,
     platform_paths::{config_file_path, log_file_path, stderr_log_path},
     store::Store,
@@ -110,6 +110,19 @@ static LANGUAGE_CODE: OnceLock<CString> = OnceLock::new();
 static CRT_NATIVE_PATH_ENABLED: OnceLock<bool> = OnceLock::new();
 static VIDEO_WIDTH: OnceLock<u32> = OnceLock::new();
 static VIDEO_HEIGHT: OnceLock<u32> = OnceLock::new();
+static DEBUG_LOGGING_ENABLED: OnceLock<bool> = OnceLock::new();
+static STARTUP_TRACE_ORIGIN: OnceLock<Instant> = OnceLock::new();
+
+pub(crate) fn startup_trace(stage: impl AsRef<str>) {
+    if !DEBUG_LOGGING_ENABLED.get().copied().unwrap_or(false) {
+        return;
+    }
+    let stage = stage.as_ref();
+    let elapsed_ms = STARTUP_TRACE_ORIGIN
+        .get()
+        .map_or(0, |origin| origin.elapsed().as_millis());
+    tracing::debug!(target: "startup", elapsed_ms, stage, "startup trace");
+}
 
 /// Returns the resolved UI language override as a NUL-terminated UTF-8
 /// string. An empty string signals "follow `QLocale::system()`"; any
@@ -145,6 +158,23 @@ pub extern "C" fn zaparoo_rust_video_width() -> u32 {
 #[no_mangle]
 pub extern "C" fn zaparoo_rust_video_height() -> u32 {
     VIDEO_HEIGHT.get().copied().unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn zaparoo_rust_debug_logging_enabled() -> bool {
+    DEBUG_LOGGING_ENABLED.get().copied().unwrap_or(false)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn zaparoo_rust_trace_startup(stage_ptr: *const u8, stage_len: usize) {
+    if stage_ptr.is_null() || stage_len == 0 {
+        startup_trace("cpp:<empty>");
+        return;
+    }
+    // SAFETY: Caller guarantees a valid UTF-8 slice for this call.
+    let stage =
+        unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(stage_ptr, stage_len)) };
+    startup_trace(stage);
 }
 
 /// Installs a panic hook that routes Rust panics through the tracing
@@ -300,6 +330,7 @@ fn install_crash_signal_handler() {
 /// Returns 0 on success.
 #[no_mangle]
 pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
+    let _ = STARTUP_TRACE_ORIGIN.set(Instant::now());
     // FIRST: redirect our own stderr to a file so any panic, abort, or
     // glibc diagnostic in the rest of init lands on disk instead of in
     // the wrapper's /dev/null. Independent of tracing — must run before
@@ -308,6 +339,9 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
 
     let config_path = config_file_path();
     let mut config = load_config(&config_path);
+    let debug_logging = debug_logging_enabled(&config);
+    let _ = DEBUG_LOGGING_ENABLED.set(debug_logging);
+    startup_trace("rust:init config loaded");
 
     // CRT path always renders to the native writer's fixed 320x240 RGB8888
     // linuxfb surface. User-configured [video] dimensions still apply to the
@@ -327,21 +361,25 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
     let _ = CRT_NATIVE_PATH_ENABLED.set(crt_native_path_forced);
     let _ = VIDEO_WIDTH.set(config.video_width);
     let _ = VIDEO_HEIGHT.set(config.video_height);
+    startup_trace("rust:init config cached");
 
     // Leak the guard — it must live for the process lifetime to keep the
     // file-appender thread running. The OS reclaims it on exit.
     let guard = install(&config);
     Box::leak(Box::new(guard));
+    startup_trace("rust:logger installed");
 
     // Install after logging so panics go through the same sinks; before
     // tokio / client setup so a panic during those lines is captured.
     install_panic_hook();
+    startup_trace("rust:panic hook installed");
 
     // Catches native crashes (SIGSEGV/SIGBUS/SIGABRT/SIGILL/SIGFPE) that
     // never enter the Rust panic hook — cxx-qt FFI faults, static-Qt
     // platform code, qFatal() aborts. Writes a boundary marker to
     // frontend.log before re-raising with the default disposition.
     install_crash_signal_handler();
+    startup_trace("rust:crash handler installed");
 
     tracing::info!("Zaparoo Frontend starting");
     tracing::info!(
@@ -360,16 +398,22 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
         }
     };
     let handle = runtime.handle().clone();
+    startup_trace("rust:tokio runtime built");
 
     mister_runtime::apply_pre_qt_setup(&config, crt_native_path_forced);
+    startup_trace("rust:mister pre-qt setup done");
 
     let client = Client::new(config.core_endpoint.clone(), &handle);
+    startup_trace("rust:client created");
     platform::spawn_fetcher(client.clone(), &handle);
+    startup_trace("rust:platform fetcher spawned");
     let store = Store::new(client.clone(), handle.clone());
+    startup_trace("rust:store created");
 
     // Load persisted UI state up front so per-screen singletons can seed
     // their properties from a consistent snapshot during Initialize.
     let persist_state = Arc::new(Mutex::new(persist::load()));
+    startup_trace("rust:persist loaded");
 
     // init_globals takes the owning `Runtime` — the static holder is
     // what `zaparoo_rust_shutdown` later drains via `shutdown_timeout`.
@@ -382,6 +426,7 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
         config.key_to_action.clone(),
         core_is_local,
     );
+    startup_trace("rust:model globals initialized");
 
     0
 }
@@ -406,6 +451,7 @@ pub extern "C" fn zaparoo_rust_shutdown() {
 #[no_mangle]
 pub extern "C" fn zaparoo_rust_post_qt_start() {
     mister_runtime::ensure_core_service_running();
+    startup_trace("rust:core service start requested");
 }
 
 fn core_endpoint_is_loopback(endpoint: &str) -> bool {

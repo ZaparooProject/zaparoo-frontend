@@ -29,9 +29,12 @@ fn debug_env_is_truthy(val: &str) -> bool {
     val != "0" && val != "false"
 }
 
+pub fn debug_logging_enabled(config: &Config) -> bool {
+    config.debug_logging || std::env::var("ZAPAROO_DEBUG").is_ok_and(|v| debug_env_is_truthy(&v))
+}
+
 pub fn install_at(config: &Config, log_path: &Path) -> LoggerGuard {
-    let debug = config.debug_logging
-        || std::env::var("ZAPAROO_DEBUG").is_ok_and(|v| debug_env_is_truthy(&v));
+    let debug = debug_logging_enabled(config);
 
     let file_appender = tracing_appender::rolling::never(
         log_path.parent().unwrap_or(Path::new(".")),

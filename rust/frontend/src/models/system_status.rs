@@ -71,15 +71,20 @@ pub mod ffi {
 
 impl Initialize for ffi::SystemStatus {
     fn initialize(mut self: Pin<&mut Self>) {
-        apply_local_status(self.as_mut(), probe_local_status());
+        let started = std::time::Instant::now();
+        crate::startup_trace("rust:model SystemStatus init start");
 
         let qt_thread = self.qt_thread();
         if let Err(e) = thread::Builder::new()
             .name("zaparoo-system-status".into())
-            .spawn(move || loop {
-                thread::sleep(LOCAL_PROBE_INTERVAL);
+            .spawn(move || {
                 let status = probe_local_status();
                 let _ = qt_thread.queue(move |model| apply_local_status(model, status));
+                loop {
+                    thread::sleep(LOCAL_PROBE_INTERVAL);
+                    let status = probe_local_status();
+                    let _ = qt_thread.queue(move |model| apply_local_status(model, status));
+                }
             })
         {
             warn!("failed to spawn system status probe thread: {e}");
@@ -88,6 +93,10 @@ impl Initialize for ffi::SystemStatus {
         if crate::models::core_is_local() {
             bind_local_readers(self.as_mut());
         }
+        crate::startup_trace(format!(
+            "rust:model SystemStatus init end dur_ms={}",
+            started.elapsed().as_millis()
+        ));
     }
 }
 
@@ -181,6 +190,7 @@ fn yes_no(value: bool) -> &'static str {
 }
 
 fn probe_local_status() -> LocalStatus {
+    let started = std::time::Instant::now();
     let network = default_network_kind()
         .filter(|_| internet_reachable())
         .map_or((false, false), |kind| match kind {
@@ -188,11 +198,19 @@ fn probe_local_status() -> LocalStatus {
             InterfaceKind::Lan => (false, true),
         });
 
-    LocalStatus {
+    let status = LocalStatus {
         has_wifi_internet: network.0,
         has_lan_internet: network.1,
         has_bluetooth: bluetooth_adapter_present(),
-    }
+    };
+    crate::startup_trace(format!(
+        "rust:model SystemStatus probe dur_ms={} wifi={} lan={} bt={}",
+        started.elapsed().as_millis(),
+        status.has_wifi_internet,
+        status.has_lan_internet,
+        status.has_bluetooth
+    ));
+    status
 }
 
 fn default_network_kind() -> Option<InterfaceKind> {

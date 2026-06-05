@@ -199,6 +199,8 @@ fn project(state: &MediaStatusState) -> Snapshot {
 
 impl Initialize for ffi::MediaStatus {
     fn initialize(mut self: Pin<&mut Self>) {
+        let started = std::time::Instant::now();
+        crate::startup_trace("rust:model MediaStatus init start");
         let resource = crate::models::global_store().media_status();
         let mut rx = resource.subscribe();
         apply(self.as_mut(), project(&rx.borrow_and_update()));
@@ -210,6 +212,10 @@ impl Initialize for ffi::MediaStatus {
                 let _ = qt_thread.queue(move |m| apply(m, snapshot));
             }
         });
+        crate::startup_trace(format!(
+            "rust:model MediaStatus init end dur_ms={}",
+            started.elapsed().as_millis()
+        ));
     }
 }
 

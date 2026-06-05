@@ -54,6 +54,11 @@ macro_rules! bind_to_endpoint {
         impl ::cxx_qt::Initialize for $target {
             fn initialize(mut self: ::std::pin::Pin<&mut Self>) {
                 use ::cxx_qt::Threading;
+                let __startup_trace_label = ::std::any::type_name::<$target>();
+                let __startup_trace_started = ::std::time::Instant::now();
+                $crate::startup_trace(format!(
+                    "rust:model init start type={__startup_trace_label}"
+                ));
                 let mut rx = $crate::models::global_store()
                     .subscribe::<$endpoint>($args)
                     .subscribe();
@@ -64,6 +69,10 @@ macro_rules! bind_to_endpoint {
                 // `Default::default()` placeholder.
                 let projected = $select(&*rx.borrow_and_update());
                 $apply(self.as_mut(), projected);
+                $crate::startup_trace(format!(
+                    "rust:model init seeded type={__startup_trace_label} dur_ms={}",
+                    __startup_trace_started.elapsed().as_millis()
+                ));
 
                 let qt_thread = self.qt_thread();
                 $crate::models::global_handle().spawn(async move {
@@ -72,6 +81,10 @@ macro_rules! bind_to_endpoint {
                         let _ = qt_thread.queue(move |m| $apply(m, projected));
                     }
                 });
+                $crate::startup_trace(format!(
+                    "rust:model init end type={__startup_trace_label} dur_ms={}",
+                    __startup_trace_started.elapsed().as_millis()
+                ));
             }
         }
     };

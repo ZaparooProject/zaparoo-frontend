@@ -223,6 +223,8 @@ pub mod ffi {
 
 impl Initialize for ffi::Settings {
     fn initialize(mut self: Pin<&mut Self>) {
+        let started = std::time::Instant::now();
+        crate::startup_trace("rust:model Settings init start");
         let snapshot: SettingsState = with_persist_read(|s| s.settings.clone());
         let config_path = config_file_path();
         let is_mister = runtime::current().is_mister();
@@ -258,6 +260,10 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().available_media_image_types = media_image_types();
         self.as_mut().rust_mut().current_media_image_type =
             QString::from(merged.media_image_type.as_str());
+        crate::startup_trace(format!(
+            "rust:model Settings init end dur_ms={}",
+            started.elapsed().as_millis()
+        ));
     }
 }
 

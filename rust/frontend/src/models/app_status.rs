@@ -91,8 +91,14 @@ pub mod ffi {
 
 impl Initialize for ffi::AppStatus {
     fn initialize(mut self: Pin<&mut Self>) {
+        let started = std::time::Instant::now();
+        crate::startup_trace("rust:model AppStatus init start");
         bind_catalog_status(self.as_mut());
         bind_link_state(self);
+        crate::startup_trace(format!(
+            "rust:model AppStatus init end dur_ms={}",
+            started.elapsed().as_millis()
+        ));
     }
 }
 

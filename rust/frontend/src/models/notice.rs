@@ -53,8 +53,14 @@ pub mod ffi {
 
 impl Initialize for ffi::Notice {
     fn initialize(mut self: Pin<&mut Self>) {
+        let started = std::time::Instant::now();
+        crate::startup_trace("rust:model Notice init start");
         let cfg = load_config(&config_file_path());
         self.as_mut().rust_mut().commercial_ack = cfg.notice.commercial_ack;
+        crate::startup_trace(format!(
+            "rust:model Notice init end dur_ms={}",
+            started.elapsed().as_millis()
+        ));
     }
 }
 

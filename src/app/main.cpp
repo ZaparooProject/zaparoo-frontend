@@ -55,6 +55,8 @@ extern "C" const char* zaparoo_rust_language_code();
 extern "C" bool zaparoo_rust_crt_native_path_enabled();
 extern "C" uint32_t zaparoo_rust_video_width();
 extern "C" uint32_t zaparoo_rust_video_height();
+extern "C" bool zaparoo_rust_debug_logging_enabled();
+extern "C" void zaparoo_rust_trace_startup(const uint8_t* stage, size_t len);
 
 // Pull Zaparoo QML plugin symbols into the final binary so the linker does
 // not strip their static-initializer registration functions.
@@ -125,6 +127,16 @@ static ParsedArguments extractCrtArgument(int argc, char* argv[])
 
 constexpr int kRestartExitCode = 1000;
 
+static void startupTrace(const char* stage)
+{
+    if (!zaparoo_rust_debug_logging_enabled())
+    {
+        return;
+    }
+    const size_t len = std::strlen(stage);
+    zaparoo_rust_trace_startup(reinterpret_cast<const uint8_t*>(stage), len);
+}
+
 int main(int argc, char* argv[]) // NOLINT
 {
     ParsedArguments parsedArgs = extractCrtArgument(argc, argv);
@@ -158,16 +170,21 @@ int main(int argc, char* argv[]) // NOLINT
     {
         return EXIT_FAILURE;
     }
+    startupTrace("cpp:rust init complete");
 
     // Start Core before Qt/font/QML setup so service boot overlaps the
     // frontend's own construction work. On desktop this is a no-op.
     zaparoo_rust_post_qt_start();
+    startupTrace("cpp:post-qt-start hook complete");
 
     // Install after zaparoo_rust_init() so tracing is live before any Qt
     // messages are emitted.
     qInstallMessageHandler(qtMessageHandler);
+    startupTrace("cpp:qt message handler installed");
     QGuiApplication app(qtArgc, qtArgv);
+    startupTrace("cpp:QGuiApplication constructed");
     QPixmapCache::setCacheLimit(kPixmapCacheLimitKiB);
+    startupTrace("cpp:QPixmapCache limit set");
 
     // Resolve language before font registration so startup only pays for
     // script fallback fonts the selected locale can actually use. The base
@@ -264,6 +281,7 @@ int main(int argc, char* argv[]) // NOLINT
     {
         qInfo("Registered locale-specific font fallbacks for %s", qUtf8Printable(locale.name()));
     }
+    startupTrace("cpp:font registration complete");
     if (crtNativePathEnabled)
     {
         QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
@@ -301,6 +319,7 @@ int main(int argc, char* argv[]) // NOLINT
         qInfo("No translation catalog for %s in :/i18n; using source strings",
               qUtf8Printable(locale.name()));
     }
+    startupTrace("cpp:translator setup complete");
 
     QQmlApplicationEngine engine;
     // Engine takes ownership of the provider — it deletes it when the
@@ -311,6 +330,7 @@ int main(int argc, char* argv[]) // NOLINT
     // MainLayout does).
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     engine.addImageProvider(QStringLiteral("media-image"), new MediaImageProvider());
+    startupTrace("cpp:QQmlApplicationEngine + image provider ready");
 
     // One-shot diagnostic: a static MiSTer Qt build configured without
     // `-feature-png` / libpng silently lacks the PNG QImageIOHandler, so
@@ -375,6 +395,7 @@ int main(int argc, char* argv[]) // NOLINT
     initialProperties.insert(QStringLiteral("videoHeight"),
                              static_cast<int>(zaparoo_rust_video_height()));
     engine.setInitialProperties(initialProperties);
+    startupTrace("cpp:QML initial properties set");
 
     // objectCreationFailed fires before loadFromModule returns when a QML
     // type fails to resolve or compile. Individual QML errors are already
@@ -385,6 +406,7 @@ int main(int argc, char* argv[]) // NOLINT
         &engine, &QQmlApplicationEngine::objectCreationFailed, &engine, [](const QUrl& url)
         { qCritical("QML object creation failed for %s", qUtf8Printable(url.toString())); });
 
+    startupTrace("cpp:loading QML root module");
     engine.loadFromModule("Zaparoo.App", "Main");
 
     if (engine.rootObjects().isEmpty())
@@ -392,11 +414,28 @@ int main(int argc, char* argv[]) // NOLINT
         qCritical("QML engine produced no root objects; startup aborted (see earlier errors)");
         return EXIT_FAILURE;
     }
+    startupTrace("cpp:QML root object created");
+
+    auto* rootWindow = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+    if (rootWindow != nullptr)
+    {
+        QObject::connect(rootWindow, &QQuickWindow::frameSwapped, rootWindow,
+                         [logged = false]() mutable
+                         {
+                             if (logged)
+                             {
+                                 return;
+                             }
+                             logged = true;
+                             startupTrace("cpp:first frame swapped");
+                         });
+    }
 
     if (crtNativePathEnabled)
     {
         qInfo("CRT startup decision: initialising native video writer");
         initNativeVideoWriter();
+        startupTrace("cpp:native video writer initialized");
         // Drive the fb0 -> DDR copy from Qt's render-finish signal so
         // we mirror exactly one frame per actual scenegraph render
         // (idle scenes produce no `frameSwapped` and therefore no
@@ -414,7 +453,6 @@ int main(int argc, char* argv[]) // NOLINT
         // queued connection puts it FIFO behind the UpdateRequest,
         // so `doRedraw()` runs first and we then read the freshly
         // updated fb0.
-        auto* rootWindow = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
         if (rootWindow != nullptr)
         {
             QObject::connect(

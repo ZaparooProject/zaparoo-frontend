@@ -23,6 +23,9 @@ import Zaparoo.Theme
 // property bindings so the dirty rect is bounded to the pill.
 Item {
     id: pill
+    property bool mediaActivityEnabled: false
+
+    Component.onCompleted: console.debug("startup/qml component CoreStatusPill completed")
 
     // Link-state constants mirror rust/frontend/src/models/app_status.rs:
     //   0 DISCONNECTED · 1 CONNECTING · 2 CONNECTED · 3 RECONNECTING · 4 UNREACHABLE.
@@ -56,39 +59,41 @@ Item {
             return qsTr("Core error");
 
         // Priority 2 — media database.
-        if (Browse.MediaStatus.optimizing)
-            return qsTr("Optimizing database");
+        if (pill.mediaActivityEnabled) {
+            if (Browse.MediaStatus.optimizing)
+                return qsTr("Optimizing database");
 
-        if (Browse.MediaStatus.indexing) {
-            const cur = Browse.MediaStatus.current_step;
-            const tot = Browse.MediaStatus.total_steps;
-            const display = Browse.MediaStatus.current_step_display;
-            if (Browse.MediaStatus.paused)
-                return qsTr("Indexing paused");
+            if (Browse.MediaStatus.indexing) {
+                const cur = Browse.MediaStatus.current_step;
+                const tot = Browse.MediaStatus.total_steps;
+                const display = Browse.MediaStatus.current_step_display;
+                if (Browse.MediaStatus.paused)
+                    return qsTr("Indexing paused");
 
-            if (tot > 0 && display !== "")
-                return qsTr("Indexing %1/%2 - %3").arg(cur).arg(tot).arg(display);
+                if (tot > 0 && display !== "")
+                    return qsTr("Indexing %1/%2 - %3").arg(cur).arg(tot).arg(display);
 
-            if (tot > 0)
-                return qsTr("Indexing %1/%2").arg(cur).arg(tot);
+                if (tot > 0)
+                    return qsTr("Indexing %1/%2").arg(cur).arg(tot);
 
-            return qsTr("Indexing…");
-        }
-        // Priority 3 — scraper.
-        if (Browse.MediaStatus.scraping) {
-            const cur = Browse.MediaStatus.scrape_current_step;
-            const tot = Browse.MediaStatus.scrape_total_steps;
-            const display = Browse.MediaStatus.scrape_current_step_display;
-            if (Browse.MediaStatus.scrape_paused)
-                return qsTr("Scrape paused");
+                return qsTr("Indexing…");
+            }
+            // Priority 3 — scraper.
+            if (Browse.MediaStatus.scraping) {
+                const cur = Browse.MediaStatus.scrape_current_step;
+                const tot = Browse.MediaStatus.scrape_total_steps;
+                const display = Browse.MediaStatus.scrape_current_step_display;
+                if (Browse.MediaStatus.scrape_paused)
+                    return qsTr("Scrape paused");
 
-            if (tot > 0 && display !== "")
-                return qsTr("Scraping %1/%2 - %3").arg(cur).arg(tot).arg(display);
+                if (tot > 0 && display !== "")
+                    return qsTr("Scraping %1/%2 - %3").arg(cur).arg(tot).arg(display);
 
-            if (tot > 0)
-                return qsTr("Scraping %1/%2").arg(cur).arg(tot);
+                if (tot > 0)
+                    return qsTr("Scraping %1/%2").arg(cur).arg(tot);
 
-            return qsTr("Scraping…");
+                return qsTr("Scraping…");
+            }
         }
         return "";
     }

@@ -27,6 +27,8 @@ import Zaparoo.Browse as Browse
 Item {
     id: settings
 
+    Component.onCompleted: console.debug("startup/qml component SettingsScreen completed")
+
     // Bound by MainLayout to `root.pendingTransition !== ""`. Settings
     // is a destination, never a source, so this is currently always
     // false when the screen is visible — kept for parity with the

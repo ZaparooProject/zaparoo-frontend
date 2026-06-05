@@ -25,6 +25,8 @@ import Zaparoo.Browse as Browse
 Item {
     id: about
 
+    Component.onCompleted: console.debug("startup/qml component AboutScreen completed")
+
     // Bound by MainLayout to `root.pendingTransition !== ""`. About is
     // a destination, never a source — kept for parity with the other
     // screens.

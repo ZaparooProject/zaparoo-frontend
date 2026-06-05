@@ -71,12 +71,18 @@ pub mod ffi {
 
 impl Initialize for ffi::GamesState {
     fn initialize(mut self: Pin<&mut Self>) {
+        let started = std::time::Instant::now();
+        crate::startup_trace("rust:model GamesState init start");
         let snapshot: GamesState = with_persist_read(|s| s.games.clone());
         self.as_mut().rust_mut().system_id = QString::from(snapshot.system_id.as_str());
         let (path_stack, selected_at_level) =
             normalize_persisted(&snapshot.path_stack, &snapshot.selected_at_level);
         self.as_mut().rust_mut().path_stack = vec_to_qstringlist(&path_stack);
         self.as_mut().rust_mut().selected_at_level = vec_to_qstringlist(&selected_at_level);
+        crate::startup_trace(format!(
+            "rust:model GamesState init end dur_ms={}",
+            started.elapsed().as_millis()
+        ));
     }
 }
 

@@ -48,6 +48,8 @@ import Zaparoo.Browse as Browse
 Item {
     id: hub
 
+    Component.onCompleted: console.debug("startup/qml component HubScreen completed")
+
     readonly property var _placeholderCategories: [
         { name: qsTr("Arcade"), coverKey: "categories/Arcade" },
         { name: qsTr("Computers"), coverKey: "categories/Computer" },
@@ -222,7 +224,7 @@ Item {
     // against. Both rows wrap modulo their count so a single Left/Right
     // press at either end whips around to the far side.
     function _navigate(delta: int): bool {
-        const count = hub.currentRow === 0 ? Browse.CategoriesModel.count : hub.actionEntries.length;
+        const count = hub.currentRow === 0 ? hub.visibleCategoryEntries.length : hub.actionEntries.length;
         if (count <= 0)
             return false;
         const next = ((hub.currentIndex + delta) % count + count) % count;
@@ -272,7 +274,7 @@ Item {
     // Returns false only when the destination row is empty (no
     // categories loaded yet, etc.).
     function _crossRow(): bool {
-        const topCount = Browse.CategoriesModel.count;
+        const topCount = hub.visibleCategoryEntries.length;
         const bottomCount = hub.actionEntries.length;
         const sourceCount = hub.currentRow === 0 ? topCount : bottomCount;
         const destCount = hub.currentRow === 0 ? bottomCount : topCount;

@@ -20,6 +20,8 @@ import Zaparoo.Theme
 Item {
     id: header
 
+    Component.onCompleted: console.debug("startup/qml component HeaderBar completed")
+
     // Exposed for the screensaver overlay so it can read the logo's
     // on-screen geometry (mapToItem + paintedWidth/Height) and start
     // the bouncing copy at exactly the same position.
@@ -28,6 +30,8 @@ Item {
     readonly property var _headerProfile: header.layoutProfile && header.layoutProfile.header ? header.layoutProfile.header : null
     property string browseTitle: ""
     property string browseProgressText: ""
+    property bool statusIconsEnabled: false
+    property bool mediaActivityEnabled: false
 
     height: Sizing.headerHeight
 
@@ -94,28 +98,28 @@ Item {
 
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
-            visible: Browse.SystemStatus.has_nfc
+            visible: header.statusIconsEnabled && Browse.SystemStatus.has_nfc
             source: Resources.statusIconUrl("NFC")
             name: "NFC"
         }
 
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
-            visible: Browse.SystemStatus.has_wifi_internet
+            visible: header.statusIconsEnabled && Browse.SystemStatus.has_wifi_internet
             source: Resources.statusIconUrl("WiFi")
             name: "Wi-Fi"
         }
 
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
-            visible: Browse.SystemStatus.has_lan_internet
+            visible: header.statusIconsEnabled && Browse.SystemStatus.has_lan_internet
             source: Resources.statusIconUrl("WiredNetwork")
             name: "LAN"
         }
 
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
-            visible: Browse.SystemStatus.has_bluetooth
+            visible: header.statusIconsEnabled && Browse.SystemStatus.has_bluetooth
             source: Resources.statusIconUrl("Bluetooth")
             name: "Bluetooth"
         }
@@ -187,5 +191,6 @@ Item {
         anchors.top: header._headerProfile && header._headerProfile.statusPillPinnedTop ? parent.top : topHud.bottom
         anchors.right: topHud.right
         anchors.topMargin: header._headerProfile && header._headerProfile.statusPillPinnedTop ? 0 : Sizing.headerStackGap
+        mediaActivityEnabled: header.mediaActivityEnabled
     }
 }

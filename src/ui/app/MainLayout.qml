@@ -71,6 +71,22 @@ ApplicationWindow {
     property bool _crtPreviewResizeGuard: false
 
     readonly property bool _crtPreviewActive: root.crtPreview && root.videoWidth > 0 && root.videoHeight > 0
+    property bool _startupTraceActive: true
+    property bool _statusIconsEnabled: false
+    property bool _headerMediaActivityEnabled: false
+    property bool _firstFrameSeen: false
+    property bool systemsScreenRequested: false
+    property bool gamesScreenRequested: false
+    property bool favoritesScreenRequested: false
+    property bool recentsScreenRequested: false
+    property bool settingsScreenRequested: false
+    property bool aboutScreenRequested: false
+
+    function _startupTrace(): void {
+        if (!root._startupTraceActive)
+            return;
+        console.debug.apply(console, arguments);
+    }
 
     function _clampCrtPreviewScale(scale: int): int {
         return Math.max(root._crtPreviewMinScale, Math.min(root._crtPreviewMaxScale, scale));
@@ -148,6 +164,16 @@ ApplicationWindow {
         if (root._crtPreviewActive && root.crtPreviewScale === 0 && !root._crtPreviewResizeGuard)
             root.applyCrtPreviewScale(root._crtPreviewEffectiveScale);
     }
+    onFrameSwapped: {
+        if (root._firstFrameSeen)
+            return;
+        root._firstFrameSeen = true;
+        root._statusIconsEnabled = true;
+        root._headerMediaActivityEnabled = true;
+        root._startupTrace("startup/qml firstFrameSwapped",
+                           "statusIconsEnabled=" + root._statusIconsEnabled,
+                           "mediaActivityEnabled=" + root._headerMediaActivityEnabled);
+    }
 
     // When the window crosses to a different screen (e.g. dev drags
     // it from a 4K to a 1080p monitor), Qt updates Screen.width and
@@ -203,12 +229,12 @@ ApplicationWindow {
     // reached via root.hubScreen.* / root.systemsScreen.* /
     // root.gamesScreen.* — no per-widget aliases here.
     property alias hubScreen: hubScreen
-    property alias systemsScreen: systemsScreen
-    property alias gamesScreen: gamesScreen
-    property alias favoritesScreen: favoritesScreen
-    property alias recentsScreen: recentsScreen
-    property alias settingsScreen: settingsScreen
-    property alias aboutScreen: aboutScreen
+    property var systemsScreen: systemsScreenLoader.item
+    property var gamesScreen: gamesScreenLoader.item
+    property var favoritesScreen: favoritesScreenLoader.item
+    property var recentsScreen: recentsScreenLoader.item
+    property var settingsScreen: settingsScreenLoader.item
+    property var aboutScreen: aboutScreenLoader.item
     property alias contextMenu: contextMenu
     property alias commercialNoticeModal: commercialNoticeModal
     property alias firstRunIndexModal: firstRunIndexModal
@@ -381,8 +407,25 @@ ApplicationWindow {
     // between the two sides would defeat the guard — see #24 for the
     // tracked single-source-of-truth refactor.
     onActiveScreenChanged: {
+        root._startupTrace("startup/qml activeScreenChanged",
+                           "activeScreen=" + root.activeScreen,
+                           "pendingTransition=" + root.pendingTransition,
+                           "startupRestoreVisible=" + root.startupRestoreVisible,
+                           "connectionWaitVisible=" + root.connectionWaitVisible);
         if (ScreenManager.activeScreen !== root.activeScreen)
             ScreenManager.activeScreen = root.activeScreen;
+    }
+    onStartupRestoreVisibleChanged: {
+        root._startupTrace("startup/qml startupRestoreVisibleChanged",
+                           "visible=" + root.startupRestoreVisible,
+                           "activeScreen=" + root.activeScreen);
+    }
+    onConnectionWaitVisibleChanged: {
+        root._startupTrace("startup/qml connectionWaitVisibleChanged",
+                           "visible=" + root.connectionWaitVisible,
+                           "activeScreen=" + root.activeScreen,
+                           "linkState=" + Browse.AppStatus.link_state,
+                           "connectionState=" + Browse.AppStatus.connection_state);
     }
     Connections {
         target: ScreenManager
@@ -495,6 +538,8 @@ ApplicationWindow {
                 layoutProfile: root._browseViewProfile
                 browseTitle: root.browseHeaderTitle
                 browseProgressText: root.browseHeaderProgressText
+                statusIconsEnabled: root._statusIconsEnabled
+                mediaActivityEnabled: root._headerMediaActivityEnabled
                 z: 200
             }
 
@@ -538,48 +583,93 @@ ApplicationWindow {
                     anchors.fill: parent
                     visible: root.activeScreen === root.screenHub
                     transitioning: root.pendingTransition !== ""
+                    onVisibleChanged: {
+                        if (!visible || !root._startupTraceActive)
+                            return;
+                        root._startupTrace("startup/qml firstHubVisible",
+                                           "restoreVisible=" + root.startupRestoreVisible,
+                                           "connectionState=" + Browse.AppStatus.connection_state,
+                                           "categories=" + Browse.CategoriesModel.count);
+                        root._startupTraceActive = false;
+                    }
                 }
 
-                SystemsScreen {
-                    id: systemsScreen
+                Loader {
+                    id: systemsScreenLoader
                     anchors.fill: parent
-                    visible: root.activeScreen === root.screenSystems
-                    transitioning: root.pendingTransition !== ""
+                    active: root.systemsScreenRequested
+                    visible: status === Loader.Ready && root.activeScreen === root.screenSystems
+                    sourceComponent: Component {
+                        SystemsScreen {
+                            anchors.fill: parent
+                            transitioning: root.pendingTransition !== ""
+                        }
+                    }
                 }
 
-                GamesScreen {
-                    id: gamesScreen
+                Loader {
+                    id: gamesScreenLoader
                     anchors.fill: parent
-                    visible: root.activeScreen === root.screenGames
-                    transitioning: root.pendingTransition !== ""
+                    active: root.gamesScreenRequested
+                    visible: status === Loader.Ready && root.activeScreen === root.screenGames
+                    sourceComponent: Component {
+                        GamesScreen {
+                            anchors.fill: parent
+                            transitioning: root.pendingTransition !== ""
+                        }
+                    }
                 }
 
-                FavoritesScreen {
-                    id: favoritesScreen
+                Loader {
+                    id: favoritesScreenLoader
                     anchors.fill: parent
-                    visible: root.activeScreen === root.screenFavorites
-                    transitioning: root.pendingTransition !== ""
+                    active: root.favoritesScreenRequested
+                    visible: status === Loader.Ready && root.activeScreen === root.screenFavorites
+                    sourceComponent: Component {
+                        FavoritesScreen {
+                            anchors.fill: parent
+                            transitioning: root.pendingTransition !== ""
+                        }
+                    }
                 }
 
-                RecentsScreen {
-                    id: recentsScreen
+                Loader {
+                    id: recentsScreenLoader
                     anchors.fill: parent
-                    visible: root.activeScreen === root.screenRecents
-                    transitioning: root.pendingTransition !== ""
+                    active: root.recentsScreenRequested
+                    visible: status === Loader.Ready && root.activeScreen === root.screenRecents
+                    sourceComponent: Component {
+                        RecentsScreen {
+                            anchors.fill: parent
+                            transitioning: root.pendingTransition !== ""
+                        }
+                    }
                 }
 
-                SettingsScreen {
-                    id: settingsScreen
+                Loader {
+                    id: settingsScreenLoader
                     anchors.fill: parent
-                    visible: root.activeScreen === root.screenSettings
-                    transitioning: root.pendingTransition !== ""
+                    active: root.settingsScreenRequested
+                    visible: status === Loader.Ready && root.activeScreen === root.screenSettings
+                    sourceComponent: Component {
+                        SettingsScreen {
+                            anchors.fill: parent
+                            transitioning: root.pendingTransition !== ""
+                        }
+                    }
                 }
 
-                AboutScreen {
-                    id: aboutScreen
+                Loader {
+                    id: aboutScreenLoader
                     anchors.fill: parent
-                    visible: root.activeScreen === root.screenAbout
-                    transitioning: root.pendingTransition !== ""
+                    active: root.aboutScreenRequested
+                    visible: status === Loader.Ready && root.activeScreen === root.screenAbout
+                    sourceComponent: Component {
+                        AboutScreen {
+                            anchors.fill: parent
+                            transitioning: root.pendingTransition !== ""
+                        }
+                    }
                 }
             }
 
@@ -964,6 +1054,8 @@ ApplicationWindow {
                                 }
                             ];
                         if (root.systemsScreenState === "ready") {
+                            if (root.systemsScreen === null)
+                                return [];
                             // L/R shoulders page jump; only advertise the cue
                             // when there's a second page to jump to, so we
                             // don't promise a press that no-ops on a single
@@ -1006,7 +1098,10 @@ ApplicationWindow {
                     if (root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents) {
                         const isFavorites = root.activeScreen === root.screenFavorites;
                         const state = isFavorites ? root.favoritesScreenState : root.recentsScreenState;
-                        const grid = isFavorites ? root.favoritesScreen.favoritesGrid : root.recentsScreen.recentsGrid;
+                        const screen = isFavorites ? root.favoritesScreen : root.recentsScreen;
+                        if (screen === null)
+                            return [];
+                        const grid = isFavorites ? screen.favoritesGrid : screen.recentsGrid;
                         if (state === "loading")
                             return [
                                 {
@@ -1054,6 +1149,8 @@ ApplicationWindow {
                         ];
                     }
                     if (root.activeScreen === root.screenSettings) {
+                        if (root.settingsScreen === null)
+                            return [];
                         let row = [];
                         // Up/Down moves between fields; only useful when there
                         // are 2+ fields.
@@ -1089,6 +1186,8 @@ ApplicationWindow {
                         return row;
                     }
                     if (root.activeScreen === root.screenAbout) {
+                        if (root.aboutScreen === null)
+                            return [];
                         let row = [];
                         // Up/Down only meaningful when the body actually
                         // overflows the viewport (per the minimal help-bar
@@ -1113,6 +1212,8 @@ ApplicationWindow {
                             }
                         ];
                     if (root.gamesScreenState === "ready") {
+                        if (root.gamesScreen === null)
+                            return [];
                         const pages = root.gamesScreen.gamesGrid.pageCount;
                         // Options menu is only meaningful on media leaves —
                         // folder/root entries open via Accept and have no

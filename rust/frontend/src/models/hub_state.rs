@@ -53,10 +53,16 @@ pub mod ffi {
 
 impl Initialize for ffi::HubState {
     fn initialize(mut self: Pin<&mut Self>) {
+        let started = std::time::Instant::now();
+        crate::startup_trace("rust:model HubState init start");
         let snapshot: HubState = with_persist_read(|s| s.hub.clone());
         self.as_mut().rust_mut().category = QString::from(snapshot.category.as_str());
         self.as_mut().rust_mut().selected_row = snapshot.selected_row;
         self.as_mut().rust_mut().selected_action = QString::from(snapshot.selected_action.as_str());
+        crate::startup_trace(format!(
+            "rust:model HubState init end dur_ms={}",
+            started.elapsed().as_millis()
+        ));
     }
 }
 

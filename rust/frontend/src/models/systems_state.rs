@@ -42,8 +42,14 @@ pub mod ffi {
 
 impl Initialize for ffi::SystemsState {
     fn initialize(mut self: Pin<&mut Self>) {
+        let started = std::time::Instant::now();
+        crate::startup_trace("rust:model SystemsState init start");
         let snapshot: SystemsState = with_persist_read(|s| s.systems.clone());
         self.as_mut().rust_mut().system_id = QString::from(snapshot.system_id.as_str());
+        crate::startup_trace(format!(
+            "rust:model SystemsState init end dur_ms={}",
+            started.elapsed().as_millis()
+        ));
     }
 }
 
