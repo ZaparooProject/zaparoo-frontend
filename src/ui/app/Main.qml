@@ -109,6 +109,8 @@ MainLayout {
         const savedScreen = Browse.AppState.active_screen;
         if (savedScreen === root.screenGames || savedScreen === root.screenSystems || savedScreen === root.screenHub || savedScreen === root.screenFavorites || savedScreen === root.screenRecents || savedScreen === root.screenSettings || savedScreen === root.screenAbout)
             root.activeScreen = savedScreen;
+        Browse.FavoritesModel.cover_requests_paused = root.activeScreen !== root.screenFavorites;
+        Browse.RecentsModel.cover_requests_paused = root.activeScreen !== root.screenRecents;
         // If the catalog is already ready, fire the restore here so
         // the cascade (set_category → SystemsModel reset → seed
         // currentIndex → set_system → GamesModel reset) lands before
@@ -127,6 +129,7 @@ MainLayout {
         // otherwise the grid lands on index 0 and ignores persisted
         // selected_path.
         if (savedScreen === root.screenFavorites) {
+            root._resumeFavoritesCovers();
             if (Browse.FavoritesModel.loading) {
                 root._favoritesReadyCallback = function () {
                     root.favoritesScreen.restoreSelection();
@@ -136,6 +139,7 @@ MainLayout {
             }
         }
         if (savedScreen === root.screenRecents) {
+            root._resumeRecentsCovers();
             if (Browse.RecentsModel.loading) {
                 root._recentsReadyCallback = function () {
                     root.recentsScreen.restoreSelection();
@@ -383,6 +387,7 @@ MainLayout {
             root._recentsReadyCallback = null;
             cb();
         }
+
         function onResume_availableChanged(): void {
             if (!root._resumeStartupFocusPending || !Browse.RecentsModel.resume_available)
                 return;
@@ -486,6 +491,7 @@ MainLayout {
 
     function _navigateToFavorites(): void {
         root.pendingTransition = "favorites";
+        root._resumeFavoritesCovers();
         if (!Browse.FavoritesModel.loading) {
             root.favoritesScreen.restoreSelection();
             root._completeTransition(root.screenFavorites);
@@ -504,6 +510,7 @@ MainLayout {
     // sees the centred "Loading…" cue rather than an empty grid.
     function _navigateToRecents(): void {
         root.pendingTransition = "recents";
+        root._resumeRecentsCovers();
         if (!Browse.RecentsModel.loading) {
             root.recentsScreen.restoreSelection();
             root._completeTransition(root.screenRecents);
@@ -513,6 +520,18 @@ MainLayout {
             root.recentsScreen.restoreSelection();
             root._completeTransition(root.screenRecents);
         };
+    }
+
+    function _resumeFavoritesCovers(): void {
+        Browse.FavoritesModel.cover_requests_paused = false;
+        const first = root.favoritesScreen.mediaGrid.currentPage * root.favoritesScreen.mediaGrid.pageSize;
+        Browse.FavoritesModel.refresh_cover_keys(first, root.favoritesScreen.mediaGrid.pageSize * 2);
+    }
+
+    function _resumeRecentsCovers(): void {
+        Browse.RecentsModel.cover_requests_paused = false;
+        const first = root.recentsScreen.mediaGrid.currentPage * root.recentsScreen.mediaGrid.pageSize;
+        Browse.RecentsModel.refresh_cover_keys(first, root.recentsScreen.mediaGrid.pageSize * 2);
     }
 
     // Hub → Settings transition. The Settings screen has no async
@@ -1528,7 +1547,9 @@ MainLayout {
     property string _heldAction: ""
     property int _heldKey: 0
     property bool rapidNavigationActive: false
+    property bool rapidNavigationIndicatorActive: false
     property string rapidNavigationAction: ""
+    property int _rapidNavigationTapCount: 0
     // Aliased so tst_navigation.qml can observe the repeat state machine
     // — child Timer ids are file-scoped and aren't reachable otherwise.
     property alias _repeatPending: repeatInitial.running
@@ -1557,6 +1578,12 @@ MainLayout {
 
     Binding {
         target: root.gamesScreen
+        property: "detailRapidIndicatorActive"
+        value: root.activeScreen === root.screenGames && root.rapidNavigationIndicatorActive
+    }
+
+    Binding {
+        target: root.gamesScreen
         property: "detailRapidScrollAction"
         value: root.activeScreen === root.screenGames ? root.rapidNavigationAction : ""
     }
@@ -1565,6 +1592,12 @@ MainLayout {
         target: root.favoritesScreen
         property: "detailRapidScrollActive"
         value: root.activeScreen === root.screenFavorites && root.rapidNavigationActive
+    }
+
+    Binding {
+        target: root.favoritesScreen
+        property: "detailRapidIndicatorActive"
+        value: root.activeScreen === root.screenFavorites && root.rapidNavigationIndicatorActive
     }
 
     Binding {
@@ -1581,6 +1614,12 @@ MainLayout {
 
     Binding {
         target: root.recentsScreen
+        property: "detailRapidIndicatorActive"
+        value: root.activeScreen === root.screenRecents && root.rapidNavigationIndicatorActive
+    }
+
+    Binding {
+        target: root.recentsScreen
         property: "detailRapidScrollAction"
         value: root.activeScreen === root.screenRecents ? root.rapidNavigationAction : ""
     }
@@ -1592,16 +1631,22 @@ MainLayout {
     function _noteRapidNavigationAction(action: string, forceActive: bool): void {
         if (!root._isRapidNavigationAction(action))
             return;
+        const sameBurst = rapidNavigationQuiet.running && root.rapidNavigationAction === action;
+        root._rapidNavigationTapCount = sameBurst ? root._rapidNavigationTapCount + 1 : 1;
         root.rapidNavigationAction = action;
         if (forceActive || rapidNavigationQuiet.running)
             root.rapidNavigationActive = true;
+        if (forceActive || action === "page_prev" || action === "page_next" || root._rapidNavigationTapCount >= 3)
+            root.rapidNavigationIndicatorActive = true;
         rapidNavigationQuiet.restart();
     }
 
     function _resetRapidNavigation(): void {
         rapidNavigationQuiet.stop();
         root.rapidNavigationActive = false;
+        root.rapidNavigationIndicatorActive = false;
         root.rapidNavigationAction = "";
+        root._rapidNavigationTapCount = 0;
     }
 
     function _isRepeatableAction(action: string): bool {
@@ -1770,7 +1815,9 @@ MainLayout {
         repeat: false
         onTriggered: {
             root.rapidNavigationActive = false;
+            root.rapidNavigationIndicatorActive = false;
             root.rapidNavigationAction = "";
+            root._rapidNavigationTapCount = 0;
         }
     }
 

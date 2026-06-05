@@ -95,6 +95,7 @@ const DEFAULT_PAGE_SIZE: i32 = 15;
 // the visible and next pages, so a large `FETCH_MORE_CHUNK_SIZE` no
 // longer floods the cover queue.
 const FETCH_MORE_CHUNK_SIZE: i32 = 100;
+const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 300;
 
 // `apply_append_page` sub-batches the model insert into chunks of this
 // many rows so the Repeater's per-delegate `createObject` cost (the
@@ -104,12 +105,10 @@ const FETCH_MORE_CHUNK_SIZE: i32 = 100;
 // `_commitPendingTarget` fires within ~200 ms of the user's press; the
 // rest are posted from `global_handle()` with one frame of breathing
 // room (`SUB_BATCH_FRAME_GAP_MS`) between batches so input + paint can
-// drain in between. 25 is one full visual page on a 5x5 dense layout
-// and roughly 190 ms of insert work warm — detectable as a hitch but
-// well below the monolithic stall and short enough that the next user
-// press lands inside one batch's gap. Tunable: drop to 12-15 if a
-// single-batch hitch still feels chunky.
-const APPEND_SUB_BATCH_SIZE: usize = 25;
+// drain in between. 12 is intentionally below a full dense-grid page:
+// more batches trickle in, but each batch has less chance to monopolize
+// the Qt thread during a held Down/Up scroll.
+const APPEND_SUB_BATCH_SIZE: usize = 12;
 
 // One frame at 30 Hz, the MiSTer software renderer's effective frame
 // budget. Gives Qt one full frame to drain input + paint between
@@ -216,16 +215,11 @@ pub struct GamesModelRust {
     // the new one. Same race shape as `cover_gate_seq`, just for the
     // sub-batch fan-out.
     append_seq: Arc<AtomicU64>,
-    // True from the moment `apply_initial_page` queues its look-ahead
-    // `fetch_more` until the matching `apply_append_page` lands. While
-    // set, the cover-gate release paths (`arm_cover_gate`,
-    // `notify_cover_update`, `release_cover_gate_after_timeout` aside)
-    // hold `loading=true` even after first-paint covers cache, so the
-    // user sees a single full-screen "Loading…" overlay instead of
-    // `Loading…` followed immediately by `Loading more…`. Cleared on
-    // append (success or failure) and on every `start_initial_browse`.
-    // The 3 s safety timer is the bounded fall-through, so a stalled
-    // prefetch can't park the user on the overlay forever.
+    // True from the moment `apply_initial_page` queues its metadata
+    // look-ahead `fetch_more` until the matching `apply_append_page`
+    // lands. This is informational only: background look-ahead must
+    // not hold the full-screen loading gate after the visible page is
+    // ready.
     pending_initial_lookahead: bool,
     // First visible row in the grid. Bound from QML to
     // `gamesGrid.currentPage * gamesGrid.pageSize` so the model knows
@@ -335,6 +329,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn fetch_more(self: Pin<&mut GamesModel>);
+
+        #[qinvokable]
+        fn fetch_more_rapid(self: Pin<&mut GamesModel>);
 
         #[qinvokable]
         fn prefetch_around(self: Pin<&mut GamesModel>, first_visible_row: i32);
@@ -527,7 +524,15 @@ impl ffi::GamesModel {
         self.start_initial_browse(p, systems, false);
     }
 
-    fn fetch_more(mut self: Pin<&mut Self>) {
+    fn fetch_more(self: Pin<&mut Self>) {
+        self.fetch_more_with_limit(FETCH_MORE_CHUNK_SIZE);
+    }
+
+    fn fetch_more_rapid(self: Pin<&mut Self>) {
+        self.fetch_more_with_limit(FETCH_MORE_RAPID_CHUNK_SIZE);
+    }
+
+    fn fetch_more_with_limit(mut self: Pin<&mut Self>, limit: i32) {
         // Debounce: PagedGrid fires `loadMoreRequested` once per page
         // turn, but a fast spinner on the last loaded page can fire
         // twice before the first follow-up returns. All three guards
@@ -557,8 +562,7 @@ impl ffi::GamesModel {
         // `set_path` invalidate the prior cursor sequence.
         let seq = self.seq.clone();
         let ticket = seq.load(Ordering::SeqCst);
-        let max_results =
-            u32::try_from(FETCH_MORE_CHUNK_SIZE.max(1)).unwrap_or(u32::from(u16::MAX));
+        let max_results = u32::try_from(limit.max(1)).unwrap_or(u32::from(u16::MAX));
         self.as_mut().set_loading_more(true);
         let qt_thread = self.qt_thread();
         let store = global_store();
@@ -597,9 +601,13 @@ impl ffi::GamesModel {
     /// page, then previous page. Queued stale requests are dropped so
     /// a page change immediately makes the new visible page win.
     fn prefetch_around(self: Pin<&mut Self>, first_visible_row: i32) {
+        let cache = global_media_image_cache();
+        if self.cover_requests_paused {
+            cache.clear_pending_requests();
+            return;
+        }
         let plan =
             prefetch_around_plan(&self.entries, self.count, self.page_size, first_visible_row);
-        let cache = global_media_image_cache();
         let ps = u32::try_from(self.page_size.max(1)).unwrap_or(1);
         cache.replace_pending_requests_ordered(plan, ps);
     }
@@ -1593,12 +1601,7 @@ fn notify_cover_update(mut model: Pin<&mut ffi::GamesModel>, key: &MediaKey) {
                     return;
                 }
                 model.as_mut().rust_mut().cover_gate_timer = None;
-                // Same hold rule as the immediate-cached path in
-                // `arm_cover_gate`: if the look-ahead prefetch still
-                // owes us, leave loading=true. `apply_append_page`
-                // will release once the prefetch lands (or the safety
-                // timer in `release_cover_gate_after_timeout` will).
-                if model.loading && !model.pending_initial_lookahead {
+                if model.loading {
                     info!("games: cover gate released after decode-settle window");
                     model.as_mut().set_loading(false);
                 }
@@ -1669,11 +1672,7 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
     );
     if unresolved.is_empty() {
         model.as_mut().rust_mut().pending_first_paint_keys.clear();
-        // Hold loading=true if we still owe the user a look-ahead
-        // prefetch — `apply_append_page` will release once that lands
-        // (or `release_cover_gate_after_timeout` will, as a safety
-        // net).
-        if model.loading && !model.pending_initial_lookahead {
+        if model.loading {
             model.as_mut().set_loading(false);
         }
         return;
@@ -1698,37 +1697,11 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().rust_mut().cover_gate_timer = Some(handle);
 }
 
-/// Clear `pending_initial_lookahead` and, if the cover gate has
-/// already drained (no waiting keys, no decode-settle timer running),
-/// release loading=false. Called from `apply_append_page` on both
-/// success and error: the look-ahead has done its job, so any cover
-/// gate that was holding for the prefetch should now flip.
-///
-/// Three orderings produce three branches here:
-/// - Covers landed and decode-settle fired before the prefetch
-///   landed: timer is None, `pending_first_paint_keys` is empty, we
-///   release immediately.
-/// - Covers all cached on arm: `pending_first_paint_keys` was empty
-///   from the start, no timer was armed beyond the 3 s safety, but
-///   `arm_cover_gate`'s immediate-release path was skipped because
-///   the flag was set. Same as above — release.
-/// - Covers still in flight: `pending_first_paint_keys` non-empty;
-///   leave the gate alone, `notify_cover_update` will release once
-///   they drain (and the flag-clear we just did frees its check).
+/// Clear `pending_initial_lookahead` after the background prefetch
+/// lands. Look-ahead no longer participates in full-screen loading:
+/// visible page readiness and cover first-paint own that gate.
 fn release_initial_lookahead_gate(mut model: Pin<&mut ffi::GamesModel>) {
-    if !model.pending_initial_lookahead {
-        return;
-    }
     model.as_mut().rust_mut().pending_initial_lookahead = false;
-    if !model.loading {
-        return;
-    }
-    let covers_drained = model.pending_first_paint_keys.is_empty();
-    let timer_idle = model.cover_gate_timer.is_none();
-    if covers_drained && timer_idle {
-        info!("games: cover gate released after look-ahead prefetch landed");
-        model.as_mut().set_loading(false);
-    }
 }
 
 /// Force-release the cover gate from the safety timer. Called only via
@@ -2073,19 +2046,17 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     // re-issues this through `onCurrentPageChanged` in QML.
     model.as_mut().rust_mut().visible_first_row = 0;
     model.as_mut().prefetch_around(0);
-    // Arm the initial-look-ahead gate BEFORE arm_cover_gate so the
-    // gate's "no covers to wait on" fast path also waits on the
-    // pending append rather than flipping loading=false right away.
-    // Cleared by the matching `apply_append_page` (success or failure)
-    // or by the cover_gate safety timer.
+    // Metadata look-ahead runs in the background. Track it only so
+    // stale follow-up completions can clear their own bookkeeping; do
+    // not let it hold the first visible page behind the full-screen
+    // loading overlay.
     let will_lookahead = has_next_page && !model.loading_more;
     if will_lookahead {
         model.as_mut().rust_mut().pending_initial_lookahead = true;
     }
     // Decide whether to release `loading` immediately or hold it until
-    // covers are cached. `arm_cover_gate` flips loading off itself when
-    // the page has nothing to wait on AND the look-ahead gate is
-    // clear; otherwise it leaves loading=true and arms the timer.
+    // visible-page covers are cached. Background metadata look-ahead
+    // does not participate in this gate.
     arm_cover_gate(model.as_mut());
     if !model.error_message.is_empty() {
         model.as_mut().set_error_message(QString::default());

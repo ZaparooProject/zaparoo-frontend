@@ -45,8 +45,8 @@ const UPLOAD_URL: &str = "https://logs.zaparoo.org/";
 const UPLOAD_TIMEOUT_SECS: u32 = 30;
 
 const SUPPORT_SUMMARY_LIMIT_BYTES: usize = 64 * 1024;
-const PER_LOG_LIMIT_BYTES: usize = 512 * 1024;
-const UPLOAD_LIMIT_BYTES: usize = 1024 * 1024;
+const PER_LOG_LIMIT_BYTES: usize = 256 * 1024;
+const UPLOAD_LIMIT_BYTES: usize = 768 * 1024;
 const UPLOAD_HEADROOM_BYTES: usize = 4 * 1024;
 const PAYLOAD_LIMIT_BYTES: usize = UPLOAD_LIMIT_BYTES - UPLOAD_HEADROOM_BYTES;
 
@@ -412,6 +412,8 @@ fn yes_no(value: bool) -> &'static str {
 }
 
 fn upload_payload(payload: &[u8]) -> UploadOutcome {
+    let payload_len = payload.len();
+    info!(payload_len, "log upload payload prepared");
     let timeout_arg = UPLOAD_TIMEOUT_SECS.to_string();
     // MiSTer commonly has an outdated CA bundle and incorrect clock before NTP sync.
     // Keep support log upload usable there.
@@ -459,7 +461,8 @@ fn upload_payload(payload: &[u8]) -> UploadOutcome {
         } else {
             stderr
         };
-        return UploadOutcome::Error(message);
+        warn!(payload_len, "log upload curl failed: {message}");
+        return UploadOutcome::Error(format!("{message} (payload {payload_len} bytes)"));
     }
 
     let url = String::from_utf8_lossy(&output.stdout).trim().to_string();

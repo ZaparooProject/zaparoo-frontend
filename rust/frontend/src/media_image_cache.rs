@@ -1073,7 +1073,7 @@ fn process_batch_outcomes(
         }
         if let Some(update) = update {
             if let Some(ext) = update.ext {
-                info!(
+                debug!(
                     system_id = %key.system_id,
                     path = %key.path,
                     ext,
@@ -1086,14 +1086,14 @@ fn process_batch_outcomes(
                 let soft_no_image = guard.soft_no_image.contains(&key);
                 let search_seen = guard.search_seen.contains(&key);
                 if negative {
-                    info!(
+                    debug!(
                         system_id = %key.system_id,
                         path = %key.path,
                         search_seen,
                         "media_image_cache: no image (negative memo)",
                     );
                 } else {
-                    info!(
+                    debug!(
                         system_id = %key.system_id,
                         path = %key.path,
                         policy = ?entry.no_image_policy,
@@ -1190,22 +1190,23 @@ fn classify_single_media_image_error(
         );
         return FetchOutcome::ConnectionDown;
     }
+    if is_stable_media_image_miss(message) {
+        debug!(
+            system_id = %key.system_id,
+            path = %key.path,
+            had_id_hint,
+            "media_image_cache: media.image stable miss: {message}",
+        );
+        return FetchOutcome::NoImage;
+    }
     if had_id_hint && !key.system_id.is_empty() && !key.path.is_empty() {
-        info!(
+        debug!(
             system_id = %key.system_id,
             path = %key.path,
             media_id = ?key.media_id,
             "media_image_cache: media.image error with media_id hint: {message} (transient, will retry with system/path)",
         );
         return FetchOutcome::Transient;
-    }
-    if is_stable_media_image_miss(message) {
-        debug!(
-            system_id = %key.system_id,
-            path = %key.path,
-            "media_image_cache: media.image stable miss: {message}",
-        );
-        return FetchOutcome::NoImage;
     }
     info!(
         system_id = %key.system_id,
@@ -1418,7 +1419,7 @@ pub unsafe extern "C" fn zaparoo_media_image_bytes_for(
     };
     let cache = global_media_image_cache();
     if let Some(bytes) = cache.get_bytes(&key) {
-        info!(
+        debug!(
             system_id = %key.system_id,
             path = %key.path,
             cache_hit = true,
@@ -1427,7 +1428,7 @@ pub unsafe extern "C" fn zaparoo_media_image_bytes_for(
         );
         callback(user_data, bytes.as_ptr(), bytes.len());
     } else {
-        info!(
+        debug!(
             system_id = %key.system_id,
             path = %key.path,
             cache_hit = false,
@@ -1447,10 +1448,10 @@ mod tests {
     )]
 
     use super::{
-        ext_for_content_type, ext_from_extension_field, finish_fetch, is_connection_down_error,
-        pop_one, process_batch_outcomes, CacheState, FetchOutcome, MediaImageCache,
-        MediaImageUpdate, MediaKey, NegativeMemo, NoImagePolicy, QueueEntry, MAX_QUEUE_LEN,
-        NEGATIVE_MEMO_CAP,
+        classify_single_media_image_error, ext_for_content_type, ext_from_extension_field,
+        finish_fetch, is_connection_down_error, pop_one, process_batch_outcomes, CacheState,
+        FetchOutcome, MediaImageCache, MediaImageUpdate, MediaKey, NegativeMemo, NoImagePolicy,
+        QueueEntry, MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
     };
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex, RwLock};
@@ -1622,6 +1623,37 @@ mod tests {
         assert_eq!(decoded.system_id.as_ref(), "SNES");
         assert_eq!(decoded.path.as_ref(), "/p");
         assert_eq!(decoded.image_type.as_deref(), Some("boxart"));
+    }
+
+    #[test]
+    fn stable_media_image_miss_with_id_hint_is_not_retried() {
+        let key = MediaKey::with_media_id("Arcade", "/media/fat/_Arcade/Computer Space.mra", 14912);
+
+        let outcome = classify_single_media_image_error(
+            &key,
+            "no image found for media: system=\"Arcade\" path=\"/media/fat/_Arcade/Computer Space.mra\"",
+            true,
+        );
+
+        assert!(matches!(outcome, FetchOutcome::NoImage));
+    }
+
+    #[test]
+    fn non_stable_media_id_error_still_retries_without_hint() {
+        let key = MediaKey::with_media_id("SNES", "/p", 42);
+
+        let outcome = classify_single_media_image_error(&key, "stale media id", true);
+
+        assert!(matches!(outcome, FetchOutcome::Transient));
+    }
+
+    #[test]
+    fn connection_down_error_does_not_retry_immediately() {
+        let key = MediaKey::with_media_id("SNES", "/p", 42);
+
+        let outcome = classify_single_media_image_error(&key, "connection reset by peer", true);
+
+        assert!(matches!(outcome, FetchOutcome::ConnectionDown));
     }
 
     fn key(s: &str, p: &str) -> MediaKey {
