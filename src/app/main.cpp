@@ -14,7 +14,6 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QGuiApplication>
-#include <QImageReader>
 #include <QList>
 #include <QLocale>
 #include <QPixmapCache>
@@ -181,10 +180,6 @@ int main(int argc, char* argv[]) // NOLINT
     // messages are emitted.
     qInstallMessageHandler(qtMessageHandler);
     startupTrace("cpp:qt message handler installed");
-    QGuiApplication app(qtArgc, qtArgv);
-    startupTrace("cpp:QGuiApplication constructed");
-    QPixmapCache::setCacheLimit(kPixmapCacheLimitKiB);
-    startupTrace("cpp:QPixmapCache limit set");
 
     // Resolve language before font registration so startup only pays for
     // script fallback fonts the selected locale can actually use. The base
@@ -194,6 +189,11 @@ int main(int argc, char* argv[]) // NOLINT
     const QLocale locale = langCode.isEmpty() ? QLocale::system() : QLocale(langCode);
     const QLocale::Language uiLanguage = locale.language();
     const bool crtNativePathEnabled = zaparoo_rust_crt_native_path_enabled();
+
+    QGuiApplication app(qtArgc, qtArgv);
+    startupTrace("cpp:QGuiApplication constructed");
+    QPixmapCache::setCacheLimit(kPixmapCacheLimitKiB);
+    startupTrace("cpp:QPixmapCache limit set");
 
     // addApplicationFont returns -1 on failure (broken qrc path,
     // unreadable file). Logging the failure mode keeps a refactor that
@@ -331,21 +331,6 @@ int main(int argc, char* argv[]) // NOLINT
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     engine.addImageProvider(QStringLiteral("media-image"), new MediaImageProvider());
     startupTrace("cpp:QQmlApplicationEngine + image provider ready");
-
-    // One-shot diagnostic: a static MiSTer Qt build configured without
-    // `-feature-png` / libpng silently lacks the PNG QImageIOHandler, so
-    // `QImage::loadFromData(<png bytes>)` returns null and every cover
-    // looks "missing" with no other signal. Logging the registered
-    // formats at startup turns that failure mode into one decisive line.
-    QStringList formatNames;
-    const QList<QByteArray> supportedFormats = QImageReader::supportedImageFormats();
-    formatNames.reserve(supportedFormats.size());
-    for (const QByteArray& fmt : supportedFormats)
-    {
-        formatNames << QString::fromLatin1(fmt);
-    }
-    qInfo("QImageReader supportedImageFormats: %s",
-          qUtf8Printable(formatNames.join(QStringLiteral(", "))));
 
     QVariantMap initialProperties = {
         {"crtNativePath", crtNativePathEnabled},
