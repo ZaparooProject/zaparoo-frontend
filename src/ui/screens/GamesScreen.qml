@@ -53,7 +53,7 @@ MediaListScreen {
     detailShowDescription: false
     detailShowTitle: false
     detailLoadingText: qsTr("Loading game…")
-    pauseCoverRequestsDuringRapid: false
+    pauseCoverRequestsDuringRapid: true
     detailCanPreviousImage: Browse.GamesModel.current_detail_image_can_prev
     detailCanNextImage: Browse.GamesModel.current_detail_image_can_next
     detailIdentityForIndex: function (index) {
@@ -135,11 +135,16 @@ MediaListScreen {
     gridRowsOverride: games._gridRows
     gridTotalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
     gridHasMorePages: Browse.GamesModel.has_next_page
-    gridLoadMoreAction: () => Browse.GamesModel.fetch_more()
+    gridLoadMoreAction: urgent => {
+        if (urgent || games.detailRapidScrollActive)
+            Browse.GamesModel.fetch_more_rapid();
+        else
+            Browse.GamesModel.fetch_more();
+    }
     gridCurrentPageChangedAction: () => {
         const first = games.gamesGrid.currentPage * games.gamesGrid.pageSize;
         Browse.GamesModel.visible_first_row = first;
-        if (!games._listLayout)
+        if (!games._listLayout && !games.detailRapidScrollActive)
             Browse.GamesModel.prefetch_around(first);
     }
     activeLabelTextProvider: () => games.gamesGrid.itemCount > 0 ? Browse.GamesModel.name_at(games.gamesGrid.currentIndex) : ""
@@ -221,8 +226,7 @@ MediaListScreen {
     // directions have a row-edge escape branch, so all four cardinal
     // actions share this exact body.
     function _performGridMove(dx: int, dy: int): void {
-        if (games.gamesGrid.moveSelection(dx, dy))
-            games._scheduleSelectedPersist(Browse.GamesModel.path_at(games.gamesGrid.currentIndex));
+        games.gamesGrid.moveSelection(dx, dy);
     }
 
     function _performLinearMove(delta: int): void {
@@ -246,7 +250,6 @@ MediaListScreen {
             return;
         }
         games.gamesGrid.currentIndex = next;
-        games._scheduleSelectedPersist(Browse.GamesModel.path_at(games.gamesGrid.currentIndex));
         if (next >= count - 2 && Browse.GamesModel.has_next_page)
             Browse.GamesModel.fetch_more();
         games._prefetchListTail(next);
@@ -281,8 +284,7 @@ MediaListScreen {
             games._performLinearMove(delta * games._browsePageSize);
             return;
         }
-        if (games.gamesGrid.pageBy(delta))
-            games._scheduleSelectedPersist(Browse.GamesModel.path_at(games.gamesGrid.currentIndex));
+        games.gamesGrid.pageBy(delta);
     }
 
     // True when we're inside a navigated folder (path_stack length > 1).

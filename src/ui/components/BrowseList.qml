@@ -74,6 +74,13 @@ Item {
         return Qt.rect(p.x, p.y, listView.width, root.rowHeight);
     }
 
+    function _syncContentY(): void {
+        const maxY = Math.max(0, listView.contentHeight - listView.height);
+        const targetY = Math.min(root._targetContentY, maxY);
+        if (listView.contentY !== targetY)
+            listView.contentY = targetY;
+    }
+
     clip: true
 
     Rectangle {
@@ -90,7 +97,9 @@ Item {
             root.currentName = "";
             root.currentCoverKey = "";
         }
+        root._syncContentY();
     }
+    on_TargetContentYChanged: root._syncContentY()
 
     MouseArea {
         anchors.fill: parent
@@ -112,11 +121,13 @@ Item {
         anchors.rightMargin: root.totalItems > root.visibleRowCount ? root._gutterWidth + root._gutterGap + root.cardPaddingRight : root.cardPaddingRight
         model: root.model
         currentIndex: root.currentIndex
-        contentY: Math.min(root._targetContentY, Math.max(0, contentHeight - height))
         boundsBehavior: Flickable.StopAtBounds
         interactive: false
         spacing: root.rowSpacing
         highlightFollowsCurrentItem: false
+        Component.onCompleted: root._syncContentY()
+        onContentHeightChanged: root._syncContentY()
+        onHeightChanged: root._syncContentY()
 
         delegate: Item {
             id: row
