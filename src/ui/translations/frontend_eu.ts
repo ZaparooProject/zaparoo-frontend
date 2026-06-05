@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
-<TS version="2.1" language="en" sourcelanguage="en">
+<TS version="2.1" language="eu" sourcelanguage="en">
 <context>
     <name>AboutScreen</name>
     <message>
@@ -122,12 +122,12 @@
     <message>
         <location filename="../components/BrowseDetailPane.qml" line="89"/>
         <source>Category</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Kategoria</translation>
     </message>
     <message>
         <location filename="../components/BrowseDetailPane.qml" line="91"/>
         <source>Release date</source>
-        <translation type="unfinished">Kategoria</translation>
+        <translation type="unfinished">Argitaratze data</translation>
     </message>
     <message>
         <location filename="../components/BrowseDetailPane.qml" line="93"/>
@@ -577,7 +577,8 @@
         <location filename="../app/MainLayout.qml" line="798"/>
         <location filename="../app/MainLayout.qml" line="821"/>
         <location filename="../app/MainLayout.qml" line="832"/>
-        <source>Utzi</translation>
+        <source>Cancel</source>
+        <translation>Utzi</translation>
     </message>
     <message>
         <location filename="../app/MainLayout.qml" line="776"/>
@@ -697,8 +698,8 @@
     </message>
     <message>
         <location filename="../app/MainLayout.qml" line="988"/>
-        <source>Txandakatu</source>
-        <translation>Toggle</translation>
+        <source>Toggle</source>
+        <translation>Txandakatu</translation>
     </message>
 </context>
 <context>
