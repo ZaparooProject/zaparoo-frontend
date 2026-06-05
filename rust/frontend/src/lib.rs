@@ -400,8 +400,9 @@ pub extern "C" fn zaparoo_rust_shutdown() {
     models::shutdown_runtime(Duration::from_secs(2));
 }
 
-/// Called by the C++ main after the QML engine has loaded but before `exec()`.
-/// Fires the Zaparoo Core service start (`MiSTer` only, no-op on desktop).
+/// Called by the C++ main immediately after Rust init. Fires the Zaparoo Core
+/// service start (`MiSTer` only, no-op on desktop) early enough to overlap Core
+/// boot with Qt/font/QML setup.
 #[no_mangle]
 pub extern "C" fn zaparoo_rust_post_qt_start() {
     mister_runtime::ensure_core_service_running();

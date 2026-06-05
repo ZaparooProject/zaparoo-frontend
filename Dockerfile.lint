@@ -27,7 +27,7 @@
 # static cross Qt, and the host Qt build needed for cross-config —
 # none of which the desktop lint/build surface needs.
 
-FROM rust:1.95-slim-trixie
+FROM rust:1.96-slim-trixie
 
 ENV DEBIAN_FRONTEND=noninteractive
 # Qt complains and switches to C.UTF-8 every time it is invoked under the

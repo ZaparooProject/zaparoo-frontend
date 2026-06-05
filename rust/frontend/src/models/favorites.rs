@@ -298,19 +298,28 @@ fn apply_state(
         if model.has_next_page != has_next_page {
             model.as_mut().set_has_next_page(has_next_page);
         }
-        // Decide whether to release `loading` immediately or hold it
-        // until covers are cached. `arm_cover_gate` flips loading off
-        // itself when the page has nothing to wait on (every cover
-        // already cached, or all rows unattributed); otherwise it
-        // leaves loading=true and arms the safety timer.
-        arm_cover_gate(model.as_mut());
+        // Hidden startup binding can pause cover requests so Hub paints without
+        // Favorites' off-screen cover gate. Screen entry resumes requests and
+        // refreshes visible cover roles.
+        if model.cover_requests_paused {
+            disarm_cover_gate(model.as_mut());
+            if model.loading {
+                model.as_mut().set_loading(false);
+            }
+        } else {
+            // Decide whether to release `loading` immediately or hold it until
+            // covers are cached. `arm_cover_gate` flips loading off itself when
+            // the page has nothing to wait on; otherwise it leaves loading=true
+            // and arms the safety timer.
+            arm_cover_gate(model.as_mut());
+        }
         if model.loading_more {
             model.as_mut().set_loading_more(false);
         }
         // Look-ahead prefetch: warm page 2 so the first scroll past the
         // initial page doesn't surface a "Loading more…" cue. `fetch_more`
         // is itself guarded by `has_next_page` and `loading_more`.
-        if has_next_page {
+        if has_next_page && !model.cover_requests_paused {
             model.as_mut().fetch_more();
         }
     } else if err.is_empty() {

@@ -68,6 +68,7 @@ Item {
     property bool transitioning: false
     property bool gridFocused: true
     property bool detailRapidScrollActive: false
+    property bool detailRapidIndicatorActive: detailRapidScrollActive
     property string detailRapidScrollAction: ""
     property bool pauseCoverRequestsDuringRapid: true
     property bool forceListLayout: false
@@ -89,7 +90,7 @@ Item {
     property int gridTotalItemsOverride: -1
     property bool gridHasMorePages: false
     readonly property bool _listRapidLineMove: root._listLayout && (root.detailRapidScrollAction === "up" || root.detailRapidScrollAction === "down")
-    readonly property bool _showRapidScrollIndicator: root.detailRapidScrollActive && !root._listRapidLineMove
+    readonly property bool _showRapidScrollIndicator: root.detailRapidIndicatorActive && !root._listRapidLineMove
     readonly property bool _listLayout: root.forceListLayout || Browse.Settings.current_browse_layout === "list"
     readonly property bool _tateListLayout: root._listLayout && Browse.Settings.current_orientation !== "horizontal"
     readonly property string _activeListViewId: root._tateListLayout ? root.tateListViewId : root.listViewId
@@ -168,7 +169,6 @@ Item {
         if (index < 0 || index >= mediaGrid.itemCount)
             return;
         mediaGrid.currentIndex = index;
-        root._persistFocus();
     }
 
     function _performLinearMove(delta: int): void {
@@ -190,7 +190,6 @@ Item {
             return;
         }
         mediaGrid.currentIndex = next;
-        root._persistFocus();
         if (next >= count - 2)
             root.mediaModel.fetch_more();
     }
@@ -413,9 +412,10 @@ Item {
         totalItemsOverride: root.gridTotalItemsOverride
         hasMorePages: root.gridHasMorePages
         coverLoadingPaused: root.detailRapidScrollActive
-        onLoadMoreRequested: {
+        rapidRenderMode: root.detailRapidScrollActive
+        onLoadMoreRequested: urgent => {
             if (typeof root.gridLoadMoreAction === "function")
-                root.gridLoadMoreAction();
+                root.gridLoadMoreAction(urgent);
             else
                 root.mediaModel.fetch_more();
         }

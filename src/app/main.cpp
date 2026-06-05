@@ -159,6 +159,10 @@ int main(int argc, char* argv[]) // NOLINT
         return EXIT_FAILURE;
     }
 
+    // Start Core before Qt/font/QML setup so service boot overlaps the
+    // frontend's own construction work. On desktop this is a no-op.
+    zaparoo_rust_post_qt_start();
+
     // Install after zaparoo_rust_init() so tracing is live before any Qt
     // messages are emitted.
     qInstallMessageHandler(qtMessageHandler);
@@ -391,7 +395,6 @@ int main(int argc, char* argv[]) // NOLINT
                          qInstallMessageHandler(nullptr);
                      });
 
-    zaparoo_rust_post_qt_start();
     const int exitCode = QGuiApplication::exec();
     if (exitCode != kRestartExitCode)
     {

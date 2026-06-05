@@ -51,6 +51,7 @@ Item {
     // untouched.
     property bool focused: true
     property bool coverLoadingPaused: false
+    property bool rapidRenderMode: false
     property var layoutProfile: null
     readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
 
@@ -59,7 +60,7 @@ Item {
     // response; models without ignore it. The grid does not know
     // whether the model has more data — that is a model concern, kept
     // out of this component so it stays generic.
-    signal loadMoreRequested
+    signal loadMoreRequested(bool urgent)
     // Mouse entry points. Screens own persistence and activation side
     // effects, so the grid only updates its focused index and reports the
     // row the pointer targeted.
@@ -235,7 +236,7 @@ Item {
             root._pendingTargetPage = targetPage;
             root._pendingTargetRow = root.currentRow;
             root._pendingTargetCol = root.currentColumn;
-            root.loadMoreRequested();
+            root.loadMoreRequested(true);
             return false;
         }
         root._pendingTargetPage = -1;
@@ -251,7 +252,7 @@ Item {
         // `loadAheadPages` of the loaded edge, kick a fetch so the next
         // page boundary lands on freshly loaded rows.
         if (root.currentPage >= root.pageCount - root.loadAheadPages - 1)
-            root.loadMoreRequested();
+            root.loadMoreRequested(false);
         return true;
     }
 
@@ -283,7 +284,7 @@ Item {
                 // Keep the chain going; `fetch_more` is debounced
                 // model-side via `loading_more`, so a redundant emit
                 // is cheap.
-                root.loadMoreRequested();
+                root.loadMoreRequested(true);
                 return;
             }
             // Model says no more pages are coming. Settle on the
@@ -383,7 +384,7 @@ Item {
                     root._pendingTargetPage = targetPage;
                     root._pendingTargetRow = root.rows - 1;
                     root._pendingTargetCol = root.currentColumn;
-                    root.loadMoreRequested();
+                    root.loadMoreRequested(true);
                     return false;
                 }
                 newPage = targetPage;
@@ -395,7 +396,7 @@ Item {
                     root._pendingTargetPage = targetPage;
                     root._pendingTargetRow = 0;
                     root._pendingTargetCol = root.currentColumn;
-                    root.loadMoreRequested();
+                    root.loadMoreRequested(true);
                     return false;
                 }
                 newPage = targetPage;
@@ -423,7 +424,7 @@ Item {
             // fetch more so a subsequent press can land on freshly-
             // loaded rows.
             if (root.currentPage >= root.pageCount - root.loadAheadPages - 1)
-                root.loadMoreRequested();
+                root.loadMoreRequested(false);
             return false;
         }
         // Successful directional move clears any pending wrap-target;
@@ -437,7 +438,7 @@ Item {
         // model's own debounce (`loading_more` guard) collapses
         // repeated emissions while a fetch is in flight.
         if (root.currentPage >= root.pageCount - root.loadAheadPages - 1)
-            root.loadMoreRequested();
+            root.loadMoreRequested(false);
         return true;
     }
 
@@ -553,8 +554,8 @@ Item {
                 // after crossing past the retention edge runs at
                 // nice +10 (see media_image_provider.cpp) and is
                 // invisible to the renderer.
-                readonly property bool _coverInRange: cellPage === root.currentPage
-                readonly property bool _coverInRetentionRange: Math.abs(cellPage - root.currentPage) <= (root.coverLoadingPaused ? 1 : 5)
+                readonly property bool _coverInRange: !root.rapidRenderMode && cellPage === root.currentPage
+                readonly property bool _coverInRetentionRange: !root.rapidRenderMode && Math.abs(cellPage - root.currentPage) <= (root.coverLoadingPaused ? 1 : 5)
                 property bool _coverEverRequested: false
                 Binding on _coverEverRequested {
                     when: cellItem._coverInRange
@@ -590,7 +591,9 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: Sizing.cornerRadius
-                    color: Theme.surfaceCard
+                    color: cellItem.isSelected && root.rapidRenderMode ? Theme.selectionSurface : Theme.surfaceCard
+                    border.width: cellItem.isSelected && root.rapidRenderMode ? Sizing.stroke(2) : 0
+                    border.color: Theme.accent
                 }
 
                 TileLoader {
@@ -606,7 +609,7 @@ Item {
                     // ~110 active tiles instead of N, per-press
                     // binding cost stays roughly constant as the
                     // dataset grows.
-                    active: cellItem._coverInRetentionRange
+                    active: cellItem._coverInRetentionRange && !root.rapidRenderMode
                     // Incubate Tile construction on background frames
                     // so a retention-edge crossing (10 cells flipping
                     // active) doesn't block the main thread. The

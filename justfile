@@ -32,6 +32,9 @@ release:
     ZAPAROO_OFFICIAL_BUILD=1 cmake --build --preset desktop-release
     ZAPAROO_OFFICIAL_BUILD=1 ./scripts/build-arm32.sh
 
+release-zip *args:
+    ./scripts/package-mister-release.sh {{args}}
+
 build-dev:
     cmake --preset desktop-dev
     cmake --build --preset desktop-dev
