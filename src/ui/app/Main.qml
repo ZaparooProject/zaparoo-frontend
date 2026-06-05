@@ -106,6 +106,8 @@ MainLayout {
         Browse.GamesModel.page_size = root._gamesPageSize;
         const savedScreen = Browse.AppState.active_screen;
         root.activeScreen = root.screenHub;
+        if (savedScreen === root.screenSettings || savedScreen === root.screenAbout || savedScreen === root.screenHub)
+            root.activeScreen = savedScreen;
         if (savedScreen === root.screenGames || savedScreen === root.screenSystems || savedScreen === root.screenFavorites || savedScreen === root.screenRecents) {
             root._startupRestorePending = true;
             root._startupRestoreScreen = savedScreen;
@@ -691,7 +693,14 @@ MainLayout {
             return;
         }
         if (Browse.CategoriesModel.count <= 0) {
-            root._finishStartupRestore();
+            // Connected + temporarily empty catalog is not final during
+            // startup: Core can answer with 0 systems before media-db
+            // completion triggers the catalog invalidation refetch.
+            // Keep the restore armed so the later non-empty refetch can
+            // still resume the saved browse screen. A truly empty
+            // library remains cancelable by user input and is surfaced
+            // by the first-run modal.
+            root._startupRestoreStarted = false;
             return;
         }
         const category = Browse.HubState.category;

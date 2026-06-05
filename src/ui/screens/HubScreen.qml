@@ -48,6 +48,31 @@ import Zaparoo.Browse as Browse
 Item {
     id: hub
 
+    readonly property var _placeholderCategories: [
+        { name: qsTr("Arcade"), coverKey: "categories/Arcade" },
+        { name: qsTr("Computers"), coverKey: "categories/Computer" },
+        { name: qsTr("Consoles"), coverKey: "categories/Console" },
+        { name: qsTr("Handhelds"), coverKey: "categories/Handheld" }
+    ]
+    readonly property var _fallbackCoverKeyByCategory: ({
+        "Arcade": "categories/Arcade",
+        "Computers": "categories/Computer",
+        "Consoles": "categories/Console",
+        "Handhelds": "categories/Handheld"
+    })
+    readonly property var visibleCategoryEntries: {
+        if (Browse.CategoriesModel.count <= 0)
+            return hub._placeholderCategories;
+        const entries = [];
+        for (let i = 0; i < Browse.CategoriesModel.count; i++) {
+            const name = Browse.CategoriesModel.category_at(i);
+            entries.push({
+                name: name,
+                coverKey: hub._fallbackCoverKeyByCategory[name] || ("categories/" + name)
+            });
+        }
+        return entries;
+    }
     property bool transitioning: false
     // 0 = categories row, 1 = actions row.
     property int currentRow: 0
@@ -275,7 +300,7 @@ Item {
     // choppy on MiSTer even though SystemsScreen is `visible: false`.
     function _commitCategorySelection(): void {
         Browse.HubState.selected_row = 0;
-        if (Browse.CategoriesModel.count > 0)
+        if (Browse.CategoriesModel.count > 0 && hub.currentIndex < Browse.CategoriesModel.count)
             Browse.HubState.category = Browse.CategoriesModel.category_at(hub.currentIndex);
     }
 
@@ -292,7 +317,7 @@ Item {
     }
 
     function _focusCategory(index: int): void {
-        if (index < 0 || index >= Browse.CategoriesModel.count)
+        if (index < 0 || index >= hub.visibleCategoryEntries.length)
             return;
         hub.currentRow = 0;
         hub.currentIndex = index;
@@ -315,7 +340,7 @@ Item {
         if (hub.currentRow === 0) {
             // Empty row sends "" — router treats that as the committed
             // "Enter on empty hub goes to Systems" passthrough.
-            const chosen = Browse.CategoriesModel.count <= 0 ? "" : Browse.CategoriesModel.category_at(hub.currentIndex);
+            const chosen = Browse.CategoriesModel.count <= 0 || hub.currentIndex >= Browse.CategoriesModel.count ? "" : Browse.CategoriesModel.category_at(hub.currentIndex);
             hub.requestAccept(chosen);
             return;
         }
@@ -360,7 +385,7 @@ Item {
         readonly property int spacing: Sizing.pctW(3)
         readonly property int sideInset: Sizing.pctW(5)
         readonly property int maxCellWidth: Sizing.pctH(22)
-        readonly property int n: Browse.CategoriesModel.count
+        readonly property int n: hub.visibleCategoryEntries.length
         // n=0 falls back to maxCellWidth so the actions row (which
         // mirrors `categoriesRow.cellWidth`) still renders at proper
         // size when the catalog reports 0 systems. Without the
@@ -400,14 +425,13 @@ Item {
         Repeater {
             id: itemRepeater
 
-            model: Browse.CategoriesModel
+            model: hub.visibleCategoryEntries
 
             Item {
                 id: cellItem
 
                 required property int index
-                required property string name
-                required property string coverKey
+                required property var modelData
 
                 x: categoriesRow.rowOriginX + index * (categoriesRow.cellWidth + categoriesRow.spacing)
                 y: categoriesRow.verticalPadding
@@ -424,8 +448,8 @@ Item {
                     sourceComponent: tileDelegate
                     isSelected: cellItem.isSelected
                     isFocused: hub.currentRow === 0
-                    name: cellItem.name
-                    coverKey: cellItem.coverKey
+                    name: cellItem.modelData.name
+                    coverKey: cellItem.modelData.coverKey
                 }
 
                 MouseArea {
@@ -543,8 +567,9 @@ Item {
                 const entry = hub.actionEntries[hub.currentIndex];
                 return entry ? entry.text : "";
             }
-            if (Browse.CategoriesModel.count > 0)
-                return Browse.CategoriesModel.category_at(hub.currentIndex);
+            const entry = hub.visibleCategoryEntries[hub.currentIndex];
+            if (entry)
+                return entry.name;
             return "";
         }
         visible: !hub.transitioning
@@ -562,7 +587,7 @@ Item {
         enabled: Browse.CategoriesModel.loaded || (Browse.CategoriesModel.error_message ?? "") !== ""
         loading: false
         errorMessage: Browse.CategoriesModel.error_message ?? ""
-        count: Browse.CategoriesModel.count
+        count: Browse.CategoriesModel.loaded ? Browse.CategoriesModel.count : 1
         emptyText: qsTr("No systems available. Run Update media database from Settings.")
     }
 }
