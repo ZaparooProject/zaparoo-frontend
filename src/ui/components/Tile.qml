@@ -109,6 +109,8 @@ Item {
     readonly property bool _coverPending: root.delegateCoverKey === "icons/Loading"
     readonly property url _coverSource: root._coverPending ? "" : Resources.coverUrl(root.delegateCoverKey)
     readonly property bool _hasCover: cover.status === Image.Ready
+    readonly property bool _startupTraceResource: root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey === "icons/PlayOutline" || root.delegateCoverKey === "icons/HeartOutline" || root.delegateCoverKey === "icons/History" || root.delegateCoverKey === "icons/Settings"
+    property double _startupTraceLoadStartedAt: 0
 
     anchors.fill: parent
     Component.onCompleted: {
@@ -119,6 +121,20 @@ Item {
         // qmllint disable missing-property compiler
         if (typeof parent.isSelected !== "boolean" || typeof parent.isFocused !== "boolean" || typeof parent.name !== "string" || typeof parent.coverKey !== "string")
             console.warn("Tile: parent does not satisfy the delegate contract " + "(expected isSelected:bool, isFocused:bool, " + "name:string, coverKey:string)");
+    }
+
+    function _startupTrace(stage: string, details: string): void {
+        if (!root._startupTraceResource)
+            return;
+        let node = root.parent;
+        while (node) {
+            if (typeof node._startupTrace === "function") {
+                node._startupTrace(stage, "coverKey=" + root.delegateCoverKey, details);
+                return;
+            }
+            node = node.parent;
+        }
+        console.debug(stage + " coverKey=" + root.delegateCoverKey + " " + details);
     }
 
     // Tile body. Solid card so the white icon has a high-contrast
@@ -214,6 +230,30 @@ Item {
             // there is no second layer of card padding below.
             bottomMargin: root.showCaption ? root._captionHeight + root._captionGap : root._padding
             horizontalCenter: parent.horizontalCenter
+        }
+
+        onStatusChanged: {
+            if (!root._startupTraceResource)
+                return;
+            if (status === Image.Loading) {
+                root._startupTraceLoadStartedAt = Date.now();
+                root._startupTrace("startup/qml resource load start",
+                                   "source=" + source);
+            } else if (status === Image.Ready) {
+                const durMs = root._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - root._startupTraceLoadStartedAt) : 0;
+                root._startupTrace("startup/qml resource load ready",
+                                   "source=" + source,
+                                   "dur_ms=" + durMs,
+                                   "paintedWidth=" + width,
+                                   "paintedHeight=" + height);
+                root._startupTraceLoadStartedAt = 0;
+            } else if (status === Image.Error) {
+                const durMs = root._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - root._startupTraceLoadStartedAt) : 0;
+                root._startupTrace("startup/qml resource load error",
+                                   "source=" + source,
+                                   "dur_ms=" + durMs);
+                root._startupTraceLoadStartedAt = 0;
+            }
         }
     }
 

@@ -126,6 +126,29 @@ MainLayout {
         return root.hubScreen;
     }
 
+    function _requestModal(modal: string): void {
+        if (modal === root.modalCardWrite)
+            root.cardWriteModalRequested = true;
+        else if (modal === root.modalContextMenu)
+            root.contextMenuRequested = true;
+        else if (modal === root.modalGameInfo)
+            root.gameInfoModalRequested = true;
+        else if (modal === root.modalQrCode)
+            root.qrCodeModalRequested = true;
+        else if (modal === root.modalCommercialNotice)
+            root.commercialNoticeModalRequested = true;
+        else if (modal === root.modalFirstRunIndex)
+            root.firstRunIndexModalRequested = true;
+        else if (modal === root.modalLogUpload)
+            root.logUploadModalRequested = true;
+        else if (modal === root.modalQuitConfirm)
+            root.quitConfirmModalRequested = true;
+        else if (modal === root.modalListPicker)
+            root.listPickerModalRequested = true;
+        else if (modal === root.modalSettingNeedsRestart)
+            root.settingNeedsRestartModalRequested = true;
+    }
+
     Component.onCompleted: {
         // Desktop CRT preview applies one initial integer scale here,
         // then MainLayout snaps later user resizes to the supported
@@ -989,7 +1012,8 @@ MainLayout {
             root._discoverParentEntries = root.contextMenuEntries;
             root.contextMenuEntries = entries;
             root.contextMenuMode = "alternate_versions";
-            root.contextMenu.currentIndex = 0;
+            if (root.contextMenu !== null)
+                root.contextMenu.currentIndex = 0;
         }
     }
 
@@ -1138,6 +1162,7 @@ MainLayout {
         root._discoverParentEntries = [];
         root._discoverMenuPending = false;
         root.contextMenuAnchor = anchorRect;
+        root._requestModal(root.modalContextMenu);
         root.contextMenuVisible = true;
         if (ScreenManager.topModal !== root.modalContextMenu)
             ScreenManager.pushModal(root.modalContextMenu);
@@ -1272,6 +1297,7 @@ MainLayout {
         if (systemId === "" || path === "")
             return;
         Browse.GameInfo.load(systemId, path, title);
+        root._requestModal(root.modalGameInfo);
         root.gameInfoModalVisible = true;
         if (ScreenManager.topModal !== root.modalGameInfo)
             ScreenManager.pushModal(root.modalGameInfo);
@@ -1285,6 +1311,7 @@ MainLayout {
     }
 
     function openQrCodeModal(): void {
+        root._requestModal(root.modalQrCode);
         root.qrCodeModalVisible = true;
         if (ScreenManager.topModal !== root.modalQrCode)
             ScreenManager.pushModal(root.modalQrCode);
@@ -1323,6 +1350,7 @@ MainLayout {
         if (Browse.CategoriesModel.count > 0)
             return;
         root._firstRunIndexShown = true;
+        root._requestModal(root.modalFirstRunIndex);
         root.firstRunIndexModalVisible = true;
         if (ScreenManager.topModal !== root.modalFirstRunIndex)
             ScreenManager.pushModal(root.modalFirstRunIndex);
@@ -1353,6 +1381,7 @@ MainLayout {
         // ready to use.
         if (!root.bootComplete)
             return;
+        root._requestModal(root.modalCommercialNotice);
         root.commercialNoticeModalVisible = true;
         if (ScreenManager.topModal !== root.modalCommercialNotice)
             ScreenManager.pushModal(root.modalCommercialNotice);
@@ -1377,6 +1406,7 @@ MainLayout {
         // in the session doesn't paint stale state behind the new
         // upload's "Uploading…" copy.
         Browse.LogUpload.reset();
+        root._requestModal(root.modalLogUpload);
         root.logUploadModalVisible = true;
         if (ScreenManager.topModal !== root.modalLogUpload)
             ScreenManager.pushModal(root.modalLogUpload);
@@ -1394,6 +1424,7 @@ MainLayout {
     // `openQuitConfirmModal` instead of `Qt.quit()` so a stray B / Esc
     // can't kill the frontend; the modal owns the actual decision.
     function openQuitConfirmModal(): void {
+        root._requestModal(root.modalQuitConfirm);
         root.quitConfirmModalVisible = true;
         if (ScreenManager.topModal !== root.modalQuitConfirm)
             ScreenManager.pushModal(root.modalQuitConfirm);
@@ -1420,6 +1451,7 @@ MainLayout {
         root.listPickerEntries = entries;
         root.listPickerInitialId = initialId;
         root.listPickerFieldId = fieldId;
+        root._requestModal(root.modalListPicker);
         root.listPickerModalVisible = true;
         if (ScreenManager.topModal !== root.modalListPicker)
             ScreenManager.pushModal(root.modalListPicker);
@@ -1436,6 +1468,7 @@ MainLayout {
     }
 
     function openSettingNeedsRestartModal(): void {
+        root._requestModal(root.modalSettingNeedsRestart);
         root.settingNeedsRestartModalVisible = true;
         if (ScreenManager.topModal !== root.modalSettingNeedsRestart)
             ScreenManager.pushModal(root.modalSettingNeedsRestart);
@@ -1634,6 +1667,7 @@ MainLayout {
             Browse.FavoritesModel.cancel_card_write();
         root.cardWriteOwner = owner;
         root.cardWriteFailed = false;
+        root._requestModal(root.modalCardWrite);
         root.cardWriteModalVisible = true;
         cardWriteFailureTimer.stop();
         if (ScreenManager.topModal !== root.modalCardWrite)
@@ -1709,21 +1743,29 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalQrCode && action === "cancel") {
                 root.closeQrCodeModal();
             } else if (ScreenManager.topModal === root.modalGameInfo) {
-                root.gameInfoModal.handleAction(action);
+                if (root.gameInfoModal !== null)
+                    root.gameInfoModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalContextMenu) {
-                root.contextMenu.handleAction(action);
+                if (root.contextMenu !== null)
+                    root.contextMenu.handleAction(action);
             } else if (ScreenManager.topModal === root.modalFirstRunIndex) {
-                root.firstRunIndexModal.handleAction(action);
+                if (root.firstRunIndexModal !== null)
+                    root.firstRunIndexModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalCommercialNotice) {
-                root.commercialNoticeModal.handleAction(action);
+                if (root.commercialNoticeModal !== null)
+                    root.commercialNoticeModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalLogUpload) {
-                root.logUploadModal.handleAction(action);
+                if (root.logUploadModal !== null)
+                    root.logUploadModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalQuitConfirm) {
-                root.quitConfirmModal.handleAction(action);
+                if (root.quitConfirmModal !== null)
+                    root.quitConfirmModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalSettingNeedsRestart) {
-                root.settingNeedsRestartModal.handleAction(action);
+                if (root.settingNeedsRestartModal !== null)
+                    root.settingNeedsRestartModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalListPicker) {
-                root.listPickerModal.handleAction(action);
+                if (root.listPickerModal !== null)
+                    root.listPickerModal.handleAction(action);
             }
             // While a modal owns input, swallow everything not handled
             // above rather than leak it to the root screen.

@@ -81,6 +81,16 @@ ApplicationWindow {
     property bool recentsScreenRequested: false
     property bool settingsScreenRequested: false
     property bool aboutScreenRequested: false
+    property bool cardWriteModalRequested: false
+    property bool settingNeedsRestartModalRequested: false
+    property bool contextMenuRequested: false
+    property bool qrCodeModalRequested: false
+    property bool gameInfoModalRequested: false
+    property bool firstRunIndexModalRequested: false
+    property bool commercialNoticeModalRequested: false
+    property bool logUploadModalRequested: false
+    property bool quitConfirmModalRequested: false
+    property bool listPickerModalRequested: false
 
     function _startupTrace(): void {
         if (!root._startupTraceActive)
@@ -235,14 +245,16 @@ ApplicationWindow {
     property var recentsScreen: recentsScreenLoader.item
     property var settingsScreen: settingsScreenLoader.item
     property var aboutScreen: aboutScreenLoader.item
-    property alias contextMenu: contextMenu
-    property alias commercialNoticeModal: commercialNoticeModal
-    property alias firstRunIndexModal: firstRunIndexModal
-    property alias gameInfoModal: gameInfoModal
-    property alias logUploadModal: logUploadModal
-    property alias quitConfirmModal: quitConfirmModal
-    property alias settingNeedsRestartModal: settingNeedsRestartModal
-    property alias listPickerModal: listPickerModal
+    property var cardWriteModal: cardWriteModalLoader.item
+    property var contextMenu: contextMenuLoader.item
+    property var qrCodeModal: qrCodeModalLoader.item
+    property var commercialNoticeModal: commercialNoticeModalLoader.item
+    property var firstRunIndexModal: firstRunIndexModalLoader.item
+    property var gameInfoModal: gameInfoModalLoader.item
+    property var logUploadModal: logUploadModalLoader.item
+    property var quitConfirmModal: quitConfirmModalLoader.item
+    property var settingNeedsRestartModal: settingNeedsRestartModalLoader.item
+    property var listPickerModal: listPickerModalLoader.item
     property alias headerBar: headerBar
     property alias screensaverOverlay: screensaverOverlay
     // Exposed so Main.qml binds Sizing.screenWidth/Height to the
@@ -511,6 +523,8 @@ ApplicationWindow {
             // rendered, so this is MiSTer-safe; `cache: true` keeps the
             // pixmap in QPixmapCache after first decode.
             Image {
+                id: backgroundTexture
+
                 anchors.fill: parent
                 source: "qrc:/qt/qml/Zaparoo/App/resources/images/bg-circuit.png"
                 fillMode: Image.Tile
@@ -520,6 +534,35 @@ ApplicationWindow {
                 // of flashing the bare bgDeep underneath. One small PNG decode
                 // at startup is cheap.
                 asynchronous: false
+
+                property double _startupTraceLoadStartedAt: 0
+
+                onStatusChanged: {
+                    if (!root._startupTraceActive && !root._firstFrameSeen)
+                        return;
+                    if (status === Image.Loading) {
+                        backgroundTexture._startupTraceLoadStartedAt = Date.now();
+                        root._startupTrace("startup/qml resource load start",
+                                           "coverKey=background/bg-circuit",
+                                           "source=" + source);
+                    } else if (status === Image.Ready) {
+                        const durMs = backgroundTexture._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - backgroundTexture._startupTraceLoadStartedAt) : 0;
+                        root._startupTrace("startup/qml resource load ready",
+                                           "coverKey=background/bg-circuit",
+                                           "source=" + source,
+                                           "dur_ms=" + durMs,
+                                           "tileWidth=" + sourceSize.width,
+                                           "tileHeight=" + sourceSize.height);
+                        backgroundTexture._startupTraceLoadStartedAt = 0;
+                    } else if (status === Image.Error) {
+                        const durMs = backgroundTexture._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - backgroundTexture._startupTraceLoadStartedAt) : 0;
+                        root._startupTrace("startup/qml resource load error",
+                                           "coverKey=background/bg-circuit",
+                                           "source=" + source,
+                                           "dur_ms=" + durMs);
+                        backgroundTexture._startupTraceLoadStartedAt = 0;
+                    }
+                }
             }
 
             // ── Top header (logo + status row + status pill) ───────────────────────────
@@ -752,103 +795,144 @@ ApplicationWindow {
 
             // ── Card writer modal ────────────────────────────────────────────────────
 
-            Modal {
-                id: cardWriteModal
-
-                open: root.cardWriteModalVisible
-                kind: "transient"
-                failed: root.cardWriteFailed
-                title: root.cardWriteFailed ? qsTr("Writing failed") : qsTr("Put a writable card near the reader")
-                onCancelRequested: root.cancelCardWriteRequested()
+            Loader {
+                id: cardWriteModalLoader
+                active: root.cardWriteModalRequested
+                sourceComponent: Component {
+                    Modal {
+                        open: root.cardWriteModalVisible
+                        kind: "transient"
+                        failed: root.cardWriteFailed
+                        title: root.cardWriteFailed ? qsTr("Writing failed") : qsTr("Put a writable card near the reader")
+                        onCancelRequested: root.cancelCardWriteRequested()
+                    }
+                }
             }
 
             // ── Setting restart prompt modal ────────────────────────────────────────────────────
 
-            Modal {
-                id: settingNeedsRestartModal
-
-                open: root.settingNeedsRestartModalVisible
-                kind: "confirm"
-                title: qsTr("Quit and restart Zaparoo Frontend?")
-                body: qsTr("In order to apply this setting we need to restart the frontend.")
-                onConfirmed: root.acceptRestart()
-                onCancelRequested: root.cancelRestart()
+            Loader {
+                id: settingNeedsRestartModalLoader
+                active: root.settingNeedsRestartModalRequested
+                sourceComponent: Component {
+                    Modal {
+                        open: root.settingNeedsRestartModalVisible
+                        kind: "confirm"
+                        title: qsTr("Quit and restart Zaparoo Frontend?")
+                        body: qsTr("In order to apply this setting we need to restart the frontend.")
+                        onConfirmed: root.acceptRestart()
+                        onCancelRequested: root.cancelRestart()
+                    }
+                }
             }
 
-            ContextMenu {
-                id: contextMenu
-
-                open: root.contextMenuVisible
-                anchorRect: root.contextMenuAnchor
-                entries: root.contextMenuEntries
-                bottomUnsafeHeight: BrowseLayouts.numberValue(root._browseViewProfile, "footer.bottomUnsafeHeight", Sizing.pctH(6) + Sizing.pctH(2))
-                onAccepted: id => root.contextMenuAccepted(id)
-                onCloseRequested: root.contextMenuCloseRequested()
+            Loader {
+                id: contextMenuLoader
+                active: root.contextMenuRequested
+                sourceComponent: Component {
+                    ContextMenu {
+                        open: root.contextMenuVisible
+                        anchorRect: root.contextMenuAnchor
+                        entries: root.contextMenuEntries
+                        bottomUnsafeHeight: BrowseLayouts.numberValue(root._browseViewProfile, "footer.bottomUnsafeHeight", Sizing.pctH(6) + Sizing.pctH(2))
+                        onAccepted: id => root.contextMenuAccepted(id)
+                        onCloseRequested: root.contextMenuCloseRequested()
+                    }
+                }
             }
 
-            QrCodeModal {
-                id: qrCodeModal
-
+            Loader {
+                id: qrCodeModalLoader
                 anchors.fill: parent
-                open: root.qrCodeModalVisible
+                active: root.qrCodeModalRequested
+                sourceComponent: Component {
+                    QrCodeModal {
+                        anchors.fill: parent
+                        open: root.qrCodeModalVisible
+                    }
+                }
             }
 
-            GameInfoModal {
-                id: gameInfoModal
-
+            Loader {
+                id: gameInfoModalLoader
                 anchors.fill: parent
-                open: root.gameInfoModalVisible
-                onCloseRequested: root.closeGameInfoRequested()
+                active: root.gameInfoModalRequested
+                sourceComponent: Component {
+                    GameInfoModal {
+                        anchors.fill: parent
+                        open: root.gameInfoModalVisible
+                        onCloseRequested: root.closeGameInfoRequested()
+                    }
+                }
             }
 
             // First-run mediadb index modal. Pushed by Main.qml the first time
             // we connect to a Core whose mediadb is empty. Blocks the screens
             // beneath until the initial scan completes (or the user cancels and
             // tries again).
-            FirstRunIndexModal {
-                id: firstRunIndexModal
-
+            Loader {
+                id: firstRunIndexModalLoader
                 anchors.fill: parent
-                open: root.firstRunIndexModalVisible
-                onCloseRequested: root.closeFirstRunIndexRequested()
+                active: root.firstRunIndexModalRequested
+                sourceComponent: Component {
+                    FirstRunIndexModal {
+                        anchors.fill: parent
+                        open: root.firstRunIndexModalVisible
+                        onCloseRequested: root.closeFirstRunIndexRequested()
+                    }
+                }
             }
 
             // Commercial-use notice. Sits above every other modal (z: 310) so
             // it always paints first on a fresh install. Once the user acks,
             // `Browse.Notice.commercial_ack` flips to true on disk and the
             // modal stays closed for the rest of this install.
-            CommercialNoticeModal {
-                id: commercialNoticeModal
-
+            Loader {
+                id: commercialNoticeModalLoader
                 anchors.fill: parent
-                open: root.commercialNoticeModalVisible
-                onCloseRequested: root.closeCommercialNoticeRequested()
+                active: root.commercialNoticeModalRequested
+                sourceComponent: Component {
+                    CommercialNoticeModal {
+                        anchors.fill: parent
+                        open: root.commercialNoticeModalVisible
+                        onCloseRequested: root.closeCommercialNoticeRequested()
+                    }
+                }
             }
 
             // Log-upload modal. Pushed by Main.qml when the user triggers the
             // "Upload log" action in Settings. Owns its own three-phase view
             // (uploading / success / error) — the router only sees open / close.
-            LogUploadModal {
-                id: logUploadModal
-
+            Loader {
+                id: logUploadModalLoader
                 anchors.fill: parent
-                open: root.logUploadModalVisible
-                onCloseRequested: root.closeLogUploadRequested()
+                active: root.logUploadModalRequested
+                sourceComponent: Component {
+                    LogUploadModal {
+                        anchors.fill: parent
+                        open: root.logUploadModalVisible
+                        onCloseRequested: root.closeLogUploadRequested()
+                    }
+                }
             }
 
             // Quit-confirm modal. Pushed by Main.qml when the user presses
             // cancel on Hub. Default focus is "No" so an accidental press
             // can't quit; "Yes" routes through `quitConfirmAccepted` and the
             // router calls Qt.quit().
-            Modal {
-                id: quitConfirmModal
-
-                open: root.quitConfirmModalVisible
-                kind: "confirm"
-                title: qsTr("Quit Zaparoo Frontend?")
-                body: qsTr("Are you sure you want to exit?")
-                onConfirmed: root.quitConfirmAccepted()
-                onCancelRequested: root.closeQuitConfirmRequested()
+            Loader {
+                id: quitConfirmModalLoader
+                active: root.quitConfirmModalRequested
+                sourceComponent: Component {
+                    Modal {
+                        open: root.quitConfirmModalVisible
+                        kind: "confirm"
+                        title: qsTr("Quit Zaparoo Frontend?")
+                        body: qsTr("Are you sure you want to exit?")
+                        onConfirmed: root.quitConfirmAccepted()
+                        onCancelRequested: root.closeQuitConfirmRequested()
+                    }
+                }
             }
 
             // List-picker modal. Settings opens this for picker rows
@@ -856,16 +940,21 @@ ApplicationWindow {
             // fieldId round-trip lets the router dispatch the chosen id
             // back to the matching Browse.Settings.set_X without parsing
             // the title.
-            ListPickerModal {
-                id: listPickerModal
-
+            Loader {
+                id: listPickerModalLoader
                 anchors.fill: parent
-                open: root.listPickerModalVisible
-                title: root.listPickerTitle
-                entries: root.listPickerEntries
-                initialId: root.listPickerInitialId
-                onAccepted: id => root.listPickerAccepted(root.listPickerFieldId, id)
-                onCloseRequested: root.listPickerCloseRequested(root.listPickerFieldId)
+                active: root.listPickerModalRequested
+                sourceComponent: Component {
+                    ListPickerModal {
+                        anchors.fill: parent
+                        open: root.listPickerModalVisible
+                        title: root.listPickerTitle
+                        entries: root.listPickerEntries
+                        initialId: root.listPickerInitialId
+                        onAccepted: id => root.listPickerAccepted(root.listPickerFieldId, id)
+                        onCloseRequested: root.listPickerCloseRequested(root.listPickerFieldId)
+                    }
+                }
             }
 
             // ── Instructions bar ──────────────────────────────────────────────────────
@@ -948,8 +1037,10 @@ ApplicationWindow {
                             }
                         ];
                     if (root.logUploadModalVisible) {
-                        const phase = root.logUploadModal.phase;
-                        if (phase === root.logUploadModal._stateSuccess)
+                        const phase = root.logUploadModal ? root.logUploadModal.phase : "";
+                        const success = root.logUploadModal ? root.logUploadModal._stateSuccess : "__none__";
+                        const error = root.logUploadModal ? root.logUploadModal._stateError : "__none__";
+                        if (phase === success)
                             return [
                                 {
                                     button: "ButtonA",
@@ -960,7 +1051,7 @@ ApplicationWindow {
                                     label: qsTr("Close")
                                 }
                             ];
-                        if (phase === root.logUploadModal._stateError)
+                        if (phase === error)
                             return [
                                 {
                                     button: "ButtonA",
@@ -1004,7 +1095,7 @@ ApplicationWindow {
                     if (!root.bootComplete)
                         return [];
                     if (root.firstRunIndexModalVisible) {
-                        const phase = root.firstRunIndexModal.phase;
+                        const phase = root.firstRunIndexModal ? root.firstRunIndexModal.phase : "";
                         if (phase === "running")
                             return [
                                 {

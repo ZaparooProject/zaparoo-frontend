@@ -22,10 +22,9 @@ QtObject {
     //     QML engine. The URL bypasses qrc entirely; QtQuick calls
     //     `requestImage` with the encoded key, the Rust side decodes
     //     back to `(systemId, path)` and returns bytes.
-    //   * everything else (categories, icons/Folder, icons/File, …) —
-    //     SVG. QtSvg rasterizes the source on first load and the
-    //     result lands in QPixmapCache, so paint cost matches PNG
-    //     after the one-shot decode.
+    //   * `categories/<name>` — curated Hub category icons, shipped
+    //     as SVG source.
+    //   * everything else (icons/Folder, icons/File, …) — SVG.
 
     // Base URL for everything under `resources/` in the embedded qrc.
     readonly property string baseUrl: "qrc:/qt/qml/Zaparoo/App/resources/"
