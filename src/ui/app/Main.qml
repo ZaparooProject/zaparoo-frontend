@@ -54,6 +54,7 @@ MainLayout {
     property bool _startupRestorePending: false
     property bool _startupRestoreStarted: false
     property string _startupRestoreScreen: ""
+    property var _screenReadyCallbacks: ({})
     property var _discoverParentEntries: []
     property string _pendingLauncherSystemId: ""
     property string _pendingLauncherSelectionId: ""
@@ -110,6 +111,19 @@ MainLayout {
             root.aboutScreenRequested = true;
     }
 
+    function _primeStartupRestoreScreen(screen: string): void {
+        if (screen === root.screenSystems) {
+            root._requestScreen(root.screenSystems);
+            return;
+        }
+        if (screen === root.screenGames) {
+            root._requestScreen(root.screenSystems);
+            root._requestScreen(root.screenGames);
+            return;
+        }
+        root._requestScreen(screen);
+    }
+
     function _screenItem(screen: string): var {
         if (screen === root.screenSystems)
             return root.systemsScreen;
@@ -124,6 +138,30 @@ MainLayout {
         if (screen === root.screenAbout)
             return root.aboutScreen;
         return root.hubScreen;
+    }
+
+    function _whenScreenReady(screen: string, callback): void {
+        root._requestScreen(screen);
+        const item = root._screenItem(screen);
+        if (item !== null && item !== undefined) {
+            callback(item);
+            return;
+        }
+        const pending = root._screenReadyCallbacks[screen] || [];
+        pending.push(callback);
+        root._screenReadyCallbacks[screen] = pending;
+    }
+
+    function _flushScreenReady(screen: string): void {
+        const item = root._screenItem(screen);
+        if (item === null || item === undefined)
+            return;
+        const pending = root._screenReadyCallbacks[screen] || [];
+        if (pending.length === 0)
+            return;
+        delete root._screenReadyCallbacks[screen];
+        for (let i = 0; i < pending.length; i++)
+            pending[i](item);
     }
 
     function _requestModal(modal: string): void {
@@ -164,6 +202,7 @@ MainLayout {
         if (savedScreen !== "" && savedScreen !== root.screenHub) {
             root._startupRestorePending = true;
             root._startupRestoreScreen = savedScreen;
+            root._primeStartupRestoreScreen(savedScreen);
             root.startupRestoreVisible = true;
             startupRestoreKickTimer.restart();
         }
@@ -224,84 +263,38 @@ MainLayout {
         // GamesState, or we'd override the user's position with a stale
         // games target from a prior escape-back-up-the-stack.
         function onModelReset(): void {
-            if (root.systemsScreen === null)
+            if (root.systemsScreen === null) {
+                root._whenScreenReady(root.screenSystems, function () {
+                    root._restoreSystemsScreenSelection();
+                });
                 return;
-            const savedSystem = root.activeScreen === root.screenGames ? (Browse.GamesState.system_id !== "" ? Browse.GamesState.system_id : Browse.SystemsState.system_id) : Browse.SystemsState.system_id;
-            const idx = savedSystem === "" ? -1 : Browse.SystemsModel.index_for_system_id(savedSystem);
-            // Seed without animating the page-snap — a fresh model is a
-            // category switch, not user navigation, so the previous
-            // page's slide-out would just be a distracting swoop.
-            root.systemsScreen.systemsGrid.setCurrentIndexImmediate(idx >= 0 ? idx : 0);
-            if (idx >= 0) {
-                // Restore at the deepest persisted folder level. Index 0
-                // is the games-screen initial view (model decides
-                // single-root auto-nav); deeper levels are real paths
-                // pushed by `_navigateIntoFolder`. set_system seeds the
-                // model's current_system_id (which set_path needs as a
-                // browse filter); when the user was deep in a folder we
-                // immediately follow up with set_path so the user
-                // resumes inside their last folder. Esc still pops one
-                // level at a time because the persisted path_stack
-                // carries the intermediate levels. The set_system
-                // browse is invalidated by the second seq-bump and its
-                // result is discarded — wasted work but correct.
-                Browse.GamesModel.set_system(savedSystem);
-                const stack = Browse.GamesState.path_stack;
-                const top = stack.length > 0 ? stack[stack.length - 1] : "";
-                if (top !== "")
-                    Browse.GamesModel.set_path(top);
-            } else if (root.activeScreen === root.screenGames && Browse.SystemsModel.count > 0) {
-                // Games-screen restore where the saved id is missing
-                // (renamed system, ROM deleted): drive GamesModel from
-                // the visible row 0 fallback so the user sees real
-                // games for whichever system the grid landed on, not a
-                // stale list from a prior session. Persisted
-                // GamesState.system_id is left untouched so the user's
-                // intent survives a transient catalog gap.
-                Browse.GamesModel.set_system(Browse.SystemsModel.system_id_at(0));
             }
+            root._restoreSystemsScreenSelection();
         }
     }
     Connections {
         target: Browse.GamesModel
         function onModelReset(): void {
-            if (root.gamesScreen === null)
-                return;
-            // Restore selection at the deepest navigated level. Stack
-            // levels share the same ListModel reset signal — the model
-            // doesn't know which level a reset corresponds to — so we
-            // always read the top-of-stack saved entry path; if the
-            // entry is gone (deleted, moved, or this is a different
-            // level than the one persisted) we fall back to row 0.
-            const sels = Browse.GamesState.selected_at_level;
-            const savedPath = sels.length > 0 ? sels[sels.length - 1] : "";
-            const idx = savedPath === "" ? -1 : Browse.GamesModel.index_for_game_path(savedPath);
-            if (idx >= 0) {
-                root.gamesScreen.gamesGrid.setCurrentIndexImmediate(idx);
-                root._pendingGameRestorePath = "";
+            if (root.gamesScreen === null) {
+                root._whenScreenReady(root.screenGames, function () {
+                    root._restoreGamesScreenSelection();
+                });
                 return;
             }
-            // Saved entry isn't on page 1. If there are more pages,
-            // keep paginating until it shows up or we exhaust the
-            // folder; the count-watcher below drives the loop.
-            // Otherwise (entry truly gone, or single-page folder)
-            // fall back to row 0.
-            if (savedPath !== "" && Browse.GamesModel.has_next_page) {
-                root._pendingGameRestorePath = savedPath;
-                root.gamesScreen.gamesGrid.setCurrentIndexImmediate(0);
-                Browse.GamesModel.fetch_more();
-                return;
-            }
-            root._pendingGameRestorePath = "";
-            root.gamesScreen.gamesGrid.setCurrentIndexImmediate(0);
+            root._restoreGamesScreenSelection();
         }
         // Pages 2+ append rows via begin_insert_rows / end_insert_rows
         // (no model reset), so we can't piggy-back on onModelReset to
         // retry the lookup. `count` bumps on every append, giving us a
         // stable per-page edge to resume the deep-page restore on.
         function onCountChanged(): void {
-            if (root.gamesScreen === null)
+            if (root.gamesScreen === null) {
+                root._whenScreenReady(root.screenGames, function () {
+                    if (root._pendingGameRestorePath !== "")
+                        root._restoreGamesScreenSelection();
+                });
                 return;
+            }
             const path = root._pendingGameRestorePath;
             if (path === "")
                 return;
@@ -541,20 +534,19 @@ MainLayout {
     }
 
     function _navigateToFavorites(): void {
-        root._requestScreen(root.screenFavorites);
         root.pendingTransition = "favorites";
-        root._resumeFavoritesCovers();
-        if (!Browse.FavoritesModel.loading) {
-            if (root.favoritesScreen !== null)
+        root._whenScreenReady(root.screenFavorites, function () {
+            root._resumeFavoritesCovers();
+            if (!Browse.FavoritesModel.loading) {
                 root.favoritesScreen.restoreSelection();
-            root._completeTransition(root.screenFavorites);
-            return;
-        }
-        root._favoritesReadyCallback = function () {
-            if (root.favoritesScreen !== null)
+                root._completeTransition(root.screenFavorites);
+                return;
+            }
+            root._favoritesReadyCallback = function () {
                 root.favoritesScreen.restoreSelection();
-            root._completeTransition(root.screenFavorites);
-        };
+                root._completeTransition(root.screenFavorites);
+            };
+        });
     }
 
     // Hub → Recents transition. RecentsModel binds eagerly via
@@ -563,20 +555,19 @@ MainLayout {
     // with a slow Core link we wait on `loadingChanged` so the user
     // sees the centred "Loading…" cue rather than an empty grid.
     function _navigateToRecents(): void {
-        root._requestScreen(root.screenRecents);
         root.pendingTransition = "recents";
-        root._resumeRecentsCovers();
-        if (!Browse.RecentsModel.loading) {
-            if (root.recentsScreen !== null)
+        root._whenScreenReady(root.screenRecents, function () {
+            root._resumeRecentsCovers();
+            if (!Browse.RecentsModel.loading) {
                 root.recentsScreen.restoreSelection();
-            root._completeTransition(root.screenRecents);
-            return;
-        }
-        root._recentsReadyCallback = function () {
-            if (root.recentsScreen !== null)
+                root._completeTransition(root.screenRecents);
+                return;
+            }
+            root._recentsReadyCallback = function () {
                 root.recentsScreen.restoreSelection();
-            root._completeTransition(root.screenRecents);
-        };
+                root._completeTransition(root.screenRecents);
+            };
+        });
     }
 
     function _resumeFavoritesCovers(): void {
@@ -600,13 +591,51 @@ MainLayout {
     // in initialize() — so the flip is instant; no pendingTransition,
     // no waiter.
     function _navigateToSettings(): void {
-        root._goto(root.screenSettings);
+        root._whenScreenReady(root.screenSettings, function () {
+            root._goto(root.screenSettings);
+        });
     }
 
     // Settings → About transition. Static info screen, no async data,
     // so the flip is instant — same shape as _navigateToSettings above.
     function _navigateToAbout(): void {
-        root._goto(root.screenAbout);
+        root._whenScreenReady(root.screenAbout, function () {
+            root._goto(root.screenAbout);
+        });
+    }
+
+    function _restoreSystemsScreenSelection(): void {
+        const savedSystem = root.activeScreen === root.screenGames ? (Browse.GamesState.system_id !== "" ? Browse.GamesState.system_id : Browse.SystemsState.system_id) : Browse.SystemsState.system_id;
+        const idx = savedSystem === "" ? -1 : Browse.SystemsModel.index_for_system_id(savedSystem);
+        root.systemsScreen.systemsGrid.setCurrentIndexImmediate(idx >= 0 ? idx : 0);
+        if (idx >= 0) {
+            Browse.GamesModel.set_system(savedSystem);
+            const stack = Browse.GamesState.path_stack;
+            const top = stack.length > 0 ? stack[stack.length - 1] : "";
+            if (top !== "")
+                Browse.GamesModel.set_path(top);
+        } else if (root.activeScreen === root.screenGames && Browse.SystemsModel.count > 0) {
+            Browse.GamesModel.set_system(Browse.SystemsModel.system_id_at(0));
+        }
+    }
+
+    function _restoreGamesScreenSelection(): void {
+        const sels = Browse.GamesState.selected_at_level;
+        const savedPath = sels.length > 0 ? sels[sels.length - 1] : "";
+        const idx = savedPath === "" ? -1 : Browse.GamesModel.index_for_game_path(savedPath);
+        if (idx >= 0) {
+            root.gamesScreen.gamesGrid.setCurrentIndexImmediate(idx);
+            root._pendingGameRestorePath = "";
+            return;
+        }
+        if (savedPath !== "" && Browse.GamesModel.has_next_page) {
+            root._pendingGameRestorePath = savedPath;
+            root.gamesScreen.gamesGrid.setCurrentIndexImmediate(0);
+            Browse.GamesModel.fetch_more();
+            return;
+        }
+        root._pendingGameRestorePath = "";
+        root.gamesScreen.gamesGrid.setCurrentIndexImmediate(0);
     }
 
     // Systems Accept routing. Pin destination to Games, fill the
@@ -738,42 +767,42 @@ MainLayout {
         }
         root._startupRestoreStarted = true;
         if (targetScreen === root.screenSettings || targetScreen === root.screenAbout) {
-            root._finishStartupRestore();
-            root._goto(targetScreen);
+            root._whenScreenReady(targetScreen, function () {
+                root._finishStartupRestore();
+                root._goto(targetScreen);
+            });
             return;
         }
         if (targetScreen === root.screenFavorites) {
-            root._requestScreen(root.screenFavorites);
-            if (Browse.FavoritesModel.loading) {
-                root._favoritesReadyCallback = function () {
-                    if (root.favoritesScreen !== null)
+            root._whenScreenReady(root.screenFavorites, function () {
+                if (Browse.FavoritesModel.loading) {
+                    root._favoritesReadyCallback = function () {
                         root.favoritesScreen.restoreSelection();
+                        root._finishStartupRestore();
+                        root._goto(root.screenFavorites);
+                    };
+                } else {
+                    root.favoritesScreen.restoreSelection();
                     root._finishStartupRestore();
                     root._goto(root.screenFavorites);
-                };
-            } else {
-                if (root.favoritesScreen !== null)
-                    root.favoritesScreen.restoreSelection();
-                root._finishStartupRestore();
-                root._goto(root.screenFavorites);
-            }
+                }
+            });
             return;
         }
         if (targetScreen === root.screenRecents) {
-            root._requestScreen(root.screenRecents);
-            if (Browse.RecentsModel.loading) {
-                root._recentsReadyCallback = function () {
-                    if (root.recentsScreen !== null)
+            root._whenScreenReady(root.screenRecents, function () {
+                if (Browse.RecentsModel.loading) {
+                    root._recentsReadyCallback = function () {
                         root.recentsScreen.restoreSelection();
+                        root._finishStartupRestore();
+                        root._goto(root.screenRecents);
+                    };
+                } else {
+                    root.recentsScreen.restoreSelection();
                     root._finishStartupRestore();
                     root._goto(root.screenRecents);
-                };
-            } else {
-                if (root.recentsScreen !== null)
-                    root.recentsScreen.restoreSelection();
-                root._finishStartupRestore();
-                root._goto(root.screenRecents);
-            }
+                }
+            });
             return;
         }
         if (Browse.CategoriesModel.count <= 0) {
@@ -844,6 +873,13 @@ MainLayout {
         repeat: false
         onTriggered: root._maybeStartStartupRestore()
     }
+
+    onSystemsScreenChanged: root._flushScreenReady(root.screenSystems)
+    onGamesScreenChanged: root._flushScreenReady(root.screenGames)
+    onFavoritesScreenChanged: root._flushScreenReady(root.screenFavorites)
+    onRecentsScreenChanged: root._flushScreenReady(root.screenRecents)
+    onSettingsScreenChanged: root._flushScreenReady(root.screenSettings)
+    onAboutScreenChanged: root._flushScreenReady(root.screenAbout)
 
     Connections {
         target: root.hubScreen
