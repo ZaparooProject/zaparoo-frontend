@@ -166,9 +166,9 @@ gh release download "$MENU_TAG" \
     --dir "$MENU_DIR" \
     --clobber
 
-MAIN_TAG="$(gh api "repos/${MAIN_REPO}/releases/latest" --jq '.tag_name')"
-if [ -z "$MAIN_TAG" ] || [ "$MAIN_TAG" = "null" ]; then
-    error "could not resolve latest release for $MAIN_REPO"
+MAIN_TAG="${MAIN_MISTER_TAG:-${MAIN_TAG:-}}"
+if [ -z "$MAIN_TAG" ]; then
+    error "MAIN_MISTER_TAG is required; pass the exact ${MAIN_REPO} release tag to package reproducibly"
 fi
 
 echo "Downloading ${MAIN_REPO}@${MAIN_TAG}/${MAIN_ASSET}"
