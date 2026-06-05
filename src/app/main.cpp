@@ -190,6 +190,13 @@ int main(int argc, char* argv[]) // NOLINT
     const QLocale::Language uiLanguage = locale.language();
     const bool crtNativePathEnabled = zaparoo_rust_crt_native_path_enabled();
 
+#ifdef ZAPAROO_EMBEDDED_BUILD
+    if (qEnvironmentVariableIsEmpty("QT_QPA_FONTDIR"))
+    {
+        qputenv("QT_QPA_FONTDIR", QByteArrayLiteral("/tmp/zaparoo"));
+    }
+#endif
+
     QGuiApplication app(qtArgc, qtArgv);
     startupTrace("cpp:QGuiApplication constructed");
     QPixmapCache::setCacheLimit(kPixmapCacheLimitKiB);
@@ -280,6 +287,12 @@ int main(int argc, char* argv[]) // NOLINT
     if (registeredScriptFallback)
     {
         qInfo("Registered locale-specific font fallbacks for %s", qUtf8Printable(locale.name()));
+    }
+    {
+        QFont defaultFont = QGuiApplication::font();
+        defaultFont.setFamily(crtNativePathEnabled ? QStringLiteral("MxPlus HP 100LX 6x8")
+                                                   : QStringLiteral("Noto Sans"));
+        QGuiApplication::setFont(defaultFont);
     }
     startupTrace("cpp:font registration complete");
     if (crtNativePathEnabled)
