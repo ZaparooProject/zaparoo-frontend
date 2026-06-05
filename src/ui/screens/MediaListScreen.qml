@@ -102,6 +102,15 @@ Item {
     readonly property bool _crtListStrip: Theme.crtNativePath && root._listLayout
     readonly property int _listOverlayBottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.overlayBottomMargin : Sizing.pctH(15)
     readonly property bool _gateHide: root.transitioning || root._loading()
+    readonly property int _linkDisconnected: 0
+    readonly property int _linkConnecting: 1
+    readonly property int _linkConnected: 2
+    readonly property int _linkReconnecting: 3
+    readonly property int _linkUnreachable: 4
+    readonly property bool _showConnectionOverlay: {
+        const link = Browse.AppStatus.link_state ?? root._linkDisconnected;
+        return root._count() === 0 && (link === root._linkDisconnected || link === root._linkConnecting || link === root._linkReconnecting || link === root._linkUnreachable);
+    }
 
     signal requestHubScreen
     signal requestContextMenu(int index, var anchorRect)
@@ -508,6 +517,7 @@ Item {
         y: root._listLayout ? listCard.y : mediaGrid.y
         width: root._listLayout ? listCard.width : mediaGrid.width
         height: root._listLayout ? Math.max(0, root.height - listCard.y - root._listOverlayBottomMargin) : mediaGrid.height
+        enabled: !root._showConnectionOverlay
         loading: root._loading()
         errorMessage: root._errorMessage()
         count: root._count()

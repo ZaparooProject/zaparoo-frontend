@@ -274,6 +274,38 @@ ApplicationWindow {
     // surfaces only via the top-right status pill — the user keeps
     // their cached catalog and just sees the link state change.
     property bool bootComplete: false
+    property bool startupRestoreVisible: false
+    property string startupRestoreText: qsTr("Restoring state, navigate to cancel")
+    readonly property int _linkDisconnected: 0
+    readonly property int _linkConnecting: 1
+    readonly property int _linkConnected: 2
+    readonly property int _linkReconnecting: 3
+    readonly property int _linkUnreachable: 4
+    readonly property bool connectionWaitVisible: {
+        const link = Browse.AppStatus.link_state ?? root._linkDisconnected;
+        if (!(root.activeScreen === root.screenSystems || root.activeScreen === root.screenGames || root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents))
+            return false;
+        const waitingForLink = link === root._linkDisconnected || link === root._linkConnecting || link === root._linkReconnecting || link === root._linkUnreachable;
+        if (!waitingForLink)
+            return false;
+        if (root.activeScreen === root.screenSystems)
+            return Browse.SystemsModel.count === 0;
+        if (root.activeScreen === root.screenGames)
+            return Browse.GamesModel.count === 0;
+        if (root.activeScreen === root.screenFavorites)
+            return Browse.FavoritesModel.count === 0;
+        if (root.activeScreen === root.screenRecents)
+            return Browse.RecentsModel.count === 0;
+        return false;
+    }
+    readonly property string connectionWaitText: {
+        const link = Browse.AppStatus.link_state ?? root._linkDisconnected;
+        if (link === root._linkUnreachable)
+            return qsTr("Can't reach Zaparoo Core. Check your connection.");
+        if (link === root._linkReconnecting)
+            return qsTr("Reconnecting…");
+        return qsTr("Connecting to Zaparoo Core…");
+    }
 
     // Per-screen state derivation. Shape mirrors ScreenStateOverlay's
     // `state` ternary so the help bar and the in-screen overlay agree
@@ -500,10 +532,6 @@ ApplicationWindow {
                 id: stackedScreens
 
                 anchors.fill: parent
-                // Screens stay hidden until the catalog has loaded for the
-                // first time. BootOverlay holds the window in the meantime;
-                // see the `bootComplete` property declaration above.
-                visible: root.bootComplete
 
                 HubScreen {
                     id: hubScreen
@@ -555,19 +583,81 @@ ApplicationWindow {
                 }
             }
 
-            // ── Boot overlay ─────────────────────────────────────────────────────────
-            //
-            // Painted between the screens and the modal layer; unmounts itself
-            // the first time `bootComplete` flips true. Loader (rather than
-            // `visible: false`) so the overlay leaves the scene graph after
-            // dismissal — a subsequent disconnect must not bring it back over
-            // the user's cached catalog.
+            Item {
+                visible: root.startupRestoreVisible && root.activeScreen === root.screenHub
+                z: 60
 
-            Loader {
-                anchors.fill: parent
-                active: !root.bootComplete
-                z: 50
-                sourceComponent: BootOverlay {}
+                Rectangle {
+                    x: Sizing.center(scene.width, width)
+                    y: Math.max(Sizing.headerBottom + Sizing.pctH(2), root.hubScreen._blockY - height - Sizing.pctH(4))
+                    width: Sizing.px(restoreText.implicitWidth + restoreIndicator.width + Sizing.pctW(5))
+                    height: Sizing.px(Math.max(Sizing.fontSize(4.2), restoreIndicator.height) + Sizing.pctH(2.2))
+                    color: Theme.surfaceCard
+                    radius: Sizing.half(height)
+                    border.width: Sizing.stroke(1)
+                    border.color: Theme.borderMid
+
+                    LoadingIndicator {
+                        id: restoreIndicator
+
+                        x: Sizing.pctW(1.3)
+                        y: Sizing.center(parent.height, height)
+                        text: ""
+                        glyphSize: Sizing.fontSize(3.8)
+                        spacing: 0
+                    }
+
+                    Text {
+                        id: restoreText
+
+                        x: restoreIndicator.x + restoreIndicator.width + Sizing.pctW(1.2)
+                        y: Sizing.center(parent.height, height)
+                        text: root.startupRestoreText
+                        font.family: Theme.fontUi
+                        font.pixelSize: Sizing.fontSize(2.5)
+                        color: Theme.textPrimary
+                        renderType: Text.NativeRendering
+                    }
+                }
+            }
+
+            Item {
+                visible: root.connectionWaitVisible
+                z: 61
+
+                Rectangle {
+                    x: Sizing.center(scene.width, width)
+                    y: Sizing.center(scene.height, height)
+                    width: Sizing.px(connectionWaitTextItem.implicitWidth + connectionWaitIndicator.width + Sizing.pctW(5.6))
+                    height: Sizing.px(Math.max(Sizing.fontSize(4.6), connectionWaitIndicator.height) + Sizing.pctH(2.6))
+                    color: Theme.surfaceCard
+                    radius: Sizing.half(height)
+                    border.width: Sizing.stroke(1)
+                    border.color: (Browse.AppStatus.link_state ?? root._linkDisconnected) === root._linkUnreachable ? Theme.accent : Theme.borderMid
+
+                    LoadingIndicator {
+                        id: connectionWaitIndicator
+
+                        x: Sizing.pctW(1.4)
+                        y: Sizing.center(parent.height, height)
+                        text: ""
+                        glyphSize: Sizing.fontSize(4.0)
+                        spacing: 0
+                        visible: (Browse.AppStatus.link_state ?? root._linkDisconnected) !== root._linkUnreachable
+                    }
+
+                    Text {
+                        id: connectionWaitTextItem
+
+                        x: (connectionWaitIndicator.visible ? connectionWaitIndicator.x + connectionWaitIndicator.width + Sizing.pctW(1.2) : Sizing.pctW(1.6))
+                        y: Sizing.center(parent.height, height)
+                        text: root.connectionWaitText
+                        font.family: Theme.fontUi
+                        font.pixelSize: Sizing.fontSize(2.7)
+                        color: Theme.textPrimary
+                        renderType: Text.NativeRendering
+                    }
+                }
             }
 
             // ── Card writer modal ────────────────────────────────────────────────────

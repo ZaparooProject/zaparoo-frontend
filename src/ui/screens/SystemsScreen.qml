@@ -49,6 +49,15 @@ Item {
     readonly property var _footerProfile: systems._gridProfile && systems._gridProfile.footer ? systems._gridProfile.footer : null
     readonly property var _listProfile: systems._viewProfile && systems._viewProfile.list ? systems._viewProfile.list : null
     readonly property int _listOverlayBottomMargin: systems._listProfile ? systems._listProfile.overlayBottomMargin : Sizing.pctH(15)
+    readonly property int _linkDisconnected: 0
+    readonly property int _linkConnecting: 1
+    readonly property int _linkConnected: 2
+    readonly property int _linkReconnecting: 3
+    readonly property int _linkUnreachable: 4
+    readonly property bool _showConnectionOverlay: {
+        const link = Browse.AppStatus.link_state ?? systems._linkDisconnected;
+        return Browse.SystemsModel.count === 0 && (link === systems._linkDisconnected || link === systems._linkConnecting || link === systems._linkReconnecting || link === systems._linkUnreachable);
+    }
     readonly property var _gridShape: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight)
 
     signal requestAccept(systemId: string)
@@ -320,6 +329,7 @@ Item {
         y: systems._listLayout ? listCard.y : systemsGrid.y
         width: systems._listLayout ? systems.width : systemsGrid.width
         height: systems._listLayout ? Math.max(0, systems.height - listCard.y - systems._listOverlayBottomMargin) : systemsGrid.height
+        enabled: !systems._showConnectionOverlay
         loading: Browse.SystemsModel.loading
         errorMessage: Browse.SystemsModel.error_message ?? ""
         count: Browse.SystemsModel.count

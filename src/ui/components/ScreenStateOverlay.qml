@@ -20,6 +20,7 @@ import Zaparoo.Theme
 Item {
     id: overlay
 
+    property bool enabled: true
     property bool loading: false
     property string errorMessage: ""
     property int count: 0
@@ -31,7 +32,7 @@ Item {
     // animations to the overlay or a subclass.
     readonly property string viewState: overlay.loading ? "loading" : (overlay.errorMessage !== "" ? "error" : (overlay.count === 0 ? "empty" : "ready"))
 
-    visible: overlay.viewState !== "ready"
+    visible: overlay.enabled && overlay.viewState !== "ready"
 
     Column {
         x: Sizing.center(parent.width, width)

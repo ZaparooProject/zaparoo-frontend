@@ -51,6 +51,9 @@ MainLayout {
     property string _pendingResolutionSelection: ""
     property bool _discoverMenuPending: false
     property bool _resumeStartupFocusPending: false
+    property bool _startupRestorePending: false
+    property bool _startupRestoreStarted: false
+    property string _startupRestoreScreen: ""
     property var _discoverParentEntries: []
     property string _pendingLauncherSystemId: ""
     property string _pendingLauncherSelectionId: ""
@@ -101,14 +104,14 @@ MainLayout {
             root.applyCrtPreviewScale(root._crtPreviewInitialScale);
         }
         Browse.GamesModel.page_size = root._gamesPageSize;
-        // Restore screen synchronously before first paint. The parent
-        // process on MiSTer kills the frontend without notice, so we
-        // resume exactly where we left off. Selection restore happens
-        // asynchronously in the modelReset handlers below as catalog
-        // data arrives.
         const savedScreen = Browse.AppState.active_screen;
-        if (savedScreen === root.screenGames || savedScreen === root.screenSystems || savedScreen === root.screenHub || savedScreen === root.screenFavorites || savedScreen === root.screenRecents || savedScreen === root.screenSettings || savedScreen === root.screenAbout)
-            root.activeScreen = savedScreen;
+        root.activeScreen = root.screenHub;
+        if (savedScreen === root.screenGames || savedScreen === root.screenSystems || savedScreen === root.screenFavorites || savedScreen === root.screenRecents) {
+            root._startupRestorePending = true;
+            root._startupRestoreScreen = savedScreen;
+            root.startupRestoreVisible = true;
+            startupRestoreKickTimer.restart();
+        }
         // If the catalog is already ready, fire the restore here so
         // the cascade (set_category → SystemsModel reset → seed
         // currentIndex → set_system → GamesModel reset) lands before
@@ -116,12 +119,7 @@ MainLayout {
         // Connection below fires it on first delivery.
         if (Browse.CategoriesModel.count > 0)
             root.hubScreen.restoreFromCategoriesReset();
-        if (root.activeScreen === root.screenHub) {
-            if (Browse.RecentsModel.resume_available)
-                root.hubScreen.focusResumeIfAvailable();
-            else
-                root._resumeStartupFocusPending = true;
-        }
+        root._maybeArmHubResumeFocus();
         // Warm-start into Favorites/Recents needs the same
         // restore-on-ready dance the navigate helpers perform,
         // otherwise the grid lands on index 0 and ignores persisted
@@ -155,6 +153,7 @@ MainLayout {
         // (e.g. an unusually fast warm-cache reconnect).
         root._maybeCompleteBoot();
         root._maybeOpenFirstRunIndex();
+        root._maybeStartStartupRestore();
     }
 
     // Seed row/grid indices from persisted state when models deliver new
@@ -172,6 +171,7 @@ MainLayout {
         target: Browse.CategoriesModel
         function onModelReset(): void {
             root.hubScreen.restoreFromCategoriesReset();
+            root._maybeStartStartupRestore();
         }
     }
     Connections {
@@ -384,6 +384,8 @@ MainLayout {
             cb();
         }
         function onResume_availableChanged(): void {
+            if (root._startupRestorePending)
+                return;
             if (!root._resumeStartupFocusPending || !Browse.RecentsModel.resume_available)
                 return;
             root._resumeStartupFocusPending = false;
@@ -596,21 +598,133 @@ MainLayout {
         root._resetIdle();
     }
 
+    function _finishStartupRestore(): void {
+        startupRestoreKickTimer.stop();
+        root._startupRestorePending = false;
+        root._startupRestoreStarted = false;
+        root._startupRestoreScreen = "";
+        root.startupRestoreVisible = false;
+        root._maybeArmHubResumeFocus();
+    }
+
+    function _cancelStartupRestore(): void {
+        if (!root._startupRestorePending)
+            return;
+        root._categoryReadyCallback = null;
+        root._systemReadyCallback = null;
+        root._favoritesReadyCallback = null;
+        root._recentsReadyCallback = null;
+        root._deferredCategoryPending = false;
+        deferredCategorySetTimer.stop();
+        root._finishStartupRestore();
+    }
+
+    function _maybeArmHubResumeFocus(): void {
+        if (root.activeScreen !== root.screenHub || root._startupRestorePending)
+            return;
+        if (Browse.RecentsModel.resume_available) {
+            root._resumeStartupFocusPending = false;
+            root.hubScreen.focusResumeIfAvailable();
+        } else {
+            root._resumeStartupFocusPending = true;
+        }
+    }
+
+    function _maybeStartStartupRestore(): void {
+        if (!root._startupRestorePending || root._startupRestoreStarted)
+            return;
+        if (startupRestoreKickTimer.running)
+            return;
+        if (Browse.AppStatus.connection_state !== 2)
+            return;
+        const targetScreen = root._startupRestoreScreen;
+        if (targetScreen === "") {
+            root._finishStartupRestore();
+            return;
+        }
+        root._startupRestoreStarted = true;
+        if (targetScreen === root.screenFavorites) {
+            if (Browse.FavoritesModel.loading) {
+                root._favoritesReadyCallback = function () {
+                    root.favoritesScreen.restoreSelection();
+                    root._finishStartupRestore();
+                    root._goto(root.screenFavorites);
+                };
+            } else {
+                root.favoritesScreen.restoreSelection();
+                root._finishStartupRestore();
+                root._goto(root.screenFavorites);
+            }
+            return;
+        }
+        if (targetScreen === root.screenRecents) {
+            if (Browse.RecentsModel.loading) {
+                root._recentsReadyCallback = function () {
+                    root.recentsScreen.restoreSelection();
+                    root._finishStartupRestore();
+                    root._goto(root.screenRecents);
+                };
+            } else {
+                root.recentsScreen.restoreSelection();
+                root._finishStartupRestore();
+                root._goto(root.screenRecents);
+            }
+            return;
+        }
+        if (Browse.CategoriesModel.count <= 0) {
+            root._finishStartupRestore();
+            return;
+        }
+        const category = Browse.HubState.category;
+        if (category === "") {
+            root._finishStartupRestore();
+            return;
+        }
+        root._ensureCategory(category, function () {
+            if (targetScreen === root.screenSystems) {
+                root._finishStartupRestore();
+                root._goto(root.screenSystems);
+                return;
+            }
+            const systemId = Browse.GamesState.system_id !== "" ? Browse.GamesState.system_id : Browse.SystemsState.system_id;
+            if (systemId === "") {
+                root._finishStartupRestore();
+                return;
+            }
+            root._ensureSystem(systemId, function () {
+                root._finishStartupRestore();
+                root._goto(root.screenGames);
+            });
+        });
+    }
+
+    Timer {
+        id: startupRestoreKickTimer
+        interval: 120
+        repeat: false
+        onTriggered: root._maybeStartStartupRestore()
+    }
+
     Connections {
         target: root.hubScreen
         function onRequestAccept(category: string): void {
+            root._cancelStartupRestore();
             root._navigateFromHub(category);
         }
         function onRequestQuit(): void {
+            root._cancelStartupRestore();
             root.openQuitConfirmModal();
         }
         function onRequestFavoritesScreen(): void {
+            root._cancelStartupRestore();
             root._navigateToFavorites();
         }
         function onRequestRecentsScreen(): void {
+            root._cancelStartupRestore();
             root._navigateToRecents();
         }
         function onRequestSettingsScreen(): void {
+            root._cancelStartupRestore();
             root._navigateToSettings();
         }
     }
@@ -1356,6 +1470,7 @@ MainLayout {
         function onConnection_stateChanged(): void {
             root._maybeOpenFirstRunIndex();
             root._maybeCompleteBoot();
+            root._maybeStartStartupRestore();
         }
     }
 
@@ -1449,6 +1564,8 @@ MainLayout {
         // press goes through the normal routing below.
         if (root._maybeDismissScreensaver())
             return;
+        if (root._startupRestorePending && !ScreenManager.hasModal)
+            root._cancelStartupRestore();
         root._resetIdle();
         // Input gate. While a forward transition is in flight, swallow
         // every press so a user mashing buttons during the loading

@@ -559,6 +559,7 @@ Item {
         y: categoriesRow.y + Sizing.center(categoriesRow.height, height)
         width: categoriesRow.width
         height: categoriesRow.height
+        enabled: Browse.CategoriesModel.loaded || (Browse.CategoriesModel.error_message ?? "") !== ""
         loading: false
         errorMessage: Browse.CategoriesModel.error_message ?? ""
         count: Browse.CategoriesModel.count
