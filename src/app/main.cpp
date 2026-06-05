@@ -164,6 +164,16 @@ int main(int argc, char* argv[]) // NOLINT
     qInstallMessageHandler(qtMessageHandler);
     QGuiApplication app(qtArgc, qtArgv);
     QPixmapCache::setCacheLimit(kPixmapCacheLimitKiB);
+
+    // Resolve language before font registration so startup only pays for
+    // script fallback fonts the selected locale can actually use. The base
+    // NotoSans.ttf covers Latin/Greek/Cyrillic UI locales; the large CJK
+    // faces are only needed for Japanese/Korean/Chinese.
+    const QString langCode = QString::fromUtf8(zaparoo_rust_language_code());
+    const QLocale locale = langCode.isEmpty() ? QLocale::system() : QLocale(langCode);
+    const QLocale::Language uiLanguage = locale.language();
+    const bool crtNativePathEnabled = zaparoo_rust_crt_native_path_enabled();
+
     // addApplicationFont returns -1 on failure (broken qrc path,
     // unreadable file). Logging the failure mode keeps a refactor that
     // breaks the resource alias from silently degrading to the default
@@ -179,31 +189,77 @@ int main(int argc, char* argv[]) // NOLINT
         qInfo("Registered font %s: %s", qUtf8Printable(path),
               qUtf8Printable(QFontDatabase::applicationFontFamilies(fontId).join(", ")));
     };
-    registerFont(QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/MxPlus_HP_100LX_6x8.ttf"));
-    registerFont(QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSans.ttf"));
-    registerFont(QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSansArabic.ttf"));
-    registerFont(QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSansDevanagari.ttf"));
-    registerFont(QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSansHebrew.ttf"));
-    registerFont(QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSansJP.ttf"));
-    registerFont(QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSansKR.ttf"));
-    registerFont(QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSansTC.ttf"));
-    // Keep the primary UI fonts separated by mode (CRT = HP 100LX,
-    // standard = Noto Sans). Only register bundled CJK fallbacks so
-    // scripts the primary family lacks still resolve consistently.
-    QFontDatabase::addApplicationFallbackFontFamily(QChar::Script_Hiragana,
-                                                    QStringLiteral("Noto Sans JP"));
-    QFontDatabase::addApplicationFallbackFontFamily(QChar::Script_Katakana,
-                                                    QStringLiteral("Noto Sans JP"));
-    QFontDatabase::addApplicationFallbackFontFamily(QChar::Script_Hangul,
-                                                    QStringLiteral("Noto Sans KR"));
-    QFontDatabase::addApplicationFallbackFontFamily(QChar::Script_Han,
-                                                    QStringLiteral("Noto Sans TC"));
-    QFontDatabase::addApplicationFallbackFontFamily(QChar::Script_Arabic,
-                                                    QStringLiteral("Noto Sans Arabic"));
-    QFontDatabase::addApplicationFallbackFontFamily(QChar::Script_Devanagari,
-                                                    QStringLiteral("Noto Sans Devanagari"));
-    qInfo("Registered application font fallbacks for CJK, Arabic, and Devanagari scripts");
-    const bool crtNativePathEnabled = zaparoo_rust_crt_native_path_enabled();
+    const auto registerFallbackFont = [&registerFont](QChar::Script script, const QString& path,
+                                                      const QString& family)
+    {
+        registerFont(path);
+        QFontDatabase::addApplicationFallbackFontFamily(script, family);
+    };
+
+    if (crtNativePathEnabled)
+    {
+        registerFont(
+            QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/MxPlus_HP_100LX_6x8.ttf"));
+    }
+    else
+    {
+        registerFont(QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSans.ttf"));
+    }
+
+    bool registeredScriptFallback = false;
+    if (uiLanguage == QLocale::Arabic)
+    {
+        registerFallbackFont(QChar::Script_Arabic,
+                             QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/"
+                                            "NotoSansArabic.ttf"),
+                             QStringLiteral("Noto Sans Arabic"));
+        registeredScriptFallback = true;
+    }
+    if (!crtNativePathEnabled && uiLanguage == QLocale::Hebrew)
+    {
+        registerFallbackFont(QChar::Script_Hebrew,
+                             QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/"
+                                            "NotoSansHebrew.ttf"),
+                             QStringLiteral("Noto Sans Hebrew"));
+        registeredScriptFallback = true;
+    }
+    if (uiLanguage == QLocale::Hindi)
+    {
+        registerFallbackFont(QChar::Script_Devanagari,
+                             QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/"
+                                            "NotoSansDevanagari.ttf"),
+                             QStringLiteral("Noto Sans Devanagari"));
+        registeredScriptFallback = true;
+    }
+    if (uiLanguage == QLocale::Japanese)
+    {
+        registerFallbackFont(QChar::Script_Hiragana,
+                             QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSansJP.ttf"),
+                             QStringLiteral("Noto Sans JP"));
+        QFontDatabase::addApplicationFallbackFontFamily(QChar::Script_Katakana,
+                                                        QStringLiteral("Noto Sans JP"));
+        QFontDatabase::addApplicationFallbackFontFamily(QChar::Script_Han,
+                                                        QStringLiteral("Noto Sans JP"));
+        registeredScriptFallback = true;
+    }
+    if (uiLanguage == QLocale::Korean)
+    {
+        registerFallbackFont(QChar::Script_Hangul,
+                             QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSansKR.ttf"),
+                             QStringLiteral("Noto Sans KR"));
+        registeredScriptFallback = true;
+    }
+    if (uiLanguage == QLocale::Chinese)
+    {
+        registerFallbackFont(QChar::Script_Han,
+                             QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/NotoSansTC.ttf"),
+                             QStringLiteral("Noto Sans TC"));
+        registeredScriptFallback = true;
+    }
+    if (registeredScriptFallback)
+    {
+        qInfo("Registered locale-specific font fallbacks for %s", qUtf8Printable(locale.name()));
+    }
     if (crtNativePathEnabled)
     {
         QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
@@ -228,8 +284,6 @@ int main(int argc, char* argv[]) // NOLINT
     // The Rust side resolves `[general] language` from frontend.toml into a
     // BCP-47 tag ("ja", "de_DE") or an empty string (follow system locale).
     // Stack lifetime is fine — `translator` outlives app.exec() and all QML.
-    const QString langCode = QString::fromUtf8(zaparoo_rust_language_code());
-    const QLocale locale = langCode.isEmpty() ? QLocale::system() : QLocale(langCode);
     QTranslator translator;
     if (translator.load(locale, "frontend", "_", ":/i18n"))
     {
