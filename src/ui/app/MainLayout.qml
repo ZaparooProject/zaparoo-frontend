@@ -312,14 +312,15 @@ ApplicationWindow {
     // surfaces only via the top-right status pill — the user keeps
     // their cached catalog and just sees the link state change.
     property bool bootComplete: false
-    property bool startupRestoreVisible: false
-    property string startupRestoreText: qsTr("Restoring state, navigate to cancel")
+    property bool startupRestoreCurtainVisible: Browse.AppState.active_screen !== "" && Browse.AppState.active_screen !== root.screenHub
     readonly property int _linkDisconnected: 0
     readonly property int _linkConnecting: 1
     readonly property int _linkConnected: 2
     readonly property int _linkReconnecting: 3
     readonly property int _linkUnreachable: 4
     readonly property bool connectionWaitVisible: {
+        if (root.startupRestoreCurtainVisible)
+            return false;
         const link = Browse.AppStatus.link_state ?? root._linkDisconnected;
         if (!(root.activeScreen === root.screenSystems || root.activeScreen === root.screenGames || root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents))
             return false;
@@ -422,14 +423,14 @@ ApplicationWindow {
         root._startupTrace("startup/qml activeScreenChanged",
                            "activeScreen=" + root.activeScreen,
                            "pendingTransition=" + root.pendingTransition,
-                           "startupRestoreVisible=" + root.startupRestoreVisible,
+                           "startupRestoreCurtainVisible=" + root.startupRestoreCurtainVisible,
                            "connectionWaitVisible=" + root.connectionWaitVisible);
         if (ScreenManager.activeScreen !== root.activeScreen)
             ScreenManager.activeScreen = root.activeScreen;
     }
-    onStartupRestoreVisibleChanged: {
-        root._startupTrace("startup/qml startupRestoreVisibleChanged",
-                           "visible=" + root.startupRestoreVisible,
+    onStartupRestoreCurtainVisibleChanged: {
+        root._startupTrace("startup/qml startupRestoreCurtainVisibleChanged",
+                           "visible=" + root.startupRestoreCurtainVisible,
                            "activeScreen=" + root.activeScreen);
     }
     onConnectionWaitVisibleChanged: {
@@ -620,6 +621,7 @@ ApplicationWindow {
                 id: stackedScreens
 
                 anchors.fill: parent
+                visible: !root.startupRestoreCurtainVisible
 
                 HubScreen {
                     id: hubScreen
@@ -630,7 +632,7 @@ ApplicationWindow {
                         if (!visible || !root._startupTraceActive)
                             return;
                         root._startupTrace("startup/qml firstHubVisible",
-                                           "restoreVisible=" + root.startupRestoreVisible,
+                                           "restoreCurtainVisible=" + root.startupRestoreCurtainVisible,
                                            "connectionState=" + Browse.AppStatus.connection_state,
                                            "categories=" + Browse.CategoriesModel.count);
                         root._startupTraceActive = false;
@@ -712,44 +714,6 @@ ApplicationWindow {
                             anchors.fill: parent
                             transitioning: root.pendingTransition !== ""
                         }
-                    }
-                }
-            }
-
-            Item {
-                visible: root.startupRestoreVisible && root.activeScreen === root.screenHub
-                z: 60
-
-                Rectangle {
-                    x: Sizing.center(scene.width, width)
-                    y: Math.max(Sizing.headerBottom + Sizing.pctH(2), root.hubScreen._blockY - height - Sizing.pctH(4))
-                    width: Sizing.px(restoreText.implicitWidth + restoreIndicator.width + Sizing.pctW(5))
-                    height: Sizing.px(Math.max(Sizing.fontSize(4.2), restoreIndicator.height) + Sizing.pctH(2.2))
-                    color: Theme.surfaceCard
-                    radius: Sizing.half(height)
-                    border.width: Sizing.stroke(1)
-                    border.color: Theme.borderMid
-
-                    LoadingIndicator {
-                        id: restoreIndicator
-
-                        x: Sizing.pctW(1.3)
-                        y: Sizing.center(parent.height, height)
-                        text: ""
-                        glyphSize: Sizing.fontSize(3.8)
-                        spacing: 0
-                    }
-
-                    Text {
-                        id: restoreText
-
-                        x: restoreIndicator.x + restoreIndicator.width + Sizing.pctW(1.2)
-                        y: Sizing.center(parent.height, height)
-                        text: root.startupRestoreText
-                        font.family: Theme.fontUi
-                        font.pixelSize: Sizing.fontSize(2.5)
-                        color: Theme.textPrimary
-                        renderType: Text.NativeRendering
                     }
                 }
             }
@@ -1092,7 +1056,7 @@ ApplicationWindow {
                                 label: qsTr("Cancel")
                             }
                         ];
-                    if (!root.bootComplete)
+                    if (!root.bootComplete || root.startupRestoreCurtainVisible)
                         return [];
                     if (root.firstRunIndexModalVisible) {
                         const phase = root.firstRunIndexModal ? root.firstRunIndexModal.phase : "";

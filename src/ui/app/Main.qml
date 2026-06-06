@@ -197,14 +197,16 @@ MainLayout {
             root.applyCrtPreviewScale(root._crtPreviewInitialScale);
         }
         Browse.GamesModel.page_size = root._gamesPageSize;
-        const savedScreen = Browse.AppState.active_screen;
-        root.activeScreen = root.screenHub;
-        if (savedScreen !== "" && savedScreen !== root.screenHub) {
+        const savedScreen = root._validStartupScreen(Browse.AppState.active_screen);
+        root.startupRestoreCurtainVisible = savedScreen !== "" && savedScreen !== root.screenHub;
+        if (root.startupRestoreCurtainVisible) {
             root._startupRestorePending = true;
             root._startupRestoreScreen = savedScreen;
             root._primeStartupRestoreScreen(savedScreen);
-            root.startupRestoreVisible = true;
+            root.activeScreen = savedScreen;
             startupRestoreKickTimer.restart();
+        } else {
+            root.activeScreen = root.screenHub;
         }
         root._startupTrace("startup/qml Component.onCompleted",
                            "savedScreen=" + savedScreen,
@@ -233,6 +235,12 @@ MainLayout {
         root._maybeCompleteBoot();
         root._maybeOpenFirstRunIndex();
         root._maybeStartStartupRestore();
+    }
+
+    function _validStartupScreen(screen: string): string {
+        if (screen === root.screenHub || screen === root.screenSystems || screen === root.screenGames || screen === root.screenFavorites || screen === root.screenRecents || screen === root.screenSettings || screen === root.screenAbout)
+            return screen;
+        return "";
     }
 
     // Seed row/grid indices from persisted state when models deliver new
@@ -302,7 +310,7 @@ MainLayout {
             // up — selected_at_level isn't touched by a peer-screen
             // exit, so without this gate the loop would keep hammering
             // fetch_more in the background until the folder exhausts.
-            if (root.activeScreen !== root.screenGames) {
+            if (root.activeScreen !== root.screenGames && !(root._startupRestorePending && root._startupRestoreScreen === root.screenGames)) {
                 root._pendingGameRestorePath = "";
                 return;
             }
@@ -315,12 +323,14 @@ MainLayout {
             const currentTop = sels.length > 0 ? sels[sels.length - 1] : "";
             if (currentTop !== path) {
                 root._pendingGameRestorePath = "";
+                root._maybeFinishStartupGamesRestore();
                 return;
             }
             const idx = Browse.GamesModel.index_for_game_path(path);
             if (idx >= 0) {
-                root.gamesScreen.gamesGrid.setCurrentIndexImmediate(idx);
+                root._setGamesRestoreIndex(idx);
                 root._pendingGameRestorePath = "";
+                root._maybeFinishStartupGamesRestore();
                 return;
             }
             if (Browse.GamesModel.has_next_page) {
@@ -331,6 +341,7 @@ MainLayout {
                 return;
             }
             root._pendingGameRestorePath = "";
+            root._maybeFinishStartupGamesRestore();
         }
     }
 
@@ -533,20 +544,38 @@ MainLayout {
         });
     }
 
-    function _navigateToFavorites(): void {
-        root.pendingTransition = "favorites";
+    function _completeFavoritesTransition(): void {
+        if (root.pendingTransition !== "favorites")
+            return;
+        root.favoritesScreen.restoreSelection();
+        root._completeTransition(root.screenFavorites);
+    }
+
+    function _startFavoritesTransitionLoad(): void {
+        if (root.pendingTransition !== "favorites")
+            return;
         root._whenScreenReady(root.screenFavorites, function () {
+            if (root.pendingTransition !== "favorites")
+                return;
             root._resumeFavoritesCovers();
             if (!Browse.FavoritesModel.loading) {
-                root.favoritesScreen.restoreSelection();
-                root._completeTransition(root.screenFavorites);
+                root._completeFavoritesTransition();
                 return;
             }
-            root._favoritesReadyCallback = function () {
-                root.favoritesScreen.restoreSelection();
-                root._completeTransition(root.screenFavorites);
-            };
+            root._favoritesReadyCallback = root._completeFavoritesTransition;
         });
+    }
+
+    function _navigateToFavorites(): void {
+        root.pendingTransition = "favorites";
+        favoritesTransitionTimer.restart();
+    }
+
+    function _completeRecentsTransition(): void {
+        if (root.pendingTransition !== "recents")
+            return;
+        root.recentsScreen.restoreSelection();
+        root._completeTransition(root.screenRecents);
     }
 
     // Hub → Recents transition. RecentsModel binds eagerly via
@@ -554,20 +583,24 @@ MainLayout {
     // Ready and the callback fires synchronously. On a cold launch
     // with a slow Core link we wait on `loadingChanged` so the user
     // sees the centred "Loading…" cue rather than an empty grid.
-    function _navigateToRecents(): void {
-        root.pendingTransition = "recents";
+    function _startRecentsTransitionLoad(): void {
+        if (root.pendingTransition !== "recents")
+            return;
         root._whenScreenReady(root.screenRecents, function () {
+            if (root.pendingTransition !== "recents")
+                return;
             root._resumeRecentsCovers();
             if (!Browse.RecentsModel.loading) {
-                root.recentsScreen.restoreSelection();
-                root._completeTransition(root.screenRecents);
+                root._completeRecentsTransition();
                 return;
             }
-            root._recentsReadyCallback = function () {
-                root.recentsScreen.restoreSelection();
-                root._completeTransition(root.screenRecents);
-            };
+            root._recentsReadyCallback = root._completeRecentsTransition;
         });
+    }
+
+    function _navigateToRecents(): void {
+        root.pendingTransition = "recents";
+        recentsTransitionTimer.restart();
     }
 
     function _resumeFavoritesCovers(): void {
@@ -619,23 +652,41 @@ MainLayout {
         }
     }
 
-    function _restoreGamesScreenSelection(): void {
+    function _setGamesRestoreIndex(index: int): void {
+        if (root.gamesScreen === null)
+            return;
+        root.gamesScreen.suppressSelectionPersist = true;
+        root.gamesScreen.gamesGrid.setCurrentIndexImmediate(index);
+        root.gamesScreen.suppressSelectionPersist = false;
+    }
+
+    function _restoreGamesScreenSelection(): bool {
         const sels = Browse.GamesState.selected_at_level;
         const savedPath = sels.length > 0 ? sels[sels.length - 1] : "";
         const idx = savedPath === "" ? -1 : Browse.GamesModel.index_for_game_path(savedPath);
         if (idx >= 0) {
-            root.gamesScreen.gamesGrid.setCurrentIndexImmediate(idx);
+            root._setGamesRestoreIndex(idx);
             root._pendingGameRestorePath = "";
-            return;
+            return true;
         }
         if (savedPath !== "" && Browse.GamesModel.has_next_page) {
             root._pendingGameRestorePath = savedPath;
-            root.gamesScreen.gamesGrid.setCurrentIndexImmediate(0);
+            root._setGamesRestoreIndex(0);
             Browse.GamesModel.fetch_more();
-            return;
+            return false;
         }
         root._pendingGameRestorePath = "";
-        root.gamesScreen.gamesGrid.setCurrentIndexImmediate(0);
+        root._setGamesRestoreIndex(0);
+        return true;
+    }
+
+    function _maybeFinishStartupGamesRestore(): void {
+        if (!root._startupRestorePending || root._startupRestoreScreen !== root.screenGames)
+            return;
+        if (root._pendingGameRestorePath !== "")
+            return;
+        root._finishStartupRestore();
+        root._goto(root.screenGames);
     }
 
     // Systems Accept routing. Pin destination to Games, fill the
@@ -717,23 +768,8 @@ MainLayout {
         root._startupRestorePending = false;
         root._startupRestoreStarted = false;
         root._startupRestoreScreen = "";
-        root.startupRestoreVisible = false;
+        root.startupRestoreCurtainVisible = false;
         root._maybeArmHubResumeFocus();
-    }
-
-    function _cancelStartupRestore(): void {
-        if (!root._startupRestorePending)
-            return;
-        root._startupTrace("startup/qml cancelStartupRestore",
-                           "activeScreen=" + root.activeScreen,
-                           "connectionState=" + Browse.AppStatus.connection_state);
-        root._categoryReadyCallback = null;
-        root._systemReadyCallback = null;
-        root._favoritesReadyCallback = null;
-        root._recentsReadyCallback = null;
-        root._deferredCategoryPending = false;
-        deferredCategorySetTimer.stop();
-        root._finishStartupRestore();
     }
 
     function _maybeArmHubResumeFocus(): void {
@@ -806,15 +842,23 @@ MainLayout {
             return;
         }
         if (Browse.CategoriesModel.count <= 0) {
-            // Connected + temporarily empty catalog is not final during
-            // startup: Core can answer with 0 systems before media-db
-            // completion triggers the catalog invalidation refetch.
-            // Keep the restore armed so the later non-empty refetch can
-            // still resume the saved browse screen. A truly empty
-            // library remains cancelable by user input and is surfaced
-            // by the first-run modal.
-            root._startupRestoreStarted = false;
-            root._startupTrace("startup/qml startupRestore waitingForCatalog");
+            const catalogError = Browse.CategoriesModel.error_message ?? "";
+            if (!Browse.CategoriesModel.loaded && catalogError === "") {
+                root._startupRestoreStarted = false;
+                root._startupTrace("startup/qml startupRestore waitingForCatalog");
+                return;
+            }
+            root._startupTrace("startup/qml startupRestore emptyCatalog",
+                               "loaded=" + Browse.CategoriesModel.loaded,
+                               "error=" + catalogError);
+            root._finishStartupRestore();
+            root._goto(targetScreen);
+            return;
+        }
+        if (targetScreen === root.screenHub) {
+            root.hubScreen.restoreFromCategoriesReset();
+            root._finishStartupRestore();
+            root._goto(root.screenHub);
             return;
         }
         const category = Browse.HubState.category;
@@ -839,14 +883,21 @@ MainLayout {
                 if (arcadeBypass) {
                     Browse.SystemsState.system_id = arcadeSystemId;
                     Browse.GamesState.system_id = arcadeSystemId;
+                    root._startupRestoreScreen = root.screenGames;
+                    root.activeScreen = root.screenGames;
                     root._ensureSystem(arcadeSystemId, function () {
-                        root._finishStartupRestore();
-                        root._goto(root.screenGames);
+                        root._whenScreenReady(root.screenGames, function () {
+                            if (root._restoreGamesScreenSelection())
+                                root._maybeFinishStartupGamesRestore();
+                        });
                     });
                     return;
                 }
-                root._finishStartupRestore();
-                root._goto(root.screenSystems);
+                root._whenScreenReady(root.screenSystems, function () {
+                    root._restoreSystemsScreenSelection();
+                    root._finishStartupRestore();
+                    root._goto(root.screenSystems);
+                });
                 return;
             }
             const systemId = Browse.GamesState.system_id !== "" ? Browse.GamesState.system_id : (Browse.SystemsState.system_id !== "" ? Browse.SystemsState.system_id : arcadeSystemId);
@@ -857,12 +908,22 @@ MainLayout {
                 root._finishStartupRestore();
                 return;
             }
-            root._ensureSystem(systemId, function () {
-                root._startupTrace("startup/qml startupRestore systemReady",
-                                   "systemId=" + systemId,
-                                   "target=" + targetScreen);
-                root._finishStartupRestore();
-                root._goto(root.screenGames);
+            root._whenScreenReady(root.screenSystems, function () {
+                root._restoreSystemsScreenSelection();
+                root._systemReadyCallback = function () {
+                    root._startupTrace("startup/qml startupRestore systemReady",
+                                       "systemId=" + Browse.GamesModel.current_system_id,
+                                       "target=" + targetScreen);
+                    root._whenScreenReady(root.screenGames, function () {
+                        if (root._restoreGamesScreenSelection())
+                            root._maybeFinishStartupGamesRestore();
+                    });
+                };
+                if (!Browse.GamesModel.loading) {
+                    const cb = root._systemReadyCallback;
+                    root._systemReadyCallback = null;
+                    cb();
+                }
             });
         });
     }
@@ -884,23 +945,18 @@ MainLayout {
     Connections {
         target: root.hubScreen
         function onRequestAccept(category: string): void {
-            root._cancelStartupRestore();
             root._navigateFromHub(category);
         }
         function onRequestQuit(): void {
-            root._cancelStartupRestore();
             root.openQuitConfirmModal();
         }
         function onRequestFavoritesScreen(): void {
-            root._cancelStartupRestore();
             root._navigateToFavorites();
         }
         function onRequestRecentsScreen(): void {
-            root._cancelStartupRestore();
             root._navigateToRecents();
         }
         function onRequestSettingsScreen(): void {
-            root._cancelStartupRestore();
             root._navigateToSettings();
         }
     }
@@ -1685,9 +1741,11 @@ MainLayout {
         target: Browse.CategoriesModel
         function onLoadedChanged(): void {
             root._maybeOpenFirstRunIndex();
+            root._maybeStartStartupRestore();
         }
         function onCountChanged(): void {
             root._maybeOpenFirstRunIndex();
+            root._maybeStartStartupRestore();
         }
     }
 
@@ -1751,8 +1809,8 @@ MainLayout {
         // press goes through the normal routing below.
         if (root._maybeDismissScreensaver())
             return;
-        if (root._startupRestorePending && !ScreenManager.hasModal)
-            root._cancelStartupRestore();
+        if (root._startupRestorePending && root.startupRestoreCurtainVisible && root.activeScreen === root._startupRestoreScreen && !ScreenManager.hasModal)
+            return;
         root._resetIdle();
         // Input gate. While a forward transition is in flight, swallow
         // every press so a user mashing buttons during the loading
@@ -2185,14 +2243,16 @@ MainLayout {
     // is the source.
     Item {
         anchors.fill: parent
-        visible: root.pendingTransition !== ""
+        visible: (root.pendingTransition !== "" && root.bootComplete && !root.startupRestoreCurtainVisible) || (root.startupRestoreCurtainVisible && root._startupRestoreScreen !== "")
         z: 100
+
+        readonly property string cueScreen: root.pendingTransition !== "" ? root.pendingTransition : root._startupRestoreScreen
 
         LoadingIndicator {
             x: Sizing.center(parent.width, width)
             y: Sizing.center(parent.height, height)
             text: {
-                switch (root.pendingTransition) {
+                switch (parent.cueScreen) {
                 case "systems":
                     return qsTr("Loading systems…");
                 case "games":
@@ -2304,6 +2364,20 @@ MainLayout {
             if (cb !== null)
                 cb();
         }
+    }
+
+    Timer {
+        id: favoritesTransitionTimer
+        interval: 50
+        repeat: false
+        onTriggered: root._startFavoritesTransitionLoad()
+    }
+
+    Timer {
+        id: recentsTransitionTimer
+        interval: 50
+        repeat: false
+        onTriggered: root._startRecentsTransitionLoad()
     }
 
     // Deferred set_category trigger. Lets the transition overlay

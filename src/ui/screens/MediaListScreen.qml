@@ -76,6 +76,7 @@ Item {
     property bool showTopStrip: true
     property bool showBottomStatusRow: false
     property bool activeLabelAtBottom: false
+    property bool suppressSelectionPersist: false
     property int gridBottomMargin: Sizing.pctH(15)
     property int activeLabelBottomMargin: 0
     property int activeLabelHeight: Sizing.pctH(7)
@@ -160,7 +161,7 @@ Item {
     }
 
     function _persistFocus(): void {
-        if (root.mediaModel === null)
+        if (root.suppressSelectionPersist || root.mediaModel === null)
             return;
         const idx = mediaGrid.currentIndex;
         if (idx < 0)
