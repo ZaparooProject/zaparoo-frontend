@@ -106,17 +106,21 @@ Item {
     readonly property int _blockHeight: 2 * (categoriesRow.cellHeight + 2 * categoriesRow.verticalPadding) + (categoriesRow.spacing - categoriesRow.verticalPadding - actionsRow.verticalPadding) + Sizing.pctH(3) + Sizing.pctH(7)
     readonly property int _blockY: Math.round((Sizing.headerBottom + hub.height - Sizing.pctH(6) - hub._blockHeight) / 2)
 
-    // Action-row data. Resume is prepended only when Core history has
-    // a fresh launchable row; the rest keep stable ids so persisted
-    // focus can remap across insertion/removal.
+    readonly property bool resumeKnownUnavailable: !Browse.RecentsModel.loading && !Browse.RecentsModel.resume_available && Browse.AppStatus.connection_state === 2
+    readonly property bool resumeActionVisible: !hub.resumeKnownUnavailable
+
+    // Action-row data. Resume is visible by default while Core history
+    // is unknown; hide it only after Recents proves there is nothing
+    // resumable. The tile always uses the play icon so startup never
+    // waits on a game cover for the Hub's primary action.
     readonly property var actionEntries: {
         const entries = [];
-        if (Browse.RecentsModel.resume_available) {
+        if (hub.resumeActionVisible) {
             const resumeName = Browse.RecentsModel.resume_name;
             entries.push({
                 id: "resume",
-                coverKey: Browse.RecentsModel.resume_cover_key || "icons/PlayOutline",
-                text: resumeName.length > 0 ? qsTr("Resume: %1").arg(resumeName) : qsTr("Resume Game")
+                coverKey: "icons/PlayOutline",
+                text: resumeName.length > 0 ? resumeName : qsTr("Resume")
             });
         }
         entries.push({
@@ -150,9 +154,9 @@ Item {
         hub.currentIndex = hub._actionIndexForId(Browse.HubState.selected_action);
     }
 
-    function focusResumeIfAvailable(): void {
+    function focusResumeIfVisible(): void {
         const resumeIndex = hub._actionIndexForId("resume");
-        if (!Browse.RecentsModel.resume_available || hub.actionEntries[resumeIndex].id !== "resume")
+        if (!hub.resumeActionVisible || hub.actionEntries[resumeIndex].id !== "resume")
             return;
         hub.currentRow = 1;
         hub.currentIndex = resumeIndex;
@@ -160,7 +164,27 @@ Item {
         hub._commitActionSelection();
     }
 
-    onActionEntriesChanged: hub._remapActionFocus()
+    function _focusFallbackAfterResumeRemoved(): void {
+        if (Browse.CategoriesModel.count > 0) {
+            hub.currentRow = 0;
+            hub.currentIndex = 0;
+            hub._crossSavedIndex = -1;
+            hub._commitCategorySelection();
+            return;
+        }
+        hub.currentRow = 1;
+        hub.currentIndex = hub._actionIndexForId("settings");
+        hub._crossSavedIndex = -1;
+        hub._commitActionSelection();
+    }
+
+    onActionEntriesChanged: {
+        if (hub.currentRow === 1 && Browse.HubState.selected_action === "resume" && !hub.resumeActionVisible) {
+            hub._focusFallbackAfterResumeRemoved();
+            return;
+        }
+        hub._remapActionFocus();
+    }
 
     // Test-harness hook so `tst_navigation.qml` can reset both focus
     // axes between cases without poking individual properties through
@@ -198,7 +222,9 @@ Item {
         // Settings — the only meaningful action ("Run Update media
         // database from Settings") the empty-hub message points at.
         const savedRow = Browse.HubState.selected_row;
-        if (savedRow === 1) {
+        if (hub.resumeActionVisible) {
+            hub.focusResumeIfVisible();
+        } else if (savedRow === 1) {
             hub.currentRow = 1;
             hub.currentIndex = hub._actionIndexForId(Browse.HubState.selected_action);
         } else if (Browse.CategoriesModel.count === 0) {

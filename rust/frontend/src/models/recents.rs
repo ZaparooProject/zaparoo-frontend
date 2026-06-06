@@ -603,27 +603,8 @@ fn cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
     )
 }
 
-fn resume_cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
-    let media_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
-    let cache = global_media_image_cache();
-    let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
-    let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
-    let soft_no_image = media_key
-        .as_ref()
-        .is_some_and(|k| cache.is_soft_no_image(k));
-    if requests_enabled && !cached && !negative && !soft_no_image {
-        if let Some(k) = media_key.as_ref() {
-            cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
-        }
-    }
-    resume_cover_key_for_with(media_key.as_ref(), cached)
-}
-
-fn resume_cover_key_for_with(key: Option<&MediaKey>, cached: bool) -> String {
-    match key {
-        Some(k) if cached => MediaImageCache::image_key_for(k),
-        _ => RESUME_FALLBACK_COVER_KEY.to_string(),
-    }
+fn resume_cover_key_for(_entry: &MediaHistoryEntry, _requests_enabled: bool) -> String {
+    RESUME_FALLBACK_COVER_KEY.to_string()
 }
 
 fn sync_resume_state(mut model: Pin<&mut ffi::RecentsModel>) {
@@ -1156,7 +1137,7 @@ mod tests {
 
     use super::{
         compute_unresolved_keys, cover_key_for_with, dedupe_latest_by_path, filter_entries_by_path,
-        launch_text_for, media_key_for, position_of_path, project, resume_cover_key_for_with,
+        launch_text_for, media_key_for, position_of_path, project, resume_cover_key_for,
         resume_entry, resume_entry_is_fresh, RESUME_FALLBACK_COVER_KEY,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -1238,21 +1219,10 @@ mod tests {
     }
 
     #[test]
-    fn resume_cover_key_uses_play_outline_unless_cached() {
+    fn resume_cover_key_always_uses_play_outline() {
         let e = entry("smb", "/p/smb", "NES", "NES");
-        let key = media_key_for(&e).expect("media has key");
-        assert_eq!(
-            resume_cover_key_for_with(Some(&key), false),
-            RESUME_FALLBACK_COVER_KEY
-        );
-        assert_eq!(
-            resume_cover_key_for_with(None, false),
-            RESUME_FALLBACK_COVER_KEY
-        );
-        assert_eq!(
-            resume_cover_key_for_with(Some(&key), true),
-            MediaImageCache::image_key_for(&key)
-        );
+        assert_eq!(resume_cover_key_for(&e, true), RESUME_FALLBACK_COVER_KEY);
+        assert_eq!(resume_cover_key_for(&e, false), RESUME_FALLBACK_COVER_KEY);
     }
 
     #[test]

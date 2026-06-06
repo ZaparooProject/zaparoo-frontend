@@ -886,6 +886,7 @@ ApplicationWindow {
             // router calls Qt.quit().
             Loader {
                 id: quitConfirmModalLoader
+                anchors.fill: parent
                 active: root.quitConfirmModalRequested
                 sourceComponent: Component {
                     Modal {

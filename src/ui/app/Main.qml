@@ -50,7 +50,7 @@ MainLayout {
     property string _pendingLanguageSelection: ""
     property string _pendingResolutionSelection: ""
     property bool _discoverMenuPending: false
-    property bool _resumeStartupFocusPending: false
+    property bool _pendingResumeLaunch: false
     property bool _startupRestorePending: false
     property bool _startupRestoreStarted: false
     property string _startupRestoreScreen: ""
@@ -432,6 +432,7 @@ MainLayout {
         function onLoadingChanged(): void {
             if (Browse.RecentsModel.loading)
                 return;
+            root._maybeCompletePendingResumeLaunch();
             const cb = root._recentsReadyCallback;
             if (cb === null)
                 return;
@@ -440,13 +441,7 @@ MainLayout {
         }
 
         function onResume_availableChanged(): void {
-            if (root._startupRestorePending)
-                return;
-            if (!root._resumeStartupFocusPending || !Browse.RecentsModel.resume_available)
-                return;
-            root._resumeStartupFocusPending = false;
-            if (root.activeScreen === root.screenHub)
-                root.hubScreen.focusResumeIfAvailable();
+            root._maybeCompletePendingResumeLaunch();
         }
     }
     Connections {
@@ -518,7 +513,7 @@ MainLayout {
             return;
         }
         if (category === "resume") {
-            Browse.RecentsModel.launch_resume();
+            root._navigateResumeFromHub();
             return;
         }
         Browse.HubState.category = category;
@@ -542,6 +537,48 @@ MainLayout {
                 });
             }
         });
+    }
+
+    function _cancelResumeLaunch(): void {
+        root._pendingResumeLaunch = false;
+        if (root.pendingTransition === "resume")
+            root.pendingTransition = "";
+        if (root.activeScreen !== root.screenHub)
+            root._goto(root.screenHub);
+    }
+
+    function _maybeCompletePendingResumeLaunch(): void {
+        if (!root._pendingResumeLaunch || root.pendingTransition !== "resume")
+            return;
+        if (Browse.RecentsModel.loading)
+            return;
+        if (Browse.RecentsModel.resume_available) {
+            root._pendingResumeLaunch = false;
+            Browse.RecentsModel.launch_resume();
+            return;
+        }
+        if (Browse.AppStatus.connection_state === 2 || Browse.AppStatus.connection_state === 3)
+            root._cancelResumeLaunch();
+    }
+
+    function _startResumeLaunch(): void {
+        if (root.pendingTransition !== "resume")
+            return;
+        root._pendingResumeLaunch = true;
+        root._maybeCompletePendingResumeLaunch();
+    }
+
+    function _navigateResumeFromHub(): void {
+        if (!Browse.RecentsModel.loading && Browse.RecentsModel.resume_available) {
+            Browse.RecentsModel.launch_resume();
+            return;
+        }
+        if (Browse.RecentsModel.loading || Browse.AppStatus.connection_state !== 2) {
+            root.pendingTransition = "resume";
+            resumeLaunchTimer.restart();
+            return;
+        }
+        root._cancelResumeLaunch();
     }
 
     function _completeFavoritesTransition(): void {
@@ -775,12 +812,7 @@ MainLayout {
     function _maybeArmHubResumeFocus(): void {
         if (root.activeScreen !== root.screenHub || root._startupRestorePending)
             return;
-        if (Browse.RecentsModel.resume_available) {
-            root._resumeStartupFocusPending = false;
-            root.hubScreen.focusResumeIfAvailable();
-        } else {
-            root._resumeStartupFocusPending = true;
-        }
+        root.hubScreen.focusResumeIfVisible();
     }
 
     function _maybeStartStartupRestore(): void {
@@ -1713,6 +1745,7 @@ MainLayout {
             root._maybeOpenFirstRunIndex();
             root._maybeCompleteBoot();
             root._maybeStartStartupRestore();
+            root._maybeCompletePendingResumeLaunch();
         }
     }
 
@@ -2243,7 +2276,7 @@ MainLayout {
     // is the source.
     Item {
         anchors.fill: parent
-        visible: (root.pendingTransition !== "" && root.bootComplete && !root.startupRestoreCurtainVisible) || (root.startupRestoreCurtainVisible && root._startupRestoreScreen !== "")
+        visible: (root.pendingTransition !== "" && !root.startupRestoreCurtainVisible) || (root.startupRestoreCurtainVisible && root._startupRestoreScreen !== "")
         z: 100
 
         readonly property string cueScreen: root.pendingTransition !== "" ? root.pendingTransition : root._startupRestoreScreen
@@ -2257,6 +2290,8 @@ MainLayout {
                     return qsTr("Loading systems…");
                 case "games":
                     return qsTr("Loading games…");
+                case "resume":
+                    return qsTr("Loading game…");
                 case "favorites":
                     return qsTr("Loading favorites…");
                 case "recents":
@@ -2364,6 +2399,13 @@ MainLayout {
             if (cb !== null)
                 cb();
         }
+    }
+
+    Timer {
+        id: resumeLaunchTimer
+        interval: 50
+        repeat: false
+        onTriggered: root._startResumeLaunch()
     }
 
     Timer {

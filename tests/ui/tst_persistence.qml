@@ -39,6 +39,7 @@ TestCase {
         // mark the boot complete up-front; otherwise visibility-driven
         // assertions would fail against the boot curtain.
         main.bootComplete = true;
+        main.pendingTransition = "";
         main.activeScreen = main.screenHub;
     }
 
@@ -106,8 +107,9 @@ TestCase {
     // an empty Systems grid re-fires the current load instead of
     // flipping forward — the screen-flip-on-empty rule is Hub-only.
     function test_screen_flip_on_empty_categories_persists_active_screen(): void {
+        main.hubScreen.currentRow = 0;
         main.handleKey(Qt.Key_Return);
-        compare(Browse.AppState.active_screen, main.screenSystems, "Enter must flip active_screen to systems even on an empty categories row");
+        compare(Browse.AppState.active_screen, main.screenSystems, "Enter on the empty categories row must flip active_screen to systems");
     }
 
     // Symmetric to the Hub test above: that one proves the flip *does*
@@ -129,6 +131,7 @@ TestCase {
     // harness) the guard must skip the write, leaving prior state intact.
     function test_enter_on_empty_categories_preserves_hub_state(): void {
         Browse.HubState.category = "persistence-probe-category";
+        main.hubScreen.currentRow = 0;
         main.handleKey(Qt.Key_Return);
         compare(Browse.HubState.category, "persistence-probe-category", "Enter on an empty categories row must not overwrite HubState.category");
     }
