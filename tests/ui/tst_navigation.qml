@@ -5,6 +5,7 @@
 import QtQuick
 import QtTest
 import Zaparoo.App
+import Zaparoo.Browse as Browse
 
 // Exercises the hub ↔ systems ↔ games navigation state machine defined
 // in Main.qml. State is driven either by writing to the activeScreen
@@ -29,7 +30,13 @@ TestCase {
         // we mark the boot complete up-front; otherwise every visibility
         // assertion below would fail against the boot curtain.
         main.bootComplete = true;
+        main.systemsScreenRequested = true;
+        main.gamesScreenRequested = true;
+        main.favoritesScreenRequested = true;
+        main.recentsScreenRequested = true;
+        main.settingsScreenRequested = true;
         main.activeScreen = main.screenHub;
+        main.pendingTransition = "";
         // Hub focus is two rows now (categories + actions); reset both
         // axes so a prior test's row-jump doesn't leak into the next.
         // qmllint disable compiler
@@ -46,6 +53,8 @@ TestCase {
     function test_initial_state_is_hub(): void {
         compare(main.activeScreen, main.screenHub);
         compare(main.hubScreen.visible, true);
+        compare(main.hubScreen.currentRow, 1, "Cold optimistic Hub should start on Resume");
+        compare(main.hubScreen.currentIndex, 0, "Resume is the first optimistic action");
         compare(main.systemsScreen.visible, false);
         compare(main.gamesScreen.visible, false);
     }
@@ -67,10 +76,16 @@ TestCase {
         compare(main.systemsScreen.visible, false);
     }
 
-    // Enter on hub categories drills into systems screen.
-    function test_enter_on_hub_routes_to_systems(): void {
+    // Enter on an optimistic placeholder category starts the normal
+    // systems loading transition and preserves the visible category
+    // name instead of treating the row as empty.
+    function test_enter_on_optimistic_hub_category_starts_systems_transition(): void {
+        main.hubScreen.currentRow = 0;
+        main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Return);
-        compare(main.activeScreen, main.screenSystems);
+        compare(main.pendingTransition, "systems");
+        compare(Browse.HubState.category, "Arcade");
+        compare(main.activeScreen, main.screenHub, "Optimistic route stays under the loading cue until catalog readiness is authoritative");
     }
 
     // Down on hub moves focus between the categories row and the
@@ -169,34 +184,35 @@ TestCase {
     // at top[0] and just verify currentRow flipped — the destination
     // index is verified by the _mapCrossRow tests above.
     function test_up_on_top_row_wraps_to_bottom_row(): void {
-        // resetFocus() in init() leaves us on top[0].
+        main.hubScreen.currentRow = 0;
+        main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Up);
         compare(main.hubScreen.currentRow, 1, "Up from top should wrap to bottom row");
     }
 
-    // Bottom row wraps left/right. Use Down from top[0] to drop into
-    // the bottom row first; bottomCount=3 so a single Right at the
-    // last index must wrap to 0.
+    // Bottom row wraps left/right. During optimistic boot the Hub has
+    // four placeholder categories and four actions (Resume still
+    // visible until history proves otherwise), so Down from top[0]
+    // lands at bottom[0].
     function test_bottom_row_right_wraps_to_first(): void {
+        main.hubScreen.currentRow = 0;
+        main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Down);
-        // _mapCrossRow(0, topCount=0, 3) lands us at bottom[2].
         compare(main.hubScreen.currentRow, 1);
-        compare(main.hubScreen.currentIndex, 2, "Centered map of top[0] with empty top lands at bottom[2]");
+        compare(main.hubScreen.currentIndex, 0, "Centered map of top[0] lands at bottom[0] while placeholder categories are visible");
+        main.hubScreen.currentIndex = main.hubScreen.actionEntries.length - 1;
         main.handleKey(Qt.Key_Right);
         compare(main.hubScreen.currentIndex, 0, "Right at last bottom-row index wraps to first");
     }
 
     function test_bottom_row_left_wraps_to_last(): void {
+        main.hubScreen.currentRow = 0;
+        main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Down);
         compare(main.hubScreen.currentRow, 1);
-        // Drive Left three times:
-        // bottom[2] → bottom[1] → bottom[0] → wrap to bottom[2].
-        main.handleKey(Qt.Key_Left);
-        compare(main.hubScreen.currentIndex, 1);
-        main.handleKey(Qt.Key_Left);
         compare(main.hubScreen.currentIndex, 0);
         main.handleKey(Qt.Key_Left);
-        compare(main.hubScreen.currentIndex, 2, "Left at first bottom-row index wraps to last");
+        compare(main.hubScreen.currentIndex, main.hubScreen.actionEntries.length - 1, "Left at first bottom-row index wraps to last");
     }
 
     // Cross-row round-trip. With 4 categories on top vs 3 actions on
@@ -210,6 +226,8 @@ TestCase {
     // Up can return there. `_mapCrossRow(0, topCount=0, 3)` puts us at
     // bottom[2] regardless — that part is unchanged.
     function test_cross_row_arms_saved_source_index(): void {
+        main.hubScreen.currentRow = 0;
+        main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Down);
         compare(main.hubScreen.currentRow, 1);
         compare(main.hubScreen._crossSavedIndex, 0, "Down from top[0] must save 0 for the round-trip back");
@@ -219,6 +237,8 @@ TestCase {
     // — the user has now committed to navigating within the new row,
     // so the next cross should fall back to the centered visual map.
     function test_cross_row_horizontal_input_clears_saved_index(): void {
+        main.hubScreen.currentRow = 0;
+        main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Down);
         compare(main.hubScreen._crossSavedIndex, 0);
         main.handleKey(Qt.Key_Left);
@@ -229,6 +249,8 @@ TestCase {
     // intent as a horizontal arrow press — clear the saved index so a
     // later Up doesn't snap back to a row the user already left.
     function test_cross_row_mouse_focus_clears_saved_index(): void {
+        main.hubScreen.currentRow = 0;
+        main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Down);
         compare(main.hubScreen._crossSavedIndex, 0);
         main.hubScreen._focusAction(0);
@@ -262,8 +284,10 @@ TestCase {
         const moved = main.hubScreen._crossRow();
         verify(moved);
         compare(main.hubScreen.currentRow, 1);
-        // _mapCrossRow(0, topCount=0, 3) lands at bottom[2].
-        compare(main.hubScreen.currentIndex, 2, "Out-of-range saved index falls back to the visual map");
+        // Optimistic Hub exposes four placeholder categories during
+        // test cold-start, and the action row has four entries while
+        // Resume is still unknown, so the visual map lands at bottom[0].
+        compare(main.hubScreen.currentIndex, 0, "Out-of-range saved index falls back to the visual map");
     }
 
     // resetFocus is the test-harness reset and the cold-launch state.
@@ -272,6 +296,8 @@ TestCase {
     function test_reset_focus_clears_saved_index(): void {
         main.hubScreen._crossSavedIndex = 2;
         main.hubScreen.resetFocus();
+        compare(main.hubScreen.currentRow, 1);
+        compare(main.hubScreen.currentIndex, 0);
         compare(main.hubScreen._crossSavedIndex, -1);
     }
     // qmllint enable compiler

@@ -6,6 +6,7 @@ import QtQuick
 import QtTest
 import Zaparoo.App
 import Zaparoo.Browse as Browse
+import Zaparoo.Theme
 
 // cxx-qt 0.8 patches `isFinal: true` on singleton properties but the
 // qmltypes schema has no `isFinal` slot for Method, so every direct
@@ -39,6 +40,8 @@ TestCase {
         // mark the boot complete up-front; otherwise visibility-driven
         // assertions would fail against the boot curtain.
         main.bootComplete = true;
+        main.systemsScreenRequested = true;
+        main.gamesScreenRequested = true;
         main.pendingTransition = "";
         main.activeScreen = main.screenHub;
     }
@@ -50,6 +53,8 @@ TestCase {
     function cleanup(): void {
         Browse.AppState.active_screen = "";
         Browse.HubState.category = "";
+        Browse.HubState.selected_row = 0;
+        Browse.HubState.selected_action = "";
         Browse.SystemsState.system_id = "";
         // set_system_id resets path_stack/selected_at_level to [""], [""]
         // internally, but only on an actual transition — the setter
@@ -100,16 +105,15 @@ TestCase {
         compare(sels[sels.length - 1], "persistence-probe-path", "navigating an empty games grid must not overwrite GamesState selection");
     }
 
-    // Screen flips are user-visible intent, not selection state. On Hub
-    // they should persist even when the underlying model is empty (so
-    // the frontend resumes on the right screen next boot). Systems and
-    // Games own a [OK] RETRY contract on non-Ready accept, so Enter on
-    // an empty Systems grid re-fires the current load instead of
-    // flipping forward — the screen-flip-on-empty rule is Hub-only.
-    function test_screen_flip_on_empty_categories_persists_active_screen(): void {
+    // Optimistic Hub exposes placeholder categories before the catalog
+    // lands. Accepting one starts the systems loading transition but
+    // does not persist a screen flip until the catalog/category route
+    // has resolved.
+    function test_optimistic_category_accept_starts_pending_systems_transition(): void {
         main.hubScreen.currentRow = 0;
         main.handleKey(Qt.Key_Return);
-        compare(Browse.AppState.active_screen, main.screenSystems, "Enter on the empty categories row must flip active_screen to systems");
+        compare(main.pendingTransition, "systems");
+        compare(Browse.AppState.active_screen, "", "Pending optimistic transition must not persist a completed screen flip yet");
     }
 
     // Symmetric to the Hub test above: that one proves the flip *does*
@@ -125,15 +129,42 @@ TestCase {
         compare(Browse.AppState.active_screen, "persistence-probe-screen", "Enter on an empty systems grid must retry, not flip — AppState.active_screen must not be overwritten");
     }
 
-    // Enter commits the highlighted selection into HubState so first-launch
-    // users who never press Left/Right still get a restorable identifier on
-    // disk. The write is guarded by count > 0 — on an empty row (this
-    // harness) the guard must skip the write, leaving prior state intact.
-    function test_enter_on_empty_categories_preserves_hub_state(): void {
+    // Placeholder category accept writes the visible optimistic target
+    // into HubState so the delayed router can apply the same user intent
+    // once the real catalog arrives.
+    function test_enter_on_optimistic_categories_writes_hub_state(): void {
         Browse.HubState.category = "persistence-probe-category";
         main.hubScreen.currentRow = 0;
+        main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Return);
-        compare(Browse.HubState.category, "persistence-probe-category", "Enter on an empty categories row must not overwrite HubState.category");
+        compare(Browse.HubState.selected_row, 0, "Enter on an optimistic category must persist the top row");
+        compare(Browse.HubState.category, "Arcade", "Enter on an optimistic category must persist the visible target");
+    }
+
+    function test_enter_on_optimistic_console_writes_real_category_id(): void {
+        Browse.HubState.category = "persistence-probe-category";
+        main.hubScreen.currentRow = 0;
+        main.hubScreen.currentIndex = 2;
+        main.handleKey(Qt.Key_Return);
+        compare(Browse.HubState.selected_row, 0, "Enter on an optimistic category must persist the top row");
+        compare(Browse.HubState.category, "Console", "Optimistic display labels must persist Core category ids");
+    }
+
+    function test_legacy_plural_placeholder_category_canonicalizes(): void {
+        compare(CategoryIds.canonicalize("Consoles"), CategoryIds.consoleId);
+        compare(CategoryIds.canonicalize("Computers"), CategoryIds.computerId);
+        compare(CategoryIds.canonicalize("Handhelds"), CategoryIds.handheldId);
+    }
+
+    function test_enter_on_optimistic_recents_writes_hub_state(): void {
+        Browse.HubState.selected_row = 0;
+        Browse.HubState.selected_action = "settings";
+        main.hubScreen.currentRow = 1;
+        main.hubScreen.currentIndex = main.hubScreen._actionIndexForId("recents");
+        main.handleKey(Qt.Key_Return);
+        compare(main.pendingTransition, "recents");
+        compare(Browse.HubState.selected_row, 1, "Enter on an optimistic action must persist the action row");
+        compare(Browse.HubState.selected_action, "recents", "Enter on optimistic Recents must persist the selected action");
     }
 
     function test_enter_on_empty_systems_preserves_systems_state(): void {

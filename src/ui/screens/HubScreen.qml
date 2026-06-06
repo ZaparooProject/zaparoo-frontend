@@ -51,17 +51,27 @@ Item {
     Component.onCompleted: console.debug("startup/qml component HubScreen completed")
 
     readonly property var _placeholderCategories: [
-        { name: qsTr("Arcade"), coverKey: "categories/Arcade" },
-        { name: qsTr("Computers"), coverKey: "categories/Computer" },
-        { name: qsTr("Consoles"), coverKey: "categories/Console" },
-        { name: qsTr("Handhelds"), coverKey: "categories/Handheld" }
+        {
+            id: CategoryIds.arcadeId,
+            name: qsTr("Arcade"),
+            coverKey: CategoryIds.coverKey(CategoryIds.arcadeId)
+        },
+        {
+            id: CategoryIds.computerId,
+            name: qsTr("Computers"),
+            coverKey: CategoryIds.coverKey(CategoryIds.computerId)
+        },
+        {
+            id: CategoryIds.consoleId,
+            name: qsTr("Consoles"),
+            coverKey: CategoryIds.coverKey(CategoryIds.consoleId)
+        },
+        {
+            id: CategoryIds.handheldId,
+            name: qsTr("Handhelds"),
+            coverKey: CategoryIds.coverKey(CategoryIds.handheldId)
+        }
     ]
-    readonly property var _fallbackCoverKeyByCategory: ({
-        "Arcade": "categories/Arcade",
-        "Computers": "categories/Computer",
-        "Consoles": "categories/Console",
-        "Handhelds": "categories/Handheld"
-    })
     readonly property var visibleCategoryEntries: {
         if (Browse.CategoriesModel.count <= 0)
             return hub._placeholderCategories;
@@ -69,16 +79,17 @@ Item {
         for (let i = 0; i < Browse.CategoriesModel.count; i++) {
             const name = Browse.CategoriesModel.category_at(i);
             entries.push({
+                id: name,
                 name: name,
-                coverKey: hub._fallbackCoverKeyByCategory[name] || ("categories/" + name)
+                coverKey: CategoryIds.coverKey(name)
             });
         }
         return entries;
     }
     property bool transitioning: false
     // 0 = categories row, 1 = actions row.
-    property int currentRow: 0
-    // Index within the active row.
+    property int currentRow: 1
+    // Index within the active row. Resume is first while optimistic/history is unknown.
     property int currentIndex: 0
     // Source-row index from the most recent cross. Used to make a
     // Down → Up (or Up → Down) round-trip return to the originating
@@ -190,8 +201,8 @@ Item {
     // axes between cases without poking individual properties through
     // MainLayout's alias.
     function resetFocus(): void {
-        hub.currentRow = 0;
-        hub.currentIndex = 0;
+        hub.currentRow = 1;
+        hub.currentIndex = hub._actionIndexForId("resume");
         hub._crossSavedIndex = -1;
     }
 
@@ -209,7 +220,7 @@ Item {
     // category — otherwise the visible focus drifts off whichever
     // screen the user is on.
     function restoreFromCategoriesReset(): void {
-        const savedCategory = Browse.HubState.category;
+        const savedCategory = CategoryIds.canonicalize(Browse.HubState.category);
         const idx = savedCategory === "" ? -1 : Browse.CategoriesModel.index_for_category(savedCategory);
         const chosenCategoryIndex = idx >= 0 ? idx : 0;
         const chosenCategory = idx >= 0 ? savedCategory : Browse.CategoriesModel.category_at(chosenCategoryIndex);
@@ -222,11 +233,15 @@ Item {
         // Settings — the only meaningful action ("Run Update media
         // database from Settings") the empty-hub message points at.
         const savedRow = Browse.HubState.selected_row;
-        if (hub.resumeActionVisible) {
-            hub.focusResumeIfVisible();
-        } else if (savedRow === 1) {
+        const savedAction = Browse.HubState.selected_action;
+        if (savedRow === 1 && savedAction !== "") {
             hub.currentRow = 1;
-            hub.currentIndex = hub._actionIndexForId(Browse.HubState.selected_action);
+            hub.currentIndex = hub._actionIndexForId(savedAction);
+        } else if (idx >= 0) {
+            hub.currentRow = 0;
+            hub.currentIndex = chosenCategoryIndex;
+        } else if (hub.resumeActionVisible) {
+            hub.focusResumeIfVisible();
         } else if (Browse.CategoriesModel.count === 0) {
             hub.currentRow = 1;
             hub.currentIndex = hub._actionIndexForId("settings");
@@ -326,10 +341,18 @@ Item {
     // press fires two model resets per press, each destroying-and-
     // recreating SystemsScreen's bound delegates on the UI thread —
     // choppy on MiSTer even though SystemsScreen is `visible: false`.
+    function _currentCategoryId(): string {
+        if (Browse.CategoriesModel.count > 0 && hub.currentIndex < Browse.CategoriesModel.count)
+            return Browse.CategoriesModel.category_at(hub.currentIndex);
+        const entry = hub.visibleCategoryEntries[hub.currentIndex];
+        return entry ? CategoryIds.canonicalize(entry.id) : "";
+    }
+
     function _commitCategorySelection(): void {
         Browse.HubState.selected_row = 0;
-        if (Browse.CategoriesModel.count > 0 && hub.currentIndex < Browse.CategoriesModel.count)
-            Browse.HubState.category = Browse.CategoriesModel.category_at(hub.currentIndex);
+        const category = hub._currentCategoryId();
+        if (category !== "")
+            Browse.HubState.category = category;
     }
 
     function _commitActionSelection(): void {
@@ -365,11 +388,13 @@ Item {
     }
 
     function _activateCurrent(): void {
+        hub._commitCurrent();
         if (hub.currentRow === 0) {
-            // Empty row sends "" — router treats that as the committed
-            // "Enter on empty hub goes to Systems" passthrough.
-            const chosen = Browse.CategoriesModel.count <= 0 || hub.currentIndex >= Browse.CategoriesModel.count ? "" : Browse.CategoriesModel.category_at(hub.currentIndex);
-            hub.requestAccept(chosen);
+            // During optimistic boot the visible category row is backed
+            // by localized placeholder labels. Accept the stable category
+            // id, not the display name, so persisted HubState and router
+            // comparisons remain locale-independent.
+            hub.requestAccept(hub._currentCategoryId());
             return;
         }
 

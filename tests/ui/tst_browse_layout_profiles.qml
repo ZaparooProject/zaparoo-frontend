@@ -31,6 +31,7 @@ TestCase {
 
     function init(): void {
         main.bootComplete = true;
+        main.systemsScreenRequested = true;
         main.activeScreen = main.screenSystems;
         main.crtNativePath = false;
         Browse.Settings.current_browse_layout = "grid";

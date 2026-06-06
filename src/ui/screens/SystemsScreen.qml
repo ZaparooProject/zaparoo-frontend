@@ -37,6 +37,7 @@ Item {
     // the tile ring keeps a single visible focus indicator at all
     // times. The ring restores automatically when the modal pops.
     property bool gridFocused: true
+    property bool optimisticLoading: false
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
     readonly property bool _crtGridLayout: Theme.crtNativePath && !systems._listLayout
     readonly property bool _crtListStrip: Theme.crtNativePath && systems._listLayout
@@ -49,15 +50,6 @@ Item {
     readonly property var _footerProfile: systems._gridProfile && systems._gridProfile.footer ? systems._gridProfile.footer : null
     readonly property var _listProfile: systems._viewProfile && systems._viewProfile.list ? systems._viewProfile.list : null
     readonly property int _listOverlayBottomMargin: systems._listProfile ? systems._listProfile.overlayBottomMargin : Sizing.pctH(15)
-    readonly property int _linkDisconnected: 0
-    readonly property int _linkConnecting: 1
-    readonly property int _linkConnected: 2
-    readonly property int _linkReconnecting: 3
-    readonly property int _linkUnreachable: 4
-    readonly property bool _showConnectionOverlay: {
-        const link = Browse.AppStatus.link_state ?? systems._linkDisconnected;
-        return Browse.SystemsModel.count === 0 && (link === systems._linkDisconnected || link === systems._linkConnecting || link === systems._linkReconnecting || link === systems._linkUnreachable);
-    }
     readonly property var _gridShape: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight)
 
     signal requestAccept(systemId: string)
@@ -118,7 +110,7 @@ Item {
     // Mirrors ScreenStateOverlay's `state` ternary so accept routing and
     // the in-screen overlay agree on which state we're in.
     function _state(): string {
-        if (Browse.SystemsModel.loading)
+        if (Browse.SystemsModel.loading || systems.optimisticLoading)
             return "loading";
         if ((Browse.SystemsModel.error_message ?? "") !== "")
             return "error";
@@ -329,8 +321,8 @@ Item {
         y: systems._listLayout ? listCard.y : systemsGrid.y
         width: systems._listLayout ? systems.width : systemsGrid.width
         height: systems._listLayout ? Math.max(0, systems.height - listCard.y - systems._listOverlayBottomMargin) : systemsGrid.height
-        enabled: !systems._showConnectionOverlay
-        loading: Browse.SystemsModel.loading
+        enabled: true
+        loading: Browse.SystemsModel.loading || systems.optimisticLoading
         errorMessage: Browse.SystemsModel.error_message ?? ""
         count: Browse.SystemsModel.count
         emptyText: qsTr("No systems in this category")

@@ -35,6 +35,7 @@ Item {
     // other screens so the convention holds when a future routing
     // change adds a Settings-as-source path.
     property bool transitioning: false
+    property bool optimisticLoading: false
 
     signal requestHubScreen
     // Forward signal carrying the focused action row's id. The router
@@ -677,6 +678,11 @@ Item {
     }
 
     function handleAction(action: string): void {
+        if (settings.optimisticLoading) {
+            if (action === "cancel")
+                settings.requestHubScreen();
+            return;
+        }
         if (action === "up") {
             settings.currentIndex = settings._seekNavigable(settings.currentIndex, -1);
         } else if (action === "down") {
@@ -722,6 +728,7 @@ Item {
 
     TopStatusStrip {
         id: topStrip
+        visible: !settings.optimisticLoading
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
@@ -760,6 +767,7 @@ Item {
     // margin clears the help bar (pctH(6)) plus a small gap.
     Flickable {
         id: flickable
+        visible: !settings.optimisticLoading
 
         // topMargin and bottomMargin are sized to leave a clear band
         // for the scroll chevrons to sit outside the scrollable area
@@ -899,7 +907,7 @@ Item {
         anchors.horizontalCenter: flickable.horizontalCenter
         fillMode: Image.PreserveAspectFit
         smooth: true
-        visible: settings._hasContentAbove
+        visible: !settings.optimisticLoading && settings._hasContentAbove
     }
 
     Image {
@@ -911,7 +919,7 @@ Item {
         anchors.horizontalCenter: flickable.horizontalCenter
         fillMode: Image.PreserveAspectFit
         smooth: true
-        visible: settings._hasContentBelow
+        visible: !settings.optimisticLoading && settings._hasContentBelow
     }
 
     // Empty-state placeholder shown on runtimes with no settings to
@@ -920,11 +928,19 @@ Item {
     Text {
         x: Sizing.center(parent.width, width)
         y: Sizing.center(parent.height, height)
-        visible: settings.fieldCount === 0
+        visible: !settings.optimisticLoading && settings.fieldCount === 0
         text: qsTr("No settings available on this platform")
         color: Theme.textLabel
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontSize(2.6)
         renderType: Text.NativeRendering
+    }
+
+    ScreenStateOverlay {
+        anchors.fill: parent
+        enabled: settings.optimisticLoading
+        loading: settings.optimisticLoading
+        count: 0
+        loadingText: qsTr("Loading settings…")
     }
 }

@@ -6,6 +6,7 @@ qt_add_library(zaparoo_ui_theme STATIC)
 
 set_source_files_properties(
     BrowseLayouts.qml
+    CategoryIds.qml
     Resources.qml
     Sizing.qml
     Theme.qml
@@ -18,6 +19,7 @@ qt_add_qml_module(
     VERSION 1.0
     QML_FILES
         BrowseLayouts.qml
+        CategoryIds.qml
         Resources.qml
         Sizing.qml
         Theme.qml

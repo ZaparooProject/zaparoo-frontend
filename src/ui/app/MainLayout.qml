@@ -95,7 +95,10 @@ ApplicationWindow {
     function _startupTrace(): void {
         if (!root._startupTraceActive)
             return;
-        console.debug.apply(console, arguments);
+        const parts = [];
+        for (let i = 0; i < arguments.length; i++)
+            parts.push(String(arguments[i]));
+        console.debug(parts.join(" "));
     }
 
     function _clampCrtPreviewScale(scale: int): int {
@@ -180,9 +183,7 @@ ApplicationWindow {
         root._firstFrameSeen = true;
         root._statusIconsEnabled = true;
         root._headerMediaActivityEnabled = true;
-        root._startupTrace("startup/qml firstFrameSwapped",
-                           "statusIconsEnabled=" + root._statusIconsEnabled,
-                           "mediaActivityEnabled=" + root._headerMediaActivityEnabled);
+        root._startupTrace("startup/qml firstFrameSwapped", "statusIconsEnabled=" + root._statusIconsEnabled, "mediaActivityEnabled=" + root._headerMediaActivityEnabled);
     }
 
     // When the window crosses to a different screen (e.g. dev drags
@@ -313,38 +314,7 @@ ApplicationWindow {
     // their cached catalog and just sees the link state change.
     property bool bootComplete: false
     property bool startupRestoreCurtainVisible: Browse.AppState.active_screen !== "" && Browse.AppState.active_screen !== root.screenHub
-    readonly property int _linkDisconnected: 0
-    readonly property int _linkConnecting: 1
-    readonly property int _linkConnected: 2
-    readonly property int _linkReconnecting: 3
-    readonly property int _linkUnreachable: 4
-    readonly property bool connectionWaitVisible: {
-        if (root.startupRestoreCurtainVisible)
-            return false;
-        const link = Browse.AppStatus.link_state ?? root._linkDisconnected;
-        if (!(root.activeScreen === root.screenSystems || root.activeScreen === root.screenGames || root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents))
-            return false;
-        const waitingForLink = link === root._linkDisconnected || link === root._linkConnecting || link === root._linkReconnecting || link === root._linkUnreachable;
-        if (!waitingForLink)
-            return false;
-        if (root.activeScreen === root.screenSystems)
-            return Browse.SystemsModel.count === 0;
-        if (root.activeScreen === root.screenGames)
-            return Browse.GamesModel.count === 0;
-        if (root.activeScreen === root.screenFavorites)
-            return Browse.FavoritesModel.count === 0;
-        if (root.activeScreen === root.screenRecents)
-            return Browse.RecentsModel.count === 0;
-        return false;
-    }
-    readonly property string connectionWaitText: {
-        const link = Browse.AppStatus.link_state ?? root._linkDisconnected;
-        if (link === root._linkUnreachable)
-            return qsTr("Can't reach Zaparoo Core. Check your connection.");
-        if (link === root._linkReconnecting)
-            return qsTr("Reconnecting…");
-        return qsTr("Connecting to Zaparoo Core…");
-    }
+    readonly property bool catalogStillBooting: !Browse.CategoriesModel.loaded && (Browse.CategoriesModel.error_message ?? "") === ""
 
     // Per-screen state derivation. Shape mirrors ScreenStateOverlay's
     // `state` ternary so the help bar and the in-screen overlay agree
@@ -352,15 +322,15 @@ ApplicationWindow {
     // CategoriesModel binds eagerly via bind_to_endpoint! and exposes
     // no `loading` qproperty, so a count-of-zero collapses straight
     // into Empty (matching the overlay's existing behavior on Hub).
-    readonly property string systemsScreenState: Browse.SystemsModel.loading ? "loading" : ((Browse.SystemsModel.error_message ?? "") !== "" ? "error" : (Browse.SystemsModel.count === 0 ? "empty" : "ready"))
+    readonly property string systemsScreenState: (Browse.SystemsModel.loading || (root.activeScreen === root.screenSystems && root.catalogStillBooting)) ? "loading" : ((Browse.SystemsModel.error_message ?? "") !== "" ? "error" : (Browse.SystemsModel.count === 0 ? "empty" : "ready"))
 
-    readonly property string gamesScreenState: Browse.GamesModel.loading ? "loading" : ((Browse.GamesModel.error_message ?? "") !== "" ? "error" : (Browse.GamesModel.count === 0 ? "empty" : "ready"))
+    readonly property string gamesScreenState: (Browse.GamesModel.loading || (root.activeScreen === root.screenGames && root.catalogStillBooting)) ? "loading" : ((Browse.GamesModel.error_message ?? "") !== "" ? "error" : (Browse.GamesModel.count === 0 ? "empty" : "ready"))
 
-    readonly property string favoritesScreenState: Browse.FavoritesModel.loading ? "loading" : ((Browse.FavoritesModel.error_message ?? "") !== "" ? "error" : (Browse.FavoritesModel.count === 0 ? "empty" : "ready"))
+    readonly property string favoritesScreenState: (Browse.FavoritesModel.loading || (root.activeScreen === root.screenFavorites && root.catalogStillBooting)) ? "loading" : ((Browse.FavoritesModel.error_message ?? "") !== "" ? "error" : (Browse.FavoritesModel.count === 0 ? "empty" : "ready"))
 
     readonly property string hubScreenState: (Browse.CategoriesModel.error_message ?? "") !== "" ? "error" : (Browse.CategoriesModel.count === 0 ? "empty" : "ready")
 
-    readonly property string recentsScreenState: Browse.RecentsModel.loading ? "loading" : ((Browse.RecentsModel.error_message ?? "") !== "" ? "error" : (Browse.RecentsModel.count === 0 ? "empty" : "ready"))
+    readonly property string recentsScreenState: (Browse.RecentsModel.loading || (root.activeScreen === root.screenRecents && root.catalogStillBooting)) ? "loading" : ((Browse.RecentsModel.error_message ?? "") !== "" ? "error" : (Browse.RecentsModel.count === 0 ? "empty" : "ready"))
     readonly property string displayOrientation: Browse.Settings.current_orientation
     readonly property bool _sceneRotated: root.displayOrientation === "cw" || root.displayOrientation === "ccw"
     readonly property bool _browseListLayout: Browse.Settings.current_browse_layout === "list"
@@ -420,25 +390,12 @@ ApplicationWindow {
     // between the two sides would defeat the guard — see #24 for the
     // tracked single-source-of-truth refactor.
     onActiveScreenChanged: {
-        root._startupTrace("startup/qml activeScreenChanged",
-                           "activeScreen=" + root.activeScreen,
-                           "pendingTransition=" + root.pendingTransition,
-                           "startupRestoreCurtainVisible=" + root.startupRestoreCurtainVisible,
-                           "connectionWaitVisible=" + root.connectionWaitVisible);
+        root._startupTrace("startup/qml activeScreenChanged", "activeScreen=" + root.activeScreen, "pendingTransition=" + root.pendingTransition, "startupRestoreCurtainVisible=" + root.startupRestoreCurtainVisible);
         if (ScreenManager.activeScreen !== root.activeScreen)
             ScreenManager.activeScreen = root.activeScreen;
     }
     onStartupRestoreCurtainVisibleChanged: {
-        root._startupTrace("startup/qml startupRestoreCurtainVisibleChanged",
-                           "visible=" + root.startupRestoreCurtainVisible,
-                           "activeScreen=" + root.activeScreen);
-    }
-    onConnectionWaitVisibleChanged: {
-        root._startupTrace("startup/qml connectionWaitVisibleChanged",
-                           "visible=" + root.connectionWaitVisible,
-                           "activeScreen=" + root.activeScreen,
-                           "linkState=" + Browse.AppStatus.link_state,
-                           "connectionState=" + Browse.AppStatus.connection_state);
+        root._startupTrace("startup/qml startupRestoreCurtainVisibleChanged", "visible=" + root.startupRestoreCurtainVisible, "activeScreen=" + root.activeScreen);
     }
     Connections {
         target: ScreenManager
@@ -543,24 +500,14 @@ ApplicationWindow {
                         return;
                     if (status === Image.Loading) {
                         backgroundTexture._startupTraceLoadStartedAt = Date.now();
-                        root._startupTrace("startup/qml resource load start",
-                                           "coverKey=background/bg-circuit",
-                                           "source=" + source);
+                        root._startupTrace("startup/qml resource load start", "coverKey=background/bg-circuit", "source=" + source);
                     } else if (status === Image.Ready) {
                         const durMs = backgroundTexture._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - backgroundTexture._startupTraceLoadStartedAt) : 0;
-                        root._startupTrace("startup/qml resource load ready",
-                                           "coverKey=background/bg-circuit",
-                                           "source=" + source,
-                                           "dur_ms=" + durMs,
-                                           "tileWidth=" + sourceSize.width,
-                                           "tileHeight=" + sourceSize.height);
+                        root._startupTrace("startup/qml resource load ready", "coverKey=background/bg-circuit", "source=" + source, "dur_ms=" + durMs, "tileWidth=" + sourceSize.width, "tileHeight=" + sourceSize.height);
                         backgroundTexture._startupTraceLoadStartedAt = 0;
                     } else if (status === Image.Error) {
                         const durMs = backgroundTexture._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - backgroundTexture._startupTraceLoadStartedAt) : 0;
-                        root._startupTrace("startup/qml resource load error",
-                                           "coverKey=background/bg-circuit",
-                                           "source=" + source,
-                                           "dur_ms=" + durMs);
+                        root._startupTrace("startup/qml resource load error", "coverKey=background/bg-circuit", "source=" + source, "dur_ms=" + durMs);
                         backgroundTexture._startupTraceLoadStartedAt = 0;
                     }
                 }
@@ -631,10 +578,7 @@ ApplicationWindow {
                     onVisibleChanged: {
                         if (!visible || !root._startupTraceActive)
                             return;
-                        root._startupTrace("startup/qml firstHubVisible",
-                                           "restoreCurtainVisible=" + root.startupRestoreCurtainVisible,
-                                           "connectionState=" + Browse.AppStatus.connection_state,
-                                           "categories=" + Browse.CategoriesModel.count);
+                        root._startupTrace("startup/qml firstHubVisible", "restoreCurtainVisible=" + root.startupRestoreCurtainVisible, "connectionState=" + Browse.AppStatus.connection_state, "categories=" + Browse.CategoriesModel.count);
                         root._startupTraceActive = false;
                     }
                 }
@@ -648,6 +592,7 @@ ApplicationWindow {
                         SystemsScreen {
                             anchors.fill: parent
                             transitioning: root.pendingTransition !== ""
+                            optimisticLoading: root.activeScreen === root.screenSystems && root.catalogStillBooting
                         }
                     }
                 }
@@ -661,6 +606,7 @@ ApplicationWindow {
                         GamesScreen {
                             anchors.fill: parent
                             transitioning: root.pendingTransition !== ""
+                            optimisticLoading: root.activeScreen === root.screenGames && root.catalogStillBooting
                         }
                     }
                 }
@@ -674,6 +620,7 @@ ApplicationWindow {
                         FavoritesScreen {
                             anchors.fill: parent
                             transitioning: root.pendingTransition !== ""
+                            optimisticLoading: root.activeScreen === root.screenFavorites && root.catalogStillBooting
                         }
                     }
                 }
@@ -687,6 +634,7 @@ ApplicationWindow {
                         RecentsScreen {
                             anchors.fill: parent
                             transitioning: root.pendingTransition !== ""
+                            optimisticLoading: root.activeScreen === root.screenRecents && root.catalogStillBooting
                         }
                     }
                 }
@@ -700,6 +648,7 @@ ApplicationWindow {
                         SettingsScreen {
                             anchors.fill: parent
                             transitioning: root.pendingTransition !== ""
+                            optimisticLoading: root.activeScreen === root.screenSettings && root.catalogStillBooting
                         }
                     }
                 }
@@ -714,45 +663,6 @@ ApplicationWindow {
                             anchors.fill: parent
                             transitioning: root.pendingTransition !== ""
                         }
-                    }
-                }
-            }
-
-            Item {
-                visible: root.connectionWaitVisible
-                z: 61
-
-                Rectangle {
-                    x: Sizing.center(scene.width, width)
-                    y: Sizing.center(scene.height, height)
-                    width: Sizing.px(connectionWaitTextItem.implicitWidth + connectionWaitIndicator.width + Sizing.pctW(5.6))
-                    height: Sizing.px(Math.max(Sizing.fontSize(4.6), connectionWaitIndicator.height) + Sizing.pctH(2.6))
-                    color: Theme.surfaceCard
-                    radius: Sizing.half(height)
-                    border.width: Sizing.stroke(1)
-                    border.color: (Browse.AppStatus.link_state ?? root._linkDisconnected) === root._linkUnreachable ? Theme.accent : Theme.borderMid
-
-                    LoadingIndicator {
-                        id: connectionWaitIndicator
-
-                        x: Sizing.pctW(1.4)
-                        y: Sizing.center(parent.height, height)
-                        text: ""
-                        glyphSize: Sizing.fontSize(4.0)
-                        spacing: 0
-                        visible: (Browse.AppStatus.link_state ?? root._linkDisconnected) !== root._linkUnreachable
-                    }
-
-                    Text {
-                        id: connectionWaitTextItem
-
-                        x: (connectionWaitIndicator.visible ? connectionWaitIndicator.x + connectionWaitIndicator.width + Sizing.pctW(1.2) : Sizing.pctW(1.6))
-                        y: Sizing.center(parent.height, height)
-                        text: root.connectionWaitText
-                        font.family: Theme.fontUi
-                        font.pixelSize: Sizing.fontSize(2.7)
-                        color: Theme.textPrimary
-                        renderType: Text.NativeRendering
                     }
                 }
             }
