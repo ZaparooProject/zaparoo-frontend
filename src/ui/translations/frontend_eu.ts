@@ -6,7 +6,7 @@
     <message>
         <location filename="../screens/AboutScreen.qml" line="71"/>
         <source>About / License</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Buruz / Lizentzia</translation>
     </message>
     <message>
         <location filename="../screens/AboutScreen.qml" line="153"/>
@@ -150,7 +150,7 @@
     <message>
         <location filename="../components/CommercialNoticeModal.qml" line="79"/>
         <source>This free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Doako kode-eskuragarri konstrukzioa eskuragarri dago erabilera pertsonal eta ez-komertzialerako bakarrik. Erabilera komertzialak bestelako lizentzia behar du.</translation>
     </message>
     <message>
         <location filename="../components/CommercialNoticeModal.qml" line="90"/>
@@ -391,7 +391,7 @@
     <message>
         <location filename="../screens/HubScreen.qml" line="537"/>
         <source>No systems available. Run Update media database from Settings.</source>
-        <translation type="unfinished">Ez dago sistemarik eskuragarri. Exekutatu Eguneratu baliabide datubasea Aukeretatik</translation>
+        <translation type="unfinished">Ez dago sistemarik eskuragarri. Exekutatu Eguneratu multimedia datubasea Aukeretatik</translation>
     </message>
 </context>
 <context>
@@ -412,7 +412,7 @@
     <message>
         <location filename="../components/LogUploadModal.qml" line="97"/>
         <source>Uploading log file - this may take a moment.</source>
-        <translation type="unfinished">Fitxategia igotzen - honek momentu bat eraman dezake.</translation>
+        <translation type="unfinished">Log fitxategia igotzen - honek momentu bat eraman dezake.</translation>
     </message>
     <message>
         <location filename="../components/LogUploadModal.qml" line="197"/>
@@ -629,7 +629,7 @@
     <message>
         <location filename="../app/MainLayout.qml" line="592"/>
         <source>Quit and restart Zaparoo Frontend?</source>
-        <translation type="unfinished">Itxi eta Zaparoo Frontend berabiarazi</translation>
+        <translation type="unfinished">Zaparoo Frontend itxi eta berrabiarazi</translation>
     </message>
     <message>
         <location filename="../app/MainLayout.qml" line="593"/>
@@ -717,7 +717,7 @@
     <message>
         <location filename="../screens/MediaListScreen.qml" line="307"/>
         <source>%1 / %2</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">%1 / %2</translation>
     </message>
 </context>
 <context>
@@ -758,7 +758,7 @@
     <message>
         <location filename="../screens/RecentsScreen.qml" line="25"/>
         <source>Nothing played yet</source>
-        <translation>Oraindik ez da ezertara jolastu</translation>
+        <translation>Oraindik ez da ezertara jokatu</translation>
     </message>
 </context>
 <context>
@@ -850,7 +850,7 @@
     <message>
         <location filename="../screens/SettingsScreen.qml" line="122"/>
         <source>Re-scrape existing</source>
-        <translation type="unfinished">Berriro scrapeatzea existitzen da</translation>
+        <translation type="unfinished">Existitzen direnak berriro scrapeatu </translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="126"/>
@@ -865,7 +865,7 @@
     <message>
         <location filename="../screens/SettingsScreen.qml" line="141"/>
         <source>Upload log file</source>
-        <translation type="unfinished">Igo erregistro fitxategia</translation>
+        <translation type="unfinished">Igo log fitxategia</translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="146"/>
@@ -962,7 +962,7 @@
     <message>
         <location filename="../screens/SettingsScreen.qml" line="381"/>
         <source>Slovak</source>
-        <translation type="unfinished">eslovakiera</translation>
+        <translation type="unfinished">Eslovakiera</translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="383"/>
@@ -972,7 +972,7 @@
     <message>
         <location filename="../screens/SettingsScreen.qml" line="385"/>
         <source>Chinese (Simplified)</source>
-        <translation type="unfinished">Txinera (sinplifikatua)</translation>
+        <translation type="unfinished">Txinera (Sinplifikatua)</translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="387"/>
@@ -987,7 +987,7 @@
     <message>
         <location filename="../screens/SettingsScreen.qml" line="391"/>
         <source>Hindi</source>
-        <translation type="unfinished">HIndia</translation>
+        <translation type="unfinished">Hindia</translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="392"/>
