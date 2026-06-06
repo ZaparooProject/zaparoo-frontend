@@ -2027,7 +2027,7 @@ MainLayout {
         root.rapidNavigationAction = action;
         if (forceActive || rapidNavigationQuiet.running)
             root.rapidNavigationActive = true;
-        if (forceActive || action === "page_prev" || action === "page_next" || root._rapidNavigationTapCount >= 3)
+        if (forceActive || root._rapidNavigationTapCount >= 3)
             root.rapidNavigationIndicatorActive = true;
         rapidNavigationQuiet.restart();
     }

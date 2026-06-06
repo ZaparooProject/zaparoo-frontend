@@ -1581,21 +1581,20 @@ fn notify_cover_update(mut model: Pin<&mut ffi::GamesModel>, key: &MediaKey) {
             handle.abort();
         }
         // Bytes are cached, but QML's `MediaImageProvider` still has to
-        // decode them. The hidden cover pre-warmer in `GamesScreen.qml`
-        // dispatches all N requests at once and the provider's 4-worker
-        // pool decodes them in ~75–150 ms; without this settle window
-        // the gate flips `loading=false` ~80 ms after the last byte
-        // lands and `gamesGrid` materialises before the last few
-        // decodes complete, painting the procedural fallback over those
-        // tiles for a frame or two. The settle uses the same seq-ticket
-        // guard as the safety timer so a folder change cancels the
-        // pending release.
+        // decode them. PagedGrid now feeds real coverKey values to the
+        // current and next page while the loading overlay is still up,
+        // but MiSTer's software-rendered frame loop can lag behind the
+        // last cache broadcast. Keep a bounded settle window long enough
+        // for the first-page provider/decode lag seen on MiSTer so the
+        // first visible grid frame is less likely to paint fallbacks or
+        // hourglasses. The seq-ticket guard matches the safety timer so
+        // a folder change cancels the pending release.
         info!("games: cover gate bytes settled — entering decode-settle window");
         let seq = model.rust().cover_gate_seq.clone();
         let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
         let qt_thread = model.qt_thread();
         let handle = global_handle().spawn(async move {
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::time::sleep(Duration::from_millis(1500)).await;
             let _ = qt_thread.queue(move |mut model: Pin<&mut ffi::GamesModel>| {
                 if seq.load(Ordering::SeqCst) != ticket {
                     return;

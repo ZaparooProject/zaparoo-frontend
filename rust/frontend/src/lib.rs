@@ -165,6 +165,12 @@ pub extern "C" fn zaparoo_rust_debug_logging_enabled() -> bool {
     DEBUG_LOGGING_ENABLED.get().copied().unwrap_or(false)
 }
 
+/// Records a startup trace stage from the C++ bootstrap path.
+///
+/// # Safety
+///
+/// `stage_ptr` must point to `stage_len` bytes of valid UTF-8 for the
+/// duration of this call, unless it is null or `stage_len` is zero.
 #[no_mangle]
 pub unsafe extern "C" fn zaparoo_rust_trace_startup(stage_ptr: *const u8, stage_len: usize) {
     if stage_ptr.is_null() || stage_len == 0 {

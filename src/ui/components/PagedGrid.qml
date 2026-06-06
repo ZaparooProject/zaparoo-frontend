@@ -519,15 +519,17 @@ Item {
                 readonly property int cellCol: cellLocal % root.columns
                 readonly property bool isSelected: index === root.currentIndex
 
-                // Cover-load gate AND delegate-materialisation gate.
+                // Cover-decode gate AND delegate-materialisation gate.
                 // PagedGrid's Repeater creates one cellItem per model
                 // row at construction. Two-tier gate, both anchored on
                 // distance from `root.currentPage`:
                 //
-                //   - request range (current page only): visible cells
-                //     fire image-provider requests. Rust owns ordered
-                //     current/next/previous page prefetch so hidden QML
-                //     delegates do not fight the explicit queue.
+                //   - decode range (current + next page): cells hand
+                //     their real coverKey to Tile, forcing hidden
+                //     next-page Image decode/QPixmapCache warm before
+                //     the page cut. Rust still owns byte-fetch priority
+                //     via `prefetch_around`; this range only makes QML
+                //     consume already-warmed bytes early enough.
                 //   - retention range (±5 pages): cells inside this
                 //     radius keep their TileLoader.active=true so the
                 //     Tile delegate stays materialised, AND cells that
@@ -537,7 +539,7 @@ Item {
                 //     per-press binding cost from growing with the
                 //     dataset - only ~110 Tile delegates exist at any
                 //     time regardless of N. Retention doesn't trigger
-                //     new cover requests; only the request range does.
+                //     new cover requests; only the decode range does.
                 //
                 // Off-radius cells (outside retention) set
                 // `TileLoader.active=false`, which destroys the
@@ -554,7 +556,7 @@ Item {
                 // after crossing past the retention edge runs at
                 // nice +10 (see media_image_provider.cpp) and is
                 // invisible to the renderer.
-                readonly property bool _coverInRange: !root.rapidRenderMode && cellPage === root.currentPage
+                readonly property bool _coverInRange: !root.rapidRenderMode && cellPage >= root.currentPage && cellPage <= root.currentPage + 1
                 readonly property bool _coverInRetentionRange: !root.rapidRenderMode && Math.abs(cellPage - root.currentPage) <= (root.coverLoadingPaused ? 1 : 5)
                 property bool _coverEverRequested: false
                 Binding on _coverEverRequested {
@@ -582,21 +584,48 @@ Item {
                 // finishes incubating it paints opaque on top with
                 // the same color and radius, so the silhouette is
                 // hidden for free without an explicit visibility
-                // gate. No bindings on `root.currentPage` or
-                // `root.currentIndex` so it doesn't reintroduce the
-                // per-press fan-out we just bounded; the Repeater's
-                // visibility gate (cellPage === currentPage on the
-                // parent) means only ~pageSize silhouettes paint
-                // per frame.
+                // gate. The only selection-dependent work here is the
+                // focused placeholder ring below; it stays limited to
+                // the current page by the parent visibility gate.
                 Rectangle {
+                    id: placeholderCard
+
                     anchors.fill: parent
                     radius: Sizing.cornerRadius
-                    color: cellItem.isSelected && root.rapidRenderMode ? Theme.selectionSurface : Theme.surfaceCard
-                    border.width: cellItem.isSelected && root.rapidRenderMode ? Sizing.stroke(2) : 0
-                    border.color: Theme.accent
+                    color: Theme.surfaceCard
+                    border.color: Theme.borderMid
+                    border.width: Sizing.stroke(1)
+                }
+
+                // Standalone selected-cell ring for skeleton/rapid mode.
+                // Tile.qml owns the normal ring, but rapidRenderMode
+                // deliberately disables TileLoader to keep held d-pad
+                // navigation cheap. Draw the same filled-rect ring on
+                // the placeholder so selection never disappears while
+                // covers/delegates are paused.
+                Rectangle {
+                    id: placeholderFocusRingOuter
+
+                    anchors.fill: parent
+                    anchors.margins: Sizing.pctH(0.4)
+                    color: Theme.accent
+                    radius: Math.max(0, Sizing.cornerRadius - Sizing.pctH(0.4))
+                    antialiasing: true
+                    visible: cellItem.isSelected && root.focused && (root.rapidRenderMode || tileLoader.status !== Loader.Ready)
+                }
+
+                Rectangle {
+                    anchors.fill: placeholderFocusRingOuter
+                    anchors.margins: Sizing.stroke(Sizing.pctH(0.6))
+                    color: placeholderCard.color
+                    radius: Math.max(0, placeholderFocusRingOuter.radius - Sizing.stroke(Sizing.pctH(0.6)))
+                    antialiasing: true
+                    visible: placeholderFocusRingOuter.visible
                 }
 
                 TileLoader {
+                    id: tileLoader
+
                     anchors.fill: parent
                     sourceComponent: root.delegate
                     // Bound delegate materialisation to the retention

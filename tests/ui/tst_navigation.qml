@@ -379,11 +379,20 @@ TestCase {
     // qmllint enable compiler
     }
 
+    function test_single_page_tap_does_not_show_rapid_indicator(): void {
+        // qmllint disable compiler
+        main._noteRapidNavigationAction("page_next", false);
+        compare(main.rapidNavigationAction, "page_next");
+        compare(main.rapidNavigationIndicatorActive, false, "single page tap should not flash rapid indicator");
+    // qmllint enable compiler
+    }
+
     function test_repeat_tick_forces_rapid_navigation_active(): void {
         // qmllint disable compiler
         main._armRepeat("page_next", Qt.Key_R);
         main._handleRepeatAction();
         compare(main.rapidNavigationActive, true, "held page action should enter rapid mode on first repeat tick");
+        compare(main.rapidNavigationIndicatorActive, true, "held page action should show rapid indicator on first repeat tick");
         main._stopRepeat();
         wait(main._rapidNavigationQuietMs + 40);
         compare(main.rapidNavigationActive, false);

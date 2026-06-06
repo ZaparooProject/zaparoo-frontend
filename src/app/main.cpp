@@ -217,8 +217,8 @@ int main(int argc, char* argv[]) // NOLINT
         qInfo("Registered font %s: %s", qUtf8Printable(path),
               qUtf8Printable(QFontDatabase::applicationFontFamilies(fontId).join(", ")));
     };
-    const auto registerFallbackFont = [&registerFont](QChar::Script script, const QString& path,
-                                                      const QString& family)
+    const auto registerFallbackFont =
+        [&registerFont](QChar::Script script, const QString& path, const QString& family)
     {
         registerFont(path);
         QFontDatabase::addApplicationFallbackFontFamily(script, family);
