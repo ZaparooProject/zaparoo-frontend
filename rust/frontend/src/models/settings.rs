@@ -87,8 +87,9 @@ const MISTER_RESOLUTIONS: &[&str] = &[
     "2048x1536",
 ];
 const LANGUAGES: &[&str] = &[
-    "auto", "en", "it_IT", "es", "eu", "de", "el", "ja", "ko", "nl", "ro", "sk", "uk", "zh_CN",
-    "he", "ar", "hi",
+    "auto", "en", "en_US", "en_GB", "it_IT", "es", "es_ES", "eu", "eu_ES", "de", "de_DE", "el",
+    "el_GR", "ja", "ja_JP", "ko", "ko_KR", "nl", "nl_NL", "ro", "ro_RO", "sk", "sk_SK", "uk",
+    "uk_UA", "zh_CN", "zh_TW", "zh_HK", "he", "he_IL", "ar", "ar_SA", "hi", "hi_IN",
 ];
 const DEFAULT_LANGUAGE: &str = "auto";
 const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
@@ -729,6 +730,8 @@ mod tests {
         assert_eq!(normalize_language("AUTO"), DEFAULT_LANGUAGE);
         assert_eq!(normalize_language("fr"), DEFAULT_LANGUAGE);
         assert_eq!(normalize_language("it_IT"), "it_IT");
+        assert_eq!(normalize_language("es_ES"), "es_ES");
+        assert_eq!(normalize_language("eu_ES"), "eu_ES");
     }
 
     #[test]

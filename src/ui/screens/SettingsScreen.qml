@@ -468,37 +468,39 @@ Item {
     }
 
     function _languageDisplay(value: string): string {
-        if (value === "en")
+        if (value === "en" || value === "en_US" || value === "en_GB")
             return qsTr("English");
         if (value === "it_IT")
             return qsTr("Italian");
-        if (value === "es")
+        if (value === "es" || value === "es_ES")
             return qsTr("Spanish");
-        if (value === "eu")
+        if (value === "eu" || value === "eu_ES")
             return qsTr("Basque");
-        if (value === "de")
+        if (value === "de" || value === "de_DE")
             return qsTr("German");
-        if (value === "el")
+        if (value === "el" || value === "el_GR")
             return qsTr("Greek");
-        if (value === "ja")
+        if (value === "ja" || value === "ja_JP")
             return qsTr("Japanese");
-        if (value === "ko")
+        if (value === "ko" || value === "ko_KR")
             return qsTr("Korean");
-        if (value === "nl")
+        if (value === "nl" || value === "nl_NL")
             return qsTr("Dutch");
-        if (value === "ro")
+        if (value === "ro" || value === "ro_RO")
             return qsTr("Romanian");
-        if (value === "sk")
+        if (value === "sk" || value === "sk_SK")
             return qsTr("Slovak");
-        if (value === "uk")
+        if (value === "uk" || value === "uk_UA")
             return qsTr("Ukrainian");
         if (value === "zh_CN")
             return qsTr("Chinese (Simplified)");
-        if (value === "he")
+        if (value === "zh_TW" || value === "zh_HK")
+            return qsTr("Chinese (Traditional)");
+        if (value === "he" || value === "he_IL")
             return qsTr("Hebrew");
-        if (value === "ar")
+        if (value === "ar" || value === "ar_SA")
             return qsTr("Arabic");
-        if (value === "hi")
+        if (value === "hi" || value === "hi_IN")
             return qsTr("Hindi");
         return qsTr("Auto");
     }
