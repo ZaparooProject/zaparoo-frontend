@@ -55,6 +55,8 @@ pub struct TagInfo {
     pub tag: String,
     #[serde(rename = "type", default)]
     pub tag_type: String,
+    #[serde(default)]
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -316,6 +318,30 @@ impl MediaHistoryResult {
     pub fn next_cursor(&self) -> Option<String> {
         self.pagination.as_ref().and_then(|p| p.next_cursor.clone())
     }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaHistoryLatestEntry {
+    #[serde(default)]
+    pub system_id: String,
+    #[serde(default)]
+    pub system_name: String,
+    #[serde(default)]
+    pub media_name: String,
+    #[serde(default)]
+    pub media_path: String,
+    #[serde(default)]
+    pub launcher_id: String,
+    #[serde(default)]
+    pub started_at: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaHistoryLatestResult {
+    #[serde(default)]
+    pub entry: Option<MediaHistoryLatestEntry>,
 }
 
 /// Parameters for single-image `media.image`. Core identifies the
@@ -995,13 +1021,13 @@ mod tests {
 
     use super::{
         BrowseEntry, HealthResult, IndexingStatusResponse, LaunchersResult, LogDownloadResult,
-        MediaBrowseParams, MediaBrowseResult, MediaHistoryParams, MediaHistoryResult,
-        MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams, MediaImageResult,
-        MediaIndexParams, MediaLookupParams, MediaLookupResult, MediaMetaParams, MediaMetaResult,
-        MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams,
-        MediaTagsResult, ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse,
-        SettingsResult, SystemDefault, SystemsResult, TokensHistoryResult, TokensResult,
-        UpdateSettingsParams, VersionResult,
+        MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult, MediaHistoryParams,
+        MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams,
+        MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult, MediaMetaParams,
+        MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult,
+        MediaTagsParams, MediaTagsResult, ReaderInfo, ReadersResult, ScrapersResult,
+        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsResult, TagInfo,
+        TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
     };
 
     #[test]
@@ -1337,6 +1363,46 @@ mod tests {
         let result: MediaHistoryResult = serde_json::from_str("{}").expect("parse");
         assert!(result.entries.is_empty());
         assert!(result.pagination.is_none());
+    }
+
+    #[test]
+    fn media_history_latest_result_parses_documented_payload() {
+        let json = r#"{
+            "entry": {
+                "systemId": "SNES",
+                "systemName": "Super Nintendo Entertainment System",
+                "mediaName": "Super Mario World",
+                "mediaPath": "/roms/snes/Super Mario World (USA).sfc",
+                "launcherId": "SNES",
+                "startedAt": "2025-01-22T14:30:00Z"
+            }
+        }"#;
+        let result: MediaHistoryLatestResult = serde_json::from_str(json).expect("parse");
+        let entry = result.entry.expect("entry");
+        assert_eq!(entry.system_id, "SNES");
+        assert_eq!(entry.media_name, "Super Mario World");
+        assert_eq!(entry.media_path, "/roms/snes/Super Mario World (USA).sfc");
+        assert_eq!(entry.launcher_id, "SNES");
+        assert_eq!(entry.started_at, "2025-01-22T14:30:00Z");
+    }
+
+    #[test]
+    fn media_history_latest_result_handles_no_entry() {
+        let result: MediaHistoryLatestResult =
+            serde_json::from_str(r#"{"entry":null}"#).expect("parse");
+        assert!(result.entry.is_none());
+        let result: MediaHistoryLatestResult = serde_json::from_str("{}").expect("parse");
+        assert!(result.entry.is_none());
+    }
+
+    #[test]
+    fn tag_info_parses_label() {
+        let tag: TagInfo =
+            serde_json::from_str(r#"{"type":"developer","tag":"nintendo","label":"Nintendo"}"#)
+                .expect("parse");
+        assert_eq!(tag.tag_type, "developer");
+        assert_eq!(tag.tag, "nintendo");
+        assert_eq!(tag.label, "Nintendo");
     }
 
     #[test]

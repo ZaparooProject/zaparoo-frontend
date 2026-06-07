@@ -15,10 +15,10 @@
 
 use crate::media_types::{
     HealthResult, LaunchersResult, LogDownloadResult, MediaBrowseParams, MediaBrowseResult,
-    MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
-    MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
-    MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams,
-    MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
+    MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams,
+    MediaHistoryTopResult, MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams,
+    MediaLookupResult, MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams,
+    MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
     MediaTagsUpdateResult, ReadersResult, ReadersWriteParams, RunParams, ScrapersResult,
     ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult,
     TokensResult, UpdateSettingsParams, VersionResult,
@@ -634,6 +634,16 @@ impl Client {
             .and_then(Value::as_array)
             .map_or(0, Vec::len);
         debug!(entries_len, "media.history response");
+        serde_json::from_value(val).map_err(|e| ClientError {
+            message: e.to_string(),
+        })
+    }
+
+    /// Fetches the latest play-history row without media DB enrichment.
+    pub async fn media_history_latest(&self) -> Result<MediaHistoryLatestResult, ClientError> {
+        let val = self
+            .call("media.history.latest", &serde_json::json!({}))
+            .await?;
         serde_json::from_value(val).map_err(|e| ClientError {
             message: e.to_string(),
         })

@@ -7,16 +7,14 @@
 //
 // Two paths into the model:
 //
-//   * `bind_to_endpoint!` seeds page 1 from `MediaHistoryEndpoint` so
-//     a screen flip into Recents has data on the first paint when the
-//     resource is already `Ready`. The fixed args (`limit = 25`, no
-//     `systems` filter) match what the UI requests; if a future filter
-//     is added, switch to a per-arg pattern like `GamesModel`.
+//   * `ensure_loaded()` starts the initial page fetch lazily when the
+//     Recents screen is requested. Hub boot does not need the paginated
+//     history list, so it stays off the startup RPC burst.
 //
-//   * `fetch_more()` — cursor-driven follow-ups bypass the cache and
-//     call `Client::media_history` directly, just like games. The
-//     model owns the cursor, the in-flight `loading_more` debounce,
-//     and the seq ticket that disarms stale callbacks.
+//   * `fetch_more()` — cursor-driven follow-ups call
+//     `Client::media_history` directly, just like games. The model owns
+//     the cursor, the in-flight `loading_more` debounce, and the seq
+//     ticket that disarms stale callbacks.
 //
 // History is flat (no folder navigation, no auto-nav) so this model
 // stays a fraction of the size of `GamesModel`. Rows are deduplicated
@@ -26,7 +24,7 @@
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
 use crate::models::{global_handle, global_store};
-use cxx_qt::{CxxQtType, Threading};
+use cxx_qt::{CxxQtType, Initialize, Threading};
 use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant,
 };
@@ -38,15 +36,13 @@ use std::time::Duration;
 use time::{format_description::well_known::Rfc3339, Duration as TimeDuration, OffsetDateTime};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
-use zaparoo_core::client::ClientError;
-use zaparoo_core::endpoints::media_history::{HistoryArgs, MediaHistoryEndpoint};
+use tracing::{debug, info, warn};
+use zaparoo_core::client::{ClientError, ConnectionState};
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::media_types::{
-    MediaHistoryEntry, MediaHistoryParams, MediaHistoryResult, MediaMeta, MediaMetaParams,
-    RunParams, TagInfo,
+    MediaHistoryEntry, MediaHistoryLatestEntry, MediaHistoryParams, MediaHistoryResult, MediaMeta,
+    MediaMetaParams, RunParams, TagInfo,
 };
-use zaparoo_core::remote_resource::ResourceStatus;
 
 const NAME_ROLE: i32 = 256 + 1;
 const PATH_ROLE: i32 = 256 + 2;
@@ -82,8 +78,14 @@ pub struct RecentsModelRust {
     has_next_page: bool,
     next_cursor: Option<String>,
     resume_available: bool,
+    resume_loading: bool,
     resume_name: QString,
     resume_cover_key: QString,
+    resume_entry: Option<MediaHistoryEntry>,
+    resume_requested: bool,
+    resume_seq: Arc<AtomicU64>,
+    history_requested: bool,
+    history_subscription: Option<JoinHandle<()>>,
     current_detail_loading: bool,
     current_detail_tags: QString,
     current_detail_image_key: QString,
@@ -145,6 +147,7 @@ pub mod ffi {
         #[qproperty(QString, error_message)]
         #[qproperty(bool, has_next_page)]
         #[qproperty(bool, resume_available)]
+        #[qproperty(bool, resume_loading)]
         #[qproperty(QString, resume_name)]
         #[qproperty(QString, resume_cover_key)]
         #[qproperty(bool, current_detail_loading)]
@@ -152,6 +155,9 @@ pub mod ffi {
         #[qproperty(QString, current_detail_image_key)]
         #[qproperty(bool, cover_requests_paused)]
         type RecentsModel = super::RecentsModelRust;
+
+        #[qinvokable]
+        fn ensure_loaded(self: Pin<&mut RecentsModel>);
 
         #[qinvokable]
         fn fetch_more(self: Pin<&mut RecentsModel>);
@@ -236,12 +242,10 @@ pub mod ffi {
     impl cxx_qt::Initialize for RecentsModel {}
 }
 
-crate::bind_to_endpoint! {
-    for ffi::RecentsModel,
-    endpoint = MediaHistoryEndpoint,
-    args = HistoryArgs::new(Vec::new(), PAGE_SIZE),
-    select = project,
-    apply = apply_state,
+impl Initialize for ffi::RecentsModel {
+    fn initialize(mut self: Pin<&mut Self>) {
+        self.as_mut().bind_resume_to_connection();
+    }
 }
 
 /// Snapshot of a single page that `apply_state` can write onto the
@@ -249,22 +253,12 @@ crate::bind_to_endpoint! {
 /// `qt_thread` queue.
 type PageSnapshot = (Vec<MediaHistoryEntry>, bool, Option<String>);
 
-/// Project the resource status onto an `(Option<PageSnapshot>, error)`
-/// tuple. `Idle`/`Loading` map to the same `(None, "")` shape so the
-/// apply path can decide on its own whether to show the spinner.
-fn project(status: &ResourceStatus<MediaHistoryResult>) -> (Option<PageSnapshot>, String) {
-    match status {
-        ResourceStatus::Ready(data) => (
-            Some((
-                data.entries.clone(),
-                data.has_next_page(),
-                data.next_cursor(),
-            )),
-            String::new(),
-        ),
-        ResourceStatus::Errored { message, .. } => (None, message.clone()),
-        ResourceStatus::Idle | ResourceStatus::Loading => (None, String::new()),
-    }
+fn page_snapshot(result: &MediaHistoryResult) -> PageSnapshot {
+    (
+        result.entries.clone(),
+        result.has_next_page(),
+        result.next_cursor(),
+    )
 }
 
 fn apply_state(
@@ -402,6 +396,131 @@ impl ffi::RecentsModel {
         h
     }
 
+    fn bind_resume_to_connection(mut self: Pin<&mut Self>) {
+        self.as_mut().ensure_resume_fetch();
+        let mut rx = global_store().client().connection.subscribe();
+        let qt_thread = self.qt_thread();
+        global_handle().spawn(async move {
+            while rx.changed().await.is_ok() {
+                let _ = qt_thread.queue(|model| {
+                    model.ensure_resume_fetch();
+                });
+            }
+        });
+    }
+
+    fn ensure_loaded(mut self: Pin<&mut Self>) {
+        if self.history_requested {
+            return;
+        }
+        self.as_mut().rust_mut().history_requested = true;
+        if !self.loading {
+            self.as_mut().set_loading(true);
+        }
+        let store = global_store();
+        if matches!(
+            *store.client().connection.borrow(),
+            ConnectionState::Connected
+        ) {
+            self.as_mut().start_initial_history_fetch();
+            return;
+        }
+        let mut rx = store.client().connection.subscribe();
+        let qt_thread = self.qt_thread();
+        let handle = global_handle().spawn(async move {
+            loop {
+                if rx.changed().await.is_err() {
+                    break;
+                }
+                let state = rx.borrow_and_update().clone();
+                match state {
+                    ConnectionState::Connected => {
+                        let _ = qt_thread.queue(|model| {
+                            model.start_initial_history_fetch();
+                        });
+                        break;
+                    }
+                    ConnectionState::Unreachable(message) => {
+                        let _ = qt_thread.queue(move |model| {
+                            apply_state(model, (None, message));
+                        });
+                        break;
+                    }
+                    ConnectionState::Disconnected
+                    | ConnectionState::Connecting
+                    | ConnectionState::Reconnecting => {}
+                }
+            }
+        });
+        self.as_mut().rust_mut().history_subscription = Some(handle);
+    }
+
+    fn start_initial_history_fetch(mut self: Pin<&mut Self>) {
+        self.as_mut().ensure_cover_subscription();
+        self.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
+        clear_current_detail_state(self.as_mut());
+        let seq = self.rust().seq.clone();
+        let ticket = seq.load(Ordering::SeqCst);
+        let qt_thread = self.qt_thread();
+        let store = global_store();
+        global_handle().spawn(async move {
+            let result = store
+                .client()
+                .media_history(MediaHistoryParams {
+                    limit: Some(PAGE_SIZE),
+                    cursor: None,
+                    systems: Vec::new(),
+                })
+                .await;
+            let projected = match result {
+                Ok(result) => (Some(page_snapshot(&result)), String::new()),
+                Err(e) => (None, e.message),
+            };
+            let _ = qt_thread.queue(move |model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                apply_state(model, projected);
+            });
+        });
+    }
+
+    fn ensure_resume_fetch(mut self: Pin<&mut Self>) {
+        if self.resume_requested {
+            return;
+        }
+        let store = global_store();
+        if !matches!(
+            *store.client().connection.borrow(),
+            ConnectionState::Connected
+        ) {
+            if !self.resume_loading {
+                self.as_mut().set_resume_loading(true);
+            }
+            sync_resume_state(self);
+            return;
+        }
+        self.as_mut().rust_mut().resume_requested = true;
+        self.as_mut()
+            .rust()
+            .resume_seq
+            .fetch_add(1, Ordering::SeqCst);
+        self.as_mut().set_resume_loading(true);
+        sync_resume_state(self.as_mut());
+        let seq = self.rust().resume_seq.clone();
+        let ticket = seq.load(Ordering::SeqCst);
+        let qt_thread = self.qt_thread();
+        global_handle().spawn(async move {
+            let result = store.client().media_history_latest().await;
+            let _ = qt_thread.queue(move |model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                apply_resume_latest_result(model, result);
+            });
+        });
+    }
+
     fn fetch_more(mut self: Pin<&mut Self>) {
         if self.loading_more || !self.has_next_page {
             return;
@@ -447,7 +566,7 @@ impl ffi::RecentsModel {
     }
 
     fn launch_resume(self: Pin<&mut Self>) {
-        let Some(entry) = resume_entry(&self.entries) else {
+        let Some(entry) = self.resume_entry.as_ref() else {
             return;
         };
         launch_entry(entry);
@@ -607,8 +726,42 @@ fn resume_cover_key_for(_entry: &MediaHistoryEntry, _requests_enabled: bool) -> 
     RESUME_FALLBACK_COVER_KEY.to_string()
 }
 
+fn apply_resume_latest_result(
+    mut model: Pin<&mut ffi::RecentsModel>,
+    result: Result<zaparoo_core::media_types::MediaHistoryLatestResult, ClientError>,
+) {
+    let latest = match result {
+        Ok(result) => result.entry,
+        Err(e) => {
+            debug!("media.history.latest failed: {}", e.message);
+            None
+        }
+    };
+    model.as_mut().rust_mut().resume_entry =
+        latest.map(history_entry_from_latest).filter(|entry| {
+            !launch_text_for(entry).is_empty()
+                && resume_entry_is_fresh(entry, OffsetDateTime::now_utc())
+        });
+    if model.resume_loading {
+        model.as_mut().set_resume_loading(false);
+    }
+    sync_resume_state(model);
+}
+
+fn history_entry_from_latest(entry: MediaHistoryLatestEntry) -> MediaHistoryEntry {
+    MediaHistoryEntry {
+        system_id: entry.system_id,
+        system_name: entry.system_name,
+        media_name: entry.media_name,
+        media_path: entry.media_path,
+        launcher_id: entry.launcher_id,
+        started_at: entry.started_at,
+        ..MediaHistoryEntry::default()
+    }
+}
+
 fn sync_resume_state(mut model: Pin<&mut ffi::RecentsModel>) {
-    let (available, name, cover_key) = match resume_entry(&model.entries) {
+    let (available, name, cover_key) = match model.resume_entry.as_ref() {
         Some(entry) => (
             true,
             QString::from(entry.media_name.as_str()),
@@ -733,11 +886,20 @@ fn detail_value_for_aliases(source: &[TagInfo], aliases: &[&str]) -> String {
             aliases
                 .iter()
                 .any(|alias| tag.tag_type.eq_ignore_ascii_case(alias))
-                && !tag.tag.trim().is_empty()
+                && !tag_display_value(tag).is_empty()
         })
-        .map(|tag| tag.tag.trim().to_string())
+        .map(tag_display_value)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn tag_display_value(tag: &TagInfo) -> String {
+    let label = tag.label.trim();
+    if label.is_empty() {
+        tag.tag.trim().to_string()
+    } else {
+        label.to_string()
+    }
 }
 
 fn clear_current_detail_state(mut model: Pin<&mut ffi::RecentsModel>) {
@@ -1137,7 +1299,7 @@ mod tests {
 
     use super::{
         compute_unresolved_keys, cover_key_for_with, dedupe_latest_by_path, filter_entries_by_path,
-        launch_text_for, media_key_for, position_of_path, project, resume_cover_key_for,
+        launch_text_for, media_key_for, page_snapshot, position_of_path, resume_cover_key_for,
         resume_entry, resume_entry_is_fresh, RESUME_FALLBACK_COVER_KEY,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -1147,7 +1309,6 @@ mod tests {
         OffsetDateTime,
     };
     use zaparoo_core::media_types::{MediaHistoryEntry, MediaHistoryResult, Pagination};
-    use zaparoo_core::remote_resource::ResourceStatus;
 
     fn entry(name: &str, path: &str, system_id: &str, launcher_id: &str) -> MediaHistoryEntry {
         MediaHistoryEntry {
@@ -1398,21 +1559,7 @@ mod tests {
     }
 
     #[test]
-    fn project_idle_yields_empty_pending() {
-        let (page, err) = project(&ResourceStatus::Idle);
-        assert!(page.is_none());
-        assert!(err.is_empty());
-    }
-
-    #[test]
-    fn project_loading_yields_empty_pending() {
-        let (page, err) = project(&ResourceStatus::Loading);
-        assert!(page.is_none());
-        assert!(err.is_empty());
-    }
-
-    #[test]
-    fn project_ready_carries_entries_and_pagination() {
+    fn page_snapshot_carries_entries_and_pagination() {
         let result = MediaHistoryResult {
             entries: vec![entry("smb", "/p/smb", "NES", "NES")],
             pagination: Some(Pagination {
@@ -1421,9 +1568,7 @@ mod tests {
                 next_cursor: Some("cursor-2".into()),
             }),
         };
-        let (page, err) = project(&ResourceStatus::Ready(result));
-        assert!(err.is_empty());
-        let (entries, has_next, cursor) = page.expect("ready snapshot");
+        let (entries, has_next, cursor) = page_snapshot(&result);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].media_path, "/p/smb");
         assert!(has_next);
@@ -1431,28 +1576,16 @@ mod tests {
     }
 
     #[test]
-    fn project_ready_without_pagination_disarms_next_page() {
+    fn page_snapshot_without_pagination_disarms_next_page() {
         // Core docs say pagination is omitted when no entries are
-        // returned. The projection must surface that as `has_next_page
+        // returned. The snapshot must surface that as `has_next_page
         // = false` so the model disarms `fetch_more` instead of looping
         // on a stale cursor.
         let result = MediaHistoryResult::default();
-        let (page, err) = project(&ResourceStatus::Ready(result));
-        assert!(err.is_empty());
-        let (entries, has_next, cursor) = page.expect("ready snapshot");
+        let (entries, has_next, cursor) = page_snapshot(&result);
         assert!(entries.is_empty());
         assert!(!has_next);
         assert!(cursor.is_none());
-    }
-
-    #[test]
-    fn project_errored_carries_message_with_no_snapshot() {
-        let (page, err) = project(&ResourceStatus::Errored {
-            message: "rpc kaboom".into(),
-            retrying: true,
-        });
-        assert!(page.is_none());
-        assert_eq!(err, "rpc kaboom");
     }
 
     #[test]

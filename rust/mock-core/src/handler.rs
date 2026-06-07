@@ -64,6 +64,7 @@ pub fn dispatch(text: &str) -> String {
         "media.search" => Some(fixtures::media_search_response(&req.params)),
         "media.browse" => Some(fixtures::media_browse_response(&req.params)),
         "media.history" => Some(fixtures::media_history_response(&req.params)),
+        "media.history.latest" => Some(fixtures::media_history_latest_response()),
         "run" => {
             let zap_script = req.params.get("text").and_then(Value::as_str).unwrap_or("");
             info!(%zap_script, "run");
@@ -249,6 +250,19 @@ mod tests {
             .as_object()
             .expect("pagination object");
         assert_eq!(pagination["hasNextPage"], Value::Bool(false));
+    }
+
+    #[test]
+    fn media_history_latest_returns_latest_entry() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.history.latest"}"#;
+        let resp = parse(&dispatch(req));
+        let entry = resp["result"]["entry"].as_object().expect("entry object");
+        assert!(entry["mediaName"].is_string());
+        assert!(entry["mediaPath"].is_string());
+        assert!(entry["systemId"].is_string());
+        assert!(entry["systemName"].is_string());
+        assert!(entry["launcherId"].is_string());
+        assert!(entry["startedAt"].is_string());
     }
 
     #[test]

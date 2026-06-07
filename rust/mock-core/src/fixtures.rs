@@ -181,6 +181,20 @@ pub fn media_browse_response(params: &Value) -> Value {
     })
 }
 
+pub fn media_history_latest_response() -> Value {
+    let (name, file, system) = ALL_GAMES[0];
+    json!({
+        "entry": {
+            "systemId": system,
+            "systemName": system_display_for(system),
+            "mediaName": name,
+            "mediaPath": format!("/mock/{system}/{file}"),
+            "launcherId": system,
+            "startedAt": "2026-04-29T23:00:00Z",
+        }
+    })
+}
+
 pub fn media_history_response(params: &Value) -> Value {
     let systems = params
         .get("systems")

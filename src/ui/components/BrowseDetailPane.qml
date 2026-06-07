@@ -21,6 +21,7 @@ Item {
     property bool detailSuppressed: false
     property bool showChrome: true
     property string loadingText: qsTr("Loading…")
+    property int loadingDelayMs: 150
     property var layoutProfile: null
 
     readonly property var _detail: root.layoutProfile && root.layoutProfile.detail ? root.layoutProfile.detail : null
@@ -58,7 +59,10 @@ Item {
     readonly property int _carouselGutter: (canPreviousImage || canNextImage) ? Sizing.pctW(4) : 0
     readonly property bool _coverPending: coverKey === "icons/Loading"
     readonly property url _coverSource: _coverPending ? "" : Resources.coverUrl(coverKey)
+    readonly property bool _coverBusy: root._coverPending || cover.status === Image.Loading
     readonly property bool _paneLoading: root.loading
+    readonly property bool _delayedPaneLoading: root._paneLoading && root._paneLoadingDelayElapsed
+    readonly property bool _delayedCoverBusy: root._coverBusy && root._coverLoadingDelayElapsed
     readonly property bool _detailVisible: !root._paneLoading && !root.detailSuppressed
     readonly property bool _suppressedPlaceholderCover: root.detailSuppressed && coverKey.startsWith("icons/") && root._coverSource !== ""
     readonly property var _detailRows: _parseDetailTags(detailTags)
@@ -69,8 +73,56 @@ Item {
     readonly property int _compactMetadataHeight: Math.min(Sizing.px(content.height * 0.38), _metadataNaturalHeight)
 
     property int _labelColumnWidth: 0
+    property bool _paneLoadingDelayElapsed: false
+    property bool _coverLoadingDelayElapsed: false
 
     onDetailTagsChanged: root._labelColumnWidth = 0
+    onLoadingChanged: root._updatePaneLoadingDelay()
+    onLoadingDelayMsChanged: {
+        root._updatePaneLoadingDelay();
+        root._updateCoverLoadingDelay();
+    }
+    on_CoverBusyChanged: root._updateCoverLoadingDelay()
+
+    Timer {
+        id: paneLoadingDelayTimer
+
+        interval: Math.max(0, root.loadingDelayMs)
+        repeat: false
+        onTriggered: root._paneLoadingDelayElapsed = root._paneLoading
+    }
+
+    Timer {
+        id: coverLoadingDelayTimer
+
+        interval: Math.max(0, root.loadingDelayMs)
+        repeat: false
+        onTriggered: root._coverLoadingDelayElapsed = root._coverBusy
+    }
+
+    function _updatePaneLoadingDelay(): void {
+        paneLoadingDelayTimer.stop();
+        root._paneLoadingDelayElapsed = false;
+        if (!root._paneLoading)
+            return;
+        if (root.loadingDelayMs <= 0) {
+            root._paneLoadingDelayElapsed = true;
+            return;
+        }
+        paneLoadingDelayTimer.restart();
+    }
+
+    function _updateCoverLoadingDelay(): void {
+        coverLoadingDelayTimer.stop();
+        root._coverLoadingDelayElapsed = false;
+        if (!root._coverBusy)
+            return;
+        if (root.loadingDelayMs <= 0) {
+            root._coverLoadingDelayElapsed = true;
+            return;
+        }
+        coverLoadingDelayTimer.restart();
+    }
 
     function _localizedTagLabel(label: string): string {
         if (label === "Year")
@@ -183,13 +235,13 @@ Item {
                     y: Sizing.center(parent.height, height)
                     width: Math.min(Sizing.pctH(10), parent.width, parent.height)
                     height: width
-                    source: Resources.iconUrl(root._coverPending || cover.status === Image.Loading ? "Loading" : "File")
+                    source: Resources.iconUrl(root._coverBusy ? "Loading" : "File")
                     sourceSize.width: Sizing.px(width)
                     sourceSize.height: Sizing.px(height)
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     asynchronous: false
-                    visible: !root._paneLoading && !root._suppressedPlaceholderCover && (root.detailSuppressed || root._coverPending || cover.status === Image.Loading || root._coverSource === "" || cover.status === Image.Error)
+                    visible: !root._paneLoading && !root._suppressedPlaceholderCover && (root.detailSuppressed || root._delayedCoverBusy || (!root._coverBusy && (root._coverSource === "" || cover.status === Image.Error)))
                 }
             }
         }
@@ -345,7 +397,7 @@ Item {
         }
 
         LoadingIndicator {
-            visible: root._paneLoading && !root.detailSuppressed
+            visible: root._delayedPaneLoading && !root.detailSuppressed
             x: Sizing.center(parent.width, width)
             y: Sizing.center(parent.height, height)
             text: root.loadingText

@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::debug;
-use zaparoo_core::media_types::{MediaMeta, MediaMetaParams};
+use zaparoo_core::media_types::{MediaMeta, MediaMetaParams, TagInfo};
 
 #[derive(Default)]
 pub struct GameInfoRust {
@@ -223,9 +223,10 @@ fn detail_tags_from_meta(meta: &MediaMeta, path: &str) -> String {
             source
                 .iter()
                 .filter(|tag| {
-                    tag.tag_type.eq_ignore_ascii_case(tag_type) && !tag.tag.trim().is_empty()
+                    tag.tag_type.eq_ignore_ascii_case(tag_type)
+                        && !tag_display_value(tag).is_empty()
                 })
-                .map(|tag| (display_label(&tag.tag_type), tag.tag.trim().to_string())),
+                .map(|tag| (display_label(&tag.tag_type), tag_display_value(tag))),
         );
     }
     rows.extend(
@@ -234,9 +235,9 @@ fn detail_tags_from_meta(meta: &MediaMeta, path: &str) -> String {
             .filter(|tag| {
                 !is_ordered_tag(&tag.tag_type)
                     && !tag.tag_type.trim().is_empty()
-                    && !tag.tag.trim().is_empty()
+                    && !tag_display_value(tag).is_empty()
             })
-            .map(|tag| (display_label(&tag.tag_type), tag.tag.trim().to_string())),
+            .map(|tag| (display_label(&tag.tag_type), tag_display_value(tag))),
     );
     let filename = file_stem_or_name(path);
     if !filename.is_empty() {
@@ -246,6 +247,15 @@ fn detail_tags_from_meta(meta: &MediaMeta, path: &str) -> String {
         .map(|(label, value)| format!("{label}\t{value}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn tag_display_value(tag: &TagInfo) -> String {
+    let label = tag.label.trim();
+    if label.is_empty() {
+        tag.tag.trim().to_string()
+    } else {
+        label.to_string()
+    }
 }
 
 fn is_ordered_tag(tag_type: &str) -> bool {

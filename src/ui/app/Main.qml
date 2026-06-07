@@ -608,7 +608,7 @@ MainLayout {
     function _maybeCompletePendingResumeLaunch(): void {
         if (!root._pendingResumeLaunch || root.pendingTransition !== "resume")
             return;
-        if (Browse.RecentsModel.loading)
+        if (Browse.RecentsModel.resume_loading)
             return;
         if (Browse.RecentsModel.resume_available) {
             root._pendingResumeLaunch = false;
@@ -627,11 +627,11 @@ MainLayout {
     }
 
     function _navigateResumeFromHub(): void {
-        if (!Browse.RecentsModel.loading && Browse.RecentsModel.resume_available) {
+        if (!Browse.RecentsModel.resume_loading && Browse.RecentsModel.resume_available) {
             Browse.RecentsModel.launch_resume();
             return;
         }
-        if (Browse.RecentsModel.loading || Browse.AppStatus.connection_state !== 2) {
+        if (Browse.RecentsModel.resume_loading || Browse.AppStatus.connection_state !== 2) {
             root.pendingTransition = "resume";
             resumeLaunchTimer.restart();
             return;
@@ -675,17 +675,18 @@ MainLayout {
         root._completeTransition(root.screenRecents);
     }
 
-    // Hub → Recents transition. RecentsModel binds eagerly via
-    // bind_to_endpoint!, so on a warm launch the resource is already
-    // Ready and the callback fires synchronously. On a cold launch
-    // with a slow Core link we wait on `loadingChanged` so the user
-    // sees the centred "Loading…" cue rather than an empty grid.
+    // Hub → Recents transition. The paginated history load is lazy so
+    // Hub Resume does not pay for `media.history` during startup. Start
+    // it only once the Recents screen is actually requested, then wait
+    // on `loadingChanged` so the user sees the centred "Loading…" cue
+    // rather than an empty grid.
     function _startRecentsTransitionLoad(): void {
         if (root.pendingTransition !== "recents")
             return;
         root._whenScreenReady(root.screenRecents, function () {
             if (root.pendingTransition !== "recents")
                 return;
+            Browse.RecentsModel.ensure_loaded();
             root._resumeRecentsCovers();
             if (root._catalogStillBooting())
                 return;

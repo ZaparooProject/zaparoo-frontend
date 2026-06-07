@@ -801,11 +801,20 @@ fn detail_value_for_aliases(source: &[TagInfo], aliases: &[&str]) -> String {
             aliases
                 .iter()
                 .any(|alias| tag.tag_type.eq_ignore_ascii_case(alias))
-                && !tag.tag.trim().is_empty()
+                && !tag_display_value(tag).is_empty()
         })
-        .map(|tag| tag.tag.trim().to_string())
+        .map(tag_display_value)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn tag_display_value(tag: &TagInfo) -> String {
+    let label = tag.label.trim();
+    if label.is_empty() {
+        tag.tag.trim().to_string()
+    } else {
+        label.to_string()
+    }
 }
 
 fn file_stem_or_name(path: &str, name: &str) -> String {
