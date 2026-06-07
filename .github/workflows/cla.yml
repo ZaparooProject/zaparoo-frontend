@@ -8,7 +8,9 @@ on:
   issue_comment:
     types: [created]
   pull_request_target:
-    types: [opened, closed, synchronize]
+    # Do not run on closed: contributor-assistant can report success on close/lock,
+    # leaving stale green status when PRs are later reopened.
+    types: [opened, reopened, synchronize]
 
 # pull_request_target is used (not pull_request) because the action needs
 # write access to commit signatures.json back to the repo. Contributor code
