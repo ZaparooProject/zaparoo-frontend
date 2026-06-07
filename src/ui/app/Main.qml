@@ -1212,6 +1212,16 @@ MainLayout {
                     label: qsTr("Change launcher")
                 });
             }
+            const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
+            if (!mediaBusy) {
+                entries.push({
+                    id: "index_system",
+                    label: qsTr("Update media database")
+                }, {
+                    id: "scrape_system",
+                    label: qsTr("Scrape metadata")
+                });
+            }
             return entries;
         }
         if (owner === "recents") {
@@ -1414,6 +1424,14 @@ MainLayout {
                 Browse.AlternateVersions.launch_at(altIndex);
         } else if (id === "launch_system") {
             Browse.SystemsModel.launch_at(targetIndex);
+        } else if (id === "index_system") {
+            const systemId = Browse.SystemsModel.system_id_at(targetIndex);
+            if (systemId !== "")
+                Browse.MediaStatus.start_index_for_system(systemId);
+        } else if (id === "scrape_system") {
+            const systemId = Browse.SystemsModel.system_id_at(targetIndex);
+            if (systemId !== "")
+                Browse.MediaStatus.start_scrape_for_system(systemId);
         } else if (id === "launch_game") {
             if (owner === "favorites")
                 Browse.FavoritesModel.launch_at(targetIndex);

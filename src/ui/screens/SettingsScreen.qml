@@ -472,6 +472,10 @@ Item {
             return qsTr("English");
         if (value === "it_IT")
             return qsTr("Italian");
+        if (value === "es")
+            return qsTr("Spanish");
+        if (value === "eu")
+            return qsTr("Basque");
         if (value === "de")
             return qsTr("German");
         if (value === "el")

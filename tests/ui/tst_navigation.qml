@@ -438,18 +438,20 @@ TestCase {
     }
     // qmllint enable compiler
 
-    function test_context_menu_systems_owner_is_single_launch_core(): void {
+    function test_context_menu_systems_owner_includes_media_actions(): void {
         // qmllint disable compiler
         const entries = main.buildContextMenuEntries("systems", "", false, false, false, "");
-        compare(_idsOf(entries), ["launch_system"], "Systems context menu is just Launch core regardless of has_nfc");
+        compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system"], "Systems context menu includes system-scoped maintenance actions");
         verify(entries[0].label.length > 0, "Launch core label is set (not asserted in English for translation)");
+        verify(entries[1].label.length > 0, "Update media database label is set");
+        verify(entries[2].label.length > 0, "Scrape metadata label is set");
     // qmllint enable compiler
     }
 
     function test_context_menu_systems_has_nfc_does_not_add_entries(): void {
         // qmllint disable compiler
         const entries = main.buildContextMenuEntries("systems", "", false, true, false, "");
-        compare(_idsOf(entries), ["launch_system"], "has_nfc must not affect the systems menu");
+        compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system"], "has_nfc must not affect the systems menu");
     // qmllint enable compiler
     }
 

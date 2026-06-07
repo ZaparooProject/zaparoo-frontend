@@ -113,10 +113,16 @@ pub mod ffi {
         fn start_index(self: Pin<&mut MediaStatus>);
 
         #[qinvokable]
+        fn start_index_for_system(self: Pin<&mut MediaStatus>, system_id: QString);
+
+        #[qinvokable]
         fn cancel_index(self: Pin<&mut MediaStatus>);
 
         #[qinvokable]
         fn start_scrape(self: Pin<&mut MediaStatus>, force: bool);
+
+        #[qinvokable]
+        fn start_scrape_for_system(self: Pin<&mut MediaStatus>, system_id: QString);
 
         #[qinvokable]
         fn cancel_scrape(self: Pin<&mut MediaStatus>);
@@ -229,6 +235,23 @@ impl ffi::MediaStatus {
         });
     }
 
+    fn start_index_for_system(self: Pin<&mut Self>, system_id: QString) {
+        let system_id: String = system_id.into();
+        if system_id.is_empty() {
+            warn!("media_status: start_index_for_system ignored empty system_id");
+            return;
+        }
+        let resource = crate::models::global_store().media_status();
+        crate::models::global_handle().spawn(async move {
+            let params = MediaIndexParams {
+                systems: Some(vec![system_id]),
+            };
+            if let Err(e) = resource.start_index(params).await {
+                warn!("media_status: start_index_for_system failed: {}", e.message);
+            }
+        });
+    }
+
     fn cancel_index(self: Pin<&mut Self>) {
         let resource = crate::models::global_store().media_status();
         crate::models::global_handle().spawn(async move {
@@ -257,6 +280,28 @@ impl ffi::MediaStatus {
             };
             if let Err(e) = resource.start_scrape(params).await {
                 warn!("media_status: start_scrape failed: {}", e.message);
+            }
+        });
+    }
+
+    fn start_scrape_for_system(self: Pin<&mut Self>, system_id: QString) {
+        let system_id: String = system_id.into();
+        if system_id.is_empty() {
+            warn!("media_status: start_scrape_for_system ignored empty system_id");
+            return;
+        }
+        let resource = crate::models::global_store().media_status();
+        crate::models::global_handle().spawn(async move {
+            let params = MediaScrapeParams {
+                scraper_id: "gamelist.xml".into(),
+                systems: vec![system_id],
+                force: false,
+            };
+            if let Err(e) = resource.start_scrape(params).await {
+                warn!(
+                    "media_status: start_scrape_for_system failed: {}",
+                    e.message
+                );
             }
         });
     }

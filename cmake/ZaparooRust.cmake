@@ -166,6 +166,7 @@ qt_add_translations(
     "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_en.ts"
     "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_it.ts"
     "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_es.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_eu.ts"
     "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_de.ts"
     "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_el.ts"
     "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_ja.ts"

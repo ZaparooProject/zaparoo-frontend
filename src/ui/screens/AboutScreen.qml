@@ -264,7 +264,7 @@ Item {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     horizontalAlignment: Text.AlignHCenter
-                    text: "Italiano - Andrea Bogazzi\nEspañol - Carlos R."
+                    text: "Italiano - Andrea Bogazzi\nEspañol - Carlos R.\nEuskara - devilschile2"
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
                     font.pixelSize: Sizing.fontSize(2.6)

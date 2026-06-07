@@ -156,6 +156,7 @@ other locales fall through to the source strings.
 |---|---|
 | Italian (`it_IT`) | Andrea Bogazzi ([@asturur](https://github.com/asturur)) |
 | Spanish (`es_ES`) | Carlos R. ([@crodriguezdominguez](https://github.com/crodriguezdominguez)) |
+| Basque (`eu`) | devilschile2 |
 
 Translators are added to this table when their `.ts` file is merged. Names
 also appear on the About screen so end users see them.

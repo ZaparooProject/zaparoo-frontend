@@ -87,8 +87,8 @@ const MISTER_RESOLUTIONS: &[&str] = &[
     "2048x1536",
 ];
 const LANGUAGES: &[&str] = &[
-    "auto", "en", "it_IT", "de", "el", "ja", "ko", "nl", "ro", "sk", "uk", "zh_CN", "he", "ar",
-    "hi",
+    "auto", "en", "it_IT", "es", "eu", "de", "el", "ja", "ko", "nl", "ro", "sk", "uk", "zh_CN",
+    "he", "ar", "hi",
 ];
 const DEFAULT_LANGUAGE: &str = "auto";
 const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
