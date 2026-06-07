@@ -23,6 +23,7 @@
 // QR/card-write payloads prefer Core's portable ZapScript.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
+use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
@@ -806,15 +807,6 @@ fn detail_value_for_aliases(source: &[TagInfo], aliases: &[&str]) -> String {
         .map(tag_display_value)
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-fn tag_display_value(tag: &TagInfo) -> String {
-    let label = tag.label.trim();
-    if label.is_empty() {
-        tag.tag.trim().to_string()
-    } else {
-        label.to_string()
-    }
 }
 
 fn file_stem_or_name(path: &str, name: &str) -> String {

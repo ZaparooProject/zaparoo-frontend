@@ -5,6 +5,7 @@
 use crate::media_image_cache::{
     global_media_image_cache, MediaImageCache, MediaImageUpdate, MediaKey,
 };
+use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
@@ -15,7 +16,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::debug;
-use zaparoo_core::media_types::{MediaMeta, MediaMetaParams, TagInfo};
+use zaparoo_core::media_types::{MediaMeta, MediaMetaParams};
 
 #[derive(Default)]
 pub struct GameInfoRust {
@@ -247,15 +248,6 @@ fn detail_tags_from_meta(meta: &MediaMeta, path: &str) -> String {
         .map(|(label, value)| format!("{label}\t{value}"))
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn tag_display_value(tag: &TagInfo) -> String {
-    let label = tag.label.trim();
-    if label.is_empty() {
-        tag.tag.trim().to_string()
-    } else {
-        label.to_string()
-    }
 }
 
 fn is_ordered_tag(tag_type: &str) -> bool {

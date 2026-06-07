@@ -23,6 +23,7 @@
 // recents launches by `run`-ing the entry's launcher route.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
+use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Initialize, Threading};
 use cxx_qt_lib::{
@@ -85,6 +86,7 @@ pub struct RecentsModelRust {
     resume_requested: bool,
     resume_seq: Arc<AtomicU64>,
     history_requested: bool,
+    history_fetching: bool,
     history_subscription: Option<JoinHandle<()>>,
     current_detail_loading: bool,
     current_detail_tags: QString,
@@ -266,6 +268,9 @@ fn apply_state(
     (data, err): (Option<PageSnapshot>, String),
 ) {
     if let Some((entries, has_next_page, next_cursor)) = data {
+        model.as_mut().rust_mut().history_requested = true;
+        model.as_mut().rust_mut().history_fetching = false;
+        model.as_mut().rust_mut().history_subscription = None;
         // A fresh initial page resets the cursor chain — bump `seq` so
         // any in-flight `fetch_more` sees a stale ticket and bails.
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
@@ -331,6 +336,9 @@ fn apply_state(
             model.as_mut().set_has_next_page(false);
         }
     } else {
+        model.as_mut().rust_mut().history_requested = false;
+        model.as_mut().rust_mut().history_fetching = false;
+        model.as_mut().rust_mut().history_subscription = None;
         // Same disarm as the Pending branch — an Errored transition
         // doesn't reset entries, so a callback queued during the prior
         // Ready could otherwise append rows that don't belong to the
@@ -410,10 +418,10 @@ impl ffi::RecentsModel {
     }
 
     fn ensure_loaded(mut self: Pin<&mut Self>) {
-        if self.history_requested {
+        if self.history_requested || self.history_fetching {
             return;
         }
-        self.as_mut().rust_mut().history_requested = true;
+        self.as_mut().rust_mut().history_fetching = true;
         if !self.loading {
             self.as_mut().set_loading(true);
         }
@@ -430,6 +438,13 @@ impl ffi::RecentsModel {
         let handle = global_handle().spawn(async move {
             loop {
                 if rx.changed().await.is_err() {
+                    let _ = qt_thread.queue(|mut model| {
+                        model.as_mut().rust_mut().history_fetching = false;
+                        model.as_mut().rust_mut().history_subscription = None;
+                        if model.loading {
+                            model.as_mut().set_loading(false);
+                        }
+                    });
                     break;
                 }
                 let state = rx.borrow_and_update().clone();
@@ -441,10 +456,18 @@ impl ffi::RecentsModel {
                         break;
                     }
                     ConnectionState::Unreachable(message) => {
-                        let _ = qt_thread.queue(move |model| {
-                            apply_state(model, (None, message));
+                        let _ = qt_thread.queue(move |mut model| {
+                            let qerr = QString::from(message.as_str());
+                            if model.error_message != qerr {
+                                model.as_mut().set_error_message(qerr);
+                            }
+                            if model.loading {
+                                model.as_mut().set_loading(false);
+                            }
+                            if model.has_next_page {
+                                model.as_mut().set_has_next_page(false);
+                            }
                         });
-                        break;
                     }
                     ConnectionState::Disconnected
                     | ConnectionState::Connecting
@@ -456,6 +479,13 @@ impl ffi::RecentsModel {
     }
 
     fn start_initial_history_fetch(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().history_subscription = None;
+        if !self.loading {
+            self.as_mut().set_loading(true);
+        }
+        if !self.error_message.is_empty() {
+            self.as_mut().set_error_message(QString::default());
+        }
         self.as_mut().ensure_cover_subscription();
         self.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         clear_current_detail_state(self.as_mut());
@@ -734,7 +764,12 @@ fn apply_resume_latest_result(
         Ok(result) => result.entry,
         Err(e) => {
             debug!("media.history.latest failed: {}", e.message);
-            None
+            model.as_mut().rust_mut().resume_requested = false;
+            if model.resume_loading {
+                model.as_mut().set_resume_loading(false);
+            }
+            sync_resume_state(model);
+            return;
         }
     };
     model.as_mut().rust_mut().resume_entry =
@@ -891,15 +926,6 @@ fn detail_value_for_aliases(source: &[TagInfo], aliases: &[&str]) -> String {
         .map(tag_display_value)
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-fn tag_display_value(tag: &TagInfo) -> String {
-    let label = tag.label.trim();
-    if label.is_empty() {
-        tag.tag.trim().to_string()
-    } else {
-        label.to_string()
-    }
 }
 
 fn clear_current_detail_state(mut model: Pin<&mut ffi::RecentsModel>) {

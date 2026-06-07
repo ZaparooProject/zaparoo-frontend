@@ -49,6 +49,7 @@ pub mod system_launchers;
 pub mod system_status;
 pub mod systems;
 pub mod systems_state;
+pub mod tag_utils;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
