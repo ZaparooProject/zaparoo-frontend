@@ -69,14 +69,16 @@ Item {
     readonly property int _tagRowCount: _detailRows.length
     readonly property int _tagTextSize: Sizing.fontSize(2.2)
     readonly property int _tagLabelGap: Sizing.pctW(1.4)
+    readonly property int _metadataLabelMaxWidth: root._detail && root._detail.metadataLabelMaxWidth !== undefined ? root._detail.metadataLabelMaxWidth : 0
+    readonly property int _labelColumnWidth: root._metadataLabelMaxWidth > 0 ? Math.min(root._labelColumnNaturalWidth, root._metadataLabelMaxWidth) : root._labelColumnNaturalWidth
     readonly property int _metadataNaturalHeight: _tagRowCount <= 0 ? 0 : (_tagRowCount * _tagRowHeight) + ((_tagRowCount - 1) * _tagRowSpacing)
     readonly property int _compactMetadataHeight: Math.min(Sizing.px(content.height * 0.38), _metadataNaturalHeight)
 
-    property int _labelColumnWidth: 0
+    property int _labelColumnNaturalWidth: 0
     property bool _paneLoadingDelayElapsed: false
     property bool _coverLoadingDelayElapsed: false
 
-    onDetailTagsChanged: root._labelColumnWidth = 0
+    onDetailTagsChanged: root._labelColumnNaturalWidth = 0
     onLoadingChanged: root._updatePaneLoadingDelay()
     onLoadingDelayMsChanged: {
         root._updatePaneLoadingDelay();
@@ -124,26 +126,36 @@ Item {
         coverLoadingDelayTimer.restart();
     }
 
-    function _localizedTagLabel(label: string): string {
+    function _tagLabel(fullLabel: string, shortLabel: string): var {
+        return {
+            "label": fullLabel + "\u009C" + shortLabel,
+            "measureLabel": fullLabel
+        };
+    }
+
+    function _localizedTagLabel(label: string): var {
         if (label === "Year")
-            return qsTr("Year");
+            return root._tagLabel(qsTr("Year"), qsTr("Yr", "Short metadata label for Year; keep 2-4 characters if possible"));
         if (label === "Genre")
-            return qsTr("Genre");
+            return root._tagLabel(qsTr("Genre"), qsTr("Gen", "Short metadata label for Genre; keep 2-4 characters if possible"));
         if (label === "Players")
-            return qsTr("Players");
+            return root._tagLabel(qsTr("Players"), qsTr("Plyr", "Short metadata label for Players; keep 2-4 characters if possible"));
         if (label === "Developer")
-            return qsTr("Developer");
+            return root._tagLabel(qsTr("Developer"), qsTr("Dev", "Short metadata label for Developer; keep 2-4 characters if possible"));
         if (label === "Publisher")
-            return qsTr("Publisher");
+            return root._tagLabel(qsTr("Publisher"), qsTr("Pub", "Short metadata label for Publisher; keep 2-4 characters if possible"));
         if (label === "Rating")
-            return qsTr("Rating");
+            return root._tagLabel(qsTr("Rating"), qsTr("Rtg", "Short metadata label for Rating; keep 2-4 characters if possible"));
         if (label === "Category")
-            return qsTr("Category");
+            return root._tagLabel(qsTr("Category"), qsTr("Cat", "Short metadata label for Category; keep 2-4 characters if possible"));
         if (label === "Release date")
-            return qsTr("Release date");
+            return root._tagLabel(qsTr("Release date"), qsTr("Date", "Short metadata label for Release date; keep 2-4 characters if possible"));
         if (label === "Manufacturer")
-            return qsTr("Manufacturer");
-        return label;
+            return root._tagLabel(qsTr("Manufacturer"), qsTr("Mfr", "Short metadata label for Manufacturer; keep 2-4 characters if possible"));
+        return {
+            "label": label,
+            "measureLabel": label
+        };
     }
 
     function _parseDetailTags(tags: string): var {
@@ -152,9 +164,11 @@ Item {
         return tags.split("\n").map(row => {
             const parts = row.split("\t");
             const rawLabel = parts.length > 0 ? parts[0] : "";
+            const label = root._localizedTagLabel(rawLabel);
             return {
                 "rawLabel": rawLabel,
-                "label": root._localizedTagLabel(rawLabel),
+                "label": label.label,
+                "measureLabel": label.measureLabel,
                 "value": parts.length > 1 ? parts[1] : ""
             };
         });
@@ -348,18 +362,19 @@ Item {
                                 height: root._tagRowHeight
 
                                 readonly property string label: modelData.label ?? ""
+                                readonly property string measureLabel: modelData.measureLabel ?? tagRow.label
                                 readonly property string value: modelData.value ?? ""
 
                                 TextMetrics {
                                     id: labelMetrics
 
-                                    text: tagRow.label
+                                    text: tagRow.measureLabel
                                     font.family: Theme.fontUi
                                     font.pixelSize: root._tagTextSize
-                                    onAdvanceWidthChanged: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(advanceWidth))
+                                    onAdvanceWidthChanged: root._labelColumnNaturalWidth = Math.max(root._labelColumnNaturalWidth, Math.ceil(advanceWidth))
                                 }
 
-                                Component.onCompleted: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(labelMetrics.advanceWidth))
+                                Component.onCompleted: root._labelColumnNaturalWidth = Math.max(root._labelColumnNaturalWidth, Math.ceil(labelMetrics.advanceWidth))
 
                                 Text {
                                     anchors.left: parent.left
@@ -369,6 +384,7 @@ Item {
                                     color: Theme.textLabel
                                     font.family: Theme.fontUi
                                     font.pixelSize: root._tagTextSize
+                                    textFormat: Text.PlainText
                                     elide: Text.ElideRight
                                     horizontalAlignment: Text.AlignRight
                                     renderType: Text.NativeRendering

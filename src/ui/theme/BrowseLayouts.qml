@@ -486,6 +486,7 @@ QtObject {
                         "metadataRightMargin": 1,
                         "metadataHeightAdjustment": 2,
                         "metadataBottomAligned": false,
+                        "metadataLabelMaxWidth": 24,
                         "titleBottomMargin": 2,
                         "tagRowHeight": 9,
                         "tagRowSpacing": 0
@@ -670,6 +671,7 @@ QtObject {
                         "metadataRightMargin": 1,
                         "metadataHeightAdjustment": 2,
                         "metadataBottomAligned": true,
+                        "metadataLabelMaxWidth": 24,
                         "titleBottomMargin": 2,
                         "tagRowHeight": 9,
                         "tagRowSpacing": 0

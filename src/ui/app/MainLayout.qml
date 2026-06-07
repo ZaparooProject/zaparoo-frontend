@@ -702,6 +702,7 @@ ApplicationWindow {
 
             Loader {
                 id: contextMenuLoader
+                anchors.fill: parent
                 active: root.contextMenuRequested
                 sourceComponent: Component {
                     ContextMenu {
