@@ -144,7 +144,7 @@ MediaListScreen {
     gridCurrentPageChangedAction: () => {
         const first = games.gamesGrid.currentPage * games.gamesGrid.pageSize;
         Browse.GamesModel.visible_first_row = first;
-        if (!games._listLayout && !games.detailRapidScrollActive)
+        if (!games._listLayout)
             Browse.GamesModel.prefetch_around(first);
     }
     activeLabelTextProvider: () => games.gamesGrid.itemCount > 0 ? Browse.GamesModel.name_at(games.gamesGrid.currentIndex) : ""

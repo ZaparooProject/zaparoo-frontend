@@ -64,22 +64,22 @@ Item {
         {
             kind: "field",
             id: "pageDisplayInterface",
-            label: qsTr("Display & Interface")
+            label: qsTr("Display")
         },
         {
             kind: "field",
             id: "pageControlsInput",
-            label: qsTr("Controls & Input")
+            label: qsTr("Controls")
         },
         {
             kind: "field",
             id: "pageLibraryData",
-            label: qsTr("Library & Data Management")
+            label: qsTr("Library")
         },
         {
             kind: "field",
             id: "pageSupportAbout",
-            label: qsTr("Support & About")
+            label: qsTr("Support")
         }
     ]
     readonly property var displayInterfaceFields: {
@@ -182,13 +182,13 @@ Item {
     }
     readonly property string pageTitle: {
         if (settings.currentPage === settings.pageDisplayInterface)
-            return qsTr("Display & Interface");
+            return qsTr("Display");
         if (settings.currentPage === settings.pageControlsInput)
-            return qsTr("Controls & Input");
+            return qsTr("Controls");
         if (settings.currentPage === settings.pageLibraryData)
-            return qsTr("Library & Data Management");
+            return qsTr("Library");
         if (settings.currentPage === settings.pageSupportAbout)
-            return qsTr("Support & About");
+            return qsTr("Support");
         return qsTr("Settings");
     }
 

@@ -78,6 +78,17 @@ MainLayout {
     readonly property int _gamesGridRows: root._gamesGridShape.rows
     readonly property int _gamesPageSize: Browse.Settings.current_browse_layout === "list" ? root._gamesListFetchSize : root._gamesGridColumns * root._gamesGridRows
     on_GamesPageSizeChanged: Browse.GamesModel.page_size = root._gamesPageSize
+    // Maximum cover dimension requested from Core. Computed from the tile
+    // pixel size with 2x headroom so the resized image looks sharp even
+    // when the grid zooms slightly. Core fits the image within a
+    // maxSize x maxSize box before returning it, so the cache holds far
+    // more covers at the same byte cap.
+    readonly property int _gamesCoverMaxSize: {
+        const tileW = Math.ceil(Sizing.screenWidth / Math.max(1, root._gamesGridColumns));
+        const tileH = Math.ceil(Sizing.screenHeight / Math.max(1, root._gamesGridRows));
+        return Math.max(tileW, tileH) * 2;
+    }
+    on_GamesCoverMaxSizeChanged: Browse.GamesModel.set_cover_max_size(root._gamesCoverMaxSize)
 
     // Bind Sizing to the scene's logical dimensions, not the
     // ApplicationWindow's. Outside CRT preview the scene fills the

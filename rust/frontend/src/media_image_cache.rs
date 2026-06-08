@@ -34,6 +34,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::{c_char, c_void};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use base64::engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD};
@@ -57,13 +58,15 @@ const KEY_SEPARATOR: u8 = 0x1F;
 /// `system_id/path` pair (~64 B) → roughly 400 KiB worst-case.
 const NEGATIVE_MEMO_CAP: usize = 4096;
 
-/// Hard cap on cached image bytes. Sized to comfortably hold one or two
-/// pages of typical Games tiles plus the occasional ~5 MiB boxart
-/// outlier without LRU-evicting prefetched-but-not-yet-read entries.
-/// On `MiSTer` (492 MiB total, no swap) this still leaves ~300 MiB for
-/// Core, the FPGA wrapper, and a loaded game core; measured headroom
-/// with the frontend running was 367 MiB available.
-const CACHE_CAP_BYTES: usize = 64 * 1024 * 1024;
+/// Hard cap on cached image bytes. Sized to hold several pages of
+/// full-resolution tiles while leaving headroom for Core, the FPGA
+/// wrapper, and a loaded game core. On `MiSTer` (492 MiB total, no swap)
+/// measured free RAM with the frontend running was ~367 MiB, so 128 MiB
+/// leaves ~239 MiB for the rest of the system. When `max_cover_size` is
+/// set (resized covers average ~30 KB), this cap holds thousands of
+/// tiles rather than the ~110 full-resolution SNES covers that fit at
+/// 64 MiB.
+const CACHE_CAP_BYTES: usize = 128 * 1024 * 1024;
 
 /// Maximum retries for a single key after a transient fetch failure
 /// (RPC error, base64 decode error). Generous enough to ride through
@@ -76,16 +79,16 @@ const CACHE_CAP_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FETCH_ATTEMPTS: u8 = 3;
 
 /// Number of fetch worker tasks pulling from the shared LIFO queue.
-/// Two workers let visible pages fill more than one cover at a time
+/// Two workers let visible pages fill multiple covers at a time
 /// while keeping Core/WebSocket pressure low on `MiSTer`. If runtime
-/// logs show resets or media.image rate-limit errors, drop this back
-/// to one before trying any broader queue changes.
+/// logs show stalls, resets, or media.image rate-limit errors, tune
+/// this before trying any broader queue changes.
 const FETCH_DRIVER_WORKERS: usize = 2;
 
-/// Hard cap on pending enqueues in the fetch queue. Sized for three
-/// dense visual pages (current, next, previous) plus margin, so an
-/// explicit page-window rebuild does not drop the previous-page warm
-/// on a 30-tile layout while still bounding stale queue memory.
+/// Hard cap on pending enqueues in the fetch queue. Sized for a few
+/// dense visual pages (current, lookahead, previous) plus margin, so
+/// an explicit page-window rebuild does not drop the previous-page
+/// warm on a 30-tile layout while still bounding stale queue memory.
 const MAX_QUEUE_LEN: usize = 96;
 
 /// MIME content-type → on-disk extension for the formats we are willing
@@ -601,6 +604,9 @@ pub struct MediaImageCache {
     /// `notify_one()` per enqueue.
     queue_notify: Arc<Notify>,
     updates_tx: broadcast::Sender<MediaImageUpdate>,
+    /// Maximum cover dimension requested from Core. 0 = full resolution.
+    /// Set by QML via `set_max_cover_size` when the grid shape changes.
+    max_cover_size: Arc<AtomicU32>,
 }
 
 impl MediaImageCache {
@@ -613,6 +619,7 @@ impl MediaImageCache {
         let queue: Arc<Mutex<VecDeque<QueueEntry>>> = Arc::new(Mutex::new(VecDeque::new()));
         let queue_notify = Arc::new(Notify::new());
         let (updates_tx, _) = broadcast::channel::<MediaImageUpdate>(64);
+        let max_cover_size = Arc::new(AtomicU32::new(0));
 
         spawn_fetch_driver(
             runtime,
@@ -621,6 +628,7 @@ impl MediaImageCache {
             &updates_tx,
             &queue,
             &queue_notify,
+            &max_cover_size,
             store_factory,
         );
 
@@ -629,7 +637,17 @@ impl MediaImageCache {
             queue,
             queue_notify,
             updates_tx,
+            max_cover_size,
         }
+    }
+
+    /// Set the maximum cover dimension (pixels) sent to Core with every
+    /// `media.image` request. Core resizes the image to fit within a
+    /// `size × size` bounding box before returning it, so the cached
+    /// bytes are smaller and more covers fit in the fixed-size cache.
+    /// Pass `0` to request full-resolution images (default).
+    pub fn set_max_cover_size(&self, size: u32) {
+        self.max_cover_size.store(size, Ordering::Relaxed);
     }
 
     /// Bytes for `key`, if cached. Bumps `last_used` so the entry's
@@ -733,7 +751,7 @@ impl MediaImageCache {
         self.release_drained_pending(&drained);
         debug!(
             dropped = drained.len(),
-            "media_image_cache: cleared queued cover requests"
+            "media_image_cache: cleared pending cover fetches"
         );
     }
 
@@ -798,7 +816,7 @@ impl MediaImageCache {
         debug!(
             dropped = drained.len(),
             queued = queued_len,
-            "media_image_cache: replaced queued cover requests"
+            "media_image_cache: replaced pending cover fetches"
         );
         for _ in 0..FETCH_DRIVER_WORKERS {
             self.queue_notify.notify_one();
@@ -935,6 +953,10 @@ fn pop_one(queue: &Arc<Mutex<VecDeque<QueueEntry>>>) -> Option<QueueEntry> {
     queue.lock().unwrap().pop_back()
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "private constructor; adding max_cover_size pushed it to 8"
+)]
 fn spawn_fetch_driver<F>(
     runtime: &Handle,
     cap_bytes: usize,
@@ -942,6 +964,7 @@ fn spawn_fetch_driver<F>(
     updates_tx: &broadcast::Sender<MediaImageUpdate>,
     queue: &Arc<Mutex<VecDeque<QueueEntry>>>,
     queue_notify: &Arc<Notify>,
+    max_cover_size: &Arc<AtomicU32>,
     store_factory: F,
 ) where
     F: Fn() -> Arc<Store> + Send + Sync + 'static,
@@ -956,6 +979,7 @@ fn spawn_fetch_driver<F>(
         let queue = queue.clone();
         let queue_notify = queue_notify.clone();
         let store_factory = store_factory.clone();
+        let max_cover_size = max_cover_size.clone();
         runtime.spawn(async move {
             loop {
                 let Some(entry) = pop_one(&queue) else {
@@ -963,7 +987,7 @@ fn spawn_fetch_driver<F>(
                     continue;
                 };
                 let store = store_factory();
-                let outcome = fetch_one(&store, &state, entry).await;
+                let outcome = fetch_one(&store, &state, &max_cover_size, entry).await;
                 process_batch_outcomes(
                     &state,
                     cap_bytes,
@@ -1136,6 +1160,7 @@ enum FetchOutcome {
 async fn fetch_one(
     store: &Arc<Store>,
     state: &Arc<RwLock<CacheState>>,
+    max_cover_size: &Arc<AtomicU32>,
     entry: QueueEntry,
 ) -> (QueueEntry, FetchOutcome) {
     let key = entry.key.clone();
@@ -1155,6 +1180,10 @@ async fn fetch_one(
     } else if let Some(image_type) = key.image_type.as_ref() {
         params.image_types.push(image_type.to_string());
     }
+    let max_size = max_cover_size.load(Ordering::Relaxed);
+    if max_size > 0 {
+        params.max_size = Some(max_size);
+    }
     debug!(
         system_id = %key.system_id,
         path = %key.path,
@@ -1162,6 +1191,7 @@ async fn fetch_one(
         had_id_hint,
         policy = ?entry.no_image_policy,
         page_size = entry.page_size,
+        max_size,
         "media_image_cache: media.image request"
     );
     match store.client().media_image(params).await {
@@ -1454,6 +1484,7 @@ mod tests {
         QueueEntry, MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
     };
     use std::collections::VecDeque;
+    use std::sync::atomic::AtomicU32;
     use std::sync::{Arc, Mutex, RwLock};
     use tokio::sync::{broadcast, Notify};
 
@@ -1472,6 +1503,7 @@ mod tests {
             queue,
             queue_notify,
             updates_tx,
+            max_cover_size: Arc::new(AtomicU32::new(0)),
         }
     }
 

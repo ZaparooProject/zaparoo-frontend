@@ -52,6 +52,7 @@ Item {
     property bool focused: true
     property bool coverLoadingPaused: false
     property bool rapidRenderMode: false
+    readonly property int _coverRetentionPages: Math.max(1, Math.ceil(Sizing.visibleCovers))
     property var layoutProfile: null
     readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
 
@@ -550,14 +551,14 @@ Item {
                 // collapses to the procedural fallback and the
                 // texture reference drops.
                 //
-                // Memory ceiling: ±5 around currentPage = up to 11
-                // pages × pageSize covers ≈ 110 covers ≈ 40 MB
-                // decoded - OK on MiSTer's shared 512 MB. Re-decode
+                // Memory ceiling tracks visible cover density: ±
+                // _coverRetentionPages around currentPage keeps enough
+                // decoded pages warm for the current UI scale. Re-decode
                 // after crossing past the retention edge runs at
                 // nice +10 (see media_image_provider.cpp) and is
                 // invisible to the renderer.
                 readonly property bool _coverInRange: !root.rapidRenderMode && cellPage >= root.currentPage && cellPage <= root.currentPage + 1
-                readonly property bool _coverInRetentionRange: !root.rapidRenderMode && Math.abs(cellPage - root.currentPage) <= (root.coverLoadingPaused ? 1 : 5)
+                readonly property bool _coverInRetentionRange: !root.rapidRenderMode && Math.abs(cellPage - root.currentPage) <= (root.coverLoadingPaused ? 1 : root._coverRetentionPages)
                 property bool _coverEverRequested: false
                 Binding on _coverEverRequested {
                     when: cellItem._coverInRange
@@ -639,13 +640,13 @@ Item {
                     // binding cost stays roughly constant as the
                     // dataset grows.
                     active: cellItem._coverInRetentionRange && !root.rapidRenderMode
-                    // Incubate Tile construction on background frames
-                    // so a retention-edge crossing (10 cells flipping
-                    // active) doesn't block the main thread. The
-                    // newly-revealed cells fill in over the next
-                    // frame or two; the user's selection move lands
-                    // immediately.
-                    asynchronous: true
+                    // Current-page delegates complete synchronously so
+                    // tile content appears with the page instead of
+                    // revealing icon/logo Images one-by-one as the
+                    // Loader incubates across frames. Off-page retained
+                    // delegates still incubate asynchronously so
+                    // retention-edge warmup does not block input.
+                    asynchronous: cellItem.cellPage !== root.currentPage
                     isSelected: cellItem.isSelected
                     isFocused: root.focused
                     name: cellItem.name

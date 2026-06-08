@@ -211,7 +211,7 @@ Item {
     function _resumeCoverRequests(): void {
         if (root.mediaModel === null)
             return;
-        if (root.pauseCoverRequestsDuringRapid)
+        if (root._listLayout && root.pauseCoverRequestsDuringRapid)
             root.mediaModel.cover_requests_paused = false;
         if (typeof root.mediaModel.refresh_cover_keys === "function")
             root.mediaModel.refresh_cover_keys(root._coverRefreshFirstRow(), root._coverRefreshRowCount());
@@ -220,7 +220,7 @@ Item {
     }
 
     function _pauseCoverRequests(): void {
-        if (root.mediaModel === null || !root.pauseCoverRequestsDuringRapid)
+        if (root.mediaModel === null || !root._listLayout || !root.pauseCoverRequestsDuringRapid)
             return;
         root.mediaModel.cover_requests_paused = true;
         if (typeof root.mediaModel.clear_pending_cover_requests === "function")

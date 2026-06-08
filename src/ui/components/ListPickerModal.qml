@@ -52,6 +52,13 @@ Item {
     readonly property int _visibleRows: Math.max(1, Math.min(entries.length, Math.floor((_maxViewportHeight + _rowSpacing) / (_rowHeight + _rowSpacing))))
     readonly property int _viewportHeight: _visibleRows * _rowHeight + Math.max(0, _visibleRows - 1) * _rowSpacing
     readonly property int _contentHeight: Math.max(1, entries.length) * _rowHeight + Math.max(0, entries.length - 1) * _rowSpacing
+    readonly property bool _scrollable: entries.length > _visibleRows
+    readonly property int _scrollArrowSize: Sizing.pctH(3)
+    readonly property int _scrollArrowGap: Sizing.pctH(0.5)
+    readonly property int _scrollIndicatorBand: _scrollable ? _scrollArrowSize + _scrollArrowGap : 0
+    readonly property int _viewportSlotHeight: _viewportHeight + 2 * _scrollIndicatorBand
+    readonly property bool _hasContentAbove: viewport.contentY > 1
+    readonly property bool _hasContentBelow: viewport.contentY + viewport.height < viewport.contentHeight - 1
 
     visible: modal.open
     anchors.fill: parent
@@ -69,7 +76,20 @@ Item {
                 }
             }
         }
+        viewport.contentY = 0;
         modal.currentIndex = next;
+        modal._scrollCurrentIntoView();
+    }
+
+    function _scrollCurrentIntoView(): void {
+        const stride = modal._rowHeight + modal._rowSpacing;
+        const top = modal.currentIndex * stride;
+        const bottom = top + modal._rowHeight;
+        if (top < viewport.contentY) {
+            viewport.contentY = top;
+        } else if (bottom > viewport.contentY + viewport.height) {
+            viewport.contentY = bottom - viewport.height;
+        }
     }
 
     function move(delta: int): void {
@@ -103,12 +123,14 @@ Item {
             id: viewportSlot
 
             width: parent.width
-            height: modal._viewportHeight
+            height: modal._viewportSlotHeight
 
             Flickable {
                 id: viewport
 
                 anchors.fill: parent
+                anchors.topMargin: modal._scrollIndicatorBand
+                anchors.bottomMargin: modal._scrollIndicatorBand
                 contentWidth: width
                 contentHeight: modal._contentHeight
                 clip: true
@@ -166,6 +188,30 @@ Item {
                     }
                 }
             }
+
+            Image {
+                source: Resources.iconUrl("ScrollUp")
+                width: modal._scrollArrowSize
+                height: width
+                anchors.bottom: viewport.top
+                anchors.bottomMargin: modal._scrollArrowGap
+                anchors.horizontalCenter: viewport.horizontalCenter
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                visible: modal._hasContentAbove
+            }
+
+            Image {
+                source: Resources.iconUrl("ScrollDown")
+                width: modal._scrollArrowSize
+                height: width
+                anchors.top: viewport.bottom
+                anchors.topMargin: modal._scrollArrowGap
+                anchors.horizontalCenter: viewport.horizontalCenter
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                visible: modal._hasContentBelow
+            }
         }
     }
 
@@ -176,14 +222,7 @@ Item {
     Connections {
         target: modal
         function onCurrentIndexChanged(): void {
-            const stride = modal._rowHeight + modal._rowSpacing;
-            const top = modal.currentIndex * stride;
-            const bottom = top + modal._rowHeight;
-            if (top < viewport.contentY) {
-                viewport.contentY = top;
-            } else if (bottom > viewport.contentY + viewport.height) {
-                viewport.contentY = bottom - viewport.height;
-            }
+            modal._scrollCurrentIntoView();
         }
     }
 }
