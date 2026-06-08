@@ -52,7 +52,7 @@ Item {
     property bool focused: true
     property bool coverLoadingPaused: false
     property bool rapidRenderMode: false
-    readonly property int _coverRetentionPages: 7
+    readonly property int _coverRetentionPages: Math.max(1, Math.ceil(Sizing.visibleCovers))
     property var layoutProfile: null
     readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
 
@@ -551,9 +551,9 @@ Item {
                 // collapses to the procedural fallback and the
                 // texture reference drops.
                 //
-                // Memory ceiling: ±7 around currentPage = up to 15
-                // pages × pageSize covers ≈ 150 covers ≈ 55 MB
-                // decoded - OK on MiSTer's shared 512 MB. Re-decode
+                // Memory ceiling tracks visible cover density: ±
+                // _coverRetentionPages around currentPage keeps enough
+                // decoded pages warm for the current UI scale. Re-decode
                 // after crossing past the retention edge runs at
                 // nice +10 (see media_image_provider.cpp) and is
                 // invisible to the renderer.
