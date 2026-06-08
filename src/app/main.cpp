@@ -163,7 +163,7 @@ int main(int argc, char* argv[]) // NOLINT
     }
 
     QGuiApplication::setApplicationName("Zaparoo Frontend");
-    QGuiApplication::setApplicationVersion("1.0.3");
+    QGuiApplication::setApplicationVersion("1.1.0");
     QGuiApplication::setOrganizationName("Zaparoo");
     QGuiApplication::setOrganizationDomain("zaparoo.org");
 
