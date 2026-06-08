@@ -97,6 +97,8 @@ const DEFAULT_PAGE_SIZE: i32 = 15;
 // longer floods the cover queue.
 const FETCH_MORE_CHUNK_SIZE: i32 = 100;
 const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 300;
+const COVER_PREFETCH_NEXT_PAGES: i32 = 2;
+const COVER_PREFETCH_PREVIOUS_PAGES: i32 = 1;
 
 // `apply_append_page` sub-batches the model insert into chunks of this
 // many rows so the Repeater's per-delegate `createObject` cost (the
@@ -229,6 +231,7 @@ pub struct GamesModelRust {
     // so a freshly-landed metadata chunk can re-issue the prefetch
     // window for whatever row the user is currently looking at.
     visible_first_row: i32,
+    cover_max_size: i32,
 }
 
 impl Default for GamesModelRust {
@@ -272,6 +275,7 @@ impl Default for GamesModelRust {
             append_seq: Arc::new(AtomicU64::new(0)),
             pending_initial_lookahead: false,
             visible_first_row: 0,
+            cover_max_size: 0,
         }
     }
 }
@@ -320,7 +324,11 @@ pub mod ffi {
         #[qproperty(bool, cover_key_roles_enabled)]
         #[qproperty(bool, cover_requests_paused)]
         #[qproperty(i32, visible_first_row)]
+        #[qproperty(i32, cover_max_size, READ, WRITE = set_cover_max_size, NOTIFY)]
         type GamesModel = super::GamesModelRust;
+
+        #[qinvokable]
+        fn set_cover_max_size(self: Pin<&mut GamesModel>, size: i32);
 
         #[qinvokable]
         fn set_system(self: Pin<&mut GamesModel>, system_id: QString);
@@ -497,6 +505,12 @@ impl ffi::GamesModel {
         h
     }
 
+    fn set_cover_max_size(mut self: Pin<&mut Self>, size: i32) {
+        let clamped = size.max(0);
+        self.as_mut().rust_mut().cover_max_size = clamped;
+        global_media_image_cache().set_max_cover_size(u32::try_from(clamped).unwrap_or(0));
+    }
+
     fn set_system(mut self: Pin<&mut Self>, system_id: QString) {
         let sid = system_id.to_string();
         self.as_mut().set_current_system_id(system_id);
@@ -598,9 +612,10 @@ impl ffi::GamesModel {
     ///
     /// `first_visible_row` is the row index of the topmost visible
     /// tile (`gamesGrid.currentPage * gamesGrid.pageSize` from QML).
-    /// The replacement queue drains current page first, then next
-    /// page, then previous page. Queued stale requests are dropped so
-    /// a page change immediately makes the new visible page win.
+    /// The replacement queue drains current page first, then several
+    /// next pages, then the previous page. Queued stale requests are
+    /// dropped so a page change immediately makes the new visible page
+    /// win.
     fn prefetch_around(self: Pin<&mut Self>, first_visible_row: i32) {
         let cache = global_media_image_cache();
         if self.cover_requests_paused {
@@ -1404,8 +1419,8 @@ fn media_key_for(entry: &BrowseEntry) -> Option<MediaKey> {
 
 /// Pure ordering helper for `prefetch_around`. Returns
 /// (`MediaKey`, `media_id`) pairs in desired fetch order: current page
-/// top-to-bottom, then next page, then previous page. Folders and
-/// entries without a `media_key` are skipped.
+/// top-to-bottom, then configured next pages, then configured previous
+/// pages. Folders and entries without a `media_key` are skipped.
 fn prefetch_around_plan(
     entries: &[BrowseEntry],
     count: i32,
@@ -1418,29 +1433,28 @@ fn prefetch_around_plan(
     let page_size = page_size.max(1);
     let first = first_visible_row.clamp(0, count.saturating_sub(1));
     let current_end = first.saturating_add(page_size).min(count);
-    let next_end = current_end.saturating_add(page_size).min(count);
-    let previous_start = first.saturating_sub(page_size);
+    let next_end = current_end
+        .saturating_add(page_size.saturating_mul(COVER_PREFETCH_NEXT_PAGES))
+        .min(count);
+    let previous_start =
+        first.saturating_sub(page_size.saturating_mul(COVER_PREFETCH_PREVIOUS_PAGES));
     let mut plan: Vec<(MediaKey, Option<i64>)> =
         Vec::with_capacity(((next_end - previous_start) as usize).min(entries.len()));
-    let push = |row: i32, plan: &mut Vec<(MediaKey, Option<i64>)>| {
-        let idx = row as usize;
-        if idx >= entries.len() {
-            return;
-        }
-        let entry = &entries[idx];
-        if let Some(key) = media_key_for(entry) {
-            plan.push((key.with_current_cover_preference(), entry.media_id));
+    let push_range = |range: std::ops::Range<i32>, plan: &mut Vec<(MediaKey, Option<i64>)>| {
+        for row in range {
+            let idx = row as usize;
+            if idx >= entries.len() {
+                continue;
+            }
+            let entry = &entries[idx];
+            if let Some(key) = media_key_for(entry) {
+                plan.push((key.with_current_cover_preference(), entry.media_id));
+            }
         }
     };
-    for row in first..current_end {
-        push(row, &mut plan);
-    }
-    for row in current_end..next_end {
-        push(row, &mut plan);
-    }
-    for row in previous_start..first {
-        push(row, &mut plan);
-    }
+    push_range(first..current_end, &mut plan);
+    push_range(current_end..next_end, &mut plan);
+    push_range(previous_start..first, &mut plan);
     plan
 }
 
@@ -3058,14 +3072,14 @@ mod tests {
     }
 
     #[test]
-    fn prefetch_around_plan_orders_current_next_previous() {
-        let entries: Vec<BrowseEntry> = (0..45)
+    fn prefetch_around_plan_orders_current_next_pages_previous() {
+        let entries: Vec<BrowseEntry> = (0..60)
             .map(|i| media(&format!("g{i}"), &format!("/g/{i}"), "NES"))
             .collect();
-        let plan = prefetch_around_plan(&entries, 45, 15, 15);
+        let plan = prefetch_around_plan(&entries, 60, 15, 15);
         let paths: Vec<String> = plan.iter().map(|(k, _)| k.path.to_string()).collect();
         let mut expected: Vec<String> = (15..30).map(|i| format!("/g/{i}")).collect();
-        expected.extend((30..45).map(|i| format!("/g/{i}")));
+        expected.extend((30..60).map(|i| format!("/g/{i}")));
         expected.extend((0..15).map(|i| format!("/g/{i}")));
         assert_eq!(paths, expected);
     }

@@ -360,6 +360,11 @@ pub struct MediaImageParams {
     pub path: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub image_types: Vec<String>,
+    /// Maximum dimension (width or height) in pixels. Core resizes the
+    /// image to fit within a `max_size × max_size` bounding box before
+    /// returning it. Omit (or send 0) to receive the full-resolution blob.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<u32>,
 }
 
 impl MediaImageParams {
@@ -369,6 +374,7 @@ impl MediaImageParams {
             system: system.into(),
             path: path.into(),
             image_types: Vec::new(),
+            max_size: None,
         }
     }
 
@@ -378,6 +384,7 @@ impl MediaImageParams {
             system: String::new(),
             path: String::new(),
             image_types: Vec::new(),
+            max_size: None,
         }
     }
 }

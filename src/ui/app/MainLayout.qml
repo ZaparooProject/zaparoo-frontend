@@ -1182,13 +1182,12 @@ ApplicationWindow {
                         if (root.gamesScreen === null)
                             return [];
                         const pages = root.gamesScreen.gamesGrid.pageCount;
-                        // Options menu is only meaningful on media leaves —
-                        // folder/root entries open via Accept and have no
-                        // per-entry actions. Drop the X cue so the bar
-                        // doesn't promise a press that no-ops.
+                        // Mirror the real context-menu gate used by
+                        // GamesScreen/openContextMenu. Singleton folders
+                        // with media identity can launch and be favorited,
+                        // so they should advertise Options too.
                         const idx = root.gamesScreen.gamesGrid.currentIndex;
-                        const entryType = Browse.GamesModel.entry_type_at(idx);
-                        const isFolder = entryType === "directory" || entryType === "root";
+                        const mediaCapable = Browse.GamesModel.is_media_capable_at(idx);
                         let row = [
                             {
                                 button: "Dpad",
@@ -1204,7 +1203,7 @@ ApplicationWindow {
                             button: "ButtonA",
                             label: qsTr("Open")
                         });
-                        if (!isFolder)
+                        if (mediaCapable)
                             row.push({
                                 button: "ButtonX",
                                 label: qsTr("Options")

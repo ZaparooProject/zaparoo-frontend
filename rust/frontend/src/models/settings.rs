@@ -81,6 +81,7 @@ const MISTER_RESOLUTIONS: &[&str] = &[
     "",
     "1280x720",
     "1920x1080",
+    "2560x1440",
     "1920x1200",
     "1920x1440",
     "640x480",
@@ -666,12 +667,13 @@ mod tests {
     }
 
     #[test]
-    fn curated_list_contains_720p_and_1080p() {
+    fn curated_list_contains_common_16_9_resolutions() {
         // Mostly a sanity guard — if a future edit silently drops the
-        // two most-likely-to-work resolutions, this test catches it.
+        // most-likely-to-work 16:9 resolutions, this test catches it.
         let collected: Vec<&str> = MISTER_RESOLUTIONS.to_vec();
         assert!(collected.contains(&"1280x720"));
         assert!(collected.contains(&"1920x1080"));
+        assert!(collected.contains(&"2560x1440"));
     }
 
     #[test]
