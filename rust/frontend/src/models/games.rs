@@ -1355,7 +1355,12 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32, requests_enabled: bool) ->
     let soft_no_image = media_key
         .as_ref()
         .is_some_and(|k| cache.is_soft_no_image(k));
-    if requests_enabled && !cached && !negative && !soft_no_image {
+    // Browse-provided signal: Core confirmed no image property for this entry.
+    // Treat as negative — show the cover placeholder and skip the
+    // media.image request. This eliminates the per-entry lookup flood on
+    // systems like Arcade that have very few scraped covers.
+    let no_cover = !entry.has_cover;
+    if requests_enabled && !cached && !negative && !soft_no_image && !no_cover {
         // Miss-driven re-enqueue: when QML asks for the cover URL of
         // a media entry whose bytes aren't in the cache, kick a fetch
         // right here. This is the only implicit path covers reach the
@@ -1373,7 +1378,7 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32, requests_enabled: bool) ->
         entry,
         media_key.as_ref(),
         cached,
-        negative || soft_no_image || !requests_enabled,
+        negative || soft_no_image || no_cover || !requests_enabled,
     )
 }
 
@@ -1447,6 +1452,11 @@ fn prefetch_around_plan(
                 continue;
             }
             let entry = &entries[idx];
+            // Skip entries Core has confirmed have no cover; they would
+            // occupy fetch queue slots but always return "no image".
+            if !entry.has_cover {
+                continue;
+            }
             if let Some(key) = media_key_for(entry) {
                 plan.push((key.with_current_cover_preference(), entry.media_id));
             }
@@ -1591,7 +1601,15 @@ fn notify_cover_update(mut model: Pin<&mut ffi::GamesModel>, key: &MediaKey) {
         .rust_mut()
         .pending_first_paint_keys
         .remove(key);
-    if was_pending && model.pending_first_paint_keys.is_empty() && model.loading {
+    // Hold the overlay while the initial look-ahead is still in flight so
+    // the Loading screen covers both cover resolution AND the background
+    // chunk's materialization. `release_initial_lookahead_gate` below will
+    // trigger the release once both conditions are satisfied.
+    if was_pending
+        && model.pending_first_paint_keys.is_empty()
+        && !model.pending_initial_lookahead
+        && model.loading
+    {
         if let Some(handle) = model.as_mut().rust_mut().cover_gate_timer.take() {
             handle.abort();
         }
@@ -1655,6 +1673,10 @@ where
 {
     entries
         .iter()
+        // Browse-provided signal: Core confirmed no image for this entry.
+        // Exclude from the gate set — these entries will never resolve to
+        // cached bytes, so waiting on them would always ride the timeout.
+        .filter(|entry| entry.has_cover)
         .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
         .filter(|k| !is_cached(k) && !is_negative(k))
         .collect()
@@ -1693,14 +1715,28 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
         handle.abort();
     }
     let cache = global_media_image_cache();
+    // Scope the waiting set to the visible page only, not all loaded
+    // entries. The prefetcher queues only ~3 pages' worth; computing
+    // over all entries means the set can never drain on a large folder
+    // (e.g. 411 PSX dirs) and the gate always rides the full timeout.
+    // Using the visible page (page_size rows starting at visible_first_row)
+    // lets the set drain as soon as the on-screen covers land.
+    let page_size = model.page_size.max(1) as usize;
+    let first = model.rust().visible_first_row.max(0) as usize;
+    let window_end = (first + page_size).min(model.entries.len());
+    let visible_entries = &model.entries[first..window_end];
     let unresolved = compute_unresolved_keys(
-        &model.entries,
+        visible_entries,
         |k| cache.is_cached(k),
         |k| cache.is_negative(k),
     );
     if unresolved.is_empty() {
         model.as_mut().rust_mut().pending_first_paint_keys.clear();
-        if model.loading {
+        // If the initial look-ahead is still in flight, keep loading=true
+        // so the overlay covers the materialization of the first background
+        // chunk. `release_initial_lookahead_gate` will release it once
+        // the sub-batches have finished splicing onto the Qt thread.
+        if model.loading && !model.pending_initial_lookahead {
             model.as_mut().set_loading(false);
         }
         return;
@@ -1714,7 +1750,7 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
     let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
     let qt_thread = model.qt_thread();
     let handle = global_handle().spawn(async move {
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        tokio::time::sleep(Duration::from_millis(1500)).await;
         let _ = qt_thread.queue(move |model| {
             if seq.load(Ordering::SeqCst) != ticket {
                 return;
@@ -1725,11 +1761,15 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().rust_mut().cover_gate_timer = Some(handle);
 }
 
-/// Clear `pending_initial_lookahead` after the background prefetch
-/// lands. Look-ahead no longer participates in full-screen loading:
-/// visible page readiness and cover first-paint own that gate.
+/// Clear `pending_initial_lookahead` after the background prefetch lands.
+/// If the cover gate already drained before look-ahead finished (e.g. a
+/// system with no covers whose pending keys resolved to empty immediately),
+/// release the loading overlay now that both conditions are met.
 fn release_initial_lookahead_gate(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().rust_mut().pending_initial_lookahead = false;
+    if model.pending_first_paint_keys.is_empty() && model.loading {
+        model.as_mut().set_loading(false);
+    }
 }
 
 /// Force-release the cover gate from the safety timer. Called only via
@@ -3009,6 +3049,38 @@ mod tests {
                 ..BrowseEntry::default()
             },
         ];
+        let unresolved = compute_unresolved_keys(&entries, |_| false, |_| false);
+        assert!(unresolved.is_empty());
+    }
+
+    #[test]
+    fn compute_unresolved_keys_excludes_no_cover_entries() {
+        // Core sends has_cover=false for entries with no image property row.
+        // These entries will never resolve to cached bytes, so they must
+        // not be included in the gate set — otherwise the gate would always
+        // ride the safety timer on systems like Arcade.
+        let mut no_cover = media("nocovergame", "/p/nocovergame", "Arcade");
+        no_cover.has_cover = false;
+        let entries = vec![
+            no_cover,
+            media("coveredgame", "/p/coveredgame", "NES"),
+        ];
+        let unresolved = compute_unresolved_keys(&entries, |_| false, |_| false);
+        let expected: HashSet<MediaKey> =
+            [MediaKey::new("NES", "/p/coveredgame")].into_iter().collect();
+        assert_eq!(unresolved, expected);
+    }
+
+    #[test]
+    fn compute_unresolved_keys_all_no_cover_returns_empty() {
+        // A page where Core confirmed no entry has a cover (e.g. Arcade
+        // with no scraped artwork) must result in an empty unresolved set
+        // so the gate releases immediately rather than timing out.
+        let mut a = media("a", "/p/a", "Arcade");
+        a.has_cover = false;
+        let mut b = media("b", "/p/b", "Arcade");
+        b.has_cover = false;
+        let entries = vec![a, b];
         let unresolved = compute_unresolved_keys(&entries, |_| false, |_| false);
         assert!(unresolved.is_empty());
     }

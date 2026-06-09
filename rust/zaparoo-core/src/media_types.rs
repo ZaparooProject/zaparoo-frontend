@@ -2,8 +2,27 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
+
+/// Serde helper: deserializes `null` as the type's `Default` instead of
+/// failing. Used on `Vec<T>` fields where Core may emit `null` for an empty
+/// collection (Go nil slices marshal as `null`, not `[]`).
+fn deserialize_null_default<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    let opt = Option::deserialize(d)?;
+    Ok(opt.unwrap_or_default())
+}
+
+/// Serde default for `has_cover`: true when the field is absent so that
+/// clients receiving responses from older Core builds (which don't emit
+/// `hasCover`) still request covers rather than silently skipping them.
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -184,7 +203,12 @@ pub struct MediaBrowseParams {
     pub sort: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+// `Default` is implemented manually below so that `has_cover` defaults to
+// `true` (request covers unless Core explicitly says otherwise) rather than
+// the Rust zero-value `false`. The serde `default = "default_true"` handles
+// the wire-protocol case (field absent); this impl handles Rust callers that
+// use `..BrowseEntry::default()` in tests and struct-update syntax.
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowseEntry {
     /// Opaque media database row ID. Present on `media` entries and
@@ -214,6 +238,34 @@ pub struct BrowseEntry {
     /// Core can populate this on singleton media-container directories.
     #[serde(default)]
     pub tags: Vec<TagInfo>,
+    /// When `false`, Core has confirmed this media has no cover image in
+    /// its properties tables. Defaults to `true` when the field is absent
+    /// (older Core builds don't send it) so cover requests are still made.
+    /// Only meaningful for `media` entries; folders always behave as `true`.
+    #[serde(default = "default_true")]
+    pub has_cover: bool,
+}
+
+impl Default for BrowseEntry {
+    fn default() -> Self {
+        Self {
+            media_id: None,
+            name: String::new(),
+            path: String::new(),
+            entry_type: String::new(),
+            file_count: 0,
+            system_id: String::new(),
+            system_ids: Vec::new(),
+            zap_script: String::new(),
+            relative_path: String::new(),
+            group: String::new(),
+            description: String::new(),
+            tags: Vec::new(),
+            // Default to true so callers that don't set this field (tests,
+            // struct-update syntax) still request covers from Core.
+            has_cover: true,
+        }
+    }
 }
 
 impl BrowseEntry {
@@ -455,13 +507,13 @@ pub struct MediaMeta {
     pub parent_dir: String,
     #[serde(default)]
     pub is_missing: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub tags: Vec<TagInfo>,
     /// ROM-level scraped properties keyed by canonical type tag (e.g.
     /// `property:description`, `property:image-boxart`).
     #[serde(default)]
     pub properties: HashMap<String, MediaMetaProperty>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub available_image_types: Vec<String>,
     #[serde(default)]
     pub title: MediaMetaTitle,
@@ -484,13 +536,13 @@ pub struct MediaMetaTitle {
     pub slug_word_count: u32,
     #[serde(default)]
     pub system: MediaMetaSystemRef,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub tags: Vec<TagInfo>,
     /// Title-level scraped properties shared by all rows under the same
     /// title slug.
     #[serde(default)]
     pub properties: HashMap<String, MediaMetaProperty>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub available_image_types: Vec<String>,
 }
 
@@ -2125,5 +2177,31 @@ mod tests {
         assert_eq!(result.scrapers[0].id, "screenscraper");
         assert_eq!(result.scrapers[0].supported_systems, vec!["SNES", "NES"]);
         assert!(result.scrapers[1].supported_systems.is_empty());
+    }
+
+    #[test]
+    fn browse_entry_has_cover_absent_defaults_to_true() {
+        // Older Core builds don't send `hasCover`; the frontend must
+        // still request covers for those entries.
+        let json = r#"{"name":"Zelda","path":"/roms/NES/zelda.nes","type":"media"}"#;
+        let entry: BrowseEntry = serde_json::from_str(json).expect("parse");
+        assert!(entry.has_cover, "absent hasCover should default to true");
+    }
+
+    #[test]
+    fn browse_entry_has_cover_false_is_honoured() {
+        // Core sends hasCover=false when it has confirmed no image property
+        // row for the entry. The frontend should skip the cover request.
+        let json = r#"{"name":"Zelda","path":"/roms/NES/zelda.nes","type":"media","hasCover":false}"#;
+        let entry: BrowseEntry = serde_json::from_str(json).expect("parse");
+        assert!(!entry.has_cover, "hasCover=false must be preserved");
+    }
+
+    #[test]
+    fn browse_entry_default_has_cover_true() {
+        // BrowseEntry::default() must give has_cover=true so struct-update
+        // syntax in tests/callers doesn't accidentally suppress cover requests.
+        let entry = BrowseEntry::default();
+        assert!(entry.has_cover, "Default::has_cover must be true");
     }
 }
