@@ -687,6 +687,7 @@ ApplicationWindow {
 
             Loader {
                 id: settingNeedsRestartModalLoader
+                anchors.fill: parent
                 active: root.settingNeedsRestartModalRequested
                 sourceComponent: Component {
                     Modal {

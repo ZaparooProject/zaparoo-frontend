@@ -470,7 +470,7 @@ Item {
     function _languageDisplay(value: string): string {
         if (value === "en" || value === "en_US" || value === "en_GB")
             return qsTr("English");
-        if (value === "it_IT")
+        if (value === "it" || value === "it_IT")
             return qsTr("Italian");
         if (value === "es" || value === "es_ES")
             return qsTr("Spanish");

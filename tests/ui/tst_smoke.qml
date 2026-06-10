@@ -30,6 +30,15 @@ TestCase {
         compare(typeof Browse.SystemStatus.has_bluetooth, "boolean");
     }
 
+    function test_restart_prompt_covers_window() {
+        mainWindow.openSettingNeedsRestartModal();
+        tryCompare(mainWindow, "settingNeedsRestartModalVisible", true);
+        verify(mainWindow.settingNeedsRestartModal !== null);
+        compare(mainWindow.settingNeedsRestartModal.width, mainWindow.width);
+        compare(mainWindow.settingNeedsRestartModal.height, mainWindow.height);
+        mainWindow.cancelPendingRestart();
+    }
+
     name: "UiWindow"
     when: windowShown
 
@@ -40,4 +49,5 @@ TestCase {
         width: 1280
         height: 720
     }
+
 }

@@ -87,10 +87,36 @@ const MISTER_RESOLUTIONS: &[&str] = &[
     "640x480",
     "2048x1536",
 ];
+// One picker row per user-visible language. Region-specific tags are
+// accepted below as aliases so old configs keep working without creating
+// duplicate labels like English/English/English in the settings modal.
 const LANGUAGES: &[&str] = &[
-    "auto", "en", "en_US", "en_GB", "it_IT", "es", "es_ES", "eu", "eu_ES", "de", "de_DE", "el",
-    "el_GR", "ja", "ja_JP", "ko", "ko_KR", "nl", "nl_NL", "ro", "ro_RO", "sk", "sk_SK", "uk",
-    "uk_UA", "zh_CN", "zh_TW", "zh_HK", "he", "he_IL", "ar", "ar_SA", "hi", "hi_IN",
+    "auto", "en", "it_IT", "es", "eu", "de", "el", "ja", "ko", "nl", "ro", "sk", "uk", "zh_CN",
+    "zh_TW", "he", "ar", "hi",
+];
+const LANGUAGE_ALIASES: &[(&str, &str)] = &[
+    ("en_US", "en"),
+    ("en_GB", "en"),
+    ("it", "it_IT"),
+    ("es_ES", "es"),
+    ("eu_ES", "eu"),
+    ("de_DE", "de"),
+    ("el_GR", "el"),
+    ("ja_JP", "ja"),
+    ("ko_KR", "ko"),
+    ("nl_NL", "nl"),
+    ("ro_RO", "ro"),
+    ("sk_SK", "sk"),
+    ("uk_UA", "uk"),
+    ("zh_Hans", "zh_CN"),
+    ("zh_Hans_CN", "zh_CN"),
+    ("zh_Hant", "zh_TW"),
+    ("zh_Hant_TW", "zh_TW"),
+    ("zh_HK", "zh_TW"),
+    ("zh_Hant_HK", "zh_TW"),
+    ("he_IL", "he"),
+    ("ar_SA", "ar"),
+    ("hi_IN", "hi"),
 ];
 const DEFAULT_LANGUAGE: &str = "auto";
 const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
@@ -577,10 +603,16 @@ fn normalize_language(value: &str) -> &str {
     if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
         return DEFAULT_LANGUAGE;
     }
-    LANGUAGES
+    if let Some(language) = LANGUAGES
         .iter()
         .copied()
         .find(|language| *language == trimmed)
+    {
+        return language;
+    }
+    LANGUAGE_ALIASES
+        .iter()
+        .find_map(|(alias, language)| (*alias == trimmed).then_some(*language))
         .unwrap_or(DEFAULT_LANGUAGE)
 }
 
@@ -732,8 +764,31 @@ mod tests {
         assert_eq!(normalize_language("AUTO"), DEFAULT_LANGUAGE);
         assert_eq!(normalize_language("fr"), DEFAULT_LANGUAGE);
         assert_eq!(normalize_language("it_IT"), "it_IT");
-        assert_eq!(normalize_language("es_ES"), "es_ES");
-        assert_eq!(normalize_language("eu_ES"), "eu_ES");
+        assert_eq!(normalize_language("es"), "es");
+        assert_eq!(normalize_language("eu"), "eu");
+        assert_eq!(normalize_language("zh_TW"), "zh_TW");
+    }
+
+    #[test]
+    fn language_normalization_migrates_region_aliases() {
+        assert_eq!(normalize_language("en_US"), "en");
+        assert_eq!(normalize_language("en_GB"), "en");
+        assert_eq!(normalize_language("it"), "it_IT");
+        assert_eq!(normalize_language("es_ES"), "es");
+        assert_eq!(normalize_language("eu_ES"), "eu");
+        assert_eq!(normalize_language("de_DE"), "de");
+        assert_eq!(normalize_language("el_GR"), "el");
+        assert_eq!(normalize_language("ja_JP"), "ja");
+        assert_eq!(normalize_language("ko_KR"), "ko");
+        assert_eq!(normalize_language("nl_NL"), "nl");
+        assert_eq!(normalize_language("ro_RO"), "ro");
+        assert_eq!(normalize_language("sk_SK"), "sk");
+        assert_eq!(normalize_language("uk_UA"), "uk");
+        assert_eq!(normalize_language("zh_Hans_CN"), "zh_CN");
+        assert_eq!(normalize_language("zh_HK"), "zh_TW");
+        assert_eq!(normalize_language("he_IL"), "he");
+        assert_eq!(normalize_language("ar_SA"), "ar");
+        assert_eq!(normalize_language("hi_IN"), "hi");
     }
 
     #[test]
