@@ -59,10 +59,11 @@ Item {
     readonly property int _carouselGutter: (canPreviousImage || canNextImage) ? Sizing.pctW(4) : 0
     readonly property bool _coverPending: coverKey === "icons/Loading"
     readonly property url _coverSource: _coverPending ? "" : Resources.coverUrl(coverKey)
-    readonly property bool _coverBusy: root._coverPending || cover.status === Image.Loading
+    readonly property bool _coverMediaImagePending: coverKey.startsWith("media-image/") && cover.status !== Image.Ready && cover.status !== Image.Error
+    readonly property bool _coverBusy: root._coverPending || root._coverMediaImagePending || cover.status === Image.Loading
     readonly property bool _paneLoading: root.loading
     readonly property bool _delayedPaneLoading: root._paneLoading && root._paneLoadingDelayElapsed
-    readonly property bool _coverBusyIndicatorVisible: root._coverBusy && (root._coverLoadingDelayElapsed || root._paneLoadingDelayElapsed)
+    readonly property bool _coverBusyIndicatorVisible: root._coverPending || root._coverMediaImagePending || (cover.status === Image.Loading && root._coverLoadingDelayElapsed)
     readonly property bool _detailVisible: !root.detailSuppressed
     readonly property bool _emptyPaneLoading: root._delayedPaneLoading && !root._coverBusyIndicatorVisible && root._coverSource === "" && root._detailRows.length === 0 && root.title === ""
     readonly property bool _suppressedPlaceholderCover: root.detailSuppressed && coverKey.startsWith("icons/") && root._coverSource !== ""

@@ -25,7 +25,7 @@ TestCase {
 
         width: 320
         height: 240
-        loadingDelayMs: 0
+        loadingDelayMs: 150
         showTitle: true
     }
 
@@ -57,6 +57,15 @@ TestCase {
         verify(findChild(pane, "detailTagTable").visible);
         verify(findChild(pane, "detailPlaceholderIcon").visible);
         verify(!findChild(pane, "detailLoadingIndicator").visible);
+    }
+
+    function test_loading_icon_survives_media_image_handoff(): void {
+        pane.coverKey = "icons/Loading";
+        wait(1);
+        verify(findChild(pane, "detailPlaceholderIcon").visible);
+
+        pane.coverKey = "media-image/not-ready";
+        verify(findChild(pane, "detailPlaceholderIcon").visible);
     }
 
     function test_suppressed_detail_still_hides_metadata(): void {
