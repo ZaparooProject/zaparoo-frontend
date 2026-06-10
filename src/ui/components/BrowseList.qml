@@ -15,7 +15,6 @@ Item {
     property string currentCoverKey: ""
     property int totalItemsOverride: -1
     property int targetVisibleRowCount: 0
-    property bool showFileStem: false
     property bool showChrome: true
     property var layoutProfile: null
     readonly property var _list: root.layoutProfile && root.layoutProfile.list ? root.layoutProfile.list : null
@@ -142,12 +141,13 @@ Item {
             height: root.rowHeight
 
             readonly property bool selected: row.index === root.currentIndex
+            readonly property string displayTitle: row.name !== "" ? row.name : row.fileStem
 
             Binding {
                 target: root
                 property: "currentName"
                 when: row.selected
-                value: row.name
+                value: row.displayTitle
                 restoreMode: Binding.RestoreNone
             }
 
@@ -194,7 +194,7 @@ Item {
                 anchors.right: parent.right
                 anchors.rightMargin: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) + root._rowTextRightPadding : root._rowTextRightPadding
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.showFileStem && row.fileStem !== "" ? row.fileStem : row.name
+                text: row.displayTitle
                 color: row.selected ? Theme.textPrimary : Theme.textLabel
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontSize(2.9)

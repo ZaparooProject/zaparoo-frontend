@@ -26,7 +26,6 @@ Item {
     property string detailPlaceholderKey: "icons/File"
     property int totalItemsOverride: -1
     property int targetVisibleRowCount: 0
-    property bool showFileStem: false
     property bool detailShowDescription: true
     property bool detailShowTitle: true
     property string detailLoadingText: qsTr("Loading…")
@@ -368,7 +367,6 @@ Item {
         model: root.mediaModel
         totalItemsOverride: root.totalItemsOverride
         targetVisibleRowCount: root.targetVisibleRowCount
-        showFileStem: root.showFileStem
         currentIndex: mediaGrid.currentIndex
         detailTitle: listCard.currentName
         detailCoverKey: root.detailRapidScrollActive ? root.detailPlaceholderKey : (root._detailImageKey() !== "" ? root._detailImageKey() : listCard.currentCoverKey)
