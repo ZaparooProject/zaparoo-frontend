@@ -511,7 +511,7 @@ pub struct MediaMeta {
     pub tags: Vec<TagInfo>,
     /// ROM-level scraped properties keyed by canonical type tag (e.g.
     /// `property:description`, `property:image-boxart`).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub properties: HashMap<String, MediaMetaProperty>,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub available_image_types: Vec<String>,
@@ -540,7 +540,7 @@ pub struct MediaMetaTitle {
     pub tags: Vec<TagInfo>,
     /// Title-level scraped properties shared by all rows under the same
     /// title slug.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub properties: HashMap<String, MediaMetaProperty>,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub available_image_types: Vec<String>,
@@ -2180,6 +2180,19 @@ mod tests {
     }
 
     #[test]
+    fn media_meta_properties_null_defaults_to_empty_maps() {
+        let json = r#"{
+            "media": {
+                "properties": null,
+                "title": {"properties": null}
+            }
+        }"#;
+        let result: MediaMetaResult = serde_json::from_str(json).expect("parse");
+        assert!(result.media.properties.is_empty());
+        assert!(result.media.title.properties.is_empty());
+    }
+
+    #[test]
     fn browse_entry_has_cover_absent_defaults_to_true() {
         // Older Core builds don't send `hasCover`; the frontend must
         // still request covers for those entries.
@@ -2192,7 +2205,8 @@ mod tests {
     fn browse_entry_has_cover_false_is_honoured() {
         // Core sends hasCover=false when it has confirmed no image property
         // row for the entry. The frontend should skip the cover request.
-        let json = r#"{"name":"Zelda","path":"/roms/NES/zelda.nes","type":"media","hasCover":false}"#;
+        let json =
+            r#"{"name":"Zelda","path":"/roms/NES/zelda.nes","type":"media","hasCover":false}"#;
         let entry: BrowseEntry = serde_json::from_str(json).expect("parse");
         assert!(!entry.has_cover, "hasCover=false must be preserved");
     }

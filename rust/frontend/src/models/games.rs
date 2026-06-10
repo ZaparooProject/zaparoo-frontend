@@ -1360,7 +1360,8 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32, requests_enabled: bool) ->
     // media.image request. This eliminates the per-entry lookup flood on
     // systems like Arcade that have very few scraped covers.
     let no_cover = !entry.has_cover;
-    if requests_enabled && !cached && !negative && !soft_no_image && !no_cover {
+    let effective_cached = cached && !no_cover;
+    if requests_enabled && !effective_cached && !negative && !soft_no_image && !no_cover {
         // Miss-driven re-enqueue: when QML asks for the cover URL of
         // a media entry whose bytes aren't in the cache, kick a fetch
         // right here. This is the only implicit path covers reach the
@@ -1377,7 +1378,7 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32, requests_enabled: bool) ->
     cover_key_for_with(
         entry,
         media_key.as_ref(),
-        cached,
+        effective_cached,
         negative || soft_no_image || no_cover || !requests_enabled,
     )
 }
@@ -1702,14 +1703,14 @@ fn reset_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
 /// - If every media entry is already cached or negatively-memoised
 ///   (folder-only page, or revisit), set loading=false right now —
 ///   there's nothing to wait on, the screen-flip overlay clears.
-/// - Otherwise, store the unresolved set on the model, arm a 3 s safety
-///   timer, and leave loading=true. `notify_cover_update` will drain
-///   the set as covers land; whichever happens first (set empties or
-///   timer fires) releases the gate.
+/// - Otherwise, store the unresolved set on the model, arm a 1.5 s
+///   safety timer, and leave loading=true. `notify_cover_update` will
+///   drain the set as covers land; whichever happens first (set empties
+///   or timer fires) releases the gate.
 ///
-/// The 3 s timeout is the fall-through: if the bulk RPC stalls, the
-/// user sees `Loading…` for at most 3 s before the existing
-/// "list with placeholders → covers pop in" behaviour resumes.
+/// The 1.5 s timeout is the fall-through: if the bulk RPC or initial
+/// look-ahead stalls, the user sees `Loading…` for at most 1.5 s before
+/// the existing "list with placeholders → covers pop in" behavior resumes.
 fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
     if let Some(handle) = model.as_mut().rust_mut().cover_gate_timer.take() {
         handle.abort();
@@ -1736,8 +1737,13 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
         // so the overlay covers the materialization of the first background
         // chunk. `release_initial_lookahead_gate` will release it once
         // the sub-batches have finished splicing onto the Qt thread.
-        if model.loading && !model.pending_initial_lookahead {
-            model.as_mut().set_loading(false);
+        if model.loading {
+            if model.pending_initial_lookahead {
+                info!("games: arm cover gate (holding loading until look-ahead lands)");
+                arm_cover_gate_timeout(model);
+            } else {
+                model.as_mut().set_loading(false);
+            }
         }
         return;
     }
@@ -1746,16 +1752,26 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
         "games: arm cover gate (holding loading until covers cached)"
     );
     model.as_mut().rust_mut().pending_first_paint_keys = unresolved;
+    arm_cover_gate_timeout(model);
+}
+
+fn arm_cover_gate_timeout(mut model: Pin<&mut ffi::GamesModel>) {
     let seq = model.rust().cover_gate_seq.clone();
     let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
     let qt_thread = model.qt_thread();
     let handle = global_handle().spawn(async move {
         tokio::time::sleep(Duration::from_millis(1500)).await;
-        let _ = qt_thread.queue(move |model| {
+        let _ = qt_thread.queue(move |mut model: Pin<&mut ffi::GamesModel>| {
             if seq.load(Ordering::SeqCst) != ticket {
                 return;
             }
-            release_cover_gate_after_timeout(model);
+            if model.loading
+                && (model.pending_initial_lookahead || !model.pending_first_paint_keys.is_empty())
+            {
+                release_cover_gate_after_timeout(model);
+            } else {
+                model.as_mut().rust_mut().cover_gate_timer = None;
+            }
         });
     });
     model.as_mut().rust_mut().cover_gate_timer = Some(handle);
@@ -1767,8 +1783,14 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
 /// release the loading overlay now that both conditions are met.
 fn release_initial_lookahead_gate(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().rust_mut().pending_initial_lookahead = false;
-    if model.pending_first_paint_keys.is_empty() && model.loading {
-        model.as_mut().set_loading(false);
+    if model.pending_first_paint_keys.is_empty() {
+        if let Some(handle) = model.as_mut().rust_mut().cover_gate_timer.take() {
+            handle.abort();
+            model.rust().cover_gate_seq.fetch_add(1, Ordering::SeqCst);
+        }
+        if model.loading {
+            model.as_mut().set_loading(false);
+        }
     }
 }
 
@@ -3061,13 +3083,11 @@ mod tests {
         // ride the safety timer on systems like Arcade.
         let mut no_cover = media("nocovergame", "/p/nocovergame", "Arcade");
         no_cover.has_cover = false;
-        let entries = vec![
-            no_cover,
-            media("coveredgame", "/p/coveredgame", "NES"),
-        ];
+        let entries = vec![no_cover, media("coveredgame", "/p/coveredgame", "NES")];
         let unresolved = compute_unresolved_keys(&entries, |_| false, |_| false);
-        let expected: HashSet<MediaKey> =
-            [MediaKey::new("NES", "/p/coveredgame")].into_iter().collect();
+        let expected: HashSet<MediaKey> = [MediaKey::new("NES", "/p/coveredgame")]
+            .into_iter()
+            .collect();
         assert_eq!(unresolved, expected);
     }
 

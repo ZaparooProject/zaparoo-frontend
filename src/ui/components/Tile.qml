@@ -237,21 +237,14 @@ Item {
                 return;
             if (status === Image.Loading) {
                 root._startupTraceLoadStartedAt = Date.now();
-                root._startupTrace("startup/qml resource load start",
-                                   "source=" + source);
+                root._startupTrace("startup/qml resource load start", "source=" + source);
             } else if (status === Image.Ready) {
                 const durMs = root._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - root._startupTraceLoadStartedAt) : 0;
-                root._startupTrace("startup/qml resource load ready",
-                                   "source=" + source,
-                                   "dur_ms=" + durMs,
-                                   "paintedWidth=" + width,
-                                   "paintedHeight=" + height);
+                root._startupTrace("startup/qml resource load ready", "source=" + source, "dur_ms=" + durMs, "paintedWidth=" + width, "paintedHeight=" + height);
                 root._startupTraceLoadStartedAt = 0;
             } else if (status === Image.Error) {
                 const durMs = root._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - root._startupTraceLoadStartedAt) : 0;
-                root._startupTrace("startup/qml resource load error",
-                                   "source=" + source,
-                                   "dur_ms=" + durMs);
+                root._startupTrace("startup/qml resource load error", "source=" + source, "dur_ms=" + durMs);
                 root._startupTraceLoadStartedAt = 0;
             }
         }
