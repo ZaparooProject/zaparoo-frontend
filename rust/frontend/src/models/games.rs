@@ -641,19 +641,19 @@ impl ffi::GamesModel {
             return;
         }
         let entry = &self.entries[index as usize];
-        let fallback_text = run_text_for_entry(entry);
-        if fallback_text.is_empty() {
-            return;
-        }
         let params = singleton_directory_needs_launch_resolution(entry)
             .then(|| meta_params_for_entry(entry))
             .flatten();
+        let fallback_text = run_text_for_entry(entry);
+        if params.is_none() && fallback_text.is_none() {
+            return;
+        }
         let name = entry.name.clone();
         let store = global_store();
         global_handle().spawn(async move {
             let text = if let Some(params) = params {
                 match store.client().media_meta(params).await {
-                    Ok(result) if !result.media.path.trim().is_empty() => result.media.path,
+                    Ok(result) if !result.media.path.trim().is_empty() => Some(result.media.path),
                     Ok(_) => fallback_text.clone(),
                     Err(e) => {
                         warn!(
@@ -665,6 +665,10 @@ impl ffi::GamesModel {
                 }
             } else {
                 fallback_text.clone()
+            };
+            let Some(text) = text else {
+                warn!("singleton launch fallback unavailable for {name}; not launching container path");
+                return;
             };
             if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
                 warn!("run failed for {name}: {}", e.message);
@@ -1106,11 +1110,14 @@ fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
             && (entry.media_id.is_some() || !entry.zap_script.is_empty()))
 }
 
-fn run_text_for_entry(entry: &BrowseEntry) -> String {
-    if !entry.path.trim().is_empty() {
-        return entry.path.clone();
+fn run_text_for_entry(entry: &BrowseEntry) -> Option<String> {
+    if singleton_directory_needs_launch_resolution(entry) {
+        return (!entry.zap_script.trim().is_empty()).then(|| entry.zap_script.clone());
     }
-    entry.zap_script.clone()
+    if !entry.path.trim().is_empty() {
+        return Some(entry.path.clone());
+    }
+    (!entry.zap_script.trim().is_empty()).then(|| entry.zap_script.clone())
 }
 
 fn meta_params_for_entry(entry: &BrowseEntry) -> Option<MediaMetaParams> {
@@ -2925,14 +2932,14 @@ mod tests {
     }
 
     #[test]
-    fn singleton_directory_uses_media_id_for_meta_but_container_as_fallback_run_text() {
+    fn singleton_directory_uses_media_id_for_meta_and_zapscript_as_fallback_run_text() {
         let entry = BrowseEntry {
             media_id: Some(42),
-            name: "Archive".into(),
-            path: "/roms/NES/archive.zip".into(),
+            name: "Game".into(),
+            path: "/roms/PSX/Game".into(),
             entry_type: "directory".into(),
-            system_id: "NES".into(),
-            zap_script: "@NES/Super Mario Bros.".into(),
+            system_id: "PSX".into(),
+            zap_script: "@PSX/Game".into(),
             ..BrowseEntry::default()
         };
         assert!(singleton_directory_needs_launch_resolution(&entry));
@@ -2940,7 +2947,25 @@ mod tests {
         assert_eq!(params.media_id, Some(42));
         assert!(params.system.is_empty());
         assert!(params.path.is_empty());
-        assert_eq!(run_text_for_entry(&entry), "/roms/NES/archive.zip");
+        assert_eq!(run_text_for_entry(&entry).as_deref(), Some("@PSX/Game"));
+        assert_ne!(
+            run_text_for_entry(&entry).as_deref(),
+            Some("/roms/PSX/Game")
+        );
+    }
+
+    #[test]
+    fn singleton_directory_without_zapscript_has_no_fallback_run_text() {
+        let entry = BrowseEntry {
+            media_id: Some(42),
+            name: "Game".into(),
+            path: "/roms/PSX/Game".into(),
+            entry_type: "directory".into(),
+            system_id: "PSX".into(),
+            ..BrowseEntry::default()
+        };
+        assert!(singleton_directory_needs_launch_resolution(&entry));
+        assert_eq!(run_text_for_entry(&entry), None);
     }
 
     #[test]
@@ -2950,7 +2975,10 @@ mod tests {
             ..media("smb", "/roms/NES/smb.nes", "NES")
         };
         assert!(!singleton_directory_needs_launch_resolution(&entry));
-        assert_eq!(run_text_for_entry(&entry), "/roms/NES/smb.nes");
+        assert_eq!(
+            run_text_for_entry(&entry).as_deref(),
+            Some("/roms/NES/smb.nes")
+        );
     }
 
     #[test]
