@@ -97,6 +97,7 @@ const DEFAULT_PAGE_SIZE: i32 = 15;
 // longer floods the cover queue.
 const FETCH_MORE_CHUNK_SIZE: i32 = 100;
 const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 300;
+const COLLAPSED_DIRECTORY_BROWSE_PAGE_SIZE: u32 = 1000;
 const COVER_PREFETCH_NEXT_PAGES: i32 = 2;
 const COVER_PREFETCH_PREVIOUS_PAGES: i32 = 1;
 
@@ -640,34 +641,34 @@ impl ffi::GamesModel {
         if index < 0 || index >= self.count {
             return;
         }
-        let entry = &self.entries[index as usize];
-        let params = singleton_directory_needs_launch_resolution(entry)
-            .then(|| meta_params_for_entry(entry))
+        let entry = self.entries[index as usize].clone();
+        let params = singleton_directory_needs_launch_resolution(&entry)
+            .then(|| meta_params_for_entry(&entry))
             .flatten();
-        let fallback_text = run_text_for_entry(entry);
-        if params.is_none() && fallback_text.is_none() {
+        let browse_params = media_capable_directory_browse_params(&entry);
+        let fallback_text = run_text_for_entry(&entry);
+        if params.is_none() && browse_params.is_none() && fallback_text.is_none() {
             return;
         }
         let name = entry.name.clone();
+        let needs_resolution = params.is_some() || browse_params.is_some();
         let store = global_store();
         global_handle().spawn(async move {
-            let text = if let Some(params) = params {
-                match store.client().media_meta(params).await {
-                    Ok(result) if !result.media.path.trim().is_empty() => Some(result.media.path),
-                    Ok(_) => fallback_text.clone(),
-                    Err(e) => {
-                        warn!(
-                            "singleton launch path resolve failed for {name}: {}",
-                            e.message
-                        );
-                        fallback_text.clone()
-                    }
-                }
+            let text = if needs_resolution {
+                let client = store.client();
+                resolve_media_capable_directory_run_text(
+                    client.as_ref(),
+                    &entry,
+                    params,
+                    browse_params,
+                    fallback_text,
+                )
+                .await
             } else {
-                fallback_text.clone()
+                fallback_text
             };
             let Some(text) = text else {
-                warn!("singleton launch fallback unavailable for {name}; not launching container path");
+                warn!("media-capable directory launch fallback unavailable for {name}; not launching container path");
                 return;
             };
             if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
@@ -1111,13 +1112,133 @@ fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
 }
 
 fn run_text_for_entry(entry: &BrowseEntry) -> Option<String> {
-    if singleton_directory_needs_launch_resolution(entry) {
-        return (!entry.zap_script.trim().is_empty()).then(|| entry.zap_script.clone());
+    if media_capable_directory_needs_child_resolution(entry) {
+        return non_empty_text(&entry.zap_script);
     }
-    if !entry.path.trim().is_empty() {
-        return Some(entry.path.clone());
+    path_then_zap_script_for_entry(entry)
+}
+
+fn path_then_zap_script_for_entry(entry: &BrowseEntry) -> Option<String> {
+    non_empty_text(&entry.path).or_else(|| non_empty_text(&entry.zap_script))
+}
+
+fn non_empty_text(text: &str) -> Option<String> {
+    (!text.trim().is_empty()).then(|| text.to_string())
+}
+
+async fn resolve_media_capable_directory_run_text(
+    client: &zaparoo_core::client::Client,
+    entry: &BrowseEntry,
+    meta_params: Option<MediaMetaParams>,
+    browse_params: Option<MediaBrowseParams>,
+    fallback_text: Option<String>,
+) -> Option<String> {
+    if let Some(params) = meta_params {
+        match client.media_meta(params).await {
+            Ok(result) if !result.media.path.trim().is_empty() => return Some(result.media.path),
+            Ok(_) => warn!(
+                "singleton launch path resolve returned empty path for {}; trying folder browse",
+                entry.name
+            ),
+            Err(e) => warn!(
+                "singleton launch path resolve failed for {}: {}",
+                entry.name, e.message
+            ),
+        }
     }
-    (!entry.zap_script.trim().is_empty()).then(|| entry.zap_script.clone())
+
+    if let Some(params) = browse_params {
+        match client.media_browse(params).await {
+            Ok(result) => {
+                if let Some(text) = child_launch_text_from_browse_result(entry, &result) {
+                    return Some(text);
+                }
+                warn!(
+                    "media-capable directory browse found no launchable child for {}",
+                    entry.name
+                );
+            }
+            Err(e) => warn!(
+                "media-capable directory browse failed for {}: {}",
+                entry.name, e.message
+            ),
+        }
+    }
+
+    fallback_text
+}
+
+fn child_launch_text_from_browse_result(
+    parent: &BrowseEntry,
+    result: &MediaBrowseResult,
+) -> Option<String> {
+    let children = result
+        .entries
+        .iter()
+        .filter(|entry| !entry.is_folder())
+        .collect::<Vec<_>>();
+    if let Some(media_id) = parent.media_id {
+        let matching_media_id = children
+            .iter()
+            .copied()
+            .filter(|entry| entry.media_id == Some(media_id))
+            .collect::<Vec<_>>();
+        if let Some(text) = best_launch_text_for_entries(&matching_media_id) {
+            return Some(text);
+        }
+    }
+    best_launch_text_for_entries(&children)
+}
+
+fn best_launch_text_for_entries(entries: &[&BrowseEntry]) -> Option<String> {
+    entries
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            non_empty_text(&entry.path).map(|path| (launch_path_priority(&path), index, path))
+        })
+        .min_by_key(|(priority, index, _)| (*priority, *index))
+        .map(|(_, _, path)| path)
+        .or_else(|| {
+            entries
+                .iter()
+                .find_map(|entry| non_empty_text(&entry.zap_script))
+        })
+}
+
+fn launch_path_priority(path: &str) -> u8 {
+    let Some((_, extension)) = path.rsplit_once('.') else {
+        return 100;
+    };
+    if extension.eq_ignore_ascii_case("m3u") {
+        0
+    } else if extension.eq_ignore_ascii_case("cue") {
+        1
+    } else if extension.eq_ignore_ascii_case("gdi") {
+        2
+    } else if extension.eq_ignore_ascii_case("chd") {
+        3
+    } else {
+        100
+    }
+}
+
+fn media_capable_directory_browse_params(entry: &BrowseEntry) -> Option<MediaBrowseParams> {
+    if !media_capable_directory_needs_child_resolution(entry) || entry.path.trim().is_empty() {
+        return None;
+    }
+    let system_id = entry_system_id(entry);
+    let systems = if system_id.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![system_id]
+    };
+    Some(MediaBrowseParams {
+        path: entry.path.clone(),
+        systems,
+        max_results: Some(COLLAPSED_DIRECTORY_BROWSE_PAGE_SIZE),
+        ..MediaBrowseParams::default()
+    })
 }
 
 fn meta_params_for_entry(entry: &BrowseEntry) -> Option<MediaMetaParams> {
@@ -1133,6 +1254,11 @@ fn meta_params_for_entry(entry: &BrowseEntry) -> Option<MediaMetaParams> {
 
 fn singleton_directory_needs_launch_resolution(entry: &BrowseEntry) -> bool {
     entry.entry_type == "directory" && entry.media_id.is_some()
+}
+
+fn media_capable_directory_needs_child_resolution(entry: &BrowseEntry) -> bool {
+    entry.entry_type == "directory"
+        && (entry.media_id.is_some() || !entry.zap_script.trim().is_empty())
 }
 
 fn description_from_meta(meta: &MediaMeta) -> String {
@@ -2386,9 +2512,10 @@ mod tests {
     )]
 
     use super::{
-        chunk_for_subbatching, compute_unresolved_keys, cover_key_for_with, cover_placeholder_for,
-        decide_initial, dedup_roots_drop_ancestors, detail_tags_from_tags, display_name,
-        entry_system_id, is_media_capable_entry, is_strict_ancestor_path, leading_dir_count,
+        child_launch_text_from_browse_result, chunk_for_subbatching, compute_unresolved_keys,
+        cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
+        detail_tags_from_tags, display_name, entry_system_id, is_media_capable_entry,
+        is_strict_ancestor_path, leading_dir_count, media_capable_directory_browse_params,
         media_key_for, meta_params_for_entry, position_of_game_path, prefetch_around_plan,
         project_status, run_text_for_entry, singleton_directory_needs_launch_resolution,
         transform_entries, InitialAction, Projection,
@@ -2932,7 +3059,7 @@ mod tests {
     }
 
     #[test]
-    fn singleton_directory_uses_media_id_for_meta_and_zapscript_as_fallback_run_text() {
+    fn singleton_directory_uses_media_id_for_meta_and_skips_container_run_text() {
         let entry = BrowseEntry {
             media_id: Some(42),
             name: "Game".into(),
@@ -2947,6 +3074,10 @@ mod tests {
         assert_eq!(params.media_id, Some(42));
         assert!(params.system.is_empty());
         assert!(params.path.is_empty());
+        let browse_params = media_capable_directory_browse_params(&entry).expect("browse params");
+        assert_eq!(browse_params.path, "/roms/PSX/Game");
+        assert_eq!(browse_params.systems, vec!["PSX".to_string()]);
+        assert_eq!(browse_params.max_results, Some(1000));
         assert_eq!(run_text_for_entry(&entry).as_deref(), Some("@PSX/Game"));
         assert_ne!(
             run_text_for_entry(&entry).as_deref(),
@@ -2955,8 +3086,50 @@ mod tests {
     }
 
     #[test]
-    fn singleton_directory_without_zapscript_has_no_fallback_run_text() {
-        let entry = BrowseEntry {
+    fn singleton_directory_child_resolution_prefers_cue_path_over_zapscript() {
+        let parent = BrowseEntry {
+            media_id: Some(42),
+            name: "Game".into(),
+            path: "/roms/PSX/Game".into(),
+            entry_type: "directory".into(),
+            system_id: "PSX".into(),
+            zap_script: "@PSX/Game".into(),
+            ..BrowseEntry::default()
+        };
+        let result = MediaBrowseResult {
+            path: parent.path.clone(),
+            entries: vec![
+                BrowseEntry {
+                    media_id: Some(42),
+                    name: "Game Track 1".into(),
+                    path: "/roms/PSX/Game/track01.bin".into(),
+                    entry_type: "media".into(),
+                    system_id: "PSX".into(),
+                    zap_script: "@PSX/Game Track 1".into(),
+                    ..BrowseEntry::default()
+                },
+                BrowseEntry {
+                    media_id: Some(42),
+                    name: "Game".into(),
+                    path: "/roms/PSX/Game/Game.cue".into(),
+                    entry_type: "media".into(),
+                    system_id: "PSX".into(),
+                    zap_script: "@PSX/Game".into(),
+                    ..BrowseEntry::default()
+                },
+            ],
+            total_files: 2,
+            pagination: None,
+        };
+        assert_eq!(
+            child_launch_text_from_browse_result(&parent, &result).as_deref(),
+            Some("/roms/PSX/Game/Game.cue")
+        );
+    }
+
+    #[test]
+    fn singleton_directory_without_zapscript_can_still_resolve_child_path() {
+        let parent = BrowseEntry {
             media_id: Some(42),
             name: "Game".into(),
             path: "/roms/PSX/Game".into(),
@@ -2964,8 +3137,25 @@ mod tests {
             system_id: "PSX".into(),
             ..BrowseEntry::default()
         };
-        assert!(singleton_directory_needs_launch_resolution(&entry));
-        assert_eq!(run_text_for_entry(&entry), None);
+        let result = MediaBrowseResult {
+            path: parent.path.clone(),
+            entries: vec![BrowseEntry {
+                media_id: Some(42),
+                name: "Game".into(),
+                path: "/roms/PSX/Game/Game.cue".into(),
+                entry_type: "media".into(),
+                system_id: "PSX".into(),
+                ..BrowseEntry::default()
+            }],
+            total_files: 1,
+            pagination: None,
+        };
+        assert!(singleton_directory_needs_launch_resolution(&parent));
+        assert_eq!(run_text_for_entry(&parent), None);
+        assert_eq!(
+            child_launch_text_from_browse_result(&parent, &result).as_deref(),
+            Some("/roms/PSX/Game/Game.cue")
+        );
     }
 
     #[test]
