@@ -18,6 +18,7 @@ qt_add_qml_module(
         CommercialNoticeModal.qml
         ContextMenu.qml
         CoreStatusPill.qml
+        DelayedLoadingIndicator.qml
         FirstRunIndexModal.qml
         FocusedMediaDetailController.qml
         GameInfoModal.qml

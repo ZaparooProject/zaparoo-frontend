@@ -374,6 +374,22 @@ MainLayout {
         Browse.AppState.active_screen = screen;
     }
 
+    // Back transitions need the same delayed loading cue as forward
+    // model fills. Request the destination first so lazy Loaders can
+    // mount behind the cue, then cut after the cue has had one frame to
+    // paint.
+    function _navigateBackToScreen(screen: string): void {
+        if (screen === root.activeScreen)
+            return;
+        root._backTransitionTarget = screen;
+        root.pendingTransition = "back";
+        root._whenScreenReady(screen, function () {
+            if (root.pendingTransition !== "back" || root._backTransitionTarget !== screen)
+                return;
+            backTransitionTimer.restart();
+        });
+    }
+
     // Single-shot callback slots fired by the loadingChanged
     // listeners below. Only one transition is in flight at a time
     // (input gate guarantees this), so two scalars are enough.
@@ -394,6 +410,7 @@ MainLayout {
     // complete the transition before our own `set_category` has been
     // issued.
     property bool _deferredCategoryPending: false
+    property bool _deferredSystemPending: false
     // Saved games-screen entry path that wasn't on the freshly seeded
     // page 1 of MediaBrowse. The GamesModel.onCountChanged watcher
     // below paginates forward via fetch_more until the path is found
@@ -401,6 +418,9 @@ MainLayout {
     // any navigation that starts a new browse target so a stale
     // restore can't keep paginating after the user moves on.
     property string _pendingGameRestorePath: ""
+    property string _backTransitionTarget: ""
+    property string _pendingFolderBackTargetPath: ""
+    property string _pendingFolderBackSystemId: ""
 
     function _catalogStillBooting(): bool {
         return !Browse.CategoriesModel.loaded && (Browse.CategoriesModel.error_message ?? "") === "";
@@ -418,6 +438,20 @@ MainLayout {
         root._startupTrace("startup/qml deferred category ready", "category=" + targetCategory + " count=" + Browse.SystemsModel.count);
         const cb = root._categoryReadyCallback;
         root._categoryReadyCallback = null;
+        cb();
+        return true;
+    }
+
+    function _completeDeferredSystemIfReady(targetSystemId: string): bool {
+        if (root._systemReadyCallback === null)
+            return false;
+        if (Browse.GamesModel.loading)
+            return false;
+        if (Browse.GamesModel.current_system_id !== targetSystemId)
+            return false;
+        root._startupTrace("startup/qml deferred system ready", "systemId=" + targetSystemId + " count=" + Browse.GamesModel.count);
+        const cb = root._systemReadyCallback;
+        root._systemReadyCallback = null;
         cb();
         return true;
     }
@@ -481,6 +515,10 @@ MainLayout {
         function onLoadingChanged(): void {
             if (Browse.GamesModel.loading)
                 return;
+            if (root._deferredSystemPending) {
+                root._startupTrace("startup/qml system loading edge ignored", "reason=deferred-pending systemId=" + Browse.GamesModel.current_system_id + " count=" + Browse.GamesModel.count);
+                return;
+            }
             const cb = root._systemReadyCallback;
             if (cb === null)
                 return;
@@ -523,13 +561,12 @@ MainLayout {
     // populated — a re-Accept after Esc-back); the set_category call
     // is still made for parity with the prior behaviour even though
     // Rust early-returns when the category already matches. Async
-    // path waits for loadingChanged; the 50 ms defer hides
-    // set_category's synchronous teardown of SystemsScreen's bound
-    // tile delegates behind the transition overlay, so the user sees
-    // overlay → frozen-under-overlay → grid instead of freeze →
-    // flash → grid. Qt.callLater is not enough; it fires inside the
-    // same event loop iteration before the next render polish/sync
-    // pass.
+    // path waits for loadingChanged. When replacing an already-populated
+    // SystemsModel during a transition, defer until the delayed loading cue
+    // has had one frame to paint; otherwise set_category's synchronous
+    // delegate teardown can freeze the GUI before any feedback appears.
+    // Qt.callLater is not enough; it fires inside the same event loop
+    // iteration before the next render polish/sync pass.
     function _ensureCategory(category: string, cb, waitForCatalog): void {
         if (waitForCatalog && root._catalogStillBooting()) {
             root._startupTrace("startup/qml catalog wait arm", "category=" + category);
@@ -547,6 +584,7 @@ MainLayout {
         root._categoryReadyCallback = cb;
         root._deferredCategoryPending = true;
         deferredCategorySetTimer.targetCategory = category;
+        deferredCategorySetTimer.interval = root.pendingTransition !== "" && Browse.SystemsModel.count > 0 ? root.loadingIndicatorDelayMs + 50 : 50;
         deferredCategorySetTimer.restart();
     }
 
@@ -556,7 +594,9 @@ MainLayout {
     // but the cached result applies inline through the watcher's seed
     // — loading flips back to false before set_system returns — so we
     // can call cb() synchronously on this path. Cold-load goes through
-    // the systemReadyCallback waiter below.
+    // the systemReadyCallback waiter below; when replacing populated
+    // games rows during a transition, defer to the delayed loading cue
+    // for the same pre-feedback-freeze reason as _ensureCategory.
     function _ensureSystem(systemId: string, cb): void {
         if (Browse.GamesModel.current_system_id === systemId && Browse.GamesModel.count > 0) {
             Browse.GamesModel.set_system(systemId);
@@ -564,7 +604,10 @@ MainLayout {
             return;
         }
         root._systemReadyCallback = cb;
-        Browse.GamesModel.set_system(systemId);
+        root._deferredSystemPending = true;
+        deferredSystemSetTimer.targetSystemId = systemId;
+        deferredSystemSetTimer.interval = root.pendingTransition !== "" && Browse.GamesModel.count > 0 ? root.loadingIndicatorDelayMs + 50 : 1;
+        deferredSystemSetTimer.restart();
     }
 
     // Hub Accept routing. Empty-row passthrough preserves the committed
@@ -836,26 +879,41 @@ MainLayout {
         Browse.GamesModel.set_path(path);
     }
 
-    // Folder pop-up inside the games screen. Pops the deepest level off
-    // the stack, then drives the model back to the parent path. If we
-    // pop to the root level (path_stack[0] is always "") the call goes
-    // through `set_system` so the model re-runs the
-    // single-root-auto-nav decision rather than browsing the literal
-    // empty path with no system filter.
+    // Folder pop-up inside the games screen. Pop persistence immediately
+    // so kill-resume observes the back intent, then defer the model rebrowse
+    // until LoadingIndicator has painted. If we pop to the root level
+    // (path_stack[0] is always "") the call goes through `set_system` so
+    // the model re-runs single-root auto-nav rather than browsing the
+    // literal empty path with no system filter.
     function _navigateOutOfFolder(): void {
         const stack = Browse.GamesState.path_stack;
         if (stack.length <= 1)
             return;
+        root.pendingTransition = "folder_back";
         Browse.GamesState.pop_level();
         const newStack = Browse.GamesState.path_stack;
         const target = newStack[newStack.length - 1];
+        root._pendingFolderBackTargetPath = target;
+        root._pendingFolderBackSystemId = target === "" ? Browse.GamesState.system_id : "";
+        folderBackTransitionTimer.restart();
+    }
+
+    function _completeFolderBackTransition(): void {
+        const target = root._pendingFolderBackTargetPath;
+        const systemId = root._pendingFolderBackSystemId;
+        root._pendingFolderBackTargetPath = "";
+        root._pendingFolderBackSystemId = "";
+        if (root.pendingTransition !== "folder_back")
+            return;
         if (target === "") {
-            const sid = Browse.GamesState.system_id;
-            if (sid !== "")
-                Browse.GamesModel.set_system(sid);
+            if (systemId !== "")
+                Browse.GamesModel.set_system(systemId);
         } else {
             Browse.GamesModel.set_path(target);
         }
+        if (root.pendingTransition === "folder_back")
+            root.pendingTransition = "";
+        root._resetIdle();
     }
 
     // Clear the pending flag, then flip. Order matters: clearing
@@ -1055,7 +1113,7 @@ MainLayout {
     Connections {
         target: root.favoritesScreen
         function onRequestHubScreen(): void {
-            root._goto(root.screenHub);
+            root._navigateBackToScreen(root.screenHub);
         }
         function onRequestContextMenu(index: int, anchorRect): void {
             root.openContextMenu("favorites", index, anchorRect);
@@ -1064,7 +1122,7 @@ MainLayout {
     Connections {
         target: root.recentsScreen
         function onRequestHubScreen(): void {
-            root._goto(root.screenHub);
+            root._navigateBackToScreen(root.screenHub);
         }
         function onRequestContextMenu(index: int, anchorRect): void {
             root.openContextMenu("recents", index, anchorRect);
@@ -1108,7 +1166,7 @@ MainLayout {
             root._navigateFromSystems(systemId);
         }
         function onRequestHubScreen(): void {
-            root._goto(root.screenHub);
+            root._navigateBackToScreen(root.screenHub);
         }
         function onRequestContextMenu(index: int, anchorRect): void {
             root.openContextMenu("systems", index, anchorRect);
@@ -1149,10 +1207,10 @@ MainLayout {
         function onRequestSystemsScreen(): void {
             const arcadeBypassActive = Browse.Platform.is_mister && Browse.Platform.ready && Browse.SystemsModel.current_category === CategoryIds.arcadeId && Browse.SystemsModel.count === 1 && Browse.GamesModel.current_system_id === CategoryIds.arcadeId;
             if (arcadeBypassActive) {
-                root._goto(root.screenHub);
+                root._navigateBackToScreen(root.screenHub);
                 return;
             }
-            root._goto(root.screenSystems);
+            root._navigateBackToScreen(root.screenSystems);
         }
         function onRequestNavigateIntoFolder(path: string): void {
             root._navigateIntoFolder(path);
@@ -1934,8 +1992,8 @@ MainLayout {
         // first so an Accept/Esc on a card-write modal isn't
         // accidentally swallowed if a transition is pending behind
         // it (the modal owns input regardless).
-        if (root.pendingTransition !== "" && !ScreenManager.hasModal) {
-            root._startupTrace("input/qml drop", "reason=pending-transition", "action=" + action, "pendingTransition=" + root.pendingTransition);
+        if ((root.pendingTransition !== "" || root.transitionCueVisible) && !ScreenManager.hasModal) {
+            root._startupTrace("input/qml drop", "reason=pending-transition", "action=" + action, "pendingTransition=" + root.pendingTransition, "transitionCueVisible=" + root.transitionCueVisible);
             return;
         }
         if (ScreenManager.hasModal) {
@@ -2221,7 +2279,7 @@ MainLayout {
         // `_maybeCompleteBoot` and `_completeTransition` call
         // `_resetIdle()` so the countdown restarts cleanly the moment
         // the gate clears.
-        if (!root.bootComplete || root.pendingTransition !== "")
+        if (!root.bootComplete || root.pendingTransition !== "" || root.transitionCueVisible)
             return;
         const lg = root.headerBar.logoItem;
         if (!lg)
@@ -2355,24 +2413,30 @@ MainLayout {
         }
     }
 
-    // Forward-transition cue. Item, not Rectangle — the source
-    // screen's existing background and circuit-trace texture stay
-    // visible underneath; never paint a full-screen fill. The
-    // source screen's primary content is hidden by `transitioning`
-    // bindings so the centred "Loading…" reads alone in the cleared
-    // band. Sized to the full window so anchors.centerIn parks
-    // the row in the geometric centre regardless of which screen
-    // is the source.
+    // Transition cue. Item, not Rectangle — the source screen's existing
+    // background and circuit-trace texture stay visible underneath; never
+    // paint a full-screen fill. The delayed indicator suppresses flashes
+    // for quick loads; once it appears, screen `transitioning` bindings hide
+    // primary content so the centred "Loading…" reads alone in the cleared
+    // band. Sized to the full window so anchors.centerIn parks the row in
+    // the geometric centre regardless of which screen is the source.
     Item {
         anchors.fill: parent
-        visible: (root.pendingTransition !== "" && !root.startupRestoreCurtainVisible) || (root.startupRestoreCurtainVisible && root._startupRestoreScreen !== "")
+        visible: transitionCueActive || transitionCue.showing
         z: 100
 
+        readonly property bool transitionCueActive: (root.pendingTransition !== "" && !root.startupRestoreCurtainVisible) || (root.startupRestoreCurtainVisible && root._startupRestoreScreen !== "")
         readonly property string cueScreen: root.pendingTransition !== "" ? root.pendingTransition : root._startupRestoreScreen
 
-        LoadingIndicator {
+        DelayedLoadingIndicator {
+            id: transitionCue
+            active: parent.transitionCueActive
+            delayMs: root.loadingIndicatorDelayMs
+            minimumVisibleMs: root.minimumLoadingVisibleMs
             x: Sizing.center(parent.width, width)
             y: Sizing.center(parent.height, height)
+            onShowingChanged: root.transitionCueVisible = showing
+            Component.onCompleted: root.transitionCueVisible = showing
             text: {
                 switch (parent.cueScreen) {
                 case "systems":
@@ -2513,12 +2577,36 @@ MainLayout {
         onTriggered: root._startRecentsTransitionLoad()
     }
 
-    // Deferred set_category trigger. Lets the transition overlay
-    // paint a frame before set_category's synchronous teardown of
-    // SystemsScreen's tile delegates freezes the GUI thread. The
-    // 50 ms interval covers a single frame even at MiSTer's ~20 fps
-    // software renderer; Qt.callLater / interval 0 fire inside the
-    // same event loop iteration before the next render.
+    Timer {
+        id: backTransitionTimer
+        interval: root.loadingIndicatorDelayMs + 50
+        repeat: false
+        onTriggered: {
+            const target = root._backTransitionTarget;
+            root._backTransitionTarget = "";
+            if (target === "") {
+                if (root.pendingTransition === "back")
+                    root.pendingTransition = "";
+                return;
+            }
+            if (root.pendingTransition !== "back")
+                return;
+            root._completeTransition(target);
+        }
+    }
+
+    Timer {
+        id: folderBackTransitionTimer
+        interval: root.loadingIndicatorDelayMs + 50
+        repeat: false
+        onTriggered: root._completeFolderBackTransition()
+    }
+
+    // Deferred set_category trigger. When the existing model has rows,
+    // the caller stretches the interval to the delayed cue threshold plus
+    // one frame so the transition indicator is visible before synchronous
+    // delegate teardown can freeze the GUI thread. Qt.callLater / interval
+    // 0 fire inside the same event loop iteration before the next render.
     Timer {
         id: deferredCategorySetTimer
         interval: 50
@@ -2534,6 +2622,20 @@ MainLayout {
             // edge will arrive; complete synchronously in that no-op case.
             root._deferredCategoryPending = false;
             root._completeDeferredCategoryIfReady(category);
+        }
+    }
+
+    Timer {
+        id: deferredSystemSetTimer
+        interval: 1
+        repeat: false
+        property string targetSystemId: ""
+        onTriggered: {
+            const systemId = deferredSystemSetTimer.targetSystemId;
+            root._startupTrace("startup/qml deferred system trigger", "systemId=" + systemId);
+            Browse.GamesModel.set_system(systemId);
+            root._deferredSystemPending = false;
+            root._completeDeferredSystemIfReady(systemId);
         }
     }
 }

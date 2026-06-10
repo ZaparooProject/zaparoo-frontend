@@ -297,12 +297,15 @@ ApplicationWindow {
     signal contextMenuCloseRequested
     signal closeGameInfoRequested
 
-    // Forward-transition state owned by Main.qml. "" while idle;
-    // "systems" or "games" while waiting on a model fill before
-    // flipping `activeScreen`. Declared here so the source-screen
-    // content-hiding bindings (row/grid `visible`) resolve statically
-    // in qmllint.
+    // Transition state owned by Main.qml. "" while idle; non-empty while
+    // the router is waiting on a model fill or a delayed loading cue
+    // before flipping `activeScreen` / rebrowsing. Declared here so the
+    // source-screen content-hiding bindings (row/grid `visible`) resolve
+    // statically in qmllint.
     property string pendingTransition: ""
+    readonly property int loadingIndicatorDelayMs: 300
+    readonly property int minimumLoadingVisibleMs: 200
+    property bool transitionCueVisible: false
 
     // Cold-launch curtain. False until the catalog has loaded for the
     // first time this session; while false the host screens are
@@ -552,11 +555,10 @@ ApplicationWindow {
             // docs/qml-gotchas.md → "Software-renderer animation costs"
             // for the full reasoning.
             //
-            // No additional cue on screen change: the help-bar text changes
-            // instantly, the screen body swaps, and the user just pressed
-            // OK or Esc — the action is deliberate and the feedback is
-            // immediate. The page-dot pulse inside `PagedGrid` is the only
-            // animated transition cue in the frontend.
+            // Transition feedback is a delayed static LoadingIndicator, not
+            // an animated screen effect. Quick swaps cut directly; slower
+            // model fills hide source content only after the loading cue is
+            // visible, avoiding both spinner flashes and pre-feedback freezes.
             //
             // The wrapper `Item` stays for grouping clarity; with no fade
             // machinery it carries no buffered state. Model bindings stay
@@ -574,7 +576,7 @@ ApplicationWindow {
                     id: hubScreen
                     anchors.fill: parent
                     visible: root.activeScreen === root.screenHub
-                    transitioning: root.pendingTransition !== ""
+                    transitioning: root.transitionCueVisible
                     onVisibleChanged: {
                         if (!visible || !root._startupTraceActive)
                             return;
@@ -591,7 +593,7 @@ ApplicationWindow {
                     sourceComponent: Component {
                         SystemsScreen {
                             anchors.fill: parent
-                            transitioning: root.pendingTransition !== ""
+                            transitioning: root.transitionCueVisible
                             optimisticLoading: root.activeScreen === root.screenSystems && root.catalogStillBooting
                         }
                     }
@@ -605,7 +607,7 @@ ApplicationWindow {
                     sourceComponent: Component {
                         GamesScreen {
                             anchors.fill: parent
-                            transitioning: root.pendingTransition !== ""
+                            transitioning: root.transitionCueVisible
                             optimisticLoading: root.activeScreen === root.screenGames && root.catalogStillBooting
                         }
                     }
@@ -619,7 +621,7 @@ ApplicationWindow {
                     sourceComponent: Component {
                         FavoritesScreen {
                             anchors.fill: parent
-                            transitioning: root.pendingTransition !== ""
+                            transitioning: root.transitionCueVisible
                             optimisticLoading: root.activeScreen === root.screenFavorites && root.catalogStillBooting
                         }
                     }
@@ -633,7 +635,7 @@ ApplicationWindow {
                     sourceComponent: Component {
                         RecentsScreen {
                             anchors.fill: parent
-                            transitioning: root.pendingTransition !== ""
+                            transitioning: root.transitionCueVisible
                             optimisticLoading: root.activeScreen === root.screenRecents && root.catalogStillBooting
                         }
                     }
@@ -647,7 +649,7 @@ ApplicationWindow {
                     sourceComponent: Component {
                         SettingsScreen {
                             anchors.fill: parent
-                            transitioning: root.pendingTransition !== ""
+                            transitioning: root.transitionCueVisible
                             optimisticLoading: root.activeScreen === root.screenSettings && root.catalogStillBooting
                         }
                     }
@@ -661,7 +663,7 @@ ApplicationWindow {
                     sourceComponent: Component {
                         AboutScreen {
                             anchors.fill: parent
-                            transitioning: root.pendingTransition !== ""
+                            transitioning: root.transitionCueVisible
                         }
                     }
                 }
@@ -989,7 +991,7 @@ ApplicationWindow {
                             }
                         ];
                     }
-                    if (root.pendingTransition !== "")
+                    if (root.pendingTransition !== "" || root.transitionCueVisible)
                         return [];
                     if (root.activeScreen === root.screenHub) {
                         // Hub always has the actions row (Recently Played /

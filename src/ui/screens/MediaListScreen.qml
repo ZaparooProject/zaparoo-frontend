@@ -104,7 +104,8 @@ Item {
     readonly property var _footerProfile: root._gridLayoutProfile && root._gridLayoutProfile.footer ? root._gridLayoutProfile.footer : null
     readonly property bool _crtListStrip: Theme.crtNativePath && root._listLayout
     readonly property int _listOverlayBottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.overlayBottomMargin : Sizing.pctH(15)
-    readonly property bool _gateHide: root.transitioning || root._loading()
+    property bool _stateOverlayLoadingVisible: false
+    readonly property bool _gateHide: root.transitioning || root._stateOverlayLoadingVisible
 
     signal requestHubScreen
     signal requestContextMenu(int index, var anchorRect)
@@ -506,6 +507,7 @@ Item {
     }
 
     ScreenStateOverlay {
+        id: screenStateOverlay
         x: root._listLayout ? listCard.x : mediaGrid.x
         y: root._listLayout ? listCard.y : mediaGrid.y
         width: root._listLayout ? listCard.width : mediaGrid.width
@@ -516,5 +518,7 @@ Item {
         count: root._count()
         emptyText: root.emptyText
         loadingText: root.loadingText
+        onLoadingVisibleChanged: root._stateOverlayLoadingVisible = loadingVisible
+        Component.onCompleted: root._stateOverlayLoadingVisible = loadingVisible
     }
 }

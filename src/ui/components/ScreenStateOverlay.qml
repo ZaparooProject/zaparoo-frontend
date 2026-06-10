@@ -26,11 +26,16 @@ Item {
     property int count: 0
     property string emptyText: qsTr("Nothing here")
     property string loadingText: qsTr("Loading…")
+    property int loadingDelayMs: 300
+    property int minimumLoadingVisibleMs: 200
+    readonly property bool loadingVisible: overlay.enabled && delayedLoading.showing
     // Named `viewState` rather than `state` — `Item.state` is a
     // built-in slot wired to `states:` / `transitions:`, and shadowing
     // it would silently break any future maintainer who adds state
-    // animations to the overlay or a subclass.
-    readonly property string viewState: overlay.loading ? "loading" : (overlay.errorMessage !== "" ? "error" : (overlay.count === 0 ? "empty" : "ready"))
+    // animations to the overlay or a subclass. During the loading-delay
+    // window, report Ready so Empty/Error text does not flash before the
+    // async result settles.
+    readonly property string viewState: overlay.loadingVisible ? "loading" : (overlay.loading ? "ready" : (overlay.errorMessage !== "" ? "error" : (overlay.count === 0 ? "empty" : "ready")))
 
     visible: overlay.enabled && overlay.viewState !== "ready"
 
@@ -39,14 +44,16 @@ Item {
         y: Sizing.center(parent.height, height)
         spacing: Sizing.pctH(0.6)
 
-        // Loading state shares the LoadingIndicator with the global
-        // forward-transition overlay and the GamesScreen pagination
-        // cue — single component, single visual vocabulary for "in
-        // flight". Error/Empty stay as plain text since they are
-        // terminal states, not in-flight ones.
-        LoadingIndicator {
+        // Loading state shares the delayed LoadingIndicator path with the
+        // global transition overlay — single visual vocabulary for "in
+        // flight" without flashing on sub-threshold loads. Error/Empty
+        // stay as plain text since they are terminal states.
+        DelayedLoadingIndicator {
+            id: delayedLoading
             anchors.horizontalCenter: parent.horizontalCenter
-            visible: overlay.viewState === "loading"
+            active: overlay.enabled && overlay.loading
+            delayMs: overlay.loadingDelayMs
+            minimumVisibleMs: overlay.minimumLoadingVisibleMs
             text: overlay.loadingText
         }
 

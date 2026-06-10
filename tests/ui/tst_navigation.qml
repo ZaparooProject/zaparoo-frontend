@@ -37,6 +37,7 @@ TestCase {
         main.settingsScreenRequested = true;
         main.activeScreen = main.screenHub;
         main.pendingTransition = "";
+        tryCompare(main, "transitionCueVisible", false);
         // Hub focus is two rows now (categories + actions); reset both
         // axes so a prior test's row-jump doesn't leak into the next.
         // qmllint disable compiler
@@ -107,18 +108,27 @@ TestCase {
         compare(main.activeScreen, main.screenSystems, "Enter on an empty systems screen must retry, not flip to games");
     }
 
-    // Escape on games goes back to systems (one peer up the stack).
+    // Escape on games goes back to systems (one peer up the stack) after
+    // a one-frame Loading cue, matching heavy forward transitions.
     function test_escape_on_games_returns_to_systems(): void {
         main.activeScreen = main.screenGames;
         main.handleKey(Qt.Key_Escape);
-        compare(main.activeScreen, main.screenSystems);
+        compare(main.pendingTransition, "back");
+        compare(main.activeScreen, main.screenGames);
+        tryCompare(main, "activeScreen", main.screenSystems);
+        compare(main.pendingTransition, "");
+        tryCompare(main, "transitionCueVisible", false);
     }
 
-    // Escape on systems goes back to hub.
+    // Escape on systems goes back to hub after the same Loading cue.
     function test_escape_on_systems_returns_to_hub(): void {
         main.activeScreen = main.screenSystems;
         main.handleKey(Qt.Key_Escape);
-        compare(main.activeScreen, main.screenHub);
+        compare(main.pendingTransition, "back");
+        compare(main.activeScreen, main.screenSystems);
+        tryCompare(main, "activeScreen", main.screenHub);
+        compare(main.pendingTransition, "");
+        tryCompare(main, "transitionCueVisible", false);
     }
 
     // Up on systems is a grid-internal move; at the top row (or on an
@@ -134,7 +144,10 @@ TestCase {
     function test_backspace_behaves_like_escape_on_games(): void {
         main.activeScreen = main.screenGames;
         main.handleKey(Qt.Key_Backspace);
-        compare(main.activeScreen, main.screenSystems);
+        compare(main.pendingTransition, "back");
+        tryCompare(main, "activeScreen", main.screenSystems);
+        compare(main.pendingTransition, "");
+        tryCompare(main, "transitionCueVisible", false);
     }
 
     // Cross-row mapping. The test harness has no live CategoriesModel
