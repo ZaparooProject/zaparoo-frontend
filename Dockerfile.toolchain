@@ -270,7 +270,8 @@ CXX_armv7-unknown-linux-gnueabihf = "arm-none-linux-gnueabihf-g++"\n\
 AR_armv7-unknown-linux-gnueabihf = "arm-none-linux-gnueabihf-ar"\n\
 ' > /root/.cargo/config.toml
 
-# Pre-warm rustup with the exact toolchain pinned by rust/rust-toolchain.toml
+# Pre-warm rustup with the exact toolchain pinned by the repo-root
+# rust-toolchain.toml
 # (1.90.0 + armv7-unknown-linux-gnueabihf target). Without this, the first
 # `cargo` invocation inside Dockerfile.arm32 has to download the pinned
 # toolchain on every build because rustup's override falls through to the

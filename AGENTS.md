@@ -121,6 +121,32 @@ raw cargo as the default path; the justfile carries the expected environment.
   a cold start. Any in-memory cache must enforce a strict bytes cap with LRU
   eviction — MiSTer has under 512 MB of shared system RAM and the frontend
   competes with Core, the FPGA wrapper, and the active core for it.
+- Do not add `.git/` rerun-if triggers or `ZAPAROO_BUILD_*` provenance baking
+  to `rust/frontend/build.rs`. Provenance lives in the `rust/build-info` leaf
+  crate precisely so commits don't re-run the cxx-qt codegen. See
+  `docs/building.md` → "Build caching".
+
+## Build caching couplings
+
+Full inventory and rationale: `docs/building.md` → "Build caching". The
+update rules, in short:
+
+- Bumping the Rust toolchain pin touches three files together:
+  `rust-toolchain.toml` (repo root — it must stay there so Corrosion's
+  cargo invocations from `build*/` resolve it), `Dockerfile.lint`'s
+  `RUST_TOOLCHAIN` ARG (+ `scripts/lint/VERSION` bump), and
+  `Dockerfile.toolchain`'s pre-warm (+ `scripts/toolchain/VERSION` bump).
+  A missed image still builds, but re-downloads the toolchain inside the
+  container on every run.
+- `just build` recipes skip cmake configure when `build.ninja` exists.
+  After editing `cacheVariables` in `CMakePresets.json`, run
+  `cmake --preset <name>` once by hand (ninja can't see preset edits).
+- `just lint` persists the cargo registry, advisory DB, and ccache dir in
+  gitignored `.docker-cache/`. Delete it to reset. Never mount over the
+  lint container's `/usr/local/rustup`.
+- `Dockerfile.arm32` builds inside BuildKit cache mounts; cache mounts are
+  not image layers, so anything the export stage needs must be `cp`'d out
+  within the same RUN. `docker builder prune` resets a corrupted cache.
 
 ## Project Map
 

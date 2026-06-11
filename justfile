@@ -12,12 +12,20 @@ default:
     @just --list
 
 # --- build ---
+# Configure runs only when the build dir has no build.ninja (the guard
+# is build.ninja, not CMakeCache.txt, because a failed configure leaves
+# the cache behind but only a successful generate writes build.ninja).
+# Ninja re-runs cmake itself when CMakeLists/*.cmake change, so the
+# explicit configure is pure overhead on every other invocation. The one
+# case ninja cannot see is an edited cacheVariable in CMakePresets.json —
+# after changing presets, run `cmake --preset <name>` once by hand (or
+# `just clean`).
 build:
-    cmake --preset desktop-debug
+    test -f build/build.ninja || cmake --preset desktop-debug
     cmake --build --preset desktop-debug
 
 build-release:
-    cmake --preset desktop-release
+    test -f build-release/build.ninja || cmake --preset desktop-release
     cmake --build --preset desktop-release
 
 # Release build with provenance markers baked in. Sets
@@ -36,11 +44,11 @@ release-zip *args:
     ./scripts/package-mister-release.sh {{args}}
 
 build-dev:
-    cmake --preset desktop-dev
+    test -f build-dev/build.ninja || cmake --preset desktop-dev
     cmake --build --preset desktop-dev
 
 build-san:
-    cmake --preset desktop-sanitized
+    test -f build-san/build.ninja || cmake --preset desktop-sanitized
     cmake --build --preset desktop-sanitized
 
 arm32:
@@ -93,10 +101,21 @@ _LINT_IMAGE := "ghcr.io/zaparooproject/zaparoo-lint:" + trim(`cat scripts/lint/V
 # opt in with `DOCKER_PLATFORM=linux/arm64 just …`.
 _LINT_PLATFORM := env_var_or_default("DOCKER_PLATFORM", "linux/amd64")
 
+# Host-side caches survive the ephemeral container: the cargo registry
+# (index + crate sources), cargo-deny's advisory DB clone, and ccache's
+# object cache otherwise re-download / recompile on every run. They live
+# under gitignored .docker-cache/ as plain host dirs (not named volumes)
+# so the `-u $(id -u)` user can write to them. Deliberately NOT mounted:
+# /usr/local/rustup — shadowing it would hide the image's baked
+# toolchains and break the cmake-driven _build-in-image path.
 _lint *cmd:
+    mkdir -p .docker-cache/cargo-registry .docker-cache/advisory-dbs .docker-cache/ccache
     docker run --rm \
         --platform {{_LINT_PLATFORM}} \
         -v "$PWD":/workdir \
+        -v "$PWD/.docker-cache/cargo-registry":/usr/local/cargo/registry \
+        -v "$PWD/.docker-cache/advisory-dbs":/usr/local/cargo/advisory-dbs \
+        -e CCACHE_DIR=/workdir/.docker-cache/ccache \
         -u "$(id -u):$(id -g)" \
         {{_LINT_IMAGE}} \
         {{cmd}}
@@ -106,7 +125,7 @@ _lint *cmd:
 # host's build/ directory. Underscore-prefixed recipes are private
 # (hidden from `just --list`).
 _build-in-image:
-    cmake --preset desktop-docker-debug
+    test -f build-docker/build.ninja || cmake --preset desktop-docker-debug
     cmake --build --preset desktop-docker-debug
 
 # Container-internal: cmake `lint` target (clang-format dry-run +

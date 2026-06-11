@@ -20,7 +20,8 @@ path       = "src/lib.rs"
 workspace = true
 
 [dependencies]
-zaparoo-core = { path = "../zaparoo-core" }
+zaparoo-core       = { path = "../zaparoo-core" }
+zaparoo-build-info = { path = "../build-info" }
 cxx          = { workspace = true }
 cxx-qt       = { workspace = true }
 cxx-qt-lib   = { workspace = true, features = ["qt_gui", "qt_qml", "qt_quickcontrols"] }

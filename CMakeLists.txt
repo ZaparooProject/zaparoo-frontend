@@ -31,6 +31,14 @@ if(ZAPAROO_EMBEDDED)
     add_compile_definitions(ZAPAROO_EMBEDDED_BUILD)
 endif()
 
+# Compiler cache for all C++ TUs (first-party, moc, qmlcachegen). Found at configure time rather
+# than pinned in presets so contributors without ccache still build; an explicit
+# -DCMAKE_CXX_COMPILER_LAUNCHER wins.
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(ZaparooCompileOptions)
 include(ZaparooQmlModule)

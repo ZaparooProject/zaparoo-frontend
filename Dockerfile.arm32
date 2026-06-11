@@ -43,13 +43,24 @@ RUN mkdir -p /opt/gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf/arm-none-
 
 WORKDIR /src
 
-COPY CMakeLists.txt .
+# rust-toolchain.toml pins the toolchain the toolchain image pre-warms;
+# without it cargo would fall back to the image's default toolchain.
+COPY CMakeLists.txt rust-toolchain.toml ./
 COPY cmake/ cmake/
 COPY src/ src/
 COPY resources/ resources/
 COPY rust/ rust/
 
-RUN mkdir build && cd build && \
+# /src/build and the cargo registry are BuildKit cache mounts so source
+# changes (which bust the COPY layers above) still reuse ninja and cargo
+# incremental state from prior builds. Cache mounts are not image layers:
+# anything the export stage needs must be cp'd out within this RUN, and
+# the cmake configure is skipped when the cached build dir already
+# generated build.ninja (the provenance ARGs are env for cargo, not
+# cmake variables, so a stale configure is safe).
+RUN --mount=type=cache,target=/src/build,sharing=locked \
+    --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
+    mkdir -p build && cd build && \
     if [ -n "${ZAPAROO_OFFICIAL_BUILD}" ]; then \
         export ZAPAROO_OFFICIAL_BUILD="${ZAPAROO_OFFICIAL_BUILD}"; \
     fi && \
@@ -59,15 +70,18 @@ RUN mkdir build && cd build && \
     if [ -n "${ZAPAROO_BUILD_DATE}" ]; then \
         export ZAPAROO_BUILD_DATE="${ZAPAROO_BUILD_DATE}"; \
     fi && \
-    /opt/qt6-arm32/bin/qt-cmake .. \
-        -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_SHARED_LIBS=OFF \
-        -DZAPAROO_BUILD_TESTS=OFF \
-        -DZAPAROO_EMBEDDED=ON \
-        -DQt6LinguistTools_DIR=/opt/qt6-host/lib/cmake/Qt6LinguistTools \
-    && ninja
+    if [ ! -f build.ninja ]; then \
+        /opt/qt6-arm32/bin/qt-cmake .. \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DZAPAROO_BUILD_TESTS=OFF \
+            -DZAPAROO_EMBEDDED=ON \
+            -DQt6LinguistTools_DIR=/opt/qt6-host/lib/cmake/Qt6LinguistTools; \
+    fi \
+    && ninja \
+    && cp bin/frontend /src/frontend-built
 
 # Output stage — extracts the binary into the host output directory
 FROM scratch AS export
-COPY --from=app-build /src/build/bin/frontend /frontend
+COPY --from=app-build /src/frontend-built /frontend

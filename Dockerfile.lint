@@ -43,6 +43,11 @@ ARG AQTINSTALL_VERSION=3.3.0
 ARG CARGO_DENY_VERSION=0.19.4
 ARG CARGO_NEXTEST_VERSION=0.9.110
 ARG JUST_VERSION=1.50.0
+# Must match rust-toolchain.toml. Baked into the image so rustup does not
+# download the pinned toolchain (+ rustfmt, clippy, armv7 target) inside
+# the ephemeral container on every cargo invocation — both locally via
+# `just *-docker` and in CI lint jobs.
+ARG RUST_TOOLCHAIN=1.90.0
 
 # Apt-installed packages. clang-format / clang-tidy are pinned to a
 # specific major because Trixie ships 17, 18, and 19 side-by-side and
@@ -135,9 +140,11 @@ ENV LD_LIBRARY_PATH=${QT_DIR}/lib
 ENV QT_PLUGIN_PATH=${QT_DIR}/plugins
 ENV QML2_IMPORT_PATH=${QT_DIR}/qml
 
-# armv7-unknown-linux-gnueabihf is requested by rust/rust-toolchain.toml so
-# the workspace can cross-compile to MiSTer. Pre-installing here means cargo
-# does not have to sync the target every time CI/`just *-docker` invokes it.
+# The repo-root rust-toolchain.toml pins ${RUST_TOOLCHAIN} with rustfmt,
+# clippy, and the armv7 MiSTer cross target; installing exactly that here
+# means rustup never has to download a toolchain inside the ephemeral
+# container. The base image's default toolchain only serves the `cargo
+# install` lines below.
 #
 # After the installs, `rm -rf /usr/local/cargo/{registry,git}` drops the
 # crates.io index and source caches that `cargo install` populated. The
@@ -152,8 +159,8 @@ ENV QML2_IMPORT_PATH=${QT_DIR}/qml
 # treats every metadata change as a file copy). `just *-docker` recipes
 # pass `-u $(id -u):$(id -g)` so cargo needs world-writable
 # /usr/local/cargo and /usr/local/rustup at runtime.
-RUN rustup component add rustfmt clippy \
-    && rustup target add armv7-unknown-linux-gnueabihf \
+RUN rustup toolchain install ${RUST_TOOLCHAIN} --profile minimal \
+        -c rustfmt -c clippy -t armv7-unknown-linux-gnueabihf \
     && cargo install --locked --version ${CARGO_DENY_VERSION} cargo-deny \
     && cargo install --locked --version ${CARGO_NEXTEST_VERSION} cargo-nextest \
     && cargo install --locked --version ${JUST_VERSION} just \

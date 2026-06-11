@@ -207,7 +207,108 @@ When you bump `scripts/lint/VERSION` (because `Dockerfile.lint` changed), the
 first CI run on the PR builds and pushes the new image to GHCR
 automatically before the lint/test/build jobs start. After the PR
 merges to main, `lint-image-build.yml` rebuilds the image multi-arch
-so non-amd64 hosts have a native pull available too.
+so non-amd64 hosts have a native pull available too. To run the new
+image locally before that first CI push, build the tag yourself:
+
+```bash
+docker build -f Dockerfile.lint \
+    -t ghcr.io/zaparooproject/zaparoo-lint:$(cat scripts/lint/VERSION) .
+```
+
+## Build caching
+
+The build is fast only because several caches cooperate. Each one has a
+coupling that is easy to break silently; this section is the inventory.
+AGENTS.md points here — keep both in sync when any of these change.
+
+### Build provenance lives in `rust/build-info`, nowhere else
+
+The commit hash / build date / channel shown in About and the startup
+log are baked by `rust/build-info/build.rs`, a deliberate leaf crate.
+It is the only build script allowed to declare
+`rerun-if-changed=../../.git/HEAD` (and `refs/heads`): those triggers
+fire on every commit, rebase, and branch switch, so whatever build
+script carries them re-runs on every commit. In `rust/build-info` that
+re-run costs milliseconds. In `rust/frontend/build.rs` — which runs the
+full cxx-qt codegen and compiles its generated C++ — it used to cost a
+near-full rebuild in every cargo target dir.
+
+Do not add `.git/` rerun triggers or `ZAPAROO_BUILD_*` provenance env
+baking back into `rust/frontend/build.rs`. New provenance fields go in
+`rust/build-info` and are consumed as `zaparoo_build_info::*` consts.
+
+### The Rust toolchain pin is referenced in three images
+
+`rust-toolchain.toml` sits at the **repo root** (not in `rust/`) so
+that rustup resolves it for every cargo invocation in the tree —
+including Corrosion's, which run from `build*/` during the cmake build.
+Keeping it in `rust/` made desktop builds silently float on the host's
+default toolchain, so a `rustup update` invalidated every build dir and
+the sccache cache.
+
+Bumping the pinned version means updating, in the same change:
+
+| Where | What |
+|---|---|
+| `rust-toolchain.toml` | the pin itself |
+| `Dockerfile.lint` | `RUST_TOOLCHAIN` ARG, plus a `scripts/lint/VERSION` bump so the image republishes |
+| `Dockerfile.toolchain` | the pre-warmed `rustup toolchain install`, plus a `scripts/toolchain/VERSION` bump |
+
+If any image is left behind, builds still work — rustup downloads the
+pinned toolchain inside the container on **every** run, which is
+exactly the slow path this setup exists to avoid.
+
+`Dockerfile.arm32` COPYs `rust-toolchain.toml` into the build context;
+keep that COPY if the file ever moves again, or the ARM32 build falls
+back to the toolchain image's default channel.
+
+### justfile recipes skip cmake configure
+
+`just build` (and `build-dev`, `build-release`, `build-san`, and the
+lint container's `_build-in-image`) only run `cmake --preset` when the
+build dir has no `build.ninja` (that file — not `CMakeCache.txt`, which
+a *failed* configure also leaves behind — is only written by a
+successful generate). Ninja re-runs cmake itself when `CMakeLists.txt`
+or `*.cmake` files change, so this is safe — with one exception: edits
+to `cacheVariables` in `CMakePresets.json` are invisible to ninja.
+After changing a preset, run `cmake --preset <name>` once by hand, or
+`just clean`.
+
+### Compiler caches
+
+- **C++**: the top-level `CMakeLists.txt` wires ccache as
+  `CMAKE_CXX_COMPILER_LAUNCHER` when ccache is on PATH (host and lint
+  image both have it). ccache's default 5 GB cap is small for Qt
+  across this repo's five build dirs; `ccache -M 20G` once per host is
+  worth it.
+- **Rust**: the justfile exports `RUSTC_WRAPPER=sccache` when sccache
+  is installed. It caches dependency crates across the five cargo
+  target dirs (Corrosion hard-codes one per build dir). It cannot
+  cache workspace-crate incremental compiles or build-script runs —
+  which is why the provenance split above matters.
+
+### Lint container caches under `.docker-cache/`
+
+The `_lint` recipe bind-mounts three host dirs into the otherwise
+ephemeral container: the cargo registry (index + crate sources),
+cargo-deny's advisory DB, and ccache's object dir. Delete
+`.docker-cache/` to reset them; it is gitignored. Do **not** add a
+mount over `/usr/local/rustup` — it would shadow the toolchains baked
+into the lint image and break the cmake-driven lint path, which needs
+a resolvable toolchain before `/workdir` is even consulted.
+
+### ARM32 builds use BuildKit cache mounts
+
+In `Dockerfile.arm32` the cmake build dir (`/src/build`) and the cargo
+registry are `RUN --mount=type=cache` mounts, so `just arm32` reuses
+ninja and cargo incremental state even though source COPY layers bust
+on every change. Two rules follow:
+
+- Cache mounts are not image layers. Anything a later stage needs must
+  be `cp`'d out of the mount within the same RUN (the binary is copied
+  to `/src/frontend-built`, which is what the export stage COPYs).
+- `docker builder prune` is the reset switch if the cached build dir
+  ever gets into a bad state.
 
 ## Deploy desktop bundle
 
@@ -266,9 +367,11 @@ does not cover.
 `just build` resolves to:
 
 ```bash
-cmake --preset desktop-debug
+test -f build/build.ninja || cmake --preset desktop-debug
 cmake --build --preset desktop-debug
 ```
+
+(See "Build caching" for why configure is conditional.)
 
 `just lint-cpp` resolves to `cmake --build build-docker --target lint`
 inside the lint container — which runs clang-format (check only),

@@ -56,29 +56,29 @@ fn main() {
 
     // SAFETY: cc_builder is unsafe in 0.8 because cxx-qt makes no stability
     // guarantees about the cc::Build instance. We only adjust the include
-    // path so the generated bridge code can find model_includes.h; we do
-    // not mutate flags or sources cxx-qt depends on.
+    // path so the generated bridge code can find model_includes.h and add
+    // a diagnostic-suppression flag; we do not mutate flags or sources
+    // cxx-qt depends on for correctness.
     let builder = unsafe {
         builder.cc_builder(|cc| {
             cc.include("src/models");
+            // GCC 16's -Wsfinae-incomplete fires on Qt 6's own headers
+            // (qchar.h via QHash) when they are included with -I instead
+            // of -isystem, flooding every cargo build log through the
+            // cc warning replay. Qt-internal noise, nothing we can fix
+            // here; no-op on compilers without the flag.
+            cc.flag_if_supported("-Wno-sfinae-incomplete");
         })
     };
     builder.build();
 
+    // Build provenance (commit / date / channel) deliberately does NOT
+    // live here: it is baked by the `zaparoo-build-info` leaf crate so
+    // that its `.git/` rerun triggers never re-run this build script —
+    // a rerun here means re-running the entire cxx-qt codegen and
+    // recompiling its generated C++.
     println!("cargo:rerun-if-env-changed=ZAPAROO_RUNTIME");
     println!("cargo:rerun-if-env-changed=ZAPAROO_DEV_BUILD");
-    println!("cargo:rerun-if-env-changed=ZAPAROO_OFFICIAL_BUILD");
-    println!("cargo:rerun-if-env-changed=ZAPAROO_BUILD_COMMIT");
-    println!("cargo:rerun-if-env-changed=ZAPAROO_BUILD_DATE");
-
-    // Rerun when HEAD or any branch ref moves so ZAPAROO_BUILD_COMMIT /
-    // ZAPAROO_BUILD_DATE refresh after rebases, branch switches, and
-    // commits that don't otherwise touch this crate. Emitting any
-    // rerun-if-* directive disables Cargo's "rerun on any package
-    // file change" default, which is why these are needed alongside
-    // the env-changed lines above.
-    println!("cargo:rerun-if-changed=../../.git/HEAD");
-    println!("cargo:rerun-if-changed=../../.git/refs/heads");
 
     println!("cargo:rustc-check-cfg=cfg(zaparoo_runtime, values(\"mister\"))");
     println!("cargo:rustc-check-cfg=cfg(dev_build)");
@@ -94,56 +94,4 @@ fn main() {
     if std::env::var("ZAPAROO_DEV_BUILD").is_ok() {
         println!("cargo:rustc-cfg=dev_build");
     }
-
-    // Build provenance — baked into the binary and surfaced through the
-    // `Browse.BuildInfo` singleton plus the startup log. Goal is
-    // "this binary is from this source tree at this date, and it is /
-    // is not an official package", not DRM. Failures fall back to
-    // "unknown" / "dev"; the build still succeeds.
-    //
-    // Prefer values supplied via env so cross-builds that don't have
-    // `.git/` in their build context (e.g. the ARM32 Docker build,
-    // which COPYs only source dirs) can be told the commit and date by
-    // the host. Fall back to running `git` / `date` when the env vars
-    // are absent or empty, which is the common path for host builds.
-    let commit = std::env::var("ZAPAROO_BUILD_COMMIT")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            std::process::Command::new("git")
-                .args(["rev-parse", "--short=7", "HEAD"])
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .and_then(|o| String::from_utf8(o.stdout).ok())
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-        })
-        .unwrap_or_else(|| "unknown".to_string());
-    println!("cargo:rustc-env=ZAPAROO_BUILD_COMMIT={commit}");
-
-    let build_date = std::env::var("ZAPAROO_BUILD_DATE")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            std::process::Command::new("date")
-                .args(["-u", "+%Y-%m-%d"])
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .and_then(|o| String::from_utf8(o.stdout).ok())
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-        })
-        .unwrap_or_else(|| "unknown".to_string());
-    println!("cargo:rustc-env=ZAPAROO_BUILD_DATE={build_date}");
-
-    let channel = if std::env::var("ZAPAROO_OFFICIAL_BUILD").is_ok() {
-        "official"
-    } else {
-        "dev"
-    };
-    println!("cargo:rustc-env=ZAPAROO_BUILD_CHANNEL={channel}");
 }
