@@ -112,7 +112,7 @@ Item {
     // Mirrors ScreenStateOverlay's `state` ternary so accept routing and
     // the in-screen overlay agree on which state we're in.
     function _state(): string {
-        if (Browse.SystemsModel.loading || systems.optimisticLoading)
+        if (systems._loading)
             return "loading";
         if ((Browse.SystemsModel.error_message ?? "") !== "")
             return "error";
