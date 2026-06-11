@@ -51,6 +51,8 @@ Item {
     readonly property var _listProfile: systems._viewProfile && systems._viewProfile.list ? systems._viewProfile.list : null
     readonly property int _listOverlayBottomMargin: systems._listProfile ? systems._listProfile.overlayBottomMargin : Sizing.pctH(15)
     readonly property var _gridShape: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight)
+    readonly property bool _loading: Browse.SystemsModel.loading || systems.optimisticLoading
+    readonly property bool _gateHide: systems.transitioning || systems._loading
 
     signal requestAccept(systemId: string)
     signal requestHubScreen
@@ -196,13 +198,13 @@ Item {
         totalPages: systems._footerProfile && systems._footerProfile.bottomStatusVisible ? 1 : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
         totalText: Theme.crtNativePath ? "" : (Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "")
         rightTextOverride: !systems._listLayout || systemsGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(systemsGrid.currentIndex + 1).arg(Math.max(1, Browse.SystemsModel.count))
-        visible: !systems.transitioning && (!systems._statusProfile || systems._statusProfile.topStripVisible)
+        visible: !systems._gateHide && (!systems._statusProfile || systems._statusProfile.topStripVisible)
     }
 
     BrowseListDetailView {
         id: listCard
 
-        visible: !systems.transitioning && systems._listLayout
+        visible: !systems._gateHide && systems._listLayout
         anchors.left: parent.left
         anchors.leftMargin: systems._listProfile ? systems._listProfile.cardSideMargin : Sizing.pctW(5)
         anchors.right: parent.right
@@ -261,10 +263,10 @@ Item {
         onEmptyRightClicked: systems.handleAction("cancel")
         onPageWheelRequested: delta => systems.handleAction(delta > 0 ? "page_next" : "page_prev")
 
-        // Hide the tiles while the router holds us here on a forward
-        // transition (Systems → Games) so the centred "Loading…" cue
-        // (painted from Main.qml) reads alone over the cleared grid.
-        visible: !systems.transitioning && !systems._listLayout
+        // Hide tiles as soon as the model enters Loading, while the
+        // centered cue below can still use its anti-flicker delay.
+        // Otherwise the cleared/reseeded model can flash loading tiles.
+        visible: !systems._gateHide && !systems._listLayout
     }
 
     // Active system caption — single big line just under the grid.
@@ -279,11 +281,11 @@ Item {
         anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
         height: systems._footerProfile ? systems._footerProfile.activeLabelHeight : Sizing.pctH(7)
         text: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_name_at(systemsGrid.currentIndex) : ""
-        visible: !systems.transitioning && !systems._listLayout
+        visible: !systems._gateHide && !systems._listLayout
     }
 
     Text {
-        visible: systems._footerProfile && systems._footerProfile.bottomStatusVisible && !systems.transitioning && !systems._listLayout && Browse.SystemsModel.count > 0
+        visible: systems._footerProfile && systems._footerProfile.bottomStatusVisible && !systems._gateHide && !systems._listLayout && Browse.SystemsModel.count > 0
         anchors.left: parent.left
         anchors.leftMargin: systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
@@ -300,7 +302,7 @@ Item {
     }
 
     Text {
-        visible: systems._footerProfile && systems._footerProfile.bottomStatusVisible && !systems.transitioning && !systems._listLayout && Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize) > 1
+        visible: systems._footerProfile && systems._footerProfile.bottomStatusVisible && !systems._gateHide && !systems._listLayout && Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize) > 1
         anchors.right: parent.right
         anchors.rightMargin: systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
@@ -322,7 +324,7 @@ Item {
         width: systems._listLayout ? systems.width : systemsGrid.width
         height: systems._listLayout ? Math.max(0, systems.height - listCard.y - systems._listOverlayBottomMargin) : systemsGrid.height
         enabled: true
-        loading: Browse.SystemsModel.loading || systems.optimisticLoading
+        loading: systems._loading
         errorMessage: Browse.SystemsModel.error_message ?? ""
         count: Browse.SystemsModel.count
         emptyText: qsTr("No systems in this category")
