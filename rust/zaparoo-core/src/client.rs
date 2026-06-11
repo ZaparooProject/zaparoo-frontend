@@ -24,11 +24,11 @@ use crate::media_types::{
     TokensResult, UpdateSettingsParams, VersionResult,
 };
 use futures_util::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_tungstenite::{
     connect_async_with_config,
@@ -158,6 +158,23 @@ impl std::fmt::Display for ClientError {
 impl std::error::Error for ClientError {}
 
 type PendingMap = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value, ClientError>>>>>;
+
+fn deserialize_timed<T: DeserializeOwned>(
+    method: &'static str,
+    val: Value,
+) -> Result<T, ClientError> {
+    let started = Instant::now();
+    let result = serde_json::from_value(val).map_err(|e| ClientError {
+        message: e.to_string(),
+    });
+    debug!(
+        method,
+        duration_ms = started.elapsed().as_millis(),
+        ok = result.is_ok(),
+        "rpc deserialize",
+    );
+    result
+}
 
 /// Session-scoped outbound sender. `None` means no live ws session, so
 /// `call()` fails fast with `not connected` instead of queueing into a
@@ -304,7 +321,7 @@ impl Client {
 
         runtime.spawn(async move {
             let mut fsm = ConnectionFsm::default();
-            let process_start = std::time::Instant::now();
+            let process_start = Instant::now();
 
             loop {
                 // Cold-boot fast-retry window: while we have never
@@ -437,6 +454,7 @@ impl Client {
         let text = serde_json::to_string(&req).map_err(|e| ClientError {
             message: e.to_string(),
         })?;
+        let started = Instant::now();
 
         // Snapshot the current session's sender. If `None`, no live link —
         // fail immediately rather than queueing into a channel that will
@@ -461,14 +479,41 @@ impl Client {
             {
                 self.pending.lock().unwrap().remove(&id);
             }
+            debug!(
+                method,
+                duration_ms = started.elapsed().as_millis(),
+                error = "not connected",
+                "rpc round trip",
+            );
             return Err(ClientError {
                 message: "not connected".into(),
             });
         }
 
-        resp_rx.await.map_err(|_| ClientError {
+        let result = resp_rx.await.map_err(|_| ClientError {
             message: "channel closed".into(),
-        })?
+        })?;
+        match result {
+            Ok(val) => {
+                let payload_bytes = serde_json::to_vec(&val).map_or(0, |bytes| bytes.len());
+                debug!(
+                    method,
+                    duration_ms = started.elapsed().as_millis(),
+                    payload_bytes,
+                    "rpc round trip",
+                );
+                Ok(val)
+            }
+            Err(e) => {
+                debug!(
+                    method,
+                    duration_ms = started.elapsed().as_millis(),
+                    error = %e.message,
+                    "rpc round trip",
+                );
+                Err(e)
+            }
+        }
     }
 
     pub async fn systems(&self, params: SystemsParams) -> Result<SystemsResult, ClientError> {
@@ -554,9 +599,7 @@ impl Client {
         params: MediaSearchParams,
     ) -> Result<MediaSearchResult, ClientError> {
         let val = self.call("media.search", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        deserialize_timed("media.search", val)
     }
 
     pub async fn media_browse(
@@ -579,9 +622,7 @@ impl Client {
             .map_or(0, Vec::len);
         let total_files = val.get("totalFiles").and_then(Value::as_u64).unwrap_or(0);
         debug!(entries_len, total_files, "media.browse response");
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        deserialize_timed("media.browse", val)
     }
 
     /// Fetches a single best-match cover image for the given media row.
@@ -613,9 +654,7 @@ impl Client {
         params: MediaMetaParams,
     ) -> Result<MediaMetaResult, ClientError> {
         let val = self.call("media.meta", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        deserialize_timed("media.meta", val)
     }
 
     pub async fn media_history(
@@ -634,9 +673,7 @@ impl Client {
             .and_then(Value::as_array)
             .map_or(0, Vec::len);
         debug!(entries_len, "media.history response");
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        deserialize_timed("media.history", val)
     }
 
     /// Fetches the latest play-history row without media DB enrichment.

@@ -31,6 +31,7 @@
 // when the user spams direction-arrow + Accept across a model swap.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
+use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
@@ -41,7 +42,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
@@ -233,6 +234,7 @@ pub struct GamesModelRust {
     // window for whatever row the user is currently looking at.
     visible_first_row: i32,
     cover_max_size: i32,
+    nav_timing: Option<NavTiming>,
 }
 
 impl Default for GamesModelRust {
@@ -277,6 +279,7 @@ impl Default for GamesModelRust {
             pending_initial_lookahead: false,
             visible_first_row: 0,
             cover_max_size: 0,
+            nav_timing: None,
         }
     }
 }
@@ -994,6 +997,7 @@ impl ffi::GamesModel {
             page_size = self.page_size,
             "games: start_initial_browse",
         );
+        self.as_mut().rust_mut().nav_timing = Some(NavTiming::new("network"));
         self.as_mut().ensure_cover_subscription();
         self.as_mut().set_current_path(QString::from(path.as_str()));
         self.as_mut().set_loading(true);
@@ -1071,6 +1075,12 @@ impl ffi::GamesModel {
         // the outer call later overwrites `self.watcher`.
         let qt_thread = self.qt_thread();
         let snapshot = status_rx.borrow_and_update().clone();
+        if let Some(timing) = self.as_mut().rust_mut().nav_timing.as_mut() {
+            if matches!(snapshot, ResourceStatus::Ready(_)) {
+                timing.set_source("cache");
+                timing.mark_request_done();
+            }
+        }
         let seq_for_loop = seq.clone();
         let handle = global_handle().spawn(async move {
             while status_rx.changed().await.is_ok() {
@@ -1694,6 +1704,28 @@ fn cover_key_for_with(
     }
 }
 
+fn finish_nav_timing(
+    mut model: Pin<&mut ffi::GamesModel>,
+    reason: &'static str,
+    pending_remaining: usize,
+) {
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.take() {
+        timing.log_release("games", reason, pending_remaining);
+    }
+}
+
+fn mark_nav_source(mut model: Pin<&mut ffi::GamesModel>, source: &'static str) {
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.set_source(source);
+    }
+}
+
+fn mark_nav_request_done(mut model: Pin<&mut ffi::GamesModel>) {
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.mark_request_done();
+    }
+}
+
 /// Emit `dataChanged(coverKey)` for every row whose entry's
 /// `(systemId, path)` matches `key`. Cheap walk of the current
 /// `entries` vec — pages top out at a few hundred rows after look-
@@ -1792,6 +1824,7 @@ fn notify_cover_update(mut model: Pin<&mut ffi::GamesModel>, key: &MediaKey) {
                 if model.loading {
                     info!("games: cover gate released after decode-settle window");
                     model.as_mut().set_loading(false);
+                    finish_nav_timing(model.as_mut(), "covers-ready", 0);
                 }
             });
         });
@@ -1867,11 +1900,21 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
     let first = model.rust().visible_first_row.max(0) as usize;
     let window_end = (first + page_size).min(model.entries.len());
     let visible_entries = &model.entries[first..window_end];
+    let cover_keys = visible_entries
+        .iter()
+        .filter(|entry| entry.has_cover)
+        .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
+        .collect::<Vec<_>>();
+    let cover_total = cover_keys.len();
+    let cover_cache_hits = cover_keys.iter().filter(|k| cache.is_cached(k)).count();
     let unresolved = compute_unresolved_keys(
         visible_entries,
         |k| cache.is_cached(k),
         |k| cache.is_negative(k),
     );
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.start_gate(cover_total, cover_cache_hits, unresolved.len());
+    }
     if unresolved.is_empty() {
         model.as_mut().rust_mut().pending_first_paint_keys.clear();
         // If the initial look-ahead is still in flight, keep loading=true
@@ -1884,6 +1927,7 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
                 arm_cover_gate_timeout(model);
             } else {
                 model.as_mut().set_loading(false);
+                finish_nav_timing(model.as_mut(), "covers-ready", 0);
             }
         }
         return;
@@ -1931,6 +1975,7 @@ fn release_initial_lookahead_gate(mut model: Pin<&mut ffi::GamesModel>) {
         }
         if model.loading {
             model.as_mut().set_loading(false);
+            finish_nav_timing(model.as_mut(), "lookahead-ready", 0);
         }
     }
 }
@@ -1950,6 +1995,7 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().rust_mut().pending_initial_lookahead = false;
     if model.loading {
         model.as_mut().set_loading(false);
+        finish_nav_timing(model.as_mut(), "timeout", pending);
     }
 }
 
@@ -2103,6 +2149,7 @@ fn is_strict_ancestor_path(parent: &str, child: &str) -> bool {
 fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<MediaBrowseResult>) {
     match project_status(status) {
         Projection::Pending => {
+            mark_nav_source(model.as_mut(), "network");
             // A new browse round started (or a Ready→Pending refetch
             // is in flight). Abort any cover gate left from the
             // previous Ready so its safety-timer callback can't race
@@ -2126,6 +2173,7 @@ fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<Med
             }
         }
         Projection::Ready(mut result) => {
+            mark_nav_request_done(model.as_mut());
             let eligible = model.rust().auto_nav_eligible;
             // Eligibility is consumed by the first Ready that follows
             // an eligible load. A subsequent refetch (mutation
@@ -2214,6 +2262,7 @@ fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<Med
             if model.loading {
                 model.as_mut().set_loading(false);
             }
+            finish_nav_timing(model.as_mut(), "error", 0);
             if model.has_next_page {
                 model.as_mut().set_has_next_page(false);
             }
@@ -2222,6 +2271,7 @@ fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<Med
 }
 
 fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseResult) {
+    let apply_started = Instant::now();
     // Already seeded: this Ready is a cache invalidation refetch on
     // the same browse target (e.g. `MediaTagsUpdateMutation`'s
     // `MediaBrowseEndpoint` invalidation after a favorite toggle, or
@@ -2236,6 +2286,7 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
         if model.loading {
             model.as_mut().set_loading(false);
         }
+        finish_nav_timing(model.as_mut(), "already-seeded", 0);
         return;
     }
     let has_next_page = result.has_next_page();
@@ -2277,6 +2328,13 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     // re-issues this through `onCurrentPageChanged` in QML.
     model.as_mut().rust_mut().visible_first_row = 0;
     model.as_mut().prefetch_around(0);
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.mark_apply_done();
+    }
+    debug!(
+        apply_ms = apply_started.elapsed().as_millis(),
+        "games: apply_initial_page timing",
+    );
     // Metadata look-ahead runs in the background. Track it only so
     // stale follow-up completions can clear their own bookkeeping; do
     // not let it hold the first visible page behind the full-screen

@@ -23,6 +23,7 @@
 // recents launches by `run`-ing the entry's launcher route.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
+use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Initialize, Threading};
@@ -33,7 +34,7 @@ use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use time::{format_description::well_known::Rfc3339, Duration as TimeDuration, OffsetDateTime};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
@@ -120,6 +121,7 @@ pub struct RecentsModelRust {
     // JoinHandle doesn't cancel a callback already queued onto the Qt
     // thread between sleep-completion and abort.
     cover_gate_seq: Arc<AtomicU64>,
+    nav_timing: Option<NavTiming>,
 }
 
 #[cxx_qt::bridge]
@@ -267,7 +269,11 @@ fn apply_state(
     mut model: Pin<&mut ffi::RecentsModel>,
     (data, err): (Option<PageSnapshot>, String),
 ) {
+    let apply_started = Instant::now();
     if let Some((entries, has_next_page, next_cursor)) = data {
+        if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+            timing.mark_request_done();
+        }
         model.as_mut().rust_mut().history_requested = true;
         model.as_mut().rust_mut().history_fetching = false;
         model.as_mut().rust_mut().history_subscription = None;
@@ -288,6 +294,13 @@ fn apply_state(
         model.as_mut().end_reset_model();
         model.as_mut().count_changed();
         sync_resume_state(model.as_mut());
+        if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+            timing.mark_apply_done();
+        }
+        debug!(
+            apply_ms = apply_started.elapsed().as_millis(),
+            "recents: apply_state timing",
+        );
         if model.has_next_page != has_next_page {
             model.as_mut().set_has_next_page(has_next_page);
         }
@@ -298,6 +311,7 @@ fn apply_state(
             disarm_cover_gate(model.as_mut());
             if model.loading {
                 model.as_mut().set_loading(false);
+                finish_nav_timing(model.as_mut(), "covers-paused", 0);
             }
         } else {
             // Decide whether to release `loading` immediately or hold it until
@@ -329,6 +343,9 @@ fn apply_state(
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().rust_mut().next_cursor = None;
         sync_resume_state(model.as_mut());
+        if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+            timing.set_source("network");
+        }
         if !model.loading {
             model.as_mut().set_loading(true);
         }
@@ -351,6 +368,7 @@ fn apply_state(
         if model.loading {
             model.as_mut().set_loading(false);
         }
+        finish_nav_timing(model.as_mut(), "error", 0);
         if model.has_next_page {
             model.as_mut().set_has_next_page(false);
         }
@@ -418,7 +436,11 @@ impl ffi::RecentsModel {
     }
 
     fn ensure_loaded(mut self: Pin<&mut Self>) {
-        if self.history_requested || self.history_fetching {
+        if self.history_requested {
+            NavTiming::new("cache").log_release("recents", "already-loaded", 0);
+            return;
+        }
+        if self.history_fetching {
             return;
         }
         self.as_mut().rust_mut().history_fetching = true;
@@ -479,6 +501,7 @@ impl ffi::RecentsModel {
     }
 
     fn start_initial_history_fetch(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().nav_timing = Some(NavTiming::new("network"));
         self.as_mut().rust_mut().history_subscription = None;
         if !self.loading {
             self.as_mut().set_loading(true);
@@ -999,6 +1022,16 @@ fn enqueue_recents_covers(entries: &[MediaHistoryEntry]) {
     }
 }
 
+fn finish_nav_timing(
+    mut model: Pin<&mut ffi::RecentsModel>,
+    reason: &'static str,
+    pending_remaining: usize,
+) {
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.take() {
+        timing.log_release("recents", reason, pending_remaining);
+    }
+}
+
 /// Emit `dataChanged(coverKey)` for every row whose entry's
 /// `(systemId, mediaPath)` matches `key`. Cheap walk of the current
 /// `entries` vec — recents pages top out at a few hundred rows after
@@ -1083,6 +1116,7 @@ fn notify_cover_update(mut model: Pin<&mut ffi::RecentsModel>, key: &MediaKey) {
                 if model.loading {
                     info!("recents: cover gate released after decode-settle window");
                     model.as_mut().set_loading(false);
+                    finish_nav_timing(model.as_mut(), "covers-ready", 0);
                 }
             });
         });
@@ -1126,15 +1160,26 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::RecentsModel>) {
         handle.abort();
     }
     let cache = global_media_image_cache();
+    let cover_keys = model
+        .entries
+        .iter()
+        .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
+        .collect::<Vec<_>>();
+    let cover_total = cover_keys.len();
+    let cover_cache_hits = cover_keys.iter().filter(|k| cache.is_cached(k)).count();
     let unresolved = compute_unresolved_keys(
         &model.entries,
         |k| cache.is_cached(k),
         |k| cache.is_negative(k) || cache.is_soft_no_image(k),
     );
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.start_gate(cover_total, cover_cache_hits, unresolved.len());
+    }
     if unresolved.is_empty() {
         model.as_mut().rust_mut().pending_first_paint_keys.clear();
         if model.loading {
             model.as_mut().set_loading(false);
+            finish_nav_timing(model.as_mut(), "covers-ready", 0);
         }
         return;
     }
@@ -1179,6 +1224,7 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::RecentsModel>) {
     model.as_mut().rust_mut().cover_gate_timer = None;
     if model.loading {
         model.as_mut().set_loading(false);
+        finish_nav_timing(model.as_mut(), "timeout", pending);
     }
 }
 
