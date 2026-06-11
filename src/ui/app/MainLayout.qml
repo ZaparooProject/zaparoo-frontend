@@ -897,6 +897,55 @@ ApplicationWindow {
                 }
             }
 
+            // Modal scrim backstop for the CRT overscan band. Modal
+            // scrims fill `scene`, which is inset by the safe area, so
+            // the full-bleed background would otherwise glow undimmed
+            // around every open modal. Four edge strips extend the same
+            // Theme.scrim into the band - strips rather than one big
+            // rectangle because a full overlay would double-dim the
+            // scene area on top of the modal's own scrim. Strip
+            // thickness follows the framebuffer axis each scene edge
+            // maps to (the swap mirrors the rotation).
+            Item {
+                id: crtScrimBackstop
+
+                readonly property int bandX: (root._sceneRotated ? root._crtInsetH : root._crtInsetW) / 2
+                readonly property int bandY: (root._sceneRotated ? root._crtInsetW : root._crtInsetH) / 2
+
+                anchors.fill: parent
+                visible: root.crtNativePath && ScreenManager.hasModal
+                z: 350
+
+                Rectangle {
+                    x: -crtScrimBackstop.bandX
+                    y: -crtScrimBackstop.bandY
+                    width: crtScrimBackstop.width + 2 * crtScrimBackstop.bandX
+                    height: crtScrimBackstop.bandY
+                    color: Theme.scrim
+                }
+                Rectangle {
+                    x: -crtScrimBackstop.bandX
+                    y: crtScrimBackstop.height
+                    width: crtScrimBackstop.width + 2 * crtScrimBackstop.bandX
+                    height: crtScrimBackstop.bandY
+                    color: Theme.scrim
+                }
+                Rectangle {
+                    x: -crtScrimBackstop.bandX
+                    y: 0
+                    width: crtScrimBackstop.bandX
+                    height: crtScrimBackstop.height
+                    color: Theme.scrim
+                }
+                Rectangle {
+                    x: crtScrimBackstop.width
+                    y: 0
+                    width: crtScrimBackstop.bandX
+                    height: crtScrimBackstop.height
+                    color: Theme.scrim
+                }
+            }
+
             // ── Instructions bar ──────────────────────────────────────────────────────
 
             Rectangle {

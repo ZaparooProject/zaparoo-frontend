@@ -495,6 +495,20 @@ pub fn crt_video_dimensions(standard: &str) -> (u32, u32) {
     }
 }
 
+/// DDR word1 mode id for a native CRT video standard. Same vocabulary
+/// as the Menu fork core and `native_video_writer.cpp`, and also byte 1
+/// of `zaparoo_launcher_crt.bin` so `Main_MiSTer` programs the matching
+/// framebuffer geometry before spawning the frontend (Main's hardcoded
+/// 352x240 plus its post-spawn re-assert would otherwise stomp a PAL
+/// framebuffer).
+pub fn crt_mode_id(standard: &str) -> u8 {
+    match normalize_crt_video_standard(standard) {
+        "480i" => 1,
+        "pal" => 2,
+        _ => 0,
+    }
+}
+
 /// Clamp centering trims to the ranges the core honors, so persisted
 /// values never depend on the hardware's saturating clamp.
 pub fn clamp_crt_offsets(h_offset: i32, v_offset: i32) -> (i32, i32) {
@@ -1007,6 +1021,15 @@ mod tests {
         assert_eq!(crt_video_dimensions("pal"), (352, 288));
         assert_eq!(crt_video_dimensions("480i"), (720, 480));
         assert_eq!(crt_video_dimensions("garbage"), (352, 240));
+    }
+
+    #[test]
+    fn crt_mode_ids_match_ddr_contract() {
+        use super::crt_mode_id;
+        assert_eq!(crt_mode_id("ntsc"), 0);
+        assert_eq!(crt_mode_id("480i"), 1);
+        assert_eq!(crt_mode_id("PAL"), 2);
+        assert_eq!(crt_mode_id("garbage"), 0);
     }
 
     #[test]

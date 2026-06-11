@@ -41,10 +41,14 @@ use zaparoo_core::platform_paths::config_file_path;
 /// Picker order for the Analog video section's standard picker.
 const VIDEO_STANDARDS: &[&str] = &["ntsc", "pal"];
 
-/// The 1-byte CRT-enable flag Main_MiSTer reads when the menu core
-/// loads (`zaparoo_alt_launcher_init_for_menu`). The frontend writes it
-/// and exits with code 42; Main re-reads it and respawns us with or
-/// without `--crt`.
+/// The CRT state file Main_MiSTer reads when the menu core loads
+/// (`zaparoo_alt_launcher_init_for_menu`) and on every CRT spawn:
+/// byte 0 = enabled, byte 1 = DDR mode id (`crt_mode_id`). Main needs
+/// the mode byte because it programs the framebuffer geometry before
+/// the spawn AND re-asserts it ~1 s after - without it, a PAL fb would
+/// be stomped back to 352x240. The frontend writes the file and exits
+/// with code 42; Main re-reads it and respawns us with or without
+/// `--crt`. Legacy 1-byte files read as mode 0 (NTSC) on Main's side.
 #[cfg(zaparoo_runtime = "mister")]
 const CRT_ENABLE_FILE: &str = "/media/fat/config/zaparoo_launcher_crt.bin";
 
@@ -98,9 +102,10 @@ pub mod ffi {
         #[qinvokable]
         fn commit_offsets(self: Pin<&mut CrtVideo>);
 
-        /// Write the 1-byte CRT-enable flag Main_MiSTer reads on
-        /// respawn. Returns false if the write failed (caller should
-        /// not exit-42 in that case). No-op true off MiSTer.
+        /// Write the CRT state file Main_MiSTer reads on respawn:
+        /// [enabled, mode id of the current video standard]. Returns
+        /// false if the write failed (caller should not exit-42 in
+        /// that case). No-op true off MiSTer.
         #[qinvokable]
         fn write_crt_enable_file(self: Pin<&mut CrtVideo>, enabled: bool) -> bool;
     }
@@ -198,7 +203,8 @@ impl ffi::CrtVideo {
 
     #[cfg(zaparoo_runtime = "mister")]
     fn write_crt_enable_file(self: Pin<&mut Self>, enabled: bool) -> bool {
-        match std::fs::write(CRT_ENABLE_FILE, [u8::from(enabled)]) {
+        let mode = zaparoo_core::config::crt_mode_id(&self.current_video_standard.to_string());
+        match std::fs::write(CRT_ENABLE_FILE, [u8::from(enabled), mode]) {
             Ok(()) => true,
             Err(e) => {
                 tracing::warn!("could not write {CRT_ENABLE_FILE}: {e}");

@@ -2062,8 +2062,22 @@ MainLayout {
             Browse.Settings.set_language(language);
         if (resolution !== "")
             Browse.Settings.set_resolution(resolution);
-        if (crtStandard !== "")
+        if (crtStandard !== "") {
             Browse.CrtVideo.set_video_standard(crtStandard);
+            // A standard change must respawn through Main_MiSTer (exit
+            // 42), not the in-process execvp restart: Main owns the fb
+            // geometry (programs it pre-spawn and re-asserts ~1 s in,
+            // reading the mode byte from the CRT state file), so it
+            // has to re-read the new mode before the next frontend
+            // boots. The desktop preview has no Main; the execvp
+            // restart below re-reads frontend.toml and resizes the
+            // preview canvas.
+            if (Browse.Settings.is_mister) {
+                if (Browse.CrtVideo.write_crt_enable_file(true))
+                    Qt.exit(42);
+                return;
+            }
+        }
         root.restartApp();
     }
 
