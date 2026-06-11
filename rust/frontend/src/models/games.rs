@@ -464,7 +464,7 @@ impl ffi::GamesModel {
         }
         let entry = &self.entries[index.row() as usize];
         match role {
-            NAME_ROLE => QVariant::from(&QString::from(entry.name.as_str())),
+            NAME_ROLE => QVariant::from(&QString::from(display_title_for_entry(entry).as_ref())),
             PATH_ROLE => QVariant::from(&QString::from(entry.path.as_str())),
             ZAP_SCRIPT_ROLE => QVariant::from(&QString::from(entry.zap_script.as_str())),
             SYSTEM_ID_ROLE => QVariant::from(&QString::from(entry_system_id(entry).as_str())),
@@ -791,7 +791,7 @@ impl ffi::GamesModel {
         if index < 0 || index >= self.count {
             return QString::default();
         }
-        QString::from(self.entries[index as usize].name.as_str())
+        QString::from(display_title_for_entry(&self.entries[index as usize]).as_ref())
     }
 
     fn description_at(&self, index: i32) -> QString {
@@ -1371,6 +1371,14 @@ fn detail_value_for_aliases(source: &[TagInfo], aliases: &[&str]) -> String {
         .map(tag_display_value)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn display_title_for_entry(entry: &BrowseEntry) -> std::borrow::Cow<'_, str> {
+    if entry.name.is_empty() {
+        std::borrow::Cow::Owned(file_stem_or_name(&entry.path, &entry.name))
+    } else {
+        std::borrow::Cow::Borrowed(entry.name.as_str())
+    }
 }
 
 fn file_stem_or_name(path: &str, name: &str) -> String {
@@ -2514,11 +2522,11 @@ mod tests {
     use super::{
         child_launch_text_from_browse_result, chunk_for_subbatching, compute_unresolved_keys,
         cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
-        detail_tags_from_tags, display_name, entry_system_id, is_media_capable_entry,
-        is_strict_ancestor_path, leading_dir_count, media_capable_directory_browse_params,
-        media_key_for, meta_params_for_entry, position_of_game_path, prefetch_around_plan,
-        project_status, run_text_for_entry, singleton_directory_needs_launch_resolution,
-        transform_entries, InitialAction, Projection,
+        detail_tags_from_tags, display_name, display_title_for_entry, entry_system_id,
+        is_media_capable_entry, is_strict_ancestor_path, leading_dir_count,
+        media_capable_directory_browse_params, media_key_for, meta_params_for_entry,
+        position_of_game_path, prefetch_around_plan, project_status, run_text_for_entry,
+        singleton_directory_needs_launch_resolution, transform_entries, InitialAction, Projection,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
     use std::collections::HashSet;
@@ -2773,6 +2781,27 @@ mod tests {
             decide_initial(&result, true, None, ""),
             InitialAction::Apply
         );
+    }
+
+    #[test]
+    fn display_title_prefers_core_name_with_disc_marker() {
+        let entry = media("D (Disc 1)", "/roms/PSX/D.cue", "PSX");
+        assert_eq!(display_title_for_entry(&entry).as_ref(), "D (Disc 1)");
+    }
+
+    #[test]
+    fn display_title_prefers_singleton_directory_alias() {
+        let mut entry = folder("Friendly Alias", "/roms/PSX/InternalContainer");
+        entry.media_id = Some(42);
+        entry.system_id = "PSX".into();
+        entry.zap_script = "@PSX/Friendly Alias".into();
+        assert_eq!(display_title_for_entry(&entry).as_ref(), "Friendly Alias");
+    }
+
+    #[test]
+    fn display_title_falls_back_to_file_stem_when_name_empty() {
+        let entry = media("", "/roms/PSX/D (Disc 2).cue", "PSX");
+        assert_eq!(display_title_for_entry(&entry).as_ref(), "D (Disc 2)");
     }
 
     #[test]

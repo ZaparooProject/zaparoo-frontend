@@ -12,7 +12,6 @@ Item {
     property alias currentIndex: browseList.currentIndex
     property alias totalItemsOverride: browseList.totalItemsOverride
     property alias targetVisibleRowCount: browseList.targetVisibleRowCount
-    property alias showFileStem: browseList.showFileStem
     property alias currentName: browseList.currentName
     property alias currentCoverKey: browseList.currentCoverKey
     property alias itemCount: browseList.itemCount

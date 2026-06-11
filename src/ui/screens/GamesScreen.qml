@@ -49,7 +49,6 @@ MediaListScreen {
     loadingText: qsTr("Loading games…")
     totalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
     targetVisibleRowCount: games._listPageSize
-    showFileStem: true
     detailShowDescription: false
     detailShowTitle: false
     detailLoadingText: qsTr("Loading game…")

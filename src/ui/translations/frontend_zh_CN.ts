@@ -97,100 +97,100 @@ Euskara - devilschile2</source>
         <translation type="unfinished">正在加载…</translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="138"/>
+        <location filename="../components/BrowseDetailPane.qml" line="140"/>
         <source>Year</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="138"/>
+        <location filename="../components/BrowseDetailPane.qml" line="140"/>
         <source>Yr</source>
         <comment>Short metadata label for Year; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="140"/>
+        <location filename="../components/BrowseDetailPane.qml" line="142"/>
         <source>Genre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="140"/>
+        <location filename="../components/BrowseDetailPane.qml" line="142"/>
         <source>Gen</source>
         <comment>Short metadata label for Genre; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="142"/>
+        <location filename="../components/BrowseDetailPane.qml" line="144"/>
         <source>Players</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="142"/>
+        <location filename="../components/BrowseDetailPane.qml" line="144"/>
         <source>Plyr</source>
         <comment>Short metadata label for Players; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="144"/>
+        <location filename="../components/BrowseDetailPane.qml" line="146"/>
         <source>Developer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="144"/>
+        <location filename="../components/BrowseDetailPane.qml" line="146"/>
         <source>Dev</source>
         <comment>Short metadata label for Developer; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="146"/>
+        <location filename="../components/BrowseDetailPane.qml" line="148"/>
         <source>Publisher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="146"/>
+        <location filename="../components/BrowseDetailPane.qml" line="148"/>
         <source>Pub</source>
         <comment>Short metadata label for Publisher; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="148"/>
+        <location filename="../components/BrowseDetailPane.qml" line="150"/>
         <source>Rating</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="148"/>
+        <location filename="../components/BrowseDetailPane.qml" line="150"/>
         <source>Rtg</source>
         <comment>Short metadata label for Rating; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="150"/>
+        <location filename="../components/BrowseDetailPane.qml" line="152"/>
         <source>Category</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="150"/>
+        <location filename="../components/BrowseDetailPane.qml" line="152"/>
         <source>Cat</source>
         <comment>Short metadata label for Category; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="152"/>
+        <location filename="../components/BrowseDetailPane.qml" line="154"/>
         <source>Release date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="152"/>
+        <location filename="../components/BrowseDetailPane.qml" line="154"/>
         <source>Date</source>
         <comment>Short metadata label for Release date; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="154"/>
+        <location filename="../components/BrowseDetailPane.qml" line="156"/>
         <source>Manufacturer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="154"/>
+        <location filename="../components/BrowseDetailPane.qml" line="156"/>
         <source>Mfr</source>
         <comment>Short metadata label for Manufacturer; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
@@ -425,19 +425,19 @@ Euskara - devilschile2</source>
 <context>
     <name>GamesScreen</name>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="122"/>
-        <location filename="../screens/GamesScreen.qml" line="157"/>
+        <location filename="../screens/GamesScreen.qml" line="121"/>
+        <location filename="../screens/GamesScreen.qml" line="156"/>
         <source>%1 files</source>
         <translation>%1 个文件</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="55"/>
+        <location filename="../screens/GamesScreen.qml" line="54"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="131"/>
-        <location filename="../screens/GamesScreen.qml" line="158"/>
+        <location filename="../screens/GamesScreen.qml" line="130"/>
+        <location filename="../screens/GamesScreen.qml" line="157"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -452,7 +452,7 @@ Euskara - devilschile2</source>
         <translation>正在加载游戏…</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="127"/>
+        <location filename="../screens/GamesScreen.qml" line="126"/>
         <source>Loading more…</source>
         <translation>正在加载更多…</translation>
     </message>
@@ -699,136 +699,136 @@ Euskara - devilschile2</source>
         <translation type="unfinished">最近游玩</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="695"/>
+        <location filename="../app/MainLayout.qml" line="696"/>
         <source>Quit and restart Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="696"/>
+        <location filename="../app/MainLayout.qml" line="697"/>
         <source>In order to apply this setting we need to restart the frontend.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="806"/>
+        <location filename="../app/MainLayout.qml" line="807"/>
         <source>Quit Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="807"/>
+        <location filename="../app/MainLayout.qml" line="808"/>
         <source>Are you sure you want to exit?</source>
         <translation>确定要退出吗？</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="886"/>
-        <location filename="../app/MainLayout.qml" line="960"/>
-        <location filename="../app/MainLayout.qml" line="1003"/>
-        <location filename="../app/MainLayout.qml" line="1034"/>
-        <location filename="../app/MainLayout.qml" line="1084"/>
-        <location filename="../app/MainLayout.qml" line="1127"/>
+        <location filename="../app/MainLayout.qml" line="887"/>
+        <location filename="../app/MainLayout.qml" line="961"/>
+        <location filename="../app/MainLayout.qml" line="1004"/>
+        <location filename="../app/MainLayout.qml" line="1035"/>
+        <location filename="../app/MainLayout.qml" line="1085"/>
+        <location filename="../app/MainLayout.qml" line="1128"/>
         <location filename="../app/MainLayout.qml" line="1195"/>
         <source>Move</source>
         <translation>移动</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="890"/>
-        <location filename="../app/MainLayout.qml" line="964"/>
+        <location filename="../app/MainLayout.qml" line="891"/>
+        <location filename="../app/MainLayout.qml" line="965"/>
         <source>Select</source>
         <translation>选择</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="894"/>
-        <location filename="../app/MainLayout.qml" line="898"/>
-        <location filename="../app/MainLayout.qml" line="912"/>
-        <location filename="../app/MainLayout.qml" line="927"/>
-        <location filename="../app/MainLayout.qml" line="938"/>
+        <location filename="../app/MainLayout.qml" line="895"/>
+        <location filename="../app/MainLayout.qml" line="899"/>
+        <location filename="../app/MainLayout.qml" line="913"/>
+        <location filename="../app/MainLayout.qml" line="928"/>
+        <location filename="../app/MainLayout.qml" line="939"/>
         <source>Close</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="905"/>
-        <location filename="../app/MainLayout.qml" line="945"/>
-        <location filename="../app/MainLayout.qml" line="968"/>
-        <location filename="../app/MainLayout.qml" line="979"/>
+        <location filename="../app/MainLayout.qml" line="906"/>
+        <location filename="../app/MainLayout.qml" line="946"/>
+        <location filename="../app/MainLayout.qml" line="969"/>
+        <location filename="../app/MainLayout.qml" line="980"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="923"/>
+        <location filename="../app/MainLayout.qml" line="924"/>
         <source>Done</source>
         <translation>完成</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="934"/>
-        <location filename="../app/MainLayout.qml" line="1057"/>
-        <location filename="../app/MainLayout.qml" line="1110"/>
+        <location filename="../app/MainLayout.qml" line="935"/>
+        <location filename="../app/MainLayout.qml" line="1058"/>
+        <location filename="../app/MainLayout.qml" line="1111"/>
         <location filename="../app/MainLayout.qml" line="1221"/>
         <source>Retry</source>
         <translation>重试</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="953"/>
+        <location filename="../app/MainLayout.qml" line="954"/>
         <source>I understand</source>
         <translation>我明白了</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="987"/>
+        <location filename="../app/MainLayout.qml" line="988"/>
         <source>Start</source>
         <translation>开始</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1007"/>
-        <location filename="../app/MainLayout.qml" line="1044"/>
-        <location filename="../app/MainLayout.qml" line="1094"/>
+        <location filename="../app/MainLayout.qml" line="1008"/>
+        <location filename="../app/MainLayout.qml" line="1045"/>
+        <location filename="../app/MainLayout.qml" line="1095"/>
         <location filename="../app/MainLayout.qml" line="1205"/>
         <source>Open</source>
         <translation>打开</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1011"/>
+        <location filename="../app/MainLayout.qml" line="1012"/>
         <source>Quit</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1020"/>
-        <location filename="../app/MainLayout.qml" line="1050"/>
-        <location filename="../app/MainLayout.qml" line="1061"/>
-        <location filename="../app/MainLayout.qml" line="1076"/>
-        <location filename="../app/MainLayout.qml" line="1103"/>
-        <location filename="../app/MainLayout.qml" line="1114"/>
-        <location filename="../app/MainLayout.qml" line="1151"/>
-        <location filename="../app/MainLayout.qml" line="1169"/>
-        <location filename="../app/MainLayout.qml" line="1178"/>
+        <location filename="../app/MainLayout.qml" line="1021"/>
+        <location filename="../app/MainLayout.qml" line="1051"/>
+        <location filename="../app/MainLayout.qml" line="1062"/>
+        <location filename="../app/MainLayout.qml" line="1077"/>
+        <location filename="../app/MainLayout.qml" line="1104"/>
+        <location filename="../app/MainLayout.qml" line="1115"/>
+        <location filename="../app/MainLayout.qml" line="1152"/>
+        <location filename="../app/MainLayout.qml" line="1170"/>
+        <location filename="../app/MainLayout.qml" line="1179"/>
         <location filename="../app/MainLayout.qml" line="1214"/>
         <location filename="../app/MainLayout.qml" line="1225"/>
         <source>Back</source>
         <translation>返回</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1040"/>
-        <location filename="../app/MainLayout.qml" line="1090"/>
+        <location filename="../app/MainLayout.qml" line="1041"/>
+        <location filename="../app/MainLayout.qml" line="1091"/>
         <location filename="../app/MainLayout.qml" line="1201"/>
         <source>Page</source>
         <translation>页面</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1047"/>
-        <location filename="../app/MainLayout.qml" line="1099"/>
+        <location filename="../app/MainLayout.qml" line="1048"/>
+        <location filename="../app/MainLayout.qml" line="1100"/>
         <location filename="../app/MainLayout.qml" line="1210"/>
         <source>Options</source>
         <translation>选项</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1136"/>
+        <location filename="../app/MainLayout.qml" line="1137"/>
         <source>Change</source>
         <translation>更改</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1142"/>
+        <location filename="../app/MainLayout.qml" line="1143"/>
         <source>Toggle</source>
         <translation>切换</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1165"/>
+        <location filename="../app/MainLayout.qml" line="1166"/>
         <source>Scroll</source>
         <translation>滚动</translation>
     </message>
@@ -836,17 +836,17 @@ Euskara - devilschile2</source>
 <context>
     <name>MediaListScreen</name>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="32"/>
+        <location filename="../screens/MediaListScreen.qml" line="31"/>
         <source>Loading…</source>
         <translation type="unfinished">正在加载…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="351"/>
+        <location filename="../screens/MediaListScreen.qml" line="350"/>
         <source>%1 entries</source>
         <translation type="unfinished">%1 个条目</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="352"/>
+        <location filename="../screens/MediaListScreen.qml" line="351"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
