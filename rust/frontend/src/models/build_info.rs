@@ -42,9 +42,9 @@ pub mod ffi {
         #[qobject]
         #[qml_element]
         #[qml_singleton]
-        // READ + CONSTANT + FINAL — values are baked at compile time
-        // from build.rs env vars and never change after Initialize.
-        // Same shape as `Browse.Runtime`.
+        // READ + CONSTANT + FINAL — values come from
+        // `zaparoo_build_info::*` compile-time constants and never
+        // change after Initialize. Same shape as `Browse.Runtime`.
         #[qproperty(QString, commit, READ, CONSTANT, FINAL)]
         #[qproperty(QString, build_date, READ, CONSTANT, FINAL)]
         #[qproperty(QString, channel, READ, CONSTANT, FINAL)]
