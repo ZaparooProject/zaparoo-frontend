@@ -116,6 +116,8 @@ static LANGUAGE_CODE: OnceLock<CString> = OnceLock::new();
 static CRT_NATIVE_PATH_ENABLED: OnceLock<bool> = OnceLock::new();
 static VIDEO_WIDTH: OnceLock<u32> = OnceLock::new();
 static VIDEO_HEIGHT: OnceLock<u32> = OnceLock::new();
+static CRT_H_OFFSET: OnceLock<i32> = OnceLock::new();
+static CRT_V_OFFSET: OnceLock<i32> = OnceLock::new();
 static DEBUG_LOGGING_ENABLED: OnceLock<bool> = OnceLock::new();
 static STARTUP_TRACE_ORIGIN: OnceLock<Instant> = OnceLock::new();
 
@@ -164,6 +166,23 @@ pub extern "C" fn zaparoo_rust_video_width() -> u32 {
 #[no_mangle]
 pub extern "C" fn zaparoo_rust_video_height() -> u32 {
     VIDEO_HEIGHT.get().copied().unwrap_or(0)
+}
+
+/// Persisted native CRT horizontal centering trim (pixels, + = right),
+/// already clamped to the core's honored range. Pulled by
+/// `native_video_writer.cpp` at init so word1 carries the saved
+/// calibration from the first published frame. Reads before
+/// [`zaparoo_rust_init`] return `0`.
+#[no_mangle]
+pub extern "C" fn zaparoo_rust_crt_h_offset() -> i32 {
+    CRT_H_OFFSET.get().copied().unwrap_or(0)
+}
+
+/// Persisted native CRT vertical centering trim (lines, + = down). See
+/// [`zaparoo_rust_crt_h_offset`].
+#[no_mangle]
+pub extern "C" fn zaparoo_rust_crt_v_offset() -> i32 {
+    CRT_V_OFFSET.get().copied().unwrap_or(0)
 }
 
 #[no_mangle]
@@ -355,13 +374,27 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
     let _ = DEBUG_LOGGING_ENABLED.set(debug_logging);
     startup_trace("rust:init config loaded");
 
-    // CRT path always renders to the native writer's fixed 320x240 RGB8888
-    // linuxfb surface. User-configured [video] dimensions still apply to the
-    // normal MiSTer path, but `--crt` overrides them so startup `vmode`, the
-    // desktop preview canvas, and the writer's fb0 validation all agree.
+    // CRT path always renders to one of the native writer's mode
+    // geometries (352x240 NTSC, 352x288 PAL, 720x480 480i), selected by
+    // the persisted video standard. User-configured [video] dimensions
+    // still apply to the normal MiSTer path, but `--crt` overrides them
+    // so startup `vmode`, the desktop preview canvas, and the writer's
+    // fb0 validation all agree. frontend.toml is the durable source for
+    // the standard and offsets (state.toml lives on tmpfs on MiSTer and
+    // mirrors it).
     if crt_native_path_forced {
-        config.video_width = 320;
-        config.video_height = 240;
+        let standard = zaparoo_core::config::normalize_crt_video_standard(
+            config.settings.crt_video_standard.as_deref().unwrap_or(""),
+        );
+        let (width, height) = zaparoo_core::config::crt_video_dimensions(standard);
+        config.video_width = width;
+        config.video_height = height;
+        let (h_offset, v_offset) = zaparoo_core::config::clamp_crt_offsets(
+            config.settings.crt_h_offset.unwrap_or(0),
+            config.settings.crt_v_offset.unwrap_or(0),
+        );
+        let _ = CRT_H_OFFSET.set(h_offset);
+        let _ = CRT_V_OFFSET.set(v_offset);
     }
 
     // Cache the language override so `zaparoo_rust_language_code` (called

@@ -43,6 +43,7 @@ MainLayout {
     readonly property string modalListPicker: "list_picker"
     readonly property string modalLetterJump: "letter_jump"
     readonly property string modalSettingNeedsRestart: "restart_confirm"
+    readonly property string modalCrtCalibration: "crt_calibration"
 
     // One-shot session flag: the first-run modal is shown at most
     // once per frontend process, even if the WS link drops and the
@@ -50,6 +51,12 @@ MainLayout {
     property bool _firstRunIndexShown: false
     property string _pendingLanguageSelection: ""
     property string _pendingResolutionSelection: ""
+    property string _pendingCrtStandardSelection: ""
+    // Staged CRT-mode toggle awaiting the restart-confirm modal:
+    // "" (none), "on", or "off". Confirming writes the 1-byte enable
+    // file and exits with code 42 so Main_MiSTer respawns the frontend
+    // with the new mode (see Browse.CrtVideo).
+    property string _pendingCrtToggle: ""
     property bool _discoverMenuPending: false
     property bool _pendingResumeLaunch: false
     property bool _startupRestorePending: false
@@ -230,6 +237,8 @@ MainLayout {
             root.letterJumpModalRequested = true;
         else if (modal === root.modalSettingNeedsRestart)
             root.settingNeedsRestartModalRequested = true;
+        else if (modal === root.modalCrtCalibration)
+            root.crtCalibrationModalRequested = true;
     }
 
     Component.onCompleted: {
@@ -1268,6 +1277,10 @@ MainLayout {
                 root.openLogUploadModal();
             else if (actionId === "aboutLicense")
                 root._navigateToAbout();
+            else if (actionId === "crtEnable" || actionId === "crtDisable")
+                root.stageCrtToggle(actionId === "crtEnable");
+            else if (actionId === "crtCalibration")
+                root.openCrtCalibrationModal();
         }
         function onRequestListPicker(title: string, entries: var, initialId: string, fieldId: string): void {
             root.openListPickerModal(title, entries, initialId, fieldId);
@@ -2005,31 +2018,76 @@ MainLayout {
             root._pendingLanguageSelection = selectedId;
         else if (fieldId === "resolution")
             root._pendingResolutionSelection = selectedId;
+        else if (fieldId === "crtVideoStandard")
+            root._pendingCrtStandardSelection = selectedId;
+        root.openSettingNeedsRestartModal();
+    }
+
+    function stageCrtToggle(enable: bool): void {
+        root._pendingCrtToggle = enable ? "on" : "off";
         root.openSettingNeedsRestartModal();
     }
 
     function cancelPendingRestart(): void {
         root._pendingLanguageSelection = "";
         root._pendingResolutionSelection = "";
+        root._pendingCrtStandardSelection = "";
+        root._pendingCrtToggle = "";
         root.closeSettingNeedsRestartModal();
     }
 
     function confirmPendingRestart(): void {
+        // CRT-mode toggle takes a different exit: Main_MiSTer owns the
+        // respawn (the new mode needs a different fb setup and --crt
+        // flag), so persist the flag byte and exit with the reserved
+        // reload code instead of the in-process execvp restart. If the
+        // flag write fails, stay up rather than respawn into the old
+        // mode and let the user retry.
+        if (root._pendingCrtToggle !== "") {
+            const enable = root._pendingCrtToggle === "on";
+            root._pendingCrtToggle = "";
+            root.closeSettingNeedsRestartModal();
+            if (Browse.CrtVideo.write_crt_enable_file(enable))
+                Qt.exit(42);
+            return;
+        }
         const language = root._pendingLanguageSelection;
         const resolution = root._pendingResolutionSelection;
+        const crtStandard = root._pendingCrtStandardSelection;
         root._pendingLanguageSelection = "";
         root._pendingResolutionSelection = "";
+        root._pendingCrtStandardSelection = "";
         root.closeSettingNeedsRestartModal();
         if (language !== "")
             Browse.Settings.set_language(language);
         if (resolution !== "")
             Browse.Settings.set_resolution(resolution);
+        if (crtStandard !== "")
+            Browse.CrtVideo.set_video_standard(crtStandard);
         root.restartApp();
     }
 
     function restartApp() {
         Qt.exit(1000);
     }
+
+    // CRT calibration lifecycle. Full-bleed test pattern mounted
+    // outside the safe-area inset (see MainLayout); arrows nudge the
+    // centering trims live through Browse.CrtVideo.
+    function openCrtCalibrationModal(): void {
+        root._requestModal(root.modalCrtCalibration);
+        root.crtCalibrationModalVisible = true;
+        if (ScreenManager.topModal !== root.modalCrtCalibration)
+            ScreenManager.pushModal(root.modalCrtCalibration);
+    }
+
+    function closeCrtCalibrationModal(): void {
+        root.crtCalibrationModalVisible = false;
+        if (ScreenManager.topModal === root.modalCrtCalibration)
+            ScreenManager.popModal();
+    }
+
+    onCloseCrtCalibrationRequested: root.closeCrtCalibrationModal()
 
     function beginSystemLauncherUpdate(systemId: string, selectedId: string): void {
         root._pendingLauncherSystemId = systemId;
@@ -2129,6 +2187,12 @@ MainLayout {
             Browse.Settings.set_screensaver_timeout(selectedId);
         else if (fieldId === "mediaImageType")
             Browse.Settings.set_media_image_type(selectedId);
+        else if (fieldId === "crtVideoStandard") {
+            root.closeListPickerModal();
+            if (selectedId !== Browse.CrtVideo.current_video_standard)
+                root.stageSettingRestart(fieldId, selectedId);
+            return;
+        }
         root.closeListPickerModal();
     }
     onListPickerCloseRequested: root.handleListPickerCloseRequested()
@@ -2332,6 +2396,9 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalLetterJump) {
                 if (root.letterJumpModal !== null)
                     root.letterJumpModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalCrtCalibration) {
+                if (root.crtCalibrationModal !== null)
+                    root.crtCalibrationModal.handleAction(action);
             }
             // While a modal owns input, swallow everything not handled
             // above rather than leak it to the root screen.

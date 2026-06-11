@@ -541,7 +541,9 @@ impl ffi::Settings {
     }
 }
 
-fn persist_settings<F: FnOnce(&mut SettingsState)>(mutator: F) -> persist::PersistedState {
+pub(super) fn persist_settings<F: FnOnce(&mut SettingsState)>(
+    mutator: F,
+) -> persist::PersistedState {
     let snapshot = with_persist_mut(|s| {
         mutator(&mut s.settings);
         s.clone()
@@ -561,7 +563,7 @@ fn persist_if_changed(current: &SettingsState, merged: &SettingsState) {
     persist::save(&snapshot);
 }
 
-fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsState) {
+pub(super) fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsState) {
     if let Err(e) = save_settings_mirror(
         config_path,
         SettingsMirror {
@@ -580,6 +582,9 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
             show_hidden: settings.show_hidden,
             show_original_filenames: settings.show_original_filenames,
             region: settings.region.as_str(),
+            crt_video_standard: settings.crt_video_standard.as_str(),
+            crt_h_offset: settings.crt_h_offset,
+            crt_v_offset: settings.crt_v_offset,
         },
     ) {
         warn!(
@@ -589,7 +594,33 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
     }
 }
 
+// Resolve the native-CRT settings (video standard plus clamped centering
+// trims) from config-over-snapshot. Split out of `merge_settings` so that
+// function stays within the clippy line budget.
+fn merge_crt_settings(snapshot: &SettingsState, config: &Config) -> (String, i32, i32) {
+    let (h_offset, v_offset) = zaparoo_core::config::clamp_crt_offsets(
+        config
+            .settings
+            .crt_h_offset
+            .unwrap_or(snapshot.crt_h_offset),
+        config
+            .settings
+            .crt_v_offset
+            .unwrap_or(snapshot.crt_v_offset),
+    );
+    let standard = zaparoo_core::config::normalize_crt_video_standard(
+        config
+            .settings
+            .crt_video_standard
+            .as_deref()
+            .unwrap_or(snapshot.crt_video_standard.as_str()),
+    )
+    .to_string();
+    (standard, h_offset, v_offset)
+}
+
 fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
+    let (crt_video_standard, crt_h_offset, crt_v_offset) = merge_crt_settings(snapshot, config);
     SettingsState {
         resolution: if config.video_explicit {
             format!("{}x{}", config.video_width, config.video_height)
@@ -673,6 +704,9 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
                 .unwrap_or(snapshot.region.as_str()),
         )
         .to_string(),
+        crt_video_standard,
+        crt_h_offset,
+        crt_v_offset,
     }
 }
 

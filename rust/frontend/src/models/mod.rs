@@ -29,6 +29,7 @@ pub mod app_status;
 pub mod browse;
 pub mod build_info;
 pub mod categories;
+pub mod crt_video;
 pub mod favorites;
 pub mod favorites_state;
 pub mod game_info;
