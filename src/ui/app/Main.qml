@@ -421,6 +421,7 @@ MainLayout {
     property string _backTransitionTarget: ""
     property string _pendingFolderBackTargetPath: ""
     property string _pendingFolderBackSystemId: ""
+    property var _folderBackReadyCallback: null
 
     function _catalogStillBooting(): bool {
         return !Browse.CategoriesModel.loaded && (Browse.CategoriesModel.error_message ?? "") === "";
@@ -452,6 +453,17 @@ MainLayout {
         root._startupTrace("startup/qml deferred system ready", "systemId=" + targetSystemId + " count=" + Browse.GamesModel.count);
         const cb = root._systemReadyCallback;
         root._systemReadyCallback = null;
+        cb();
+        return true;
+    }
+
+    function _completeFolderBackRebrowseIfReady(): bool {
+        if (root._folderBackReadyCallback === null)
+            return false;
+        if (Browse.GamesModel.loading)
+            return false;
+        const cb = root._folderBackReadyCallback;
+        root._folderBackReadyCallback = null;
         cb();
         return true;
     }
@@ -520,10 +532,11 @@ MainLayout {
                 return;
             }
             const cb = root._systemReadyCallback;
-            if (cb === null)
-                return;
-            root._systemReadyCallback = null;
-            cb();
+            if (cb !== null) {
+                root._systemReadyCallback = null;
+                cb();
+            }
+            root._completeFolderBackRebrowseIfReady();
         }
     }
     Connections {
@@ -905,14 +918,20 @@ MainLayout {
         root._pendingFolderBackSystemId = "";
         if (root.pendingTransition !== "folder_back")
             return;
+        root._folderBackReadyCallback = root._finishFolderBackTransition;
         if (target === "") {
             if (systemId !== "")
                 Browse.GamesModel.set_system(systemId);
         } else {
             Browse.GamesModel.set_path(target);
         }
-        if (root.pendingTransition === "folder_back")
-            root.pendingTransition = "";
+        root._completeFolderBackRebrowseIfReady();
+    }
+
+    function _finishFolderBackTransition(): void {
+        if (root.pendingTransition !== "folder_back")
+            return;
+        root.pendingTransition = "";
         root._resetIdle();
     }
 
