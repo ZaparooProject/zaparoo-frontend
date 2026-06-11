@@ -5,8 +5,9 @@
 // `Browse.BuildInfo` — provenance baked in at build time. Surfaces the
 // short git commit, the UTC build date, and the build channel
 // ("official" for binaries produced via `just release`, "dev"
-// otherwise). Read-only constants seeded from `cargo:rustc-env`
-// values emitted by `build.rs`.
+// otherwise). Read-only constants seeded from the `zaparoo-build-info`
+// leaf crate (kept out of this crate's build.rs so commits don't
+// re-run the cxx-qt codegen).
 //
 // Goal is provenance, not enforcement. A fork can rebuild without
 // `ZAPAROO_OFFICIAL_BUILD` and the channel falls back to "dev"; that
@@ -18,9 +19,9 @@ use cxx_qt::Initialize;
 use cxx_qt_lib::QString;
 use std::pin::Pin;
 
-const BUILD_COMMIT: &str = env!("ZAPAROO_BUILD_COMMIT");
-const BUILD_DATE: &str = env!("ZAPAROO_BUILD_DATE");
-const BUILD_CHANNEL: &str = env!("ZAPAROO_BUILD_CHANNEL");
+const BUILD_COMMIT: &str = zaparoo_build_info::COMMIT;
+const BUILD_DATE: &str = zaparoo_build_info::BUILD_DATE;
+const BUILD_CHANNEL: &str = zaparoo_build_info::CHANNEL;
 
 #[derive(Default)]
 pub struct BuildInfoRust {
@@ -41,9 +42,9 @@ pub mod ffi {
         #[qobject]
         #[qml_element]
         #[qml_singleton]
-        // READ + CONSTANT + FINAL — values are baked at compile time
-        // from build.rs env vars and never change after Initialize.
-        // Same shape as `Browse.Runtime`.
+        // READ + CONSTANT + FINAL — values come from
+        // `zaparoo_build_info::*` compile-time constants and never
+        // change after Initialize. Same shape as `Browse.Runtime`.
         #[qproperty(QString, commit, READ, CONSTANT, FINAL)]
         #[qproperty(QString, build_date, READ, CONSTANT, FINAL)]
         #[qproperty(QString, channel, READ, CONSTANT, FINAL)]

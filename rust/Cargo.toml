@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 [workspace]
-members = ["frontend", "mock-core", "zaparoo-core"]
+members = ["build-info", "frontend", "mock-core", "zaparoo-core"]
 resolver = "2"
 
 [workspace.package]

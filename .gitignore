@@ -1,7 +1,8 @@
-# Build directories
-build/
-build2/
-build-*/
+# Build directories (anchored to repo root — an unanchored `build-*/`
+# also swallows source dirs like rust/build-info/)
+/build/
+/build2/
+/build-*/
 cmake-build-*/
 artifacts/
 
@@ -51,6 +52,9 @@ output/
 
 # pre-commit cache
 .cache/
+
+# Persistent caches mounted into the lint container (see justfile _lint)
+.docker-cache/
 
 # Qt Creator local user settings
 *.creator.user
