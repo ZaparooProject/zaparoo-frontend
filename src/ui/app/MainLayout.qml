@@ -325,15 +325,15 @@ ApplicationWindow {
     // CategoriesModel binds eagerly via bind_to_endpoint! and exposes
     // no `loading` qproperty, so a count-of-zero collapses straight
     // into Empty (matching the overlay's existing behavior on Hub).
-    readonly property string systemsScreenState: (Browse.SystemsModel.loading || (root.activeScreen === root.screenSystems && root.catalogStillBooting)) ? "loading" : ((Browse.SystemsModel.error_message ?? "") !== "" ? "error" : (Browse.SystemsModel.count === 0 ? "empty" : "ready"))
+    readonly property string systemsScreenState: root.activeScreen !== root.screenSystems ? "" : ((Browse.SystemsModel.loading || root.catalogStillBooting) ? "loading" : ((Browse.SystemsModel.error_message ?? "") !== "" ? "error" : (Browse.SystemsModel.count === 0 ? "empty" : "ready")))
 
-    readonly property string gamesScreenState: (Browse.GamesModel.loading || (root.activeScreen === root.screenGames && root.catalogStillBooting)) ? "loading" : ((Browse.GamesModel.error_message ?? "") !== "" ? "error" : (Browse.GamesModel.count === 0 ? "empty" : "ready"))
+    readonly property string gamesScreenState: root.activeScreen !== root.screenGames ? "" : ((Browse.GamesModel.loading || root.catalogStillBooting) ? "loading" : ((Browse.GamesModel.error_message ?? "") !== "" ? "error" : (Browse.GamesModel.count === 0 ? "empty" : "ready")))
 
-    readonly property string favoritesScreenState: (Browse.FavoritesModel.loading || (root.activeScreen === root.screenFavorites && root.catalogStillBooting)) ? "loading" : ((Browse.FavoritesModel.error_message ?? "") !== "" ? "error" : (Browse.FavoritesModel.count === 0 ? "empty" : "ready"))
+    readonly property string favoritesScreenState: root.activeScreen !== root.screenFavorites ? "" : ((Browse.FavoritesModel.loading || root.catalogStillBooting) ? "loading" : ((Browse.FavoritesModel.error_message ?? "") !== "" ? "error" : (Browse.FavoritesModel.count === 0 ? "empty" : "ready")))
 
     readonly property string hubScreenState: (Browse.CategoriesModel.error_message ?? "") !== "" ? "error" : (Browse.CategoriesModel.count === 0 ? "empty" : "ready")
 
-    readonly property string recentsScreenState: (Browse.RecentsModel.loading || (root.activeScreen === root.screenRecents && root.catalogStillBooting)) ? "loading" : ((Browse.RecentsModel.error_message ?? "") !== "" ? "error" : (Browse.RecentsModel.count === 0 ? "empty" : "ready"))
+    readonly property string recentsScreenState: root.activeScreen !== root.screenRecents ? "" : ((Browse.RecentsModel.loading || root.catalogStillBooting) ? "loading" : ((Browse.RecentsModel.error_message ?? "") !== "" ? "error" : (Browse.RecentsModel.count === 0 ? "empty" : "ready")))
     readonly property string displayOrientation: Browse.Settings.current_orientation
     readonly property bool _sceneRotated: root.displayOrientation === "cw" || root.displayOrientation === "ccw"
     readonly property bool _browseListLayout: Browse.Settings.current_browse_layout === "list"
