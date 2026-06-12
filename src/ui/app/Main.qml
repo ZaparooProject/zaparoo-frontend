@@ -381,13 +381,13 @@ MainLayout {
         if (screen === root.screenHub)
             return true;
         if (screen === root.screenSystems)
-            return !root.catalogStillBooting && !Browse.SystemsModel.loading;
+            return !Browse.SystemsModel.loading;
         if (screen === root.screenGames)
-            return !root.catalogStillBooting && !Browse.GamesModel.loading;
+            return !Browse.GamesModel.loading;
         if (screen === root.screenFavorites)
-            return !root.catalogStillBooting && !Browse.FavoritesModel.loading;
+            return !Browse.FavoritesModel.loading;
         if (screen === root.screenRecents)
-            return !root.catalogStillBooting && !Browse.RecentsModel.loading;
+            return !Browse.RecentsModel.loading;
         return true;
     }
 
@@ -940,22 +940,38 @@ MainLayout {
         Browse.GamesModel.set_path(path);
     }
 
-    // Folder pop-up inside the games screen. Pop persistence immediately
-    // so kill-resume observes the back intent, then defer the model rebrowse
-    // until LoadingIndicator has painted. If we pop to the root level
-    // (path_stack[0] is always "") the call goes through `set_system` so
-    // the model re-runs single-root auto-nav rather than browsing the
-    // literal empty path with no system filter.
+    function _rebrowseGamesFolderTarget(path: string, systemId: string): void {
+        if (path === "") {
+            if (systemId !== "")
+                Browse.GamesModel.set_system(systemId);
+        } else {
+            Browse.GamesModel.set_path(path);
+        }
+    }
+
+    // Folder pop-up inside the games screen. Cached parents take the same direct
+    // path as folder drill-down, so Back does not show fake global Loading for a
+    // browse result we can seed synchronously. Cold parents keep the delayed cue
+    // before rebrowse so the UI does not look dead if the reset/RPC stalls.
     function _navigateOutOfFolder(): void {
         const stack = Browse.GamesState.path_stack;
         if (stack.length <= 1)
             return;
-        root.pendingTransition = "folder_back";
         Browse.GamesState.pop_level();
         const newStack = Browse.GamesState.path_stack;
         const target = newStack[newStack.length - 1];
+        const systemId = target === "" ? Browse.GamesState.system_id : "";
+        root._pendingFolderBackTargetPath = "";
+        root._pendingFolderBackSystemId = "";
+        folderBackTransitionTimer.stop();
+        if (Browse.GamesModel.browse_cached_for_path(target)) {
+            root._rebrowseGamesFolderTarget(target, systemId);
+            root._resetIdle();
+            return;
+        }
+        root.pendingTransition = "folder_back";
         root._pendingFolderBackTargetPath = target;
-        root._pendingFolderBackSystemId = target === "" ? Browse.GamesState.system_id : "";
+        root._pendingFolderBackSystemId = systemId;
         folderBackTransitionTimer.restart();
     }
 
@@ -967,12 +983,7 @@ MainLayout {
         if (root.pendingTransition !== "folder_back")
             return;
         root._folderBackReadyCallback = root._finishFolderBackTransition;
-        if (target === "") {
-            if (systemId !== "")
-                Browse.GamesModel.set_system(systemId);
-        } else {
-            Browse.GamesModel.set_path(target);
-        }
+        root._rebrowseGamesFolderTarget(target, systemId);
         root._completeFolderBackRebrowseIfReady();
     }
 

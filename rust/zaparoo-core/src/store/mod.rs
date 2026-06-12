@@ -157,6 +157,26 @@ impl Store {
         self.client.clone()
     }
 
+    #[allow(
+        clippy::unwrap_used,
+        reason = "mutex poisoning signals another thread panicked with the lock held; state is unrecoverable"
+    )]
+    pub fn is_ready<E: Endpoint>(&self, args: &E::Args) -> bool {
+        let key = CacheKey::new::<E>(args);
+        let inner = self.inner.lock().unwrap();
+        inner
+            .cache
+            .get(&key)
+            .and_then(|entry| {
+                entry
+                    .resource
+                    .clone()
+                    .downcast::<RemoteResource<E::Output>>()
+                    .ok()
+            })
+            .is_some_and(|resource| resource.is_ready())
+    }
+
     /// Get (or create) the shared `RemoteResource` for endpoint `E`
     /// with `args`. Subsequent calls with equal args return the same
     /// `Arc`, so multiple QML singletons binding the same endpoint

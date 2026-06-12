@@ -346,6 +346,9 @@ pub mod ffi {
         fn set_path(self: Pin<&mut GamesModel>, path: &QString);
 
         #[qinvokable]
+        fn browse_cached_for_path(self: &GamesModel, path: &QString) -> bool;
+
+        #[qinvokable]
         fn fetch_more(self: Pin<&mut GamesModel>);
 
         #[qinvokable]
@@ -546,6 +549,21 @@ impl ffi::GamesModel {
             vec![sid]
         };
         self.start_initial_browse(p, systems, false);
+    }
+
+    fn browse_cached_for_path(&self, path: &QString) -> bool {
+        let sid = self.current_system_id.to_string();
+        let systems = if sid.is_empty() {
+            Vec::new()
+        } else {
+            vec![sid]
+        };
+        let max_results = u32::try_from(self.page_size.max(1)).unwrap_or(u32::from(u16::MAX));
+        global_store().is_ready::<MediaBrowseEndpoint>(&BrowseArgs::new(
+            path.to_string(),
+            systems,
+            max_results,
+        ))
     }
 
     fn fetch_more(self: Pin<&mut Self>) {
