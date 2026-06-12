@@ -77,7 +77,10 @@ MainLayout {
     readonly property int _gamesGridColumns: root._gamesGridShape.columns
     readonly property int _gamesGridRows: root._gamesGridShape.rows
     readonly property int _gamesPageSize: Browse.Settings.current_browse_layout === "list" ? root._gamesListFetchSize : root._gamesGridColumns * root._gamesGridRows
-    on_GamesPageSizeChanged: Browse.GamesModel.page_size = root._gamesPageSize
+    on_GamesPageSizeChanged: {
+        if (root.gamesScreenRequested || root.activeScreen === root.screenGames)
+            root._syncGamesModelLayout();
+    }
     // Maximum cover dimension requested from Core. Computed from the tile
     // pixel size with 2x headroom so the resized image looks sharp even
     // when the grid zooms slightly. Core fits the image within a
@@ -88,7 +91,10 @@ MainLayout {
         const tileH = Math.ceil(Sizing.screenHeight / Math.max(1, root._gamesGridRows));
         return Math.max(tileW, tileH) * 2;
     }
-    on_GamesCoverMaxSizeChanged: Browse.GamesModel.set_cover_max_size(root._gamesCoverMaxSize)
+    on_GamesCoverMaxSizeChanged: {
+        if (root.gamesScreenRequested || root.activeScreen === root.screenGames)
+            root._syncGamesModelLayout();
+    }
 
     // Bind Sizing to the scene's logical dimensions, not the
     // ApplicationWindow's. Outside CRT preview the scene fills the
@@ -110,9 +116,10 @@ MainLayout {
     function _requestScreen(screen: string): void {
         if (screen === root.screenSystems)
             root.systemsScreenRequested = true;
-        else if (screen === root.screenGames)
+        else if (screen === root.screenGames) {
             root.gamesScreenRequested = true;
-        else if (screen === root.screenFavorites)
+            root._syncGamesModelLayout();
+        } else if (screen === root.screenFavorites)
             root.favoritesScreenRequested = true;
         else if (screen === root.screenRecents)
             root.recentsScreenRequested = true;
@@ -120,6 +127,11 @@ MainLayout {
             root.settingsScreenRequested = true;
         else if (screen === root.screenAbout)
             root.aboutScreenRequested = true;
+    }
+
+    function _syncGamesModelLayout(): void {
+        Browse.GamesModel.page_size = root._gamesPageSize;
+        Browse.GamesModel.set_cover_max_size(root._gamesCoverMaxSize);
     }
 
     function _screenItem(screen: string): var {
@@ -194,7 +206,6 @@ MainLayout {
         if (!root.fullScreen && root._crtPreviewActive) {
             root.applyCrtPreviewScale(root._crtPreviewInitialScale);
         }
-        Browse.GamesModel.page_size = root._gamesPageSize;
         const savedScreen = root._validStartupScreen(Browse.AppState.active_screen);
         root.activeScreen = root.screenHub;
         if (savedScreen !== "" && savedScreen !== root.screenHub) {
