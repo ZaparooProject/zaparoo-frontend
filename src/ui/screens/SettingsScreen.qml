@@ -118,6 +118,11 @@ Item {
         });
         out.push({
             kind: "field",
+            id: "clockFormat",
+            label: qsTr("Clock format")
+        });
+        out.push({
+            kind: "field",
             id: "language",
             label: qsTr("Language")
         });
@@ -237,13 +242,31 @@ Item {
     property bool _activeScrapeUsedRescrape: false
     readonly property bool _visibleRescrapeExisting: settings._scrapeBusy && Browse.MediaStatus.scrape_force_known ? Browse.MediaStatus.scrape_force : settings.rescrapeExisting
 
-    // Drive the top/bottom scroll chevrons. Mirrors PagedGrid's
-    // `hasPagesAbove`/`hasPagesBelow` recipe, but for a continuous
-    // Flickable rather than a paginated grid. The 1-px epsilon
-    // swallows sub-pixel rounding so the chevrons don't flicker on
-    // exact-fit content.
-    readonly property bool _hasContentAbove: flickable.contentY > 1
-    readonly property bool _hasContentBelow: flickable.contentY + flickable.height < flickable.contentHeight - 1
+    // Drive the top/bottom scroll chevrons. Ignore the spacer-only
+    // overflow at the form edges: the arrows should mean another row
+    // is hidden, not that there is padding past the last visible row.
+    // The 1-px epsilon swallows sub-pixel rounding so the chevrons
+    // don't flicker on exact-fit content.
+    readonly property bool _hasContentAbove: settings._firstFieldTop() >= 0 && flickable.contentY > settings._firstFieldTop() + 1
+    readonly property bool _hasContentBelow: settings._lastFieldBottom() >= 0 && flickable.contentY + flickable.height < settings._lastFieldBottom() - 1
+
+    function _firstFieldTop(): real {
+        for (let i = 0; i < settings.fieldCount; i++) {
+            const row = rowRepeater.itemAt(i);
+            if (row !== null && settings._isField(i))
+                return row.y;
+        }
+        return -1;
+    }
+
+    function _lastFieldBottom(): real {
+        for (let i = settings.fieldCount - 1; i >= 0; i--) {
+            const row = rowRepeater.itemAt(i);
+            if (row !== null && settings._isField(i))
+                return row.y + row.height;
+        }
+        return -1;
+    }
 
     function _triggerIndex(): void {
         if (settings._scrapeBusy)
@@ -295,6 +318,8 @@ Item {
             return settings._buttonLayoutDisplay(Browse.Settings.current_button_layout);
         if (id === "screensaverTimeout")
             return settings._screensaverTimeoutDisplay(Browse.Settings.current_screensaver_timeout);
+        if (id === "clockFormat")
+            return settings._clockFormatDisplay(Browse.Settings.current_clock_format);
         if (id === "mediaImageType")
             return settings._mediaImageTypeDisplay(Browse.Settings.current_media_image_type);
         return "";
@@ -412,7 +437,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "language" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType";
+        return id === "language" || id === "clockFormat" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType";
     }
     // True when focused row accepts A without left/right cycling:
     // pickers, jobs, modal/navigation rows, and root category rows.
@@ -505,6 +530,11 @@ Item {
         return raw === undefined || raw === null ? [] : raw;
     }
 
+    function _clockFormatList(): list<string> {
+        const raw = Browse.Settings.available_clock_formats;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
     function _orientationList(): list<string> {
         const raw = Browse.Settings.available_orientations;
         return raw === undefined || raw === null ? [] : raw;
@@ -545,6 +575,14 @@ Item {
             return qsTr("Arabic");
         if (value === "hi" || value === "hi_IN")
             return qsTr("Hindi");
+        return qsTr("Auto");
+    }
+
+    function _clockFormatDisplay(value: string): string {
+        if (value === "12h")
+            return qsTr("12-hour");
+        if (value === "24h")
+            return qsTr("24-hour");
         return qsTr("Auto");
     }
 
@@ -659,6 +697,15 @@ Item {
                     label: settings._languageDisplay(list[i])
                 });
             initialId = Browse.Settings.current_language;
+        } else if (id === "clockFormat") {
+            title = qsTr("Clock format");
+            const list = settings._clockFormatList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._clockFormatDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_clock_format;
         } else if (id === "orientation") {
             title = qsTr("Orientation");
             const list = settings._orientationList();

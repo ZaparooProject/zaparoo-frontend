@@ -92,11 +92,15 @@ pub struct FavoritesState {
 /// from `[mister.video_*]` in `frontend.toml` is left in place.
 /// `language` mirrors `[general].language` in `frontend.toml` so the UI
 /// settings snapshot stays coherent with the config-backed startup path.
+/// `clock_format` is `auto`, `12h`, or `24h`; `auto` follows the effective
+/// UI locale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SettingsState {
     pub resolution: String,
     pub language: String,
+    #[serde(default = "default_clock_format")]
+    pub clock_format: String,
     #[serde(default = "default_orientation")]
     pub orientation: String,
     #[serde(default = "default_browse_layout")]
@@ -120,6 +124,7 @@ impl Default for SettingsState {
         Self {
             resolution: String::new(),
             language: String::new(),
+            clock_format: default_clock_format(),
             orientation: default_orientation(),
             browse_layout: default_browse_layout(),
             button_layout: default_button_layout(),
@@ -130,6 +135,10 @@ impl Default for SettingsState {
             media_image_type: default_media_image_type(),
         }
     }
+}
+
+fn default_clock_format() -> String {
+    "auto".into()
 }
 
 fn default_orientation() -> String {
@@ -284,6 +293,7 @@ mod tests {
             settings: SettingsState {
                 resolution: "1920x1080".into(),
                 language: "it_IT".into(),
+                clock_format: "24h".into(),
                 orientation: "cw".into(),
                 browse_layout: "list".into(),
                 button_layout: "b".into(),
@@ -383,6 +393,7 @@ mod tests {
         let state = load_from(&path);
         assert_eq!(state.settings.resolution, "1920x1080");
         assert_eq!(state.settings.language, "");
+        assert_eq!(state.settings.clock_format, "auto");
         assert_eq!(state.settings.browse_layout, "grid");
         assert_eq!(state.settings.button_layout, "a");
         assert!(state.settings.mouse_enabled);
