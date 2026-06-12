@@ -91,6 +91,10 @@ Item {
     property int currentRow: 1
     // Index within the active row. Resume is first while optimistic/history is unknown.
     property int currentIndex: 0
+    // False on the first-paint path so Hub can draw a static Resume tile
+    // without touching RecentsModel. MainLayout flips this after the
+    // first frame, then Resume can hide/update from Core history.
+    property bool resumeModelEnabled: false
     // Source-row index from the most recent cross. Used to make a
     // Down → Up (or Up → Down) round-trip return to the originating
     // tile, which the centered visual-nearest mapping in `_mapCrossRow`
@@ -117,7 +121,7 @@ Item {
     readonly property int _blockHeight: 2 * (categoriesRow.cellHeight + 2 * categoriesRow.verticalPadding) + (categoriesRow.spacing - categoriesRow.verticalPadding - actionsRow.verticalPadding) + Sizing.pctH(3) + Sizing.pctH(7)
     readonly property int _blockY: Math.round((Sizing.headerBottom + hub.height - Sizing.pctH(6) - hub._blockHeight) / 2)
 
-    readonly property bool resumeKnownUnavailable: !Browse.RecentsModel.resume_loading && !Browse.RecentsModel.resume_available && Browse.AppStatus.connection_state === 2
+    readonly property bool resumeKnownUnavailable: hub.resumeModelEnabled && !Browse.RecentsModel.resume_loading && !Browse.RecentsModel.resume_available && Browse.AppStatus.connection_state === 2
     readonly property bool resumeActionVisible: !hub.resumeKnownUnavailable
 
     // Action-row data. Resume is visible by default while Core history
@@ -127,7 +131,7 @@ Item {
     readonly property var actionEntries: {
         const entries = [];
         if (hub.resumeActionVisible) {
-            const resumeName = Browse.RecentsModel.resume_name;
+            const resumeName = hub.resumeModelEnabled ? Browse.RecentsModel.resume_name : "";
             entries.push({
                 id: "resume",
                 coverKey: "icons/PlayOutline",

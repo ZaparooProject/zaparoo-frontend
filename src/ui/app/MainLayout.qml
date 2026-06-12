@@ -577,6 +577,7 @@ ApplicationWindow {
                     anchors.fill: parent
                     visible: root.activeScreen === root.screenHub
                     transitioning: root.transitionCueVisible
+                    resumeModelEnabled: root._firstFrameSeen
                     onVisibleChanged: {
                         if (!visible || !root._startupTraceActive)
                             return;
