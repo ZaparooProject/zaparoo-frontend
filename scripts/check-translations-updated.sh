@@ -8,7 +8,7 @@ for candidate in "$script_dir/.." "${GITHUB_WORKSPACE:-}" "$PWD"; do
     if [[ -z "$candidate" ]]; then
         continue
     fi
-    if top="$(git -C "$candidate" rev-parse --show-toplevel 2>/dev/null)"; then
+    if top="$(git -c safe.directory="$candidate" -C "$candidate" rev-parse --show-toplevel 2>/dev/null)"; then
         repo_root="$top"
         break
     fi
@@ -24,9 +24,9 @@ before="$(mktemp)"
 after="$(mktemp)"
 trap 'rm -f "$before" "$after"' EXIT
 
-git -C "$repo_root" diff -- src/ui/translations >"$before"
+git -c safe.directory="$repo_root" -C "$repo_root" diff -- src/ui/translations >"$before"
 cmake --build "$repo_root/$build_dir" --target update_translations
-git -C "$repo_root" diff -- src/ui/translations >"$after"
+git -c safe.directory="$repo_root" -C "$repo_root" diff -- src/ui/translations >"$after"
 
 if cmp -s "$before" "$after"; then
     exit 0
@@ -38,5 +38,5 @@ else
     echo "Qt translation catalogs are stale. Run cmake --build $build_dir --target update_translations and commit the src/ui/translations changes." >&2
 fi
 
-git -C "$repo_root" diff -- src/ui/translations
+git -c safe.directory="$repo_root" -C "$repo_root" diff -- src/ui/translations
 exit 1
