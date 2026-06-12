@@ -220,8 +220,6 @@ MainLayout {
             root.activeScreen = root.screenHub;
         }
         root._startupTrace("startup/qml Component.onCompleted", "savedScreen=" + savedScreen, "initialActiveScreen=" + root.activeScreen, "startupRestorePending=" + root._startupRestorePending, "connectionState=" + Browse.AppStatus.connection_state);
-        Browse.FavoritesModel.cover_requests_paused = root.activeScreen !== root.screenFavorites;
-        Browse.RecentsModel.cover_requests_paused = root.activeScreen !== root.screenRecents;
         // If the catalog is already ready, fire the restore here so
         // the cascade (set_category → SystemsModel reset → seed
         // currentIndex → set_system → GamesModel reset) lands before
@@ -990,6 +988,7 @@ MainLayout {
         }
         if (targetScreen === root.screenFavorites) {
             root._whenScreenReady(root.screenFavorites, function () {
+                root._resumeFavoritesCovers();
                 if (Browse.FavoritesModel.loading) {
                     root._favoritesReadyCallback = function () {
                         root.favoritesScreen.restoreSelection();
@@ -1006,6 +1005,8 @@ MainLayout {
         }
         if (targetScreen === root.screenRecents) {
             root._whenScreenReady(root.screenRecents, function () {
+                Browse.RecentsModel.ensure_loaded();
+                root._resumeRecentsCovers();
                 if (Browse.RecentsModel.loading) {
                     root._recentsReadyCallback = function () {
                         root.recentsScreen.restoreSelection();
