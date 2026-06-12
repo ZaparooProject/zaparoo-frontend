@@ -322,8 +322,8 @@ fn apply_state(
             disarm_cover_gate(model.as_mut());
             if model.loading {
                 model.as_mut().set_loading(false);
-                finish_nav_timing(model.as_mut(), "covers-paused", 0);
             }
+            finish_nav_timing(model.as_mut(), "covers-paused", 0);
         } else {
             // Decide whether to release `loading` immediately or hold it until
             // covers are cached. `arm_cover_gate` flips loading off itself when
@@ -1062,8 +1062,8 @@ fn notify_cover_update(mut model: Pin<&mut ffi::FavoritesModel>, key: &MediaKey)
                 if model.loading {
                     info!("favorites: cover gate released after decode-settle window");
                     model.as_mut().set_loading(false);
-                    finish_nav_timing(model.as_mut(), "covers-ready", 0);
                 }
+                finish_nav_timing(model.as_mut(), "covers-ready", 0);
             });
         });
         model.as_mut().rust_mut().cover_gate_timer = Some(handle);
@@ -1125,8 +1125,8 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::FavoritesModel>) {
         model.as_mut().rust_mut().pending_first_paint_keys.clear();
         if model.loading {
             model.as_mut().set_loading(false);
-            finish_nav_timing(model.as_mut(), "covers-ready", 0);
         }
+        finish_nav_timing(model.as_mut(), "covers-ready", 0);
         return;
     }
     info!(
@@ -1170,8 +1170,8 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::FavoritesModel>) {
     model.as_mut().rust_mut().cover_gate_timer = None;
     if model.loading {
         model.as_mut().set_loading(false);
-        finish_nav_timing(model.as_mut(), "timeout", pending);
     }
+    finish_nav_timing(model.as_mut(), "timeout", pending);
 }
 
 /// Build the `text` payload sent to Core's `run` for a search entry.

@@ -1889,7 +1889,7 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
     let unresolved = compute_unresolved_keys(
         visible_entries,
         |k| cache.is_cached(k),
-        |k| cache.is_negative(k),
+        |k| cache.is_negative(k) || cache.is_soft_no_image(k),
     );
     if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
         timing.start_gate(cover_total, cover_cache_hits, unresolved.len());
@@ -2248,6 +2248,16 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     // transient blip doesn't leave the spinner stuck on after the
     // refetch lands.
     if model.is_seeded {
+        let has_next_page = result.has_next_page();
+        let next_cursor = result.next_cursor();
+        let total = i32::try_from(result.total_files).unwrap_or(i32::MAX);
+        model.as_mut().rust_mut().next_cursor = next_cursor;
+        if model.has_next_page != has_next_page {
+            model.as_mut().set_has_next_page(has_next_page);
+        }
+        if model.total_files != total {
+            model.as_mut().set_total_files(total);
+        }
         if model.loading {
             model.as_mut().set_loading(false);
         }
