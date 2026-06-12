@@ -213,13 +213,12 @@ MainLayout {
             root._startupRestoreScreen = savedScreen;
         }
         root._startupTrace("startup/qml Component.onCompleted", "savedScreen=" + savedScreen, "initialActiveScreen=" + root.activeScreen, "startupRestorePending=" + root._startupRestorePending, "connectionState=" + Browse.AppStatus.connection_state);
-        // If the catalog is already ready, fire the restore here so
-        // the cascade (set_category → SystemsModel reset → seed
-        // currentIndex → set_system → GamesModel reset) lands before
-        // first paint. Otherwise the CategoriesModel.onModelReset
-        // Connection below fires it on first delivery.
+        // If the catalog is already ready, restore Hub focus here
+        // without cascading into SystemsModel. First paint stays Hub
+        // only; the post-frame handler below runs the cascade needed
+        // by saved-screen restore and later drill-downs.
         if (Browse.CategoriesModel.count > 0)
-            root.hubScreen.restoreFromCategoriesReset();
+            root.hubScreen.restoreFromCategoriesReset(false);
         root._maybeArmHubResumeFocus();
         // Open the commercial-use notice on first paint of an unacked
         // install. Sits in front of the media-DB first-run modal in the
@@ -236,8 +235,11 @@ MainLayout {
     }
 
     on_FirstFrameSeenChanged: {
-        if (root._firstFrameSeen)
+        if (root._firstFrameSeen) {
+            if (Browse.CategoriesModel.count > 0)
+                root.hubScreen.restoreFromCategoriesReset(true);
             root._maybeStartStartupRestore();
+        }
     }
 
     function _validStartupScreen(screen: string): string {
@@ -260,7 +262,7 @@ MainLayout {
     Connections {
         target: Browse.CategoriesModel
         function onModelReset(): void {
-            root.hubScreen.restoreFromCategoriesReset();
+            root.hubScreen.restoreFromCategoriesReset(root._firstFrameSeen);
             root._maybeStartStartupRestore();
             root._maybeContinueOptimisticTransitions();
         }
@@ -1038,7 +1040,7 @@ MainLayout {
             return;
         }
         if (targetScreen === root.screenHub) {
-            root.hubScreen.restoreFromCategoriesReset();
+            root.hubScreen.restoreFromCategoriesReset(true);
             root._finishStartupRestore();
             root._goto(root.screenHub);
             return;

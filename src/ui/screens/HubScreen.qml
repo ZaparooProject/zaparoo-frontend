@@ -210,11 +210,10 @@ Item {
         hub._crossSavedIndex = -1;
     }
 
-    // Restore the hub from the persisted `Browse.HubState`. Always
-    // cascades into `SystemsModel.set_category` because the cascade
-    // drives the next onModelReset handler that a games-screen restore
-    // depends on; the call is idempotent when the model already holds
-    // the right category.
+    // Restore the hub from the persisted `Browse.HubState`. The router
+    // decides whether this pass should cascade into
+    // `SystemsModel.set_category`; first Hub paint restores focus only,
+    // then post-frame restore/transition paths can pay for Systems.
     //
     // Called from two sites in Main.qml — the Component.onCompleted
     // early-arrival path (catalog already seeded synchronously) and the
@@ -223,7 +222,7 @@ Item {
     // re-seeded even when SystemsModel is already on the chosen
     // category — otherwise the visible focus drifts off whichever
     // screen the user is on.
-    function restoreFromCategoriesReset(): void {
+    function restoreFromCategoriesReset(cascadeSystems: bool): void {
         const savedCategory = CategoryIds.canonicalize(Browse.HubState.category);
         const idx = savedCategory === "" ? -1 : Browse.CategoriesModel.index_for_category(savedCategory);
         const chosenCategoryIndex = idx >= 0 ? idx : 0;
@@ -259,6 +258,8 @@ Item {
         // point past the new category list).
         hub._crossSavedIndex = -1;
 
+        if (!cascadeSystems)
+            return;
         if (Browse.SystemsModel.current_category === chosenCategory && Browse.SystemsModel.count > 0)
             return;
         Browse.SystemsModel.set_category(chosenCategory);
