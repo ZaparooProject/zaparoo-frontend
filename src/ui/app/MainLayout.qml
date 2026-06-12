@@ -316,7 +316,7 @@ ApplicationWindow {
     // surfaces only via the top-right status pill — the user keeps
     // their cached catalog and just sees the link state change.
     property bool bootComplete: false
-    property bool startupRestoreCurtainVisible: Browse.AppState.active_screen !== "" && Browse.AppState.active_screen !== root.screenHub
+    property bool startupRestoreCurtainVisible: false
     readonly property bool catalogStillBooting: !Browse.CategoriesModel.loaded && (Browse.CategoriesModel.error_message ?? "") === ""
 
     // Per-screen state derivation. Shape mirrors ScreenStateOverlay's

@@ -122,19 +122,6 @@ MainLayout {
             root.aboutScreenRequested = true;
     }
 
-    function _primeStartupRestoreScreen(screen: string): void {
-        if (screen === root.screenSystems) {
-            root._requestScreen(root.screenSystems);
-            return;
-        }
-        if (screen === root.screenGames) {
-            root._requestScreen(root.screenSystems);
-            root._requestScreen(root.screenGames);
-            return;
-        }
-        root._requestScreen(screen);
-    }
-
     function _screenItem(screen: string): var {
         if (screen === root.screenSystems)
             return root.systemsScreen;
@@ -209,15 +196,10 @@ MainLayout {
         }
         Browse.GamesModel.page_size = root._gamesPageSize;
         const savedScreen = root._validStartupScreen(Browse.AppState.active_screen);
-        root.startupRestoreCurtainVisible = savedScreen !== "" && savedScreen !== root.screenHub;
-        if (root.startupRestoreCurtainVisible) {
+        root.activeScreen = root.screenHub;
+        if (savedScreen !== "" && savedScreen !== root.screenHub) {
             root._startupRestorePending = true;
             root._startupRestoreScreen = savedScreen;
-            root._primeStartupRestoreScreen(savedScreen);
-            root.activeScreen = savedScreen;
-            startupRestoreKickTimer.restart();
-        } else {
-            root.activeScreen = root.screenHub;
         }
         root._startupTrace("startup/qml Component.onCompleted", "savedScreen=" + savedScreen, "initialActiveScreen=" + root.activeScreen, "startupRestorePending=" + root._startupRestorePending, "connectionState=" + Browse.AppStatus.connection_state);
         // If the catalog is already ready, fire the restore here so
@@ -240,6 +222,11 @@ MainLayout {
         root._maybeCompleteBoot();
         root._maybeOpenFirstRunIndex();
         root._maybeStartStartupRestore();
+    }
+
+    on_FirstFrameSeenChanged: {
+        if (root._firstFrameSeen)
+            root._maybeStartStartupRestore();
     }
 
     function _validStartupScreen(screen: string): string {
@@ -967,6 +954,8 @@ MainLayout {
 
     function _maybeStartStartupRestore(): void {
         if (!root._startupRestorePending || root._startupRestoreStarted)
+            return;
+        if (!root._firstFrameSeen)
             return;
         if (startupRestoreKickTimer.running)
             return;
