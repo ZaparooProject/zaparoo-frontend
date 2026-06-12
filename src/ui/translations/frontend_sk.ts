@@ -849,12 +849,12 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Načítanie…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="354"/>
+        <location filename="../screens/MediaListScreen.qml" line="355"/>
         <source>%1 entries</source>
         <translation type="unfinished">%1 položiek</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="355"/>
+        <location filename="../screens/MediaListScreen.qml" line="356"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1363,24 +1363,24 @@ Euskara - devilschile2</source>
 <context>
     <name>SystemsScreen</name>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="199"/>
-        <location filename="../screens/SystemsScreen.qml" line="297"/>
+        <location filename="../screens/SystemsScreen.qml" line="200"/>
+        <location filename="../screens/SystemsScreen.qml" line="298"/>
         <source>%1 systems</source>
         <translation>%1 systémov</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="200"/>
-        <location filename="../screens/SystemsScreen.qml" line="314"/>
+        <location filename="../screens/SystemsScreen.qml" line="201"/>
+        <location filename="../screens/SystemsScreen.qml" line="315"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="330"/>
+        <location filename="../screens/SystemsScreen.qml" line="333"/>
         <source>No systems in this category</source>
         <translation>V tejto kategórii nie sú žiadne systémy</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="331"/>
+        <location filename="../screens/SystemsScreen.qml" line="334"/>
         <source>Loading systems…</source>
         <translation>Načítanie systémov…</translation>
     </message>

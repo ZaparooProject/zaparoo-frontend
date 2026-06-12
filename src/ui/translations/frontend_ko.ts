@@ -849,12 +849,12 @@ Euskara - devilschile2</source>
         <translation type="unfinished">불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="354"/>
+        <location filename="../screens/MediaListScreen.qml" line="355"/>
         <source>%1 entries</source>
         <translation type="unfinished">항목 %1개</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="355"/>
+        <location filename="../screens/MediaListScreen.qml" line="356"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1363,24 +1363,24 @@ Euskara - devilschile2</source>
 <context>
     <name>SystemsScreen</name>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="199"/>
-        <location filename="../screens/SystemsScreen.qml" line="297"/>
+        <location filename="../screens/SystemsScreen.qml" line="200"/>
+        <location filename="../screens/SystemsScreen.qml" line="298"/>
         <source>%1 systems</source>
         <translation>시스템 %1개</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="200"/>
-        <location filename="../screens/SystemsScreen.qml" line="314"/>
+        <location filename="../screens/SystemsScreen.qml" line="201"/>
+        <location filename="../screens/SystemsScreen.qml" line="315"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="330"/>
+        <location filename="../screens/SystemsScreen.qml" line="333"/>
         <source>No systems in this category</source>
         <translation>이 카테고리에는 시스템이 없습니다</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="331"/>
+        <location filename="../screens/SystemsScreen.qml" line="334"/>
         <source>Loading systems…</source>
         <translation>시스템 불러오는 중…</translation>
     </message>

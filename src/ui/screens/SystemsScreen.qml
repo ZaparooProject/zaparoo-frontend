@@ -52,7 +52,8 @@ Item {
     readonly property int _listOverlayBottomMargin: systems._listProfile ? systems._listProfile.overlayBottomMargin : Sizing.pctH(15)
     readonly property var _gridShape: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight)
     readonly property bool _loading: Browse.SystemsModel.loading || systems.optimisticLoading
-    readonly property bool _gateHide: systems.transitioning || systems._loading
+    readonly property bool _overlayLoadingVisible: stateOverlay.loadingVisible
+    readonly property bool _gateHide: systems.transitioning || systems._loading || systems._overlayLoadingVisible
 
     signal requestAccept(systemId: string)
     signal requestHubScreen
@@ -112,7 +113,7 @@ Item {
     // Mirrors ScreenStateOverlay's `state` ternary so accept routing and
     // the in-screen overlay agree on which state we're in.
     function _state(): string {
-        if (systems._loading)
+        if (systems._loading || systems._overlayLoadingVisible)
             return "loading";
         if ((Browse.SystemsModel.error_message ?? "") !== "")
             return "error";
@@ -319,6 +320,8 @@ Item {
     }
 
     ScreenStateOverlay {
+        id: stateOverlay
+
         x: systems._listLayout ? 0 : systemsGrid.x
         y: systems._listLayout ? listCard.y : systemsGrid.y
         width: systems._listLayout ? systems.width : systemsGrid.width

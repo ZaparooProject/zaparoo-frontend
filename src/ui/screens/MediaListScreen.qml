@@ -104,10 +104,11 @@ Item {
     readonly property bool _crtListStrip: Theme.crtNativePath && root._listLayout
     readonly property int _listOverlayBottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.overlayBottomMargin : Sizing.pctH(15)
     // Hide list/grid content as soon as the model enters Loading, but
-    // let ScreenStateOverlay keep delaying the centered cue. Tying the
-    // content gate to `loadingVisible` leaves a frame window where the
-    // model has cleared/reseeded rows and the user sees loading tiles.
-    readonly property bool _gateHide: root.transitioning || root._loading()
+    // let ScreenStateOverlay keep delaying the centered cue. Keep the
+    // content hidden through the cue's minimum-visible tail so newly
+    // loaded rows cannot paint underneath lingering loading text.
+    readonly property bool _overlayLoadingVisible: stateOverlay.loadingVisible
+    readonly property bool _gateHide: root.transitioning || root._loading() || root._overlayLoadingVisible
 
     signal requestHubScreen
     signal requestContextMenu(int index, var anchorRect)
@@ -250,7 +251,7 @@ Item {
     }
 
     function _state(): string {
-        if (root._loading())
+        if (root._loading() || root._overlayLoadingVisible)
             return "loading";
         if (root._errorMessage() !== "")
             return "error";
@@ -508,6 +509,8 @@ Item {
     }
 
     ScreenStateOverlay {
+        id: stateOverlay
+
         x: root._listLayout ? listCard.x : mediaGrid.x
         y: root._listLayout ? listCard.y : mediaGrid.y
         width: root._listLayout ? listCard.width : mediaGrid.width
