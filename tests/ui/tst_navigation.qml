@@ -152,15 +152,15 @@ TestCase {
         compare(main.settingsScreen.rootGridColumns, 5);
         compare(main.settingsScreen.rootGridRows, 2);
         main.settingsScreen.currentIndex = 0;
-        main.settingsScreen.handleAction("down");
+        main.handleAction("down");
         compare(main.settingsScreen.currentIndex, 0);
-        main.settingsScreen.handleAction("right");
+        main.handleAction("right");
         compare(main.settingsScreen.currentIndex, 1);
-        main.settingsScreen.handleAction("accept");
+        main.handleAction("accept");
         compare(main.settingsScreen.currentPage, main.settingsScreen.pageControlsInput);
-        main.settingsScreen.handleAction("cancel");
+        main.handleAction("cancel");
         compare(main.settingsScreen.currentPage, main.settingsScreen.pageRoot);
-        main.settingsScreen.handleAction("cancel");
+        main.handleAction("cancel");
         compare(main.activeScreen, main.screenHub);
     }
 

@@ -1122,6 +1122,13 @@ ApplicationWindow {
                         if (root.settingsScreen === null)
                             return [];
                         if (root.settingsScreen.showingRootGrid) {
+                            if (root.settingsScreen.optimisticLoading)
+                                return [
+                                    {
+                                        button: "ButtonB",
+                                        label: qsTr("Back")
+                                    }
+                                ];
                             let gridRow = [];
                             if (root.settingsScreen.fieldCount > 1)
                                 gridRow.push({

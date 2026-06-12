@@ -728,9 +728,9 @@ Euskara - devilschile2</source>
         <location filename="../app/MainLayout.qml" line="1006"/>
         <location filename="../app/MainLayout.qml" line="1037"/>
         <location filename="../app/MainLayout.qml" line="1087"/>
-        <location filename="../app/MainLayout.qml" line="1129"/>
-        <location filename="../app/MainLayout.qml" line="1148"/>
-        <location filename="../app/MainLayout.qml" line="1215"/>
+        <location filename="../app/MainLayout.qml" line="1136"/>
+        <location filename="../app/MainLayout.qml" line="1155"/>
+        <location filename="../app/MainLayout.qml" line="1222"/>
         <source>Move</source>
         <translation>הזזה</translation>
     </message>
@@ -766,7 +766,7 @@ Euskara - devilschile2</source>
         <location filename="../app/MainLayout.qml" line="937"/>
         <location filename="../app/MainLayout.qml" line="1060"/>
         <location filename="../app/MainLayout.qml" line="1113"/>
-        <location filename="../app/MainLayout.qml" line="1241"/>
+        <location filename="../app/MainLayout.qml" line="1248"/>
         <source>Retry</source>
         <translation>נסה שוב</translation>
     </message>
@@ -784,8 +784,8 @@ Euskara - devilschile2</source>
         <location filename="../app/MainLayout.qml" line="1010"/>
         <location filename="../app/MainLayout.qml" line="1047"/>
         <location filename="../app/MainLayout.qml" line="1097"/>
-        <location filename="../app/MainLayout.qml" line="1134"/>
-        <location filename="../app/MainLayout.qml" line="1225"/>
+        <location filename="../app/MainLayout.qml" line="1141"/>
+        <location filename="../app/MainLayout.qml" line="1232"/>
         <source>Open</source>
         <translation>פתח</translation>
     </message>
@@ -801,41 +801,42 @@ Euskara - devilschile2</source>
         <location filename="../app/MainLayout.qml" line="1079"/>
         <location filename="../app/MainLayout.qml" line="1106"/>
         <location filename="../app/MainLayout.qml" line="1117"/>
-        <location filename="../app/MainLayout.qml" line="1138"/>
-        <location filename="../app/MainLayout.qml" line="1172"/>
-        <location filename="../app/MainLayout.qml" line="1190"/>
-        <location filename="../app/MainLayout.qml" line="1199"/>
-        <location filename="../app/MainLayout.qml" line="1234"/>
-        <location filename="../app/MainLayout.qml" line="1245"/>
+        <location filename="../app/MainLayout.qml" line="1129"/>
+        <location filename="../app/MainLayout.qml" line="1145"/>
+        <location filename="../app/MainLayout.qml" line="1179"/>
+        <location filename="../app/MainLayout.qml" line="1197"/>
+        <location filename="../app/MainLayout.qml" line="1206"/>
+        <location filename="../app/MainLayout.qml" line="1241"/>
+        <location filename="../app/MainLayout.qml" line="1252"/>
         <source>Back</source>
         <translation>חזרה</translation>
     </message>
     <message>
         <location filename="../app/MainLayout.qml" line="1043"/>
         <location filename="../app/MainLayout.qml" line="1093"/>
-        <location filename="../app/MainLayout.qml" line="1221"/>
+        <location filename="../app/MainLayout.qml" line="1228"/>
         <source>Page</source>
         <translation>עמוד</translation>
     </message>
     <message>
         <location filename="../app/MainLayout.qml" line="1050"/>
         <location filename="../app/MainLayout.qml" line="1102"/>
-        <location filename="../app/MainLayout.qml" line="1230"/>
+        <location filename="../app/MainLayout.qml" line="1237"/>
         <source>Options</source>
         <translation>אפשרויות</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1157"/>
+        <location filename="../app/MainLayout.qml" line="1164"/>
         <source>Change</source>
         <translation>שינוי</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1163"/>
+        <location filename="../app/MainLayout.qml" line="1170"/>
         <source>Toggle</source>
         <translation>החלף</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1186"/>
+        <location filename="../app/MainLayout.qml" line="1193"/>
         <source>Scroll</source>
         <translation>גלילה</translation>
     </message>
