@@ -54,6 +54,7 @@ Item {
     readonly property string pageLibraryData: "libraryData"
     readonly property string pageSupportAbout: "supportAbout"
     property string currentPage: settings.pageRoot
+    readonly property bool showingRootGrid: settings.currentPage === settings.pageRoot
     property var _pageIndexes: ({})
 
     // Page-aware field registries. The root mirrors console settings
@@ -64,22 +65,26 @@ Item {
         {
             kind: "field",
             id: "pageDisplayInterface",
-            label: qsTr("Display")
+            label: qsTr("Display"),
+            coverKey: "icons/Display"
         },
         {
             kind: "field",
             id: "pageControlsInput",
-            label: qsTr("Controls")
+            label: qsTr("Controls"),
+            coverKey: "icons/Controls"
         },
         {
             kind: "field",
             id: "pageLibraryData",
-            label: qsTr("Library")
+            label: qsTr("Library"),
+            coverKey: "icons/Library"
         },
         {
             kind: "field",
             id: "pageSupportAbout",
-            label: qsTr("Support")
+            label: qsTr("Support"),
+            coverKey: "icons/Support"
         }
     ]
     readonly property var displayInterfaceFields: {
@@ -354,6 +359,44 @@ Item {
                 return i;
         }
         return from;
+    }
+
+    readonly property int rootGridColumns: 5
+    readonly property int rootGridRows: 2
+
+    function _moveRootGrid(dx: int, dy: int): void {
+        if (settings.fieldCount <= 0)
+            return;
+        const columns = settings.rootGridColumns;
+        const row = Math.floor(settings.currentIndex / columns);
+        const col = settings.currentIndex % columns;
+        if (dx !== 0) {
+            const rowStart = row * columns;
+            const rowEnd = Math.min(settings.fieldCount - 1, rowStart + columns - 1);
+            let next = settings.currentIndex + dx;
+            if (next < rowStart)
+                next = rowEnd;
+            else if (next > rowEnd)
+                next = rowStart;
+            settings.currentIndex = next;
+            return;
+        }
+        if (dy !== 0) {
+            let next = settings.currentIndex + dy * columns;
+            if (next < 0) {
+                const lastRow = Math.floor((settings.fieldCount - 1) / columns);
+                next = Math.min(lastRow * columns + col, settings.fieldCount - 1);
+            } else if (next >= settings.fieldCount) {
+                next = Math.min(col, settings.fieldCount - 1);
+            }
+            settings.currentIndex = next;
+        }
+    }
+
+    function _focusRootIndex(index: int): void {
+        if (index < 0 || index >= settings.fieldCount)
+            return;
+        settings.currentIndex = index;
     }
 
     readonly property bool focusedFieldIsToggle: {
@@ -770,13 +813,25 @@ Item {
             return;
         }
         if (action === "up") {
-            settings.currentIndex = settings._seekNavigable(settings.currentIndex, -1);
+            if (settings.showingRootGrid)
+                settings._moveRootGrid(0, -1);
+            else
+                settings.currentIndex = settings._seekNavigable(settings.currentIndex, -1);
         } else if (action === "down") {
-            settings.currentIndex = settings._seekNavigable(settings.currentIndex, 1);
+            if (settings.showingRootGrid)
+                settings._moveRootGrid(0, 1);
+            else
+                settings.currentIndex = settings._seekNavigable(settings.currentIndex, 1);
         } else if (action === "left") {
-            settings._cycleFocused(-1);
+            if (settings.showingRootGrid)
+                settings._moveRootGrid(-1, 0);
+            else
+                settings._cycleFocused(-1);
         } else if (action === "right") {
-            settings._cycleFocused(1);
+            if (settings.showingRootGrid)
+                settings._moveRootGrid(1, 0);
+            else
+                settings._cycleFocused(1);
         } else if (action === "accept") {
             if (!settings._isField(settings.currentIndex))
                 return;
@@ -834,7 +889,7 @@ Item {
     // onCurrentIndexChanged below; no animation — software-renderer
     // budget can't pay for a moving column behind a focus border.
     function _scrollFocusedIntoView(): void {
-        if (!settings._isField(settings.currentIndex))
+        if (settings.showingRootGrid || !settings._isField(settings.currentIndex))
             return;
         const row = rowRepeater.itemAt(settings.currentIndex);
         if (row === null)
@@ -849,13 +904,106 @@ Item {
 
     onCurrentIndexChanged: settings._scrollFocusedIntoView()
 
+    Item {
+        id: categoryGrid
+
+        visible: !settings.optimisticLoading && settings.showingRootGrid && settings.fieldCount > 0
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: topStrip.bottom
+        anchors.topMargin: Sizing.pctH(2)
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Sizing.pctH(15)
+
+        readonly property int columns: settings.rootGridColumns
+        readonly property int rows: settings.rootGridRows
+        readonly property int leftInset: Sizing.pctW(5)
+        readonly property int rightInset: Sizing.pctW(5)
+        readonly property int topInset: Sizing.pctH(2)
+        readonly property int bottomInset: Sizing.pctH(2)
+        readonly property int cellSpacingX: Sizing.pctW(3)
+        readonly property int cellSpacingY: Sizing.pctH(4)
+        readonly property int maxCellSize: Sizing.pctH(22)
+        readonly property int _availableWidth: Math.max(0, width - leftInset - rightInset)
+        readonly property int _availableHeight: Math.max(0, height - topInset - bottomInset)
+        readonly property int cellSize: Math.max(0, Math.min(maxCellSize, Math.floor((_availableWidth - (columns - 1) * cellSpacingX) / columns), Math.floor((_availableHeight - (rows - 1) * cellSpacingY) / rows)))
+        readonly property int visibleColumns: Math.max(1, Math.min(columns, settings.fieldCount))
+        readonly property int visibleRows: Math.min(rows, Math.max(1, Math.ceil(settings.fieldCount / columns)))
+        readonly property int contentWidth: visibleColumns * cellSize + (visibleColumns - 1) * cellSpacingX
+        readonly property int contentHeight: visibleRows * cellSize + (visibleRows - 1) * cellSpacingY
+        readonly property int originX: Sizing.center(width, contentWidth)
+        readonly property int originY: Sizing.center(height, contentHeight)
+
+        Component {
+            id: categoryTileDelegate
+            Tile {}
+        }
+
+        Repeater {
+            model: settings.fields
+
+            Item {
+                id: categoryCell
+
+                required property int index
+                required property var modelData
+
+                readonly property int cellRow: Math.floor(index / categoryGrid.columns)
+                readonly property int cellCol: index % categoryGrid.columns
+                readonly property bool isSelected: index === settings.currentIndex
+
+                x: categoryGrid.originX + cellCol * (categoryGrid.cellSize + categoryGrid.cellSpacingX)
+                y: categoryGrid.originY + cellRow * (categoryGrid.cellSize + categoryGrid.cellSpacingY)
+                width: categoryGrid.cellSize
+                height: categoryGrid.cellSize
+                z: isSelected ? 1 : 0
+
+                TileLoader {
+                    anchors.fill: parent
+                    sourceComponent: categoryTileDelegate
+                    isSelected: categoryCell.isSelected
+                    isFocused: true
+                    name: categoryCell.modelData.label
+                    coverKey: categoryCell.modelData.coverKey
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    cursorShape: Qt.PointingHandCursor
+
+                    onEntered: settings._focusRootIndex(categoryCell.index)
+                    onClicked: mouse => {
+                        if (mouse.button === Qt.RightButton) {
+                            settings._goBack();
+                            return;
+                        }
+                        settings._focusRootIndex(categoryCell.index);
+                        settings.handleAction("accept");
+                    }
+                }
+            }
+        }
+    }
+
+    ActiveLabel {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Sizing.pctH(8)
+        height: Sizing.pctH(7)
+        text: settings.showingRootGrid && settings._isField(settings.currentIndex) ? settings.fields[settings.currentIndex].label : ""
+        visible: !settings.optimisticLoading && settings.showingRootGrid && settings.fieldCount > 0
+    }
+
     // Form lives in a Flickable so the section bands can grow past
     // a single screen without dropping off-frame. Width capped so
     // the rows don't stretch edge-to-edge on widescreen; bottom
     // margin clears the help bar (pctH(6)) plus a small gap.
     Flickable {
         id: flickable
-        visible: !settings.optimisticLoading
+        visible: !settings.optimisticLoading && !settings.showingRootGrid
 
         // topMargin and bottomMargin are sized to leave a clear band
         // for the scroll chevrons to sit outside the scrollable area
@@ -997,7 +1145,7 @@ Item {
         anchors.horizontalCenter: flickable.horizontalCenter
         fillMode: Image.PreserveAspectFit
         smooth: true
-        visible: !settings.optimisticLoading && settings._hasContentAbove
+        visible: !settings.optimisticLoading && !settings.showingRootGrid && settings._hasContentAbove
     }
 
     Image {
@@ -1009,7 +1157,7 @@ Item {
         anchors.horizontalCenter: flickable.horizontalCenter
         fillMode: Image.PreserveAspectFit
         smooth: true
-        visible: !settings.optimisticLoading && settings._hasContentBelow
+        visible: !settings.optimisticLoading && !settings.showingRootGrid && settings._hasContentBelow
     }
 
     // Empty-state placeholder shown on runtimes with no settings to

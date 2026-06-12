@@ -19,8 +19,10 @@ fill="none"):
   resources/images/categories/Console.svg
   resources/images/categories/Favorites.svg
   resources/images/categories/Media.svg
+  resources/images/icons/Display.svg
   resources/images/icons/File.svg
   resources/images/icons/Folder.svg
+  resources/images/icons/Library.svg
   resources/images/icons/Loading.svg
   resources/images/icons/NavDown.svg
   resources/images/icons/NavLeft.svg
@@ -29,6 +31,8 @@ fill="none"):
   resources/images/icons/ScrollDown.svg
   resources/images/icons/ScrollUp.svg
   resources/images/icons/Settings.svg
+  resources/images/icons/Support.svg
+  resources/images/icons/Tools.svg
   resources/images/status/Bluetooth.svg
   resources/images/status/WiFi.svg
   resources/images/status/WiredNetwork.svg

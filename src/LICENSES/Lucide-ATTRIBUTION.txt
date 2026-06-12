@@ -15,6 +15,7 @@ Licensed under the ISC License.
 Bundled icons (identifiable by the `class="lucide lucide-..."`
 attribute on the SVG root):
 
+  resources/images/icons/Controls.svg
   resources/images/icons/Heart.svg
   resources/images/icons/HeartOutline.svg
   resources/images/icons/History.svg

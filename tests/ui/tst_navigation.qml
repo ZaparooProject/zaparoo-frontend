@@ -145,6 +145,25 @@ TestCase {
         tryCompare(main, "transitionCueVisible", false);
     }
 
+    function test_settings_root_grid_opens_category_and_returns(): void {
+        main.activeScreen = main.screenSettings;
+        main.settingsScreen.optimisticLoading = false;
+        main.settingsScreen.currentPage = main.settingsScreen.pageRoot;
+        compare(main.settingsScreen.rootGridColumns, 5);
+        compare(main.settingsScreen.rootGridRows, 2);
+        main.settingsScreen.currentIndex = 0;
+        main.settingsScreen.handleAction("down");
+        compare(main.settingsScreen.currentIndex, 0);
+        main.settingsScreen.handleAction("right");
+        compare(main.settingsScreen.currentIndex, 1);
+        main.settingsScreen.handleAction("accept");
+        compare(main.settingsScreen.currentPage, main.settingsScreen.pageControlsInput);
+        main.settingsScreen.handleAction("cancel");
+        compare(main.settingsScreen.currentPage, main.settingsScreen.pageRoot);
+        main.settingsScreen.handleAction("cancel");
+        compare(main.activeScreen, main.screenHub);
+    }
+
     // Cross-row mapping. The test harness has no live CategoriesModel
     // so we can't drive the full handleAction("down") flow with real
     // categories — instead we unit-test the pure arithmetic helper

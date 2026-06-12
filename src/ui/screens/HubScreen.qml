@@ -146,8 +146,8 @@ Item {
         });
         entries.push({
             id: "settings",
-            coverKey: "icons/Settings",
-            text: qsTr("Settings")
+            coverKey: "icons/Tools",
+            text: qsTr("Settings & Utilities")
         });
         return entries;
     }
