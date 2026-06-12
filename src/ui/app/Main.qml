@@ -2391,10 +2391,14 @@ MainLayout {
     // events fall through to the screensaver overlay's own MouseArea
     // (when armed) or to whatever clickable sits underneath in normal
     // operation. `hoverEnabled: true` is what gets us positionChanged
-    // on bare cursor moves without a button being pressed.
+    // on bare cursor moves without a button being pressed. Disable
+    // this root-level hover area when mouse support is off so the
+    // scene-level blank-cursor blocker owns both cursor and clicks.
     MouseArea {
         anchors.fill: parent
         z: 9001
+        visible: Browse.Settings.current_mouse_enabled
+        enabled: visible
         hoverEnabled: true
         acceptedButtons: Qt.NoButton
         onPositionChanged: {

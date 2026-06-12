@@ -590,17 +590,17 @@ Euskara - devilschile2</source>
         <translation>Запустити гру</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2523"/>
+        <location filename="../app/Main.qml" line="2527"/>
         <source>Loading systems…</source>
         <translation>Завантаження систем…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2529"/>
+        <location filename="../app/Main.qml" line="2533"/>
         <source>Loading favorites…</source>
         <translation>Завантаження вибраного…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2525"/>
+        <location filename="../app/Main.qml" line="2529"/>
         <source>Loading games…</source>
         <translation>Завантаження ігор…</translation>
     </message>
@@ -655,22 +655,22 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Скасувати</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2527"/>
+        <location filename="../app/Main.qml" line="2531"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2531"/>
+        <location filename="../app/Main.qml" line="2535"/>
         <source>Loading recently played…</source>
         <translation>Завантаження нещодавніх…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2533"/>
+        <location filename="../app/Main.qml" line="2537"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2535"/>
+        <location filename="../app/Main.qml" line="2539"/>
         <source>Loading…</source>
         <translation>Завантаження…</translation>
     </message>

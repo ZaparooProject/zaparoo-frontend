@@ -590,17 +590,17 @@ Euskara - devilschile2</source>
         <translation>Εκκίνηση παιχνιδιού</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2523"/>
+        <location filename="../app/Main.qml" line="2527"/>
         <source>Loading systems…</source>
         <translation>Φόρτωση συστημάτων…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2529"/>
+        <location filename="../app/Main.qml" line="2533"/>
         <source>Loading favorites…</source>
         <translation>Φόρτωση αγαπημένων…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2525"/>
+        <location filename="../app/Main.qml" line="2529"/>
         <source>Loading games…</source>
         <translation>Φόρτωση παιχνιδιών…</translation>
     </message>
@@ -655,22 +655,22 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Ακύρωση</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2527"/>
+        <location filename="../app/Main.qml" line="2531"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2531"/>
+        <location filename="../app/Main.qml" line="2535"/>
         <source>Loading recently played…</source>
         <translation>Φόρτωση πρόσφατα παιγμένων…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2533"/>
+        <location filename="../app/Main.qml" line="2537"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2535"/>
+        <location filename="../app/Main.qml" line="2539"/>
         <source>Loading…</source>
         <translation>Φόρτωση…</translation>
     </message>
