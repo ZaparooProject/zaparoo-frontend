@@ -374,19 +374,56 @@ MainLayout {
         Browse.AppState.active_screen = screen;
     }
 
-    // Back transitions need the same delayed loading cue as forward
-    // model fills. Request the destination first so lazy Loaders can
-    // mount behind the cue, then cut after the cue has had one frame to
-    // paint.
+    function _backTargetReady(screen: string): bool {
+        const item = root._screenItem(screen);
+        if (item === null || item === undefined)
+            return false;
+        if (screen === root.screenHub)
+            return true;
+        if (screen === root.screenSystems)
+            return !root.catalogStillBooting && !Browse.SystemsModel.loading;
+        if (screen === root.screenGames)
+            return !root.catalogStillBooting && !Browse.GamesModel.loading;
+        if (screen === root.screenFavorites)
+            return !root.catalogStillBooting && !Browse.FavoritesModel.loading;
+        if (screen === root.screenRecents)
+            return !root.catalogStillBooting && !Browse.RecentsModel.loading;
+        return true;
+    }
+
+    function _maybeCompleteBackTransition(): void {
+        if (root.pendingTransition !== "back")
+            return;
+        const target = root._backTransitionTarget;
+        if (target === "" || !root._backTargetReady(target))
+            return;
+        root._backTransitionTarget = "";
+        backTransitionTimer.stop();
+        root._completeTransition(target);
+    }
+
+    // Back navigation is usually a return to an already-mounted, already-filled
+    // screen. Cut immediately in that case. Keep the delayed Loading cue only
+    // when real work is pending: lazy screen mount, catalog boot, or a model
+    // fill still in flight.
     function _navigateBackToScreen(screen: string): void {
         if (screen === root.activeScreen)
             return;
+        root._backTransitionTarget = "";
+        backTransitionTimer.stop();
+        if (root._backTargetReady(screen)) {
+            root._goto(screen);
+            root._resetIdle();
+            return;
+        }
         root._backTransitionTarget = screen;
         root.pendingTransition = "back";
         root._whenScreenReady(screen, function () {
             if (root.pendingTransition !== "back" || root._backTransitionTarget !== screen)
                 return;
-            backTransitionTimer.restart();
+            root._maybeCompleteBackTransition();
+            if (root.pendingTransition === "back")
+                backTransitionTimer.restart();
         });
     }
 
@@ -487,6 +524,7 @@ MainLayout {
                 if (root.pendingTransition === "settings")
                     root._completeTransition(root.screenSettings);
             });
+        root._maybeCompleteBackTransition();
     }
 
     // Listen for SystemsModel fills owned by an in-flight transition.
@@ -516,10 +554,13 @@ MainLayout {
             if (root._catalogWaitCategory !== "" && root._catalogStillBooting())
                 return;
             const cb = root._categoryReadyCallback;
-            if (cb === null)
+            if (cb === null) {
+                root._maybeCompleteBackTransition();
                 return;
+            }
             root._categoryReadyCallback = null;
             cb();
+            root._maybeCompleteBackTransition();
         }
     }
     Connections {
@@ -537,6 +578,7 @@ MainLayout {
                 cb();
             }
             root._completeFolderBackRebrowseIfReady();
+            root._maybeCompleteBackTransition();
         }
     }
     Connections {
@@ -546,10 +588,13 @@ MainLayout {
                 return;
             root._maybeCompletePendingResumeLaunch();
             const cb = root._recentsReadyCallback;
-            if (cb === null)
+            if (cb === null) {
+                root._maybeCompleteBackTransition();
                 return;
+            }
             root._recentsReadyCallback = null;
             cb();
+            root._maybeCompleteBackTransition();
         }
 
         function onResume_availableChanged(): void {
@@ -562,10 +607,13 @@ MainLayout {
             if (Browse.FavoritesModel.loading)
                 return;
             const cb = root._favoritesReadyCallback;
-            if (cb === null)
+            if (cb === null) {
+                root._maybeCompleteBackTransition();
                 return;
+            }
             root._favoritesReadyCallback = null;
             cb();
+            root._maybeCompleteBackTransition();
         }
     }
 
@@ -2436,9 +2484,11 @@ MainLayout {
     // background and circuit-trace texture stay visible underneath; never
     // paint a full-screen fill. The delayed indicator suppresses flashes
     // for quick loads; once it appears, screen `transitioning` bindings hide
-    // primary content so the centred "Loading…" reads alone in the cleared
-    // band. Sized to the full window so anchors.centerIn parks the row in
-    // the geometric centre regardless of which screen is the source.
+    // primary content so the centered "Loading…" reads alone in the cleared
+    // band. Do not apply a minimum-visible tail here: when the work completes
+    // near the delay threshold, the destination must not paint underneath a
+    // stale loading label. Sized to the full window so anchors.centerIn parks
+    // the row in the geometric center regardless of which screen is the source.
     Item {
         anchors.fill: parent
         visible: transitionCueActive || transitionCue.showing
@@ -2451,7 +2501,7 @@ MainLayout {
             id: transitionCue
             active: parent.transitionCueActive
             delayMs: root.loadingIndicatorDelayMs
-            minimumVisibleMs: root.minimumLoadingVisibleMs
+            minimumVisibleMs: 0
             x: Sizing.center(parent.width, width)
             y: Sizing.center(parent.height, height)
             onShowingChanged: root.transitionCueVisible = showing
@@ -2600,18 +2650,7 @@ MainLayout {
         id: backTransitionTimer
         interval: root.loadingIndicatorDelayMs + 50
         repeat: false
-        onTriggered: {
-            const target = root._backTransitionTarget;
-            root._backTransitionTarget = "";
-            if (target === "") {
-                if (root.pendingTransition === "back")
-                    root.pendingTransition = "";
-                return;
-            }
-            if (root.pendingTransition !== "back")
-                return;
-            root._completeTransition(target);
-        }
+        onTriggered: root._maybeCompleteBackTransition()
     }
 
     Timer {
