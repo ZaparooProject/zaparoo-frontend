@@ -348,6 +348,8 @@ ApplicationWindow {
     readonly property string _browseThemeId: BrowseLayouts.currentThemeId
     readonly property var _browseViewProfile: BrowseLayouts.themeProfile(root._browseThemeId, root._browseViewId)
     readonly property string _crtGamesHeaderTitle: {
+        if (root.activeScreen !== root.screenGames)
+            return "";
         const sid = Browse.GamesModel.current_system_id;
         if (sid === "")
             return "";
