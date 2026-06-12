@@ -272,7 +272,7 @@ MainLayout {
         }
     }
     Connections {
-        target: Browse.SystemsModel
+        target: root._systemsModelConnectionsEnabled ? Browse.SystemsModel : null
         // On a games-screen restore, GamesState.system_id is authoritative;
         // fall back to SystemsState.system_id only if it's empty (edge case:
         // user pressed Enter on an empty systems grid and we flipped the
@@ -291,7 +291,7 @@ MainLayout {
         }
     }
     Connections {
-        target: Browse.GamesModel
+        target: root._gamesModelConnectionsEnabled ? Browse.GamesModel : null
         function onModelReset(): void {
             if (root.gamesScreen === null) {
                 root._whenScreenReady(root.screenGames, function () {
@@ -407,6 +407,10 @@ MainLayout {
     // issued.
     property bool _deferredCategoryPending: false
     property bool _deferredSystemPending: false
+    readonly property bool _systemsModelConnectionsEnabled: root.systemsScreenRequested || root._startupRestorePending || root._categoryReadyCallback !== null || root._deferredCategoryPending || root._catalogWaitCategory !== ""
+    readonly property bool _gamesModelConnectionsEnabled: root.gamesScreenRequested || root._systemReadyCallback !== null || root._deferredSystemPending
+    readonly property bool _favoritesModelConnectionsEnabled: root.favoritesScreenRequested || root._favoritesReadyCallback !== null
+    readonly property bool _recentsModelConnectionsEnabled: root.recentsScreenRequested || root._recentsReadyCallback !== null || root._pendingResumeLaunch
     // Saved games-screen entry path that wasn't on the freshly seeded
     // page 1 of MediaBrowse. The GamesModel.onCountChanged watcher
     // below paginates forward via fetch_more until the path is found
@@ -495,7 +499,7 @@ MainLayout {
     // is consumed at most once per transition; a stray fire when no
     // transition is pending is a no-op.
     Connections {
-        target: Browse.SystemsModel
+        target: root._systemsModelConnectionsEnabled ? Browse.SystemsModel : null
         function onLoadingChanged(): void {
             if (Browse.SystemsModel.loading)
                 return;
@@ -519,7 +523,7 @@ MainLayout {
         }
     }
     Connections {
-        target: Browse.GamesModel
+        target: root._gamesModelConnectionsEnabled ? Browse.GamesModel : null
         function onLoadingChanged(): void {
             if (Browse.GamesModel.loading)
                 return;
@@ -536,7 +540,7 @@ MainLayout {
         }
     }
     Connections {
-        target: Browse.RecentsModel
+        target: root._recentsModelConnectionsEnabled ? Browse.RecentsModel : null
         function onLoadingChanged(): void {
             if (Browse.RecentsModel.loading)
                 return;
@@ -553,7 +557,7 @@ MainLayout {
         }
     }
     Connections {
-        target: Browse.FavoritesModel
+        target: root._favoritesModelConnectionsEnabled ? Browse.FavoritesModel : null
         function onLoadingChanged(): void {
             if (Browse.FavoritesModel.loading)
                 return;
