@@ -49,7 +49,7 @@ QtObject {
         return key;
     }
 
-    function coverUrl(key: string, foreground, background): url {
+    function coverUrl(key: string, foreground, secondary, background): url {
         if (key === "")
             return "";
 
@@ -58,9 +58,12 @@ QtObject {
 
         if (key.startsWith("systems/")) {
             const artworkKey = _systemArtworkKey(key);
+            const effectiveSecondary = background === undefined ? foreground : secondary;
+            const effectiveBackground = background === undefined ? secondary : background;
             const fg = _colorToken(foreground);
-            const bg = _colorToken(background === undefined ? "#000000" : background);
-            return "image://tinted-svg/" + fg + "/" + bg + "/images/" + artworkKey + ".svg";
+            const second = _colorToken(effectiveSecondary === undefined ? foreground : effectiveSecondary);
+            const bg = _colorToken(effectiveBackground === undefined ? "#000000" : effectiveBackground);
+            return "image://tinted-svg/" + fg + "/" + second + "/" + bg + "/images/" + artworkKey + ".svg";
         }
 
         return baseUrl + "images/" + key + ".svg";

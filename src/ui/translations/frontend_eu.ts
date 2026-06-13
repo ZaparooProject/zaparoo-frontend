@@ -561,138 +561,138 @@ Euskara - devilschile2</source>
 <context>
     <name>Main</name>
     <message>
-        <location filename="../app/Main.qml" line="1353"/>
+        <location filename="../app/Main.qml" line="1361"/>
         <source>Launch core</source>
         <translation type="unfinished">Exekutatu nukleoa</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1359"/>
-        <location filename="../app/Main.qml" line="1596"/>
+        <location filename="../app/Main.qml" line="1367"/>
+        <location filename="../app/Main.qml" line="1606"/>
         <source>Change launcher</source>
         <translation type="unfinished">Aldatu abiarazlea</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1415"/>
+        <location filename="../app/Main.qml" line="1425"/>
         <source>Remove from favorites</source>
         <translation type="unfinished">Kendu gogokoetatik</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1415"/>
+        <location filename="../app/Main.qml" line="1425"/>
         <source>Add to favorites</source>
         <translation type="unfinished">Gehitu gogokoetan</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1420"/>
+        <location filename="../app/Main.qml" line="1430"/>
         <source>Write to NFC token</source>
         <translation type="unfinished">Idatzi NFC token-a</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1424"/>
+        <location filename="../app/Main.qml" line="1434"/>
         <source>QR code</source>
         <translation type="unfinished">QR kodea</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1399"/>
-        <location filename="../app/Main.qml" line="1434"/>
+        <location filename="../app/Main.qml" line="1409"/>
+        <location filename="../app/Main.qml" line="1444"/>
         <source>Launch game</source>
         <translation type="unfinished">Abiarazi jokua</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2590"/>
+        <location filename="../app/Main.qml" line="2600"/>
         <source>Loading systems…</source>
         <translation type="unfinished">Sistemak kargatzen</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2596"/>
+        <location filename="../app/Main.qml" line="2606"/>
         <source>Loading favorites…</source>
         <translation type="unfinished">Gogokoak kargatzen</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2592"/>
+        <location filename="../app/Main.qml" line="2602"/>
         <source>Loading games…</source>
         <translation type="unfinished">Jokoak kargatzen</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1366"/>
-        <location filename="../app/Main.qml" line="1387"/>
+        <location filename="../app/Main.qml" line="1374"/>
+        <location filename="../app/Main.qml" line="1397"/>
         <source>Update media database</source>
         <translation type="unfinished">Eguneratu multimedia datu-basea</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1369"/>
-        <location filename="../app/Main.qml" line="1390"/>
+        <location filename="../app/Main.qml" line="1377"/>
+        <location filename="../app/Main.qml" line="1400"/>
         <source>Scrape metadata</source>
         <translation type="unfinished">Metadatuak scrapeatu</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1374"/>
         <location filename="../app/Main.qml" line="1382"/>
+        <location filename="../app/Main.qml" line="1391"/>
         <source>Unhide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1374"/>
         <location filename="../app/Main.qml" line="1382"/>
+        <location filename="../app/Main.qml" line="1391"/>
         <source>Hide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1592"/>
+        <location filename="../app/Main.qml" line="1602"/>
         <source>Default</source>
         <translation type="unfinished">Lehenetsia</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1592"/>
+        <location filename="../app/Main.qml" line="1602"/>
         <source>Current: %1</source>
         <translation type="unfinished">Unekoa: %1</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1916"/>
+        <location filename="../app/Main.qml" line="1926"/>
         <source>Saving launcher</source>
         <translation type="unfinished">Abiarazlea gordetzen</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1920"/>
+        <location filename="../app/Main.qml" line="1930"/>
         <source>Saving…</source>
         <translation type="unfinished">Gordetzen...</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1934"/>
+        <location filename="../app/Main.qml" line="1944"/>
         <source>Launcher update failed</source>
         <translation type="unfinished">Abiarazle egukeraketak huts egin du</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1938"/>
+        <location filename="../app/Main.qml" line="1948"/>
         <source>Error: %1</source>
         <translation type="unfinished">Errorea: %1</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1942"/>
+        <location filename="../app/Main.qml" line="1952"/>
         <source>Retry</source>
         <translation type="unfinished">Berriro saiatu</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1946"/>
+        <location filename="../app/Main.qml" line="1956"/>
         <source>Cancel</source>
         <translation type="unfinished">Utzi</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2594"/>
+        <location filename="../app/Main.qml" line="2604"/>
         <source>Loading game…</source>
         <translation type="unfinished">Jokua kargatzen...</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2598"/>
+        <location filename="../app/Main.qml" line="2608"/>
         <source>Loading recently played…</source>
         <translation type="unfinished">Duela gutxi jokatutakoak kargatzen...</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2600"/>
+        <location filename="../app/Main.qml" line="2610"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2602"/>
+        <location filename="../app/Main.qml" line="2612"/>
         <source>Loading…</source>
         <translation type="unfinished">Kargatzen…</translation>
     </message>
@@ -1416,7 +1416,7 @@ Euskara - devilschile2</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="310"/>
+        <location filename="../components/Tile.qml" line="314"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>

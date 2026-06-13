@@ -34,6 +34,12 @@ QtObject {
     readonly property color textLabel: "#888888"
     // Accent — static warm amber used for selection highlights.
     readonly property color accent: "#FFB347"
+    // System logo tint tokens. Source logo tones pass through a
+    // monotonic neutral grade: lifted shadow, near-white midtone,
+    // and crisp white highlight. Single-tone logos render as white.
+    readonly property color logoPrimary: textPrimary
+    readonly property color logoShadow: Qt.rgba(surfaceCard.r * 0.38 + textPrimary.r * 0.62, surfaceCard.g * 0.38 + textPrimary.g * 0.62, surfaceCard.b * 0.38 + textPrimary.b * 0.62, 1)
+    readonly property color logoSecondary: Qt.rgba(logoShadow.r * 0.18 + textPrimary.r * 0.82, logoShadow.g * 0.18 + textPrimary.g * 0.82, logoShadow.b * 0.18 + textPrimary.b * 0.82, 1)
     // Fonts
     readonly property string fontUi: crtNativePath ? "MxPlus HP 100LX 6x8" : "Noto Sans"
     readonly property string fontMono: crtNativePath ? "MxPlus HP 100LX 6x8" : "monospace"

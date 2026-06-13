@@ -111,7 +111,7 @@ Item {
     // let `loadingGlyph` own the painting.
     readonly property bool _coverPending: root.delegateCoverKey === "icons/Loading"
     readonly property bool _systemCover: root.delegateCoverKey.startsWith("systems/")
-    readonly property url _coverSource: root._coverPending ? "" : Resources.coverUrl(root.delegateCoverKey, Theme.textPrimary, Theme.surfaceCard)
+    readonly property url _coverSource: root._coverPending ? "" : Resources.coverUrl(root.delegateCoverKey, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow)
     readonly property bool _hasCover: cover.status === Image.Ready
     readonly property bool _fallbackVisible: !root.showCaption && !root._hasCover && !root._coverPending
     readonly property int _fallbackTextSize: root._systemCover ? Sizing.fontSize(5.8) : Sizing.fontSize(2.4)

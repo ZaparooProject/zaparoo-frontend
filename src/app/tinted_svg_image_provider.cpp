@@ -48,25 +48,61 @@ QColor colorFromToken(const QString& token, const QColor& fallback)
     return color.isValid() ? color : fallback;
 }
 
-int mixChannel(int a, int b, int amountB)
+int channelMix(int a, int b, int amountB)
 {
-    return (a * (255 - amountB) + b * amountB + 127) / 255;
+    return ((a * (255 - amountB)) + (b * amountB) + 127) / 255;
 }
 
-void tintImage(QImage& image, const QColor& foreground, const QColor& background)
+int lumaOf(QRgb source)
+{
+    return (((qRed(source) * 299) + (qGreen(source) * 587) + (qBlue(source) * 114)) + 500) / 1000;
+}
+
+struct ToneRange
+{
+    int min = 255;
+    int max = 0;
+    int pixels = 0;
+};
+
+ToneRange toneRangeOf(const QImage& image)
+{
+    ToneRange range;
+    for (int y = 0; y < image.height(); ++y)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto* line = reinterpret_cast<const QRgb*>(image.constScanLine(y));
+        for (int x = 0; x < image.width(); ++x)
+        {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+            const QRgb source = line[x];
+            if (qAlpha(source) <= 16)
+            {
+                continue;
+            }
+            const int luma = lumaOf(source);
+            range.min = std::min(range.min, luma);
+            range.max = std::max(range.max, luma);
+            ++range.pixels;
+        }
+    }
+    return range;
+}
+
+void tintImage(QImage& image, const QColor& highlight, const QColor& midtone, const QColor& shadow)
 {
     QImage straight = image.convertToFormat(QImage::Format_ARGB32);
-    const int fgR = foreground.red();
-    const int fgG = foreground.green();
-    const int fgB = foreground.blue();
-    // Map the darkest source pixels to a contrast-safe secondary tint,
-    // not to the card background. The black/white upstream logos use
-    // black and dark grays for real strokes/details; treating black as
-    // transparent/background erases those parts on dark themes.
-    constexpr int kDarkTintForegroundMix = 180;
-    const int darkR = mixChannel(background.red(), fgR, kDarkTintForegroundMix);
-    const int darkG = mixChannel(background.green(), fgG, kDarkTintForegroundMix);
-    const int darkB = mixChannel(background.blue(), fgB, kDarkTintForegroundMix);
+    const ToneRange range = toneRangeOf(straight);
+    const bool singleTone = range.pixels == 0 || (range.max - range.min) < 16;
+    const int highlightR = highlight.red();
+    const int highlightG = highlight.green();
+    const int highlightB = highlight.blue();
+    const int midtoneR = midtone.red();
+    const int midtoneG = midtone.green();
+    const int midtoneB = midtone.blue();
+    const int shadowR = shadow.red();
+    const int shadowG = shadow.green();
+    const int shadowB = shadow.blue();
 
     for (int y = 0; y < straight.height(); ++y)
     {
@@ -81,12 +117,36 @@ void tintImage(QImage& image, const QColor& foreground, const QColor& background
             {
                 continue;
             }
-            const int luma =
-                (qRed(source) * 299 + qGreen(source) * 587 + qBlue(source) * 114 + 500) / 1000;
-            const int inv = 255 - luma;
-            const int red = (darkR * inv + fgR * luma + 127) / 255;
-            const int green = (darkG * inv + fgG * luma + 127) / 255;
-            const int blue = (darkB * inv + fgB * luma + 127) / 255;
+
+            int red = highlightR;
+            int green = highlightG;
+            int blue = highlightB;
+            if (!singleTone)
+            {
+                // Preserve source light/dark ordering. This is a color-grade,
+                // not a semantic recolor: darkest source areas map to a lifted
+                // shadow tint, midtones pick up the theme tint, and brightest
+                // source areas stay primary white. Gradients and antialiasing
+                // remain smooth because the curve is monotonic.
+                const int tone = std::clamp((lumaOf(source) - range.min) * 255 /
+                                                std::max(1, range.max - range.min),
+                                            0, 255);
+                if (tone < 128)
+                {
+                    const int amount = tone * 2;
+                    red = channelMix(shadowR, midtoneR, amount);
+                    green = channelMix(shadowG, midtoneG, amount);
+                    blue = channelMix(shadowB, midtoneB, amount);
+                }
+                else
+                {
+                    const int amount = (tone - 128) * 2;
+                    red = channelMix(midtoneR, highlightR, amount);
+                    green = channelMix(midtoneG, highlightG, amount);
+                    blue = channelMix(midtoneB, highlightB, amount);
+                }
+            }
+
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             line[x] = qRgba(red, green, blue, alpha);
         }
@@ -95,8 +155,10 @@ void tintImage(QImage& image, const QColor& foreground, const QColor& background
 }
 } // namespace
 
-TintedSvgImageResponse::TintedSvgImageResponse(QString id, QSize requestedSize)
-    : m_id(std::move(id)), m_requestedSize(requestedSize)
+TintedSvgImageResponse::TintedSvgImageResponse(QString id, QSize requestedSize, QMutex* cacheMutex,
+                                               QCache<QString, QImage>* logoCache)
+    : m_id(std::move(id)), m_requestedSize(requestedSize), m_cacheMutex(cacheMutex),
+      m_logoCache(logoCache)
 {
     setAutoDelete(false);
 }
@@ -117,6 +179,24 @@ QString TintedSvgImageResponse::errorString() const
 
 void TintedSvgImageResponse::run()
 {
+    // Check process-memory cache before doing any SVG render or tint work.
+    // The result is deterministic for a given (id, requestedSize) pair, so
+    // repeat loads after a QPixmapCache eviction or a category re-entry skip
+    // the entire per-pixel pass. Key encodes both id and the requested size so
+    // entries with different sizes don't alias each other.
+    const QString cacheKey = m_id + QStringLiteral(":") + QString::number(m_requestedSize.width()) +
+                             QStringLiteral("x") + QString::number(m_requestedSize.height());
+    {
+        QMutexLocker locker(m_cacheMutex);
+        if (const QImage* cached = m_logoCache->object(cacheKey))
+        {
+            m_image = *cached;
+            m_factory.reset(QQuickTextureFactory::textureFactoryForImage(m_image));
+            emit finished();
+            return;
+        }
+    }
+
     static thread_local bool s_decoderNiced = false;
     if (!s_decoderNiced)
     {
@@ -125,7 +205,7 @@ void TintedSvgImageResponse::run()
     }
 
     const QStringList parts = m_id.split(QLatin1Char('/'));
-    if (parts.size() < 3)
+    if (parts.size() < 4)
     {
         m_error = QStringLiteral("malformed tinted-svg id");
         qWarning("tinted-svg provider: malformed id=%s", qUtf8Printable(m_id));
@@ -133,9 +213,10 @@ void TintedSvgImageResponse::run()
         return;
     }
 
-    const QColor foreground = colorFromToken(parts.at(0), QColor(Qt::white));
-    const QColor background = colorFromToken(parts.at(1), QColor(Qt::black));
-    const QString resourcePath = parts.mid(2).join(QLatin1Char('/'));
+    const QColor primary = colorFromToken(parts.at(0), QColor(Qt::white));
+    const QColor secondary = colorFromToken(parts.at(1), QColor(Qt::white));
+    const QColor shadow = colorFromToken(parts.at(2), QColor(Qt::black));
+    const QString resourcePath = parts.mid(3).join(QLatin1Char('/'));
     if (!resourcePath.startsWith(QStringLiteral("images/systems/")) ||
         !resourcePath.endsWith(QStringLiteral(".svg")))
     {
@@ -171,13 +252,34 @@ void TintedSvgImageResponse::run()
     renderer.render(&painter);
     painter.end();
 
-    tintImage(image, foreground, background);
+    tintImage(image, primary, secondary, shadow);
     m_image = image;
     m_factory.reset(QQuickTextureFactory::textureFactoryForImage(m_image));
+
+    // Store in the provider's process-memory cache so subsequent requests for
+    // the same logo (e.g. after a QPixmapCache eviction) skip the render pass.
+    // Cost is tracked in bytes so maxCost caps total memory use on MiSTer.
+    {
+        QMutexLocker locker(m_cacheMutex);
+        if (!m_logoCache->contains(cacheKey))
+        {
+            const auto cost = static_cast<int>(m_image.sizeInBytes());
+            // QCache::insert takes ownership of the raw pointer; this is the
+            // documented API and the owning-memory diagnostic is expected here.
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+            m_logoCache->insert(cacheKey, new QImage(m_image), cost);
+        }
+    }
+
     emit finished();
 }
 
-TintedSvgImageProvider::TintedSvgImageProvider()
+// 8 MB cap: one 256×256 ARGB logo is ~256 KB, so this covers ~32 logos.
+// The curated system set is bounded and a single theme has one fixed color
+// triad, so in practice the working set is much smaller than the cap.
+static constexpr int kLogoCacheMaxBytes = 8 * 1024 * 1024;
+
+TintedSvgImageProvider::TintedSvgImageProvider() : m_logoCache(kLogoCacheMaxBytes)
 {
     m_pool.setMaxThreadCount(4);
 }
@@ -185,7 +287,7 @@ TintedSvgImageProvider::TintedSvgImageProvider()
 QQuickImageResponse* TintedSvgImageProvider::requestImageResponse(const QString& id,
                                                                   const QSize& requestedSize)
 {
-    auto* response = new TintedSvgImageResponse(id, requestedSize);
+    auto* response = new TintedSvgImageResponse(id, requestedSize, &m_cacheMutex, &m_logoCache);
     m_pool.start(response);
     return response;
 }

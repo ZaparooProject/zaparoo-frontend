@@ -532,7 +532,7 @@ Item {
                     cursorShape: Qt.PointingHandCursor
 
                     onEntered: hub._focusCategory(cellItem.index)
-                    onClicked: (mouse) => {
+                    onClicked: mouse => {
                         hub._focusCategory(cellItem.index);
                         if (mouse.button === Qt.RightButton) {
                             if (cellItem.index < Browse.CategoriesModel.count)

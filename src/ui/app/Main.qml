@@ -459,6 +459,14 @@ MainLayout {
     property string _pendingFolderBackTargetPath: ""
     property string _pendingFolderBackSystemId: ""
     property var _folderBackReadyCallback: null
+    // System-cover prefetch gate. `_prefetchSystemCovers` populates
+    // `_systemCoverPrefetchUrls` with the first-page logos and stores the
+    // completion callback in `_systemCoverPrefetchCallback`. When every
+    // Image signals Ready/Error (or `systemCoverPrefetchTimer` expires),
+    // `_completePrefetchSystemCovers` fires the callback and clears state.
+    property var _systemCoverPrefetchUrls: []
+    property var _systemCoverPrefetchCallback: null
+    property int _systemCoverPrefetchPending: 0
 
     function _catalogStillBooting(): bool {
         return !Browse.CategoriesModel.loaded && (Browse.CategoriesModel.error_message ?? "") === "";
@@ -1377,10 +1385,12 @@ MainLayout {
         }
         if (owner === "categories") {
             const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
-            const entries = [{
-                id: "toggle_hide_category",
-                label: isHidden ? qsTr("Unhide") : qsTr("Hide")
-            }];
+            const entries = [
+                {
+                    id: "toggle_hide_category",
+                    label: isHidden ? qsTr("Unhide") : qsTr("Hide")
+                }
+            ];
             if (!mediaBusy) {
                 entries.push({
                     id: "index_category",
@@ -2603,14 +2613,71 @@ MainLayout {
                 }
             }
         }
+
+        // Hidden Image pool driven by `_prefetchSystemCovers`. Each Image
+        // renders the tinted SVG logo off-screen at the same sourceSize as
+        // the visible Tile so they share one QPixmapCache entry. When every
+        // Image signals Ready or Error, `_systemCoverPrefetchPending` reaches
+        // zero and `_completePrefetchSystemCovers` fires the transition
+        // callback. `_systemCoverPrefetchUrls` is reset to [] when the gate
+        // resolves, which destroys the delegates immediately. No background
+        // fill is added — this Item is already a transparent overlay.
+        Repeater {
+            model: root._systemCoverPrefetchUrls
+            delegate: Image {
+                required property url modelData
+                source: modelData
+                sourceSize.width: 256
+                asynchronous: true
+                visible: false
+                width: 0
+                height: 0
+                onStatusChanged: {
+                    if (status !== Image.Ready && status !== Image.Error)
+                        return;
+                    root._systemCoverPrefetchPending = Math.max(0, root._systemCoverPrefetchPending - 1);
+                    if (root._systemCoverPrefetchPending <= 0)
+                        root._completePrefetchSystemCovers();
+                }
+            }
+        }
     }
 
-    // System logos are embedded SVG resources. The hidden PNG pre-decode
-    // gate used by earlier builds only extends the "Loading systems…" overlay
-    // now; let the destination screen paint as soon as the category rows are
-    // ready and rely on the normal Image/QPixmap caches for raster reuse.
+    // System-cover prefetch gate. Holds the "Loading systems…" transition
+    // overlay until the first visible page of tinted SVG logos has decoded
+    // (or the cap timer fires), then calls cb(). This ensures the Systems
+    // grid reveals fully painted instead of showing name-text placeholders
+    // that pop into logos one-by-one. Fast/re-entry navigations complete
+    // within the 300ms DelayedLoadingIndicator threshold so no cue appears.
+    // The hidden prefetch Repeater lives in the transition-cue Item above;
+    // it watches `_systemCoverPrefetchUrls` and reports back via
+    // `_systemCoverPrefetchPending`.
     function _prefetchSystemCovers(cb): void {
-        cb();
+        const pageSize = Sizing.visibleCovers * 4;
+        const count = Math.min(Browse.SystemsModel.count, pageSize);
+        if (count === 0) {
+            cb();
+            return;
+        }
+        const urls = [];
+        for (let i = 0; i < count; ++i) {
+            const sysId = Browse.SystemsModel.system_id_at(i);
+            urls.push(Resources.coverUrl("systems/" + sysId, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow));
+        }
+        root._systemCoverPrefetchCallback = cb;
+        root._systemCoverPrefetchPending = urls.length;
+        root._systemCoverPrefetchUrls = urls;
+        systemCoverPrefetchTimer.restart();
+    }
+
+    function _completePrefetchSystemCovers(): void {
+        systemCoverPrefetchTimer.stop();
+        root._systemCoverPrefetchUrls = [];
+        root._systemCoverPrefetchPending = 0;
+        const cb = root._systemCoverPrefetchCallback;
+        root._systemCoverPrefetchCallback = null;
+        if (cb !== null)
+            cb();
     }
 
     Timer {
@@ -2646,6 +2713,19 @@ MainLayout {
         interval: root.loadingIndicatorDelayMs + 50
         repeat: false
         onTriggered: root._completeFolderBackTransition()
+    }
+
+    // Safety cap for the system-cover prefetch gate. If some logos haven't
+    // decoded by this deadline they paint in after the screen reveals,
+    // identical to the Games cover-gate timeout behavior. Cap = 300ms
+    // (loadingIndicatorDelayMs) — logos that land faster than the
+    // DelayedLoadingIndicator threshold complete the transition silently;
+    // logos that are slower get a brief "Loading systems…" cue then pop in.
+    Timer {
+        id: systemCoverPrefetchTimer
+        interval: root.loadingIndicatorDelayMs
+        repeat: false
+        onTriggered: root._completePrefetchSystemCovers()
     }
 
     // Deferred set_category trigger. When the existing model has rows,
