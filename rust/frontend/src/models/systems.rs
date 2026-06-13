@@ -2,9 +2,11 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-use crate::models::{global_handle, global_store};
+use crate::models::{global_handle, global_store, with_persist_read};
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
+use cxx_qt_lib::{
+    QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QVariant,
+};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -26,6 +28,7 @@ const NAME_ROLE: i32 = 256 + 2;
 const CATEGORY_ROLE: i32 = 256 + 3;
 const FAVORITE_ROLE: i32 = 256 + 4;
 const FILE_STEM_ROLE: i32 = 256 + 5;
+const HIDDEN_ROLE: i32 = 256 + 6;
 
 pub struct SystemInfo {
     pub id: String,
@@ -33,6 +36,9 @@ pub struct SystemInfo {
     pub category: String,
     pub release_date: Option<String>,
     pub manufacturer: Option<String>,
+    /// True when the user has hidden this system and `show_hidden` is on.
+    /// The tile renders dimmed with a "Hidden" badge.
+    pub hidden: bool,
 }
 
 #[derive(Default)]
@@ -81,6 +87,7 @@ pub mod ffi {
         type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
         type QByteArray = cxx_qt_lib::QByteArray;
         type QString = cxx_qt_lib::QString;
+        type QStringList = cxx_qt_lib::QStringList;
     }
 
     unsafe extern "RustQt" {
@@ -122,6 +129,26 @@ pub mod ffi {
 
         #[qinvokable]
         fn index_for_system_id(self: &SystemsModel, id: &QString) -> i32;
+
+        /// Returns true when the system at `index` is user-hidden and
+        /// `show_hidden` is on (i.e. visible but dimmed). Always false when
+        /// the system is fully filtered out (`show_hidden = false`).
+        #[qinvokable]
+        fn is_hidden_at(self: &SystemsModel, index: i32) -> bool;
+
+        /// Re-run the current category filter using the persisted hidden set
+        /// and `show_hidden`. Call after any hide/unhide/toggle action so the
+        /// grid reflects the new visibility without waiting for a catalog
+        /// refetch. Bumps `seq` to invalidate any in-flight `set_category`
+        /// workers.
+        #[qinvokable]
+        fn reproject(self: Pin<&mut SystemsModel>);
+
+        /// Return all system IDs in `category` from the last-known-good
+        /// catalog, ignoring the current hide filter. Used by `Main.qml` to
+        /// build a system list for category-level index/scrape operations.
+        #[qinvokable]
+        fn system_ids_for_category(self: &SystemsModel, category: &QString) -> QStringList;
 
         #[inherit]
         #[cxx_name = "beginResetModel"]
@@ -182,16 +209,33 @@ fn position_of_system_id(systems: &[SystemInfo], needle: &str) -> i32 {
 /// Filter `catalog`'s systems to the named category and re-shape them
 /// into the local row type. Returns empty when `catalog` is `None` so
 /// `set_category` and `apply_state` share one filter+map definition.
-fn rows_for_category(catalog: Option<&CatalogData>, cat: &str) -> Vec<SystemInfo> {
+///
+/// `hidden_ids` is the current persisted set of user-hidden system IDs.
+/// When `show_hidden` is false, systems in that set are dropped entirely.
+/// When true, they are included with `hidden = true` so the tile renders
+/// dimmed with a "Hidden" badge.
+fn rows_for_category(
+    catalog: Option<&CatalogData>,
+    cat: &str,
+    hidden_ids: &[String],
+    show_hidden: bool,
+) -> Vec<SystemInfo> {
     catalog.map_or_else(Vec::new, |c| {
         c.systems_by_category(cat)
             .into_iter()
-            .map(|s| SystemInfo {
-                id: s.id,
-                name: s.name,
-                category: s.category,
-                release_date: s.release_date,
-                manufacturer: s.manufacturer,
+            .filter_map(|s| {
+                let is_hidden = hidden_ids.contains(&s.id);
+                if is_hidden && !show_hidden {
+                    return None;
+                }
+                Some(SystemInfo {
+                    id: s.id,
+                    name: s.name,
+                    category: s.category,
+                    release_date: s.release_date,
+                    manufacturer: s.manufacturer,
+                    hidden: is_hidden,
+                })
             })
             .collect()
     })
@@ -211,7 +255,10 @@ fn apply_state(mut model: Pin<&mut ffi::SystemsModel>, (data, err): (Option<Cata
             // authoritative writer for the moment, and stale rows
             // win.
             model.rust().seq.fetch_add(1, Ordering::SeqCst);
-            let rows = rows_for_category(Some(&data), &cat);
+            let (hidden_ids, show_hidden) = with_persist_read(|s| {
+                (s.systems.hidden_system_ids.clone(), s.settings.show_hidden)
+            });
+            let rows = rows_for_category(Some(&data), &cat, &hidden_ids, show_hidden);
             let count = rows.len() as i32;
             let ids: Vec<&str> = rows.iter().map(|s| s.id.as_str()).collect();
             debug!(
@@ -275,6 +322,7 @@ impl ffi::SystemsModel {
             NAME_ROLE | FILE_STEM_ROLE => QVariant::from(&QString::from(s.name.as_str())),
             CATEGORY_ROLE => QVariant::from(&QString::from(s.category.as_str())),
             FAVORITE_ROLE => QVariant::from(&0_i32),
+            HIDDEN_ROLE => QVariant::from(&s.hidden),
             _ => QVariant::default(),
         }
     }
@@ -286,6 +334,7 @@ impl ffi::SystemsModel {
         h.insert(CATEGORY_ROLE, QByteArray::from("category"));
         h.insert(FAVORITE_ROLE, QByteArray::from("favorite"));
         h.insert(FILE_STEM_ROLE, QByteArray::from("fileStem"));
+        h.insert(HIDDEN_ROLE, QByteArray::from("hidden"));
         h
     }
 
@@ -344,18 +393,20 @@ impl ffi::SystemsModel {
         let seq = self.rust().seq.clone();
         let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
 
-        // Snapshot the catalog for the worker. Reading from
-        // `last_ready` rather than the live `ResourceStatus` means a
-        // transient `Loading` (a refetch in flight) doesn't wipe the
-        // grid between the user's category change and the refetch
-        // completing. The clone is small (~hundreds of `SystemInfo`
-        // rows, microseconds on ARM) and unavoidable without
-        // Arc-wrapping `last_ready`, which is out of scope.
+        // Snapshot the catalog and current hidden state for the worker.
+        // Reading from `last_ready` rather than the live `ResourceStatus`
+        // means a transient `Loading` (a refetch in flight) doesn't wipe
+        // the grid between the user's category change and the refetch
+        // completing. The clone is small (~hundreds of `SystemInfo` rows,
+        // microseconds on ARM) and unavoidable without Arc-wrapping
+        // `last_ready`, which is out of scope.
         let catalog = self.rust().last_ready.clone();
+        let (hidden_ids, show_hidden) =
+            with_persist_read(|s| (s.systems.hidden_system_ids.clone(), s.settings.show_hidden));
 
         let qt_thread = self.qt_thread();
         let handle = global_handle().spawn(async move {
-            let rows = rows_for_category(catalog.as_ref(), &cat);
+            let rows = rows_for_category(catalog.as_ref(), &cat, &hidden_ids, show_hidden);
             let count = rows.len() as i32;
             let cat_for_log = cat.clone();
             let ids_for_log: Vec<String> = rows.iter().map(|s| s.id.clone()).collect();
@@ -498,6 +549,49 @@ impl ffi::SystemsModel {
     fn index_for_system_id(&self, id: &QString) -> i32 {
         position_of_system_id(&self.systems, &id.to_string())
     }
+
+    fn is_hidden_at(&self, index: i32) -> bool {
+        if index < 0 || index >= self.count {
+            return false;
+        }
+        self.systems[index as usize].hidden
+    }
+
+    fn reproject(mut self: Pin<&mut Self>) {
+        let cat = self.rust().current_category.to_string();
+        if cat.is_empty() {
+            return;
+        }
+        let (hidden_ids, show_hidden) =
+            with_persist_read(|s| (s.systems.hidden_system_ids.clone(), s.settings.show_hidden));
+        // Bump seq to invalidate any in-flight set_category workers; their
+        // stale result would undo the reproject if they ran after us.
+        let seq = self.rust().seq.clone();
+        seq.fetch_add(1, Ordering::SeqCst);
+        let catalog = self.rust().last_ready.clone();
+        let rows = rows_for_category(catalog.as_ref(), &cat, &hidden_ids, show_hidden);
+        let count = rows.len() as i32;
+        debug!(category = %cat, count, "systems: reproject");
+        self.as_mut().begin_reset_model();
+        self.as_mut().rust_mut().systems = rows;
+        self.as_mut().rust_mut().count = count;
+        self.as_mut().end_reset_model();
+        self.as_mut().count_changed();
+        if self.loading {
+            self.as_mut().set_loading(false);
+        }
+    }
+
+    fn system_ids_for_category(&self, category: &QString) -> QStringList {
+        let cat = category.to_string();
+        let mut list = QStringList::default();
+        if let Some(ref c) = self.rust().last_ready {
+            for sys in c.systems_by_category(&cat) {
+                list.append(QString::from(sys.id.as_str()));
+            }
+        }
+        list
+    }
 }
 
 fn detail_tags_for_system(system: &SystemInfo) -> String {
@@ -607,7 +701,7 @@ mod tests {
 
     #[test]
     fn rows_for_category_none_returns_empty() {
-        let rows = rows_for_category(None, "Arcade");
+        let rows = rows_for_category(None, "Arcade", &[], false);
         assert!(rows.is_empty());
     }
 
@@ -618,12 +712,13 @@ mod tests {
             sys("snk", "SNK Heroes", "Arcade"),
             sys("zelda", "Zelda", "Consoles"),
         ]);
-        let rows = rows_for_category(Some(&catalog), "Consoles");
+        let rows = rows_for_category(Some(&catalog), "Consoles", &[], false);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].id, "smb");
         assert_eq!(rows[0].name, "Super Mario Bros");
         assert_eq!(rows[0].category, "Consoles");
         assert_eq!(rows[1].id, "zelda");
+        assert!(!rows[0].hidden);
     }
 
     #[test]
@@ -632,10 +727,47 @@ mod tests {
         nes.release_date = Some("1983".into());
         nes.manufacturer = Some("Nintendo".into());
         let catalog = catalog_with(vec![nes]);
-        let rows = rows_for_category(Some(&catalog), "Consoles");
+        let rows = rows_for_category(Some(&catalog), "Consoles", &[], false);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].release_date.as_deref(), Some("1983"));
         assert_eq!(rows[0].manufacturer.as_deref(), Some("Nintendo"));
+    }
+
+    #[test]
+    fn rows_for_category_hidden_system_excluded_when_show_hidden_false() {
+        let catalog = catalog_with(vec![
+            sys("nes", "NES", "Consoles"),
+            sys("snes", "SNES", "Consoles"),
+        ]);
+        let hidden = vec!["snes".to_string()];
+        let rows = rows_for_category(Some(&catalog), "Consoles", &hidden, false);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "nes");
+    }
+
+    #[test]
+    fn rows_for_category_hidden_system_shown_dimmed_when_show_hidden_true() {
+        let catalog = catalog_with(vec![
+            sys("nes", "NES", "Consoles"),
+            sys("snes", "SNES", "Consoles"),
+        ]);
+        let hidden = vec!["snes".to_string()];
+        let rows = rows_for_category(Some(&catalog), "Consoles", &hidden, true);
+        assert_eq!(rows.len(), 2);
+        assert!(!rows[0].hidden);
+        assert!(rows[1].hidden);
+        assert_eq!(rows[1].id, "snes");
+    }
+
+    #[test]
+    fn rows_for_category_empty_hidden_ids_no_change() {
+        let catalog = catalog_with(vec![sys("nes", "NES", "Consoles")]);
+        let rows_off = rows_for_category(Some(&catalog), "Consoles", &[], false);
+        let rows_on = rows_for_category(Some(&catalog), "Consoles", &[], true);
+        assert_eq!(rows_off.len(), 1);
+        assert_eq!(rows_on.len(), 1);
+        assert!(!rows_off[0].hidden);
+        assert!(!rows_on[0].hidden);
     }
 
     #[test]
@@ -652,7 +784,7 @@ mod tests {
     #[test]
     fn rows_for_category_unknown_returns_empty() {
         let catalog = catalog_with(vec![sys("smb", "SMB", "Consoles")]);
-        let rows = rows_for_category(Some(&catalog), "DoesNotExist");
+        let rows = rows_for_category(Some(&catalog), "DoesNotExist", &[], false);
         assert!(rows.is_empty());
     }
 
@@ -663,6 +795,7 @@ mod tests {
             category: "Consoles".into(),
             release_date: None,
             manufacturer: None,
+            hidden: false,
         }
     }
 

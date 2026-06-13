@@ -54,19 +54,22 @@ TestCase {
             "name": "D (Disc 1)",
             "fileStem": "D",
             "coverKey": "",
-            "favorite": 0
+            "favorite": 0,
+            "hidden": false
         });
         mediaModel.append({
             "name": "D (Disc 2)",
             "fileStem": "D",
             "coverKey": "",
-            "favorite": 0
+            "favorite": 0,
+            "hidden": false
         });
         mediaModel.append({
             "name": "Friendly Alias",
             "fileStem": "InternalContainer",
             "coverKey": "",
-            "favorite": 0
+            "favorite": 0,
+            "hidden": false
         });
         tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
         screen.mediaGrid.setCurrentIndexImmediate(0);

@@ -46,6 +46,18 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_selected_action(self: Pin<&mut HubState>, value: QString);
+
+        /// Add `name` to the persisted hidden-categories set. No-op if already there.
+        #[qinvokable]
+        fn hide_category(self: Pin<&mut HubState>, name: &QString);
+
+        /// Remove `name` from the persisted hidden-categories set.
+        #[qinvokable]
+        fn unhide_category(self: Pin<&mut HubState>, name: &QString);
+
+        /// Returns true when `name` is in the persisted hidden-categories set.
+        #[qinvokable]
+        fn is_category_hidden(self: &HubState, name: &QString) -> bool;
     }
 
     impl cxx_qt::Initialize for HubState {}
@@ -94,6 +106,28 @@ impl ffi::HubState {
         self.as_mut().rust_mut().selected_action = value;
         self.as_mut().selected_action_changed();
         persist_hub(|h| h.selected_action = value_str);
+    }
+
+    fn hide_category(self: Pin<&mut Self>, name: &QString) {
+        let name_str = name.to_string();
+        if name_str.is_empty() {
+            return;
+        }
+        persist_hub(|h| {
+            if !h.hidden_categories.contains(&name_str) {
+                h.hidden_categories.push(name_str);
+            }
+        });
+    }
+
+    fn unhide_category(self: Pin<&mut Self>, name: &QString) {
+        let name_str = name.to_string();
+        persist_hub(|h| h.hidden_categories.retain(|x| x != &name_str));
+    }
+
+    fn is_category_hidden(&self, name: &QString) -> bool {
+        let name_str = name.to_string();
+        with_persist_read(|s| s.hub.hidden_categories.contains(&name_str))
     }
 }
 

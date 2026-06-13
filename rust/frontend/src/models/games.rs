@@ -74,6 +74,7 @@ const FILE_COUNT_ROLE: i32 = 256 + 7;
 const FAVORITE_ROLE: i32 = 256 + 8;
 const DESCRIPTION_ROLE: i32 = 256 + 9;
 const FILE_STEM_ROLE: i32 = 256 + 10;
+const HIDDEN_ROLE: i32 = 256 + 11;
 
 // Default API page size before QML binds the model's `page_size` to the
 // grid's `pageSize`. 15 = 5 columns × 3 rows, the desktop default. The
@@ -498,6 +499,7 @@ impl ffi::GamesModel {
             FILE_STEM_ROLE => {
                 QVariant::from(&QString::from(file_stem_or_name(&entry.path, &entry.name)))
             }
+            HIDDEN_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -514,6 +516,7 @@ impl ffi::GamesModel {
         h.insert(FAVORITE_ROLE, QByteArray::from("favorite"));
         h.insert(DESCRIPTION_ROLE, QByteArray::from("description"));
         h.insert(FILE_STEM_ROLE, QByteArray::from("fileStem"));
+        h.insert(HIDDEN_ROLE, QByteArray::from("hidden"));
         h
     }
 

@@ -73,7 +73,7 @@ Item {
         }
     ]
     readonly property var visibleCategoryEntries: {
-        if (Browse.CategoriesModel.count <= 0)
+        if (!Browse.CategoriesModel.loaded || Browse.CategoriesModel.raw_count <= 0)
             return hub._placeholderCategories;
         const entries = [];
         for (let i = 0; i < Browse.CategoriesModel.count; i++) {
@@ -81,7 +81,8 @@ Item {
             entries.push({
                 id: name,
                 name: name,
-                coverKey: CategoryIds.coverKey(name)
+                coverKey: CategoryIds.coverKey(name),
+                hidden: Browse.CategoriesModel.is_hidden_at(i)
             });
         }
         return entries;
@@ -110,6 +111,10 @@ Item {
     signal requestFavoritesScreen
     signal requestRecentsScreen
     signal requestSettingsScreen
+    // Emitted when the user opens the options menu on a category tile.
+    // `anchorRect` is the tile's bounding rect mapped to hub coordinates,
+    // used by the context menu to position itself.
+    signal requestContextMenu(index: int, anchorRect: rect)
 
     // Vertically center the (categories row + actions row + activeLabel)
     // block in the band between the HeaderBar bottom (Sizing.headerBottom)
@@ -414,6 +419,15 @@ Item {
             hub.requestSettingsScreen();
     }
 
+    // Returns the bounding rect of the currently focused category cell,
+    // mapped to hub coordinates. Used to anchor the context menu.
+    function _currentCategoryCellRect(): rect {
+        const item = itemRepeater.itemAt(hub.currentIndex);
+        if (!item)
+            return Qt.rect(0, 0, 0, 0);
+        return item.mapToItem(hub, 0, 0, item.width, item.height);
+    }
+
     function handleAction(action: string): void {
         if (action === "left") {
             if (hub._navigate(-1))
@@ -428,6 +442,11 @@ Item {
             hub._activateCurrent();
         } else if (action === "cancel") {
             hub.requestQuit();
+        } else if (action === "write_card") {
+            // Only open the context menu for real (non-placeholder) category
+            // tiles — placeholders have no category to hide or scrape.
+            if (hub.currentRow === 0 && hub.currentIndex < Browse.CategoriesModel.count)
+                hub.requestContextMenu(hub.currentIndex, hub._currentCategoryCellRect());
         }
     }
 
@@ -508,18 +527,24 @@ Item {
                     isFocused: hub.currentRow === 0
                     name: cellItem.modelData.name
                     coverKey: cellItem.modelData.coverKey
+                    hidden: cellItem.modelData.hidden ?? false
                 }
 
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
-                    acceptedButtons: Qt.LeftButton
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     cursorShape: Qt.PointingHandCursor
 
                     onEntered: hub._focusCategory(cellItem.index)
-                    onClicked: {
+                    onClicked: (mouse) => {
                         hub._focusCategory(cellItem.index);
-                        hub._activateCurrent();
+                        if (mouse.button === Qt.RightButton) {
+                            if (cellItem.index < Browse.CategoriesModel.count)
+                                hub.requestContextMenu(cellItem.index, cellItem.mapToItem(hub, 0, 0, cellItem.width, cellItem.height));
+                        } else {
+                            hub._activateCurrent();
+                        }
                     }
                 }
             }

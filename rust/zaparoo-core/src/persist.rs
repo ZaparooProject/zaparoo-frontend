@@ -44,12 +44,18 @@ pub struct HubState {
     /// `"favorites"`, `"recents"` or `"settings"`. Empty defaults
     /// to the leftmost action when restored.
     pub selected_action: String,
+    /// User-hidden category names. Built-in always-hidden categories
+    /// (`Other`, `Media`) are never added here — they are filtered in
+    /// `HIDDEN_CATEGORIES` regardless.
+    pub hidden_categories: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SystemsState {
     pub system_id: String,
+    /// System IDs the user has explicitly hidden from the browse grid.
+    pub hidden_system_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,6 +100,10 @@ pub struct FavoritesState {
 /// settings snapshot stays coherent with the config-backed startup path.
 /// `clock_format` is `auto`, `12h`, or `24h`; `auto` follows the effective
 /// UI locale.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "flat settings mirror; each bool is an independent user-visible toggle"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SettingsState {
@@ -117,6 +127,10 @@ pub struct SettingsState {
     pub screensaver_timeout: String,
     #[serde(default = "default_media_image_type")]
     pub media_image_type: String,
+    /// When true, hidden systems and categories reappear in the browse UI
+    /// dimmed with a "Hidden" badge and the options menu offers "Unhide".
+    #[serde(default)]
+    pub show_hidden: bool,
 }
 
 impl Default for SettingsState {
@@ -133,6 +147,7 @@ impl Default for SettingsState {
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
+            show_hidden: false,
         }
     }
 }
@@ -272,12 +287,14 @@ mod tests {
         let original = PersistedState {
             active_screen: "games".into(),
             hub: HubState {
-                category: "Consoles".into(),
+                category: "Console".into(),
                 selected_row: 1,
                 selected_action: "settings".into(),
+                hidden_categories: vec!["Handheld".into(), "Computer".into()],
             },
             systems: SystemsState {
                 system_id: "NES".into(),
+                hidden_system_ids: vec!["ZXSpectrum".into()],
             },
             games: GamesState {
                 system_id: "NES".into(),
@@ -302,11 +319,34 @@ mod tests {
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),
+                show_hidden: true,
             },
         };
         save_to(&path, &original);
         let loaded = load_from(&path);
         assert_eq!(loaded, original);
+    }
+
+    #[test]
+    fn new_hide_fields_default_on_old_state_file() {
+        // Forward-compat: a state file written before hidden_* fields were
+        // added must load cleanly with empty lists / false.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let on_disk = r#"[hub]
+category = "Console"
+
+[systems]
+system_id = "NES"
+
+[settings]
+resolution = "1920x1080"
+"#;
+        std::fs::write(&path, on_disk).expect("write");
+        let state = load_from(&path);
+        assert_eq!(state.hub.hidden_categories, Vec::<String>::new());
+        assert_eq!(state.systems.hidden_system_ids, Vec::<String>::new());
+        assert!(!state.settings.show_hidden);
     }
 
     #[test]
@@ -341,9 +381,11 @@ mod tests {
                                 category: format!("cat-{i}-{j}"),
                                 selected_row: 0,
                                 selected_action: String::new(),
+                                hidden_categories: vec![],
                             },
                             systems: SystemsState {
                                 system_id: format!("sys-{i}-{j}"),
+                                hidden_system_ids: vec![],
                             },
                             games: GamesState {
                                 system_id: format!("sys-{i}-{j}"),

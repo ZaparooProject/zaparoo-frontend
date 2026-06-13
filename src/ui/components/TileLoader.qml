@@ -19,4 +19,5 @@ Loader {
     required property string name
     required property string coverKey
     property int favorite: 0
+    property bool hidden: false
 }

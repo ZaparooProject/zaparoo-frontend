@@ -70,6 +70,9 @@ Item {
     readonly property string delegateName: parent.name
     readonly property string delegateCoverKey: parent.coverKey
     readonly property bool delegateFavorite: parent.favorite !== 0
+    // qmllint disable missing-property compiler
+    readonly property bool delegateHidden: parent.hidden === true
+    // qmllint enable missing-property compiler
     property var layoutProfile: null
     readonly property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
     // Opt-in per-tile name caption. Off by default so Hub and Systems
@@ -217,7 +220,7 @@ Item {
         fillMode: Image.PreserveAspectFit
         smooth: true
         asynchronous: true
-        opacity: root._hasCover ? 1 : 0
+        opacity: root._hasCover ? (root.delegateHidden ? 0.4 : 1.0) : 0
 
         anchors {
             top: parent.top
@@ -294,6 +297,18 @@ Item {
         smooth: true
         asynchronous: false
         visible: root.delegateFavorite
+    }
+
+    // User-hidden state badge. It stays fully opaque over dimmed art
+    // so hidden tiles remain visually distinct when Show hidden items
+    // is enabled.
+    TileBadge {
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.rightMargin: Sizing.px(parent.width / 12)
+        anchors.topMargin: Sizing.px(parent.width / 12)
+        label: qsTr("Hidden")
+        visible: root.delegateHidden
     }
 
     // Non-caption procedural fallback. Sits at the same geometry as

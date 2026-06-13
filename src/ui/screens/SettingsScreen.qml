@@ -126,6 +126,11 @@ Item {
             id: "language",
             label: qsTr("Language")
         });
+        out.push({
+            kind: "field",
+            id: "showHidden",
+            label: qsTr("Show hidden items")
+        });
         return out;
     }
     readonly property var controlsInputFields: [
@@ -246,26 +251,23 @@ Item {
     // overflow at the form edges: the arrows should mean another row
     // is hidden, not that there is padding past the last visible row.
     // The 1-px epsilon swallows sub-pixel rounding so the chevrons
-    // don't flicker on exact-fit content.
+    // don't flicker on exact-fit content. Use the Column geometry
+    // rather than Repeater.itemAt() so the binding re-evaluates after
+    // layout settles; itemAt() returning null during construction made
+    // the bottom chevron miss overflowing pages.
     readonly property bool _hasContentAbove: settings._firstFieldTop() >= 0 && flickable.contentY > settings._firstFieldTop() + 1
     readonly property bool _hasContentBelow: settings._lastFieldBottom() >= 0 && flickable.contentY + flickable.height < settings._lastFieldBottom() - 1
 
     function _firstFieldTop(): real {
-        for (let i = 0; i < settings.fieldCount; i++) {
-            const row = rowRepeater.itemAt(i);
-            if (row !== null && settings._isField(i))
-                return row.y;
-        }
-        return -1;
+        if (settings.fieldCount <= 0)
+            return -1;
+        return leadingSpacer.height + form.spacing;
     }
 
     function _lastFieldBottom(): real {
-        for (let i = settings.fieldCount - 1; i >= 0; i--) {
-            const row = rowRepeater.itemAt(i);
-            if (row !== null && settings._isField(i))
-                return row.y + row.height;
-        }
-        return -1;
+        if (settings.fieldCount <= 0)
+            return -1;
+        return Math.max(0, form.implicitHeight - trailingSpacer.height - form.spacing);
     }
 
     function _triggerIndex(): void {
@@ -326,7 +328,7 @@ Item {
     }
 
     function _fieldControl(id: string): string {
-        if (id === "mouseEnabled" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting")
+        if (id === "mouseEnabled" || id === "showHidden" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting")
             return "toggle";
         if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout")
             return "navigate";
@@ -342,6 +344,8 @@ Item {
             return Browse.Settings.current_discover_arcade_alternate_versions;
         if (id === "rescrapeExisting")
             return settings._visibleRescrapeExisting;
+        if (id === "showHidden")
+            return Browse.Settings.current_show_hidden;
         return Browse.Settings.current_mouse_enabled;
     }
 
@@ -428,7 +432,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "mouseEnabled" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting";
+        return id === "mouseEnabled" || id === "showHidden" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting";
     }
     // True when the focused field is a list-picker row (Accept opens a
     // modal; left/right is a no-op — pickers don't cycle inline). Drives
@@ -759,6 +763,24 @@ Item {
         settings.requestListPicker(title, entries, initialId, id);
     }
 
+    function _reprojectBrowseModels(): void {
+        Browse.SystemsModel.reproject();
+        Browse.CategoriesModel.reproject();
+    }
+
+    function _setShowHidden(direction: int): void {
+        const showHidden = direction > 0;
+        if (Browse.Settings.current_show_hidden === showHidden)
+            return;
+        Browse.Settings.set_show_hidden(showHidden);
+        settings._reprojectBrowseModels();
+    }
+
+    function _toggleShowHidden(): void {
+        Browse.Settings.set_show_hidden(!Browse.Settings.current_show_hidden);
+        settings._reprojectBrowseModels();
+    }
+
     function _setMouseEnabled(direction: int): void {
         Browse.Settings.set_mouse_enabled(direction > 0);
     }
@@ -804,6 +826,8 @@ Item {
         // direction presses (left = off, right = on).
         if (id === "mouseEnabled")
             settings._setMouseEnabled(direction);
+        else if (id === "showHidden")
+            settings._setShowHidden(direction);
         else if (id === "discoverArcadeAlternateVersions")
             settings._setDiscoverArcadeAlternateVersions(direction);
         else if (id === "debugLogging")
@@ -887,6 +911,8 @@ Item {
                 return;
             if (id === "mouseEnabled")
                 settings._toggleMouseEnabled();
+            else if (id === "showHidden")
+                settings._toggleShowHidden();
             else if (id === "discoverArcadeAlternateVersions")
                 settings._toggleDiscoverArcadeAlternateVersions();
             else if (id === "debugLogging")
@@ -1078,6 +1104,8 @@ Item {
             // scroll chevron and gives the cut-off edge a breath of
             // whitespace instead of clipping mid-row.
             Item {
+                id: leadingSpacer
+
                 width: form.width
                 height: Sizing.pctH(2)
             }
@@ -1134,6 +1162,8 @@ Item {
                             settings.currentIndex = row.index;
                             if (row.modelData.id === "mouseEnabled")
                                 settings._toggleMouseEnabled();
+                            else if (row.modelData.id === "showHidden")
+                                settings._toggleShowHidden();
                             else if (row.modelData.id === "discoverArcadeAlternateVersions")
                                 settings._toggleDiscoverArcadeAlternateVersions();
                             else if (row.modelData.id === "debugLogging")
@@ -1170,6 +1200,8 @@ Item {
             // the last field clears the bottom chevron and the cut-off
             // edge sits in whitespace.
             Item {
+                id: trailingSpacer
+
                 width: form.width
                 height: Sizing.pctH(2)
             }

@@ -185,6 +185,7 @@ pub struct SettingsRust {
     current_mouse_enabled: bool,
     current_discover_arcade_alternate_versions: bool,
     current_debug_logging: bool,
+    current_show_hidden: bool,
     available_screensaver_timeouts: QStringList,
     current_screensaver_timeout: QString,
     available_media_image_types: QStringList,
@@ -220,6 +221,7 @@ pub mod ffi {
         #[qproperty(bool, current_mouse_enabled, READ, WRITE = set_mouse_enabled, NOTIFY)]
         #[qproperty(bool, current_discover_arcade_alternate_versions, READ, WRITE = set_discover_arcade_alternate_versions, NOTIFY)]
         #[qproperty(bool, current_debug_logging, READ, WRITE = set_debug_logging, NOTIFY)]
+        #[qproperty(bool, current_show_hidden, READ, WRITE = set_show_hidden, NOTIFY)]
         #[qproperty(QStringList, available_screensaver_timeouts, READ, CONSTANT)]
         #[qproperty(QString, current_screensaver_timeout, READ, WRITE = set_screensaver_timeout, NOTIFY)]
         #[qproperty(QStringList, available_media_image_types, READ, CONSTANT)]
@@ -258,6 +260,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_media_image_type(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_show_hidden(self: Pin<&mut Settings>, value: bool);
     }
 
     impl cxx_qt::Initialize for Settings {}
@@ -298,6 +303,7 @@ impl Initialize for ffi::Settings {
             .rust_mut()
             .current_discover_arcade_alternate_versions = merged.discover_arcade_alternate_versions;
         self.as_mut().rust_mut().current_debug_logging = merged.debug_logging;
+        self.as_mut().rust_mut().current_show_hidden = merged.show_hidden;
         self.as_mut().rust_mut().available_screensaver_timeouts = screensaver_timeouts();
         self.as_mut().rust_mut().current_screensaver_timeout =
             QString::from(merged.screensaver_timeout.as_str());
@@ -462,6 +468,16 @@ impl ffi::Settings {
         self.as_mut().rust_mut().current_media_image_type = QString::from(value_str.as_str());
         self.as_mut().current_media_image_type_changed();
     }
+
+    fn set_show_hidden(mut self: Pin<&mut Self>, value: bool) {
+        if self.current_show_hidden == value {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.show_hidden = value);
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_show_hidden = value;
+        self.as_mut().current_show_hidden_changed();
+    }
 }
 
 fn persist_settings<F: FnOnce(&mut SettingsState)>(mutator: F) -> persist::PersistedState {
@@ -499,6 +515,7 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
             debug_logging: settings.debug_logging,
             screensaver_timeout: settings.screensaver_timeout.as_str(),
             media_image_type: settings.media_image_type.as_str(),
+            show_hidden: settings.show_hidden,
         },
     ) {
         warn!(
@@ -575,6 +592,7 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
                 .unwrap_or(snapshot.media_image_type.as_str()),
         )
         .to_string(),
+        show_hidden: config.settings.show_hidden.unwrap_or(snapshot.show_hidden),
     }
 }
 
