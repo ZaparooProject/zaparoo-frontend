@@ -261,6 +261,9 @@ Item {
     }
 
     function handleAction(action: string): void {
+        if ((action === "left" || action === "right" || action === "up" || action === "down") && root._gateHide)
+            return;
+
         if (action === "left") {
             if (root._listLayout && typeof root.listLeftAction === "function")
                 root.listLeftAction();

@@ -849,12 +849,12 @@ Euskara - devilschile2</source>
         <translation type="unfinished">불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="355"/>
+        <location filename="../screens/MediaListScreen.qml" line="358"/>
         <source>%1 entries</source>
         <translation type="unfinished">항목 %1개</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="356"/>
+        <location filename="../screens/MediaListScreen.qml" line="359"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>

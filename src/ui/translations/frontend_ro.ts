@@ -849,12 +849,12 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Se încarcă…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="355"/>
+        <location filename="../screens/MediaListScreen.qml" line="358"/>
         <source>%1 entries</source>
         <translation type="unfinished">%1 intrări</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="356"/>
+        <location filename="../screens/MediaListScreen.qml" line="359"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
