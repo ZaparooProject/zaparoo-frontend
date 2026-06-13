@@ -52,8 +52,13 @@ pub struct SettingsConfig {
     pub discover_arcade_alternate_versions: Option<bool>,
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
+    pub show_hidden: Option<bool>,
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "flat settings mirror; each bool is an independent user-visible toggle"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsMirror<'a> {
     pub resolution: &'a str,
@@ -67,6 +72,7 @@ pub struct SettingsMirror<'a> {
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
     pub media_image_type: &'a str,
+    pub show_hidden: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -145,6 +151,7 @@ struct RawSettings {
     discover_arcade_alternate_versions: Option<bool>,
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
+    show_hidden: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -236,6 +243,7 @@ pub fn load_config(path: &Path) -> Config {
             .settings
             .media_image_type
             .map(|value| value.trim().to_string()),
+        show_hidden: raw.settings.show_hidden,
     };
     cfg.notice = NoticeConfig {
         commercial_ack: raw.notice.commercial_ack.unwrap_or(false),
@@ -325,6 +333,10 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     settings.insert(
         "media_image_type".into(),
         toml::Value::String(mirror.media_image_type.trim().to_string()),
+    );
+    settings.insert(
+        "show_hidden".into(),
+        toml::Value::Boolean(mirror.show_hidden),
     );
 
     let logging_value = table
@@ -648,6 +660,7 @@ mod tests {
                 debug_logging: true,
                 screensaver_timeout: "300",
                 media_image_type: "auto",
+                show_hidden: true,
             },
         )
         .expect("save");
@@ -663,6 +676,7 @@ mod tests {
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
+        assert_eq!(cfg.settings.show_hidden, Some(true));
         assert!(cfg.debug_logging);
     }
 
@@ -685,6 +699,7 @@ mod tests {
                 debug_logging: false,
                 screensaver_timeout: "60",
                 media_image_type: "auto",
+                show_hidden: false,
             },
         )
         .expect("save");
@@ -722,6 +737,7 @@ mod tests {
                 debug_logging: true,
                 screensaver_timeout: "off",
                 media_image_type: "auto",
+                show_hidden: false,
             },
         )
         .expect("save");

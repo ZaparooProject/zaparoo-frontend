@@ -36,6 +36,7 @@ qt_add_qml_module(
         SettingsSectionHeader.qml
         StatusIcon.qml
         Tile.qml
+        TileBadge.qml
         TileLoader.qml
         TopStatusStrip.qml
 )

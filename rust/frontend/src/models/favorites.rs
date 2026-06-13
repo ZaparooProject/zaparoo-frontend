@@ -56,6 +56,7 @@ const COVER_KEY_ROLE: i32 = 256 + 4;
 const ZAP_SCRIPT_ROLE: i32 = 256 + 5;
 const FAVORITE_ROLE: i32 = 256 + 6;
 const FILE_STEM_ROLE: i32 = 256 + 7;
+const HIDDEN_ROLE: i32 = 256 + 8;
 
 // Page size for the initial load and every cursor follow-up. Core caps
 // `maxResults` at 100; search rows are tiny (one tile + one caption per
@@ -413,6 +414,7 @@ impl ffi::FavoritesModel {
             FILE_STEM_ROLE => {
                 QVariant::from(&QString::from(file_stem_or_name(&entry.path, &entry.name)))
             }
+            HIDDEN_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -426,6 +428,7 @@ impl ffi::FavoritesModel {
         h.insert(ZAP_SCRIPT_ROLE, QByteArray::from("zapScript"));
         h.insert(FAVORITE_ROLE, QByteArray::from("favorite"));
         h.insert(FILE_STEM_ROLE, QByteArray::from("fileStem"));
+        h.insert(HIDDEN_ROLE, QByteArray::from("hidden"));
         h
     }
 

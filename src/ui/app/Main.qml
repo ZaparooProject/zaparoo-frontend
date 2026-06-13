@@ -1187,6 +1187,9 @@ MainLayout {
         function onRequestSettingsScreen(): void {
             root._navigateToSettings();
         }
+        function onRequestContextMenu(index: int, anchorRect): void {
+            root.openContextMenu("categories", index, anchorRect);
+        }
     }
     Connections {
         target: root.favoritesScreen
@@ -1345,7 +1348,7 @@ MainLayout {
     // caller saw `entries.length === 0` despite the function pushing 3
     // items in. Plain `var` round-trips cleanly and silences the
     // "insufficiently annotated" coercion warning at the call site.
-    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string) {
+    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool) {
         if (owner === "systems") {
             const entries = [
                 {
@@ -1366,6 +1369,27 @@ MainLayout {
                     label: qsTr("Update media database")
                 }, {
                     id: "scrape_system",
+                    label: qsTr("Scrape metadata")
+                });
+            }
+            entries.push({
+                id: "toggle_hide_system",
+                label: isHidden ? qsTr("Unhide") : qsTr("Hide")
+            });
+            return entries;
+        }
+        if (owner === "categories") {
+            const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
+            const entries = [{
+                id: "toggle_hide_category",
+                label: isHidden ? qsTr("Unhide") : qsTr("Hide")
+            }];
+            if (!mediaBusy) {
+                entries.push({
+                    id: "index_category",
+                    label: qsTr("Update media database")
+                }, {
+                    id: "scrape_category",
                     label: qsTr("Scrape metadata")
                 });
             }
@@ -1463,10 +1487,18 @@ MainLayout {
         let isFavorite = false;
         let systemId = "";
         let mediaCapable = false;
+        let isHidden = false;
+        let category = "";
         if (owner === "systems") {
             if (index >= Browse.SystemsModel.count)
                 return;
             systemId = Browse.SystemsModel.system_id_at(index);
+            isHidden = Browse.SystemsModel.is_hidden_at(index);
+        } else if (owner === "categories") {
+            if (index >= Browse.CategoriesModel.count)
+                return;
+            category = Browse.CategoriesModel.category_at(index);
+            isHidden = Browse.CategoriesModel.is_hidden_at(index);
         } else if (owner === "games") {
             if (index >= Browse.GamesModel.count)
                 return;
@@ -1482,7 +1514,7 @@ MainLayout {
             if (index >= Browse.RecentsModel.count)
                 return;
         }
-        const entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId);
+        const entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden);
         if (entries.length === 0)
             return;
         root.contextMenuEntries = entries;
@@ -1579,6 +1611,38 @@ MainLayout {
             const systemId = Browse.SystemsModel.system_id_at(targetIndex);
             if (systemId !== "")
                 Browse.MediaStatus.start_scrape_for_system(systemId);
+        } else if (id === "toggle_hide_system") {
+            const systemId = Browse.SystemsModel.system_id_at(targetIndex);
+            if (systemId !== "") {
+                if (Browse.SystemsState.is_system_hidden(systemId))
+                    Browse.SystemsState.unhide_system(systemId);
+                else
+                    Browse.SystemsState.hide_system(systemId);
+                Browse.SystemsModel.reproject();
+            }
+        } else if (id === "toggle_hide_category") {
+            const categoryName = Browse.CategoriesModel.category_at(targetIndex);
+            if (categoryName !== "") {
+                if (Browse.HubState.is_category_hidden(categoryName))
+                    Browse.HubState.unhide_category(categoryName);
+                else
+                    Browse.HubState.hide_category(categoryName);
+                Browse.CategoriesModel.reproject();
+            }
+        } else if (id === "index_category") {
+            const categoryName = Browse.CategoriesModel.category_at(targetIndex);
+            if (categoryName !== "") {
+                const systemIds = Browse.SystemsModel.system_ids_for_category(categoryName);
+                if (systemIds.length > 0)
+                    Browse.MediaStatus.start_index_for_systems(systemIds);
+            }
+        } else if (id === "scrape_category") {
+            const categoryName = Browse.CategoriesModel.category_at(targetIndex);
+            if (categoryName !== "") {
+                const systemIds = Browse.SystemsModel.system_ids_for_category(categoryName);
+                if (systemIds.length > 0)
+                    Browse.MediaStatus.start_scrape_for_systems(systemIds);
+            }
         } else if (id === "launch_game") {
             if (owner === "favorites")
                 Browse.FavoritesModel.launch_at(targetIndex);

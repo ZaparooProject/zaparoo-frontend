@@ -53,6 +53,7 @@ const COVER_KEY_ROLE: i32 = 256 + 4;
 const LAUNCHER_ID_ROLE: i32 = 256 + 5;
 const FAVORITE_ROLE: i32 = 256 + 6;
 const FILE_STEM_ROLE: i32 = 256 + 7;
+const HIDDEN_ROLE: i32 = 256 + 8;
 
 // Page size for the initial load and every cursor follow-up. Core caps
 // `limit` at 100; history rows are tiny (one tile + one caption per row)
@@ -406,6 +407,7 @@ impl ffi::RecentsModel {
                 &entry.media_path,
                 &entry.media_name,
             ))),
+            HIDDEN_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -419,6 +421,7 @@ impl ffi::RecentsModel {
         h.insert(LAUNCHER_ID_ROLE, QByteArray::from("launcherId"));
         h.insert(FAVORITE_ROLE, QByteArray::from("favorite"));
         h.insert(FILE_STEM_ROLE, QByteArray::from("fileStem"));
+        h.insert(HIDDEN_ROLE, QByteArray::from("hidden"));
         h
     }
 

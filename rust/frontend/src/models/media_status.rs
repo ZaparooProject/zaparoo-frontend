@@ -25,7 +25,7 @@
 // notification stream is the source of truth for what the UI renders.
 
 use cxx_qt::{Initialize, Threading};
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QString, QStringList};
 use std::pin::Pin;
 use tracing::warn;
 use zaparoo_core::media_types::{MediaIndexParams, MediaScrapeParams};
@@ -74,6 +74,7 @@ pub mod ffi {
         include!("model_includes.h");
 
         type QString = cxx_qt_lib::QString;
+        type QStringList = cxx_qt_lib::QStringList;
     }
 
     unsafe extern "RustQt" {
@@ -115,6 +116,11 @@ pub mod ffi {
         #[qinvokable]
         fn start_index_for_system(self: Pin<&mut MediaStatus>, system_id: QString);
 
+        /// Start indexing for a list of system IDs (e.g. all systems in a
+        /// category). Silently ignores empty lists.
+        #[qinvokable]
+        fn start_index_for_systems(self: Pin<&mut MediaStatus>, system_ids: QStringList);
+
         #[qinvokable]
         fn cancel_index(self: Pin<&mut MediaStatus>);
 
@@ -123,6 +129,11 @@ pub mod ffi {
 
         #[qinvokable]
         fn start_scrape_for_system(self: Pin<&mut MediaStatus>, system_id: QString);
+
+        /// Start scraping for a list of system IDs (e.g. all systems in a
+        /// category). Silently ignores empty lists.
+        #[qinvokable]
+        fn start_scrape_for_systems(self: Pin<&mut MediaStatus>, system_ids: QStringList);
 
         #[qinvokable]
         fn cancel_scrape(self: Pin<&mut MediaStatus>);
@@ -300,6 +311,54 @@ impl ffi::MediaStatus {
             if let Err(e) = resource.start_scrape(params).await {
                 warn!(
                     "media_status: start_scrape_for_system failed: {}",
+                    e.message
+                );
+            }
+        });
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QStringList by value"
+    )]
+    fn start_index_for_systems(self: Pin<&mut Self>, system_ids: QStringList) {
+        let ids: Vec<String> = system_ids.iter().map(String::from).collect();
+        if ids.is_empty() {
+            warn!("media_status: start_index_for_systems ignored empty list");
+            return;
+        }
+        let resource = crate::models::global_store().media_status();
+        crate::models::global_handle().spawn(async move {
+            let params = MediaIndexParams { systems: Some(ids) };
+            if let Err(e) = resource.start_index(params).await {
+                warn!(
+                    "media_status: start_index_for_systems failed: {}",
+                    e.message
+                );
+            }
+        });
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QStringList by value"
+    )]
+    fn start_scrape_for_systems(self: Pin<&mut Self>, system_ids: QStringList) {
+        let ids: Vec<String> = system_ids.iter().map(String::from).collect();
+        if ids.is_empty() {
+            warn!("media_status: start_scrape_for_systems ignored empty list");
+            return;
+        }
+        let resource = crate::models::global_store().media_status();
+        crate::models::global_handle().spawn(async move {
+            let params = MediaScrapeParams {
+                scraper_id: "gamelist.xml".into(),
+                systems: ids,
+                force: false,
+            };
+            if let Err(e) = resource.start_scrape(params).await {
+                warn!(
+                    "media_status: start_scrape_for_systems failed: {}",
                     e.message
                 );
             }
