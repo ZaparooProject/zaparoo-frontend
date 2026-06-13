@@ -261,7 +261,7 @@ Item {
     }
 
     function handleAction(action: string): void {
-        if ((action === "left" || action === "right" || action === "up" || action === "down") && root._gateHide)
+        if ((action === "left" || action === "right" || action === "up" || action === "down" || action === "context_menu") && root._gateHide)
             return;
 
         if (action === "left") {
@@ -313,7 +313,7 @@ Item {
                 root.acceptAction(mediaGrid.currentIndex);
             else
                 root.mediaModel.launch_at(mediaGrid.currentIndex);
-        } else if (action === "write_card") {
+        } else if (action === "context_menu") {
             if (mediaGrid.itemCount > 0) {
                 const idx = mediaGrid.currentIndex;
                 if (typeof root.contextMenuEnabledAt === "function" && !root.contextMenuEnabledAt(idx))
@@ -393,7 +393,7 @@ Item {
         }
         onItemRightClicked: index => {
             root._focusIndex(index);
-            root.handleAction("write_card");
+            root.handleAction("context_menu");
         }
         onEmptyRightClicked: root.handleAction("cancel")
         onPageWheelRequested: delta => root.handleAction(delta > 0 ? "page_next" : "page_prev")
@@ -443,7 +443,7 @@ Item {
         }
         onItemRightClicked: index => {
             root._focusIndex(index);
-            root.handleAction("write_card");
+            root.handleAction("context_menu");
         }
         onEmptyRightClicked: root.handleAction("cancel")
         onPageWheelRequested: delta => root.handleAction(delta > 0 ? "page_next" : "page_prev")

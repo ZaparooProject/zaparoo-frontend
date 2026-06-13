@@ -1363,24 +1363,24 @@ Euskara - devilschile2</source>
 <context>
     <name>SystemsScreen</name>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="200"/>
-        <location filename="../screens/SystemsScreen.qml" line="298"/>
+        <location filename="../screens/SystemsScreen.qml" line="203"/>
+        <location filename="../screens/SystemsScreen.qml" line="301"/>
         <source>%1 systems</source>
         <translation>%1 सिस्टम</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="201"/>
-        <location filename="../screens/SystemsScreen.qml" line="315"/>
+        <location filename="../screens/SystemsScreen.qml" line="204"/>
+        <location filename="../screens/SystemsScreen.qml" line="318"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="333"/>
+        <location filename="../screens/SystemsScreen.qml" line="336"/>
         <source>No systems in this category</source>
         <translation>इस श्रेणी में कोई सिस्टम नहीं है</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="334"/>
+        <location filename="../screens/SystemsScreen.qml" line="337"/>
         <source>Loading systems…</source>
         <translation>सिस्टम लोड हो रहे हैं…</translation>
     </message>

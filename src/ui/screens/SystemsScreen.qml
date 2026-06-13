@@ -123,6 +123,9 @@ Item {
     }
 
     function handleAction(action: string): void {
+        if (action === "context_menu" && systems._gateHide)
+            return;
+
         if (action === "left") {
             systems._performMove(-1, 0);
         } else if (action === "right") {
@@ -159,7 +162,7 @@ Item {
             }
             const chosen = Browse.SystemsModel.system_id_at(systems.systemsGrid.currentIndex);
             systems.requestAccept(chosen);
-        } else if (action === "write_card") {
+        } else if (action === "context_menu") {
             if (systems.systemsGrid.itemCount > 0) {
                 const idx = systems.systemsGrid.currentIndex;
                 Browse.SystemsState.system_id = Browse.SystemsModel.system_id_at(idx);
@@ -227,7 +230,7 @@ Item {
         }
         onItemRightClicked: index => {
             systems._focusIndex(index);
-            systems.handleAction("write_card");
+            systems.handleAction("context_menu");
         }
         onEmptyRightClicked: systems.handleAction("cancel")
         onPageWheelRequested: delta => systems.handleAction(delta > 0 ? "page_next" : "page_prev")
@@ -259,7 +262,7 @@ Item {
         }
         onItemRightClicked: index => {
             systems._focusIndex(index);
-            systems.handleAction("write_card");
+            systems.handleAction("context_menu");
         }
         onEmptyRightClicked: systems.handleAction("cancel")
         onPageWheelRequested: delta => systems.handleAction(delta > 0 ? "page_next" : "page_prev")
