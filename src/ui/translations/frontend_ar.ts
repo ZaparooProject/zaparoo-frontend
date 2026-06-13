@@ -1281,7 +1281,7 @@ Euskara - devilschile2</source>
         <translation>%1 ثوانٍ</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1258"/>
+        <location filename="../screens/SettingsScreen.qml" line="1261"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1375,7 +1375,7 @@ Euskara - devilschile2</source>
         <translation>الإعدادات</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1246"/>
+        <location filename="../screens/SettingsScreen.qml" line="1249"/>
         <source>No settings available on this platform</source>
         <translation>لا توجد إعدادات متاحة على هذه المنصة</translation>
     </message>

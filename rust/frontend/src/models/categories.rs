@@ -32,6 +32,7 @@ pub struct CategoriesModelRust {
     /// visible because `show_hidden` is on. Always false for unhidden items.
     hidden_flags: Vec<bool>,
     count: i32,
+    raw_count: i32,
     // Sticky-true flag: flips to true the first time the catalog
     // resolves Ready, never resets. The first-run modal in
     // `Main.qml` gates on `loaded && count === 0` so it only fires
@@ -64,6 +65,7 @@ pub mod ffi {
         #[qml_element]
         #[qml_singleton]
         #[qproperty(i32, count)]
+        #[qproperty(i32, raw_count)]
         #[qproperty(bool, loaded)]
         #[qproperty(QString, error_message)]
         type CategoriesModel = super::CategoriesModelRust;
@@ -201,7 +203,12 @@ fn apply_state(
     (raw_categories, err): (Option<Vec<String>>, String),
 ) {
     if let Some(raw) = raw_categories {
+        let raw_count = raw.len() as i32;
         model.as_mut().rust_mut().raw = raw;
+        if model.raw_count != raw_count {
+            model.as_mut().rust_mut().raw_count = raw_count;
+            model.as_mut().raw_count_changed();
+        }
         reproject_inner(model.as_mut());
     }
     let qerr = QString::from(err.as_str());
@@ -380,7 +387,7 @@ mod tests {
         // happen since it's never surfaced as a tile), the builtin filter
         // still drops it before we check user_hidden.
         let raw = vec!["Arcade".to_string(), "Other".to_string()];
-        let user_hidden: Vec<String> = Vec::new();
+        let user_hidden = vec!["Other".to_string(), "Media".to_string()];
         let (names_off, _) = visible_categories(&raw, &user_hidden, false);
         let (names_on, flags_on) = visible_categories(&raw, &user_hidden, true);
         // Other is always gone, regardless of show_hidden.

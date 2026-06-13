@@ -577,6 +577,9 @@ impl ffi::SystemsModel {
         self.as_mut().rust_mut().count = count;
         self.as_mut().end_reset_model();
         self.as_mut().count_changed();
+        if self.loading {
+            self.as_mut().set_loading(false);
+        }
     }
 
     fn system_ids_for_category(&self, category: &QString) -> QStringList {

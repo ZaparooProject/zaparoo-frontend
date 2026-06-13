@@ -769,7 +769,10 @@ Item {
     }
 
     function _setShowHidden(direction: int): void {
-        Browse.Settings.set_show_hidden(direction > 0);
+        const showHidden = direction > 0;
+        if (Browse.Settings.current_show_hidden === showHidden)
+            return;
+        Browse.Settings.set_show_hidden(showHidden);
         settings._reprojectBrowseModels();
     }
 

@@ -73,7 +73,7 @@ Item {
         }
     ]
     readonly property var visibleCategoryEntries: {
-        if (Browse.CategoriesModel.count <= 0)
+        if (!Browse.CategoriesModel.loaded || Browse.CategoriesModel.raw_count <= 0)
             return hub._placeholderCategories;
         const entries = [];
         for (let i = 0; i < Browse.CategoriesModel.count; i++) {
