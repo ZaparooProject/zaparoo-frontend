@@ -352,7 +352,7 @@ TestCase {
         // qmllint disable compiler
         compare(main._isRepeatableAction("accept"), false);
         compare(main._isRepeatableAction("cancel"), false);
-        compare(main._isRepeatableAction("write_card"), false);
+        compare(main._isRepeatableAction("context_menu"), false);
         compare(main._isRepeatableAction(""), false);
     // qmllint enable compiler
     }
