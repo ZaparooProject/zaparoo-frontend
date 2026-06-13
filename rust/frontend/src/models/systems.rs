@@ -192,7 +192,7 @@ fn project(status: &ResourceStatus<CatalogData>) -> (Option<CatalogData>, String
 /// position as i32, or -1 if not found / empty needle. The
 /// case-sensitive contract is deliberate: `SystemsState.system_id` is
 /// persisted as the exact ID Core surfaced, and the artwork bundled
-/// under `resources/images/systems/<id>.png` matches that exact case
+/// under `resources/images/systems/<id>.svg` matches that exact case
 /// (Linux qrc lookups are case-sensitive). A case-insensitive lookup
 /// would mask an upstream case drift in Core. Pulled out so the
 /// contract is unit-testable.
@@ -315,7 +315,7 @@ impl ffi::SystemsModel {
         match role {
             COVER_KEY_ROLE => {
                 // Relative path under `resources/images/` (no extension).
-                // Tile resolves the PNG via `images/<coverKey>.png`, so
+                // Tile resolves the SVG via `images/<coverKey>.svg`, so
                 // category, system and game tiles share one URL builder.
                 QVariant::from(&QString::from(format!("systems/{}", s.id).as_str()))
             }
@@ -809,7 +809,7 @@ mod tests {
     fn position_of_system_id_is_case_sensitive() {
         let systems = vec![local_sys("NES"), local_sys("SNES")];
         // SystemsState.system_id is persisted exact and the bundled
-        // artwork (`resources/images/systems/<id>.png`) matches that
+        // artwork (`resources/images/systems/<id>.svg`) matches that
         // exact case — case-insensitive lookup would silently mask a
         // Core case-drift bug.
         assert_eq!(position_of_system_id(&systems, "snes"), -1);

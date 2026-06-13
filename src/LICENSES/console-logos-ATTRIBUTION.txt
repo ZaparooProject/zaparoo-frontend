@@ -8,8 +8,8 @@ resources/images/systems/ derived from:
   by Dan Patrick
   https://archive.org/details/console-logos-professionally-redrawn-plus-official-versions
 
-The bundled system PNGs are downscaled (256 px on the longest edge) versions
-of the "Light - Color" recommended set from the GitHub mirror:
+The bundled system SVGs are optimized copies from the "Dark - Black & White"
+SVG set in the GitHub mirror, tinted at runtime by the frontend:
 
   https://github.com/PRO100BYTE/console-logos
   Mirror copyright (c) 2023 #TheDayG0ne and PRO100BYTE Team

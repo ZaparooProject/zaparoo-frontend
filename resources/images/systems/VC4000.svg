@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.1" viewBox="0 0 958 183" xmlns="http://www.w3.org/2000/svg" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink">
+<title>Logo INTERTON ELECTRONIC (horizontal)</title>
+<metadata>
+<rdf:RDF>
+<cc:Work>
+<dc:format>image/svg+xml</dc:format>
+<dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+<dc:title>Logo INTERTON ELECTRONIC (horizontal)</dc:title>
+<dc:creator>
+<cc:Agent>
+<dc:title>MagentaGreen</dc:title>
+</cc:Agent>
+</dc:creator>
+</cc:Work>
+</rdf:RDF>
+</metadata>
+<g stroke="#1a1a1a" stroke-linecap="round" stroke-linejoin="round">
+<g transform="translate(-90.988 2.087) scale(3.6281)" fill="#fff" stroke-width=".397">
+<circle cx="50.999" cy="24.562" r="23.155"/>
+<circle cx="50.999" cy="27.667" r="19.078"/>
+<circle cx="50.999" cy="30.279" r="15.685"/>
+<circle cx="50.999" cy="32.494" r="12.717"/>
+<circle cx="50.999" cy="34.478" r="10.011"/>
+<circle cx="50.999" cy="36.15" r="7.677"/>
+<circle cx="50.999" cy="37.462" r="5.796"/>
+<circle cx="50.999" cy="38.358" r="4.184"/>
+<circle cx="50.999" cy="38.754" r="3.031"/>
+</g>
+<g transform="matrix(6.2479 0 0 6.0474 191.97 -304.23)">
+<g stroke-width=".285">
+<path id="e" d="M4.01 62.019H1.16v-9.763h2.85z" fill="#fff" stroke="#000" stroke-width=".285"/>
+<path id="c" d="M31.684 62.019v-9.763h10.639v1.954H34.43v1.951h7.447v1.683H34.43v2.222h7.893v1.953z" fill="#fff" stroke="#000" stroke-width=".285"/>
+<path id="b" d="M60.941 62.019v-7.604h-3.993v-2.16h10.825v2.16H63.79v7.603z" fill="#fff" stroke="#000" stroke-width=".285"/>
+<path id="a" d="M79.235 55.014c0-.268-.08-.448-.238-.539-.151-.091-.456-.137-.915-.137h-5.167c-.468 0-.781.046-.94.137-.15.091-.226.27-.226.539v4.364c0 .268.076.449.226.539.159.091.472.137.94.137h5.167c.459 0 .764-.046.915-.137.158-.091.238-.27.238-.54zm-4.599 7.072c-1.586 0-2.664-.04-3.233-.123-.567-.087-1.04-.236-1.416-.448-.35-.199-.602-.444-.752-.734-.151-.295-.226-.763-.226-1.403V54.92c0-.64.07-1.106.213-1.396.15-.29.405-.535.765-.734.385-.217.89-.369 1.516-.456.636-.086 1.68-.129 4.045-.129 2.358 0 3.39.043 4.008.13.626.086 1.132.238 1.517.455.358.199.61.444.752.734.15.29.226.755.226 1.397v4.457c0 .662-.071 1.137-.213 1.422-.142.282-.39.52-.74.715-.377.212-.849.361-1.416.448-.569.082-1.642.124-3.222.124z" fill="#fff" stroke="#000" stroke-width=".285"/>
+<use transform="translate(6.03 16.918)" xlink:href="#a"/>
+<use transform="translate(-7.4 16.997)" xlink:href="#b"/>
+<use transform="translate(-30.527 16.999)" xlink:href="#c"/>
+<use transform="translate(-8.331 16.999)" xlink:href="#c"/>
+<path id="d" d="M45.476 72.202v-.528c0-.269-.08-.448-.238-.54-.151-.09-.456-.136-.915-.136h-5.167c-.468 0-.781.045-.94.137-.15.09-.226.27-.226.539v4.363c0 .269.076.45.226.54.159.09.472.136.94.136h5.167c.459 0 .764-.045.915-.137.158-.09.238-.27.238-.539v-.958h2.816v.958c0 .663-.071 1.137-.213 1.423-.142.282-.39.52-.74.714-.377.213-.849.362-1.416.45-.569.081-1.642.123-3.222.123l-1.824-.001c-1.586 0-2.664-.04-3.233-.123-.567-.087-1.04-.236-1.416-.449-.35-.198-.602-.444-.752-.733-.15-.295-.226-.763-.226-1.404V71.58c0-.64.071-1.105.213-1.396.15-.29.405-.535.765-.733.385-.217.89-.37 1.516-.456.636-.086 1.68-.129 4.045-.129 2.358 0 3.39.043 4.008.13.626.086 1.132.238 1.517.455.359.198.61.443.752.733.15.291.226.756.226 1.397v.622z" fill="#fff" stroke="#000" stroke-width=".285"/>
+<use transform="translate(72.592)" xlink:href="#d"/>
+<use transform="translate(102.57 16.999)" xlink:href="#e"/>
+</g>
+<use transform="translate(-37.325)" xlink:href="#b"/>
+<path id="f" d="M83.287 62.019v-9.763h4.921l5.782 7.719.029-7.719h2.407v9.763h-4.872L85.71 54.09l.008 7.929z" fill="#fff" stroke="#000" stroke-width=".285"/>
+<use transform="translate(-78.04)" xlink:href="#f"/>
+<use transform="translate(6.05 17)" xlink:href="#f"/>
+</g>
+<g transform="matrix(7.77 0 0 7.77 190.6 -374.19)">
+<path d="M10.671 70.498V62.91h2.234v5.82h5.04V70.5z" fill="#fff" stroke="#000" stroke-width=".225"/>
+<use transform="translate(14.53 13.229)" xlink:href="#g"/>
+<path id="g" d="M35.201 49.671v7.605h2.14v-2.611h3.982c.513 0 .862.049 1.047.148.191.1.285.28.285.542v1.92h2.242v-1.991c.002-.392-.188-.696-.563-.911a5.332 5.332 0 0 0-.645-.3c-.052-.02-.054-.193-.006-.205.324-.071.553-.237.74-.353.368-.232.553-.582.553-1.022v-.871c0-.747-.34-1.26-1.018-1.535-.678-.277-2.07-.416-4.179-.416zm2.14 1.343h4.248c.442 0 .735.039.879.118.151.074.227.218.227.43v1.26c0 .207-.076.35-.226.43-.145.074-.438.112-.88.112H37.34z" fill="#fff" stroke="#000" stroke-width=".225"/>
+</g>
+</g>
+</svg>

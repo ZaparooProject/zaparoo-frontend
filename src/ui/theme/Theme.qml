@@ -17,7 +17,7 @@ QtObject {
     // above bgPanel so a solid white icon+label silhouette has clear
     // contrast — the page bg pattern stays visible in the gaps between
     // tiles, and each tile reads as a self-contained chip.
-    readonly property color surfaceCard: "#2a2a45"
+    readonly property color surfaceCard: "#22223a"
     // Selected row fill. Cooler and darker than the amber accent so
     // text stays high-contrast while the accent bar remains the focus
     // cue layered on top.

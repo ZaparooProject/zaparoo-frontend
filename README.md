@@ -68,5 +68,10 @@ Third-party components:
 - **Console logos** redrawn by Dan Patrick (MIT-licensed compilation; platform
   marks remain trademarks of their respective owners). See
   [`src/LICENSES/console-logos-ATTRIBUTION.txt`](src/LICENSES/console-logos-ATTRIBUTION.txt).
+- **Wikimedia Commons public-domain text/logo assets** used for specific
+  missing system logos. See
+  [`src/LICENSES/wikimedia-public-domain-ATTRIBUTION.txt`](src/LICENSES/wikimedia-public-domain-ATTRIBUTION.txt).
+- **Noun Project icons** used in 2-player system logo composites. See
+  [`src/LICENSES/NounProject-ATTRIBUTION.txt`](src/LICENSES/NounProject-ATTRIBUTION.txt).
 
 See all bundled asset and third-party notices in [`src/LICENSES/`](src/LICENSES/).

@@ -1,0 +1,47 @@
+Wikimedia Commons Public-Domain Assets
+======================================
+
+This software bundles the following public-domain text/logo SVGs from
+Wikimedia Commons:
+
+  resources/images/systems/AliceMC10.svg
+  Source: https://commons.wikimedia.org/wiki/File:TRS-80_MC-10_badge.svg
+  Original file: TRS-80_MC-10_badge.svg
+  Author listed on Commons: Tandy Corporation
+  Uploaded/vectorized by: DigitalIceAge
+  Copyright status listed on Commons: PD-textlogo
+
+  resources/images/systems/AmstradPCW.svg
+  Source: https://commons.wikimedia.org/wiki/File:Amstrad_logo_1980s.svg
+  Original file: Amstrad_logo_1980s.svg
+  Author listed on Commons: Amstrad plc
+  Uploaded/vectorized by: DigitalIceAge
+  Copyright status listed on Commons: PD-textlogo
+
+  resources/images/systems/CoCo2.svg
+  Source: https://commons.wikimedia.org/wiki/File:TRS-80_logo.svg
+  Original file: TRS-80_logo.svg
+  Author listed on Commons: Tandy Corporation
+  Uploaded/vectorized by: Big Blue Gnu
+  Copyright status listed on Commons: public-domain text/logo
+
+  resources/images/systems/PDP1.svg
+  Source: https://commons.wikimedia.org/wiki/File:PDP-1_wordmark_horizontal.svg
+  Original file: PDP-1_wordmark_horizontal.svg
+  Author listed on Commons: Digital Equipment Corporation
+  Uploaded/vectorized by: DigitalIceAge
+  Copyright status listed on Commons: PD-textlogo
+
+  resources/images/systems/VC4000.svg
+  Source: https://commons.wikimedia.org/wiki/File:Logo_INTERTON_ELECTRONIC_(horizontal).svg
+  Original file: Logo_INTERTON_ELECTRONIC_(horizontal).svg
+  Author listed on Commons: Unknown; vectorization by MagentaGreen
+  Uploaded/vectorized by: MagentaGreen
+  Copyright status listed on Commons: public-domain/trademarked logo
+
+The bundled files were converted to grayscale or single-color SVGs and optimized for runtime tinting.
+
+Trademark notice: the logo and platform names may be protected as trademarks
+in some jurisdictions. They are included on a nominative-use basis to identify
+the platform whose content the frontend organizes; no endorsement or
+affiliation is implied or claimed.

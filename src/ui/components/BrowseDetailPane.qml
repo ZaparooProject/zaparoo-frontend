@@ -58,7 +58,7 @@ Item {
     readonly property int _cardRadius: root._surface ? root._surface.cornerRadius : Sizing.cornerRadius
     readonly property int _carouselGutter: (canPreviousImage || canNextImage) ? Sizing.pctW(4) : 0
     readonly property bool _coverPending: coverKey === "icons/Loading"
-    readonly property url _coverSource: _coverPending ? "" : Resources.coverUrl(coverKey)
+    readonly property url _coverSource: _coverPending ? "" : Resources.coverUrl(coverKey, Theme.textPrimary, Theme.surfaceCard)
     readonly property bool _coverMediaImagePending: coverKey.startsWith("media-image/") && cover.status !== Image.Ready && cover.status !== Image.Error
     readonly property bool _coverBusy: root._coverPending || root._coverMediaImagePending || cover.status === Image.Loading
     readonly property bool _paneLoading: root.loading

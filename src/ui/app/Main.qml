@@ -622,12 +622,9 @@ MainLayout {
     // populated — a re-Accept after Esc-back); the set_category call
     // is still made for parity with the prior behaviour even though
     // Rust early-returns when the category already matches. Async
-    // path waits for loadingChanged. When replacing an already-populated
-    // SystemsModel during a transition, defer until the delayed loading cue
-    // has had one frame to paint; otherwise set_category's synchronous
-    // delegate teardown can freeze the GUI before any feedback appears.
-    // Qt.callLater is not enough; it fires inside the same event loop
-    // iteration before the next render polish/sync pass.
+    // path waits for loadingChanged. The timer keeps the loadingChanged
+    // bookkeeping on the same asynchronous path without deliberately
+    // holding the transition long enough to show the global loading cue.
     function _ensureCategory(category: string, cb, waitForCatalog): void {
         if (waitForCatalog && root._catalogStillBooting()) {
             root._startupTrace("startup/qml catalog wait arm", "category=" + category);
@@ -645,7 +642,7 @@ MainLayout {
         root._categoryReadyCallback = cb;
         root._deferredCategoryPending = true;
         deferredCategorySetTimer.targetCategory = category;
-        deferredCategorySetTimer.interval = root.pendingTransition !== "" && Browse.SystemsModel.count > 0 ? root.loadingIndicatorDelayMs + 50 : 50;
+        deferredCategorySetTimer.interval = 1;
         deferredCategorySetTimer.restart();
     }
 
@@ -2608,102 +2605,12 @@ MainLayout {
         }
     }
 
-    // Hidden cover-decode loop driven by `_prefetchSystemCovers`.
-    // While `active`, mounts an Image per SystemsModel row using
-    // the same `source` / `sourceSize.width` / `cache` /
-    // `asynchronous` settings as Tile.qml's cover Image so the
-    // prefetch and the visible Tile share a QPixmapCache slot.
-    // As each Image hits Ready or Error, the delegate calls back
-    // into `_onCoverDecoded`, which fires the doneCallback and
-    // unwinds once every cover is counted. Without this warmup
-    // the destination SystemsScreen paints with each Tile showing
-    // its procedural text fallback for tens of ms while the PNG
-    // decodes — the visible "text → logo pop-in" the deferred
-    // flip alone can't fix.
-    //
-    // Bounded by `systemsCoverPrefetchTimeout` so a missing PNG
-    // (silent decode failure that doesn't emit Image.Error) or a
-    // genuinely stuck async load never strands the user on the
-    // loading overlay.
-    Item {
-        id: systemsCoverPrefetcher
-        visible: false
-        property bool active: false
-        property var doneCallback: null
-        property int total: 0
-        property int done: 0
-
-        function _markDone(): void {
-            systemsCoverPrefetcher.done++;
-            if (systemsCoverPrefetcher.done >= systemsCoverPrefetcher.total) {
-                systemsCoverPrefetcher.active = false;
-                systemsCoverPrefetchTimeout.stop();
-                const cb = systemsCoverPrefetcher.doneCallback;
-                systemsCoverPrefetcher.doneCallback = null;
-                if (cb !== null)
-                    cb();
-            }
-        }
-
-        Repeater {
-            model: systemsCoverPrefetcher.active ? Browse.SystemsModel : null
-            delegate: Image {
-                required property string coverKey
-                source: coverKey === "" ? "" : Resources.coverUrl(coverKey)
-                sourceSize.width: 256
-                asynchronous: true
-                cache: true
-
-                // Each delegate contributes exactly once.
-                // Component.onCompleted catches a synchronous Ready
-                // (cache hit during construction); onStatusChanged
-                // catches the normal async path. `_counted` dedupes
-                // so a delegate whose status flips Null → Ready
-                // inside construction (and again as the binding
-                // settles) tallies once.
-                property bool _counted: false
-                function _markDone(): void {
-                    if (_counted)
-                        return;
-                    _counted = true;
-                    systemsCoverPrefetcher._markDone();
-                }
-
-                Component.onCompleted: {
-                    if (status === Image.Ready || status === Image.Error || coverKey === "")
-                        _markDone();
-                }
-                onStatusChanged: {
-                    if (status === Image.Ready || status === Image.Error)
-                        _markDone();
-                }
-            }
-        }
-    }
-
+    // System logos are embedded SVG resources. The hidden PNG pre-decode
+    // gate used by earlier builds only extends the "Loading systems…" overlay
+    // now; let the destination screen paint as soon as the category rows are
+    // ready and rely on the normal Image/QPixmap caches for raster reuse.
     function _prefetchSystemCovers(cb): void {
-        systemsCoverPrefetcher.total = Browse.SystemsModel.count;
-        systemsCoverPrefetcher.done = 0;
-        if (systemsCoverPrefetcher.total === 0) {
-            cb();
-            return;
-        }
-        systemsCoverPrefetcher.doneCallback = cb;
-        systemsCoverPrefetcher.active = true;
-        systemsCoverPrefetchTimeout.restart();
-    }
-
-    Timer {
-        id: systemsCoverPrefetchTimeout
-        interval: 1500
-        repeat: false
-        onTriggered: {
-            systemsCoverPrefetcher.active = false;
-            const cb = systemsCoverPrefetcher.doneCallback;
-            systemsCoverPrefetcher.doneCallback = null;
-            if (cb !== null)
-                cb();
-        }
+        cb();
     }
 
     Timer {

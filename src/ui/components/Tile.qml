@@ -110,8 +110,12 @@ Item {
     // standard centred hourglass size, so swallow the source here and
     // let `loadingGlyph` own the painting.
     readonly property bool _coverPending: root.delegateCoverKey === "icons/Loading"
-    readonly property url _coverSource: root._coverPending ? "" : Resources.coverUrl(root.delegateCoverKey)
+    readonly property bool _systemCover: root.delegateCoverKey.startsWith("systems/")
+    readonly property url _coverSource: root._coverPending ? "" : Resources.coverUrl(root.delegateCoverKey, Theme.textPrimary, Theme.surfaceCard)
     readonly property bool _hasCover: cover.status === Image.Ready
+    readonly property bool _fallbackVisible: !root.showCaption && !root._hasCover && !root._coverPending
+    readonly property int _fallbackTextSize: root._systemCover ? Sizing.fontSize(5.8) : Sizing.fontSize(2.4)
+    readonly property int _fallbackMinimumTextSize: root._systemCover ? Sizing.fontSize(2.8) : Sizing.fontSize(2.4)
     readonly property bool _startupTraceResource: root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey === "icons/PlayOutline" || root.delegateCoverKey === "icons/HeartOutline" || root.delegateCoverKey === "icons/History" || root.delegateCoverKey === "icons/Settings"
     property double _startupTraceLoadStartedAt: 0
 
@@ -210,8 +214,8 @@ Item {
 
         width: parent.width - 2 * root._padding
         source: root._coverSource
-        // Pin to the system PNGs' native width (256). A size-dependent
-        // binding here would force a re-decode every frame the cell
+        // Pin system logos to a stable 256 px rasterization. A size-dependent
+        // binding here would force a re-render every frame the cell
         // animates — a constant value means QPixmapCache hits once per
         // logo and reuses the decoded pixmap across each layout
         // change. Combined with `smooth: true`, downscaling to the
@@ -313,18 +317,22 @@ Item {
 
     // Non-caption procedural fallback. Sits at the same geometry as
     // the cover and snaps to the cover the moment Image.status hits
-    // Ready; the brief Loading window shows the fallback text rather
-    // than crossfading. Cache hits skip Loading entirely and snap
-    // directly. In caption mode this is suppressed — the bottom
-    // caption already shows the name and the hourglass above signals
-    // load progress, so a wrapping copy of the name in this slot is
-    // redundant.
+    // Ready. Missing system logos use a larger fitted wordmark-style
+    // treatment so the tile reads as intentional text artwork, not a
+    // broken-image placeholder. In caption mode this is suppressed —
+    // the bottom caption already shows the name and the hourglass
+    // above signals load progress, so a wrapping copy of the name in
+    // this slot is redundant.
     Text {
         anchors.fill: cover
+        anchors.margins: root._systemCover ? Sizing.pctH(1) : 0
         text: root.delegateName
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.4)
-        color: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
+        font.pixelSize: root._fallbackTextSize
+        fontSizeMode: root._systemCover ? Text.Fit : Text.FixedSize
+        minimumPixelSize: root._fallbackMinimumTextSize
+        font.weight: root._systemCover ? Font.DemiBold : Font.Normal
+        color: root._focusedSelection || root._systemCover ? Theme.textPrimary : Theme.textLabel
         // Wrap (not WordWrap): an unbreakable identifier like
         // `_LongCollectionName_Definitive_Cut.smc` would otherwise
         // render past `width` and bleed out of the tile.
@@ -332,7 +340,7 @@ Item {
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         renderType: Text.NativeRendering
-        opacity: (!root.showCaption && !root._hasCover) ? 1 : 0
+        opacity: root._fallbackVisible ? (root.delegateHidden ? 0.4 : 1.0) : 0
         clip: true
     }
 

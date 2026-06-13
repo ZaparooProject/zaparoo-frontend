@@ -35,7 +35,7 @@ QtObject {
                         "columnGap": "pctW:3",
                         "topInset": "pctH:2",
                         "bottomInset": "pctH:2",
-                        "rowGap": "pctH:4",
+                        "rowGap": "pctH:3",
                         "scrollThumbWidth": "pctW:1.2",
                         "scrollThumbRightInset": 0,
                         "scrollThumbRightAligned": false,

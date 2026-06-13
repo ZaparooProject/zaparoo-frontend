@@ -8,6 +8,7 @@
 
 #include "media_image_provider.h"
 #include "native_video_writer.h"
+#include "tinted_svg_image_provider.h"
 
 #include <QByteArray>
 #include <QChar>
@@ -36,9 +37,9 @@
 #include <unistd.h>
 #include <vector>
 
-// Default QPixmapCache cap is 10 MiB. With ~100 system PNGs decoded at
+// Default QPixmapCache cap is 10 MiB. With ~100 system SVGs rasterized at
 // 256 px sourceSize the working set straddles that limit, so navigating
-// through every category evicts earlier system covers and re-decodes
+// through every category evicts earlier system covers and re-renders
 // them on the next visit. Bumping to 50 MiB keeps the entire system-
 // cover set resident across category swaps for the cost of a one-time
 // allocation — a worthwhile trade on MiSTer's 1 GiB DDR3 since
@@ -350,7 +351,9 @@ int main(int argc, char* argv[]) // NOLINT
     // MainLayout does).
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     engine.addImageProvider(QStringLiteral("media-image"), new MediaImageProvider());
-    startupTrace("cpp:QQmlApplicationEngine + image provider ready");
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    engine.addImageProvider(QStringLiteral("tinted-svg"), new TintedSvgImageProvider());
+    startupTrace("cpp:QQmlApplicationEngine + image providers ready");
 
     QVariantMap initialProperties = {
         {"crtNativePath", crtNativePathEnabled},

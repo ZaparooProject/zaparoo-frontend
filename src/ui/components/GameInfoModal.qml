@@ -153,7 +153,7 @@ Item {
 
                         Image {
                             anchors.fill: parent
-                            source: Browse.GameInfo.image_key !== "" ? Resources.coverUrl(Browse.GameInfo.image_key) : ""
+                            source: Browse.GameInfo.image_key !== "" ? Resources.coverUrl(Browse.GameInfo.image_key, Theme.textPrimary, Theme.surfaceCard) : ""
                             sourceSize.width: Sizing.px(parent.width)
                             fillMode: Image.PreserveAspectFit
                             asynchronous: true

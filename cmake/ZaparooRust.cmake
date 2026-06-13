@@ -63,6 +63,8 @@ qt_add_executable(
     "${CMAKE_SOURCE_DIR}/src/app/main.cpp"
     "${CMAKE_SOURCE_DIR}/src/app/media_image_provider.h"
     "${CMAKE_SOURCE_DIR}/src/app/media_image_provider.cpp"
+    "${CMAKE_SOURCE_DIR}/src/app/tinted_svg_image_provider.h"
+    "${CMAKE_SOURCE_DIR}/src/app/tinted_svg_image_provider.cpp"
     "${CMAKE_SOURCE_DIR}/src/app/native_video_writer.h"
     "${CMAKE_SOURCE_DIR}/src/app/native_video_writer.cpp"
 )
@@ -106,7 +108,7 @@ endif()
 
 target_link_libraries(
     frontend
-    PRIVATE zaparoo_frontend_rs zaparoo_ui_appplugin Qt6::Quick Qt6::QuickControls2
+    PRIVATE zaparoo_frontend_rs zaparoo_ui_appplugin Qt6::Quick Qt6::QuickControls2 Qt6::Svg
 )
 
 # Dummy CMake target satisfying qmlimportscanner's lookup for the cxx-qt plugin.

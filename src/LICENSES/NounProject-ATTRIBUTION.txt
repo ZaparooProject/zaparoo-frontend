@@ -1,0 +1,18 @@
+Noun Project Icons Attribution
+==============================
+
+This software bundles adapted Noun Project icon artwork in the following
+system logo composites:
+
+  resources/images/systems/Gameboy2P.svg
+  resources/images/systems/GBA2P.svg
+
+  Icon: "team"
+  Creator: AbtoCreative
+  Source: https://thenounproject.com/browse/icons/term/team/
+  License: Creative Commons Attribution 3.0 Unported (CC BY 3.0)
+  License text: https://creativecommons.org/licenses/by/3.0/
+
+The icon was composited with the existing platform logo artwork to identify
+2-player variants. Platform names and logos remain trademarks of their
+respective owners; no endorsement or affiliation is implied or claimed.

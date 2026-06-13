@@ -27,8 +27,9 @@ QtObject {
     // Systems tiles are squarer than box-art tiles, so they target a
     // slightly wider aspect while keeping the same preferred page size.
     readonly property var _systemsGridConfig: _gridConfig(_browseGridBaseConfig, {
-        "minCellHeight": crtNativePath ? 72 : 160,
-        "targetAspect": 1.0
+        "minCellHeight": crtNativePath ? 72 : 140,
+        "preferredPageSize": crtNativePath ? 6 : 12,
+        "targetAspect": crtNativePath ? 1.0 : 1.25
     })
     readonly property var _systemsGridShape: systemsGridShape(screenWidth, screenHeight)
     readonly property int systemsGridColumns: _systemsGridShape.columns

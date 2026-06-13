@@ -27,18 +27,18 @@ set(_APP_RESOURCES
     "${_RESOURCE_ROOT}/images/bg-circuit.svg"
 )
 
-# System logos stay PNG (curated from PRO100BYTE/console-logos — see
-# src/LICENSES/console-logos-ATTRIBUTION.txt). Categories and status
-# icons accept either PNG or SVG so SVGs can be dropped straight in
-# without a pre-render step; QtSvg rasterizes once on first load and
-# the result is cached in QPixmapCache. Top-level icons (folder, file,
-# loading, settings, navigation arrows, D-pad, ...) live under
+# System logos are black/white SVGs (curated from PRO100BYTE/console-logos — see
+# src/LICENSES/console-logos-ATTRIBUTION.txt) tinted at load time by the
+# tinted-svg image provider. Categories and status icons accept either PNG or SVG
+# so SVGs can be dropped straight in without a pre-render step; QtSvg rasterizes
+# once on first load and the result is cached in QPixmapCache. Top-level icons
+# (folder, file, loading, settings, navigation arrows, D-pad, ...) live under
 # resources/images/icons/. Gamepad button glyphs (ButtonA/B/X/Y/L/R) ship
 # as PNG under resources/images/buttons/<layout>/.
 # Globs use CONFIGURE_DEPENDS so adding/removing a file triggers a re-glob
 # on the next build.
 file(GLOB _SYSTEM_LOGOS CONFIGURE_DEPENDS
-    "${_RESOURCE_ROOT}/images/systems/*.png")
+    "${_RESOURCE_ROOT}/images/systems/*.svg")
 file(GLOB _CATEGORY_LOGOS CONFIGURE_DEPENDS
     "${_RESOURCE_ROOT}/images/categories/*.png"
     "${_RESOURCE_ROOT}/images/categories/*.svg")

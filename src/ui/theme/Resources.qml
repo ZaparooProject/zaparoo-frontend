@@ -13,8 +13,8 @@ import QtQuick
 QtObject {
     // Build a cover image URL from a `coverKey`.
     // Extension/scheme is chosen by directory:
-    //   * `systems/<id>` — the curated PNG set under
-    //     resources/images/systems/, ships as PNG.
+    //   * `systems/<id>` — the curated SVG set under
+    //     resources/images/systems/, tinted by the image provider.
     //   * `media-image/<encoded>` — media images (boxart, screenshot,
     //     wheel, titleshot, map, marquee, fanart, generic image)
     //     cached in process memory by `media_image_cache.rs`, served
@@ -36,15 +36,34 @@ QtObject {
 
     // Empty key returns an empty URL so the caller can use it as a
     // "no cover" sentinel.
-    function coverUrl(key: string): url {
+    function _colorToken(colorValue): string {
+        const text = String(colorValue === undefined ? "#ffffff" : colorValue);
+        return text.charAt(0) === "#" ? text.substring(1) : text;
+    }
+
+    function _systemArtworkKey(key: string): string {
+        if (key === "systems/MacPlus")
+            return "systems/MacOS";
+        if (key === "systems/SVI328")
+            return "systems/Spectravideo";
+        return key;
+    }
+
+    function coverUrl(key: string, foreground, background): url {
         if (key === "")
             return "";
 
         if (key.startsWith("media-image/"))
             return "image://media-image/" + key.substring("media-image/".length);
 
-        const ext = key.startsWith("systems/") ? "png" : "svg";
-        return baseUrl + "images/" + key + "." + ext;
+        if (key.startsWith("systems/")) {
+            const artworkKey = _systemArtworkKey(key);
+            const fg = _colorToken(foreground);
+            const bg = _colorToken(background === undefined ? "#000000" : background);
+            return "image://tinted-svg/" + fg + "/" + bg + "/images/" + artworkKey + ".svg";
+        }
+
+        return baseUrl + "images/" + key + ".svg";
     }
 
     // Top-right HUD host-status icons (NFC/Wi-Fi/LAN/Bluetooth).
