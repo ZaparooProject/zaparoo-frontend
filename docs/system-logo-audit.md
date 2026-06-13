@@ -60,3 +60,21 @@ Most other missing IDs had no clear match in the PRO100BYTE main SVG set and lik
 - `RX78` → Wikimedia Commons has `BANDAI.svg`, but the Bandai company wordmark is not strongly associated with this old computer; skip for now.
 - `VC4000` → resolved with Wikimedia Commons Interton Electronic SVG wordmark.
 - `Vector06C` → LaunchBox has a clear-logo PNG, but source/licensing is not obvious; skip for now.
+
+## Regional logo variants
+
+Systems where the logo itself differs by region (not just the name). Add an entry to
+`REGIONAL_LOGOS` in `rust/frontend/src/system_logos.rs` and place the variant SVG
+alongside the base art under `resources/images/systems/` when artwork lands.
+
+Naming convention: `{id}.{region}.svg` where `{region}` is `us`, `eu`, or `jp`.
+
+| System ID | US variant | EU variant | JP variant |
+|---|---|---|---|
+| `Genesis` | `Genesis` (base) | `Genesis.eu` (Mega Drive) | `Genesis.jp` (Mega Drive) |
+| `SNES` | `SNES` (base) | `SNES` (base) | `SNES.jp` (Super Famicom) |
+| `NES` | `NES` (base) | `NES` (base) | `NES.jp` (Famicom) |
+| `SMS` | `SMS` (base) | `SMS` (base) | `SMS.jp` (Mark III) |
+| `MegaCD` | `MegaCD.us` (SEGA CD) | `MegaCD` (base) | `MegaCD` (base) |
+| `S32X` | `S32X` (base) | `S32X` (base) | `S32X.jp` (Super 32X) |
+| `TurboGrafx16` | `TurboGrafx16` (base) | `TurboGrafx16.eu` (PC Engine) | `TurboGrafx16.jp` (PC Engine) |

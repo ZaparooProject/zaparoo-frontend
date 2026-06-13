@@ -123,6 +123,11 @@ Item {
         });
         out.push({
             kind: "field",
+            id: "region",
+            label: qsTr("System names")
+        });
+        out.push({
+            kind: "field",
             id: "language",
             label: qsTr("Language")
         });
@@ -322,6 +327,8 @@ Item {
             return settings._screensaverTimeoutDisplay(Browse.Settings.current_screensaver_timeout);
         if (id === "clockFormat")
             return settings._clockFormatDisplay(Browse.Settings.current_clock_format);
+        if (id === "region")
+            return settings._regionDisplay(Browse.Settings.current_region);
         if (id === "mediaImageType")
             return settings._mediaImageTypeDisplay(Browse.Settings.current_media_image_type);
         return "";
@@ -441,7 +448,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "language" || id === "clockFormat" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType";
+        return id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType";
     }
     // True when focused row accepts A without left/right cycling:
     // pickers, jobs, modal/navigation rows, and root category rows.
@@ -590,6 +597,21 @@ Item {
         return qsTr("Auto");
     }
 
+    function _regionList(): list<string> {
+        const raw = Browse.Settings.available_regions;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
+    function _regionDisplay(value: string): string {
+        if (value === "us")
+            return qsTr("Americas");
+        if (value === "eu")
+            return qsTr("Europe");
+        if (value === "jp")
+            return qsTr("Japan");
+        return qsTr("Automatic");
+    }
+
     function _orientationDisplay(value: string): string {
         if (value === "cw")
             return qsTr("Rotated CW");
@@ -710,6 +732,15 @@ Item {
                     label: settings._clockFormatDisplay(list[i])
                 });
             initialId = Browse.Settings.current_clock_format;
+        } else if (id === "region") {
+            title = qsTr("System names");
+            const list = settings._regionList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._regionDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_region;
         } else if (id === "orientation") {
             title = qsTr("Orientation");
             const list = settings._orientationList();

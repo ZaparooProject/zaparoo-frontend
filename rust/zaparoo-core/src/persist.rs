@@ -131,6 +131,11 @@ pub struct SettingsState {
     /// dimmed with a "Hidden" badge and the options menu offers "Unhide".
     #[serde(default)]
     pub show_hidden: bool,
+    /// Region variant for system names and logos. `"auto"` (default) derives
+    /// the region from the effective UI locale: `en` → US, `ja` → JP, all
+    /// others → EU. Explicit values are `"us"`, `"eu"`, `"jp"`.
+    #[serde(default = "default_region")]
+    pub region: String,
 }
 
 impl Default for SettingsState {
@@ -148,8 +153,13 @@ impl Default for SettingsState {
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
             show_hidden: false,
+            region: default_region(),
         }
     }
+}
+
+fn default_region() -> String {
+    "auto".into()
 }
 
 fn default_clock_format() -> String {
@@ -320,6 +330,7 @@ mod tests {
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),
                 show_hidden: true,
+                region: "us".into(),
             },
         };
         save_to(&path, &original);

@@ -40,6 +40,12 @@ pub struct Config {
     /// state is wiped on reboot — using state would re-show the notice
     /// every cold boot.
     pub notice: NoticeConfig,
+    /// Optional directory scanned at startup for user-supplied system
+    /// artwork. Files whose stem matches a Zaparoo system id (case-exact)
+    /// are served as-is — no tint pipeline — via the `system-image` image
+    /// provider. Configured via `[images] system_dir` in `frontend.toml`.
+    /// Absent/empty means the feature is off.
+    pub system_image_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -53,6 +59,7 @@ pub struct SettingsConfig {
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
     pub show_hidden: Option<bool>,
+    pub region: Option<String>,
 }
 
 #[allow(
@@ -73,6 +80,7 @@ pub struct SettingsMirror<'a> {
     pub screensaver_timeout: &'a str,
     pub media_image_type: &'a str,
     pub show_hidden: bool,
+    pub region: &'a str,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -92,6 +100,7 @@ impl Default for Config {
             key_to_action: input_actions::invert(&input_actions::default_bindings()),
             settings: SettingsConfig::default(),
             notice: NoticeConfig::default(),
+            system_image_dir: None,
         }
     }
 }
@@ -112,6 +121,8 @@ struct RawConfig {
     settings: RawSettings,
     #[serde(default)]
     notice: RawNotice,
+    #[serde(default)]
+    images: RawImages,
 }
 
 #[derive(Deserialize, Default)]
@@ -152,11 +163,17 @@ struct RawSettings {
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
     show_hidden: Option<bool>,
+    region: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
 struct RawNotice {
     commercial_ack: Option<bool>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawImages {
+    system_dir: Option<String>,
 }
 
 pub fn load_config(path: &Path) -> Config {
@@ -244,11 +261,30 @@ pub fn load_config(path: &Path) -> Config {
             .media_image_type
             .map(|value| value.trim().to_string()),
         show_hidden: raw.settings.show_hidden,
+        region: raw.settings.region.map(|value| value.trim().to_string()),
     };
     cfg.notice = NoticeConfig {
         commercial_ack: raw.notice.commercial_ack.unwrap_or(false),
     };
+    cfg.system_image_dir = raw
+        .images
+        .system_dir
+        .map(|value| value.trim().to_string())
+        .filter(|s| !s.is_empty());
     cfg
+}
+
+/// Get a mutable reference to a TOML section table, creating it if absent.
+fn section_mut<'a>(
+    table: &'a mut toml::Table,
+    key: &'static str,
+    path: &Path,
+) -> Result<&'a mut toml::Table, String> {
+    let v = table
+        .entry(key)
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    v.as_table_mut()
+        .ok_or_else(|| format!("config key [{key}] in {} is not a table", path.display()))
 }
 
 pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(), String> {
@@ -261,29 +297,13 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         toml::Table::new()
     };
 
-    let general_value = table
-        .entry("general")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let Some(general) = general_value.as_table_mut() else {
-        return Err(format!(
-            "config key [general] in {} is not a table",
-            path.display()
-        ));
-    };
+    let general = section_mut(&mut table, "general", path)?;
     general.insert(
         "language".into(),
         toml::Value::String(normalize_language_override(mirror.language)),
     );
 
-    let video_value = table
-        .entry("video")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let Some(video) = video_value.as_table_mut() else {
-        return Err(format!(
-            "config key [video] in {} is not a table",
-            path.display()
-        ));
-    };
+    let video = section_mut(&mut table, "video", path)?;
     video.remove("backend");
     if let Some((width, height)) = parse_resolution_override(mirror.resolution) {
         video.insert("width".into(), toml::Value::Integer(i64::from(width)));
@@ -293,15 +313,7 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         video.remove("height");
     }
 
-    let settings_value = table
-        .entry("settings")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let Some(settings) = settings_value.as_table_mut() else {
-        return Err(format!(
-            "config key [settings] in {} is not a table",
-            path.display()
-        ));
-    };
+    let settings = section_mut(&mut table, "settings", path)?;
     settings.insert(
         "orientation".into(),
         toml::Value::String(mirror.orientation.trim().to_string()),
@@ -338,16 +350,12 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         "show_hidden".into(),
         toml::Value::Boolean(mirror.show_hidden),
     );
+    settings.insert(
+        "region".into(),
+        toml::Value::String(mirror.region.trim().to_string()),
+    );
 
-    let logging_value = table
-        .entry("logging")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let Some(logging) = logging_value.as_table_mut() else {
-        return Err(format!(
-            "config key [logging] in {} is not a table",
-            path.display()
-        ));
-    };
+    let logging = section_mut(&mut table, "logging", path)?;
     logging.insert("debug".into(), toml::Value::Boolean(mirror.debug_logging));
 
     let serialized =
@@ -478,9 +486,32 @@ mod tests {
         assert_eq!(cfg.settings.button_layout, None);
         assert_eq!(cfg.settings.mouse_enabled, None);
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, None);
+        assert_eq!(cfg.settings.region, None);
+        assert!(cfg.system_image_dir.is_none());
         assert!(!cfg.notice.commercial_ack);
         // Default keyboard bindings populate the map.
         assert!(!cfg.key_to_action.is_empty());
+    }
+
+    #[test]
+    fn system_image_dir_round_trips() {
+        let f = write_tmp("[images]\nsystem_dir = \"/mnt/art/systems\"\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.system_image_dir.as_deref(), Some("/mnt/art/systems"));
+    }
+
+    #[test]
+    fn system_image_dir_absent_is_none() {
+        let f = write_tmp("[core]\nendpoint = \"ws://example.com/api\"\n");
+        let cfg = load_config(f.path());
+        assert!(cfg.system_image_dir.is_none());
+    }
+
+    #[test]
+    fn region_setting_round_trips() {
+        let f = write_tmp("[settings]\nregion = \"jp\"\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.settings.region.as_deref(), Some("jp"));
     }
 
     #[test]
@@ -661,6 +692,7 @@ mod tests {
                 screensaver_timeout: "300",
                 media_image_type: "auto",
                 show_hidden: true,
+                region: "us",
             },
         )
         .expect("save");
@@ -677,6 +709,7 @@ mod tests {
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
         assert_eq!(cfg.settings.show_hidden, Some(true));
+        assert_eq!(cfg.settings.region.as_deref(), Some("us"));
         assert!(cfg.debug_logging);
     }
 
@@ -700,6 +733,7 @@ mod tests {
                 screensaver_timeout: "60",
                 media_image_type: "auto",
                 show_hidden: false,
+                region: "auto",
             },
         )
         .expect("save");
@@ -738,6 +772,7 @@ mod tests {
                 screensaver_timeout: "off",
                 media_image_type: "auto",
                 show_hidden: false,
+                region: "auto",
             },
         )
         .expect("save");

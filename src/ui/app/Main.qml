@@ -1995,7 +1995,11 @@ MainLayout {
             Browse.Settings.set_orientation(selectedId);
         } else if (fieldId === "clockFormat")
             Browse.Settings.set_clock_format(selectedId);
-        else if (fieldId === "browseLayout")
+        else if (fieldId === "region") {
+            Browse.Settings.set_region(selectedId);
+            Browse.SystemsModel.reproject();
+            Browse.CategoriesModel.reproject();
+        } else if (fieldId === "browseLayout")
             Browse.Settings.set_browse_layout(selectedId);
         else if (fieldId === "buttonLayout")
             Browse.Settings.set_button_layout(selectedId);

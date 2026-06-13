@@ -8,6 +8,7 @@
 
 #include "media_image_provider.h"
 #include "native_video_writer.h"
+#include "system_image_provider.h"
 #include "tinted_svg_image_provider.h"
 
 #include <QByteArray>
@@ -57,6 +58,10 @@ extern "C" uint32_t zaparoo_rust_video_width();
 extern "C" uint32_t zaparoo_rust_video_height();
 extern "C" bool zaparoo_rust_debug_logging_enabled();
 extern "C" void zaparoo_rust_trace_startup(const uint8_t* stage, size_t len);
+// Push the effective UI locale into Rust so `system_region::current_region()`
+// can resolve `auto` without calling back into Qt. Called once after
+// `zaparoo_rust_init()` and the QLocale resolution below.
+extern "C" void zaparoo_rust_set_effective_locale(const uint8_t* locale, size_t len);
 
 // Pull Zaparoo QML plugin symbols into the final binary so the linker does
 // not strip their static-initializer registration functions.
@@ -192,6 +197,19 @@ int main(int argc, char* argv[]) // NOLINT
     const QLocale locale = langCode.isEmpty() ? QLocale::system() : QLocale(langCode);
     const QLocale::Language uiLanguage = locale.language();
     const bool crtNativePathEnabled = zaparoo_rust_crt_native_path_enabled();
+
+    // Push the effective locale into Rust so `system_region::current_region()`
+    // can resolve the `auto` region setting without calling back into Qt.
+    // Called here — after the QLocale is fully resolved — before any QML
+    // model Initialize callback runs. The Rust side stores it in an OnceLock
+    // so later calls are silent no-ops.
+    {
+        const QByteArray localeName = locale.name().toUtf8();
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        zaparoo_rust_set_effective_locale(reinterpret_cast<const uint8_t*>(localeName.constData()),
+                                          static_cast<size_t>(localeName.size()));
+    }
+    startupTrace("cpp:effective locale pushed to Rust");
 
 #ifdef ZAPAROO_EMBEDDED_BUILD
     if (qEnvironmentVariableIsEmpty("QT_QPA_FONTDIR"))
@@ -353,6 +371,12 @@ int main(int argc, char* argv[]) // NOLINT
     engine.addImageProvider(QStringLiteral("media-image"), new MediaImageProvider());
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     engine.addImageProvider(QStringLiteral("tinted-svg"), new TintedSvgImageProvider());
+    // User-supplied system artwork overrides. Files configured via
+    // `[images] system_dir` in `frontend.toml` are served as-is -- no tint
+    // pipeline. The provider validates that decoded paths stay inside the
+    // configured dir to prevent arbitrary filesystem reads.
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    engine.addImageProvider(QStringLiteral("system-image"), new SystemImageProvider());
     startupTrace("cpp:QQmlApplicationEngine + image providers ready");
 
     QVariantMap initialProperties = {

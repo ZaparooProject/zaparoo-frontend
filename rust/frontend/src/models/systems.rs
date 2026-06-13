@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 use crate::models::{global_handle, global_store, with_persist_read};
+use crate::system_region::Region;
+use crate::{system_image_overrides, system_logos, system_names, system_region};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QVariant,
@@ -33,6 +35,12 @@ const HIDDEN_ROLE: i32 = 256 + 6;
 pub struct SystemInfo {
     pub id: String,
     pub name: String,
+    /// Cover key emitted to QML. One of:
+    /// - `"systems/{stem}"` — tinted SVG via the `tinted-svg` provider
+    ///   (stem comes from `system_logos::logo_artwork_stem` for regional variants).
+    /// - `"system-image/{path}"` — user-supplied override via the `system-image`
+    ///   provider; no tint applied.
+    pub cover_key: String,
     pub category: String,
     pub release_date: Option<String>,
     pub manufacturer: Option<String>,
@@ -214,11 +222,16 @@ fn position_of_system_id(systems: &[SystemInfo], needle: &str) -> i32 {
 /// When `show_hidden` is false, systems in that set are dropped entirely.
 /// When true, they are included with `hidden = true` so the tile renders
 /// dimmed with a "Hidden" badge.
+///
+/// `region` drives both the localized display name (via `system_names`) and
+/// the logo artwork stem (via `system_logos`). Resolve it once before calling
+/// this function and pass it in so the caller controls the snapshot.
 fn rows_for_category(
     catalog: Option<&CatalogData>,
     cat: &str,
     hidden_ids: &[String],
     show_hidden: bool,
+    region: Region,
 ) -> Vec<SystemInfo> {
     catalog.map_or_else(Vec::new, |c| {
         c.systems_by_category(cat)
@@ -228,9 +241,18 @@ fn rows_for_category(
                 if is_hidden && !show_hidden {
                     return None;
                 }
+                // Localized display name: use Names_MiSTer data if available,
+                // fall back to the Core catalog name so unknown systems still show.
+                let name = system_names::localized_name(&s.id, region).unwrap_or(s.name);
+                // Cover key: user override takes priority over bundled art.
+                let cover_key = system_image_overrides::override_path(&s.id).map_or_else(
+                    || format!("systems/{}", system_logos::logo_artwork_stem(&s.id, region)),
+                    |p| format!("system-image/{}", p.display()),
+                );
                 Some(SystemInfo {
                     id: s.id,
-                    name: s.name,
+                    name,
+                    cover_key,
                     category: s.category,
                     release_date: s.release_date,
                     manufacturer: s.manufacturer,
@@ -258,7 +280,8 @@ fn apply_state(mut model: Pin<&mut ffi::SystemsModel>, (data, err): (Option<Cata
             let (hidden_ids, show_hidden) = with_persist_read(|s| {
                 (s.systems.hidden_system_ids.clone(), s.settings.show_hidden)
             });
-            let rows = rows_for_category(Some(&data), &cat, &hidden_ids, show_hidden);
+            let region = system_region::current_region();
+            let rows = rows_for_category(Some(&data), &cat, &hidden_ids, show_hidden, region);
             let count = rows.len() as i32;
             let ids: Vec<&str> = rows.iter().map(|s| s.id.as_str()).collect();
             debug!(
@@ -314,10 +337,11 @@ impl ffi::SystemsModel {
         let s = &self.systems[index.row() as usize];
         match role {
             COVER_KEY_ROLE => {
-                // Relative path under `resources/images/` (no extension).
-                // Tile resolves the SVG via `images/<coverKey>.svg`, so
-                // category, system and game tiles share one URL builder.
-                QVariant::from(&QString::from(format!("systems/{}", s.id).as_str()))
+                // `cover_key` is set at row-build time in `rows_for_category`:
+                // either `"system-image/{path}"` for a user override or
+                // `"systems/{stem}"` for bundled artwork. `Resources.qml`
+                // resolves this to the appropriate image:// URL.
+                QVariant::from(&QString::from(s.cover_key.as_str()))
             }
             NAME_ROLE | FILE_STEM_ROLE => QVariant::from(&QString::from(s.name.as_str())),
             CATEGORY_ROLE => QVariant::from(&QString::from(s.category.as_str())),
@@ -403,10 +427,13 @@ impl ffi::SystemsModel {
         let catalog = self.rust().last_ready.clone();
         let (hidden_ids, show_hidden) =
             with_persist_read(|s| (s.systems.hidden_system_ids.clone(), s.settings.show_hidden));
+        // Resolve region on the Qt thread so the async worker captures a
+        // snapshot rather than reading global state from a tokio thread.
+        let region = system_region::current_region();
 
         let qt_thread = self.qt_thread();
         let handle = global_handle().spawn(async move {
-            let rows = rows_for_category(catalog.as_ref(), &cat, &hidden_ids, show_hidden);
+            let rows = rows_for_category(catalog.as_ref(), &cat, &hidden_ids, show_hidden, region);
             let count = rows.len() as i32;
             let cat_for_log = cat.clone();
             let ids_for_log: Vec<String> = rows.iter().map(|s| s.id.clone()).collect();
@@ -564,12 +591,13 @@ impl ffi::SystemsModel {
         }
         let (hidden_ids, show_hidden) =
             with_persist_read(|s| (s.systems.hidden_system_ids.clone(), s.settings.show_hidden));
+        let region = system_region::current_region();
         // Bump seq to invalidate any in-flight set_category workers; their
         // stale result would undo the reproject if they ran after us.
         let seq = self.rust().seq.clone();
         seq.fetch_add(1, Ordering::SeqCst);
         let catalog = self.rust().last_ready.clone();
-        let rows = rows_for_category(catalog.as_ref(), &cat, &hidden_ids, show_hidden);
+        let rows = rows_for_category(catalog.as_ref(), &cat, &hidden_ids, show_hidden, region);
         let count = rows.len() as i32;
         debug!(category = %cat, count, "systems: reproject");
         self.as_mut().begin_reset_model();
@@ -634,6 +662,7 @@ mod tests {
     use super::{
         detail_tags_for_system, position_of_system_id, project, rows_for_category, SystemInfo,
     };
+    use crate::system_region::Region;
     use zaparoo_core::media_types::SystemInfo as MediaSystemInfo;
     use zaparoo_core::remote_resource::ResourceStatus;
     use zaparoo_core::systems_catalog::CatalogData;
@@ -701,7 +730,7 @@ mod tests {
 
     #[test]
     fn rows_for_category_none_returns_empty() {
-        let rows = rows_for_category(None, "Arcade", &[], false);
+        let rows = rows_for_category(None, "Arcade", &[], false, Region::Us);
         assert!(rows.is_empty());
     }
 
@@ -712,7 +741,7 @@ mod tests {
             sys("snk", "SNK Heroes", "Arcade"),
             sys("zelda", "Zelda", "Consoles"),
         ]);
-        let rows = rows_for_category(Some(&catalog), "Consoles", &[], false);
+        let rows = rows_for_category(Some(&catalog), "Consoles", &[], false, Region::Us);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].id, "smb");
         assert_eq!(rows[0].name, "Super Mario Bros");
@@ -727,7 +756,7 @@ mod tests {
         nes.release_date = Some("1983".into());
         nes.manufacturer = Some("Nintendo".into());
         let catalog = catalog_with(vec![nes]);
-        let rows = rows_for_category(Some(&catalog), "Consoles", &[], false);
+        let rows = rows_for_category(Some(&catalog), "Consoles", &[], false, Region::Us);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].release_date.as_deref(), Some("1983"));
         assert_eq!(rows[0].manufacturer.as_deref(), Some("Nintendo"));
@@ -740,7 +769,7 @@ mod tests {
             sys("snes", "SNES", "Consoles"),
         ]);
         let hidden = vec!["snes".to_string()];
-        let rows = rows_for_category(Some(&catalog), "Consoles", &hidden, false);
+        let rows = rows_for_category(Some(&catalog), "Consoles", &hidden, false, Region::Us);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "nes");
     }
@@ -752,7 +781,7 @@ mod tests {
             sys("snes", "SNES", "Consoles"),
         ]);
         let hidden = vec!["snes".to_string()];
-        let rows = rows_for_category(Some(&catalog), "Consoles", &hidden, true);
+        let rows = rows_for_category(Some(&catalog), "Consoles", &hidden, true, Region::Us);
         assert_eq!(rows.len(), 2);
         assert!(!rows[0].hidden);
         assert!(rows[1].hidden);
@@ -762,8 +791,8 @@ mod tests {
     #[test]
     fn rows_for_category_empty_hidden_ids_no_change() {
         let catalog = catalog_with(vec![sys("nes", "NES", "Consoles")]);
-        let rows_off = rows_for_category(Some(&catalog), "Consoles", &[], false);
-        let rows_on = rows_for_category(Some(&catalog), "Consoles", &[], true);
+        let rows_off = rows_for_category(Some(&catalog), "Consoles", &[], false, Region::Us);
+        let rows_on = rows_for_category(Some(&catalog), "Consoles", &[], true, Region::Us);
         assert_eq!(rows_off.len(), 1);
         assert_eq!(rows_on.len(), 1);
         assert!(!rows_off[0].hidden);
@@ -784,7 +813,7 @@ mod tests {
     #[test]
     fn rows_for_category_unknown_returns_empty() {
         let catalog = catalog_with(vec![sys("smb", "SMB", "Consoles")]);
-        let rows = rows_for_category(Some(&catalog), "DoesNotExist", &[], false);
+        let rows = rows_for_category(Some(&catalog), "DoesNotExist", &[], false, Region::Us);
         assert!(rows.is_empty());
     }
 
@@ -792,6 +821,7 @@ mod tests {
         SystemInfo {
             id: id.into(),
             name: id.into(),
+            cover_key: format!("systems/{id}"),
             category: "Consoles".into(),
             release_date: None,
             manufacturer: None,

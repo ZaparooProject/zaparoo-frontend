@@ -7,6 +7,10 @@ mod bind;
 mod media_image_cache;
 mod mister_runtime;
 mod models;
+pub mod system_image_overrides;
+pub mod system_logos;
+pub mod system_names;
+pub mod system_region;
 
 /// Called from the Qt message handler in main.cpp. `level` is `QtMsgType`
 /// cast to u8. `msg_ptr`/`msg_len` are a UTF-8 slice owned by the caller.
@@ -420,6 +424,13 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
     // their properties from a consistent snapshot during Initialize.
     let persist_state = Arc::new(Mutex::new(persist::load()));
     startup_trace("rust:persist loaded");
+
+    // Scan the user-supplied system artwork directory once at startup.
+    // Files whose stem matches a Zaparoo system id are served by the
+    // `system-image` image provider as-is, bypassing the tint pipeline.
+    // Missing or unset dir → empty map (feature off).
+    system_image_overrides::scan(config.system_image_dir.as_deref());
+    startup_trace("rust:system image overrides scanned");
 
     // init_globals takes the owning `Runtime` — the static holder is
     // what `zaparoo_rust_shutdown` later drains via `shutdown_timeout`.
