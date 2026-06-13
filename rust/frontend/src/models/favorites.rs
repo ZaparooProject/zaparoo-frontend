@@ -141,6 +141,7 @@ impl Default for FavoritesModelRust {
             pending_first_paint_keys: HashSet::new(),
             cover_gate_timer: None,
             cover_gate_seq: Arc::new(AtomicU64::new(0)),
+            nav_timing: None,
         }
     }
 }
