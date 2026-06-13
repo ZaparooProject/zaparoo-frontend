@@ -123,6 +123,8 @@ Item {
     }
 
     function handleAction(action: string): void {
+        if ((action === "left" || action === "right" || action === "up" || action === "down" || action === "page_prev" || action === "page_next") && systems._overlayLoadingVisible)
+            return;
         if (action === "context_menu" && systems._gateHide)
             return;
 
