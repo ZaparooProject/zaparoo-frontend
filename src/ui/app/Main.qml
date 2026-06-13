@@ -372,19 +372,56 @@ MainLayout {
         Browse.AppState.active_screen = screen;
     }
 
-    // Back transitions need the same delayed loading cue as forward
-    // model fills. Request the destination first so lazy Loaders can
-    // mount behind the cue, then cut after the cue has had one frame to
-    // paint.
+    function _backTargetReady(screen: string): bool {
+        const item = root._screenItem(screen);
+        if (item === null || item === undefined)
+            return false;
+        if (screen === root.screenHub)
+            return true;
+        if (screen === root.screenSystems)
+            return !Browse.SystemsModel.loading;
+        if (screen === root.screenGames)
+            return !Browse.GamesModel.loading;
+        if (screen === root.screenFavorites)
+            return !Browse.FavoritesModel.loading;
+        if (screen === root.screenRecents)
+            return !Browse.RecentsModel.loading;
+        return true;
+    }
+
+    function _maybeCompleteBackTransition(): void {
+        if (root.pendingTransition !== "back")
+            return;
+        const target = root._backTransitionTarget;
+        if (target === "" || !root._backTargetReady(target))
+            return;
+        root._backTransitionTarget = "";
+        backTransitionTimer.stop();
+        root._completeTransition(target);
+    }
+
+    // Back navigation is usually a return to an already-mounted, already-filled
+    // screen. Cut immediately in that case. Keep the delayed Loading cue only
+    // when real work is pending: lazy screen mount, catalog boot, or a model
+    // fill still in flight.
     function _navigateBackToScreen(screen: string): void {
         if (screen === root.activeScreen)
             return;
+        root._backTransitionTarget = "";
+        backTransitionTimer.stop();
+        if (root._backTargetReady(screen)) {
+            root._goto(screen);
+            root._resetIdle();
+            return;
+        }
         root._backTransitionTarget = screen;
         root.pendingTransition = "back";
         root._whenScreenReady(screen, function () {
             if (root.pendingTransition !== "back" || root._backTransitionTarget !== screen)
                 return;
-            backTransitionTimer.restart();
+            root._maybeCompleteBackTransition();
+            if (root.pendingTransition === "back")
+                backTransitionTimer.restart();
         });
     }
 
@@ -489,6 +526,7 @@ MainLayout {
                 if (root.pendingTransition === "settings")
                     root._completeTransition(root.screenSettings);
             });
+        root._maybeCompleteBackTransition();
     }
 
     // Listen for SystemsModel fills owned by an in-flight transition.
@@ -518,10 +556,13 @@ MainLayout {
             if (root._catalogWaitCategory !== "" && root._catalogStillBooting())
                 return;
             const cb = root._categoryReadyCallback;
-            if (cb === null)
+            if (cb === null) {
+                root._maybeCompleteBackTransition();
                 return;
+            }
             root._categoryReadyCallback = null;
             cb();
+            root._maybeCompleteBackTransition();
         }
     }
     Connections {
@@ -539,6 +580,7 @@ MainLayout {
                 cb();
             }
             root._completeFolderBackRebrowseIfReady();
+            root._maybeCompleteBackTransition();
         }
     }
     Connections {
@@ -548,10 +590,13 @@ MainLayout {
                 return;
             root._maybeCompletePendingResumeLaunch();
             const cb = root._recentsReadyCallback;
-            if (cb === null)
+            if (cb === null) {
+                root._maybeCompleteBackTransition();
                 return;
+            }
             root._recentsReadyCallback = null;
             cb();
+            root._maybeCompleteBackTransition();
         }
 
         function onResume_availableChanged(): void {
@@ -564,10 +609,13 @@ MainLayout {
             if (Browse.FavoritesModel.loading)
                 return;
             const cb = root._favoritesReadyCallback;
-            if (cb === null)
+            if (cb === null) {
+                root._maybeCompleteBackTransition();
                 return;
+            }
             root._favoritesReadyCallback = null;
             cb();
+            root._maybeCompleteBackTransition();
         }
     }
 
@@ -894,22 +942,38 @@ MainLayout {
         Browse.GamesModel.set_path(path);
     }
 
-    // Folder pop-up inside the games screen. Pop persistence immediately
-    // so kill-resume observes the back intent, then defer the model rebrowse
-    // until LoadingIndicator has painted. If we pop to the root level
-    // (path_stack[0] is always "") the call goes through `set_system` so
-    // the model re-runs single-root auto-nav rather than browsing the
-    // literal empty path with no system filter.
+    function _rebrowseGamesFolderTarget(path: string, systemId: string): void {
+        if (path === "") {
+            if (systemId !== "")
+                Browse.GamesModel.set_system(systemId);
+        } else {
+            Browse.GamesModel.set_path(path);
+        }
+    }
+
+    // Folder pop-up inside the games screen. Cached parents take the same direct
+    // path as folder drill-down, so Back does not show fake global Loading for a
+    // browse result we can seed synchronously. Cold parents keep the delayed cue
+    // before rebrowse so the UI does not look dead if the reset/RPC stalls.
     function _navigateOutOfFolder(): void {
         const stack = Browse.GamesState.path_stack;
         if (stack.length <= 1)
             return;
-        root.pendingTransition = "folder_back";
         Browse.GamesState.pop_level();
         const newStack = Browse.GamesState.path_stack;
         const target = newStack[newStack.length - 1];
+        const systemId = target === "" ? Browse.GamesState.system_id : "";
+        root._pendingFolderBackTargetPath = "";
+        root._pendingFolderBackSystemId = "";
+        folderBackTransitionTimer.stop();
+        if (Browse.GamesModel.browse_cached_for_path(target)) {
+            root._rebrowseGamesFolderTarget(target, systemId);
+            root._resetIdle();
+            return;
+        }
+        root.pendingTransition = "folder_back";
         root._pendingFolderBackTargetPath = target;
-        root._pendingFolderBackSystemId = target === "" ? Browse.GamesState.system_id : "";
+        root._pendingFolderBackSystemId = systemId;
         folderBackTransitionTimer.restart();
     }
 
@@ -921,12 +985,7 @@ MainLayout {
         if (root.pendingTransition !== "folder_back")
             return;
         root._folderBackReadyCallback = root._finishFolderBackTransition;
-        if (target === "") {
-            if (systemId !== "")
-                Browse.GamesModel.set_system(systemId);
-        } else {
-            Browse.GamesModel.set_path(target);
-        }
+        root._rebrowseGamesFolderTarget(target, systemId);
         root._completeFolderBackRebrowseIfReady();
     }
 
@@ -1870,7 +1929,9 @@ MainLayout {
             return;
         } else if (fieldId === "orientation") {
             Browse.Settings.set_orientation(selectedId);
-        } else if (fieldId === "browseLayout")
+        } else if (fieldId === "clockFormat")
+            Browse.Settings.set_clock_format(selectedId);
+        else if (fieldId === "browseLayout")
             Browse.Settings.set_browse_layout(selectedId);
         else if (fieldId === "buttonLayout")
             Browse.Settings.set_button_layout(selectedId);
@@ -2339,10 +2400,14 @@ MainLayout {
     // events fall through to the screensaver overlay's own MouseArea
     // (when armed) or to whatever clickable sits underneath in normal
     // operation. `hoverEnabled: true` is what gets us positionChanged
-    // on bare cursor moves without a button being pressed.
+    // on bare cursor moves without a button being pressed. Disable
+    // this root-level hover area when mouse support is off so the
+    // scene-level blank-cursor blocker owns both cursor and clicks.
     MouseArea {
         anchors.fill: parent
         z: 9001
+        visible: Browse.Settings.current_mouse_enabled
+        enabled: visible
         hoverEnabled: true
         acceptedButtons: Qt.NoButton
         onPositionChanged: {
@@ -2443,9 +2508,11 @@ MainLayout {
     // background and circuit-trace texture stay visible underneath; never
     // paint a full-screen fill. The delayed indicator suppresses flashes
     // for quick loads; once it appears, screen `transitioning` bindings hide
-    // primary content so the centred "Loading…" reads alone in the cleared
-    // band. Sized to the full window so anchors.centerIn parks the row in
-    // the geometric centre regardless of which screen is the source.
+    // primary content so the centered "Loading…" reads alone in the cleared
+    // band. Do not apply a minimum-visible tail here: when the work completes
+    // near the delay threshold, the destination must not paint underneath a
+    // stale loading label. Sized to the full window so anchors.centerIn parks
+    // the row in the geometric center regardless of which screen is the source.
     Item {
         anchors.fill: parent
         visible: transitionCueActive || transitionCue.showing
@@ -2458,7 +2525,7 @@ MainLayout {
             id: transitionCue
             active: parent.transitionCueActive
             delayMs: root.loadingIndicatorDelayMs
-            minimumVisibleMs: root.minimumLoadingVisibleMs
+            minimumVisibleMs: 0
             x: Sizing.center(parent.width, width)
             y: Sizing.center(parent.height, height)
             onShowingChanged: root.transitionCueVisible = showing
@@ -2607,18 +2674,7 @@ MainLayout {
         id: backTransitionTimer
         interval: root.loadingIndicatorDelayMs + 50
         repeat: false
-        onTriggered: {
-            const target = root._backTransitionTarget;
-            root._backTransitionTarget = "";
-            if (target === "") {
-                if (root.pendingTransition === "back")
-                    root.pendingTransition = "";
-                return;
-            }
-            if (root.pendingTransition !== "back")
-                return;
-            root._completeTransition(target);
-        }
+        onTriggered: root._maybeCompleteBackTransition()
     }
 
     Timer {

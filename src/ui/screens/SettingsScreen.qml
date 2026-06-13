@@ -54,6 +54,7 @@ Item {
     readonly property string pageLibraryData: "libraryData"
     readonly property string pageSupportAbout: "supportAbout"
     property string currentPage: settings.pageRoot
+    readonly property bool showingRootGrid: settings.currentPage === settings.pageRoot
     property var _pageIndexes: ({})
 
     // Page-aware field registries. The root mirrors console settings
@@ -64,22 +65,26 @@ Item {
         {
             kind: "field",
             id: "pageDisplayInterface",
-            label: qsTr("Display")
+            label: qsTr("Display"),
+            coverKey: "icons/Display"
         },
         {
             kind: "field",
             id: "pageControlsInput",
-            label: qsTr("Controls")
+            label: qsTr("Controls"),
+            coverKey: "icons/Controls"
         },
         {
             kind: "field",
             id: "pageLibraryData",
-            label: qsTr("Library")
+            label: qsTr("Library"),
+            coverKey: "icons/Library"
         },
         {
             kind: "field",
             id: "pageSupportAbout",
-            label: qsTr("Support")
+            label: qsTr("Support"),
+            coverKey: "icons/Support"
         }
     ]
     readonly property var displayInterfaceFields: {
@@ -110,6 +115,11 @@ Item {
             kind: "field",
             id: "screensaverTimeout",
             label: qsTr("Screensaver")
+        });
+        out.push({
+            kind: "field",
+            id: "clockFormat",
+            label: qsTr("Clock format")
         });
         out.push({
             kind: "field",
@@ -232,13 +242,31 @@ Item {
     property bool _activeScrapeUsedRescrape: false
     readonly property bool _visibleRescrapeExisting: settings._scrapeBusy && Browse.MediaStatus.scrape_force_known ? Browse.MediaStatus.scrape_force : settings.rescrapeExisting
 
-    // Drive the top/bottom scroll chevrons. Mirrors PagedGrid's
-    // `hasPagesAbove`/`hasPagesBelow` recipe, but for a continuous
-    // Flickable rather than a paginated grid. The 1-px epsilon
-    // swallows sub-pixel rounding so the chevrons don't flicker on
-    // exact-fit content.
-    readonly property bool _hasContentAbove: flickable.contentY > 1
-    readonly property bool _hasContentBelow: flickable.contentY + flickable.height < flickable.contentHeight - 1
+    // Drive the top/bottom scroll chevrons. Ignore the spacer-only
+    // overflow at the form edges: the arrows should mean another row
+    // is hidden, not that there is padding past the last visible row.
+    // The 1-px epsilon swallows sub-pixel rounding so the chevrons
+    // don't flicker on exact-fit content.
+    readonly property bool _hasContentAbove: settings._firstFieldTop() >= 0 && flickable.contentY > settings._firstFieldTop() + 1
+    readonly property bool _hasContentBelow: settings._lastFieldBottom() >= 0 && flickable.contentY + flickable.height < settings._lastFieldBottom() - 1
+
+    function _firstFieldTop(): real {
+        for (let i = 0; i < settings.fieldCount; i++) {
+            const row = rowRepeater.itemAt(i);
+            if (row !== null && settings._isField(i))
+                return row.y;
+        }
+        return -1;
+    }
+
+    function _lastFieldBottom(): real {
+        for (let i = settings.fieldCount - 1; i >= 0; i--) {
+            const row = rowRepeater.itemAt(i);
+            if (row !== null && settings._isField(i))
+                return row.y + row.height;
+        }
+        return -1;
+    }
 
     function _triggerIndex(): void {
         if (settings._scrapeBusy)
@@ -290,6 +318,8 @@ Item {
             return settings._buttonLayoutDisplay(Browse.Settings.current_button_layout);
         if (id === "screensaverTimeout")
             return settings._screensaverTimeoutDisplay(Browse.Settings.current_screensaver_timeout);
+        if (id === "clockFormat")
+            return settings._clockFormatDisplay(Browse.Settings.current_clock_format);
         if (id === "mediaImageType")
             return settings._mediaImageTypeDisplay(Browse.Settings.current_media_image_type);
         return "";
@@ -356,6 +386,44 @@ Item {
         return from;
     }
 
+    readonly property int rootGridColumns: 5
+    readonly property int rootGridRows: 2
+
+    function _moveRootGrid(dx: int, dy: int): void {
+        if (settings.fieldCount <= 0)
+            return;
+        const columns = settings.rootGridColumns;
+        const row = Math.floor(settings.currentIndex / columns);
+        const col = settings.currentIndex % columns;
+        if (dx !== 0) {
+            const rowStart = row * columns;
+            const rowEnd = Math.min(settings.fieldCount - 1, rowStart + columns - 1);
+            let next = settings.currentIndex + dx;
+            if (next < rowStart)
+                next = rowEnd;
+            else if (next > rowEnd)
+                next = rowStart;
+            settings.currentIndex = next;
+            return;
+        }
+        if (dy !== 0) {
+            let next = settings.currentIndex + dy * columns;
+            if (next < 0) {
+                const lastRow = Math.floor((settings.fieldCount - 1) / columns);
+                next = Math.min(lastRow * columns + col, settings.fieldCount - 1);
+            } else if (next >= settings.fieldCount) {
+                next = Math.min(col, settings.fieldCount - 1);
+            }
+            settings.currentIndex = next;
+        }
+    }
+
+    function _focusRootIndex(index: int): void {
+        if (index < 0 || index >= settings.fieldCount)
+            return;
+        settings.currentIndex = index;
+    }
+
     readonly property bool focusedFieldIsToggle: {
         if (!settings._isField(settings.currentIndex))
             return false;
@@ -369,7 +437,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "language" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType";
+        return id === "language" || id === "clockFormat" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType";
     }
     // True when focused row accepts A without left/right cycling:
     // pickers, jobs, modal/navigation rows, and root category rows.
@@ -462,6 +530,11 @@ Item {
         return raw === undefined || raw === null ? [] : raw;
     }
 
+    function _clockFormatList(): list<string> {
+        const raw = Browse.Settings.available_clock_formats;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
     function _orientationList(): list<string> {
         const raw = Browse.Settings.available_orientations;
         return raw === undefined || raw === null ? [] : raw;
@@ -502,6 +575,14 @@ Item {
             return qsTr("Arabic");
         if (value === "hi" || value === "hi_IN")
             return qsTr("Hindi");
+        return qsTr("Auto");
+    }
+
+    function _clockFormatDisplay(value: string): string {
+        if (value === "12h")
+            return qsTr("12-hour");
+        if (value === "24h")
+            return qsTr("24-hour");
         return qsTr("Auto");
     }
 
@@ -616,6 +697,15 @@ Item {
                     label: settings._languageDisplay(list[i])
                 });
             initialId = Browse.Settings.current_language;
+        } else if (id === "clockFormat") {
+            title = qsTr("Clock format");
+            const list = settings._clockFormatList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._clockFormatDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_clock_format;
         } else if (id === "orientation") {
             title = qsTr("Orientation");
             const list = settings._orientationList();
@@ -770,13 +860,25 @@ Item {
             return;
         }
         if (action === "up") {
-            settings.currentIndex = settings._seekNavigable(settings.currentIndex, -1);
+            if (settings.showingRootGrid)
+                settings._moveRootGrid(0, -1);
+            else
+                settings.currentIndex = settings._seekNavigable(settings.currentIndex, -1);
         } else if (action === "down") {
-            settings.currentIndex = settings._seekNavigable(settings.currentIndex, 1);
+            if (settings.showingRootGrid)
+                settings._moveRootGrid(0, 1);
+            else
+                settings.currentIndex = settings._seekNavigable(settings.currentIndex, 1);
         } else if (action === "left") {
-            settings._cycleFocused(-1);
+            if (settings.showingRootGrid)
+                settings._moveRootGrid(-1, 0);
+            else
+                settings._cycleFocused(-1);
         } else if (action === "right") {
-            settings._cycleFocused(1);
+            if (settings.showingRootGrid)
+                settings._moveRootGrid(1, 0);
+            else
+                settings._cycleFocused(1);
         } else if (action === "accept") {
             if (!settings._isField(settings.currentIndex))
                 return;
@@ -834,7 +936,7 @@ Item {
     // onCurrentIndexChanged below; no animation — software-renderer
     // budget can't pay for a moving column behind a focus border.
     function _scrollFocusedIntoView(): void {
-        if (!settings._isField(settings.currentIndex))
+        if (settings.showingRootGrid || !settings._isField(settings.currentIndex))
             return;
         const row = rowRepeater.itemAt(settings.currentIndex);
         if (row === null)
@@ -849,13 +951,106 @@ Item {
 
     onCurrentIndexChanged: settings._scrollFocusedIntoView()
 
+    Item {
+        id: categoryGrid
+
+        visible: !settings.optimisticLoading && settings.showingRootGrid && settings.fieldCount > 0
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: topStrip.bottom
+        anchors.topMargin: Sizing.pctH(2)
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Sizing.pctH(15)
+
+        readonly property int columns: settings.rootGridColumns
+        readonly property int rows: settings.rootGridRows
+        readonly property int leftInset: Sizing.pctW(5)
+        readonly property int rightInset: Sizing.pctW(5)
+        readonly property int topInset: Sizing.pctH(2)
+        readonly property int bottomInset: Sizing.pctH(2)
+        readonly property int cellSpacingX: Sizing.pctW(3)
+        readonly property int cellSpacingY: Sizing.pctH(4)
+        readonly property int maxCellSize: Sizing.pctH(22)
+        readonly property int _availableWidth: Math.max(0, width - leftInset - rightInset)
+        readonly property int _availableHeight: Math.max(0, height - topInset - bottomInset)
+        readonly property int cellSize: Math.max(0, Math.min(maxCellSize, Math.floor((_availableWidth - (columns - 1) * cellSpacingX) / columns), Math.floor((_availableHeight - (rows - 1) * cellSpacingY) / rows)))
+        readonly property int visibleColumns: Math.max(1, Math.min(columns, settings.fieldCount))
+        readonly property int visibleRows: Math.min(rows, Math.max(1, Math.ceil(settings.fieldCount / columns)))
+        readonly property int contentWidth: visibleColumns * cellSize + (visibleColumns - 1) * cellSpacingX
+        readonly property int contentHeight: visibleRows * cellSize + (visibleRows - 1) * cellSpacingY
+        readonly property int originX: Sizing.center(width, contentWidth)
+        readonly property int originY: Sizing.center(height, contentHeight)
+
+        Component {
+            id: categoryTileDelegate
+            Tile {}
+        }
+
+        Repeater {
+            model: settings.fields
+
+            Item {
+                id: categoryCell
+
+                required property int index
+                required property var modelData
+
+                readonly property int cellRow: Math.floor(index / categoryGrid.columns)
+                readonly property int cellCol: index % categoryGrid.columns
+                readonly property bool isSelected: index === settings.currentIndex
+
+                x: categoryGrid.originX + cellCol * (categoryGrid.cellSize + categoryGrid.cellSpacingX)
+                y: categoryGrid.originY + cellRow * (categoryGrid.cellSize + categoryGrid.cellSpacingY)
+                width: categoryGrid.cellSize
+                height: categoryGrid.cellSize
+                z: isSelected ? 1 : 0
+
+                TileLoader {
+                    anchors.fill: parent
+                    sourceComponent: categoryTileDelegate
+                    isSelected: categoryCell.isSelected
+                    isFocused: true
+                    name: categoryCell.modelData.label
+                    coverKey: categoryCell.modelData.coverKey
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    cursorShape: Qt.PointingHandCursor
+
+                    onEntered: settings._focusRootIndex(categoryCell.index)
+                    onClicked: mouse => {
+                        if (mouse.button === Qt.RightButton) {
+                            settings._goBack();
+                            return;
+                        }
+                        settings._focusRootIndex(categoryCell.index);
+                        settings.handleAction("accept");
+                    }
+                }
+            }
+        }
+    }
+
+    ActiveLabel {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Sizing.pctH(8)
+        height: Sizing.pctH(7)
+        text: settings.showingRootGrid && settings._isField(settings.currentIndex) ? settings.fields[settings.currentIndex].label : ""
+        visible: !settings.optimisticLoading && settings.showingRootGrid && settings.fieldCount > 0
+    }
+
     // Form lives in a Flickable so the section bands can grow past
     // a single screen without dropping off-frame. Width capped so
     // the rows don't stretch edge-to-edge on widescreen; bottom
     // margin clears the help bar (pctH(6)) plus a small gap.
     Flickable {
         id: flickable
-        visible: !settings.optimisticLoading
+        visible: !settings.optimisticLoading && !settings.showingRootGrid
 
         // topMargin and bottomMargin are sized to leave a clear band
         // for the scroll chevrons to sit outside the scrollable area
@@ -997,7 +1192,7 @@ Item {
         anchors.horizontalCenter: flickable.horizontalCenter
         fillMode: Image.PreserveAspectFit
         smooth: true
-        visible: !settings.optimisticLoading && settings._hasContentAbove
+        visible: !settings.optimisticLoading && !settings.showingRootGrid && settings._hasContentAbove
     }
 
     Image {
@@ -1009,7 +1204,7 @@ Item {
         anchors.horizontalCenter: flickable.horizontalCenter
         fillMode: Image.PreserveAspectFit
         smooth: true
-        visible: !settings.optimisticLoading && settings._hasContentBelow
+        visible: !settings.optimisticLoading && !settings.showingRootGrid && settings._hasContentBelow
     }
 
     // Empty-state placeholder shown on runtimes with no settings to

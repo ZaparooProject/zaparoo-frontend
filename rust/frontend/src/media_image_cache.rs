@@ -36,6 +36,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::{c_char, c_void};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
@@ -444,6 +445,7 @@ struct QueueEntry {
     key: MediaKey,
     page_size: u32,
     no_image_policy: NoImagePolicy,
+    enqueued_at: Instant,
 }
 
 #[derive(Debug)]
@@ -799,6 +801,7 @@ impl MediaImageCache {
                     key,
                     page_size,
                     no_image_policy: NoImagePolicy::Memoize,
+                    enqueued_at: Instant::now(),
                 });
             }
         }
@@ -908,6 +911,7 @@ impl MediaImageCache {
                 key,
                 page_size,
                 no_image_policy,
+                enqueued_at: Instant::now(),
             });
             // Keep only the freshest MAX_QUEUE_LEN entries; the rest
             // (oldest enqueues at the front) get dropped. The dropped
@@ -1014,7 +1018,7 @@ fn process_batch_outcomes(
     queue_notify: &Arc<Notify>,
     outcomes: Vec<(QueueEntry, FetchOutcome)>,
 ) {
-    for (entry, outcome) in outcomes {
+    for (mut entry, outcome) in outcomes {
         let key = entry.key.clone();
         let is_transient = matches!(outcome, FetchOutcome::Transient);
         let is_connection_down = matches!(outcome, FetchOutcome::ConnectionDown);
@@ -1044,6 +1048,7 @@ fn process_batch_outcomes(
                 let dropped = {
                     #[allow(clippy::unwrap_used, reason = "Mutex poisoning is unrecoverable")]
                     let mut q = queue.lock().unwrap();
+                    entry.enqueued_at = Instant::now();
                     q.push_front(entry);
                     // Mirror the `enqueue_with_media_id` cap: a
                     // long-running burst of transient failures can
@@ -1154,6 +1159,15 @@ enum FetchOutcome {
     ConnectionDown,
 }
 
+fn fetch_outcome_label(outcome: &FetchOutcome) -> &'static str {
+    match outcome {
+        FetchOutcome::Success { .. } => "success",
+        FetchOutcome::NoImage => "no_image",
+        FetchOutcome::Transient => "transient",
+        FetchOutcome::ConnectionDown => "connection_down",
+    }
+}
+
 /// Fetch one media image with one `media.image` JSON-RPC call. Core no
 /// longer accepts batched `items`, so queue fan-out happens entirely in
 /// this single-flight driver.
@@ -1164,6 +1178,7 @@ async fn fetch_one(
     entry: QueueEntry,
 ) -> (QueueEntry, FetchOutcome) {
     let key = entry.key.clone();
+    let queue_wait = entry.enqueued_at.elapsed();
     let (mut params, had_id_hint) = {
         #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
         let guard = state.read().unwrap();
@@ -1194,17 +1209,30 @@ async fn fetch_one(
         max_size,
         "media_image_cache: media.image request"
     );
-    match store.client().media_image(params).await {
-        Ok(image) => (entry, classify_media_image_result(&key, &image)),
+    let fetch_started = Instant::now();
+    let result = store.client().media_image(params).await;
+    let fetch_duration = fetch_started.elapsed();
+    let (outcome, decode_duration) = match result {
+        Ok(image) => classify_media_image_result(&key, &image),
         Err(e) => {
             let outcome = classify_single_media_image_error(&key, &e.message, had_id_hint);
             if matches!(outcome, FetchOutcome::Transient) && had_id_hint {
                 #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
                 state.write().unwrap().media_ids.remove(&key);
             }
-            (entry, outcome)
+            (outcome, Duration::ZERO)
         }
-    }
+    };
+    debug!(
+        system_id = %key.system_id,
+        path = %key.path,
+        outcome = fetch_outcome_label(&outcome),
+        queue_wait_ms = queue_wait.as_millis(),
+        fetch_ms = fetch_duration.as_millis(),
+        decode_ms = decode_duration.as_millis(),
+        "media_image_cache: cover timing",
+    );
+    (entry, outcome)
 }
 
 fn classify_single_media_image_error(
@@ -1255,25 +1283,31 @@ fn is_stable_media_image_miss(message: &str) -> bool {
         || (message.contains("media binary") && message.contains("is too large"))
 }
 
-fn classify_media_image_result(key: &MediaKey, image: &MediaImageResult) -> FetchOutcome {
+fn classify_media_image_result(
+    key: &MediaKey,
+    image: &MediaImageResult,
+) -> (FetchOutcome, Duration) {
+    let decode_started = Instant::now();
     let bytes = match BASE64_STANDARD.decode(image.data.as_bytes()) {
         Ok(b) => b,
         Err(e) => {
+            let decode_duration = decode_started.elapsed();
             warn!(
                 system_id = %key.system_id,
                 path = %key.path,
                 "media_image_cache: base64 decode failed: {e} (transient, will retry on next enqueue)",
             );
-            return FetchOutcome::Transient;
+            return (FetchOutcome::Transient, decode_duration);
         }
     };
+    let decode_duration = decode_started.elapsed();
     if bytes.is_empty() {
         warn!(
             system_id = %key.system_id,
             path = %key.path,
             "media_image_cache: media.image returned 0 bytes after base64 decode, treating as no image",
         );
-        return FetchOutcome::NoImage;
+        return (FetchOutcome::NoImage, decode_duration);
     }
     let ext = image
         .extension
@@ -1289,9 +1323,9 @@ fn classify_media_image_result(key: &MediaKey, image: &MediaImageResult) -> Fetc
             bytes_len = bytes.len(),
             "media_image_cache: unsupported extension/content_type, skipping cache",
         );
-        return FetchOutcome::NoImage;
+        return (FetchOutcome::NoImage, decode_duration);
     };
-    FetchOutcome::Success { bytes, ext }
+    (FetchOutcome::Success { bytes, ext }, decode_duration)
 }
 
 fn finish_fetch(
@@ -1486,6 +1520,7 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::atomic::AtomicU32;
     use std::sync::{Arc, Mutex, RwLock};
+    use std::time::Instant;
     use tokio::sync::{broadcast, Notify};
 
     /// Build a `MediaImageCache` without spawning the fetch driver.
@@ -2170,6 +2205,7 @@ mod tests {
             key: key("NES", "/retry"),
             page_size: 15,
             no_image_policy: NoImagePolicy::Memoize,
+            enqueued_at: Instant::now(),
         };
         {
             let mut q = queue.lock().unwrap();
@@ -2177,11 +2213,13 @@ mod tests {
                 key: second.clone(),
                 page_size: 15,
                 no_image_policy: NoImagePolicy::Memoize,
+                enqueued_at: Instant::now(),
             });
             q.push_back(QueueEntry {
                 key: first.clone(),
                 page_size: 15,
                 no_image_policy: NoImagePolicy::Memoize,
+                enqueued_at: Instant::now(),
             });
         }
         state.write().unwrap().pending.insert(retry.key.clone());
@@ -2215,16 +2253,19 @@ mod tests {
             key: a.clone(),
             page_size: 15,
             no_image_policy: NoImagePolicy::Memoize,
+            enqueued_at: Instant::now(),
         });
         q.push_back(QueueEntry {
             key: b.clone(),
             page_size: 15,
             no_image_policy: NoImagePolicy::Memoize,
+            enqueued_at: Instant::now(),
         });
         q.push_back(QueueEntry {
             key: c.clone(),
             page_size: 15,
             no_image_policy: NoImagePolicy::Memoize,
+            enqueued_at: Instant::now(),
         });
         assert_eq!(q.pop_back().map(|e| e.key), Some(c));
         assert_eq!(q.pop_back().map(|e| e.key), Some(b));

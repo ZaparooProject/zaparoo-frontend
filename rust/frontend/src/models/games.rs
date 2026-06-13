@@ -31,6 +31,7 @@
 // when the user spams direction-arrow + Accept across a model swap.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
+use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
@@ -41,7 +42,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
@@ -100,6 +101,11 @@ const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 300;
 const COLLAPSED_DIRECTORY_BROWSE_PAGE_SIZE: u32 = 1000;
 const COVER_PREFETCH_NEXT_PAGES: i32 = 2;
 const COVER_PREFETCH_PREVIOUS_PAGES: i32 = 1;
+// Bound how long navigation waits for cold visible covers. After this,
+// the page becomes interactive and any remaining covers pop in via the
+// normal update path. Keeps cold pages from waiting on the slowest
+// `media.image` request while preserving no-pop-in for warm/cache-hit pages.
+const COVER_GATE_TIMEOUT_MS: u64 = 300;
 
 // `apply_append_page` sub-batches the model insert into chunks of this
 // many rows so the Repeater's per-delegate `createObject` cost (the
@@ -219,11 +225,11 @@ pub struct GamesModelRust {
     // the new one. Same race shape as `cover_gate_seq`, just for the
     // sub-batch fan-out.
     append_seq: Arc<AtomicU64>,
-    // True from the moment `apply_initial_page` queues its metadata
-    // look-ahead `fetch_more` until the matching `apply_append_page`
-    // lands. This is informational only: background look-ahead must
-    // not hold the full-screen loading gate after the visible page is
-    // ready.
+    // True when `apply_initial_page` wants to start the metadata
+    // look-ahead `fetch_more` after the visible page is interactive.
+    // Starting it before the cover gate releases can splice rows and
+    // create delegates during a screen transition, which is exactly
+    // the UI-thread stall the loading overlay is trying to hide.
     pending_initial_lookahead: bool,
     // First visible row in the grid. Bound from QML to
     // `gamesGrid.currentPage * gamesGrid.pageSize` so the model knows
@@ -233,6 +239,7 @@ pub struct GamesModelRust {
     // window for whatever row the user is currently looking at.
     visible_first_row: i32,
     cover_max_size: i32,
+    nav_timing: Option<NavTiming>,
 }
 
 impl Default for GamesModelRust {
@@ -277,6 +284,7 @@ impl Default for GamesModelRust {
             pending_initial_lookahead: false,
             visible_first_row: 0,
             cover_max_size: 0,
+            nav_timing: None,
         }
     }
 }
@@ -336,6 +344,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_path(self: Pin<&mut GamesModel>, path: &QString);
+
+        #[qinvokable]
+        fn browse_cached_for_path(self: &GamesModel, path: &QString) -> bool;
 
         #[qinvokable]
         fn fetch_more(self: Pin<&mut GamesModel>);
@@ -538,6 +549,21 @@ impl ffi::GamesModel {
             vec![sid]
         };
         self.start_initial_browse(p, systems, false);
+    }
+
+    fn browse_cached_for_path(&self, path: &QString) -> bool {
+        let sid = self.current_system_id.to_string();
+        let systems = if sid.is_empty() {
+            Vec::new()
+        } else {
+            vec![sid]
+        };
+        let max_results = u32::try_from(self.page_size.max(1)).unwrap_or(u32::from(u16::MAX));
+        global_store().is_ready::<MediaBrowseEndpoint>(&BrowseArgs::new(
+            path.to_string(),
+            systems,
+            max_results,
+        ))
     }
 
     fn fetch_more(self: Pin<&mut Self>) {
@@ -994,6 +1020,7 @@ impl ffi::GamesModel {
             page_size = self.page_size,
             "games: start_initial_browse",
         );
+        self.as_mut().rust_mut().nav_timing = Some(NavTiming::new("network"));
         self.as_mut().ensure_cover_subscription();
         self.as_mut().set_current_path(QString::from(path.as_str()));
         self.as_mut().set_loading(true);
@@ -1071,6 +1098,12 @@ impl ffi::GamesModel {
         // the outer call later overwrites `self.watcher`.
         let qt_thread = self.qt_thread();
         let snapshot = status_rx.borrow_and_update().clone();
+        if let Some(timing) = self.as_mut().rust_mut().nav_timing.as_mut() {
+            if matches!(snapshot, ResourceStatus::Ready(_)) {
+                timing.set_source("cache");
+                timing.mark_request_done();
+            }
+        }
         let seq_for_loop = seq.clone();
         let handle = global_handle().spawn(async move {
             while status_rx.changed().await.is_ok() {
@@ -1694,6 +1727,28 @@ fn cover_key_for_with(
     }
 }
 
+fn finish_nav_timing(
+    mut model: Pin<&mut ffi::GamesModel>,
+    reason: &'static str,
+    pending_remaining: usize,
+) {
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.take() {
+        timing.log_release("games", reason, pending_remaining);
+    }
+}
+
+fn mark_nav_source(mut model: Pin<&mut ffi::GamesModel>, source: &'static str) {
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.set_source(source);
+    }
+}
+
+fn mark_nav_request_done(mut model: Pin<&mut ffi::GamesModel>) {
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.mark_request_done();
+    }
+}
+
 /// Emit `dataChanged(coverKey)` for every row whose entry's
 /// `(systemId, path)` matches `key`. Cheap walk of the current
 /// `entries` vec — pages top out at a few hundred rows after look-
@@ -1743,59 +1798,16 @@ fn notify_cover_update(mut model: Pin<&mut ffi::GamesModel>, key: &MediaKey) {
         .rust_mut()
         .pending_first_paint_keys
         .remove(key);
-    // Hold the overlay while the initial look-ahead is still in flight so
-    // the Loading screen covers both cover resolution AND the background
-    // chunk's materialization. `release_initial_lookahead_gate` below will
-    // trigger the release once both conditions are satisfied.
-    if was_pending
-        && model.pending_first_paint_keys.is_empty()
-        && !model.pending_initial_lookahead
-        && model.loading
-    {
+    if was_pending && model.pending_first_paint_keys.is_empty() && model.loading {
         if let Some(handle) = model.as_mut().rust_mut().cover_gate_timer.take() {
             handle.abort();
         }
-        // Bytes are cached, but QML's `MediaImageProvider` still has to
-        // decode them. PagedGrid now feeds real coverKey values to the
-        // current and next page while the loading overlay is still up,
-        // but MiSTer's software-rendered frame loop can lag behind the
-        // last cache broadcast. Keep a bounded MiSTer-only settle window
-        // long enough for the first-page provider/decode lag seen there
-        // so the first visible grid frame is less likely to paint
-        // fallbacks or hourglasses. Desktop/non-MiSTer releases
-        // immediately so restores are not globally delayed.
-        // TODO: Replace this heuristic with a QML decode-ready handshake
-        // from the first visible page (Ready/Error per Image plus a
-        // timeout fallback), so the gate releases on real decode state
-        // instead of runtime-specific sleep.
-        let settle_delay = if matches!(platform::current(), Some(Platform::Mister)) {
-            Duration::from_millis(1000)
-        } else {
-            Duration::ZERO
-        };
-        info!(
-            settle_ms = settle_delay.as_millis(),
-            "games: cover gate bytes settled — entering decode-settle window"
-        );
-        let seq = model.rust().cover_gate_seq.clone();
-        let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let qt_thread = model.qt_thread();
-        let handle = global_handle().spawn(async move {
-            if !settle_delay.is_zero() {
-                tokio::time::sleep(settle_delay).await;
-            }
-            let _ = qt_thread.queue(move |mut model: Pin<&mut ffi::GamesModel>| {
-                if seq.load(Ordering::SeqCst) != ticket {
-                    return;
-                }
-                model.as_mut().rust_mut().cover_gate_timer = None;
-                if model.loading {
-                    info!("games: cover gate released after decode-settle window");
-                    model.as_mut().set_loading(false);
-                }
-            });
-        });
-        model.as_mut().rust_mut().cover_gate_timer = Some(handle);
+        if model.loading {
+            info!("games: cover gate released after visible covers cached");
+            model.as_mut().set_loading(false);
+            finish_nav_timing(model.as_mut(), "covers-ready", 0);
+            maybe_start_initial_lookahead(model.as_mut());
+        }
     }
 }
 
@@ -1844,14 +1856,14 @@ fn reset_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
 /// - If every media entry is already cached or negatively-memoised
 ///   (folder-only page, or revisit), set loading=false right now —
 ///   there's nothing to wait on, the screen-flip overlay clears.
-/// - Otherwise, store the unresolved set on the model, arm a 1.5 s
+/// - Otherwise, store the unresolved set on the model, arm a short
 ///   safety timer, and leave loading=true. `notify_cover_update` will
 ///   drain the set as covers land; whichever happens first (set empties
 ///   or timer fires) releases the gate.
 ///
-/// The 1.5 s timeout is the fall-through: if the bulk RPC or initial
-/// look-ahead stalls, the user sees `Loading…` for at most 1.5 s before
-/// the existing "list with placeholders → covers pop in" behavior resumes.
+/// The timeout is the fall-through: if visible cover fetches are cold,
+/// the user sees `Loading…` only briefly before the existing "list with
+/// placeholders → covers pop in" behavior resumes.
 fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
     if let Some(handle) = model.as_mut().rust_mut().cover_gate_timer.take() {
         handle.abort();
@@ -1867,24 +1879,27 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::GamesModel>) {
     let first = model.rust().visible_first_row.max(0) as usize;
     let window_end = (first + page_size).min(model.entries.len());
     let visible_entries = &model.entries[first..window_end];
+    let cover_keys = visible_entries
+        .iter()
+        .filter(|entry| entry.has_cover)
+        .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
+        .collect::<Vec<_>>();
+    let cover_total = cover_keys.len();
+    let cover_cache_hits = cover_keys.iter().filter(|k| cache.is_cached(k)).count();
     let unresolved = compute_unresolved_keys(
         visible_entries,
         |k| cache.is_cached(k),
-        |k| cache.is_negative(k),
+        |k| cache.is_negative(k) || cache.is_soft_no_image(k),
     );
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.start_gate(cover_total, cover_cache_hits, unresolved.len());
+    }
     if unresolved.is_empty() {
         model.as_mut().rust_mut().pending_first_paint_keys.clear();
-        // If the initial look-ahead is still in flight, keep loading=true
-        // so the overlay covers the materialization of the first background
-        // chunk. `release_initial_lookahead_gate` will release it once
-        // the sub-batches have finished splicing onto the Qt thread.
         if model.loading {
-            if model.pending_initial_lookahead {
-                info!("games: arm cover gate (holding loading until look-ahead lands)");
-                arm_cover_gate_timeout(model);
-            } else {
-                model.as_mut().set_loading(false);
-            }
+            model.as_mut().set_loading(false);
+            finish_nav_timing(model.as_mut(), "covers-ready", 0);
+            maybe_start_initial_lookahead(model.as_mut());
         }
         return;
     }
@@ -1901,14 +1916,12 @@ fn arm_cover_gate_timeout(mut model: Pin<&mut ffi::GamesModel>) {
     let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
     let qt_thread = model.qt_thread();
     let handle = global_handle().spawn(async move {
-        tokio::time::sleep(Duration::from_millis(1500)).await;
+        tokio::time::sleep(Duration::from_millis(COVER_GATE_TIMEOUT_MS)).await;
         let _ = qt_thread.queue(move |mut model: Pin<&mut ffi::GamesModel>| {
             if seq.load(Ordering::SeqCst) != ticket {
                 return;
             }
-            if model.loading
-                && (model.pending_initial_lookahead || !model.pending_first_paint_keys.is_empty())
-            {
+            if model.loading && !model.pending_first_paint_keys.is_empty() {
                 release_cover_gate_after_timeout(model);
             } else {
                 model.as_mut().rust_mut().cover_gate_timer = None;
@@ -1918,21 +1931,21 @@ fn arm_cover_gate_timeout(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().rust_mut().cover_gate_timer = Some(handle);
 }
 
-/// Clear `pending_initial_lookahead` after the background prefetch lands.
-/// If the cover gate already drained before look-ahead finished (e.g. a
-/// system with no covers whose pending keys resolved to empty immediately),
-/// release the loading overlay now that both conditions are met.
+fn maybe_start_initial_lookahead(mut model: Pin<&mut ffi::GamesModel>) {
+    if !model.pending_initial_lookahead
+        || model.loading
+        || model.loading_more
+        || !model.has_next_page
+    {
+        return;
+    }
+    model.as_mut().rust_mut().pending_initial_lookahead = false;
+    model.as_mut().fetch_more();
+}
+
+/// Clear stale look-ahead state after the background prefetch lands or fails.
 fn release_initial_lookahead_gate(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().rust_mut().pending_initial_lookahead = false;
-    if model.pending_first_paint_keys.is_empty() {
-        if let Some(handle) = model.as_mut().rust_mut().cover_gate_timer.take() {
-            handle.abort();
-            model.rust().cover_gate_seq.fetch_add(1, Ordering::SeqCst);
-        }
-        if model.loading {
-            model.as_mut().set_loading(false);
-        }
-    }
 }
 
 /// Force-release the cover gate from the safety timer. Called only via
@@ -1943,13 +1956,11 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::GamesModel>) {
     info!(pending, "games: cover gate timed out, releasing");
     model.as_mut().rust_mut().pending_first_paint_keys.clear();
     model.as_mut().rust_mut().cover_gate_timer = None;
-    // Safety timer is the hard upper bound — release regardless of
-    // whether the look-ahead prefetch has landed. Clear the flag too
-    // so a late `apply_append_page` doesn't try to flip loading off a
-    // second time.
-    model.as_mut().rust_mut().pending_initial_lookahead = false;
+    // Safety timer is the hard upper bound for visible covers.
     if model.loading {
         model.as_mut().set_loading(false);
+        finish_nav_timing(model.as_mut(), "timeout", pending);
+        maybe_start_initial_lookahead(model.as_mut());
     }
 }
 
@@ -2103,6 +2114,7 @@ fn is_strict_ancestor_path(parent: &str, child: &str) -> bool {
 fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<MediaBrowseResult>) {
     match project_status(status) {
         Projection::Pending => {
+            mark_nav_source(model.as_mut(), "network");
             // A new browse round started (or a Ready→Pending refetch
             // is in flight). Abort any cover gate left from the
             // previous Ready so its safety-timer callback can't race
@@ -2126,6 +2138,7 @@ fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<Med
             }
         }
         Projection::Ready(mut result) => {
+            mark_nav_request_done(model.as_mut());
             let eligible = model.rust().auto_nav_eligible;
             // Eligibility is consumed by the first Ready that follows
             // an eligible load. A subsequent refetch (mutation
@@ -2214,6 +2227,7 @@ fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<Med
             if model.loading {
                 model.as_mut().set_loading(false);
             }
+            finish_nav_timing(model.as_mut(), "error", 0);
             if model.has_next_page {
                 model.as_mut().set_has_next_page(false);
             }
@@ -2222,6 +2236,7 @@ fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<Med
 }
 
 fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseResult) {
+    let apply_started = Instant::now();
     // Already seeded: this Ready is a cache invalidation refetch on
     // the same browse target (e.g. `MediaTagsUpdateMutation`'s
     // `MediaBrowseEndpoint` invalidation after a favorite toggle, or
@@ -2233,22 +2248,36 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     // transient blip doesn't leave the spinner stuck on after the
     // refetch lands.
     if model.is_seeded {
+        let has_next_page = result.has_next_page();
+        let next_cursor = result.next_cursor();
+        let total = i32::try_from(result.total_files).unwrap_or(i32::MAX);
+        model.as_mut().rust_mut().next_cursor = next_cursor;
+        if model.has_next_page != has_next_page {
+            model.as_mut().set_has_next_page(has_next_page);
+        }
+        if model.total_files != total {
+            model.as_mut().set_total_files(total);
+        }
         if model.loading {
             model.as_mut().set_loading(false);
         }
+        finish_nav_timing(model.as_mut(), "already-seeded", 0);
         return;
     }
     let has_next_page = result.has_next_page();
     let next_cursor = result.next_cursor();
     let total = i32::try_from(result.total_files).unwrap_or(i32::MAX);
     let platform = platform::current();
+    let transform_started = Instant::now();
     let entries = transform_entries(result.entries, platform.as_ref());
+    let transform_ms = transform_started.elapsed().as_millis();
     let dir_count = leading_dir_count(&entries);
     let count = i32::try_from(entries.len()).unwrap_or(i32::MAX);
     info!(
         count,
         dir_count, total, has_next_page, "games: apply_initial_page"
     );
+    let reset_started = Instant::now();
     model.as_mut().begin_reset_model();
     model.as_mut().rust_mut().entries = entries;
     model.as_mut().rust_mut().count = count;
@@ -2271,16 +2300,25 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     model.as_mut().set_has_next_page(has_next_page);
     model.as_mut().end_reset_model();
     model.as_mut().count_changed();
+    let reset_ms = reset_started.elapsed().as_millis();
     // Seed the cover queue from the visible row outwards instead of
     // bulk-enqueuing every entry. The grid resets to row 0 on a fresh
     // browse, so anchor the first prefetch there. Any later page turn
     // re-issues this through `onCurrentPageChanged` in QML.
     model.as_mut().rust_mut().visible_first_row = 0;
+    let prefetch_started = Instant::now();
     model.as_mut().prefetch_around(0);
-    // Metadata look-ahead runs in the background. Track it only so
-    // stale follow-up completions can clear their own bookkeeping; do
-    // not let it hold the first visible page behind the full-screen
-    // loading overlay.
+    let prefetch_ms = prefetch_started.elapsed().as_millis();
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.mark_apply_done();
+    }
+    debug!(
+        apply_ms = apply_started.elapsed().as_millis(),
+        "games: apply_initial_page timing",
+    );
+    // Metadata look-ahead starts only after the visible page is
+    // interactive. Otherwise the follow-up append can create delegates
+    // during the transition and extend the perceived navigation stall.
     let will_lookahead = has_next_page && !model.loading_more;
     if will_lookahead {
         model.as_mut().rust_mut().pending_initial_lookahead = true;
@@ -2288,18 +2326,25 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     // Decide whether to release `loading` immediately or hold it until
     // visible-page covers are cached. Background metadata look-ahead
     // does not participate in this gate.
+    let gate_arm_started = Instant::now();
     arm_cover_gate(model.as_mut());
+    let gate_arm_ms = gate_arm_started.elapsed().as_millis();
+    debug!(
+        count,
+        transform_ms,
+        reset_ms,
+        prefetch_ms,
+        gate_arm_ms,
+        total_ms = apply_started.elapsed().as_millis(),
+        "games: apply_initial_page detail timing",
+    );
     if !model.error_message.is_empty() {
         model.as_mut().set_error_message(QString::default());
     }
-    // Metadata look-ahead: keep rows one chunk ahead of the highlight
-    // so a page advance does not pause on "Loading more…". Cover
-    // prefetch is separate: `prefetch_around` rebuilds the queue in
-    // current → next → previous order whenever rows land or the page
-    // changes.
-    if will_lookahead {
-        model.as_mut().fetch_more();
-    }
+    // If the visible page released synchronously (all covers cached or
+    // no media covers), start look-ahead now. Otherwise the release path
+    // calls `maybe_start_initial_lookahead` after loading flips false.
+    maybe_start_initial_lookahead(model.as_mut());
     // Mark seeded last so any early-return from this function leaves
     // the flag in its previous state. Subsequent Ready transitions
     // on the same browse target now skip the reset above.

@@ -1124,6 +1124,31 @@ ApplicationWindow {
                     if (root.activeScreen === root.screenSettings) {
                         if (root.settingsScreen === null)
                             return [];
+                        if (root.settingsScreen.showingRootGrid) {
+                            if (root.settingsScreen.optimisticLoading)
+                                return [
+                                    {
+                                        button: "ButtonB",
+                                        label: qsTr("Back")
+                                    }
+                                ];
+                            let gridRow = [];
+                            if (root.settingsScreen.fieldCount > 1)
+                                gridRow.push({
+                                    button: "Dpad",
+                                    label: qsTr("Move")
+                                });
+                            if (root.settingsScreen.fieldCount > 0)
+                                gridRow.push({
+                                    button: "ButtonA",
+                                    label: qsTr("Open")
+                                });
+                            gridRow.push({
+                                button: "ButtonB",
+                                label: qsTr("Back")
+                            });
+                            return gridRow;
+                        }
                         let row = [];
                         // Up/Down moves between fields; only useful when there
                         // are 2+ fields.

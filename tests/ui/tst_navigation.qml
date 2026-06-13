@@ -108,26 +108,22 @@ TestCase {
         compare(main.activeScreen, main.screenSystems, "Enter on an empty systems screen must retry, not flip to games");
     }
 
-    // Escape on games goes back to systems (one peer up the stack) after
-    // a one-frame Loading cue, matching heavy forward transitions.
+    // Escape on games goes straight back to systems when the destination
+    // screen is already mounted and its model is idle.
     function test_escape_on_games_returns_to_systems(): void {
         main.activeScreen = main.screenGames;
         main.handleKey(Qt.Key_Escape);
-        compare(main.pendingTransition, "back");
-        compare(main.activeScreen, main.screenGames);
-        tryCompare(main, "activeScreen", main.screenSystems);
         compare(main.pendingTransition, "");
+        compare(main.activeScreen, main.screenSystems);
         tryCompare(main, "transitionCueVisible", false);
     }
 
-    // Escape on systems goes back to hub after the same Loading cue.
+    // Escape on systems goes straight back to Hub; Hub has no model fill to wait on.
     function test_escape_on_systems_returns_to_hub(): void {
         main.activeScreen = main.screenSystems;
         main.handleKey(Qt.Key_Escape);
-        compare(main.pendingTransition, "back");
-        compare(main.activeScreen, main.screenSystems);
-        tryCompare(main, "activeScreen", main.screenHub);
         compare(main.pendingTransition, "");
+        compare(main.activeScreen, main.screenHub);
         tryCompare(main, "transitionCueVisible", false);
     }
 
@@ -144,10 +140,28 @@ TestCase {
     function test_backspace_behaves_like_escape_on_games(): void {
         main.activeScreen = main.screenGames;
         main.handleKey(Qt.Key_Backspace);
-        compare(main.pendingTransition, "back");
-        tryCompare(main, "activeScreen", main.screenSystems);
         compare(main.pendingTransition, "");
+        compare(main.activeScreen, main.screenSystems);
         tryCompare(main, "transitionCueVisible", false);
+    }
+
+    function test_settings_root_grid_opens_category_and_returns(): void {
+        main.activeScreen = main.screenSettings;
+        main.settingsScreen.optimisticLoading = false;
+        main.settingsScreen.currentPage = main.settingsScreen.pageRoot;
+        compare(main.settingsScreen.rootGridColumns, 5);
+        compare(main.settingsScreen.rootGridRows, 2);
+        main.settingsScreen.currentIndex = 0;
+        main.handleAction("down");
+        compare(main.settingsScreen.currentIndex, 0);
+        main.handleAction("right");
+        compare(main.settingsScreen.currentIndex, 1);
+        main.handleAction("accept");
+        compare(main.settingsScreen.currentPage, main.settingsScreen.pageControlsInput);
+        main.handleAction("cancel");
+        compare(main.settingsScreen.currentPage, main.settingsScreen.pageRoot);
+        main.handleAction("cancel");
+        compare(main.activeScreen, main.screenHub);
     }
 
     // Cross-row mapping. The test harness has no live CategoriesModel

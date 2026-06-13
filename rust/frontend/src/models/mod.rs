@@ -38,6 +38,7 @@ pub mod hub_state;
 pub mod input;
 pub mod log_upload;
 pub mod media_status;
+pub mod nav_timing;
 pub mod notice;
 pub mod platform;
 pub mod qr_code;
