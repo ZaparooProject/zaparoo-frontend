@@ -83,7 +83,6 @@ Item {
     readonly property bool _coverBusyIndicatorVisible: root._coverBusy && root._coverLoadingDelayElapsed
     readonly property bool _detailVisible: !root.detailSuppressed
     readonly property bool _emptyPaneLoading: root._delayedPaneLoading && !root._coverBusyIndicatorVisible && root._coverSource === "" && root._detailRows.length === 0 && root.title === ""
-    readonly property bool _suppressedPlaceholderCover: root.detailSuppressed && coverKey.startsWith("icons/") && root._coverSource !== ""
     readonly property var _detailRows: _parseDetailTags(detailTags)
     readonly property int _tagRowCount: _detailRows.length
     readonly property int _tagTextSize: Sizing.fontSize(2.2)
@@ -113,9 +112,15 @@ Item {
     readonly property var _displayRows: (root._rowsHaveContent(root._detailRows) || !root.loading) ? root._detailRows : root._heldDetailRows
 
     onDetailTagsChanged: {
-        root._labelColumnNaturalWidth = 0;
         if (root._rowsHaveContent(root._detailRows))
             root._heldDetailRows = root._detailRows;
+        // Do not reset _labelColumnNaturalWidth here. Label keys (Year,
+        // Genre, Players, Developer, Publisher, Rating) are the same six
+        // strings for every item, so the accumulated max width measured by
+        // TextMetrics on first delegate creation stays correct indefinitely.
+        // Resetting it to 0 mid-session causes a one-frame label collapse
+        // while the Repeater defers delegate recreation to the next update
+        // cycle — the flicker the hold mechanic is designed to prevent.
     }
     onDetailSuppressedChanged: {
         if (root.detailSuppressed)
@@ -319,7 +324,7 @@ Item {
                     sourceSize.width: 512
                     smooth: true
                     asynchronous: true
-                    visible: root._coverSource !== "" && status === Image.Ready && (!root.detailSuppressed || root._suppressedPlaceholderCover)
+                    visible: root._coverSource !== "" && status === Image.Ready && !root.detailSuppressed
                     // Record the decoded cover URL so coverHold can display it
                     // while the next cover async-decodes after a d-pad move.
                     onStatusChanged: {
@@ -344,7 +349,7 @@ Item {
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     asynchronous: false
-                    visible: !root._suppressedPlaceholderCover && !root._isSystemCover && (root.detailSuppressed || root._coverBusyIndicatorVisible || (!root._coverBusy && (root._coverSource === "" || cover.status === Image.Error)))
+                    visible: !root.detailSuppressed && !root._isSystemCover && (root._coverBusyIndicatorVisible || (!root._coverBusy && (root._coverSource === "" || cover.status === Image.Error)))
                 }
 
                 // Wordmark fallback for system entries with no curated logo SVG.

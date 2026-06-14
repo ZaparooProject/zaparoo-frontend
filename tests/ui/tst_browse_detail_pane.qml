@@ -195,6 +195,19 @@ TestCase {
         verify(!findChild(pane, "detailTagTable").visible);
     }
 
+    // Regression: during fast scroll (detailSuppressed=true) no placeholder chip
+    // should appear in the cover slot. The sidebar must be fully blank so only
+    // the card's own surfaceCard background shows through.
+    function test_suppressed_hides_cover_chip(): void {
+        pane.coverKey = "icons/File";
+        pane.loadingDelayMs = 0;
+        pane.detailSuppressed = true;
+        wait(1);
+
+        verify(!findChild(pane, "detailPlaceholderIcon").visible, "chip must be hidden during suppression");
+        verify(!findChild(pane, "detailCoverImage").visible, "cover image must be hidden during suppression");
+    }
+
     // When a system key has no matching SVG (the tinted-svg provider returns
     // an error), the wordmark should show and the generic File chip should not.
     function test_wordmark_shown_for_system_without_logo(): void {

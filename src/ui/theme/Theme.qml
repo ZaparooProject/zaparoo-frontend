@@ -35,10 +35,12 @@ QtObject {
     // Accent — static warm amber used for selection highlights.
     readonly property color accent: "#FFB347"
     // System logo tint tokens — two ramps, selected by Tile based on focus state.
-    // Inactive ramp: light lavender that contrasts against surfaceCard (#22223a).
-    readonly property color logoPrimary: "#E4E4F6"
-    readonly property color logoSecondary: "#B5B5DE"
-    readonly property color logoShadow: "#7676A8"
+    // Inactive ramp: medium purple so unfocused tiles read as secondary
+    // against the amber focused ramp. Was near-white (#E4E4F6) which
+    // made unfocused and focused tiles look too similar.
+    readonly property color logoPrimary: "#9898CC"
+    readonly property color logoSecondary: "#6060A8"
+    readonly property color logoShadow: "#3C3C80"
     // Focused ramp: amber accent marks the selected tile's logo.
     readonly property color logoFocusPrimary: "#FFE3B8"
     readonly property color logoFocusSecondary: accent

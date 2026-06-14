@@ -97,100 +97,100 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Laden…</translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="191"/>
+        <location filename="../components/BrowseDetailPane.qml" line="196"/>
         <source>Year</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="191"/>
+        <location filename="../components/BrowseDetailPane.qml" line="196"/>
         <source>Yr</source>
         <comment>Short metadata label for Year; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="193"/>
+        <location filename="../components/BrowseDetailPane.qml" line="198"/>
         <source>Genre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="193"/>
+        <location filename="../components/BrowseDetailPane.qml" line="198"/>
         <source>Gen</source>
         <comment>Short metadata label for Genre; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="195"/>
+        <location filename="../components/BrowseDetailPane.qml" line="200"/>
         <source>Players</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="195"/>
+        <location filename="../components/BrowseDetailPane.qml" line="200"/>
         <source>Plyr</source>
         <comment>Short metadata label for Players; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="197"/>
+        <location filename="../components/BrowseDetailPane.qml" line="202"/>
         <source>Developer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="197"/>
+        <location filename="../components/BrowseDetailPane.qml" line="202"/>
         <source>Dev</source>
         <comment>Short metadata label for Developer; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="199"/>
+        <location filename="../components/BrowseDetailPane.qml" line="204"/>
         <source>Publisher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="199"/>
+        <location filename="../components/BrowseDetailPane.qml" line="204"/>
         <source>Pub</source>
         <comment>Short metadata label for Publisher; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="201"/>
+        <location filename="../components/BrowseDetailPane.qml" line="206"/>
         <source>Rating</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="201"/>
+        <location filename="../components/BrowseDetailPane.qml" line="206"/>
         <source>Rtg</source>
         <comment>Short metadata label for Rating; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="203"/>
+        <location filename="../components/BrowseDetailPane.qml" line="208"/>
         <source>Category</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="203"/>
+        <location filename="../components/BrowseDetailPane.qml" line="208"/>
         <source>Cat</source>
         <comment>Short metadata label for Category; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="205"/>
+        <location filename="../components/BrowseDetailPane.qml" line="210"/>
         <source>Release date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="205"/>
+        <location filename="../components/BrowseDetailPane.qml" line="210"/>
         <source>Date</source>
         <comment>Short metadata label for Release date; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="207"/>
+        <location filename="../components/BrowseDetailPane.qml" line="212"/>
         <source>Manufacturer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="207"/>
+        <location filename="../components/BrowseDetailPane.qml" line="212"/>
         <source>Mfr</source>
         <comment>Short metadata label for Manufacturer; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>

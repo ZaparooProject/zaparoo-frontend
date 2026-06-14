@@ -512,9 +512,9 @@ Item {
     }
 
     RapidScrollIndicator {
-        visible: !root._gateHide && root._showRapidScrollIndicator && mediaGrid.itemCount > 0
+        visible: !root._gateHide && root._showRapidScrollIndicator && mediaGrid.itemCount > 0 && !root._listLayout
         x: Sizing.center(parent.width, width)
-        y: root._listLayout ? Sizing.center(parent.height, height) : Sizing.center(mediaGrid.height, height) + mediaGrid.y
+        y: Sizing.center(mediaGrid.height, height) + mediaGrid.y
         title: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 && root.mediaModel !== null ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
         z: 20
     }

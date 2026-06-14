@@ -99,4 +99,5 @@ Item {
         layoutProfile: root.layoutProfile
         showChrome: false
     }
+
 }
