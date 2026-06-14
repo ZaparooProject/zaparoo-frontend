@@ -29,7 +29,11 @@ Item {
     property alias detailSuppressed: detailPane.detailSuppressed
     property alias detailCanPreviousImage: detailPane.canPreviousImage
     property alias detailCanNextImage: detailPane.canNextImage
+    property alias detailReserveImageNav: detailPane.reserveImageNav
 
+    // layoutProfile and its sub-objects are JS-object vars; the QML compiler
+    // cannot statically type their properties. Suppress for these bindings.
+    // qmllint disable compiler
     property var _listProfile: root.layoutProfile && root.layoutProfile.list ? root.layoutProfile.list : null
     property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
     readonly property bool _verticalSplit: root._listProfile && root._listProfile.contentAxis === "vertical"
@@ -41,6 +45,7 @@ Item {
     readonly property int _listSpan: root._verticalSplit ? Math.max(0, Math.floor((height - root._dividerWidth) * root._listShare / root._shareTotal) + root._dividerMargin) : Math.max(0, Math.floor((width - root._dividerWidth) * root._listShare / root._shareTotal) + root._dividerMargin)
     readonly property int _detailSpan: root._verticalSplit ? Math.max(0, height - root._listSpan - root._dividerWidth) : Math.max(0, width - root._listSpan - root._dividerWidth)
     readonly property int _cardRadius: root._surfaceProfile ? root._surfaceProfile.cornerRadius : Sizing.cornerRadius
+    // qmllint enable compiler
 
     signal itemHovered(int index)
     signal itemClicked(int index)

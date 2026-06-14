@@ -62,6 +62,11 @@ const HIDDEN_ROLE: i32 = 256 + 8;
 // doesn't change the UI cap.
 const PAGE_SIZE: u32 = 25;
 const RESUME_MAX_AGE_DAYS: i64 = 7;
+// How many rows ahead/behind the settled cursor to warm when the user
+// dwells on a row in list-detail layout. Kept small so the 2-worker byte
+// queue stays shallow and the next cover is fetched first within ~250 ms.
+const COVER_PREFETCH_CURSOR_NEXT: i32 = 4;
+const COVER_PREFETCH_CURSOR_PREV: i32 = 2;
 const RESUME_FALLBACK_COVER_KEY: &str = "icons/PlayOutline";
 
 #[derive(Default)]
@@ -93,6 +98,16 @@ pub struct RecentsModelRust {
     current_detail_loading: bool,
     current_detail_tags: QString,
     current_detail_image_key: QString,
+    // Warm cover key for the item immediately after the current selection.
+    // Empty when there is no next item or the next item has no cached bytes.
+    // Exposed as a qproperty so QML can mount a hidden Image that decodes the
+    // cover into Qt's pixmap cache while the user is still on the current row.
+    detail_prefetch_key_next: QString,
+    // Same as `detail_prefetch_key_next` but for the item immediately before.
+    detail_prefetch_key_prev: QString,
+    // Row whose adjacent covers are being preloaded. None when no detail
+    // is active (cleared on reset or out-of-range).
+    detail_prefetch_row: Option<i32>,
     cover_requests_paused: bool,
     current_detail_media_key: Option<MediaKey>,
     current_detail_media_id: Option<i64>,
@@ -158,6 +173,8 @@ pub mod ffi {
         #[qproperty(bool, current_detail_loading)]
         #[qproperty(QString, current_detail_tags)]
         #[qproperty(QString, current_detail_image_key)]
+        #[qproperty(QString, detail_prefetch_key_next)]
+        #[qproperty(QString, detail_prefetch_key_prev)]
         #[qproperty(bool, cover_requests_paused)]
         type RecentsModel = super::RecentsModelRust;
 
@@ -660,6 +677,11 @@ impl ffi::RecentsModel {
             clear_current_detail_state(self.as_mut());
             return;
         }
+        // Record the settled row before borrowing entries.
+        self.as_mut().rust_mut().detail_prefetch_row = Some(index);
+        // Re-center the byte-fetch queue on the current row so it and
+        // its neighbors are fetched ahead of the stale list backlog.
+        prefetch_around_cursor(&self.entries, self.count, index, self.cover_requests_paused);
         let entry = &self.entries[index as usize];
         let system = entry.system_id.clone();
         let path = entry.media_path.clone();
@@ -676,6 +698,7 @@ impl ffi::RecentsModel {
         self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
         self.as_mut().rust_mut().current_detail_media_id = media_id;
         sync_current_detail_image_key(self.as_mut());
+        refresh_adjacent_cover_prefetch(self.as_mut());
         self.as_mut().set_current_detail_loading(true);
         self.as_mut().set_current_detail_tags(QString::default());
         let seq = self.rust().detail_seq.clone();
@@ -967,6 +990,61 @@ fn clear_current_detail_state(mut model: Pin<&mut ffi::RecentsModel>) {
     model
         .as_mut()
         .set_current_detail_image_key(QString::default());
+    clear_adjacent_cover_prefetch(model);
+}
+
+fn clear_adjacent_cover_prefetch(mut model: Pin<&mut ffi::RecentsModel>) {
+    model.as_mut().rust_mut().detail_prefetch_row = None;
+    if !model.detail_prefetch_key_next.is_empty() {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_next(QString::default());
+    }
+    if !model.detail_prefetch_key_prev.is_empty() {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_prev(QString::default());
+    }
+}
+
+fn refresh_adjacent_cover_prefetch(mut model: Pin<&mut ffi::RecentsModel>) {
+    let Some(row) = model.rust().detail_prefetch_row else {
+        if !model.detail_prefetch_key_next.is_empty() {
+            model
+                .as_mut()
+                .set_detail_prefetch_key_next(QString::default());
+        }
+        if !model.detail_prefetch_key_prev.is_empty() {
+            model
+                .as_mut()
+                .set_detail_prefetch_key_prev(QString::default());
+        }
+        return;
+    };
+    let count = model.count;
+    let requests_enabled = !model.cover_requests_paused;
+
+    let next_key = if row + 1 < count {
+        cover_key_for(&model.entries[(row + 1) as usize], requests_enabled)
+    } else {
+        String::new()
+    };
+    let prev_key = if row > 0 {
+        cover_key_for(&model.entries[(row - 1) as usize], requests_enabled)
+    } else {
+        String::new()
+    };
+
+    if model.detail_prefetch_key_next.to_string() != next_key {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_next(QString::from(next_key.as_str()));
+    }
+    if model.detail_prefetch_key_prev.to_string() != prev_key {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_prev(QString::from(prev_key.as_str()));
+    }
 }
 
 fn sync_current_detail_image_key(mut model: Pin<&mut ffi::RecentsModel>) {
@@ -1023,6 +1101,47 @@ fn enqueue_recents_covers(entries: &[MediaHistoryEntry]) {
             cache.enqueue_search_cover_with_media_id(key, entry.media_id, PAGE_SIZE);
         }
     }
+}
+
+/// Re-center the byte-fetch queue on the settled cursor row so covers
+/// for the current position and its immediate neighbors are fetched
+/// first, ahead of the stale top-of-list backlog.
+///
+/// Without this, the queue fills in row order at list load and drains
+/// monotonically regardless of where the user scrolls; every Down press
+/// finds the next cover still deep in the queue. Called from
+/// `load_detail_at` after the debounce fires.
+fn prefetch_around_cursor(
+    entries: &[MediaHistoryEntry],
+    count: i32,
+    row: i32,
+    requests_paused: bool,
+) {
+    let cache = global_media_image_cache();
+    if requests_paused {
+        cache.clear_pending_requests();
+        return;
+    }
+    if count <= 0 {
+        return;
+    }
+    let row = row.clamp(0, count - 1);
+    let fwd_end = (row + 1 + COVER_PREFETCH_CURSOR_NEXT).min(count);
+    let back_start = (row - COVER_PREFETCH_CURSOR_PREV).max(0);
+    let mut plan: Vec<(MediaKey, Option<i64>)> = Vec::new();
+    for i in row..fwd_end {
+        let e = &entries[i as usize];
+        if let Some(key) = media_key_for(e).map(MediaKey::with_current_cover_preference) {
+            plan.push((key, e.media_id));
+        }
+    }
+    for i in (back_start..row).rev() {
+        let e = &entries[i as usize];
+        if let Some(key) = media_key_for(e).map(MediaKey::with_current_cover_preference) {
+            plan.push((key, e.media_id));
+        }
+    }
+    cache.replace_pending_requests_ordered(plan, PAGE_SIZE);
 }
 
 fn finish_nav_timing(
@@ -1125,6 +1244,10 @@ fn notify_cover_update(mut model: Pin<&mut ffi::RecentsModel>, key: &MediaKey) {
         });
         model.as_mut().rust_mut().cover_gate_timer = Some(handle);
     }
+    // Re-check the adjacent preload keys: a neighbor's bytes may have
+    // just landed, upgrading its key from `icons/Loading` to
+    // `media-image/...` so the hidden Image can start decoding.
+    refresh_adjacent_cover_prefetch(model);
 }
 
 /// Compute the set of media keys on the current page whose covers we

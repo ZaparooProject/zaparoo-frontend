@@ -1,6 +1,9 @@
 // Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// var-typed function property bindings (identityForIndex, loadForIndex) can't
+// be statically typed by the QML compiler. Suppress the compiler category.
+// qmllint disable compiler
 
 import QtQuick
 import QtTest

@@ -1,6 +1,9 @@
 // Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// layoutProfile and its sub-properties (_gridProfile.leftInset etc.) are
+// QVariant-typed JS objects; cannot be statically typed. Structural; suppress compiler.
+// qmllint disable compiler
 
 // Bound component behavior is required because the inner Repeater +
 // Loader bind to root.* properties (delegate, focused, cellWidth, …)

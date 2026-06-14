@@ -40,7 +40,7 @@ QtObject {
 
     // Empty key returns an empty URL so the caller can use it as a
     // "no cover" sentinel.
-    function _colorToken(colorValue): string {
+    function _colorToken(colorValue: var): string {
         const text = String(colorValue === undefined ? "#ffffff" : colorValue);
         return text.charAt(0) === "#" ? text.substring(1) : text;
     }
@@ -53,7 +53,7 @@ QtObject {
         return key;
     }
 
-    function coverUrl(key: string, foreground, secondary, background): url {
+    function coverUrl(key: string, foreground: var, secondary: var, background: var): url {
         if (key === "")
             return "";
 

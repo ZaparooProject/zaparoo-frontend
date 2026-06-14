@@ -801,8 +801,11 @@ QtObject {
     function _resolveValue(theme: var, value: var, seenRefs: var): var {
         if (value === null || value === undefined)
             return value;
-        if (Array.isArray(value))
+        if (Array.isArray(value)) {
+            // qmllint disable compiler
             return value.map(entry => BrowseLayouts._resolveValue(theme, entry, seenRefs));
+            // qmllint enable compiler
+        }
         if (typeof value === "object") {
             const out = {};
             for (const key in value)
@@ -834,13 +837,17 @@ QtObject {
         const fnMatch = value.match(/^([a-z]+)\((.*)\)$/);
         if (fnMatch !== null) {
             const fnName = fnMatch[1];
+            // qmllint disable compiler
             const args = BrowseLayouts._splitArgs(fnMatch[2]).map(arg => BrowseLayouts._resolveValue(theme, arg, seenRefs));
+            // qmllint enable compiler
             if (fnName === "min" && args.length === 2)
                 return Math.min(args[0], args[1]);
             if (fnName === "max" && args.length === 2)
                 return Math.max(args[0], args[1]);
             if (fnName === "sum")
+                // qmllint disable compiler
                 return args.reduce((total, entry) => total + entry, 0);
+                // qmllint enable compiler
         }
 
         const numeric = Number(value);

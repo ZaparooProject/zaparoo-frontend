@@ -1,6 +1,10 @@
 // Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// cxx-qt 0.8 singleton methods aren't marked final so every Browse.* call trips
+// "Member can be shadowed". Screen properties accessed via Loader QObject are
+// QVariant at the qmllint level. Both are structural; suppress compiler category.
+// qmllint disable compiler
 
 import QtQuick
 import QtTest
@@ -40,9 +44,7 @@ TestCase {
         tryCompare(main, "transitionCueVisible", false);
         // Hub focus is two rows now (categories + actions); reset both
         // axes so a prior test's row-jump doesn't leak into the next.
-        // qmllint disable compiler
         main.hubScreen.resetFocus();
-        // qmllint enable compiler
         // Cancel any in-flight dpad-repeat timer left over from a prior
         // test — handleKey(dpad) arms a 350 ms initial timer and tests
         // run in microseconds, so the pending fire would land on the
@@ -169,7 +171,6 @@ TestCase {
     // categories — instead we unit-test the pure arithmetic helper
     // that owns the math. The shape verifies centered row mapping and
     // a couple of degenerate cases.
-    // qmllint disable compiler
     function test_cross_row_4_over_2_down(): void {
         const map = main.hubScreen._mapCrossRow;
         compare(map(0, 4, 2), 0, "Down from top[0] (a) → bottom[0] (e)");
@@ -327,7 +328,6 @@ TestCase {
         compare(main.hubScreen.currentIndex, 0);
         compare(main.hubScreen._crossSavedIndex, -1);
     }
-    // qmllint enable compiler
 
     // Hold-to-repeat (dpad). The repeat state machine is driven by
     // `_armRepeat` (called from handleKey on a dpad press) and
@@ -338,23 +338,19 @@ TestCase {
     // that drags real screen logic into the harness.
 
     function test_is_repeatable_action_accepts_dpad_directions(): void {
-        // qmllint disable compiler
         compare(main._isRepeatableAction("up"), true);
         compare(main._isRepeatableAction("down"), true);
         compare(main._isRepeatableAction("left"), true);
         compare(main._isRepeatableAction("right"), true);
         compare(main._isRepeatableAction("page_prev"), true);
         compare(main._isRepeatableAction("page_next"), true);
-    // qmllint enable compiler
     }
 
     function test_is_repeatable_action_rejects_other_actions(): void {
-        // qmllint disable compiler
         compare(main._isRepeatableAction("accept"), false);
         compare(main._isRepeatableAction("cancel"), false);
         compare(main._isRepeatableAction("context_menu"), false);
         compare(main._isRepeatableAction(""), false);
-    // qmllint enable compiler
     }
 
     function test_arm_repeat_records_held_and_starts_initial(): void {
@@ -412,7 +408,6 @@ TestCase {
     }
 
     function test_rapid_navigation_taps_activate_on_second_press(): void {
-        // qmllint disable compiler
         main._noteRapidNavigationAction("down", false);
         compare(main.rapidNavigationAction, "down", "rapid action tracks latest rapid input even before active mode");
         compare(main.rapidNavigationActive, false, "single isolated press should not enter rapid mode");
@@ -421,27 +416,21 @@ TestCase {
         wait(main._rapidNavigationQuietMs + 40);
         compare(main.rapidNavigationActive, false, "rapid mode clears after quiet window");
         compare(main.rapidNavigationAction, "", "quiet reset clears rapid action");
-    // qmllint enable compiler
     }
 
     function test_rapid_navigation_ignores_non_rapid_action(): void {
-        // qmllint disable compiler
         main._noteRapidNavigationAction("accept", true);
         compare(main.rapidNavigationActive, false);
         compare(main.rapidNavigationAction, "");
-    // qmllint enable compiler
     }
 
     function test_single_page_tap_does_not_show_rapid_indicator(): void {
-        // qmllint disable compiler
         main._noteRapidNavigationAction("page_next", false);
         compare(main.rapidNavigationAction, "page_next");
         compare(main.rapidNavigationIndicatorActive, false, "single page tap should not flash rapid indicator");
-    // qmllint enable compiler
     }
 
     function test_repeat_tick_forces_rapid_navigation_active(): void {
-        // qmllint disable compiler
         main._armRepeat("page_next", Qt.Key_R);
         main._handleRepeatAction();
         compare(main.rapidNavigationActive, true, "held page action should enter rapid mode on first repeat tick");
@@ -449,89 +438,67 @@ TestCase {
         main._stopRepeat();
         wait(main._rapidNavigationQuietMs + 40);
         compare(main.rapidNavigationActive, false);
-    // qmllint enable compiler
     }
 
     // Context-menu builder. Drives the pure helper directly per the QML
     // test isolation rule — no real menu opening, no handleAction.
     // Compares only the entry id sequence; labels are qsTr() and asserted
     // separately so the tests stay translation-friendly.
-    // qmllint disable compiler
     function _idsOf(entries: var): var {
         const out = [];
         for (let i = 0; i < entries.length; ++i)
             out.push(entries[i].id);
         return out;
     }
-    // qmllint enable compiler
 
     function test_context_menu_systems_owner_includes_media_actions(): void {
-        // qmllint disable compiler
         const entries = main.buildContextMenuEntries("systems", "", false, false, false, "", false);
         compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system", "toggle_hide_system"], "Systems context menu includes system-scoped maintenance actions");
         verify(entries[0].label.length > 0, "Launch core label is set (not asserted in English for translation)");
         verify(entries[1].label.length > 0, "Update media database label is set");
         verify(entries[2].label.length > 0, "Scrape metadata label is set");
         verify(entries[3].label.length > 0, "Hide label is set");
-    // qmllint enable compiler
     }
 
     function test_context_menu_systems_has_nfc_does_not_add_entries(): void {
-        // qmllint disable compiler
         const entries = main.buildContextMenuEntries("systems", "", false, true, false, "", false);
         compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system", "toggle_hide_system"], "has_nfc must not affect the systems menu");
-    // qmllint enable compiler
     }
 
     function test_context_menu_games_directory_returns_empty(): void {
-        // qmllint disable compiler
         compare(main.buildContextMenuEntries("games", "directory", false, true, false, ""), [], "Folder tiles have no context menu, even with reader attached");
-    // qmllint enable compiler
     }
 
     function test_context_menu_games_root_returns_empty(): void {
-        // qmllint disable compiler
         compare(main.buildContextMenuEntries("games", "root", false, true, false, ""), []);
-    // qmllint enable compiler
     }
 
     function test_context_menu_games_no_reader_omits_write_card(): void {
-        // qmllint disable compiler
         const entries = main.buildContextMenuEntries("games", "media", true, false, false, "");
         compare(_idsOf(entries), ["toggle_favorite", "qr_code", "launch_game"], "Write to NFC token must be hidden when no reader is reported");
-    // qmllint enable compiler
     }
 
     function test_context_menu_games_with_reader_includes_write_card(): void {
-        // qmllint disable compiler
         const entries = main.buildContextMenuEntries("games", "media", true, true, false, "");
         compare(_idsOf(entries), ["toggle_favorite", "write_card", "qr_code", "launch_game"]);
-    // qmllint enable compiler
     }
 
     function test_context_menu_favorites_matches_games_media_entries(): void {
-        // qmllint disable compiler
         const entries = main.buildContextMenuEntries("favorites", "", true, true, true, "");
         compare(_idsOf(entries), ["toggle_favorite", "write_card", "qr_code", "launch_game"]);
-    // qmllint enable compiler
     }
 
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
-        // qmllint disable compiler
         const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "");
         compare(_idsOf(entries), ["toggle_favorite", "qr_code", "launch_game"]);
-    // qmllint enable compiler
     }
 
     function test_context_menu_recents_omits_more_info(): void {
-        // qmllint disable compiler
         const entries = main.buildContextMenuEntries("recents", "", false, false, false, "");
         compare(_idsOf(entries), ["launch_game"]);
-    // qmllint enable compiler
     }
 
     function test_context_menu_games_favorite_label_toggles(): void {
-        // qmllint disable compiler
         const addEntries = main.buildContextMenuEntries("games", "media", true, false, false, "");
         const removeEntries = main.buildContextMenuEntries("games", "media", true, false, true, "");
         compare(addEntries[0].id, "toggle_favorite");
@@ -539,32 +506,24 @@ TestCase {
         verify(addEntries[0].label.length > 0);
         verify(removeEntries[0].label.length > 0);
         verify(addEntries[0].label !== removeEntries[0].label);
-    // qmllint enable compiler
     }
 
     function test_context_menu_unknown_owner_returns_empty(): void {
-        // qmllint disable compiler
         compare(main.buildContextMenuEntries("nope", "", false, true, false, ""), [], "Unknown owners get no entries — safe default");
-    // qmllint enable compiler
     }
 
     // QR-code payload wrapper. The web app at zaparoo.app/write reads the
     // zapscript out of the `v=` query param, so the helper must
     // URL-encode reserved characters.
     function test_qr_payload_empty_zapscript(): void {
-        // qmllint disable compiler
         compare(main._buildQrPayload(""), "https://zaparoo.app/write?v=");
-    // qmllint enable compiler
     }
 
     function test_qr_payload_plain_ascii(): void {
-        // qmllint disable compiler
         compare(main._buildQrPayload("foo"), "https://zaparoo.app/write?v=foo");
-    // qmllint enable compiler
     }
 
     function test_qr_payload_encodes_reserved_chars(): void {
-        // qmllint disable compiler
         // encodeURIComponent leaves `* - _ . ! ~ ' ( )` unescaped — only
         // characters that would terminate or restructure the URL get
         // percent-encoded. Real zapscripts look like
@@ -572,16 +531,13 @@ TestCase {
         // otherwise be read as a port separator in some parsers).
         const payload = main._buildQrPayload("**launch.system:Atari2600");
         compare(payload, "https://zaparoo.app/write?v=**launch.system%3AAtari2600");
-    // qmllint enable compiler
     }
 
     function test_qr_payload_encodes_url_breakers(): void {
-        // qmllint disable compiler
         // Belt-and-braces check that characters that *would* break the URL
         // (space, `&`, `?`) are escaped as expected. None of these appear
         // in current zapscripts but a future zapscript with arguments
         // containing them must still survive a round-trip.
         compare(main._buildQrPayload("a b&c?d"), "https://zaparoo.app/write?v=a%20b%26c%3Fd");
-    // qmllint enable compiler
     }
 }

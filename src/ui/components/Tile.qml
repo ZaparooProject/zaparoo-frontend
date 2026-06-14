@@ -72,7 +72,7 @@ Item {
     readonly property bool delegateFavorite: parent.favorite !== 0
     // qmllint disable missing-property compiler
     readonly property bool delegateHidden: parent.hidden === true
-    // qmllint enable missing-property compiler
+    // qmllint enable missing-property
     property var layoutProfile: null
     readonly property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
     // Opt-in per-tile name caption. Off by default so Hub and Systems
@@ -117,14 +117,10 @@ Item {
     readonly property bool _isTinted: root.delegateCoverKey.startsWith("systems/") || root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey.startsWith("icons/")
     // Unfocused ramp — always loaded for tinted keys; also the sole source for
     // real art (media-image/, system-image/) which is focus-independent.
-    readonly property url _coverBaseSrc: root._coverPending ? "" : Resources.coverUrl(
-        root.delegateCoverKey,
-        Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow)
+    readonly property url _coverBaseSrc: root._coverPending ? "" : Resources.coverUrl(root.delegateCoverKey, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow)
     // Focused ramp — only loaded for tinted icons; empty string for real art so
     // the Image item never initiates a second fetch for cover/boxart tiles.
-    readonly property url _coverFocusSrc: (root._isTinted && !root._coverPending) ? Resources.coverUrl(
-        root.delegateCoverKey,
-        Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : ""
+    readonly property url _coverFocusSrc: (root._isTinted && !root._coverPending) ? Resources.coverUrl(root.delegateCoverKey, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : ""
     // True once the focused ramp is decoded and this tile is the focused
     // selection — used to suppress coverBase so the two renders don't stack
     // (which would double the effective opacity on hidden tiles).
@@ -386,9 +382,7 @@ Item {
         fontSizeMode: root._systemCover ? Text.Fit : Text.FixedSize
         minimumPixelSize: root._fallbackMinimumTextSize
         font.weight: root._systemCover ? Font.DemiBold : Font.Normal
-        color: root._isTinted
-            ? (root._focusedSelection ? Theme.logoFocusPrimary : Theme.logoPrimary)
-            : (root._focusedSelection ? Theme.textPrimary : Theme.textLabel)
+        color: root._isTinted ? (root._focusedSelection ? Theme.logoFocusPrimary : Theme.logoPrimary) : (root._focusedSelection ? Theme.textPrimary : Theme.textLabel)
         // Wrap (not WordWrap): an unbreakable identifier like
         // `_LongCollectionName_Definitive_Cut.smc` would otherwise
         // render past `width` and bleed out of the tile.

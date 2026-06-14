@@ -1,6 +1,12 @@
 // Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// var-typed action/callback properties (acceptAction, cancelAction, gridMoveAction,
+// linearMoveAction, etc.) and layout profile bindings on QVariant-typed objects
+// cannot be statically typed. cxx-qt 0.8 singleton methods also trip "can be
+// shadowed". Both are structural; suppress compiler category file-wide.
+// qmllint disable compiler
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import Zaparoo.Theme
@@ -31,6 +37,7 @@ Item {
     property string detailLoadingText: qsTr("Loading…")
     property bool detailCanPreviousImage: false
     property bool detailCanNextImage: false
+    property bool detailReserveImageNav: false
     property var detailIdentityForIndex: null
     property var loadDetailForIndex: null
     property var clearDetailAction: null
@@ -386,6 +393,7 @@ Item {
         detailLoadingText: root.detailLoadingText
         detailCanPreviousImage: root.detailCanPreviousImage
         detailCanNextImage: root.detailCanNextImage
+        detailReserveImageNav: root.detailReserveImageNav
         onItemHovered: index => root._focusIndex(index)
         onItemClicked: index => {
             root._focusIndex(index);
@@ -524,5 +532,47 @@ Item {
         count: root._count()
         emptyText: root.emptyText
         loadingText: root.loadingText
+    }
+
+    // Adjacent-cover preload pool. While the user dwells on a list row
+    // these hidden Images decode the next and previous rows' covers into
+    // Qt's pixmap cache at the same sourceSize as the visible detail cover
+    // (512px wide), so the detail cover switch on a d-pad move is a
+    // synchronous cache hit rather than an async decode. Mirrors the
+    // system-cover prefetch pattern in Main.qml:2629. Active only in list
+    // layout; in grid layout there is no per-row detail pane.
+    // The source guard (`k.startsWith("media-image/")`) keeps the source
+    // empty for placeholder keys (`icons/*`) so no decode work is done for
+    // folder entries or cold-cache neighbors that haven't resolved yet.
+    Image {
+        id: prefetchNextCover
+        visible: false
+        width: 0
+        height: 0
+        asynchronous: true
+        cache: true
+        sourceSize.width: 512
+        source: {
+            if (!root._listLayout || root.mediaModel === null)
+                return "";
+            const k = root.mediaModel.detailPrefetchKeyNext ?? "";
+            return k.startsWith("media-image/") ? Resources.coverUrl(k, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : "";
+        }
+    }
+
+    Image {
+        id: prefetchPrevCover
+        visible: false
+        width: 0
+        height: 0
+        asynchronous: true
+        cache: true
+        sourceSize.width: 512
+        source: {
+            if (!root._listLayout || root.mediaModel === null)
+                return "";
+            const k = root.mediaModel.detailPrefetchKeyPrev ?? "";
+            return k.startsWith("media-image/") ? Resources.coverUrl(k, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : "";
+        }
     }
 }

@@ -6,6 +6,7 @@
 // "Member can be shadowed" check. Until the schema grows the slot,
 // suppress the compiler category file-wide.
 // qmllint disable compiler
+pragma ComponentBehavior: Bound
 // Single mutually-exclusive status pill anchored in the top-right HUD.
 // Surfaces — in priority order, only one ever paints — Core link state
 // (disconnected / connecting / error), media-database build progress

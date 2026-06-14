@@ -4,7 +4,6 @@
 
 import QtQuick
 import Zaparoo.Theme
-import Zaparoo.Ui
 import Zaparoo.Browse as Browse
 
 // cxx-qt 0.8 patches `isFinal: true` on singleton properties but the
@@ -53,8 +52,6 @@ MediaListScreen {
     detailShowTitle: false
     detailLoadingText: qsTr("Loading game…")
     pauseCoverRequestsDuringRapid: true
-    detailCanPreviousImage: Browse.GamesModel.current_detail_image_can_prev
-    detailCanNextImage: Browse.GamesModel.current_detail_image_can_next
     detailIdentityForIndex: function (index) {
         if (!Browse.GamesModel.is_media_capable_at(index))
             return "";
@@ -76,8 +73,6 @@ MediaListScreen {
     gridViewId: games._gridViewId
     listViewId: games._listViewId
     tateListViewId: games._tateListViewId
-    listLeftAction: () => Browse.GamesModel.cycle_detail_image(-1)
-    listRightAction: () => Browse.GamesModel.cycle_detail_image(1)
     contextMenuEnabledAt: index => Browse.GamesModel.is_media_capable_at(index)
     retryAction: () => {
         if (games._atFolderLevel()) {

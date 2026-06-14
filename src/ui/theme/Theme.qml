@@ -36,13 +36,13 @@ QtObject {
     readonly property color accent: "#FFB347"
     // System logo tint tokens — two ramps, selected by Tile based on focus state.
     // Inactive ramp: light lavender that contrasts against surfaceCard (#22223a).
-    readonly property color logoPrimary:   "#E4E4F6"
+    readonly property color logoPrimary: "#E4E4F6"
     readonly property color logoSecondary: "#B5B5DE"
-    readonly property color logoShadow:    "#7676A8"
+    readonly property color logoShadow: "#7676A8"
     // Focused ramp: amber accent marks the selected tile's logo.
-    readonly property color logoFocusPrimary:   "#FFE3B8"
+    readonly property color logoFocusPrimary: "#FFE3B8"
     readonly property color logoFocusSecondary: accent
-    readonly property color logoFocusShadow:    "#9E5E15"
+    readonly property color logoFocusShadow: "#9E5E15"
     // Fonts
     readonly property string fontUi: crtNativePath ? "MxPlus HP 100LX 6x8" : "Noto Sans"
     readonly property string fontMono: crtNativePath ? "MxPlus HP 100LX 6x8" : "monospace"

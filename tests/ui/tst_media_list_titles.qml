@@ -1,6 +1,10 @@
 // Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// cxx-qt 0.8 singleton methods aren't marked final so Browse.* calls trip
+// "Member can be shadowed". findChild() returns QVariant so property accesses
+// on the result can't be statically typed. Both are structural; suppress compiler.
+// qmllint disable compiler
 
 import QtQuick
 import QtTest

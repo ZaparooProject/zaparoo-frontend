@@ -17,6 +17,10 @@ Item {
     property int targetVisibleRowCount: 0
     property bool showChrome: true
     property var layoutProfile: null
+    // layoutProfile and its sub-objects (_list, _grid, _surface) are JS-object
+    // vars; the QML compiler cannot statically type their properties. Suppress
+    // the compiler category for these bindings only.
+    // qmllint disable compiler
     readonly property var _list: root.layoutProfile && root.layoutProfile.list ? root.layoutProfile.list : null
     readonly property var _grid: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
     readonly property var _surface: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
@@ -48,6 +52,7 @@ Item {
     readonly property int _rowTextLeftPadding: root._list ? root._list.rowTextLeftPadding : Sizing.pctW(1.6)
     readonly property int _rowTextRightPadding: root._list ? root._list.rowTextRightPadding : Sizing.pctW(1.6)
     readonly property int _favoriteRightPadding: root._list ? root._list.favoriteRightPadding : Sizing.pctW(1.6)
+    // qmllint enable compiler
 
     signal itemHovered(int index)
     signal itemClicked(int index)

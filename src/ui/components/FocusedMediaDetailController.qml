@@ -1,6 +1,9 @@
 // Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// var-typed function properties (identityForIndex, loadForIndex, clearDetail)
+// and var-typed mediaModel cannot be statically typed. Structural; suppress compiler.
+// qmllint disable compiler
 
 import QtQuick
 
