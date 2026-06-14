@@ -39,6 +39,15 @@ Wikimedia Commons:
   Uploaded/vectorized by: MagentaGreen
   Copyright status listed on Commons: public-domain/trademarked logo
 
+  resources/images/systems/Sega32X.jp.svg
+  Source: https://commons.wikimedia.org/wiki/File:Sega_32X_logo.svg
+  Original file: Sega_32X_logo.svg
+  Author listed on Commons: Sega
+  Uploaded/vectorized by: Inkscape conversion from upstream source
+  Copyright status listed on Commons: PD-textlogo
+  Note: Placeholder for Super 32X JP regional variant; no authentic Super 32X
+        JP logo art was found in the PRO100BYTE set at time of inclusion.
+
 The bundled files were converted to grayscale or single-color SVGs and optimized for runtime tinting.
 
 Trademark notice: the logo and platform names may be protected as trademarks

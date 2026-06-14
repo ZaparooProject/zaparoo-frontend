@@ -14,14 +14,14 @@
 //   Regional variant: resources/images/systems/{id}.{region}.svg
 //     where {region} is "us", "eu", or "jp".
 //
-// Systems pending regional logo art (add entries to REGIONAL_LOGOS when art lands):
-//   - Genesis / Mega Drive        (US: Genesis, EU/JP: MegaDrive variant)
-//   - SNES / Super Famicom        (JP: SuperFamicom variant)
-//   - TurboGrafx16 / PC Engine    (EU/JP: PCEngine variant)
-//   - SMS / Mark III              (JP: MarkIII variant)
-//   - MegaCD / SEGA CD            (US: SegaCD variant, EU/JP: MegaCD)
-//   - S32X / Super 32X            (JP: Super32X variant)
-//   - NES / Famicom               (JP: Famicom variant)
+// Regional logo art status:
+//   - Genesis / Mega Drive     (EU/JP): Genesis.eu.svg, Genesis.jp.svg
+//   - SNES / Super Famicom     (JP):    SNES.jp.svg
+//   - NES / Famicom            (JP):    NES.jp.svg
+//   - MasterSystem / Mark III  (JP):    MasterSystem.jp.svg
+//   - MegaCD / Sega CD         (US):    MegaCD.us.svg
+//   - TurboGrafx16 / PC Engine (EU/JP): TurboGrafx16.eu.svg, TurboGrafx16.jp.svg
+//   - Sega32X / Super 32X      (JP):    Sega32X.jp.svg  [Wikimedia placeholder]
 
 use crate::system_region::Region;
 
@@ -30,15 +30,16 @@ use crate::system_region::Region;
 /// Each entry is `(base_system_id, region, variant_stem)`. When a
 /// (`system_id`, region) pair matches, `logo_artwork_stem` returns
 /// `variant_stem`; otherwise the base `system_id` is returned.
-///
-/// The table is intentionally empty until regional artwork is added.
-/// `logo_artwork_stem` is a pure pass-through in the meantime.
 const REGIONAL_LOGOS: &[(&str, Region, &str)] = &[
-    // Add entries here as regional SVG artwork lands under
-    // resources/images/systems/. Example (not yet live):
-    // ("Genesis", Region::Eu, "Genesis.eu"),
-    // ("Genesis", Region::Jp, "Genesis.jp"),
-    // ("SNES",    Region::Jp, "SNES.jp"),
+    ("Genesis", Region::Eu, "Genesis.eu"),
+    ("Genesis", Region::Jp, "Genesis.jp"),
+    ("SNES", Region::Jp, "SNES.jp"),
+    ("NES", Region::Jp, "NES.jp"),
+    ("MasterSystem", Region::Jp, "MasterSystem.jp"),
+    ("MegaCD", Region::Us, "MegaCD.us"),
+    ("TurboGrafx16", Region::Eu, "TurboGrafx16.eu"),
+    ("TurboGrafx16", Region::Jp, "TurboGrafx16.jp"),
+    ("Sega32X", Region::Jp, "Sega32X.jp"), // Wikimedia placeholder pending real Super 32X JP art
 ];
 
 /// Return the artwork stem for a system in a given region.
@@ -63,16 +64,42 @@ mod tests {
     use crate::system_region::Region;
 
     #[test]
-    fn unknown_system_returns_base_id() {
-        assert_eq!(logo_artwork_stem("Genesis", Region::Us), "Genesis");
-        assert_eq!(logo_artwork_stem("SNES", Region::Jp), "SNES");
-        assert_eq!(logo_artwork_stem("SMS", Region::Eu), "SMS");
+    fn registered_variants_return_variant_stem() {
+        assert_eq!(logo_artwork_stem("Genesis", Region::Eu), "Genesis.eu");
+        assert_eq!(logo_artwork_stem("Genesis", Region::Jp), "Genesis.jp");
+        assert_eq!(logo_artwork_stem("SNES", Region::Jp), "SNES.jp");
+        assert_eq!(logo_artwork_stem("NES", Region::Jp), "NES.jp");
+        assert_eq!(
+            logo_artwork_stem("MasterSystem", Region::Jp),
+            "MasterSystem.jp"
+        );
+        assert_eq!(logo_artwork_stem("MegaCD", Region::Us), "MegaCD.us");
+        assert_eq!(
+            logo_artwork_stem("TurboGrafx16", Region::Eu),
+            "TurboGrafx16.eu"
+        );
+        assert_eq!(
+            logo_artwork_stem("TurboGrafx16", Region::Jp),
+            "TurboGrafx16.jp"
+        );
+        assert_eq!(logo_artwork_stem("Sega32X", Region::Jp), "Sega32X.jp");
     }
 
     #[test]
-    fn all_regions_fall_through_with_empty_table() {
-        for region in [Region::Us, Region::Eu, Region::Jp] {
-            assert_eq!(logo_artwork_stem("NES", region), "NES");
-        }
+    fn unregistered_region_returns_base_id() {
+        // Genesis US has no variant — falls through to base id.
+        assert_eq!(logo_artwork_stem("Genesis", Region::Us), "Genesis");
+        // SNES EU/US have no variants.
+        assert_eq!(logo_artwork_stem("SNES", Region::Us), "SNES");
+        assert_eq!(logo_artwork_stem("SNES", Region::Eu), "SNES");
+        // MegaCD EU/JP have no variants.
+        assert_eq!(logo_artwork_stem("MegaCD", Region::Eu), "MegaCD");
+        assert_eq!(logo_artwork_stem("MegaCD", Region::Jp), "MegaCD");
+    }
+
+    #[test]
+    fn unknown_system_returns_base_id() {
+        assert_eq!(logo_artwork_stem("SMS", Region::Eu), "SMS");
+        assert_eq!(logo_artwork_stem("Atari2600", Region::Jp), "Atari2600");
     }
 }

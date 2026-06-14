@@ -1434,7 +1434,7 @@ Euskara - devilschile2</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="314"/>
+        <location filename="../components/Tile.qml" line="368"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>

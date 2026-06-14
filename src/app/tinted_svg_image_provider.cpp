@@ -217,8 +217,12 @@ void TintedSvgImageResponse::run()
     const QColor secondary = colorFromToken(parts.at(1), QColor(Qt::white));
     const QColor shadow = colorFromToken(parts.at(2), QColor(Qt::black));
     const QString resourcePath = parts.mid(3).join(QLatin1Char('/'));
-    if (!resourcePath.startsWith(QStringLiteral("images/systems/")) ||
-        !resourcePath.endsWith(QStringLiteral(".svg")))
+    // System logos, Hub category icons, and UI glyphs all share the provider.
+    // Accept all three path prefixes; still require an .svg suffix.
+    const bool knownPrefix = resourcePath.startsWith(QStringLiteral("images/systems/")) ||
+                             resourcePath.startsWith(QStringLiteral("images/categories/")) ||
+                             resourcePath.startsWith(QStringLiteral("images/icons/"));
+    if (!knownPrefix || !resourcePath.endsWith(QStringLiteral(".svg")))
     {
         m_error = QStringLiteral("rejected tinted-svg path");
         qWarning("tinted-svg provider: rejected path=%s", qUtf8Printable(resourcePath));
@@ -274,10 +278,11 @@ void TintedSvgImageResponse::run()
     emit finished();
 }
 
-// 8 MB cap: one 256×256 ARGB logo is ~256 KB, so this covers ~32 logos.
-// The curated system set is bounded and a single theme has one fixed color
-// triad, so in practice the working set is much smaller than the cap.
-static constexpr int kLogoCacheMaxBytes = 8 * 1024 * 1024;
+// 16 MB cap: one 256×256 ARGB render is ~256 KB. With two ramps per logo
+// (unfocused + focused) plus category and icon glyphs now in the same pool,
+// the working set for a full visible page is roughly double the old single-ramp
+// estimate. 16 MB keeps ~64 renders without churning re-renders on MiSTer.
+static constexpr int kLogoCacheMaxBytes = 16 * 1024 * 1024;
 
 TintedSvgImageProvider::TintedSvgImageProvider() : m_logoCache(kLogoCacheMaxBytes)
 {

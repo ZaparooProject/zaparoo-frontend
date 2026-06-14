@@ -63,8 +63,12 @@ QtObject {
         if (key.startsWith("media-image/"))
             return "image://media-image/" + key.substring("media-image/".length);
 
-        if (key.startsWith("systems/")) {
-            const artworkKey = _systemArtworkKey(key);
+        // System logos, Hub category icons, and UI glyphs (folders, file, action
+        // icons) all go through the tinted-svg provider so their color tracks the
+        // theme ramp. The _systemArtworkKey remap (MacPlus -> MacOS, SVI328 ->
+        // Spectravideo) applies only to systems/ paths.
+        if (key.startsWith("systems/") || key.startsWith("categories/") || key.startsWith("icons/")) {
+            const artworkKey = key.startsWith("systems/") ? _systemArtworkKey(key) : key;
             const effectiveSecondary = background === undefined ? foreground : secondary;
             const effectiveBackground = background === undefined ? secondary : background;
             const fg = _colorToken(foreground);

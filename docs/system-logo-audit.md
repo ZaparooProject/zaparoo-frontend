@@ -63,18 +63,18 @@ Most other missing IDs had no clear match in the PRO100BYTE main SVG set and lik
 
 ## Regional logo variants
 
-Systems where the logo itself differs by region (not just the name). Add an entry to
-`REGIONAL_LOGOS` in `rust/frontend/src/system_logos.rs` and place the variant SVG
-alongside the base art under `resources/images/systems/` when artwork lands.
+Systems where the logo itself differs by region (not just the name). Registered in
+`REGIONAL_LOGOS` in `rust/frontend/src/system_logos.rs`; variant SVGs live alongside
+the base art under `resources/images/systems/`.
 
 Naming convention: `{id}.{region}.svg` where `{region}` is `us`, `eu`, or `jp`.
 
-| System ID | US variant | EU variant | JP variant |
-|---|---|---|---|
-| `Genesis` | `Genesis` (base) | `Genesis.eu` (Mega Drive) | `Genesis.jp` (Mega Drive) |
-| `SNES` | `SNES` (base) | `SNES` (base) | `SNES.jp` (Super Famicom) |
-| `NES` | `NES` (base) | `NES` (base) | `NES.jp` (Famicom) |
-| `SMS` | `SMS` (base) | `SMS` (base) | `SMS.jp` (Mark III) |
-| `MegaCD` | `MegaCD.us` (SEGA CD) | `MegaCD` (base) | `MegaCD` (base) |
-| `S32X` | `S32X` (base) | `S32X` (base) | `S32X.jp` (Super 32X) |
-| `TurboGrafx16` | `TurboGrafx16` (base) | `TurboGrafx16.eu` (PC Engine) | `TurboGrafx16.jp` (PC Engine) |
+| System ID | US variant | EU variant | JP variant | Status |
+|---|---|---|---|---|
+| `Genesis` | `Genesis` (base) | `Genesis.eu` (Mega Drive) | `Genesis.jp` (Mega Drive) | resolved |
+| `SNES` | `SNES` (base) | `SNES` (base) | `SNES.jp` (Super Famicom) | resolved |
+| `NES` | `NES` (base) | `NES` (base) | `NES.jp` (Famicom) | resolved |
+| `MasterSystem` | `MasterSystem` (base) | `MasterSystem` (base) | `MasterSystem.jp` (Mark III) | resolved |
+| `MegaCD` | `MegaCD.us` (Sega CD) | `MegaCD` (base) | `MegaCD` (base) | resolved |
+| `Sega32X` | `Sega32X` (base) | `Sega32X` (base) | `Sega32X.jp` (Super 32X) | placeholder - Wikimedia `Sega_32X_logo.svg`; no upstream Super 32X JP art found |
+| `TurboGrafx16` | `TurboGrafx16` (base) | `TurboGrafx16.eu` (PC Engine) | `TurboGrafx16.jp` (PC Engine) | resolved |

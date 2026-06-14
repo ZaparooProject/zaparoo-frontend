@@ -117,6 +117,13 @@ pub mod ffi {
         #[qinvokable]
         fn system_id_at(self: &SystemsModel, index: i32) -> QString;
 
+        /// Returns the cover key for the system at `index`, including any
+        /// regional artwork stem (e.g. `"systems/Genesis.eu"`). Use this in
+        /// prefetch loops instead of building `"systems/" + system_id_at(i)`,
+        /// which would miss regional variants.
+        #[qinvokable]
+        fn cover_key_at(self: &SystemsModel, index: i32) -> QString;
+
         #[qinvokable]
         fn system_name_at(self: &SystemsModel, index: i32) -> QString;
 
@@ -472,6 +479,13 @@ impl ffi::SystemsModel {
             return QString::default();
         }
         QString::from(self.systems[index as usize].id.as_str())
+    }
+
+    fn cover_key_at(&self, index: i32) -> QString {
+        if index < 0 || index >= self.count {
+            return QString::default();
+        }
+        QString::from(self.systems[index as usize].cover_key.as_str())
     }
 
     fn system_name_at(&self, index: i32) -> QString {

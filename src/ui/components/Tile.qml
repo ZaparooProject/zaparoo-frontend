@@ -111,8 +111,25 @@ Item {
     // let `loadingGlyph` own the painting.
     readonly property bool _coverPending: root.delegateCoverKey === "icons/Loading"
     readonly property bool _systemCover: root.delegateCoverKey.startsWith("systems/")
-    readonly property url _coverSource: root._coverPending ? "" : Resources.coverUrl(root.delegateCoverKey, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow)
-    readonly property bool _hasCover: cover.status === Image.Ready
+    // True for any built-in icon routed through the tinted-svg provider:
+    // system logos, hub category icons, folder/file/action UI glyphs.
+    // False for real art (media-image/, system-image/) which is never recolored.
+    readonly property bool _isTinted: root.delegateCoverKey.startsWith("systems/") || root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey.startsWith("icons/")
+    // Unfocused ramp — always loaded for tinted keys; also the sole source for
+    // real art (media-image/, system-image/) which is focus-independent.
+    readonly property url _coverBaseSrc: root._coverPending ? "" : Resources.coverUrl(
+        root.delegateCoverKey,
+        Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow)
+    // Focused ramp — only loaded for tinted icons; empty string for real art so
+    // the Image item never initiates a second fetch for cover/boxart tiles.
+    readonly property url _coverFocusSrc: (root._isTinted && !root._coverPending) ? Resources.coverUrl(
+        root.delegateCoverKey,
+        Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : ""
+    // True once the focused ramp is decoded and this tile is the focused
+    // selection — used to suppress coverBase so the two renders don't stack
+    // (which would double the effective opacity on hidden tiles).
+    readonly property bool _focusCoverActive: root._focusedSelection && root._isTinted && coverFocus.status === Image.Ready
+    readonly property bool _hasCover: coverBase.status === Image.Ready || coverFocus.status === Image.Ready
     readonly property bool _fallbackVisible: !root.showCaption && !root._hasCover && !root._coverPending
     readonly property int _fallbackTextSize: root._systemCover ? Sizing.fontSize(5.8) : Sizing.fontSize(2.4)
     readonly property int _fallbackMinimumTextSize: root._systemCover ? Sizing.fontSize(2.8) : Sizing.fontSize(2.4)
@@ -205,36 +222,46 @@ Item {
         visible: root._focusedSelection
     }
 
-    // Icon area. Fills the card minus padding on every side, centered
-    // horizontally. PreserveAspectFit lets curated logos render at
-    // their native aspect inside whichever dimension is the tighter
-    // constraint.
+    // Icon area — two stacked Images for the unfocused and focused tint ramps.
+    // Both share identical geometry; `coverFocus` sits above `coverBase` (z: 1)
+    // and is only loaded for tinted keys (system logos, category icons, UI
+    // glyphs). Real art (media-image/, system-image/) uses only `coverBase`.
+    //
+    // Focus transitions are an instant visibility swap with zero async work:
+    // both ramps are decoded while the tile is idle (coverBase during the
+    // prefetch gate; coverFocus as soon as it enters the visible delegate pool),
+    // so moving the cursor never re-requests the SVG render or drops to the
+    // procedural Text fallback.
+    //
+    // `_focusCoverActive` suppresses coverBase when the focused ramp is on top,
+    // preventing the two opaque layers from stacking their alpha on hidden tiles.
     Image {
-        id: cover
+        id: coverBase
 
         width: parent.width - 2 * root._padding
-        source: root._coverSource
-        // Pin system logos to a stable 256 px rasterization. A size-dependent
-        // binding here would force a re-render every frame the cell
-        // animates — a constant value means QPixmapCache hits once per
-        // logo and reuses the decoded pixmap across each layout
-        // change. Combined with `smooth: true`, downscaling to the
-        // actual cell width is bilinear-filtered on draw.
+        source: root._coverBaseSrc
+        // Pin to a stable 256 px rasterization. A size-dependent binding would
+        // force a re-render every frame the cell animates; a constant value means
+        // QPixmapCache hits once per logo and reuses it across layout changes.
+        // Combined with `smooth: true`, downscaling to the actual cell width is
+        // bilinear-filtered on draw.
         sourceSize.width: 256
         fillMode: Image.PreserveAspectFit
         smooth: true
         asynchronous: true
-        opacity: root._hasCover ? (root.delegateHidden ? 0.4 : 1.0) : 0
+        // Hide when the focused ramp is fully decoded and showing on top; the
+        // normal hidden-item dim (0.4) is still applied so the two renders are
+        // never stacked at the same opacity simultaneously.
+        opacity: (coverBase.status === Image.Ready && !root._focusCoverActive) ? (root.delegateHidden ? 0.4 : 1.0) : 0
 
         anchors {
             top: parent.top
             topMargin: root._padding
             bottom: parent.bottom
-            // In caption mode the cover sits above the bottom caption
-            // strip with only `_captionGap` of breathing room. The
-            // caption is flush against the card's bottom edge, so the
-            // cover's lower bound is just (caption height + gap) —
-            // there is no second layer of card padding below.
+            // In caption mode the cover sits above the bottom caption strip with
+            // only `_captionGap` of breathing room. The caption is flush against
+            // the card's bottom edge, so the cover's lower bound is just
+            // (caption height + gap) — no second layer of card padding below.
             bottomMargin: root.showCaption ? root._captionHeight + root._captionGap : root._padding
             horizontalCenter: parent.horizontalCenter
         }
@@ -257,6 +284,33 @@ Item {
         }
     }
 
+    // Focused-ramp variant. Only loaded for tinted keys (_isTinted); source is
+    // "" for real art so this Image never initiates a fetch for boxart tiles.
+    // Painted on top of coverBase (z: 1); visible only on the focused+selected
+    // tile. When not yet decoded (status != Ready) opacity is 0, so coverBase
+    // shows through as a fallback unfocused-ramp — no flash to text.
+    Image {
+        id: coverFocus
+
+        z: 1
+        width: coverBase.width
+        source: root._coverFocusSrc
+        sourceSize.width: 256
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+        asynchronous: true
+        visible: root._focusedSelection && root._isTinted
+        opacity: coverFocus.status === Image.Ready ? (root.delegateHidden ? 0.4 : 1.0) : 0
+
+        anchors {
+            top: parent.top
+            topMargin: root._padding
+            bottom: parent.bottom
+            bottomMargin: root.showCaption ? root._captionHeight + root._captionGap : root._padding
+            horizontalCenter: parent.horizontalCenter
+        }
+    }
+
     // Caption-mode loading cue. Centred hourglass glyph that paints
     // only during the Image.Loading window — once the cover lands the
     // glyph hides and the cover paints in. Error/Null cover state
@@ -266,8 +320,8 @@ Item {
     Image {
         id: loadingGlyph
 
-        x: cover.x + Sizing.center(cover.width, width)
-        y: cover.y + Sizing.center(cover.height, height)
+        x: coverBase.x + Sizing.center(coverBase.width, width)
+        y: coverBase.y + Sizing.center(coverBase.height, height)
         width: Sizing.pctH(10)
         height: Sizing.pctH(10)
         source: Resources.iconUrl("Loading")
@@ -282,7 +336,7 @@ Item {
         fillMode: Image.PreserveAspectFit
         smooth: true
         asynchronous: false
-        visible: root.showCaption && (root._coverPending || cover.status === Image.Loading)
+        visible: root.showCaption && (root._coverPending || coverBase.status === Image.Loading)
     }
 
     Image {
@@ -324,7 +378,7 @@ Item {
     // above signals load progress, so a wrapping copy of the name in
     // this slot is redundant.
     Text {
-        anchors.fill: cover
+        anchors.fill: coverBase
         anchors.margins: root._systemCover ? Sizing.pctH(1) : 0
         text: root.delegateName
         font.family: Theme.fontUi
@@ -332,7 +386,9 @@ Item {
         fontSizeMode: root._systemCover ? Text.Fit : Text.FixedSize
         minimumPixelSize: root._fallbackMinimumTextSize
         font.weight: root._systemCover ? Font.DemiBold : Font.Normal
-        color: root._focusedSelection || root._systemCover ? Theme.textPrimary : Theme.textLabel
+        color: root._isTinted
+            ? (root._focusedSelection ? Theme.logoFocusPrimary : Theme.logoPrimary)
+            : (root._focusedSelection ? Theme.textPrimary : Theme.textLabel)
         // Wrap (not WordWrap): an unbreakable identifier like
         // `_LongCollectionName_Definitive_Cut.smc` would otherwise
         // render past `width` and bleed out of the tile.

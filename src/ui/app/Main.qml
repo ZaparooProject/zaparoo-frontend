@@ -2665,8 +2665,11 @@ MainLayout {
         }
         const urls = [];
         for (let i = 0; i < count; ++i) {
-            const sysId = Browse.SystemsModel.system_id_at(i);
-            urls.push(Resources.coverUrl("systems/" + sysId, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow));
+            const key = Browse.SystemsModel.cover_key_at(i);
+            // Warm both the unfocused and focused tint ramps up front so the
+            // first d-pad move never triggers an async SVG re-render.
+            urls.push(Resources.coverUrl(key, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow));
+            urls.push(Resources.coverUrl(key, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow));
         }
         root._systemCoverPrefetchCallback = cb;
         root._systemCoverPrefetchPending = urls.length;

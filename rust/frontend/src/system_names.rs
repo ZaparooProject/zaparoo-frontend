@@ -3,47 +3,47 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // Localized system display names sourced from the Names_MiSTer project
-// (ThreepwoodLeBrush/Names_MiSTer, CC0 1.0 Universal).
+// (ThreepwoodLeBrush/Names_MiSTer, CC0 1.0 Universal), re-keyed to
+// Zaparoo Core canonical system IDs and restyled for this frontend.
 // See src/LICENSES/Names_MiSTer-ATTRIBUTION.txt for attribution details.
 //
 // Three locale sets (US / EU / JP) are embedded at compile time and parsed
-// lazily into process-lifetime HashMaps. Each map key is the MiSTer core name
+// lazily into process-lifetime HashMaps. Each map key is the Core system ID
 // after normalization (strip non-alphanumerics, lowercase); the value is the
-// cleaned display name (qualifier suffixes stripped).
+// cleaned display name (qualifier suffixes stripped as a defensive measure).
 //
-// Callers pass a Zaparoo system id; the same normalization is applied so
-// the lookup is fuzzy-by-convention. An explicit alias table covers the
-// small set of ids where normalization alone cannot bridge the gap.
+// Keys in the .txt files are Core canonical system IDs, so the lookup is
+// direct after normalization. The ID_ALIASES table covers any remaining
+// cases where normalization alone cannot bridge the gap.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::system_region::Region;
 
-const US_NAMES: &str = include_str!("data/names_CHAR28_Common_US.txt");
-const EU_NAMES: &str = include_str!("data/names_CHAR28_Common_EU.txt");
-const JP_NAMES: &str = include_str!("data/names_CHAR28_Common_JP.txt");
+const US_NAMES: &str = include_str!("data/names_us.txt");
+const EU_NAMES: &str = include_str!("data/names_eu.txt");
+const JP_NAMES: &str = include_str!("data/names_jp.txt");
 
-/// Qualifier suffixes appended by `Names_MiSTer` to mark capability variants
-/// (cycle-accurate `+`, Sinden lightgun `S`, two-player `2P`, 3D framepacked
-/// `3D`, LLAPI input `LLAPI`, wide-aspect `W`). Strip these from display names
-/// so `"Mega Drive +"` renders as `"Mega Drive"`.
+/// Noise qualifier suffixes that are purely implementation markers and carry no
+/// user-visible meaning (cycle-accurate `+`, Sinden lightgun `S`, LLAPI input
+/// `LLAPI`, wide-aspect `W`, 3D framepacked `3D`). These are stripped entirely.
 ///
 /// Order matters: check longer suffixes first to avoid partial matches.
-const QUALIFIERS: &[&str] = &[" LLAPI", " 2P", " 3D", " +", " S", " W"];
+const NOISE_QUALIFIERS: &[&str] = &[" LLAPI", " 3D", " +", " S", " W"];
 
 /// Explicit alias table for cases where normalization alone cannot map a
-/// Zaparoo system id to a `MiSTer` core key. Both sides must already be
+/// Zaparoo system id to a key in the names files. Both sides must already be
 /// in normalized form (alphanumeric-only, lowercase). Add entries here
 /// as drift is found.
 ///
-/// Format: (`zaparoo_normalized_id`, `mister_normalized_key`)
+/// Format: (`zaparoo_normalized_id`, `names_file_normalized_key`)
 const ID_ALIASES: &[(&str, &str)] = &[
     // None needed yet -- direct normalization covers all known cases.
 ];
 
 /// Strip all non-alphanumeric characters and lowercase the result.
-/// Applied identically to both `MiSTer` core keys (at parse time) and
+/// Applied identically to both file keys (at parse time) and
 /// Zaparoo system ids (at lookup time) so the match is fuzzy-by-convention.
 fn normalize_key(s: &str) -> String {
     s.chars()
@@ -52,23 +52,50 @@ fn normalize_key(s: &str) -> String {
         .to_ascii_lowercase()
 }
 
-/// Remove a single trailing capability marker from a display name.
-/// Applies the first match in `QUALIFIERS` (longest suffix wins by ordering).
-/// At most one pass -- the value from `Names_MiSTer` uses at most one qualifier
-/// on the base-core entries that Zaparoo exposes.
-fn strip_qualifiers(name: &str) -> &str {
+/// Remove trailing noise qualifiers from a display name, preserving the `2P`
+/// variant marker when present.
+///
+/// Names like `"Game Boy Advance + 2P"` carry two qualifiers: a noise suffix
+/// (`+`) and a variant marker (`2P`). Stripping left to right in a single pass
+/// would remove `2P` first, leaving the stray `+`. Instead:
+///
+/// 1. Check whether the name ends with ` 2P`; if so, peel it off temporarily.
+/// 2. Strip all noise qualifiers from the remainder in a loop.
+/// 3. Re-append ` 2P` if it was present.
+///
+/// The curated names files are clean and do not carry these suffixes, so this
+/// function is a no-op for all current entries. It is kept as a defensive
+/// measure in case raw upstream data is ever mixed in.
+fn strip_qualifiers(name: &str) -> String {
     let trimmed = name.trim();
-    for q in QUALIFIERS {
-        if let Some(stripped) = trimmed.strip_suffix(q) {
-            return stripped.trim_end();
+    let (base, has_2p) = match trimmed.strip_suffix(" 2P") {
+        Some(b) => (b.trim_end(), true),
+        None => (trimmed, false),
+    };
+    let mut s = base;
+    loop {
+        let mut changed = false;
+        for q in NOISE_QUALIFIERS {
+            if let Some(stripped) = s.strip_suffix(q) {
+                s = stripped.trim_end();
+                changed = true;
+                break;
+            }
+        }
+        if !changed {
+            break;
         }
     }
-    trimmed
+    if has_2p {
+        format!("{s} 2P")
+    } else {
+        s.to_owned()
+    }
 }
 
-/// Parse a `Names_MiSTer` `.txt` file into a `(normalized_key -> display_name)` map.
-/// Separator ruler lines (contain `|` in the key position) and blank lines are
-/// silently skipped. The display name is qualifier-stripped before storage.
+/// Parse a localized names `.txt` file into a `(normalized_key -> display_name)` map.
+/// Lines beginning with `#` and blank lines are silently skipped (they contain no `:`).
+/// The display name is qualifier-stripped before storage.
 fn parse_names(text: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for line in text.lines() {
@@ -83,7 +110,7 @@ fn parse_names(text: &str) -> HashMap<String, String> {
         if display.is_empty() {
             continue;
         }
-        map.insert(normalize_key(key), display.to_string());
+        map.insert(normalize_key(key), display);
     }
     map
 }
@@ -108,7 +135,7 @@ pub fn localized_name(system_id: &str, region: Region) -> Option<String> {
     if let Some(name) = map.get(&normalized) {
         return Some(name.clone());
     }
-    // Alias table: map Zaparoo normalized id to a different MiSTer normalized key.
+    // Alias table: map Zaparoo normalized id to a different normalized key.
     if let Some(alias_key) = ID_ALIASES
         .iter()
         .find_map(|(id, key)| (*id == normalized.as_str()).then_some(*key))
@@ -161,7 +188,32 @@ mod tests {
         assert_eq!(strip_qualifiers("Master System"), "Master System");
     }
 
-    // --- localized_name ---
+    #[test]
+    fn preserves_2p_variant_marker() {
+        // "2P" is a variant marker, not noise -- keep it.
+        assert_eq!(strip_qualifiers("Game Boy 2P"), "Game Boy 2P");
+        assert_eq!(
+            strip_qualifiers("Game Boy Advance 2P"),
+            "Game Boy Advance 2P"
+        );
+    }
+
+    #[test]
+    fn strips_noise_before_2p() {
+        // Defensive: "+" is noise; "2P" must survive.
+        assert_eq!(
+            strip_qualifiers("Game Boy Advance + 2P"),
+            "Game Boy Advance 2P"
+        );
+    }
+
+    #[test]
+    fn strips_multiple_noise_qualifiers() {
+        // Pathological: multiple noise suffixes on the same name.
+        assert_eq!(strip_qualifiers("Foo + S"), "Foo");
+    }
+
+    // --- localized_name - regional split systems ---
 
     #[test]
     fn genesis_us_is_genesis() {
@@ -188,11 +240,8 @@ mod tests {
     }
 
     #[test]
-    fn snes_jp_is_super_famicom() {
-        assert_eq!(
-            localized_name("SNES", Region::Jp).as_deref(),
-            Some("Super Famicom")
-        );
+    fn nes_us_is_nes() {
+        assert_eq!(localized_name("NES", Region::Us).as_deref(), Some("NES"));
     }
 
     #[test]
@@ -204,26 +253,33 @@ mod tests {
     }
 
     #[test]
-    fn sms_jp_is_mark_iii() {
+    fn snes_us_is_snes() {
+        assert_eq!(localized_name("SNES", Region::Us).as_deref(), Some("SNES"));
+    }
+
+    #[test]
+    fn snes_jp_is_super_famicom() {
         assert_eq!(
-            localized_name("SMS", Region::Jp).as_deref(),
-            Some("Mark III")
+            localized_name("SNES", Region::Jp).as_deref(),
+            Some("Super Famicom")
         );
     }
 
     #[test]
-    fn sms_us_is_master_system() {
+    fn mastersystem_us_is_master_system() {
         assert_eq!(
-            localized_name("SMS", Region::Us).as_deref(),
+            localized_name("MasterSystem", Region::Us).as_deref(),
             Some("Master System")
         );
     }
 
     #[test]
-    fn s32x_jp_is_super_32x() {
+    fn mastersystem_jp_is_mark_iii() {
+        // Previously broken: MiSTer key "SMS" != Core ID "MasterSystem".
+        // Re-keying to Core IDs fixes this.
         assert_eq!(
-            localized_name("S32X", Region::Jp).as_deref(),
-            Some("Super 32X")
+            localized_name("MasterSystem", Region::Jp).as_deref(),
+            Some("Mark III")
         );
     }
 
@@ -231,15 +287,12 @@ mod tests {
     fn megacd_us_is_sega_cd() {
         assert_eq!(
             localized_name("MegaCD", Region::Us).as_deref(),
-            Some("SEGA CD")
+            Some("Sega CD")
         );
     }
 
     #[test]
     fn megacd_eu_is_mega_cd() {
-        // The hyphenated "Mega-CD" is stored without the hyphen after stripping.
-        // The file has `MegaCD: Mega-CD` -- hyphen is not a qualifier, so the
-        // display name is "Mega-CD" (hyphen preserved in the value, not the key).
         assert_eq!(
             localized_name("MegaCD", Region::Eu).as_deref(),
             Some("Mega-CD")
@@ -247,14 +300,120 @@ mod tests {
     }
 
     #[test]
-    fn nonexistent_id_returns_none() {
-        assert_eq!(localized_name("NonExistentSystem", Region::Us), None);
+    fn sega32x_us_is_genesis_32x() {
+        assert_eq!(
+            localized_name("Sega32X", Region::Us).as_deref(),
+            Some("Genesis 32X")
+        );
     }
 
     #[test]
-    fn normalization_bridges_space_in_mister_key() {
-        // "Atari 2600" in the file normalizes to "atari2600".
-        // Zaparoo id "Atari2600" normalizes to "atari2600". Match.
+    fn sega32x_eu_is_mega_drive_32x() {
+        assert_eq!(
+            localized_name("Sega32X", Region::Eu).as_deref(),
+            Some("Mega Drive 32X")
+        );
+    }
+
+    #[test]
+    fn sega32x_jp_is_super_32x() {
+        // Previously broken: MiSTer key "S32X" != Core ID "Sega32X".
+        // Re-keying to Core IDs fixes this.
+        assert_eq!(
+            localized_name("Sega32X", Region::Jp).as_deref(),
+            Some("Super 32X")
+        );
+    }
+
+    #[test]
+    fn turbografx16_us_is_turbografx_16() {
+        assert_eq!(
+            localized_name("TurboGrafx16", Region::Us).as_deref(),
+            Some("TurboGrafx-16")
+        );
+    }
+
+    #[test]
+    fn turbografx16_eu_is_pc_engine() {
+        assert_eq!(
+            localized_name("TurboGrafx16", Region::Eu).as_deref(),
+            Some("PC Engine")
+        );
+    }
+
+    #[test]
+    fn turbografx16_jp_is_pc_engine() {
+        assert_eq!(
+            localized_name("TurboGrafx16", Region::Jp).as_deref(),
+            Some("PC Engine")
+        );
+    }
+
+    // --- localized_name - previously dead keys now resolved ---
+
+    #[test]
+    fn nintendo64_resolves() {
+        // Previously broken: MiSTer key "N64" != Core ID "Nintendo64".
+        assert_eq!(
+            localized_name("Nintendo64", Region::Us).as_deref(),
+            Some("Nintendo 64")
+        );
+    }
+
+    #[test]
+    fn amiga_resolves() {
+        // Previously broken: MiSTer key "Minimig" != Core ID "Amiga".
+        assert_eq!(
+            localized_name("Amiga", Region::Us).as_deref(),
+            Some("Amiga")
+        );
+    }
+
+    #[test]
+    fn dos_resolves() {
+        // Previously broken: MiSTer key "ao486" != Core ID "DOS".
+        assert_eq!(localized_name("DOS", Region::Us).as_deref(), Some("MS-DOS"));
+    }
+
+    #[test]
+    fn gamenwatch_resolves() {
+        // Previously broken: MiSTer key "GameAndWatch" != Core ID "GameNWatch".
+        assert_eq!(
+            localized_name("GameNWatch", Region::Us).as_deref(),
+            Some("Game & Watch")
+        );
+    }
+
+    // --- localized_name - fixed values ---
+
+    #[test]
+    fn neogeopocket_is_neo_geo_pocket_not_color() {
+        // Previously the MiSTer file had "Neo Geo Pocket Color" for the base handheld.
+        // Core has separate NeoGeoPocket and NeoGeoPocketColor systems.
+        assert_eq!(
+            localized_name("NeoGeoPocket", Region::Us).as_deref(),
+            Some("Neo Geo Pocket")
+        );
+        assert_eq!(
+            localized_name("NeoGeoPocketColor", Region::Us).as_deref(),
+            Some("Neo Geo Pocket Color")
+        );
+    }
+
+    #[test]
+    fn pokemonmini_has_accent_and_capital_m() {
+        assert_eq!(
+            localized_name("PokemonMini", Region::Us).as_deref(),
+            Some("Pokémon Mini")
+        );
+    }
+
+    // --- localized_name - normalization bridge ---
+
+    #[test]
+    fn normalization_bridges_case_and_digits() {
+        // Core ID "Atari2600" normalizes to "atari2600".
+        // File key "Atari2600" also normalizes to "atari2600". Match.
         assert_eq!(
             localized_name("Atari2600", Region::Us).as_deref(),
             Some("Atari 2600")
@@ -262,17 +421,20 @@ mod tests {
     }
 
     #[test]
-    fn normalization_bridges_hyphen_in_mister_key() {
-        // "ZX-Spectrum" normalizes to "zxspectrum".
+    fn normalization_bridges_hyphens_in_system_id() {
+        // Core ID "ZXSpectrum" normalizes to "zxspectrum".
+        // File key "ZXSpectrum" also normalizes to "zxspectrum". Match.
         assert_eq!(
             localized_name("ZXSpectrum", Region::Eu).as_deref(),
             Some("ZX Spectrum")
         );
     }
 
+    // --- localized_name - qualifier stripping is a no-op on clean values ---
+
     #[test]
-    fn gba_us_has_plus_stripped() {
-        // File has `GBA: Game Boy Advance +`. After qualifier strip: "Game Boy Advance".
+    fn gba_us_is_game_boy_advance() {
+        // File has clean "Game Boy Advance"; strip_qualifiers is a no-op.
         assert_eq!(
             localized_name("GBA", Region::Us).as_deref(),
             Some("Game Boy Advance")
@@ -280,18 +442,18 @@ mod tests {
     }
 
     #[test]
-    fn turbo_grafx_us_is_turbo_duo() {
+    fn gba2p_us_is_game_boy_advance_2p() {
+        // File has clean "Game Boy Advance (2P)"; strip_qualifiers is a no-op.
         assert_eq!(
-            localized_name("TurboGrafx16", Region::Us).as_deref(),
-            Some("Turbo Duo")
+            localized_name("GBA2P", Region::Us).as_deref(),
+            Some("Game Boy Advance (2P)")
         );
     }
 
+    // --- localized_name - missing entries return None ---
+
     #[test]
-    fn turbo_grafx_eu_is_pc_engine_duo() {
-        assert_eq!(
-            localized_name("TurboGrafx16", Region::Eu).as_deref(),
-            Some("PC Engine Duo")
-        );
+    fn nonexistent_id_returns_none() {
+        assert_eq!(localized_name("NonExistentSystem", Region::Us), None);
     }
 }

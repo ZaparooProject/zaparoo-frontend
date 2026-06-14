@@ -1,0 +1,144 @@
+# Zaparoo Frontend - localized system display names (JP region)
+# Keys: Zaparoo Core canonical system IDs (https://zaparoo.org/docs/systems/)
+# Values: iconic + disambiguate style (shortest unambiguous common name)
+# Source: adapted from Names_MiSTer (ThreepwoodLeBrush/Names_MiSTer, CC0 1.0)
+# See src/LICENSES/Names_MiSTer-ATTRIBUTION.txt
+
+# Game Consoles
+3DO:              3DO
+AdventureVision:  Adventure Vision
+Arcadia:          Arcadia 2001
+Astrocade:        Bally Astrocade
+Atari2600:        Atari 2600
+Atari5200:        Atari 5200
+Atari7800:        Atari 7800
+AtariXEGS:        Atari XEGS
+CasioPV1000:      Casio PV-1000
+ChannelF:         Channel F
+ColecoVision:     ColecoVision
+CreatiVision:     CreatiVision
+Dreamcast:        Dreamcast
+FDS:              Famicom Disk System
+GameCube:         GameCube
+Genesis:          Mega Drive
+Intellivision:    Intellivision
+Jaguar:           Atari Jaguar
+JaguarCD:         Atari Jaguar CD
+MasterSystem:     Mark III
+MegaCD:           Mega-CD
+NES:              Famicom
+Nintendo64:       Nintendo 64
+Odyssey2:         Odyssey 2
+PCFX:             PC-FX
+PS2:              PlayStation 2
+PS3:              PlayStation 3
+PSX:              PlayStation
+Saturn:           Saturn
+Sega32X:          Super 32X
+SG1000:           SG-1000
+SNES:             Super Famicom
+SuperGrafx:       SuperGrafx
+Switch:           Switch
+TurboGrafx16:     PC Engine
+TurboGrafx16CD:   PC Engine CD
+VC4000:           Interton VC 4000
+Vectrex:          Vectrex
+VirtualBoy:       Virtual Boy
+Wii:              Wii
+WiiU:             Wii U
+Xbox:             Xbox
+
+# Handheld Systems
+3DS:              Nintendo 3DS
+AtariLynx:        Atari Lynx
+Gamate:           Gamate
+Gameboy:          Game Boy
+Gameboy2P:        Game Boy (2P)
+GameboyColor:     Game Boy Color
+GameCom:          Game.com
+GameGear:         Game Gear
+GameNWatch:       Game & Watch
+GBA:              Game Boy Advance
+GBA2P:            Game Boy Advance (2P)
+MegaDuck:         Mega Duck
+NDS:              Nintendo DS
+NeoGeoPocket:     Neo Geo Pocket
+NeoGeoPocketColor:Neo Geo Pocket Color
+PocketChallengeV2:Pocket Challenge V2
+PokemonMini:      Pokémon Mini
+PSP:              PSP
+SuperGameboy:     Super Game Boy
+SuperVision:      SuperVision
+Vita:             PS Vita
+WonderSwan:       WonderSwan
+WonderSwanColor:  WonderSwan Color
+
+# Computer Systems
+AcornAtom:        Acorn Atom
+AcornElectron:    Acorn Electron
+AliceMC10:        Tandy MC-10
+Amiga:            Amiga
+Amstrad:          Amstrad CPC
+AmstradPCW:       Amstrad PCW
+Apogee:           Apogee BK-01
+AppleI:           Apple I
+AppleII:          Apple II
+Aquarius:         Mattel Aquarius
+Archimedes:       Acorn Archimedes
+Atari800:         Atari 800
+AtariST:          Atari ST
+BBCMicro:         BBC Micro
+BK0011M:          BK-0011M
+C16:              Commodore 16
+C64:              Commodore 64
+CasioPV2000:      Casio PV-2000
+CDI:              CD-i
+CoCo2:            Tandy Color Computer 2
+ColecoAdam:       Coleco Adam
+DOS:              MS-DOS
+EDSAC:            EDSAC
+Galaksija:        Galaksija
+Interact:         Interact
+Jupiter:          Jupiter Ace
+Laser:            Laser 310
+Lynx48:           Camputers Lynx
+MacPlus:          Macintosh Plus
+MSX:              MSX
+MSX1:             MSX1
+MultiComp:        MultiComp
+Orao:             Orao
+Oric:             Oric
+PC88:             PC-8801
+PC98:             PC-9801
+PCXT:             IBM PC XT
+PDP1:             PDP-1
+PET2001:          Commodore PET
+PMD85:            PMD 85
+QL:               Sinclair QL
+RX78:             Bandai RX-78
+SAMCoupe:         SAM Coupé
+SordM5:           Sord M5
+Specialist:       Specialist MX
+Spectravideo:     Spectravideo
+SVI328:           SVI-328
+TatungEinstein:   Tatung Einstein
+TI994A:           TI-99/4A
+TomyTutor:        Pyuta
+TRS80:            TRS-80
+TSConf:           TS-Config
+UK101:            UK101
+Vector06C:        Vector-06C
+VIC20:            Commodore VIC-20
+X68000:           X68000
+ZX81:             ZX81
+ZXNext:           ZX Spectrum Next
+ZXSpectrum:       ZX Spectrum
+
+# Arcade Systems
+Arcade:           Arcade
+NeoGeo:           Neo Geo
+NeoGeoCD:         Neo Geo CD
+
+# Other Systems
+Arduboy:          Arduboy
+Chip8:            CHIP-8
