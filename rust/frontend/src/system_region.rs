@@ -30,7 +30,7 @@ pub enum Region {
 
 /// The effective system locale name resolved by C++ before any model
 /// initialises. Set exactly once via `zaparoo_rust_set_effective_locale`.
-/// An empty string (the default) is treated as a US fallback in
+/// An empty string (the default) falls through to the EU fallback in
 /// `resolve_region`.
 static EFFECTIVE_LOCALE: OnceLock<String> = OnceLock::new();
 

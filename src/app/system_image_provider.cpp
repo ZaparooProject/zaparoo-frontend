@@ -6,6 +6,7 @@
 
 #include <QFile>
 #include <QImage>
+#include <QImageReader>
 #include <QPainter>
 #include <QSize>
 #include <QString>
@@ -24,6 +25,14 @@ namespace
 constexpr int kDefaultSvgSize = 256;
 
 constexpr std::string_view kAllowedExtensions[] = {"png", "jpg", "jpeg", "webp", "bmp", "svg"};
+
+/// Return only the final path component so logs don't expose the full override
+/// directory (which may contain a username or other private directory names).
+QString logSafeImageName(const QString& path)
+{
+    const qsizetype sep = path.lastIndexOf(QLatin1Char('/'));
+    return sep >= 0 ? path.mid(sep + 1) : path;
+}
 
 bool isAllowedExtension(const QString& ext)
 {
@@ -76,20 +85,23 @@ QImage SystemImageProvider::requestImage(const QString& id, QSize* size, const Q
     const qsizetype dotPosQ = id.lastIndexOf(QLatin1Char('.'));
     if (dotPosQ < 0 || !isAllowedExtension(id.mid(dotPosQ + 1)))
     {
-        qWarning("system-image provider: rejected extension in id=%s", qUtf8Printable(id));
+        qWarning("system-image provider: rejected extension in id=%s",
+                 qUtf8Printable(logSafeImageName(id)));
         return {};
     }
 
     // Security: validate that the path is inside the configured override dir.
     if (!isValidOverridePath(id))
     {
-        qWarning("system-image provider: path not in override dir, id=%s", qUtf8Printable(id));
+        qWarning("system-image provider: path not in override dir, id=%s",
+                 qUtf8Printable(logSafeImageName(id)));
         return {};
     }
 
     if (!QFile::exists(id))
     {
-        qWarning("system-image provider: file not found, id=%s", qUtf8Printable(id));
+        qWarning("system-image provider: file not found, id=%s",
+                 qUtf8Printable(logSafeImageName(id)));
         return {};
     }
 
@@ -101,7 +113,8 @@ QImage SystemImageProvider::requestImage(const QString& id, QSize* size, const Q
         QSvgRenderer renderer(id);
         if (!renderer.isValid())
         {
-            qWarning("system-image provider: invalid SVG, id=%s", qUtf8Printable(id));
+            qWarning("system-image provider: invalid SVG, id=%s",
+                     qUtf8Printable(logSafeImageName(id)));
             return {};
         }
         const QSize targetSize = renderSizeFor(renderer, requestedSize);
@@ -115,20 +128,28 @@ QImage SystemImageProvider::requestImage(const QString& id, QSize* size, const Q
     }
     else
     {
-        image = QImage(id);
-        if (image.isNull())
-        {
-            qWarning("system-image provider: could not load image, id=%s", qUtf8Printable(id));
-            return {};
-        }
-        // Scale to requestedSize if set, preserving aspect ratio.
+        QImageReader reader(id);
+        // Scale during decode to avoid allocating a full-resolution buffer
+        // for high-resolution user overrides on memory-constrained devices.
         const int reqW = requestedSize.width();
         const int reqH = requestedSize.height();
-        if ((reqW > 0 || reqH > 0) && (image.width() != reqW || image.height() != reqH))
+        if (reqW > 0 || reqH > 0)
         {
-            image =
-                image.scaled((reqW > 0) ? reqW : image.width(), (reqH > 0) ? reqH : image.height(),
-                             Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            const QSize nativeSize = reader.size();
+            if (nativeSize.isValid())
+            {
+                const int targetW = reqW > 0 ? reqW : nativeSize.width();
+                const int targetH = reqH > 0 ? reqH : nativeSize.height();
+                reader.setScaledSize(
+                    nativeSize.scaled(QSize(targetW, targetH), Qt::KeepAspectRatio));
+            }
+        }
+        image = reader.read();
+        if (image.isNull())
+        {
+            qWarning("system-image provider: could not load image, id=%s",
+                     qUtf8Printable(logSafeImageName(id)));
+            return {};
         }
         image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
     }
