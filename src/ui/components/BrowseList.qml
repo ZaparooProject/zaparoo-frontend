@@ -17,6 +17,9 @@ Item {
     property int targetVisibleRowCount: 0
     property bool showChrome: true
     property var layoutProfile: null
+    // When true, disables the focus-nudge Behavior and scroll-thumb
+    // glide so held-key rapid scroll stays responsive.
+    property bool rapidScrollActive: false
     // layoutProfile and its sub-objects (_list, _grid, _surface) are JS-object
     // vars; the QML compiler cannot statically type their properties. Suppress
     // the compiler category for these bindings only.
@@ -53,6 +56,16 @@ Item {
     readonly property int _rowTextRightPadding: root._list ? root._list.rowTextRightPadding : Sizing.pctW(1.6)
     readonly property int _favoriteRightPadding: root._list ? root._list.favoriteRightPadding : Sizing.pctW(1.6)
     // qmllint enable compiler
+
+    // Pulse counter for the one-shot row nudge. Callers increment via
+    // activatePulse; only the selected row fires its animation, matching
+    // the Tile activation-pulse vocabulary. Forward navigation and game
+    // launch share this single cue.
+    property int activatePulse: 0
+    // When true, resets the row nudge back to 0 so a held slide does
+    // not persist when the screen is shown again. Set by the host to
+    // !active while the screen is off-screen.
+    property bool screenSettling: false
 
     signal itemHovered(int index)
     signal itemClicked(int index)
@@ -147,6 +160,29 @@ Item {
 
             readonly property bool selected: row.index === root.currentIndex
             readonly property string displayTitle: row.name !== "" ? row.name : row.fileStem
+            // Activate nudge: selected row slides right on accept/activate,
+            // identical to the tile push-in trigger. Driven by root.activatePulse
+            // incrementing (only for the selected row); the Behavior below
+            // animates the transition. Not triggered by focus movement —
+            // matches the tile vocabulary where push-in = navigation.
+            property real _nudge: 0
+
+            Behavior on _nudge {
+                enabled: Motion.enabled && !root.rapidScrollActive
+                NumberAnimation { duration: Motion.dur(Motion.settleMs); easing.type: Easing.OutCubic }
+            }
+
+            Connections {
+                target: root
+                function onActivatePulseChanged(): void {
+                    if (row.selected)
+                        row._nudge = Sizing.pctW(1.2);
+                }
+                function onScreenSettlingChanged(): void {
+                    if (root.screenSettling)
+                        row._nudge = 0;
+                }
+            }
 
             Binding {
                 target: root
@@ -165,7 +201,9 @@ Item {
             }
 
             Item {
-                anchors.fill: parent
+                x: row._nudge
+                width: parent.width - row._nudge
+                height: parent.height
                 visible: row.selected
 
                 Rectangle {
@@ -184,7 +222,7 @@ Item {
             }
 
             Rectangle {
-                anchors.left: parent.left
+                x: row._nudge
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: root._selectionAccentWidth
@@ -195,7 +233,7 @@ Item {
 
             Text {
                 anchors.left: parent.left
-                anchors.leftMargin: root._rowTextLeftPadding
+                anchors.leftMargin: root._rowTextLeftPadding + row._nudge
                 anchors.right: parent.right
                 anchors.rightMargin: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) + root._rowTextRightPadding : root._rowTextRightPadding
                 anchors.verticalCenter: parent.verticalCenter

@@ -56,6 +56,21 @@ Item {
     property bool coverLoadingPaused: false
     property bool rapidRenderMode: false
     readonly property int _coverRetentionPages: Math.max(1, Math.ceil(Sizing.visibleCovers))
+    // Pulse counter for the one-shot tile push-in. Callers increment via
+    // pulseActivate(); TileLoader forwards the value to Tile where only the
+    // focused+selected delegate fires its cue. The same cue serves both
+    // forward navigation and game launch.
+    property int activatePulse: 0
+    function pulseActivate(): void { root.activatePulse++; }
+    // When true, Tile delegates reset their push-in scale back to 1.0
+    // so a held push-in from the previous visit does not persist when
+    // the screen is shown again. Set by the host screen to `!active`
+    // (i.e. true while the screen is off-screen).
+    property bool screenSettling: false
+    // Forwarded to each Tile's ring-fade gate. Host screens leave this
+    // false until the user takes control of focus so the restore reseat
+    // snaps; default true keeps the fade for hosts that do not wire it.
+    property bool ringFadeReady: true
     property var layoutProfile: null
     readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
 
@@ -600,6 +615,17 @@ Item {
                     color: Theme.surfaceCard
                     border.color: Theme.borderMid
                     border.width: Sizing.stroke(1)
+                    // Track the loaded Tile's push-in scale so the card
+                    // silhouette and the Tile surface shrink together.
+                    // Falls back to 1.0 when no Tile is loaded (skeleton
+                    // state), so the placeholder stays full-size until
+                    // the Tile appears. `cardScale` is a readonly alias
+                    // for `_activateScale` exposed by Tile for exactly
+                    // this cross-sibling binding.
+                    transformOrigin: Item.Center
+                    // qmllint disable missing-property
+                    scale: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.cardScale : 1.0
+                    // qmllint enable missing-property
                 }
 
                 // Standalone selected-cell ring for skeleton/rapid mode.
@@ -657,6 +683,9 @@ Item {
                     coverKey: cellItem._gatedCoverKey
                     favorite: cellItem.favorite
                     hidden: cellItem.hidden
+                    activatePulse: root.activatePulse
+                    settling: root.screenSettling
+                    ringFadeReady: root.ringFadeReady
                 }
 
                 MouseArea {
@@ -691,10 +720,12 @@ Item {
     // Up arrow at the top, down arrow at the bottom, free-floating thumb
     // in between. No painted track — the indicator is just the arrows
     // and the thumb. Hidden when the dataset fits on a single page.
-    // Snaps page-by-page; no animation on the thumb (matches the instant
-    // page flip and keeps the software renderer's dirty rect off the
-    // cell area). Sits after the cell `track` in the visual tree so the
-    // indicator paints on top of any focus-scale bleed at the right edge.
+    // The thumb snaps to each page position with no glide animation:
+    // scrolling is a hot path (cover prefetch + data load run on the same
+    // frames), so an animated thumb would repaint while the system is
+    // already busy.
+    // Sits after the cell `track` in the visual tree so the indicator
+    // paints on top of any brief scale-animation bleed at the right edge.
     Item {
         id: scrollGutter
 

@@ -135,7 +135,9 @@ TestCase {
         picker.open = true;
         picker.currentIndex = 2;
         picker.handleAction("accept");
-        compare(acceptedSpy.count, 1);
+        // accepted() is deferred via DeferredAction so the push-in
+        // animation completes first. tryCompare polls until it fires.
+        tryCompare(acceptedSpy, "count", 1);
         compare(acceptedSpy.signalArguments[0][0], "id-2");
     }
 

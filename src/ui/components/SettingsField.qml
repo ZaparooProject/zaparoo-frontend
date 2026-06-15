@@ -29,6 +29,11 @@ Item {
     property string control: "picker"
     property bool checked: false
     property bool isFocused: false
+    // Set false by SettingsScreen during a page switch so reused delegates
+    // do not animate the focus-border or toggle position when the new
+    // page's model data lands. Restored to true on the next event-loop
+    // tick so ordinary user navigation still animates.
+    property bool animateChanges: true
     // For `control: "action"` — short live-state string painted on the
     // right ("In progress", "Paused", or "" when idle). The screen
     // owns the binding; the field treats it as a plain caption.
@@ -57,6 +62,11 @@ Item {
         color: Theme.surfaceCard
         border.color: root.isFocused ? Theme.accent : Theme.borderMid
         border.width: root.isFocused ? Sizing.stroke(2) : Sizing.stroke(1)
+
+        Behavior on border.color {
+            enabled: Motion.enabled && root.animateChanges
+            ColorAnimation { duration: Motion.dur(Motion.settleMs) }
+        }
     }
 
     Text {
@@ -117,6 +127,11 @@ Item {
             // the always-on card behind the toggle a static pill
             // border read as chrome-on-chrome.
             color: root.checked ? Theme.accent : Theme.borderMid
+
+            Behavior on color {
+                enabled: Motion.enabled && root.animateChanges
+                ColorAnimation { duration: Motion.dur(Motion.settleMs) }
+            }
         }
 
         Rectangle {
@@ -126,6 +141,11 @@ Item {
             x: root.checked ? Sizing.px(toggle.width - width - Sizing.pctH(0.45)) : Sizing.pctH(0.45)
             anchors.verticalCenter: parent.verticalCenter
             color: Theme.textPrimary
+
+            Behavior on x {
+                enabled: Motion.enabled && root.animateChanges
+                NumberAnimation { duration: Motion.dur(Motion.settleMs); easing.type: Easing.OutCubic }
+            }
         }
     }
 

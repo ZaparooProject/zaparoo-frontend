@@ -20,4 +20,21 @@ Loader {
     required property string coverKey
     property int favorite: 0
     property bool hidden: false
+    // Optional pulse counter — incremented by the host when the user
+    // commits on the focused tile (forward navigation or game launch, which
+    // share one push-in cue). Tile.qml reads it via `parent.activatePulse`
+    // and only fires its animation when it is the focused selection, so
+    // hosts can safely forward the same counter to every TileLoader in a
+    // row or grid.
+    property int activatePulse: 0
+    // Set true while the host screen is inactive (off-screen). Tile.qml
+    // watches this via `delegateSettling` to reset `_activateScale` back
+    // to 1.0 off-screen so a held push-in does not persist when the user
+    // returns to the screen.
+    property bool settling: false
+    // Gates the Tile focus-ring fade. The host leaves it false until the
+    // user takes control of focus (first input) so the programmatic reseat
+    // during state restore snaps instead of cross-fading. Default true so
+    // hosts that do not wire it keep the fade on every focus change.
+    property bool ringFadeReady: true
 }

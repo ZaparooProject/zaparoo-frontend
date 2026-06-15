@@ -595,6 +595,7 @@ ApplicationWindow {
                         SystemsScreen {
                             anchors.fill: parent
                             transitioning: root.transitionCueVisible
+                            active: root.activeScreen === root.screenSystems
                             optimisticLoading: root.activeScreen === root.screenSystems && root.catalogStillBooting
                         }
                     }
@@ -609,6 +610,7 @@ ApplicationWindow {
                         GamesScreen {
                             anchors.fill: parent
                             transitioning: root.transitionCueVisible
+                            active: root.activeScreen === root.screenGames
                             optimisticLoading: root.activeScreen === root.screenGames && root.catalogStillBooting
                         }
                     }

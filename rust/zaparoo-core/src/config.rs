@@ -55,6 +55,7 @@ pub struct SettingsConfig {
     pub browse_layout: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
+    pub reduce_motion: Option<bool>,
     pub discover_arcade_alternate_versions: Option<bool>,
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
@@ -75,6 +76,7 @@ pub struct SettingsMirror<'a> {
     pub browse_layout: &'a str,
     pub button_layout: &'a str,
     pub mouse_enabled: bool,
+    pub reduce_motion: bool,
     pub discover_arcade_alternate_versions: bool,
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
@@ -159,6 +161,7 @@ struct RawSettings {
     browse_layout: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
+    reduce_motion: Option<bool>,
     discover_arcade_alternate_versions: Option<bool>,
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
@@ -251,6 +254,7 @@ pub fn load_config(path: &Path) -> Config {
             .button_layout
             .map(|value| value.trim().to_string()),
         mouse_enabled: raw.settings.mouse_enabled,
+        reduce_motion: raw.settings.reduce_motion,
         discover_arcade_alternate_versions: raw.settings.discover_arcade_alternate_versions,
         screensaver_timeout: raw
             .settings
@@ -333,6 +337,10 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     settings.insert(
         "mouse_enabled".into(),
         toml::Value::Boolean(mirror.mouse_enabled),
+    );
+    settings.insert(
+        "reduce_motion".into(),
+        toml::Value::Boolean(mirror.reduce_motion),
     );
     settings.insert(
         "discover_arcade_alternate_versions".into(),
@@ -687,6 +695,7 @@ mod tests {
                 browse_layout: "list",
                 button_layout: "b",
                 mouse_enabled: false,
+                reduce_motion: true,
                 discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "300",
@@ -728,6 +737,7 @@ mod tests {
                 browse_layout: "grid",
                 button_layout: "a",
                 mouse_enabled: true,
+                reduce_motion: false,
                 discover_arcade_alternate_versions: false,
                 debug_logging: false,
                 screensaver_timeout: "60",
@@ -767,6 +777,7 @@ mod tests {
                 browse_layout: "list",
                 button_layout: "c",
                 mouse_enabled: false,
+                reduce_motion: false,
                 discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "off",

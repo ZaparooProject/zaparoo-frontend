@@ -56,6 +56,21 @@ Item {
     property string currentPage: settings.pageRoot
     readonly property bool showingRootGrid: settings.currentPage === settings.pageRoot
     property var _pageIndexes: ({})
+    // Incremented when the user accepts a category tile so it plays the
+    // push-in animation. Forwarded to all category TileLoaders.
+    property int activatePulse: 0
+    // False until the user takes control of focus (first input). Forwarded
+    // to the category tiles as `ringFadeReady` so the programmatic focus
+    // settle on load snaps instead of cross-fading the wrong tile's focus
+    // ring. User navigation, which always follows input, cross-fades as
+    // before.
+    property bool _focusArmed: false
+    // True for one event-loop tick during a page switch. Passed as
+    // `animateChanges: false` to SettingsField delegates so reused
+    // delegates do not animate focus-border or toggle-position changes
+    // when the new page's field model lands. Normal user navigation
+    // animates because `_pageSwitching` is false at that point.
+    property bool _pageSwitching: false
 
     // Page-aware field registries. The root mirrors console settings
     // menus: stable domain categories first, short subpages second.
@@ -148,6 +163,11 @@ Item {
             kind: "field",
             id: "mouseEnabled",
             label: qsTr("Mouse support")
+        },
+        {
+            kind: "field",
+            id: "reduceMotion",
+            label: qsTr("Reduce motion")
         }
     ]
     readonly property var libraryDataFields: [
@@ -335,7 +355,7 @@ Item {
     }
 
     function _fieldControl(id: string): string {
-        if (id === "mouseEnabled" || id === "showHidden" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting")
+        if (id === "mouseEnabled" || id === "showHidden" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion")
             return "toggle";
         if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout")
             return "navigate";
@@ -353,6 +373,8 @@ Item {
             return settings._visibleRescrapeExisting;
         if (id === "showHidden")
             return Browse.Settings.current_show_hidden;
+        if (id === "reduceMotion")
+            return Browse.Settings.current_reduce_motion;
         return Browse.Settings.current_mouse_enabled;
     }
 
@@ -432,6 +454,7 @@ Item {
     function _focusRootIndex(index: int): void {
         if (index < 0 || index >= settings.fieldCount)
             return;
+        settings._focusArmed = true;
         settings.currentIndex = index;
     }
 
@@ -439,7 +462,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "mouseEnabled" || id === "showHidden" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting";
+        return id === "mouseEnabled" || id === "showHidden" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion";
     }
     // True when the focused field is a list-picker row (Accept opens a
     // modal; left/right is a no-op — pickers don't cycle inline). Drives
@@ -828,6 +851,14 @@ Item {
         Browse.Settings.set_debug_logging(!Browse.Settings.current_debug_logging);
     }
 
+    function _setReduceMotion(direction: int): void {
+        Browse.Settings.set_reduce_motion(direction > 0);
+    }
+
+    function _toggleReduceMotion(): void {
+        Browse.Settings.set_reduce_motion(!Browse.Settings.current_reduce_motion);
+    }
+
     function _setDiscoverArcadeAlternateVersions(direction: int): void {
         Browse.Settings.set_discover_arcade_alternate_versions(direction > 0);
     }
@@ -865,6 +896,8 @@ Item {
             settings._setDebugLogging(direction);
         else if (id === "rescrapeExisting")
             settings._setRescrapeExisting(direction);
+        else if (id === "reduceMotion")
+            settings._setReduceMotion(direction);
     }
 
     function _rememberPageFocus(): void {
@@ -881,22 +914,37 @@ Item {
     }
 
     function _switchPage(page: string): void {
+        // Disable SettingsField Behaviors for this synchronous block so
+        // reused delegates don't animate focus-border or toggle-position
+        // changes when the new page's field model lands. The flag is
+        // cleared on the next event-loop tick so subsequent user moves
+        // still animate normally.
+        settings._pageSwitching = true;
         settings._rememberPageFocus();
         settings.currentPage = page;
         settings._restorePageFocus();
+        Qt.callLater(() => { settings._pageSwitching = false; });
     }
 
     function _openPage(id: string): bool {
+        // Resolve the target page first so we can return false quickly for
+        // non-page IDs. Then fire the pulse (cue plays on the still-visible
+        // tile) and defer _switchPage so the push-in's downward leg is
+        // fully visible before the page swaps out.
+        let page = "";
         if (id === "pageDisplayInterface")
-            settings._switchPage(settings.pageDisplayInterface);
+            page = settings.pageDisplayInterface;
         else if (id === "pageControlsInput")
-            settings._switchPage(settings.pageControlsInput);
+            page = settings.pageControlsInput;
         else if (id === "pageLibraryData")
-            settings._switchPage(settings.pageLibraryData);
+            page = settings.pageLibraryData;
         else if (id === "pageSupportAbout")
-            settings._switchPage(settings.pageSupportAbout);
+            page = settings.pageSupportAbout;
         else
             return false;
+        settings.activatePulse++;
+        pressCommit._page = page;
+        pressCommit.arm();
         return true;
     }
 
@@ -914,6 +962,7 @@ Item {
                 settings._goBack();
             return;
         }
+        settings._focusArmed = true;
         if (action === "up") {
             if (settings.showingRootGrid)
                 settings._moveRootGrid(0, -1);
@@ -950,6 +999,8 @@ Item {
                 settings._toggleDebugLogging();
             else if (id === "rescrapeExisting")
                 settings._toggleRescrapeExisting();
+            else if (id === "reduceMotion")
+                settings._toggleReduceMotion();
             else if (id === "updateMediaDb")
                 settings._triggerIndex();
             else if (id === "runScraper")
@@ -966,6 +1017,16 @@ Item {
     }
 
     // ── Visual tree ───────────────────────────────────────────────────────────
+
+    DeferredAction {
+        id: pressCommit
+        property string _page: ""
+        onDeferred: {
+            const p = _page;
+            _page = "";
+            settings._switchPage(p);
+        }
+    }
 
     MouseArea {
         anchors.fill: parent
@@ -1069,6 +1130,8 @@ Item {
                     isFocused: true
                     name: categoryCell.modelData.label
                     coverKey: categoryCell.modelData.coverKey
+                    activatePulse: settings.activatePulse
+                    ringFadeReady: settings._focusArmed
                 }
 
                 MouseArea {
@@ -1177,6 +1240,7 @@ Item {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         isFocused: row.index === settings.currentIndex
+                        animateChanges: !settings._pageSwitching
                         // Index and scrape can't run together; while
                         // one operation is in flight the other row
                         // dims and its MouseArea stops responding.
@@ -1201,6 +1265,8 @@ Item {
                                 settings._toggleDebugLogging();
                             else if (row.modelData.id === "rescrapeExisting")
                                 settings._toggleRescrapeExisting();
+                            else if (row.modelData.id === "reduceMotion")
+                                settings._toggleReduceMotion();
                         }
                         onRightClicked: settings._goBack()
                         // Picker, action, and navigate rows route

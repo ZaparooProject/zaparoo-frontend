@@ -10,6 +10,7 @@ import QtQuick
 import QtTest
 import Zaparoo.App
 import Zaparoo.Browse as Browse
+import Zaparoo.Theme
 
 // Exercises the hub ↔ systems ↔ games navigation state machine defined
 // in Main.qml. State is driven either by writing to the activeScreen
@@ -29,6 +30,10 @@ TestCase {
     }
 
     function init(): void {
+        // Disable motion so DeferredAction.arm() runs dispatch synchronously.
+        // Navigation tests assert state immediately after handleKey/handleAction;
+        // a 90 ms async lead would cause every accept test to fail.
+        Motion.enabled = false;
         // The cold-launch BootOverlay normally hides every screen until
         // Core's catalog reaches READY. Tests don't run a real Core, so
         // we mark the boot complete up-front; otherwise every visibility
@@ -51,6 +56,10 @@ TestCase {
         // next test if we didn't reset it here.
         main._stopRepeat();
         main._resetRapidNavigation();
+    }
+
+    function cleanup(): void {
+        Motion.enabled = true;
     }
 
     function test_initial_state_is_hub(): void {

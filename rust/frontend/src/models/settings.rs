@@ -49,6 +49,9 @@
 //     selection across the rename.
 //   * `current_mouse_enabled` — READ + NOTIFY, persisted. Defaults to true
 //     so existing installs keep the visible cursor and mouse hit targets.
+//   * `current_reduce_motion` — READ + NOTIFY, persisted. Defaults to false
+//     (motion on). When true, all Behavior durations in the UI collapse to
+//     0 via Motion.dur() so animations complete in one frame.
 //   * `current_debug_logging` — READ + NOTIFY, persisted. Defaults to false.
 //     Toggling it writes `[logging] debug = …` into frontend.toml; the
 //     tracing subscriber is built once at startup so the change only takes
@@ -185,6 +188,7 @@ pub struct SettingsRust {
     available_button_layouts: QStringList,
     current_button_layout: QString,
     current_mouse_enabled: bool,
+    current_reduce_motion: bool,
     current_discover_arcade_alternate_versions: bool,
     current_debug_logging: bool,
     current_show_hidden: bool,
@@ -223,6 +227,7 @@ pub mod ffi {
         #[qproperty(QStringList, available_button_layouts, READ, CONSTANT)]
         #[qproperty(QString, current_button_layout, READ, WRITE = set_button_layout, NOTIFY)]
         #[qproperty(bool, current_mouse_enabled, READ, WRITE = set_mouse_enabled, NOTIFY)]
+        #[qproperty(bool, current_reduce_motion, READ, WRITE = set_reduce_motion, NOTIFY)]
         #[qproperty(bool, current_discover_arcade_alternate_versions, READ, WRITE = set_discover_arcade_alternate_versions, NOTIFY)]
         #[qproperty(bool, current_debug_logging, READ, WRITE = set_debug_logging, NOTIFY)]
         #[qproperty(bool, current_show_hidden, READ, WRITE = set_show_hidden, NOTIFY)]
@@ -254,6 +259,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_mouse_enabled(self: Pin<&mut Settings>, value: bool);
+
+        #[qinvokable]
+        fn set_reduce_motion(self: Pin<&mut Settings>, value: bool);
 
         #[qinvokable]
         fn set_discover_arcade_alternate_versions(self: Pin<&mut Settings>, value: bool);
@@ -308,6 +316,7 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().current_button_layout =
             QString::from(merged.button_layout.as_str());
         self.as_mut().rust_mut().current_mouse_enabled = merged.mouse_enabled;
+        self.as_mut().rust_mut().current_reduce_motion = merged.reduce_motion;
         self.as_mut()
             .rust_mut()
             .current_discover_arcade_alternate_versions = merged.discover_arcade_alternate_versions;
@@ -427,6 +436,16 @@ impl ffi::Settings {
         self.as_mut().current_mouse_enabled_changed();
     }
 
+    fn set_reduce_motion(mut self: Pin<&mut Self>, value: bool) {
+        if self.current_reduce_motion == value {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.reduce_motion = value);
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_reduce_motion = value;
+        self.as_mut().current_reduce_motion_changed();
+    }
+
     fn set_discover_arcade_alternate_versions(mut self: Pin<&mut Self>, value: bool) {
         if self.current_discover_arcade_alternate_versions == value {
             return;
@@ -537,6 +556,7 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
             browse_layout: settings.browse_layout.as_str(),
             button_layout: settings.button_layout.as_str(),
             mouse_enabled: settings.mouse_enabled,
+            reduce_motion: settings.reduce_motion,
             discover_arcade_alternate_versions: settings.discover_arcade_alternate_versions,
             debug_logging: settings.debug_logging,
             screensaver_timeout: settings.screensaver_timeout.as_str(),
@@ -596,6 +616,10 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
             .settings
             .mouse_enabled
             .unwrap_or(snapshot.mouse_enabled),
+        reduce_motion: config
+            .settings
+            .reduce_motion
+            .unwrap_or(snapshot.reduce_motion),
         discover_arcade_alternate_versions: config
             .settings
             .discover_arcade_alternate_versions

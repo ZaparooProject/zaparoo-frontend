@@ -11,6 +11,7 @@ qt_add_qml_module(
     QML_FILES
         ActiveLabel.qml
         BootOverlay.qml
+        DeferredAction.qml
         BrowseDetailPane.qml
         BrowseList.qml
         BrowseListDetailView.qml

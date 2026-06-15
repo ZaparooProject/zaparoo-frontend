@@ -47,15 +47,19 @@ Item {
     // on the MiSTer software target it is a regression, not an
     // optimization.
     // qmllint enable missing-property compiler
-    // No focus scale bump. The earlier 1.06 scale on the focused tile
-    // forced a bilinear resample of the cover pixmap on every focus
-    // move and overflowed the cell by ~3% on each side, dirtying
-    // strips of up to four neighbours per press — under software
-    // rendering on MiSTer that read as choppy d-pad navigation on
-    // covered grids. The focus outline ring + caption + active-label
-    // already mark the selection clearly, so the size cue isn't worth
-    // the per-press repaint cost. See `docs/qml-gotchas.md` →
-    // "Software-renderer animation costs".
+    // No persistent focus scale. The earlier 1.06 scale held on every
+    // focused tile forced a bilinear resample of the cover pixmap on
+    // every d-pad move and overflowed the cell by ~3% on each side,
+    // dirtying strips of up to four neighbours per press. Under Qt's
+    // software adaptation on MiSTer that read as choppy navigation on
+    // covered grids. That scale was a persistent, per-focus-move cost
+    // across the whole visible grid.
+    //
+    // The activate/launch animations below are a different cost class:
+    // a one-shot transient triggered on a single tile at the moment of
+    // activation. The dirty rect is bounded to one cell for ~90-360ms
+    // total and neighbours are unaffected. See `docs/qml-gotchas.md` →
+    // "Software-renderer animation costs" for the full distinction.
     // Bottom caption strip (caption mode only). Single line, ellipsised
     // when long. Tints to `textPrimary` on the focused tile so the
     // selection reads at a glance even when the focus outline ring is
@@ -72,7 +76,23 @@ Item {
     readonly property bool delegateFavorite: parent.favorite !== 0
     // qmllint disable missing-property compiler
     readonly property bool delegateHidden: parent.hidden === true
-    // qmllint enable missing-property compiler
+    // Pulse counter forwarded by TileLoader — increment to trigger the
+    // push-in cue on the focused tile. Every button-like action (folder
+    // drill-in, system select, game launch) shares this single cue, so
+    // there is no separate launch animation. Default to 0 so hosts that
+    // do not wire it are silently no-ops.
+    readonly property int delegateActivatePulse: parent.activatePulse ?? 0
+    // `settling` is set true by the host screen when the screen becomes
+    // inactive (off-screen). Used to reset a held push-in scale so the
+    // tile is back at 1.0 before the screen is shown again.
+    readonly property bool delegateSettling: parent.settling ?? false
+    // `ringFadeReady` gates the focus-ring fade. The host screen leaves it
+    // false until the user takes control of focus (first input), so the
+    // programmatic focus reseat during state restore snaps instead of
+    // cross-fading the wrong tile's ring on load. Defaults true for hosts
+    // that do not wire it.
+    readonly property bool delegateRingFadeReady: parent.ringFadeReady ?? true
+    // qmllint enable missing-property
     property var layoutProfile: null
     readonly property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
     // Opt-in per-tile name caption. Off by default so Hub and Systems
@@ -98,6 +118,15 @@ Item {
     readonly property int _captionTextWidth: Math.min(root._captionTextMaxWidth, root._captionMeasuredWidth)
 
     readonly property bool _focusedSelection: root.delegateIsSelected && root.delegateIsFocused
+    // Ring opacity — fades 0→1 when focus lands, 1→0 when it leaves.
+    // The Behavior below animates transitions; initial binding eval does
+    // not trigger the Behavior, so a freshly-loaded focused delegate starts
+    // fully opaque without a fade-in delay. The two ring Rectangles use
+    // `opacity: root._ringOpacity` and `visible: root._ringOpacity > 0`
+    // so they paint during the fade and disappear once fully transparent.
+    // The fade is gated on `delegateRingFadeReady` so the programmatic
+    // focus reseat during state restore snaps instead of cross-fading.
+    property real _ringOpacity: root._focusedSelection ? 1.0 : 0.0
     // `coverKey` is the relative path under `resources/images/` without
     // extension — `systems/snes`, `categories/Consoles`, etc. The model
     // chooses the subdirectory; Tile is agnostic. Resources.coverUrl is
@@ -125,14 +154,81 @@ Item {
     // selection — used to suppress coverBase so the two renders don't stack
     // (which would double the effective opacity on hidden tiles).
     readonly property bool _focusCoverActive: root._focusedSelection && root._isTinted && coverFocus.status === Image.Ready
-    readonly property bool _hasCover: coverBase.status === Image.Ready || coverFocus.status === Image.Ready
-    readonly property bool _fallbackVisible: !root.showCaption && !root._hasCover && !root._coverPending
+    // Show the procedural name fallback only when the icon genuinely failed
+    // to load (no such logo), never while it is merely decoding. During the
+    // Loading/Null window the slot stays blank so the name does not flash in
+    // before the icon pops in. coverBase always has a real source when not
+    // _coverPending, so it reliably reaches Ready or Error.
+    readonly property bool _fallbackVisible: !root.showCaption && !root._coverPending && coverBase.status === Image.Error
     readonly property int _fallbackTextSize: root._systemCover ? Sizing.fontSize(5.8) : Sizing.fontSize(2.4)
     readonly property int _fallbackMinimumTextSize: root._systemCover ? Sizing.fontSize(2.8) : Sizing.fontSize(2.4)
     readonly property bool _startupTraceResource: root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey === "icons/PlayOutline" || root.delegateCoverKey === "icons/HeartOutline" || root.delegateCoverKey === "icons/History" || root.delegateCoverKey === "icons/Settings"
     property double _startupTraceLoadStartedAt: 0
 
     anchors.fill: parent
+    // One-shot push-in scale, shared by every button-like action. The
+    // persistent 1.06 focus scale was removed; this is a bounded transient
+    // on a single tile at activation time. See the comment above for the
+    // cost-profile distinction.
+    property real _activateScale: 1.0
+    // Public read for siblings that must track this scale (e.g.
+    // PagedGrid's placeholderCard, which sits behind TileLoader).
+    readonly property real cardScale: root._activateScale
+    scale: root._activateScale
+    transformOrigin: Item.Center
+
+    onDelegateActivatePulseChanged: {
+        if (root._focusedSelection)
+            activateAnim.restart();
+    }
+
+    // Bleed guard — stop and reset if the delegate is rebound to a
+    // different entry while an animation is in flight (rapid-scroll +
+    // accept on the same frame). delegateName changes only on a genuine
+    // content rebind, not on cover-load completion, so this never cuts
+    // a legitimate same-tile cue short. DeferredAction's lead means the
+    // cue usually completes before teardown anyway; this is belt-and-suspenders.
+    onDelegateNameChanged: {
+        activateAnim.stop();
+        root._activateScale = 1.0;
+    }
+
+    // Reset scale when the host screen goes inactive so the tile is at
+    // 1.0 before it is shown again. The single-leg push-in holds at
+    // pressScale; without this reset, returning to a screen with a
+    // persistent delegate would show a permanently shrunken tile.
+    onDelegateSettlingChanged: {
+        if (root.delegateSettling) {
+            activateAnim.stop();
+            root._activateScale = 1.0;
+        }
+    }
+
+    // Ring fade Behavior — see _ringOpacity above.
+    Behavior on _ringOpacity {
+        enabled: Motion.enabled && root.delegateRingFadeReady
+        NumberAnimation {
+            duration: Motion.dur(Motion.settleMs)
+            easing.type: Easing.OutQuad
+        }
+    }
+
+    // Push in and hold — the single cue for every button-like action,
+    // whether the press navigates forward or launches a game. The screen
+    // changes while the tile is held at pressScale; the host screen's
+    // `settling` flag resets scale to 1.0 off-screen so the tile is clean
+    // when the user returns. No return-to-normal leg — the user is
+    // navigating away; a bounce-back was visible and unwanted because the
+    // source screen is held visible for the full 300 ms deferred-flip grace.
+    NumberAnimation {
+        id: activateAnim
+        target: root
+        property: "_activateScale"
+        to: Motion.pressScale
+        duration: Motion.dur(Motion.pressMs)
+        easing.type: Easing.OutQuad
+    }
+
     Component.onCompleted: {
         // Self-check the parent contract. Logs once at construction so
         // a future caller that drops Tile into a non-conforming wrapper
@@ -193,6 +289,18 @@ Item {
     // step visibly at the corners (see QTBUG-123210). Both rectangles
     // are still inside the card edge by `_outlineGap`, so the ring
     // never bleeds past the cell bounds.
+    //
+    // Fade mechanics: only the accent rect carries `opacity:
+    // _ringOpacity`. The inner mask stays fully opaque (`opacity: 1`)
+    // and is only hidden when the ring is invisible. On Qt's software
+    // renderer, `opacity` on an `Item` is NOT flattened to a texture
+    // first (that requires `layer.enabled`, which is forbidden here) —
+    // it propagates multiplicatively to each child independently. A
+    // shared-parent approach would therefore make the inner mask
+    // semi-transparent too, letting the accent fill bleed through the
+    // centre of the tile during the fade. Keeping the mask at full
+    // opacity ensures it always occludes the accent exactly in the ring
+    // band.
     Rectangle {
         id: focusRingOuter
 
@@ -201,7 +309,8 @@ Item {
         color: Theme.accent
         radius: Math.max(0, root._tileCornerRadius - root._outlineGap)
         antialiasing: true
-        visible: root._focusedSelection
+        opacity: root._ringOpacity
+        visible: root._ringOpacity > 0
     }
 
     Rectangle {
@@ -215,7 +324,9 @@ Item {
         // negative-radius garbage.
         radius: Math.max(0, focusRingOuter.radius - root._outlineWidth)
         antialiasing: true
-        visible: root._focusedSelection
+        // Always fully opaque so it cleanly occludes the accent in the
+        // ring centre throughout the fade — see comment above.
+        visible: root._ringOpacity > 0
     }
 
     // Icon area — two stacked Images for the unfocused and focused tint ramps.
@@ -365,14 +476,15 @@ Item {
         visible: root.delegateHidden
     }
 
-    // Non-caption procedural fallback. Sits at the same geometry as
-    // the cover and snaps to the cover the moment Image.status hits
-    // Ready. Missing system logos use a larger fitted wordmark-style
-    // treatment so the tile reads as intentional text artwork, not a
-    // broken-image placeholder. In caption mode this is suppressed —
-    // the bottom caption already shows the name and the hourglass
-    // above signals load progress, so a wrapping copy of the name in
-    // this slot is redundant.
+    // Non-caption procedural fallback. Sits at the same geometry as the
+    // cover and appears only when the icon fails to load (Image.Error), not
+    // while it is decoding — the slot stays blank until the icon pops in so
+    // the name never flashes in first. Missing system logos use a larger
+    // fitted wordmark-style treatment so the tile reads as intentional text
+    // artwork, not a broken-image placeholder. In caption mode this is
+    // suppressed — the bottom caption already shows the name and the
+    // hourglass above signals load progress, so a wrapping copy of the name
+    // in this slot is redundant.
     Text {
         anchors.fill: coverBase
         anchors.margins: root._systemCover ? Sizing.pctH(1) : 0

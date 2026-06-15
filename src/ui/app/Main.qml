@@ -65,6 +65,12 @@ MainLayout {
     readonly property bool activeCardWritePending: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_pending : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_pending : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_pending : false
     readonly property string activeCardWriteError: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_error : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_error : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_error : ""
 
+    // Feed the Motion singleton's master switch from the persisted
+    // reduce-motion setting. Keeping Motion dependency-free (no
+    // Browse import) means Zaparoo.Theme stays independent; the app
+    // layer is the only place that crosses the module boundary.
+    Binding { target: Motion; property: "enabled"; value: !Browse.Settings.current_reduce_motion }
+
     // Bound here (not in GamesScreen.qml) because `set_system` can fire
     // from the accept handler before the games screen mounts; binding
     // inside the screen fires only on `Component.onCompleted`, after the

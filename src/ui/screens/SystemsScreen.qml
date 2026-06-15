@@ -30,6 +30,10 @@ Item {
     property alias systemsGrid: systemsGrid
     property alias listCard: listCard
     property bool transitioning: false
+    // Set false by MainLayout when this screen is not the active screen.
+    // Forwarded to systemsGrid.screenSettling so tile delegates reset
+    // their push-in scale off-screen.
+    property bool active: true
     // Router-driven flag: `MainLayout` writes this to
     // `!ScreenManager.hasModal` so the focused tile's accent ring
     // hides while a modal (the context menu) is on top of the stack.
@@ -39,6 +43,11 @@ Item {
     // times. The ring restores automatically when the modal pops.
     property bool gridFocused: true
     property bool optimisticLoading: false
+    // False until the user takes control of focus (first input). Forwarded
+    // to the grid tiles as `ringFadeReady` so the programmatic focus reseat
+    // that state restore performs on load snaps instead of cross-fading the
+    // wrong tile's focus ring. User navigation cross-fades as before.
+    property bool _focusArmed: false
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
     readonly property bool _crtGridLayout: Theme.crtNativePath && !systems._listLayout
     readonly property bool _crtListStrip: Theme.crtNativePath && systems._listLayout
@@ -107,6 +116,7 @@ Item {
     function _focusIndex(index: int): void {
         if (index < 0 || index >= systems.systemsGrid.itemCount)
             return;
+        systems._focusArmed = true;
         systems.systemsGrid.currentIndex = index;
         Browse.SystemsState.system_id = Browse.SystemsModel.system_id_at(systems.systemsGrid.currentIndex);
     }
@@ -128,6 +138,7 @@ Item {
             return;
         if (action === "context_menu" && systems._gateHide)
             return;
+        systems._focusArmed = true;
 
         if (action === "left") {
             systems._performMove(-1, 0);
@@ -164,7 +175,9 @@ Item {
                 return;
             }
             const chosen = Browse.SystemsModel.system_id_at(systems.systemsGrid.currentIndex);
-            systems.requestAccept(chosen);
+            systems.systemsGrid.pulseActivate();
+            pressCommit._systemId = chosen;
+            pressCommit.arm();
         } else if (action === "context_menu") {
             if (systems.systemsGrid.itemCount > 0) {
                 const idx = systems.systemsGrid.currentIndex;
@@ -177,6 +190,16 @@ Item {
     }
 
     // ── Visual tree ───────────────────────────────────────────────────────────
+
+    DeferredAction {
+        id: pressCommit
+        property string _systemId: ""
+        onDeferred: {
+            const id = _systemId;
+            _systemId = "";
+            systems.requestAccept(id);
+        }
+    }
 
     // Top status strip — page counter (left), category title (center),
     // total-systems badge (right). Replaces the standalone top label
@@ -251,6 +274,8 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.gridBottomMargin : (Sizing.pctH(8) + Sizing.pctH(7))
         focused: systems.gridFocused
+        screenSettling: !systems.active
+        ringFadeReady: systems._focusArmed
         model: Browse.SystemsModel
         layoutProfile: systems._viewProfile
         columnsOverride: systems._gridShape.columns

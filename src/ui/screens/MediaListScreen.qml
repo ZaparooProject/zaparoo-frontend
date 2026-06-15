@@ -72,6 +72,7 @@ Item {
     property alias activeLabel: activeLabel
 
     property bool transitioning: false
+    property bool active: true
     property bool gridFocused: true
     property bool optimisticLoading: false
     property bool detailRapidScrollActive: false
@@ -126,6 +127,17 @@ Item {
         if (typeof root.onListLayoutEntered === "function")
             root.onListLayoutEntered();
         focusedDetail.requestNow();
+    }
+
+    // Layout-aware pulse routing. In grid layout this forwards to the
+    // PagedGrid tile; in list layout it increments the BrowseListDetailView
+    // pulse so the selected row fires its activate nudge. The same push-in
+    // cue serves both forward navigation and game launch.
+    function pulseActivate(): void {
+        if (root._listLayout)
+            listCard.activatePulse++;
+        else
+            mediaGrid.pulseActivate();
     }
 
     function _count(): int {
@@ -316,10 +328,13 @@ Item {
                     root.mediaModel.fetch_more();
                 return;
             }
-            if (typeof root.acceptAction === "function")
+            if (typeof root.acceptAction === "function") {
                 root.acceptAction(mediaGrid.currentIndex);
-            else
-                root.mediaModel.launch_at(mediaGrid.currentIndex);
+            } else {
+                root.pulseActivate();
+                defaultLaunchCommit._idx = mediaGrid.currentIndex;
+                defaultLaunchCommit.arm();
+            }
         } else if (action === "context_menu") {
             if (mediaGrid.itemCount > 0) {
                 const idx = mediaGrid.currentIndex;
@@ -334,6 +349,21 @@ Item {
                 root.cancelAction();
             else
                 root.requestHubScreen();
+        }
+    }
+
+    // Defers the default launch_at call so the push-in cue (pulseActivate)
+    // completes on a static scene before Core takes the FPGA.
+    // Only used when no `acceptAction` override is provided (Favorites,
+    // Recents). GamesScreen owns its own pressCommit with folder routing.
+    DeferredAction {
+        id: defaultLaunchCommit
+        property int _idx: -1
+        onDeferred: {
+            const i = _idx;
+            _idx = -1;
+            if (i >= 0 && root.mediaModel !== null)
+                root.mediaModel.launch_at(i);
         }
     }
 
@@ -390,6 +420,8 @@ Item {
         detailTags: root._detailTags()
         detailLoading: root._detailLoading()
         detailSuppressed: root.detailRapidScrollActive
+        listRapidScrollActive: root.detailRapidScrollActive
+        screenSettling: !root.active
         detailLoadingText: root.detailLoadingText
         detailCanPreviousImage: root.detailCanPreviousImage
         detailCanNextImage: root.detailCanNextImage
@@ -417,6 +449,7 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: root.gridBottomMargin
         focused: root.gridFocused
+        screenSettling: !root.active
         model: root.mediaModel
         delegate: Tile {
             layoutProfile: root._gridLayoutProfile

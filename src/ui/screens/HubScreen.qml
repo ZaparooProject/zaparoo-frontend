@@ -92,6 +92,16 @@ Item {
     property int currentRow: 1
     // Index within the active row. Resume is first while optimistic/history is unknown.
     property int currentIndex: 0
+    // Incremented on each Accept so the focused tile plays its push-in
+    // animation. Forwarded to every TileLoader; only the focused+selected
+    // Tile fires its animation.
+    property int activatePulse: 0
+    // False until the user takes control of focus (first input). Forwarded
+    // to the tiles as `ringFadeReady` so the programmatic focus reseat that
+    // state restore performs on load snaps instead of cross-fading the
+    // wrong tile's focus ring. Every user-driven focus move happens after
+    // this is armed, so navigation cross-fades exactly as before.
+    property bool _focusArmed: false
     // Source-row index from the most recent cross. Used to make a
     // Down → Up (or Up → Down) round-trip return to the originating
     // tile, which the centered visual-nearest mapping in `_mapCrossRow`
@@ -375,6 +385,7 @@ Item {
     function _focusCategory(index: int): void {
         if (index < 0 || index >= hub.visibleCategoryEntries.length)
             return;
+        hub._focusArmed = true;
         hub.currentRow = 0;
         hub.currentIndex = index;
         // Mouse focus is a deliberate landing on a specific tile — any
@@ -386,14 +397,17 @@ Item {
     function _focusAction(index: int): void {
         if (index < 0 || index >= hub.actionEntries.length)
             return;
+        hub._focusArmed = true;
         hub.currentRow = 1;
         hub.currentIndex = index;
         hub._crossSavedIndex = -1;
         hub._commitActionSelection();
     }
 
-    function _activateCurrent(): void {
-        hub._commitCurrent();
+    // Emit the navigation signal for the currently selected entry.
+    // Separated from _activateCurrent so DeferredAction can call it
+    // after the push-in cue has had time to play.
+    function _emitActivate(): void {
         if (hub.currentRow === 0) {
             // During optimistic boot the visible category row is backed
             // by localized placeholder labels. Accept the stable category
@@ -414,6 +428,12 @@ Item {
             hub.requestSettingsScreen();
     }
 
+    function _activateCurrent(): void {
+        hub.activatePulse++;
+        hub._commitCurrent();
+        pressCommit.arm();
+    }
+
     // Returns the bounding rect of the currently focused category cell,
     // mapped to hub coordinates. Used to anchor the context menu.
     function _currentCategoryCellRect(): rect {
@@ -424,6 +444,7 @@ Item {
     }
 
     function handleAction(action: string): void {
+        hub._focusArmed = true;
         if (action === "left") {
             if (hub._navigate(-1))
                 hub._commitCurrent();
@@ -437,7 +458,7 @@ Item {
             hub._activateCurrent();
         } else if (action === "cancel") {
             hub.requestQuit();
-        } else if (action === "write_card") {
+        } else if (action === "context_menu") {
             // Only open the context menu for real (non-placeholder) category
             // tiles — placeholders have no category to hide or scrape.
             if (hub.currentRow === 0 && hub.currentIndex < Browse.CategoriesModel.count)
@@ -446,6 +467,11 @@ Item {
     }
 
     // ── Visual tree ───────────────────────────────────────────────────────────
+
+    DeferredAction {
+        id: pressCommit
+        onDeferred: hub._emitActivate()
+    }
 
     Item {
         id: categoriesRow
@@ -523,6 +549,9 @@ Item {
                     name: cellItem.modelData.name
                     coverKey: cellItem.modelData.coverKey
                     hidden: cellItem.modelData.hidden ?? false
+                    activatePulse: hub.activatePulse
+                    settling: !hub.visible
+                    ringFadeReady: hub._focusArmed
                 }
 
                 MouseArea {
@@ -607,6 +636,9 @@ Item {
                     isFocused: hub.currentRow === 1
                     name: actionCellItem.modelData.text
                     coverKey: actionCellItem.modelData.coverKey
+                    activatePulse: hub.activatePulse
+                    settling: !hub.visible
+                    ringFadeReady: hub._focusArmed
                 }
 
                 MouseArea {
