@@ -94,11 +94,14 @@ fn strip_qualifiers(name: &str) -> String {
 }
 
 /// Parse a localized names `.txt` file into a `(normalized_key -> display_name)` map.
-/// Lines beginning with `#` and blank lines are silently skipped (they contain no `:`).
+/// Lines beginning with `#` and blank lines are silently skipped.
 /// The display name is qualifier-stripped before storage.
 fn parse_names(text: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for line in text.lines() {
+        if line.starts_with('#') {
+            continue;
+        }
         let Some((key_raw, value_raw)) = line.split_once(':') else {
             continue;
         };
