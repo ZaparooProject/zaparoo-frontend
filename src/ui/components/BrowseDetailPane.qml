@@ -82,9 +82,9 @@ Item {
     // grace becomes visible because `_coverLoadingDelayElapsed` flips true.
     readonly property bool _coverBusyIndicatorVisible: root._coverBusy && root._coverLoadingDelayElapsed
     readonly property bool _detailVisible: !root.detailSuppressed
-    readonly property bool _emptyPaneLoading: root._delayedPaneLoading && !root._coverBusyIndicatorVisible && root._coverSource === "" && root._detailRows.length === 0 && root.title === ""
+    readonly property bool _emptyPaneLoading: root._delayedPaneLoading && !root._coverBusyIndicatorVisible && root._coverSource === "" && root._displayRows.length === 0 && root.title === ""
     readonly property var _detailRows: _parseDetailTags(detailTags)
-    readonly property int _tagRowCount: _detailRows.length
+    readonly property int _tagRowCount: _displayRows.length
     readonly property int _tagTextSize: Sizing.fontSize(2.2)
     readonly property int _tagLabelGap: Sizing.pctW(1.4)
     readonly property int _metadataLabelMaxWidth: root._detail && root._detail.metadataLabelMaxWidth !== undefined ? root._detail.metadataLabelMaxWidth : 0

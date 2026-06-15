@@ -72,7 +72,7 @@ Item {
     readonly property bool delegateFavorite: parent.favorite !== 0
     // qmllint disable missing-property compiler
     readonly property bool delegateHidden: parent.hidden === true
-    // qmllint enable missing-property
+    // qmllint enable missing-property compiler
     property var layoutProfile: null
     readonly property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
     // Opt-in per-tile name caption. Off by default so Hub and Systems

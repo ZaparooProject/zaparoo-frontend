@@ -1411,9 +1411,12 @@ fn finish_fetch(
                 if no_image_policy == NoImagePolicy::Memoize && !search_seen {
                     if let Some(prev) = guard.map.remove(key) {
                         guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
-                        guard.media_ids.remove(key);
-                        guard.resolved_types.remove(key);
                     }
+                    // Remove unconditionally: media_ids is written in
+                    // enqueue_with_policy before the fetch result arrives, so it
+                    // may exist even when map had no entry.
+                    guard.media_ids.remove(key);
+                    guard.resolved_types.remove(key);
                     guard.soft_no_image.remove(key);
                     guard.negative.insert(key.clone());
                 } else if !guard.map.contains_key(key) {
@@ -1439,7 +1442,12 @@ fn finish_fetch(
             // when Core populates type_tag (>=v0.7). Old Core versions get
             // no dedup — the carousel may still show a duplicate in that
             // case, which is no worse than today.
-            if !type_tag.is_empty() {
+            if type_tag.is_empty() {
+                // Empty type_tag means old Core; clear any stale entry from a
+                // previous fetch so resolved_image_type() doesn't deduplicate
+                // against outdated type information.
+                guard.resolved_types.remove(key);
+            } else {
                 guard.resolved_types.insert(key.clone(), type_tag);
             }
             guard.soft_no_image.remove(key);
@@ -1454,9 +1462,9 @@ fn finish_fetch(
             if no_image_policy == NoImagePolicy::Memoize && !search_seen {
                 if let Some(prev) = guard.map.remove(key) {
                     guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
-                    guard.media_ids.remove(key);
-                    guard.resolved_types.remove(key);
                 }
+                guard.media_ids.remove(key);
+                guard.resolved_types.remove(key);
                 guard.soft_no_image.remove(key);
                 guard.negative.insert(key.clone());
             } else if !guard.map.contains_key(key) {

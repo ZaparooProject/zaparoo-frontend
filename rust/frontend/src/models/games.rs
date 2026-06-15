@@ -1683,7 +1683,11 @@ fn set_detail_image_keys(mut model: Pin<&mut ffi::GamesModel>, keys: Vec<MediaKe
     sync_current_detail_image_key_with_page_size(model, 1);
 }
 
-fn set_single_detail_image_key(model: Pin<&mut ffi::GamesModel>, key: Option<MediaKey>) {
+fn set_single_detail_image_key(mut model: Pin<&mut ffi::GamesModel>, key: Option<MediaKey>) {
+    // Discard pending carousel candidates from the previous row so they
+    // cannot expand the carousel on a row whose meta_params returned None
+    // (and therefore never clears pending_carousel_keys itself).
+    model.as_mut().rust_mut().pending_carousel_keys = None;
     set_detail_image_keys(model, key.into_iter().collect());
 }
 

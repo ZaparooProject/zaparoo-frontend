@@ -51,6 +51,7 @@ TestCase {
     function resetPane(): void {
         pane.loading = false;
         pane.detailSuppressed = false;
+        pane.loadingDelayMs = 150;
         pane.title = "";
         pane.detailTags = "";
         pane.coverKey = "";
