@@ -75,6 +75,27 @@ MainLayout {
         value: !Browse.Settings.current_reduce_motion
     }
 
+    // Mirror the "Show original filenames" setting onto every model that
+    // surfaces a game name. Bound centrally (not per-screen) so browse,
+    // favorites, recents, the resume banner, and launch/now-playing titles
+    // all flip together regardless of which screen is mounted. Each model's
+    // setter re-emits dataChanged so already-built delegates refresh in place.
+    Binding {
+        target: Browse.GamesModel
+        property: "show_original_filenames"
+        value: Browse.Settings.current_show_original_filenames
+    }
+    Binding {
+        target: Browse.FavoritesModel
+        property: "show_original_filenames"
+        value: Browse.Settings.current_show_original_filenames
+    }
+    Binding {
+        target: Browse.RecentsModel
+        property: "show_original_filenames"
+        value: Browse.Settings.current_show_original_filenames
+    }
+
     // Bound here (not in GamesScreen.qml) because `set_system` can fire
     // from the accept handler before the games screen mounts; binding
     // inside the screen fires only on `Component.onCompleted`, after the

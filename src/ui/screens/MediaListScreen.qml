@@ -64,6 +64,7 @@ Item {
     property var topStripTotalTextProvider: null
     property var topStripRightTextProvider: null
     property var activeLabelTextProvider: null
+    property var activeLabelTagsProvider: null
     property var gridCurrentPageChangedAction: null
     property var gridCurrentIndexChangedAction: null
     property var gridLoadMoreAction: null
@@ -542,6 +543,10 @@ Item {
         anchors.bottomMargin: root.activeLabelAtBottom ? root.activeLabelBottomMargin : 0
         height: root.activeLabelHeight
         text: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
+        // Full (untrimmed) disambiguation tokens for the focused item, shown as a
+        // dim suffix. Uses an explicit provider when given, else the model's
+        // disambiguating_tags_at; guarded so a plain ListModel (tests) is safe.
+        tags: typeof root.activeLabelTagsProvider === "function" ? root.activeLabelTagsProvider() : ((mediaGrid.itemCount > 0 && root.mediaModel && typeof root.mediaModel.disambiguating_tags_at === "function") ? root.mediaModel.disambiguating_tags_at(mediaGrid.currentIndex) : "")
     }
 
     Text {

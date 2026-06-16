@@ -163,6 +163,9 @@ Item {
             required property string fileStem
             required property string coverKey
             required property int favorite
+            // Newline-joined disambiguating-tag tokens (empty for models
+            // without variants). Every Browse model exposes this role.
+            required property string disambiguatingTags
 
             width: listView.width
             height: root.rowHeight
@@ -177,7 +180,9 @@ Item {
             // `selected` itself stays ungated so the detail-pane bindings below
             // still track content during the pre-restore window.
             readonly property bool _highlightVisible: row.selected && root.focusReady
-            readonly property string displayTitle: row.name !== "" ? row.name : row.fileStem
+            readonly property string _baseTitle: row.name !== "" ? row.name : row.fileStem
+            // Horizontal space reserved on the right for the favorite heart.
+            readonly property int _favoriteSlot: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) : 0
             property real _activateScale: 1.0
 
             // Push in and hold — mirrors Tile.qml. The activate leg has no
@@ -228,7 +233,7 @@ Item {
                 target: root
                 property: "currentName"
                 when: row.selected
-                value: row.displayTitle
+                value: row._baseTitle
                 restoreMode: Binding.RestoreNone
             }
 
@@ -269,19 +274,24 @@ Item {
                 radius: Math.max(0, Sizing.px(width / 3))
             }
 
-            Text {
+            // Row title carrying the inline dim token suffix. ScrollingCaption
+            // left-aligns and elides it, pins the top token after the name
+            // elides, and marquees the full string while this row is the
+            // selection (reduce-motion falls back to a static elide). The right
+            // margin reserves the favorite-heart slot.
+            ScrollingCaption {
                 anchors.left: parent.left
                 anchors.leftMargin: root._rowTextLeftPadding
                 anchors.right: parent.right
-                anchors.rightMargin: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) + root._rowTextRightPadding : root._rowTextRightPadding
+                anchors.rightMargin: row._favoriteSlot + root._rowTextRightPadding
                 anchors.verticalCenter: parent.verticalCenter
-                text: row.displayTitle
-                color: row._highlightVisible ? Theme.textPrimary : Theme.textLabel
-                font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.9)
-                elide: Text.ElideRight
-                verticalAlignment: Text.AlignVCenter
-                renderType: Text.NativeRendering
+                height: parent.height
+                name: row._baseTitle
+                tags: row.disambiguatingTags
+                focused: row._highlightVisible
+                centerContent: false
+                fontPixelSize: Sizing.fontSize(2.9)
+                nameColor: row._highlightVisible ? Theme.textPrimary : Theme.textLabel
             }
 
             Image {

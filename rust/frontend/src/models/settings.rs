@@ -192,6 +192,7 @@ pub struct SettingsRust {
     current_discover_arcade_alternate_versions: bool,
     current_debug_logging: bool,
     current_show_hidden: bool,
+    current_show_original_filenames: bool,
     available_screensaver_timeouts: QStringList,
     current_screensaver_timeout: QString,
     available_media_image_types: QStringList,
@@ -231,6 +232,7 @@ pub mod ffi {
         #[qproperty(bool, current_discover_arcade_alternate_versions, READ, WRITE = set_discover_arcade_alternate_versions, NOTIFY)]
         #[qproperty(bool, current_debug_logging, READ, WRITE = set_debug_logging, NOTIFY)]
         #[qproperty(bool, current_show_hidden, READ, WRITE = set_show_hidden, NOTIFY)]
+        #[qproperty(bool, current_show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
         #[qproperty(QStringList, available_screensaver_timeouts, READ, CONSTANT)]
         #[qproperty(QString, current_screensaver_timeout, READ, WRITE = set_screensaver_timeout, NOTIFY)]
         #[qproperty(QStringList, available_media_image_types, READ, CONSTANT)]
@@ -279,6 +281,9 @@ pub mod ffi {
         fn set_show_hidden(self: Pin<&mut Settings>, value: bool);
 
         #[qinvokable]
+        fn set_show_original_filenames(self: Pin<&mut Settings>, value: bool);
+
+        #[qinvokable]
         fn set_region(self: Pin<&mut Settings>, value: QString);
     }
 
@@ -322,6 +327,7 @@ impl Initialize for ffi::Settings {
             .current_discover_arcade_alternate_versions = merged.discover_arcade_alternate_versions;
         self.as_mut().rust_mut().current_debug_logging = merged.debug_logging;
         self.as_mut().rust_mut().current_show_hidden = merged.show_hidden;
+        self.as_mut().rust_mut().current_show_original_filenames = merged.show_original_filenames;
         self.as_mut().rust_mut().available_screensaver_timeouts = screensaver_timeouts();
         self.as_mut().rust_mut().current_screensaver_timeout =
             QString::from(merged.screensaver_timeout.as_str());
@@ -509,6 +515,16 @@ impl ffi::Settings {
         self.as_mut().current_show_hidden_changed();
     }
 
+    fn set_show_original_filenames(mut self: Pin<&mut Self>, value: bool) {
+        if self.current_show_original_filenames == value {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.show_original_filenames = value);
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_show_original_filenames = value;
+        self.as_mut().current_show_original_filenames_changed();
+    }
+
     #[allow(
         clippy::needless_pass_by_value,
         reason = "cxx-qt qinvokable signature requires QString by value"
@@ -562,6 +578,7 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
             screensaver_timeout: settings.screensaver_timeout.as_str(),
             media_image_type: settings.media_image_type.as_str(),
             show_hidden: settings.show_hidden,
+            show_original_filenames: settings.show_original_filenames,
             region: settings.region.as_str(),
         },
     ) {
@@ -644,6 +661,10 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
         )
         .to_string(),
         show_hidden: config.settings.show_hidden.unwrap_or(snapshot.show_hidden),
+        show_original_filenames: config
+            .settings
+            .show_original_filenames
+            .unwrap_or(snapshot.show_original_filenames),
         region: normalize_region(
             config
                 .settings

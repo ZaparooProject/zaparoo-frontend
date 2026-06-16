@@ -95,6 +95,12 @@ pub struct MediaItem {
     pub system: System,
     #[serde(default)]
     pub tags: Vec<TagInfo>,
+    /// Subset of `tags` whose values differ across same-named siblings of this
+    /// title (region, disc, rev, builddate, lang, ...), already ordered by
+    /// Core's display priority. Omitted when the title has nothing to
+    /// disambiguate. Rendered as variant badges in the browse UI.
+    #[serde(default)]
+    pub disambiguating_tags: Vec<TagInfo>,
     /// Path relative to the system's root (`SearchResultMedia.relativePath`).
     /// `None` when Core was unable to derive one (e.g. media outside any
     /// indexed root).
@@ -238,6 +244,11 @@ pub struct BrowseEntry {
     /// Core can populate this on singleton media-container directories.
     #[serde(default)]
     pub tags: Vec<TagInfo>,
+    /// Subset of `tags` whose values differ across same-named siblings of this
+    /// title, ordered by Core's display priority. Omitted when there is
+    /// nothing to disambiguate. Rendered as variant badges in the browse UI.
+    #[serde(default)]
+    pub disambiguating_tags: Vec<TagInfo>,
     /// When `false`, Core has confirmed this media has no cover image in
     /// its properties tables. Defaults to `true` when the field is absent
     /// (older Core builds don't send it) so cover requests are still made.
@@ -261,6 +272,7 @@ impl Default for BrowseEntry {
             group: String::new(),
             description: String::new(),
             tags: Vec::new(),
+            disambiguating_tags: Vec::new(),
             // Default to true so callers that don't set this field (tests,
             // struct-update syntax) still request covers from Core.
             has_cover: true,
@@ -1192,7 +1204,35 @@ mod tests {
             r#"{"results":[{"name":"G","path":"/p","zapScript":"s","system":{"id":"NES"}}]}"#;
         let result: MediaSearchResult = serde_json::from_str(json).expect("parse");
         assert!(result.results[0].tags.is_empty());
+        assert!(result.results[0].disambiguating_tags.is_empty());
         assert!(result.results[0].relative_path.is_none());
+    }
+
+    #[test]
+    fn media_search_item_parses_disambiguating_tags() {
+        let json = r#"{"results":[{
+            "name":"Sonic","path":"/p","zapScript":"s","system":{"id":"Genesis"},
+            "tags":[{"tag":"us","type":"region"},{"tag":"1","type":"disc"}],
+            "disambiguatingTags":[{"tag":"us","type":"region"},{"tag":"1","type":"disc"}]
+        }]}"#;
+        let result: MediaSearchResult = serde_json::from_str(json).expect("parse");
+        let item = &result.results[0];
+        assert_eq!(item.disambiguating_tags.len(), 2);
+        assert_eq!(item.disambiguating_tags[0].tag, "us");
+        assert_eq!(item.disambiguating_tags[0].tag_type, "region");
+        assert_eq!(item.disambiguating_tags[1].tag_type, "disc");
+    }
+
+    #[test]
+    fn browse_entry_parses_disambiguating_tags() {
+        let json = r#"{
+            "name":"Sonic","path":"/p","type":"media",
+            "disambiguatingTags":[{"tag":"eu","type":"region"}]
+        }"#;
+        let entry: BrowseEntry = serde_json::from_str(json).expect("parse");
+        assert_eq!(entry.disambiguating_tags.len(), 1);
+        assert_eq!(entry.disambiguating_tags[0].tag, "eu");
+        assert_eq!(entry.disambiguating_tags[0].tag_type, "region");
     }
 
     #[test]

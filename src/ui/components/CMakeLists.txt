@@ -33,6 +33,7 @@ qt_add_qml_module(
         RapidScrollIndicator.qml
         ScreensaverOverlay.qml
         ScreenStateOverlay.qml
+        ScrollingCaption.qml
         SettingsField.qml
         SettingsSectionHeader.qml
         StatusIcon.qml

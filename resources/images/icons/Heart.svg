@@ -1,3 +1,11 @@
-<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
-  <path fill="#fff" d="M128 224 34 132C12 110 10 75 29 52c22-27 62-29 86-5l13 13 13-13c24-24 64-22 86 5 19 23 17 58-5 80l-94 92Z"/>
+<svg width="256" height="256" viewBox="-16 -16 288 288" xmlns="http://www.w3.org/2000/svg">
+  <!-- Two-tone favorite marker: an amber (Theme.accent) heart with a keyline in
+       Theme.textVariant (the dim variant tone), built as a keyline-coloured
+       heart under the amber fill of the same path. The keyline layer extends
+       past the fill so its outset reads as an outline; the widened viewBox keeps
+       it from clipping. Plain fill + stroke only (no paint-order/effects) so it
+       renders identically under Qt's software SVG path. NOTE: textVariant is a
+       light tone, so the keyline adds little contrast on light cover art. -->
+  <path fill="#8a8ab2" stroke="#8a8ab2" stroke-width="22" stroke-linejoin="round" stroke-linecap="round" d="M128 224 34 132C12 110 10 75 29 52c22-27 62-29 86-5l13 13 13-13c24-24 64-22 86 5 19 23 17 58-5 80l-94 92Z"/>
+  <path fill="#FFB347" d="M128 224 34 132C12 110 10 75 29 52c22-27 62-29 86-5l13 13 13-13c24-24 64-22 86 5 19 23 17 58-5 80l-94 92Z"/>
 </svg>

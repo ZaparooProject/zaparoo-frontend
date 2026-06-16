@@ -32,6 +32,11 @@ QtObject {
     // Text
     readonly property color textPrimary: "#ffffff"
     readonly property color textLabel: "#888888"
+    // Variant/disambiguation suffix tone — a muted lavender-grey that reads as
+    // secondary metadata next to the title without competing with it, and
+    // stays legible on `surfaceCard` and on the CRT path. Drawn after the name
+    // in the inline caption (see `ScrollingCaption.qml`).
+    readonly property color textVariant: "#8a8ab2"
     // Accent — static warm amber used for selection highlights.
     readonly property color accent: "#FFB347"
     // System logo tint tokens — two ramps, selected by Tile based on focus state.

@@ -55,6 +55,9 @@ const LAUNCHER_ID_ROLE: i32 = 256 + 5;
 const FAVORITE_ROLE: i32 = 256 + 6;
 const FILE_STEM_ROLE: i32 = 256 + 7;
 const HIDDEN_ROLE: i32 = 256 + 8;
+// History entries carry no tags; the role exists only so the shared
+// grid/list delegates (which require it for media rows) bind cleanly here.
+const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 9;
 
 // Page size for the initial load and every cursor follow-up. Core caps
 // `limit` at 100; history rows are tiny (one tile + one caption per row)
@@ -110,6 +113,11 @@ pub struct RecentsModelRust {
     // is active (cleared on reset or out-of-range).
     detail_prefetch_row: Option<i32>,
     cover_requests_paused: bool,
+    // Mirrors the global `Show original filenames` setting; when true the
+    // `name` role, `name_at()`, and the resume banner show the original
+    // filename (sans extension). Bound from QML; flipping re-emits
+    // `dataChanged(NAME_ROLE)` and re-syncs the resume banner.
+    show_original_filenames: bool,
     current_detail_media_key: Option<MediaKey>,
     current_detail_media_id: Option<i64>,
     detail_seq: Arc<AtomicU64>,
@@ -177,6 +185,7 @@ pub mod ffi {
         #[qproperty(QString, detail_prefetch_key_next)]
         #[qproperty(QString, detail_prefetch_key_prev)]
         #[qproperty(bool, cover_requests_paused)]
+        #[qproperty(bool, show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
         type RecentsModel = super::RecentsModelRust;
 
         #[qinvokable]
@@ -192,7 +201,16 @@ pub mod ffi {
         fn launch_resume(self: Pin<&mut RecentsModel>);
 
         #[qinvokable]
+        fn set_show_original_filenames(self: Pin<&mut RecentsModel>, value: bool);
+
+        #[qinvokable]
         fn name_at(self: &RecentsModel, index: i32) -> QString;
+
+        // Always empty — media history carries no disambiguating tags. Present
+        // so the shared MediaListScreen active-label tags provider can call it
+        // uniformly across models.
+        #[qinvokable]
+        fn disambiguating_tags_at(self: &RecentsModel, index: i32) -> QString;
 
         #[qinvokable]
         fn path_at(self: &RecentsModel, index: i32) -> QString;
@@ -432,7 +450,14 @@ impl ffi::RecentsModel {
         }
         let entry = &self.entries[index.row() as usize];
         match role {
-            NAME_ROLE => QVariant::from(&QString::from(entry.media_name.as_str())),
+            NAME_ROLE => QVariant::from(&QString::from(
+                display_name(
+                    &entry.media_name,
+                    &entry.media_path,
+                    self.show_original_filenames,
+                )
+                .as_str(),
+            )),
             PATH_ROLE => QVariant::from(&QString::from(entry.media_path.as_str())),
             SYSTEM_ID_ROLE => QVariant::from(&QString::from(entry.system_id.as_str())),
             COVER_KEY_ROLE => QVariant::from(&QString::from(
@@ -445,6 +470,7 @@ impl ffi::RecentsModel {
                 &entry.media_name,
             ))),
             HIDDEN_ROLE => QVariant::from(&false),
+            DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::default()),
             _ => QVariant::default(),
         }
     }
@@ -459,6 +485,10 @@ impl ffi::RecentsModel {
         h.insert(FAVORITE_ROLE, QByteArray::from("favorite"));
         h.insert(FILE_STEM_ROLE, QByteArray::from("fileStem"));
         h.insert(HIDDEN_ROLE, QByteArray::from("hidden"));
+        h.insert(
+            DISAMBIGUATING_TAGS_ROLE,
+            QByteArray::from("disambiguatingTags"),
+        );
         h
     }
 
@@ -690,7 +720,45 @@ impl ffi::RecentsModel {
         if index < 0 || index >= self.count {
             return QString::default();
         }
-        QString::from(self.entries[index as usize].media_name.as_str())
+        {
+            let entry = &self.entries[index as usize];
+            QString::from(
+                display_name(
+                    &entry.media_name,
+                    &entry.media_path,
+                    self.show_original_filenames,
+                )
+                .as_str(),
+            )
+        }
+    }
+
+    #[allow(
+        clippy::unused_self,
+        reason = "matches the shared model invokable signature; history has no tags"
+    )]
+    fn disambiguating_tags_at(&self, _index: i32) -> QString {
+        QString::default()
+    }
+
+    fn set_show_original_filenames(mut self: Pin<&mut Self>, value: bool) {
+        if self.show_original_filenames == value {
+            return;
+        }
+        self.as_mut().rust_mut().show_original_filenames = value;
+        self.as_mut().show_original_filenames_changed();
+        let last_row = self.count - 1;
+        if last_row >= 0 {
+            let mut roles = QList::<i32>::default();
+            roles.append(NAME_ROLE);
+            let parent = QModelIndex::default();
+            let top_left = self.as_mut().index(0, 0, &parent);
+            let bottom_right = self.as_mut().index(last_row, 0, &parent);
+            self.as_mut().data_changed(&top_left, &bottom_right, &roles);
+        }
+        // The resume banner is a computed property, not a row role — re-derive
+        // it so "Continue playing" reflects the new naming immediately.
+        sync_resume_state(self.as_mut());
     }
 
     fn path_at(&self, index: i32) -> QString {
@@ -969,7 +1037,14 @@ fn sync_resume_state(mut model: Pin<&mut ffi::RecentsModel>) {
     let (available, name, cover_key) = match model.resume_entry.as_ref() {
         Some(entry) => (
             true,
-            QString::from(entry.media_name.as_str()),
+            QString::from(
+                display_name(
+                    &entry.media_name,
+                    &entry.media_path,
+                    model.show_original_filenames,
+                )
+                .as_str(),
+            ),
             QString::from(resume_cover_key_for(entry, !model.cover_requests_paused).as_str()),
         ),
         None => (
@@ -1229,6 +1304,17 @@ fn file_stem_or_name(path: &str, name: &str) -> String {
         name.to_string()
     } else {
         stem.to_string()
+    }
+}
+
+/// Resolve the user-visible name, honoring the `show_original_filenames`
+/// setting: the original filename (sans extension) when enabled, otherwise
+/// Core's cleaned display name.
+fn display_name(name: &str, path: &str, show_original_filenames: bool) -> String {
+    if show_original_filenames {
+        file_stem_or_name(path, name)
+    } else {
+        name.to_string()
     }
 }
 

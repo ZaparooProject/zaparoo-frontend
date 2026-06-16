@@ -133,6 +133,11 @@ pub struct SettingsState {
     /// dimmed with a "Hidden" badge and the options menu offers "Unhide".
     #[serde(default)]
     pub show_hidden: bool,
+    /// When true, game items display their original filename (without the
+    /// extension) instead of Core's cleaned display name, everywhere a game
+    /// name is shown.
+    #[serde(default)]
+    pub show_original_filenames: bool,
     /// Region variant for system names and logos. `"auto"` (default) derives
     /// the region from the effective UI locale: `en` → US, `ja` → JP, all
     /// others → EU. Explicit values are `"us"`, `"eu"`, `"jp"`.
@@ -156,6 +161,7 @@ impl Default for SettingsState {
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
             show_hidden: false,
+            show_original_filenames: false,
             region: default_region(),
         }
     }
@@ -334,6 +340,7 @@ mod tests {
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),
                 show_hidden: true,
+                show_original_filenames: true,
                 region: "us".into(),
             },
         };

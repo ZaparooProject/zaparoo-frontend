@@ -20,6 +20,9 @@ Loader {
     required property string coverKey
     property int favorite: 0
     property bool hidden: false
+    // Newline-joined disambiguating-tag tokens (region, disc, rev, ...).
+    // Default empty so hosts that don't wire it render no variant badges.
+    property string disambiguatingTags: ""
     // Optional pulse counter — incremented by the host when the user
     // commits on the focused tile (forward navigation or game launch, which
     // share one push-in cue). Tile.qml reads it via `parent.activatePulse`

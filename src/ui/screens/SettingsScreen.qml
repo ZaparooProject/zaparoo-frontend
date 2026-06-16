@@ -149,6 +149,11 @@ Item {
             id: "showHidden",
             label: qsTr("Show hidden items")
         });
+        out.push({
+            kind: "field",
+            id: "showOriginalFilenames",
+            label: qsTr("Show original filenames")
+        });
         return out;
     }
     readonly property var controlsInputFields: [
@@ -353,7 +358,7 @@ Item {
     }
 
     function _fieldControl(id: string): string {
-        if (id === "mouseEnabled" || id === "showHidden" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion")
+        if (id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion")
             return "toggle";
         if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout")
             return "navigate";
@@ -371,6 +376,8 @@ Item {
             return settings._visibleRescrapeExisting;
         if (id === "showHidden")
             return Browse.Settings.current_show_hidden;
+        if (id === "showOriginalFilenames")
+            return Browse.Settings.current_show_original_filenames;
         if (id === "reduceMotion")
             return Browse.Settings.current_reduce_motion;
         return Browse.Settings.current_mouse_enabled;
@@ -459,7 +466,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "mouseEnabled" || id === "showHidden" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion";
+        return id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion";
     }
     // True when the focused field is a list-picker row (Accept opens a
     // modal; left/right is a no-op — pickers don't cycle inline). Drives
@@ -832,6 +839,14 @@ Item {
         settings._reprojectBrowseModels();
     }
 
+    function _setShowOriginalFilenames(direction: int): void {
+        Browse.Settings.set_show_original_filenames(direction > 0);
+    }
+
+    function _toggleShowOriginalFilenames(): void {
+        Browse.Settings.set_show_original_filenames(!Browse.Settings.current_show_original_filenames);
+    }
+
     function _setMouseEnabled(direction: int): void {
         Browse.Settings.set_mouse_enabled(direction > 0);
     }
@@ -887,6 +902,8 @@ Item {
             settings._setMouseEnabled(direction);
         else if (id === "showHidden")
             settings._setShowHidden(direction);
+        else if (id === "showOriginalFilenames")
+            settings._setShowOriginalFilenames(direction);
         else if (id === "discoverArcadeAlternateVersions")
             settings._setDiscoverArcadeAlternateVersions(direction);
         else if (id === "debugLogging")
@@ -998,6 +1015,8 @@ Item {
                     settings._toggleMouseEnabled();
                 else if (id === "showHidden")
                     settings._toggleShowHidden();
+                else if (id === "showOriginalFilenames")
+                    settings._toggleShowOriginalFilenames();
                 else if (id === "discoverArcadeAlternateVersions")
                     settings._toggleDiscoverArcadeAlternateVersions();
                 else if (id === "debugLogging")
@@ -1287,6 +1306,8 @@ Item {
                                 settings._toggleMouseEnabled();
                             else if (row.modelData.id === "showHidden")
                                 settings._toggleShowHidden();
+                            else if (row.modelData.id === "showOriginalFilenames")
+                                settings._toggleShowOriginalFilenames();
                             else if (row.modelData.id === "discoverArcadeAlternateVersions")
                                 settings._toggleDiscoverArcadeAlternateVersions();
                             else if (row.modelData.id === "debugLogging")

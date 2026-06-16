@@ -59,21 +59,24 @@ TestCase {
             "fileStem": "D",
             "coverKey": "",
             "favorite": 0,
-            "hidden": false
+            "hidden": false,
+            "disambiguatingTags": ""
         });
         mediaModel.append({
             "name": "D (Disc 2)",
             "fileStem": "D",
             "coverKey": "",
             "favorite": 0,
-            "hidden": false
+            "hidden": false,
+            "disambiguatingTags": ""
         });
         mediaModel.append({
             "name": "Friendly Alias",
             "fileStem": "InternalContainer",
             "coverKey": "",
             "favorite": 0,
-            "hidden": false
+            "hidden": false,
+            "disambiguatingTags": ""
         });
         tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
         screen.mediaGrid.setCurrentIndexImmediate(0);
@@ -122,5 +125,32 @@ TestCase {
 
     function test_singleton_directory_alias_title_matches_between_grid_and_list(): void {
         assertGridAndListTitle(2, "Friendly Alias");
+    }
+
+    // A disambiguating-tag token renders inline after the name, in both layouts,
+    // without being focused (the always-visible top token is what lets users
+    // tell same-named variants apart at a glance across a grid).
+    function test_disambiguating_token_renders_inline_in_grid_and_list(): void {
+        mediaModel.append({
+            "name": "Sonic CD",
+            "fileStem": "Sonic CD",
+            "coverKey": "",
+            "favorite": 0,
+            "hidden": false,
+            "disambiguatingTags": "US"
+        });
+        const idx = mediaModel.count - 1;
+        tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
+
+        Browse.Settings.current_browse_layout = "grid";
+        screen.mediaGrid.setCurrentIndexImmediate(idx);
+        tryVerify(() => hasVisibleText(screen.mediaGrid, "Sonic CD"), 1000, "grid name should render");
+        tryVerify(() => hasVisibleText(screen.mediaGrid, "US"), 1000, "grid token should render inline");
+
+        Browse.Settings.current_browse_layout = "list";
+        screen.mediaGrid.setCurrentIndexImmediate(idx);
+        tryCompare(screen.listCard, "visible", true);
+        tryVerify(() => hasVisibleText(screen.listCard, "Sonic CD"), 1000, "list name should render");
+        tryVerify(() => hasVisibleText(screen.listCard, "US"), 1000, "list token should render inline");
     }
 }

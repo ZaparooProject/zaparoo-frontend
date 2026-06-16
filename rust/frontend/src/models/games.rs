@@ -32,7 +32,9 @@
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
 use crate::models::nav_timing::NavTiming;
-use crate::models::tag_utils::tag_display_value;
+use crate::models::tag_utils::{
+    disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
+};
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
@@ -75,6 +77,12 @@ const FAVORITE_ROLE: i32 = 256 + 8;
 const DESCRIPTION_ROLE: i32 = 256 + 9;
 const FILE_STEM_ROLE: i32 = 256 + 10;
 const HIDDEN_ROLE: i32 = 256 + 11;
+// Newline-joined short tokens for Core's `disambiguatingTags` (e.g.
+// "US\nDisc 2"), already ordered by display priority. Empty when the title
+// has nothing to disambiguate. A joined string (rather than a list role)
+// keeps the QVariant simple and is robust under MiSTer's AOT QML; the
+// delegate splits on newlines.
+const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 12;
 
 // Image types that Core's `media.image` endpoint can serve (per the API
 // docs). The carousel tail is filtered to this set so left/right never
@@ -157,6 +165,11 @@ const SUB_BATCH_FRAME_GAP_MS: u64 = 33;
 )]
 pub struct GamesModelRust {
     entries: Vec<BrowseEntry>,
+    // Parallel to `entries`: the sibling-diffed disambiguation display string
+    // per row (what tiles/list rows show as the inline token suffix). Recomputed
+    // whenever `entries` or `show_original_filenames` changes. See
+    // `compute_disambig_displays` / `recompute_disambig_tail`.
+    disambig_displays: Vec<String>,
     count: i32,
     loading: bool,
     loading_more: bool,
@@ -202,6 +215,11 @@ pub struct GamesModelRust {
     detail_prefetch_row: Option<i32>,
     cover_key_roles_enabled: bool,
     cover_requests_paused: bool,
+    // When true, the `name` role and `name_at()` return the original filename
+    // (without extension) instead of Core's cleaned display name. Bound from
+    // QML to the `Show original filenames` setting; flipping it re-emits
+    // `dataChanged(NAME_ROLE)` across every row so visible names update live.
+    show_original_filenames: bool,
     detail_image_keys: Vec<MediaKey>,
     // Watcher for the current initial-page subscription. Aborted on
     // every path swap so the prior watcher stops enqueuing callbacks
@@ -285,6 +303,7 @@ impl Default for GamesModelRust {
     fn default() -> Self {
         Self {
             entries: Vec::new(),
+            disambig_displays: Vec::new(),
             count: 0,
             loading: false,
             loading_more: false,
@@ -311,6 +330,7 @@ impl Default for GamesModelRust {
             detail_prefetch_row: None,
             cover_key_roles_enabled: true,
             cover_requests_paused: false,
+            show_original_filenames: false,
             detail_image_keys: Vec::new(),
             watcher: None,
             seq: Arc::new(AtomicU64::new(0)),
@@ -377,6 +397,7 @@ pub mod ffi {
         #[qproperty(QString, detail_prefetch_key_prev)]
         #[qproperty(bool, cover_key_roles_enabled)]
         #[qproperty(bool, cover_requests_paused)]
+        #[qproperty(bool, show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
         #[qproperty(i32, visible_first_row)]
         #[qproperty(i32, cover_max_size, READ, WRITE = set_cover_max_size, NOTIFY)]
         type GamesModel = super::GamesModelRust;
@@ -427,7 +448,13 @@ pub mod ffi {
         fn cancel_card_write(self: Pin<&mut GamesModel>);
 
         #[qinvokable]
+        fn set_show_original_filenames(self: Pin<&mut GamesModel>, value: bool);
+
+        #[qinvokable]
         fn name_at(self: &GamesModel, index: i32) -> QString;
+
+        #[qinvokable]
+        fn disambiguating_tags_at(self: &GamesModel, index: i32) -> QString;
 
         #[qinvokable]
         fn description_at(self: &GamesModel, index: i32) -> QString;
@@ -523,7 +550,9 @@ impl ffi::GamesModel {
         }
         let entry = &self.entries[index.row() as usize];
         match role {
-            NAME_ROLE => QVariant::from(&QString::from(display_title_for_entry(entry).as_ref())),
+            NAME_ROLE => QVariant::from(&QString::from(
+                display_name_for_entry(entry, self.show_original_filenames).as_ref(),
+            )),
             PATH_ROLE => QVariant::from(&QString::from(entry.path.as_str())),
             ZAP_SCRIPT_ROLE => QVariant::from(&QString::from(entry.zap_script.as_str())),
             SYSTEM_ID_ROLE => QVariant::from(&QString::from(entry_system_id(entry).as_str())),
@@ -547,6 +576,13 @@ impl ffi::GamesModel {
                 QVariant::from(&QString::from(file_stem_or_name(&entry.path, &entry.name)))
             }
             HIDDEN_ROLE => QVariant::from(&false),
+            // Sibling-diffed display string (common-affix trimmed against
+            // same-named neighbors); precomputed in `disambig_displays`.
+            DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::from(
+                self.disambig_displays
+                    .get(index.row() as usize)
+                    .map_or("", String::as_str),
+            )),
             _ => QVariant::default(),
         }
     }
@@ -564,6 +600,10 @@ impl ffi::GamesModel {
         h.insert(DESCRIPTION_ROLE, QByteArray::from("description"));
         h.insert(FILE_STEM_ROLE, QByteArray::from("fileStem"));
         h.insert(HIDDEN_ROLE, QByteArray::from("hidden"));
+        h.insert(
+            DISAMBIGUATING_TAGS_ROLE,
+            QByteArray::from("disambiguatingTags"),
+        );
         h
     }
 
@@ -867,7 +907,49 @@ impl ffi::GamesModel {
         if index < 0 || index >= self.count {
             return QString::default();
         }
-        QString::from(display_title_for_entry(&self.entries[index as usize]).as_ref())
+        QString::from(
+            display_name_for_entry(&self.entries[index as usize], self.show_original_filenames)
+                .as_ref(),
+        )
+    }
+
+    // Full (untrimmed) disambiguation tokens for the focused-item readout
+    // (ActiveLabel). Tiles show the sibling-diffed `disambig_displays`; the
+    // footer shows everything, space-joined.
+    fn disambiguating_tags_at(&self, index: i32) -> QString {
+        if index < 0 || index >= self.count {
+            return QString::default();
+        }
+        QString::from(
+            disambiguating_tag_labels(&self.entries[index as usize].disambiguating_tags)
+                .join(" ")
+                .as_str(),
+        )
+    }
+
+    fn set_show_original_filenames(mut self: Pin<&mut Self>, value: bool) {
+        if self.show_original_filenames == value {
+            return;
+        }
+        self.as_mut().rust_mut().show_original_filenames = value;
+        self.as_mut().show_original_filenames_changed();
+        // The displayed name drives sibling grouping, so the trimmed tag
+        // displays change too (with the toggle on, names are distinct and
+        // nothing groups). Recompute them before re-emitting.
+        let displays = compute_disambig_displays(&self.entries, value);
+        self.as_mut().rust_mut().disambig_displays = displays;
+        // Every visible name role is now stale — re-emit name + tags across all
+        // rows so the grid caption, list rows, and active label refresh in place.
+        let last_row = self.count - 1;
+        if last_row >= 0 {
+            let mut roles = QList::<i32>::default();
+            roles.append(NAME_ROLE);
+            roles.append(DISAMBIGUATING_TAGS_ROLE);
+            let parent = QModelIndex::default();
+            let top_left = self.as_mut().index(0, 0, &parent);
+            let bottom_right = self.as_mut().index(last_row, 0, &parent);
+            self.as_mut().data_changed(&top_left, &bottom_right, &roles);
+        }
     }
 
     fn description_at(&self, index: i32) -> QString {
@@ -1219,6 +1301,7 @@ impl ffi::GamesModel {
         if !self.entries.is_empty() {
             self.as_mut().begin_reset_model();
             self.as_mut().rust_mut().entries.clear();
+            self.as_mut().rust_mut().disambig_displays.clear();
             self.as_mut().rust_mut().count = 0;
             self.as_mut().end_reset_model();
             self.as_mut().count_changed();
@@ -1616,6 +1699,78 @@ fn display_title_for_entry(entry: &BrowseEntry) -> std::borrow::Cow<'_, str> {
     } else {
         std::borrow::Cow::Borrowed(entry.name.as_str())
     }
+}
+
+/// Resolve the user-visible name for an entry, honoring the
+/// `show_original_filenames` setting. When enabled, the original filename
+/// (without extension) is preferred over Core's cleaned display name.
+fn display_name_for_entry(
+    entry: &BrowseEntry,
+    show_original_filenames: bool,
+) -> std::borrow::Cow<'_, str> {
+    if show_original_filenames {
+        std::borrow::Cow::Owned(file_stem_or_name(&entry.path, &entry.name))
+    } else {
+        display_title_for_entry(entry)
+    }
+}
+
+/// Build the per-row sibling-diffed disambiguation display strings for the full
+/// `entries` slice. Grouping keys off the displayed name so the
+/// original-filename toggle (distinct names) naturally disables grouping.
+fn compute_disambig_displays(
+    entries: &[BrowseEntry],
+    show_original_filenames: bool,
+) -> Vec<String> {
+    let rows: Vec<(String, Vec<String>)> = entries
+        .iter()
+        .map(|e| {
+            (
+                display_name_for_entry(e, show_original_filenames).into_owned(),
+                disambiguating_tag_labels(&e.disambiguating_tags),
+            )
+        })
+        .collect();
+    sibling_disambiguation_displays(&rows)
+}
+
+/// After appending rows starting at `insert_first`, recompute the disambiguation
+/// displays for the boundary group (which may have grown) plus everything after
+/// it, and splice the result onto `disambig_displays`. Cheaper than recomputing
+/// the whole vec on every page append, and correct because sibling groups are
+/// local runs of equal name. Returns the boundary group's start index so the
+/// caller can re-emit `dataChanged` for the pre-existing rows it touched.
+fn recompute_disambig_tail(mut model: Pin<&mut ffi::GamesModel>, insert_first: usize) -> usize {
+    let show_original = model.show_original_filenames;
+    let (group_start, new_tail) = {
+        let entries = &model.entries;
+        let total = entries.len();
+        let mut group_start = insert_first.min(total);
+        if group_start > 0 {
+            let boundary =
+                display_name_for_entry(&entries[group_start - 1], show_original).into_owned();
+            while group_start > 0
+                && display_name_for_entry(&entries[group_start - 1], show_original).as_ref()
+                    == boundary.as_str()
+            {
+                group_start -= 1;
+            }
+        }
+        let rows: Vec<(String, Vec<String>)> = entries[group_start..total]
+            .iter()
+            .map(|e| {
+                (
+                    display_name_for_entry(e, show_original).into_owned(),
+                    disambiguating_tag_labels(&e.disambiguating_tags),
+                )
+            })
+            .collect();
+        (group_start, sibling_disambiguation_displays(&rows))
+    };
+    let displays = &mut model.as_mut().rust_mut().disambig_displays;
+    displays.truncate(group_start);
+    displays.extend(new_tail);
+    group_start
 }
 
 fn file_stem_or_name(path: &str, name: &str) -> String {
@@ -2652,8 +2807,10 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
         dir_count, total, has_next_page, "games: apply_initial_page"
     );
     let reset_started = Instant::now();
+    let displays = compute_disambig_displays(&entries, model.show_original_filenames);
     model.as_mut().begin_reset_model();
     model.as_mut().rust_mut().entries = entries;
+    model.as_mut().rust_mut().disambig_displays = displays;
     model.as_mut().rust_mut().count = count;
     model.as_mut().rust_mut().next_cursor = next_cursor;
     // Property setters run BEFORE `end_reset_model` so Main.qml's
@@ -2806,8 +2963,25 @@ fn insert_sub_batch(mut model: Pin<&mut ffi::GamesModel>, batch: Vec<BrowseEntry
     model.as_mut().begin_insert_rows(&parent, first, last);
     model.as_mut().rust_mut().entries.extend(batch);
     model.as_mut().rust_mut().count = first.saturating_add(new_count);
+    // Recompute sibling-diff displays for the boundary group + the new rows
+    // before `end_insert_rows`, so the inserted delegates read fresh values on
+    // first paint.
+    let group_start = recompute_disambig_tail(model.as_mut(), first as usize);
     model.as_mut().end_insert_rows();
     model.as_mut().count_changed();
+    // Pre-existing rows in the boundary group may now trim differently because
+    // the group grew — refresh just those.
+    let group_start = i32::try_from(group_start).unwrap_or(0);
+    if group_start < first {
+        let mut roles = QList::<i32>::default();
+        roles.append(DISAMBIGUATING_TAGS_ROLE);
+        let parent = QModelIndex::default();
+        let top_left = model.as_mut().index(group_start, 0, &parent);
+        let bottom_right = model.as_mut().index(first - 1, 0, &parent);
+        model
+            .as_mut()
+            .data_changed(&top_left, &bottom_right, &roles);
+    }
 }
 
 fn apply_append_page(

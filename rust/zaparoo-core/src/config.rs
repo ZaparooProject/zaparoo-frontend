@@ -60,6 +60,7 @@ pub struct SettingsConfig {
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
     pub show_hidden: Option<bool>,
+    pub show_original_filenames: Option<bool>,
     pub region: Option<String>,
 }
 
@@ -82,6 +83,7 @@ pub struct SettingsMirror<'a> {
     pub screensaver_timeout: &'a str,
     pub media_image_type: &'a str,
     pub show_hidden: bool,
+    pub show_original_filenames: bool,
     pub region: &'a str,
 }
 
@@ -166,6 +168,7 @@ struct RawSettings {
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
     show_hidden: Option<bool>,
+    show_original_filenames: Option<bool>,
     region: Option<String>,
 }
 
@@ -265,6 +268,7 @@ pub fn load_config(path: &Path) -> Config {
             .media_image_type
             .map(|value| value.trim().to_string()),
         show_hidden: raw.settings.show_hidden,
+        show_original_filenames: raw.settings.show_original_filenames,
         region: raw.settings.region.map(|value| value.trim().to_string()),
     };
     cfg.notice = NoticeConfig {
@@ -357,6 +361,10 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     settings.insert(
         "show_hidden".into(),
         toml::Value::Boolean(mirror.show_hidden),
+    );
+    settings.insert(
+        "show_original_filenames".into(),
+        toml::Value::Boolean(mirror.show_original_filenames),
     );
     settings.insert(
         "region".into(),
@@ -701,6 +709,7 @@ mod tests {
                 screensaver_timeout: "300",
                 media_image_type: "auto",
                 show_hidden: true,
+                show_original_filenames: true,
                 region: "us",
             },
         )
@@ -719,6 +728,7 @@ mod tests {
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
         assert_eq!(cfg.settings.show_hidden, Some(true));
+        assert_eq!(cfg.settings.show_original_filenames, Some(true));
         assert_eq!(cfg.settings.region.as_deref(), Some("us"));
         assert!(cfg.debug_logging);
     }
@@ -744,6 +754,7 @@ mod tests {
                 screensaver_timeout: "60",
                 media_image_type: "auto",
                 show_hidden: false,
+                show_original_filenames: false,
                 region: "auto",
             },
         )
@@ -785,6 +796,7 @@ mod tests {
                 screensaver_timeout: "off",
                 media_image_type: "auto",
                 show_hidden: false,
+                show_original_filenames: false,
                 region: "auto",
             },
         )

@@ -544,6 +544,9 @@ Item {
                 required property string coverKey
                 required property int favorite
                 required property bool hidden
+                // Newline-joined disambiguating-tag tokens (empty for models
+                // without variants). Every Browse model exposes this role.
+                required property string disambiguatingTags
 
                 readonly property int cellPage: Math.floor(index / root.pageSize)
                 readonly property int cellLocal: index % root.pageSize
@@ -695,6 +698,7 @@ Item {
                     coverKey: cellItem._gatedCoverKey
                     favorite: cellItem.favorite
                     hidden: cellItem.hidden
+                    disambiguatingTags: cellItem.disambiguatingTags
                     activatePulse: root.activatePulse
                     releasePulse: root.releasePulse
                     settling: root.screenSettling

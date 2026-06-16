@@ -264,6 +264,7 @@ fn media_item_from_browse_entry(entry: BrowseEntry) -> MediaItem {
             ..Default::default()
         },
         tags: entry.tags,
+        disambiguating_tags: entry.disambiguating_tags,
         relative_path: if entry.relative_path.is_empty() {
             None
         } else {

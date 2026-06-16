@@ -31,6 +31,9 @@ const CATEGORY_ROLE: i32 = 256 + 3;
 const FAVORITE_ROLE: i32 = 256 + 4;
 const FILE_STEM_ROLE: i32 = 256 + 5;
 const HIDDEN_ROLE: i32 = 256 + 6;
+// Systems have no disambiguating tags; the role exists only so the shared
+// grid/list delegates (which require it for media rows) bind cleanly here.
+const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 7;
 
 pub struct SystemInfo {
     pub id: String,
@@ -354,6 +357,7 @@ impl ffi::SystemsModel {
             CATEGORY_ROLE => QVariant::from(&QString::from(s.category.as_str())),
             FAVORITE_ROLE => QVariant::from(&0_i32),
             HIDDEN_ROLE => QVariant::from(&s.hidden),
+            DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::default()),
             _ => QVariant::default(),
         }
     }
@@ -366,6 +370,10 @@ impl ffi::SystemsModel {
         h.insert(FAVORITE_ROLE, QByteArray::from("favorite"));
         h.insert(FILE_STEM_ROLE, QByteArray::from("fileStem"));
         h.insert(HIDDEN_ROLE, QByteArray::from("hidden"));
+        h.insert(
+            DISAMBIGUATING_TAGS_ROLE,
+            QByteArray::from("disambiguatingTags"),
+        );
         h
     }
 

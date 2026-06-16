@@ -76,6 +76,11 @@ Item {
     readonly property bool delegateFavorite: parent.favorite !== 0
     // qmllint disable missing-property compiler
     readonly property bool delegateHidden: parent.hidden === true
+    // qmllint disable missing-property compiler
+    // Newline-joined disambiguating-tag tokens (region, disc, rev, ...).
+    // Empty for items with no variants. Rendered as pills over the cover in
+    // the default theme; appended inline to the caption in CRT mode.
+    readonly property string delegateDisambiguatingTags: parent.disambiguatingTags ?? ""
     // Pulse counter forwarded by TileLoader — increment to trigger the
     // push-in cue on the focused tile. Every button-like action (folder
     // drill-in, system select, game launch) shares this single cue, so
@@ -121,10 +126,12 @@ Item {
     readonly property int _captionGap: Sizing.pctH(0.4)
     readonly property int _captionTextSize: Sizing.fontSize(2.2)
     readonly property int _tileCornerRadius: root._surfaceProfile ? root._surfaceProfile.cornerRadius : Sizing.cornerRadius
-    readonly property int _captionTextMaxWidth: Math.max(0, root.width - 2 * root._tileCornerRadius)
-    readonly property int _textMeasureSlack: Theme.crtNativePath ? 0 : 2
-    readonly property int _captionMeasuredWidth: Math.ceil(Math.max(captionMetrics.advanceWidth, captionMetrics.boundingRect.width) + root._textMeasureSlack)
-    readonly property int _captionTextWidth: Math.min(root._captionTextMaxWidth, root._captionMeasuredWidth)
+    // Width available to the bottom caption. A half-corner-radius inset on each
+    // side keeps glyphs clear of the rounded corners while giving the title a
+    // bit more room than the old full-radius inset. ScrollingCaption does its
+    // own measuring/eliding/marquee inside this width.
+    readonly property int _captionSideInset: Sizing.half(root._tileCornerRadius)
+    readonly property int _captionTextMaxWidth: Math.max(0, root.width - 2 * root._captionSideInset)
 
     // Focused styling (ring + focused cover ramp) is withheld until the host
     // marks focus ready via `delegateFocusReady`. This keeps a default-index
@@ -532,48 +539,31 @@ Item {
         clip: true
     }
 
-    // Bottom caption strip (caption mode only). Single line, ellipsised
-    // when long. The Text item itself is centered on an integer x and
-    // the glyph run is left-aligned inside it; `Text.AlignHCenter` can
-    // place bitmap glyphs on a half-pixel when the tile width and text
-    // width have opposite parity, which softens Bongo in CRT mode.
-    // Tints to `textPrimary` on the focused tile so the selection reads
-    // at a glance even when the focus outline ring is outside the eye's
-    // centre — matches the procedural fallback's focus tint above.
+    // Bottom caption (caption mode only). Single line carrying the name plus an
+    // inline dim suffix of disambiguating tokens; ScrollingCaption centers and
+    // elides it, pins the top token after the name elides, and marquees the
+    // full string while this tile is the focused selection (reduce-motion falls
+    // back to a static elide).
     //
-    // The strip sits flush at the card's bottom edge so the title
-    // visually owns the bottom of the tile rather than hovering above
-    // a band of card padding. Horizontal margins clear `cornerRadius`
-    // so glyph descenders never enter the rounded-corner region (the
-    // card's surfaceCard fill curves away there, so a glyph past the
-    // inset would paint against whatever sits behind the tile).
-    // Vertically, the centred glyph lands well inside the focus
-    // ring's inner mask zone (which extends `_outlineGap +
-    // _outlineWidth` from the bottom edge), so the text background
-    // remains surfaceCard even on a focused tile.
-    TextMetrics {
-        id: captionMetrics
-
-        text: root.delegateName
-        font.family: Theme.fontUi
-        font.pixelSize: root._captionTextSize
-    }
-
-    Text {
+    // The strip sits flush at the card's bottom edge so the title visually owns
+    // the bottom of the tile. The width clears `cornerRadius` on both sides so
+    // glyphs never enter the rounded-corner region. The text lands well inside
+    // the focus ring's inner mask zone, so its background stays surfaceCard even
+    // on a focused tile. Tints to `textPrimary` on the focused tile so the
+    // selection reads at a glance.
+    ScrollingCaption {
         id: caption
 
-        x: Sizing.center(parent.width, width)
-        y: parent.height - root._captionHeight + Sizing.center(root._captionHeight, height)
-        width: root._captionTextWidth
-        height: root._captionTextSize
+        x: root._captionSideInset
+        y: parent.height - root._captionHeight
+        width: root._captionTextMaxWidth
+        height: root._captionHeight
         visible: root.showCaption
-        text: root.delegateName
-        font.family: Theme.fontUi
-        font.pixelSize: root._captionTextSize
-        color: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
-        elide: Text.ElideRight
-        horizontalAlignment: Text.AlignLeft
-        verticalAlignment: Text.AlignVCenter
-        renderType: Text.NativeRendering
+        centerContent: true
+        focused: root._focusedSelection
+        name: root.delegateName
+        tags: root.delegateDisambiguatingTags
+        fontPixelSize: root._captionTextSize
+        nameColor: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
     }
 }
