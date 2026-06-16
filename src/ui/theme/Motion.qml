@@ -31,5 +31,7 @@ QtObject {
 
     // Collapse all durations to 0 under reduce-motion so Behaviors that
     // use dur() resolve instantly without per-call branching.
-    function dur(ms: int): int { return enabled ? ms : 0; }
+    function dur(ms: int): int {
+        return enabled ? ms : 0;
+    }
 }

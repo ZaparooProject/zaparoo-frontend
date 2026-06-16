@@ -37,6 +37,12 @@ Item {
     // whose id matches. Empty string or no match falls back to 0.
     property string initialId: ""
     property int currentIndex: 0
+    // False until the user moves the selection within an open modal. Gates the
+    // row border-color fade so the initial selection set on open (jumping from
+    // the default index 0 to the `initialId` match) snaps instead of
+    // cross-fading the row 0 highlight off and the real row on. Every user move
+    // arms it, so keyboard navigation fades exactly as before.
+    property bool _navArmed: false
 
     // Push-in scale for the activated row, mirroring the tile push-in.
     property real _pressScale: 1.0
@@ -81,6 +87,7 @@ Item {
             }
         }
         viewport.contentY = 0;
+        modal._navArmed = false;
         modal.currentIndex = next;
         modal._scrollCurrentIntoView();
         modal._pressScale = 1.0;
@@ -102,6 +109,7 @@ Item {
     function move(delta: int): void {
         if (modal.entries.length <= 0)
             return;
+        modal._navArmed = true;
         const len = modal.entries.length;
         modal.currentIndex = ((modal.currentIndex + delta) % len + len) % len;
     }
@@ -196,8 +204,10 @@ Item {
                             scale: row.index === modal.currentIndex ? modal._pressScale : 1.0
 
                             Behavior on border.color {
-                                enabled: Motion.enabled
-                                ColorAnimation { duration: Motion.dur(Motion.settleMs) }
+                                enabled: Motion.enabled && modal._navArmed
+                                ColorAnimation {
+                                    duration: Motion.dur(Motion.settleMs)
+                                }
                             }
 
                             Text {
@@ -220,7 +230,10 @@ Item {
                                 hoverEnabled: true
                                 acceptedButtons: Qt.LeftButton
                                 cursorShape: Qt.PointingHandCursor
-                                onEntered: modal.currentIndex = row.index
+                                onEntered: {
+                                    modal._navArmed = true;
+                                    modal.currentIndex = row.index;
+                                }
                                 onClicked: modal._commitAccept(row.modelData.id)
                             }
                         }

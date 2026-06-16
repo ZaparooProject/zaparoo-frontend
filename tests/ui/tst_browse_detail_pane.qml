@@ -40,12 +40,21 @@ TestCase {
 
     Component {
         id: noTitlePaneComp
-        BrowseDetailPane { width: 320; height: 240; showTitle: false }
+        BrowseDetailPane {
+            width: 320
+            height: 240
+            showTitle: false
+        }
     }
 
     Component {
         id: reserveNavPaneComp
-        BrowseDetailPane { width: 320; height: 240; showTitle: false; reserveImageNav: true }
+        BrowseDetailPane {
+            width: 320
+            height: 240
+            showTitle: false
+            reserveImageNav: true
+        }
     }
 
     function resetPane(): void {
@@ -56,7 +65,6 @@ TestCase {
         pane.detailTags = "";
         pane.coverKey = "";
         pane._lastGoodCoverSource = "";
-        pane._heldDetailRows = [];
         wait(1);
     }
 
@@ -150,30 +158,32 @@ TestCase {
         paneNav.destroy();
     }
 
-    // Regression: when meta is still loading (loading: true) and the live tags
-    // are value-less, the table must display the last-good (held) rows, not the
-    // blank ones. Once loading settles (loading: false), the live rows win even
-    // if they are empty, so a genuinely metadata-less item shows blank.
-    function test_metadata_hold_while_loading(): void {
-        // Prime the hold with real values.
+    // Regression (stale-metadata flash): the detail table tracks the focused
+    // row's live tags directly, never the previous row's values. The model
+    // keeps current_detail_tags identity-correct on every move (an immediate
+    // peek shows cached/local rows or a clean blank), so the moment the live
+    // tags go value-less the table must reflect that — not hold the prior
+    // item's metadata.
+    function test_metadata_tracks_live_tags(): void {
+        // One item with real values.
         pane.loading = false;
         pane.detailTags = "Year\t1990\nGenre\tAction";
         wait(1);
-        // Move to a new item: live tags are the blank synchronous set; loading is true.
+        verify(pane._displayRows.length > 0, "real rows must be shown");
+        verify((pane._displayRows[0].value ?? "") !== "", "real row value must be present");
+
+        // Move to a value-less item while a fetch is pending: the table must
+        // show the blank live rows immediately, never the previous 1990/Action.
         pane.loading = true;
         pane.detailTags = "Year\t\nGenre\t\nPlayers\t\nDeveloper\t\nPublisher\t\nRating\t";
         wait(1);
-        const table = findChild(pane, "detailTagTable");
-        verify(table.visible, "tag table must remain visible while held rows exist and loading");
-        // The held rows carry Year=1990; confirm the held data is being used.
-        // We access _displayRows via the model that drives the Repeater.
-        verify(pane._displayRows.length > 0, "displayRows must be the held rows, not empty");
-        verify((pane._displayRows[0].value ?? "") !== "", "held row value must be non-empty while loading with blank live tags");
+        verify(pane._displayRows[0].value === "" || pane._displayRows[0].value === undefined, "blank live rows must be shown at once, never the previous item's values");
 
-        // Once loading settles, the live (blank) rows replace the held ones.
+        // A genuinely metadata-less item (empty tags) shows no table at all.
+        pane.detailTags = "";
         pane.loading = false;
         wait(1);
-        verify(pane._displayRows[0].value === "" || pane._displayRows[0].value === undefined, "after loading, live (blank) rows must be shown");
+        verify(!findChild(pane, "detailTagTable").visible, "tag table must be hidden when the item has no metadata");
     }
 
     function test_cover_hold_hidden_with_no_prior_cover(): void {

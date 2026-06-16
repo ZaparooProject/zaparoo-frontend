@@ -40,6 +40,11 @@ Item {
     property bool detailReserveImageNav: false
     property var detailIdentityForIndex: null
     property var loadDetailForIndex: null
+    // Optional immediate (non-debounced) detail hook. Defaults (when null) to
+    // the model's `peek_detail_at`; GamesScreen overrides it with
+    // `peek_description_at`. Keeps the detail table identity-correct the instant
+    // the focus moves, so it never shows the previous row's metadata.
+    property var peekDetailForIndex: null
     property var clearDetailAction: null
     property var retryAction: null
     property var acceptAction: null
@@ -75,6 +80,18 @@ Item {
     property bool active: true
     property bool gridFocused: true
     property bool optimisticLoading: false
+    // False until the user takes control of focus (first input). Forwarded to
+    // the grid tiles as `ringFadeReady` so the programmatic restore reseat
+    // snaps instead of cross-fading the wrong tile's ring.
+    property bool _focusArmed: false
+    // Set true once the selection has been finalized from persisted state
+    // (restoreSelection for favorites/recents; Main.qml's
+    // `_setGamesRestoreIndex` for games). Combined with `_focusArmed` into
+    // `_focusReady`, which gates whether the grid tiles and list rows render
+    // selection at all - so the default index 0 never paints before restore
+    // lands on a cold-start / forward entry.
+    property bool _restoreDone: false
+    readonly property bool _focusReady: root._focusArmed || root._restoreDone
     property bool detailRapidScrollActive: false
     property bool detailRapidIndicatorActive: detailRapidScrollActive
     property string detailRapidScrollAction: ""
@@ -140,6 +157,18 @@ Item {
             mediaGrid.pulseActivate();
     }
 
+    // Settle the push-in cue back to rest after a launch that keeps the
+    // frontend on the same screen (a launcher that does not take the FPGA or
+    // quit us, e.g. an Audio track). Routed like pulseActivate to whichever
+    // layout is live. Not called for forward navigation, which transitions the
+    // screen and resets the cue off-screen on its own.
+    function releaseActivate(): void {
+        if (root._listLayout)
+            listCard.releasePulse++;
+        else
+            mediaGrid.releaseActivate();
+    }
+
     function _count(): int {
         return root.mediaModel !== null ? root.mediaModel.count : 0;
     }
@@ -167,6 +196,9 @@ Item {
     function restoreSelection(): void {
         if (root._count() <= 0)
             return;
+        // The model is loaded; the selection is now finalized (either the
+        // saved path below or the default index 0). Let the tiles/rows render.
+        root._restoreDone = true;
         const path = typeof root.restoreSelectionPath === "function" ? (root.restoreSelectionPath() ?? "") : (root.mediaState !== null ? (root.mediaState.selected_path ?? "") : "");
         if (path === "")
             return;
@@ -193,6 +225,7 @@ Item {
     function _focusIndex(index: int): void {
         if (index < 0 || index >= mediaGrid.itemCount)
             return;
+        root._focusArmed = true;
         mediaGrid.currentIndex = index;
     }
 
@@ -283,6 +316,8 @@ Item {
         if ((action === "left" || action === "right" || action === "up" || action === "down" || action === "context_menu") && root._gateHide)
             return;
 
+        root._focusArmed = true;
+
         if (action === "left") {
             if (root._listLayout && typeof root.listLeftAction === "function")
                 root.listLeftAction();
@@ -362,8 +397,13 @@ Item {
         onDeferred: {
             const i = _idx;
             _idx = -1;
-            if (i >= 0 && root.mediaModel !== null)
+            if (i >= 0 && root.mediaModel !== null) {
                 root.mediaModel.launch_at(i);
+                // Settle the push-in back to rest. If the launch takes the FPGA
+                // or kills us the release is never seen; if it stays on the page
+                // (e.g. an Audio track) the cue does not stick pushed in.
+                root.releaseActivate();
+            }
         }
     }
 
@@ -376,6 +416,7 @@ Item {
         rapidScrollActive: root.detailRapidScrollActive
         identityForIndex: root.detailIdentityForIndex
         loadForIndex: root.loadDetailForIndex
+        peekForIndex: root.peekDetailForIndex
         clearDetail: root.clearDetailAction
         mediaModel: root.mediaModel
     }
@@ -413,6 +454,7 @@ Item {
         totalItemsOverride: root.totalItemsOverride
         targetVisibleRowCount: root.targetVisibleRowCount
         currentIndex: mediaGrid.currentIndex
+        focusReady: root._focusReady
         detailTitle: listCard.currentName
         detailCoverKey: root.detailRapidScrollActive ? root.detailPlaceholderKey : (root._detailImageKey() !== "" ? root._detailImageKey() : listCard.currentCoverKey)
         detailShowDescription: root.detailShowDescription
@@ -450,6 +492,8 @@ Item {
         anchors.bottomMargin: root.gridBottomMargin
         focused: root.gridFocused
         screenSettling: !root.active
+        ringFadeReady: root._focusArmed
+        focusReady: root._focusReady
         model: root.mediaModel
         delegate: Tile {
             layoutProfile: root._gridLayoutProfile

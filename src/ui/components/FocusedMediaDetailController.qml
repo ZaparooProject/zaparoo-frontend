@@ -16,6 +16,11 @@ Item {
     property var mediaModel: null
     property var identityForIndex: null
     property var loadForIndex: null
+    // Optional immediate (non-debounced) hook fired the moment the focused row
+    // changes, so the detail pane reflects THIS row at once (cached/local
+    // metadata or a clean blank) instead of holding the previous row's values
+    // through the load debounce. Defaults to the model's `peek_detail_at`.
+    property var peekForIndex: null
     property var clearDetail: null
     property bool clearOnDisable: true
     property bool rapidScrollActive: false
@@ -23,6 +28,9 @@ Item {
     property string _requestedKey: ""
     property string _pendingKey: ""
     property int _pendingIndex: -1
+    // Identity the immediate peek last ran for, so a repeated schedule for the
+    // same row does not re-peek.
+    property string _peekedKey: ""
 
     visible: false
 
@@ -62,8 +70,16 @@ Item {
         root._requestedKey = "";
         root._pendingKey = "";
         root._pendingIndex = -1;
+        root._peekedKey = "";
         if (clearDetail)
             root._clearDetail();
+    }
+
+    function _peek(index: int): void {
+        if (typeof root.peekForIndex === "function")
+            root.peekForIndex(index);
+        else if (root.mediaModel !== null && typeof root.mediaModel.peek_detail_at === "function")
+            root.mediaModel.peek_detail_at(index);
     }
 
     function _schedule(force: bool): void {
@@ -77,6 +93,13 @@ Item {
         if (key === "") {
             root._resetTransientState(true);
             return;
+        }
+        // Reflect the focused row immediately (cached/local metadata or a clean
+        // blank), before the debounce, so the table never shows the previous
+        // row's values during the load window.
+        if (root._peekedKey !== key) {
+            root._peekedKey = key;
+            root._peek(root.currentIndex);
         }
         if (!force && key === root._requestedKey)
             return;

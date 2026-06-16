@@ -69,7 +69,11 @@ MainLayout {
     // reduce-motion setting. Keeping Motion dependency-free (no
     // Browse import) means Zaparoo.Theme stays independent; the app
     // layer is the only place that crosses the module boundary.
-    Binding { target: Motion; property: "enabled"; value: !Browse.Settings.current_reduce_motion }
+    Binding {
+        target: Motion
+        property: "enabled"
+        value: !Browse.Settings.current_reduce_motion
+    }
 
     // Bound here (not in GamesScreen.qml) because `set_system` can fire
     // from the accept handler before the games screen mounts; binding
@@ -228,13 +232,16 @@ MainLayout {
         root._startupTrace("startup/qml Component.onCompleted", "savedScreen=" + savedScreen, "initialActiveScreen=" + root.activeScreen, "startupRestorePending=" + root._startupRestorePending, "connectionState=" + Browse.AppStatus.connection_state);
         Browse.FavoritesModel.cover_requests_paused = root.activeScreen !== root.screenFavorites;
         Browse.RecentsModel.cover_requests_paused = root.activeScreen !== root.screenRecents;
-        // If the catalog is already ready, fire the restore here so
-        // the cascade (set_category → SystemsModel reset → seed
-        // currentIndex → set_system → GamesModel reset) lands before
-        // first paint. Otherwise the CategoriesModel.onModelReset
-        // Connection below fires it on first delivery.
-        if (Browse.CategoriesModel.count > 0)
-            root.hubScreen.restoreFromCategoriesReset();
+        // Fire the restore here so focus is seated and marked ready before
+        // first paint. When the catalog is already ready the cascade
+        // (set_category → SystemsModel reset → seed currentIndex →
+        // set_system → GamesModel reset) also lands now. On a cold boot the
+        // catalog is empty (it is in-memory only, never persisted), so the
+        // call only marks focus ready — without it the Hub paints with no
+        // focus ring until Core connects and the onModelReset Connection
+        // below first runs the restore. The cascade is deferred to that
+        // same onModelReset, which re-runs this once the catalog lands.
+        root.hubScreen.restoreFromCategoriesReset();
         root._maybeArmHubResumeFocus();
         // Open the commercial-use notice on first paint of an unacked
         // install. Sits in front of the media-DB first-run modal in the
@@ -872,6 +879,10 @@ MainLayout {
         const savedSystem = root.activeScreen === root.screenGames ? (Browse.GamesState.system_id !== "" ? Browse.GamesState.system_id : Browse.SystemsState.system_id) : Browse.SystemsState.system_id;
         const idx = savedSystem === "" ? -1 : Browse.SystemsModel.index_for_system_id(savedSystem);
         root.systemsScreen.systemsGrid.setCurrentIndexImmediate(idx >= 0 ? idx : 0);
+        // Focus is now finalized from persisted state; let the grid render
+        // focus (snapped, since the screen's _focusArmed is still false until
+        // the first user input).
+        root.systemsScreen._restoreDone = true;
         if (idx >= 0) {
             Browse.GamesModel.set_system(savedSystem);
             const stack = Browse.GamesState.path_stack;
@@ -889,6 +900,9 @@ MainLayout {
         root.gamesScreen.suppressSelectionPersist = true;
         root.gamesScreen.gamesGrid.setCurrentIndexImmediate(index);
         root.gamesScreen.suppressSelectionPersist = false;
+        // Selection finalized from persisted state; let the grid render focus
+        // (snapped, since _focusArmed is still false until the first input).
+        root.gamesScreen._restoreDone = true;
     }
 
     function _restoreGamesScreenSelection(): bool {

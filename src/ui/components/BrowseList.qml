@@ -11,6 +11,13 @@ Item {
 
     required property var model
     property int currentIndex: 0
+    // Gates whether the selected row paints its highlight (selection surface +
+    // accent bar + bright text). The host leaves it false until the screen's
+    // selection is finalized (restore or first input) so the default row 0
+    // never lights up during the window before restore points currentIndex at
+    // the saved item on a cold start. Default true so unwired hosts highlight
+    // the selection normally.
+    property bool focusReady: true
     property string currentName: ""
     property string currentCoverKey: ""
     property int totalItemsOverride: -1
@@ -62,6 +69,11 @@ Item {
     // the Tile activation-pulse vocabulary. Forward navigation and game
     // launch share this single cue.
     property int activatePulse: 0
+    // Release counter for the row nudge. Incremented by the host to settle the
+    // selected row's slide back to 0 after a launch that keeps the frontend on
+    // the same screen. Forward navigation never increments it (the screen
+    // transition resets the nudge off-screen via screenSettling).
+    property int releasePulse: 0
     // When true, resets the row nudge back to 0 so a held slide does
     // not persist when the screen is shown again. Set by the host to
     // !active while the screen is off-screen.
@@ -159,6 +171,11 @@ Item {
             height: root.rowHeight
 
             readonly property bool selected: row.index === root.currentIndex
+            // Visual highlight is withheld until the host marks focus ready, so
+            // the default row 0 never paints the accent before restore lands.
+            // `selected` itself stays ungated so the detail-pane bindings below
+            // still track content during the pre-restore window.
+            readonly property bool _highlightVisible: row.selected && root.focusReady
             readonly property string displayTitle: row.name !== "" ? row.name : row.fileStem
             // Activate nudge: selected row slides right on accept/activate,
             // identical to the tile push-in trigger. Driven by root.activatePulse
@@ -169,7 +186,10 @@ Item {
 
             Behavior on _nudge {
                 enabled: Motion.enabled && !root.rapidScrollActive
-                NumberAnimation { duration: Motion.dur(Motion.settleMs); easing.type: Easing.OutCubic }
+                NumberAnimation {
+                    duration: Motion.dur(Motion.settleMs)
+                    easing.type: Easing.OutCubic
+                }
             }
 
             Connections {
@@ -177,6 +197,10 @@ Item {
                 function onActivatePulseChanged(): void {
                     if (row.selected)
                         row._nudge = Sizing.pctW(1.2);
+                }
+                function onReleasePulseChanged(): void {
+                    if (row.selected)
+                        row._nudge = 0;
                 }
                 function onScreenSettlingChanged(): void {
                     if (root.screenSettling)
@@ -204,7 +228,7 @@ Item {
                 x: row._nudge
                 width: parent.width - row._nudge
                 height: parent.height
-                visible: row.selected
+                visible: row._highlightVisible
 
                 Rectangle {
                     anchors.fill: parent
@@ -227,7 +251,7 @@ Item {
                 anchors.bottom: parent.bottom
                 width: root._selectionAccentWidth
                 color: Theme.accent
-                visible: row.selected
+                visible: row._highlightVisible
                 radius: Math.max(0, Sizing.px(width / 3))
             }
 
@@ -238,7 +262,7 @@ Item {
                 anchors.rightMargin: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) + root._rowTextRightPadding : root._rowTextRightPadding
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.displayTitle
-                color: row.selected ? Theme.textPrimary : Theme.textLabel
+                color: row._highlightVisible ? Theme.textPrimary : Theme.textLabel
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontSize(2.9)
                 elide: Text.ElideRight

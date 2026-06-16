@@ -29,7 +29,9 @@ Item {
     property alias detailSuppressed: detailPane.detailSuppressed
     property alias listRapidScrollActive: browseList.rapidScrollActive
     property alias activatePulse: browseList.activatePulse
+    property alias releasePulse: browseList.releasePulse
     property alias screenSettling: browseList.screenSettling
+    property alias focusReady: browseList.focusReady
     property alias detailCanPreviousImage: detailPane.canPreviousImage
     property alias detailCanNextImage: detailPane.canNextImage
     property alias detailReserveImageNav: detailPane.reserveImageNav
@@ -102,5 +104,4 @@ Item {
         layoutProfile: root.layoutProfile
         showChrome: false
     }
-
 }

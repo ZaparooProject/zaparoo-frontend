@@ -82,6 +82,13 @@ Item {
     // there is no separate launch animation. Default to 0 so hosts that
     // do not wire it are silently no-ops.
     readonly property int delegateActivatePulse: parent.activatePulse ?? 0
+    // Release counter forwarded by TileLoader — increment to settle the
+    // push-in cue back to rest (scale 1.0). Fired only after a launch that
+    // keeps the frontend on the same screen (e.g. an Audio track that does
+    // not take the FPGA); forward navigation never fires it because the
+    // screen transition + `settling` already reset the held scale off-screen.
+    // Defaults to 0 so hosts that do not wire it are silently no-ops.
+    readonly property int delegateReleasePulse: parent.releasePulse ?? 0
     // `settling` is set true by the host screen when the screen becomes
     // inactive (off-screen). Used to reset a held push-in scale so the
     // tile is back at 1.0 before the screen is shown again.
@@ -92,6 +99,14 @@ Item {
     // cross-fading the wrong tile's ring on load. Defaults true for hosts
     // that do not wire it.
     readonly property bool delegateRingFadeReady: parent.ringFadeReady ?? true
+    // `focusReady` gates whether this tile renders its focused styling at all
+    // (ring + focused cover ramp), not merely whether the ring fade animates.
+    // The host leaves it false until the screen's focus index is finalized
+    // (programmatic restore or first input). Before that, a tile that happens
+    // to sit at the default index must not paint a ring, or the wrong tile
+    // flashes focused for the frames before restore corrects the index.
+    // Defaults true for hosts that do not wire it.
+    readonly property bool delegateFocusReady: parent.focusReady ?? true
     // qmllint enable missing-property
     property var layoutProfile: null
     readonly property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
@@ -117,7 +132,14 @@ Item {
     readonly property int _captionMeasuredWidth: Math.ceil(Math.max(captionMetrics.advanceWidth, captionMetrics.boundingRect.width) + root._textMeasureSlack)
     readonly property int _captionTextWidth: Math.min(root._captionTextMaxWidth, root._captionMeasuredWidth)
 
-    readonly property bool _focusedSelection: root.delegateIsSelected && root.delegateIsFocused
+    // Focused styling (ring + focused cover ramp) is withheld until the host
+    // marks focus ready via `delegateFocusReady`. This keeps a default-index
+    // tile from painting a ring during the window between first paint and the
+    // programmatic restore that finalizes the real selection — the source of
+    // the load-time "wrong tile flashes focused" bug. Once ready, the correct
+    // tile lights up; the `delegateRingFadeReady` gate below still governs
+    // whether that reveal snaps (restore) or cross-fades (user navigation).
+    readonly property bool _focusedSelection: root.delegateIsSelected && root.delegateIsFocused && root.delegateFocusReady
     // Ring opacity — fades 0→1 when focus lands, 1→0 when it leaves.
     // The Behavior below animates transitions; initial binding eval does
     // not trigger the Behavior, so a freshly-loaded focused delegate starts
@@ -177,9 +199,34 @@ Item {
     scale: root._activateScale
     transformOrigin: Item.Center
 
+    // Fire the push-in cue only for a genuine activation, never as a
+    // side effect of delegate creation. A freshly built delegate sees its
+    // `delegateActivatePulse` resolve from the `?? 0` fallback up to the
+    // current pulse, which fires this handler once during construction. When
+    // such a delegate is momentarily the focused selection (e.g. the Settings
+    // category grid rebuilt with a stale currentIndex on a page switch), that
+    // spurious change would restart the animation and leave the wrong tile
+    // pushed in. `_mounted` flips true one event-loop pass after completion,
+    // after every construction-time transient has settled, so only real pulse
+    // increments (always delivered well after mount) play the cue.
+    property bool _mounted: false
     onDelegateActivatePulseChanged: {
-        if (root._focusedSelection)
+        if (root._mounted && root._focusedSelection)
             activateAnim.restart();
+    }
+
+    // Settle the held push-in back to rest. Used when the activation kept us
+    // on the same screen (a launcher that did not take the FPGA), so the cue
+    // does not stay stuck pushed in. The `_mounted` guard ignores any
+    // construction-time pulse transient, matching the activate handler above.
+    onDelegateReleasePulseChanged: {
+        // Only the focused selection can be holding a push-in, so only it needs
+        // to settle back — matches the activate handler's gate and avoids
+        // starting a redundant animation on every tile in the grid.
+        if (root._mounted && root._focusedSelection) {
+            activateAnim.stop();
+            releaseAnim.restart();
+        }
     }
 
     // Bleed guard — stop and reset if the delegate is rebound to a
@@ -229,6 +276,18 @@ Item {
         easing.type: Easing.OutQuad
     }
 
+    // Release leg — settles the held push-in back to rest after a launch that
+    // stays on the page. Stops `activateAnim` first so a release that lands
+    // mid-push does not fight it. See `onDelegateReleasePulseChanged`.
+    NumberAnimation {
+        id: releaseAnim
+        target: root
+        property: "_activateScale"
+        to: 1.0
+        duration: Motion.dur(Motion.settleMs)
+        easing.type: Easing.OutQuad
+    }
+
     Component.onCompleted: {
         // Self-check the parent contract. Logs once at construction so
         // a future caller that drops Tile into a non-conforming wrapper
@@ -237,6 +296,11 @@ Item {
         // qmllint disable missing-property compiler
         if (typeof parent.isSelected !== "boolean" || typeof parent.isFocused !== "boolean" || typeof parent.name !== "string" || typeof parent.coverKey !== "string")
             console.warn("Tile: parent does not satisfy the delegate contract " + "(expected isSelected:bool, isFocused:bool, " + "name:string, coverKey:string)");
+        // Defer one event-loop pass so construction-time activate-pulse
+        // transients (see onDelegateActivatePulseChanged) do not fire the cue.
+        Qt.callLater(() => {
+            root._mounted = true;
+        });
     }
 
     function _startupTrace(stage: string, details: string): void {

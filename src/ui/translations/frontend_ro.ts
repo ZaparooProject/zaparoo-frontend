@@ -97,100 +97,100 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Se încarcă…</translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="196"/>
+        <location filename="../components/BrowseDetailPane.qml" line="167"/>
         <source>Year</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="196"/>
+        <location filename="../components/BrowseDetailPane.qml" line="167"/>
         <source>Yr</source>
         <comment>Short metadata label for Year; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="198"/>
+        <location filename="../components/BrowseDetailPane.qml" line="169"/>
         <source>Genre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="198"/>
+        <location filename="../components/BrowseDetailPane.qml" line="169"/>
         <source>Gen</source>
         <comment>Short metadata label for Genre; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="200"/>
+        <location filename="../components/BrowseDetailPane.qml" line="171"/>
         <source>Players</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="200"/>
+        <location filename="../components/BrowseDetailPane.qml" line="171"/>
         <source>Plyr</source>
         <comment>Short metadata label for Players; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="202"/>
+        <location filename="../components/BrowseDetailPane.qml" line="173"/>
         <source>Developer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="202"/>
+        <location filename="../components/BrowseDetailPane.qml" line="173"/>
         <source>Dev</source>
         <comment>Short metadata label for Developer; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="204"/>
+        <location filename="../components/BrowseDetailPane.qml" line="175"/>
         <source>Publisher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="204"/>
+        <location filename="../components/BrowseDetailPane.qml" line="175"/>
         <source>Pub</source>
         <comment>Short metadata label for Publisher; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="206"/>
+        <location filename="../components/BrowseDetailPane.qml" line="177"/>
         <source>Rating</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="206"/>
+        <location filename="../components/BrowseDetailPane.qml" line="177"/>
         <source>Rtg</source>
         <comment>Short metadata label for Rating; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="208"/>
+        <location filename="../components/BrowseDetailPane.qml" line="179"/>
         <source>Category</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="208"/>
+        <location filename="../components/BrowseDetailPane.qml" line="179"/>
         <source>Cat</source>
         <comment>Short metadata label for Category; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="210"/>
+        <location filename="../components/BrowseDetailPane.qml" line="181"/>
         <source>Release date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="210"/>
+        <location filename="../components/BrowseDetailPane.qml" line="181"/>
         <source>Date</source>
         <comment>Short metadata label for Release date; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="212"/>
+        <location filename="../components/BrowseDetailPane.qml" line="183"/>
         <source>Manufacturer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="212"/>
+        <location filename="../components/BrowseDetailPane.qml" line="183"/>
         <source>Mfr</source>
         <comment>Short metadata label for Manufacturer; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
@@ -425,8 +425,8 @@ Euskara - devilschile2</source>
 <context>
     <name>GamesScreen</name>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="127"/>
-        <location filename="../screens/GamesScreen.qml" line="162"/>
+        <location filename="../screens/GamesScreen.qml" line="128"/>
+        <location filename="../screens/GamesScreen.qml" line="163"/>
         <source>%1 files</source>
         <translation>%1 fișiere</translation>
     </message>
@@ -436,8 +436,8 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="136"/>
-        <location filename="../screens/GamesScreen.qml" line="163"/>
+        <location filename="../screens/GamesScreen.qml" line="137"/>
+        <location filename="../screens/GamesScreen.qml" line="164"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -447,7 +447,7 @@ Euskara - devilschile2</source>
         <translation>Se încarcă jocurile…</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="132"/>
+        <location filename="../screens/GamesScreen.qml" line="133"/>
         <source>Loading more…</source>
         <translation>Se încarcă mai multe…</translation>
     </message>
@@ -480,22 +480,22 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="149"/>
+        <location filename="../screens/HubScreen.qml" line="156"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="155"/>
+        <location filename="../screens/HubScreen.qml" line="162"/>
         <source>Favorites</source>
         <translation>Favorite</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="160"/>
+        <location filename="../screens/HubScreen.qml" line="167"/>
         <source>Recently Played</source>
         <translation>Recent Jucate</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="165"/>
+        <location filename="../screens/HubScreen.qml" line="172"/>
         <source>Settings &amp; Utilities</source>
         <translation type="unfinished"></translation>
     </message>
@@ -504,7 +504,7 @@ Euskara - devilschile2</source>
         <translation type="vanished">Setări</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="701"/>
+        <location filename="../screens/HubScreen.qml" line="722"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>Niciun sistem disponibil. Rulați Actualizare bază de date din Setări.</translation>
     </message>
@@ -553,138 +553,138 @@ Euskara - devilschile2</source>
 <context>
     <name>Main</name>
     <message>
-        <location filename="../app/Main.qml" line="1367"/>
+        <location filename="../app/Main.qml" line="1381"/>
         <source>Launch core</source>
         <translation>Lansare core</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1373"/>
-        <location filename="../app/Main.qml" line="1612"/>
+        <location filename="../app/Main.qml" line="1387"/>
+        <location filename="../app/Main.qml" line="1626"/>
         <source>Change launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1431"/>
+        <location filename="../app/Main.qml" line="1445"/>
         <source>Remove from favorites</source>
         <translation>Elimină din favorite</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1431"/>
+        <location filename="../app/Main.qml" line="1445"/>
         <source>Add to favorites</source>
         <translation>Adaugă la favorite</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1436"/>
+        <location filename="../app/Main.qml" line="1450"/>
         <source>Write to NFC token</source>
         <translation>Scriere pe token NFC</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1440"/>
+        <location filename="../app/Main.qml" line="1454"/>
         <source>QR code</source>
         <translation>Cod QR</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1415"/>
-        <location filename="../app/Main.qml" line="1450"/>
+        <location filename="../app/Main.qml" line="1429"/>
+        <location filename="../app/Main.qml" line="1464"/>
         <source>Launch game</source>
         <translation>Lansare joc</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2610"/>
+        <location filename="../app/Main.qml" line="2624"/>
         <source>Loading systems…</source>
         <translation>Se încarcă sistemele…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2616"/>
+        <location filename="../app/Main.qml" line="2630"/>
         <source>Loading favorites…</source>
         <translation>Se încarcă favoritele…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2612"/>
+        <location filename="../app/Main.qml" line="2626"/>
         <source>Loading games…</source>
         <translation>Se încarcă jocurile…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1380"/>
-        <location filename="../app/Main.qml" line="1403"/>
+        <location filename="../app/Main.qml" line="1394"/>
+        <location filename="../app/Main.qml" line="1417"/>
         <source>Update media database</source>
         <translation type="unfinished">Actualizare bază de date media</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1383"/>
-        <location filename="../app/Main.qml" line="1406"/>
+        <location filename="../app/Main.qml" line="1397"/>
+        <location filename="../app/Main.qml" line="1420"/>
         <source>Scrape metadata</source>
         <translation type="unfinished">Extragere metadate</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1388"/>
-        <location filename="../app/Main.qml" line="1397"/>
+        <location filename="../app/Main.qml" line="1402"/>
+        <location filename="../app/Main.qml" line="1411"/>
         <source>Unhide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1388"/>
-        <location filename="../app/Main.qml" line="1397"/>
+        <location filename="../app/Main.qml" line="1402"/>
+        <location filename="../app/Main.qml" line="1411"/>
         <source>Hide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1608"/>
+        <location filename="../app/Main.qml" line="1622"/>
         <source>Default</source>
         <translation type="unfinished">Implicit</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1608"/>
+        <location filename="../app/Main.qml" line="1622"/>
         <source>Current: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1932"/>
+        <location filename="../app/Main.qml" line="1946"/>
         <source>Saving launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1936"/>
+        <location filename="../app/Main.qml" line="1950"/>
         <source>Saving…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1950"/>
+        <location filename="../app/Main.qml" line="1964"/>
         <source>Launcher update failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1954"/>
+        <location filename="../app/Main.qml" line="1968"/>
         <source>Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1958"/>
+        <location filename="../app/Main.qml" line="1972"/>
         <source>Retry</source>
         <translation type="unfinished">Reîncercare</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1962"/>
+        <location filename="../app/Main.qml" line="1976"/>
         <source>Cancel</source>
         <translation type="unfinished">Anulare</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2614"/>
+        <location filename="../app/Main.qml" line="2628"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2618"/>
+        <location filename="../app/Main.qml" line="2632"/>
         <source>Loading recently played…</source>
         <translation>Se încarcă recent jucatele…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2620"/>
+        <location filename="../app/Main.qml" line="2634"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2622"/>
+        <location filename="../app/Main.qml" line="2636"/>
         <source>Loading…</source>
         <translation>Se încarcă…</translation>
     </message>
@@ -864,12 +864,12 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Se încarcă…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="395"/>
+        <location filename="../screens/MediaListScreen.qml" line="436"/>
         <source>%1 entries</source>
         <translation type="unfinished">%1 intrări</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="396"/>
+        <location filename="../screens/MediaListScreen.qml" line="437"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -892,7 +892,7 @@ Euskara - devilschile2</source>
         <translation>Nu</translation>
     </message>
     <message>
-        <location filename="../components/Modal.qml" line="246"/>
+        <location filename="../components/Modal.qml" line="256"/>
         <source>Cancel</source>
         <translation>Anulare</translation>
     </message>
@@ -1262,7 +1262,7 @@ Euskara - devilschile2</source>
         <translation>Stil A</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1358"/>
+        <location filename="../screens/SettingsScreen.qml" line="1368"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1406,7 +1406,7 @@ Euskara - devilschile2</source>
         <translation>Setări</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1346"/>
+        <location filename="../screens/SettingsScreen.qml" line="1356"/>
         <source>No settings available on this platform</source>
         <translation>Nicio setare disponibilă pe această platformă</translation>
     </message>
@@ -1414,24 +1414,24 @@ Euskara - devilschile2</source>
 <context>
     <name>SystemsScreen</name>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="229"/>
-        <location filename="../screens/SystemsScreen.qml" line="329"/>
+        <location filename="../screens/SystemsScreen.qml" line="236"/>
+        <location filename="../screens/SystemsScreen.qml" line="338"/>
         <source>%1 systems</source>
         <translation>%1 sisteme</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="230"/>
-        <location filename="../screens/SystemsScreen.qml" line="346"/>
+        <location filename="../screens/SystemsScreen.qml" line="237"/>
+        <location filename="../screens/SystemsScreen.qml" line="355"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="364"/>
+        <location filename="../screens/SystemsScreen.qml" line="373"/>
         <source>No systems in this category</source>
         <translation>Niciun sistem în această categorie</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="365"/>
+        <location filename="../screens/SystemsScreen.qml" line="374"/>
         <source>Loading systems…</source>
         <translation>Se încarcă sistemele…</translation>
     </message>
@@ -1439,7 +1439,7 @@ Euskara - devilschile2</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="475"/>
+        <location filename="../components/Tile.qml" line="539"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>

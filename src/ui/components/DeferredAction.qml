@@ -32,7 +32,7 @@ import Zaparoo.Theme
 Timer {
     id: ctl
 
-    signal deferred()
+    signal deferred
     interval: Motion.dur(Motion.pressMs)
     repeat: false
 

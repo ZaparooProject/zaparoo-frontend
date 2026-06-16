@@ -101,31 +101,13 @@ Item {
     // Holds the last resolved cover URL so we can display it during the
     // loading grace window instead of blanking the cover area.
     property url _lastGoodCoverSource: ""
-    // Holds the last metadata rows that carried real values. Displayed while a
-    // meta fetch is in flight and the live rows are still value-less, so the
-    // table does not blank-then-repopulate on every move. Mirrors coverHold.
-    property var _heldDetailRows: []
+    // The detail table tracks the focused row's metadata directly. The model
+    // keeps `current_detail_tags` identity-correct on every move — an immediate
+    // peek shows cached/local rows or a clean blank, never the previous row's
+    // values — so no client-side hold is needed. (The cover keeps its own hold;
+    // see `coverHold`/`_lastGoodCoverSource` below.)
+    readonly property var _displayRows: root._detailRows
 
-    // Live rows when they carry values (immediate swap on cached/preloaded meta)
-    // or when loading has settled (truthful blank for metadata-less items);
-    // held rows only while a fetch is in flight and the live rows are value-less.
-    readonly property var _displayRows: (root._rowsHaveContent(root._detailRows) || !root.loading) ? root._detailRows : root._heldDetailRows
-
-    onDetailTagsChanged: {
-        if (root._rowsHaveContent(root._detailRows))
-            root._heldDetailRows = root._detailRows;
-        // Do not reset _labelColumnNaturalWidth here. Label keys (Year,
-        // Genre, Players, Developer, Publisher, Rating) are the same six
-        // strings for every item, so the accumulated max width measured by
-        // TextMetrics on first delegate creation stays correct indefinitely.
-        // Resetting it to 0 mid-session causes a one-frame label collapse
-        // while the Repeater defers delegate recreation to the next update
-        // cycle — the flicker the hold mechanic is designed to prevent.
-    }
-    onDetailSuppressedChanged: {
-        if (root.detailSuppressed)
-            root._heldDetailRows = [];
-    }
     onLoadingChanged: root._updatePaneLoadingDelay()
     onLoadingDelayMsChanged: {
         root._updatePaneLoadingDelay();
@@ -171,17 +153,6 @@ Item {
             return;
         }
         coverLoadingDelayTimer.restart();
-    }
-
-    // Returns true if any row in `rows` carries a non-empty value string.
-    // Used to decide whether to capture the hold and whether to show live
-    // or held rows in the tag table.
-    function _rowsHaveContent(rows: var): bool {
-        for (let i = 0; i < rows.length; ++i) {
-            if ((rows[i].value ?? "") !== "")
-                return true;
-        }
-        return false;
     }
 
     function _tagLabel(fullLabel: string, shortLabel: string): var {

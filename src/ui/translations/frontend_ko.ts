@@ -97,100 +97,100 @@ Euskara - devilschile2</source>
         <translation type="unfinished">불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="196"/>
+        <location filename="../components/BrowseDetailPane.qml" line="167"/>
         <source>Year</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="196"/>
+        <location filename="../components/BrowseDetailPane.qml" line="167"/>
         <source>Yr</source>
         <comment>Short metadata label for Year; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="198"/>
+        <location filename="../components/BrowseDetailPane.qml" line="169"/>
         <source>Genre</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="198"/>
+        <location filename="../components/BrowseDetailPane.qml" line="169"/>
         <source>Gen</source>
         <comment>Short metadata label for Genre; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="200"/>
+        <location filename="../components/BrowseDetailPane.qml" line="171"/>
         <source>Players</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="200"/>
+        <location filename="../components/BrowseDetailPane.qml" line="171"/>
         <source>Plyr</source>
         <comment>Short metadata label for Players; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="202"/>
+        <location filename="../components/BrowseDetailPane.qml" line="173"/>
         <source>Developer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="202"/>
+        <location filename="../components/BrowseDetailPane.qml" line="173"/>
         <source>Dev</source>
         <comment>Short metadata label for Developer; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="204"/>
+        <location filename="../components/BrowseDetailPane.qml" line="175"/>
         <source>Publisher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="204"/>
+        <location filename="../components/BrowseDetailPane.qml" line="175"/>
         <source>Pub</source>
         <comment>Short metadata label for Publisher; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="206"/>
+        <location filename="../components/BrowseDetailPane.qml" line="177"/>
         <source>Rating</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="206"/>
+        <location filename="../components/BrowseDetailPane.qml" line="177"/>
         <source>Rtg</source>
         <comment>Short metadata label for Rating; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="208"/>
+        <location filename="../components/BrowseDetailPane.qml" line="179"/>
         <source>Category</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="208"/>
+        <location filename="../components/BrowseDetailPane.qml" line="179"/>
         <source>Cat</source>
         <comment>Short metadata label for Category; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="210"/>
+        <location filename="../components/BrowseDetailPane.qml" line="181"/>
         <source>Release date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="210"/>
+        <location filename="../components/BrowseDetailPane.qml" line="181"/>
         <source>Date</source>
         <comment>Short metadata label for Release date; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="212"/>
+        <location filename="../components/BrowseDetailPane.qml" line="183"/>
         <source>Manufacturer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/BrowseDetailPane.qml" line="212"/>
+        <location filename="../components/BrowseDetailPane.qml" line="183"/>
         <source>Mfr</source>
         <comment>Short metadata label for Manufacturer; keep 2-4 characters if possible</comment>
         <translation type="unfinished"></translation>
@@ -425,8 +425,8 @@ Euskara - devilschile2</source>
 <context>
     <name>GamesScreen</name>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="127"/>
-        <location filename="../screens/GamesScreen.qml" line="162"/>
+        <location filename="../screens/GamesScreen.qml" line="128"/>
+        <location filename="../screens/GamesScreen.qml" line="163"/>
         <source>%1 files</source>
         <translation>파일 %1개</translation>
     </message>
@@ -436,8 +436,8 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="136"/>
-        <location filename="../screens/GamesScreen.qml" line="163"/>
+        <location filename="../screens/GamesScreen.qml" line="137"/>
+        <location filename="../screens/GamesScreen.qml" line="164"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -452,7 +452,7 @@ Euskara - devilschile2</source>
         <translation>게임 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="132"/>
+        <location filename="../screens/GamesScreen.qml" line="133"/>
         <source>Loading more…</source>
         <translation>더 불러오는 중…</translation>
     </message>
@@ -480,22 +480,22 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="149"/>
+        <location filename="../screens/HubScreen.qml" line="156"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="155"/>
+        <location filename="../screens/HubScreen.qml" line="162"/>
         <source>Favorites</source>
         <translation>즐겨찾기</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="160"/>
+        <location filename="../screens/HubScreen.qml" line="167"/>
         <source>Recently Played</source>
         <translation>최근 플레이</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="165"/>
+        <location filename="../screens/HubScreen.qml" line="172"/>
         <source>Settings &amp; Utilities</source>
         <translation type="unfinished"></translation>
     </message>
@@ -504,7 +504,7 @@ Euskara - devilschile2</source>
         <translation type="vanished">설정</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="701"/>
+        <location filename="../screens/HubScreen.qml" line="722"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>사용 가능한 시스템이 없습니다. 설정에서 미디어 데이터베이스 업데이트를 실행하세요.</translation>
     </message>
@@ -553,138 +553,138 @@ Euskara - devilschile2</source>
 <context>
     <name>Main</name>
     <message>
-        <location filename="../app/Main.qml" line="1367"/>
+        <location filename="../app/Main.qml" line="1381"/>
         <source>Launch core</source>
         <translation>코어 실행</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1373"/>
-        <location filename="../app/Main.qml" line="1612"/>
+        <location filename="../app/Main.qml" line="1387"/>
+        <location filename="../app/Main.qml" line="1626"/>
         <source>Change launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1380"/>
-        <location filename="../app/Main.qml" line="1403"/>
+        <location filename="../app/Main.qml" line="1394"/>
+        <location filename="../app/Main.qml" line="1417"/>
         <source>Update media database</source>
         <translation type="unfinished">미디어 데이터베이스 업데이트</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1383"/>
-        <location filename="../app/Main.qml" line="1406"/>
+        <location filename="../app/Main.qml" line="1397"/>
+        <location filename="../app/Main.qml" line="1420"/>
         <source>Scrape metadata</source>
         <translation type="unfinished">메타데이터 수집</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1388"/>
-        <location filename="../app/Main.qml" line="1397"/>
+        <location filename="../app/Main.qml" line="1402"/>
+        <location filename="../app/Main.qml" line="1411"/>
         <source>Unhide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1388"/>
-        <location filename="../app/Main.qml" line="1397"/>
+        <location filename="../app/Main.qml" line="1402"/>
+        <location filename="../app/Main.qml" line="1411"/>
         <source>Hide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1415"/>
-        <location filename="../app/Main.qml" line="1450"/>
+        <location filename="../app/Main.qml" line="1429"/>
+        <location filename="../app/Main.qml" line="1464"/>
         <source>Launch game</source>
         <translation>게임 실행</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1431"/>
+        <location filename="../app/Main.qml" line="1445"/>
         <source>Remove from favorites</source>
         <translation>즐겨찾기에서 제거</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1431"/>
+        <location filename="../app/Main.qml" line="1445"/>
         <source>Add to favorites</source>
         <translation>즐겨찾기에 추가</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1436"/>
+        <location filename="../app/Main.qml" line="1450"/>
         <source>Write to NFC token</source>
         <translation>NFC 토큰에 쓰기</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1440"/>
+        <location filename="../app/Main.qml" line="1454"/>
         <source>QR code</source>
         <translation>QR 코드</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1608"/>
+        <location filename="../app/Main.qml" line="1622"/>
         <source>Default</source>
         <translation type="unfinished">기본값</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1608"/>
+        <location filename="../app/Main.qml" line="1622"/>
         <source>Current: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1932"/>
+        <location filename="../app/Main.qml" line="1946"/>
         <source>Saving launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1936"/>
+        <location filename="../app/Main.qml" line="1950"/>
         <source>Saving…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1950"/>
+        <location filename="../app/Main.qml" line="1964"/>
         <source>Launcher update failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1954"/>
+        <location filename="../app/Main.qml" line="1968"/>
         <source>Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1958"/>
+        <location filename="../app/Main.qml" line="1972"/>
         <source>Retry</source>
         <translation type="unfinished">다시 시도</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1962"/>
+        <location filename="../app/Main.qml" line="1976"/>
         <source>Cancel</source>
         <translation type="unfinished">취소</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2610"/>
+        <location filename="../app/Main.qml" line="2624"/>
         <source>Loading systems…</source>
         <translation>시스템 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2612"/>
+        <location filename="../app/Main.qml" line="2626"/>
         <source>Loading games…</source>
         <translation>게임 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2614"/>
+        <location filename="../app/Main.qml" line="2628"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2616"/>
+        <location filename="../app/Main.qml" line="2630"/>
         <source>Loading favorites…</source>
         <translation>즐겨찾기 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2618"/>
+        <location filename="../app/Main.qml" line="2632"/>
         <source>Loading recently played…</source>
         <translation>최근 플레이 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2620"/>
+        <location filename="../app/Main.qml" line="2634"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2622"/>
+        <location filename="../app/Main.qml" line="2636"/>
         <source>Loading…</source>
         <translation>불러오는 중…</translation>
     </message>
@@ -864,12 +864,12 @@ Euskara - devilschile2</source>
         <translation type="unfinished">불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="395"/>
+        <location filename="../screens/MediaListScreen.qml" line="436"/>
         <source>%1 entries</source>
         <translation type="unfinished">항목 %1개</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="396"/>
+        <location filename="../screens/MediaListScreen.qml" line="437"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -892,7 +892,7 @@ Euskara - devilschile2</source>
         <translation>아니요</translation>
     </message>
     <message>
-        <location filename="../components/Modal.qml" line="246"/>
+        <location filename="../components/Modal.qml" line="256"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
@@ -1312,7 +1312,7 @@ Euskara - devilschile2</source>
         <translation>%1초</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1358"/>
+        <location filename="../screens/SettingsScreen.qml" line="1368"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1406,7 +1406,7 @@ Euskara - devilschile2</source>
         <translation>설정</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1346"/>
+        <location filename="../screens/SettingsScreen.qml" line="1356"/>
         <source>No settings available on this platform</source>
         <translation>이 플랫폼에서는 설정을 사용할 수 없습니다</translation>
     </message>
@@ -1414,24 +1414,24 @@ Euskara - devilschile2</source>
 <context>
     <name>SystemsScreen</name>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="229"/>
-        <location filename="../screens/SystemsScreen.qml" line="329"/>
+        <location filename="../screens/SystemsScreen.qml" line="236"/>
+        <location filename="../screens/SystemsScreen.qml" line="338"/>
         <source>%1 systems</source>
         <translation>시스템 %1개</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="230"/>
-        <location filename="../screens/SystemsScreen.qml" line="346"/>
+        <location filename="../screens/SystemsScreen.qml" line="237"/>
+        <location filename="../screens/SystemsScreen.qml" line="355"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="364"/>
+        <location filename="../screens/SystemsScreen.qml" line="373"/>
         <source>No systems in this category</source>
         <translation>이 카테고리에는 시스템이 없습니다</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="365"/>
+        <location filename="../screens/SystemsScreen.qml" line="374"/>
         <source>Loading systems…</source>
         <translation>시스템 불러오는 중…</translation>
     </message>
@@ -1439,7 +1439,7 @@ Euskara - devilschile2</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="475"/>
+        <location filename="../components/Tile.qml" line="539"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>

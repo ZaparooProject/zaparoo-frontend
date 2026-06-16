@@ -847,7 +847,7 @@ QtObject {
             if (fnName === "sum")
                 // qmllint disable compiler
                 return args.reduce((total, entry) => total + entry, 0);
-                // qmllint enable compiler
+            // qmllint enable compiler
         }
 
         const numeric = Number(value);

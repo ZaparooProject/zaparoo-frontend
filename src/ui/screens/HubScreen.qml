@@ -102,6 +102,13 @@ Item {
     // wrong tile's focus ring. Every user-driven focus move happens after
     // this is armed, so navigation cross-fades exactly as before.
     property bool _focusArmed: false
+    // Set true once the load-time category restore has run. Combined with
+    // `_focusArmed` into `_focusReady`, which gates whether the tiles render
+    // focus at all — so the action row's default Resume selection never paints
+    // a ring during the window before `restoreFromCategoriesReset` corrects
+    // focus to the saved tile on a cold start.
+    property bool _restoreDone: false
+    readonly property bool _focusReady: hub._focusArmed || hub._restoreDone
     // Source-row index from the most recent cross. Used to make a
     // Down → Up (or Up → Down) round-trip return to the originating
     // tile, which the centered visual-nearest mapping in `_mapCrossRow`
@@ -235,6 +242,10 @@ Item {
     // category — otherwise the visible focus drifts off whichever
     // screen the user is on.
     function restoreFromCategoriesReset(): void {
+        // Focus is now being finalized from persisted state; let the tiles
+        // render focus from here on (snapped, since `_focusArmed` is still
+        // false until the first user input).
+        hub._restoreDone = true;
         const savedCategory = CategoryIds.canonicalize(Browse.HubState.category);
         const idx = savedCategory === "" ? -1 : Browse.CategoriesModel.index_for_category(savedCategory);
         const chosenCategoryIndex = idx >= 0 ? idx : 0;
@@ -270,6 +281,14 @@ Item {
         // point past the new category list).
         hub._crossSavedIndex = -1;
 
+        // Cold boot before Core delivers the catalog: focus was seated above
+        // (and `_restoreDone` set, so the focus ring paints immediately
+        // instead of waiting for the connection), but the set_category
+        // cascade needs the real catalog. Defer it — this function re-runs
+        // on CategoriesModel.onModelReset once the catalog lands, and the
+        // cascade fires then.
+        if (Browse.CategoriesModel.count <= 0)
+            return;
         if (Browse.SystemsModel.current_category === chosenCategory && Browse.SystemsModel.count > 0)
             return;
         Browse.SystemsModel.set_category(chosenCategory);
@@ -552,6 +571,7 @@ Item {
                     activatePulse: hub.activatePulse
                     settling: !hub.visible
                     ringFadeReady: hub._focusArmed
+                    focusReady: hub._focusReady
                 }
 
                 MouseArea {
@@ -639,6 +659,7 @@ Item {
                     activatePulse: hub.activatePulse
                     settling: !hub.visible
                     ringFadeReady: hub._focusArmed
+                    focusReady: hub._focusReady
                 }
 
                 MouseArea {

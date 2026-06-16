@@ -61,7 +61,18 @@ Item {
     // focused+selected delegate fires its cue. The same cue serves both
     // forward navigation and game launch.
     property int activatePulse: 0
-    function pulseActivate(): void { root.activatePulse++; }
+    function pulseActivate(): void {
+        root.activatePulse++;
+    }
+    // Release counter for the push-in cue. Callers increment via
+    // releaseActivate() to settle the focused tile back to rest after a launch
+    // that keeps the frontend on the same screen (e.g. an Audio track). Forward
+    // navigation never calls this — the screen transition + `settling` reset
+    // handle the held scale off-screen.
+    property int releasePulse: 0
+    function releaseActivate(): void {
+        root.releasePulse++;
+    }
     // When true, Tile delegates reset their push-in scale back to 1.0
     // so a held push-in from the previous visit does not persist when
     // the screen is shown again. Set by the host screen to `!active`
@@ -71,6 +82,11 @@ Item {
     // false until the user takes control of focus so the restore reseat
     // snaps; default true keeps the fade for hosts that do not wire it.
     property bool ringFadeReady: true
+    // Forwarded to each Tile's focus-visibility gate. Host screens leave this
+    // false until the grid's selection is finalized (restore or first input)
+    // so the default tile 0 never paints a ring before restore lands; default
+    // true keeps focus rendering on for hosts that do not wire it.
+    property bool focusReady: true
     property var layoutProfile: null
     readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
 
@@ -642,7 +658,7 @@ Item {
                     color: Theme.accent
                     radius: Math.max(0, Sizing.cornerRadius - Sizing.pctH(0.4))
                     antialiasing: true
-                    visible: cellItem.isSelected && root.focused && (root.rapidRenderMode || tileLoader.status !== Loader.Ready)
+                    visible: cellItem.isSelected && root.focused && root.focusReady && (root.rapidRenderMode || tileLoader.status !== Loader.Ready)
                 }
 
                 Rectangle {
@@ -684,8 +700,10 @@ Item {
                     favorite: cellItem.favorite
                     hidden: cellItem.hidden
                     activatePulse: root.activatePulse
+                    releasePulse: root.releasePulse
                     settling: root.screenSettling
                     ringFadeReady: root.ringFadeReady
+                    focusReady: root.focusReady
                 }
 
                 MouseArea {

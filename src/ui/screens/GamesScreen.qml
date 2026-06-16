@@ -61,6 +61,7 @@ MediaListScreen {
         return systemId !== "" && path !== "" ? systemId + "\n" + path : "";
     }
     loadDetailForIndex: index => Browse.GamesModel.load_description_at(index)
+    peekDetailForIndex: index => Browse.GamesModel.peek_description_at(index)
     clearDetailAction: () => Browse.GamesModel.clear_current_detail()
     restoreSelectionPath: () => {
         const selected = Browse.GamesState.selected_at_level;
@@ -209,6 +210,10 @@ MediaListScreen {
                 const idx = _launchIndex;
                 _launchIndex = -1;
                 Browse.GamesModel.launch_at(idx);
+                // Settle the push-in back to rest. Invisible when the launch
+                // takes the FPGA or kills us; prevents a stuck pushed-in tile
+                // when the launcher stays on the page (e.g. an Audio track).
+                games.releaseActivate();
             }
         }
     }

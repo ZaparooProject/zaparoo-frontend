@@ -923,7 +923,9 @@ Item {
         settings._rememberPageFocus();
         settings.currentPage = page;
         settings._restorePageFocus();
-        Qt.callLater(() => { settings._pageSwitching = false; });
+        Qt.callLater(() => {
+            settings._pageSwitching = false;
+        });
     }
 
     function _openPage(id: string): bool {
@@ -1131,7 +1133,15 @@ Item {
                     name: categoryCell.modelData.label
                     coverKey: categoryCell.modelData.coverKey
                     activatePulse: settings.activatePulse
-                    ringFadeReady: settings._focusArmed
+                    // Suppress the ring fade during a page switch. Returning to
+                    // the root grid rebuilds these tiles with the stale
+                    // subpage currentIndex (tile 0) before `_restorePageFocus`
+                    // points it at the remembered root tile, so an armed fade
+                    // would cross-fade the ring off tile 0 and onto the real
+                    // tile — the visible "tile 0 flashes then focus jumps" bug.
+                    // `_pageSwitching` gates it the same way SettingsField rows
+                    // suppress their own Behaviors during the switch.
+                    ringFadeReady: settings._focusArmed && !settings._pageSwitching
                 }
 
                 MouseArea {

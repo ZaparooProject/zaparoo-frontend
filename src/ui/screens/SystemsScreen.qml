@@ -48,6 +48,13 @@ Item {
     // that state restore performs on load snaps instead of cross-fading the
     // wrong tile's focus ring. User navigation cross-fades as before.
     property bool _focusArmed: false
+    // Set true once the load-time system restore has run (see Main.qml's
+    // `_restoreSystemsScreenSelection`). Combined with `_focusArmed` into
+    // `_focusReady`, which gates whether the grid tiles render focus at all —
+    // so the grid's default tile 0 never paints a ring during the window
+    // before restore points `currentIndex` at the saved system on a cold start.
+    property bool _restoreDone: false
+    readonly property bool _focusReady: systems._focusArmed || systems._restoreDone
     readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
     readonly property bool _crtGridLayout: Theme.crtNativePath && !systems._listLayout
     readonly property bool _crtListStrip: Theme.crtNativePath && systems._listLayout
@@ -245,6 +252,7 @@ Item {
         anchors.bottomMargin: systems._listProfile ? systems._listProfile.cardBottomMargin : Sizing.pctH(8)
         model: Browse.SystemsModel
         currentIndex: systemsGrid.currentIndex
+        focusReady: systems._focusReady
         layoutProfile: systems._viewProfile
         detailTitle: listCard.currentName
         detailCoverKey: listCard.currentCoverKey
@@ -276,6 +284,7 @@ Item {
         focused: systems.gridFocused
         screenSettling: !systems.active
         ringFadeReady: systems._focusArmed
+        focusReady: systems._focusReady
         model: Browse.SystemsModel
         layoutProfile: systems._viewProfile
         columnsOverride: systems._gridShape.columns

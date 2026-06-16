@@ -65,7 +65,9 @@ Item {
 
         Behavior on border.color {
             enabled: Motion.enabled && root.animateChanges
-            ColorAnimation { duration: Motion.dur(Motion.settleMs) }
+            ColorAnimation {
+                duration: Motion.dur(Motion.settleMs)
+            }
         }
     }
 
@@ -130,7 +132,9 @@ Item {
 
             Behavior on color {
                 enabled: Motion.enabled && root.animateChanges
-                ColorAnimation { duration: Motion.dur(Motion.settleMs) }
+                ColorAnimation {
+                    duration: Motion.dur(Motion.settleMs)
+                }
             }
         }
 
@@ -144,7 +148,10 @@ Item {
 
             Behavior on x {
                 enabled: Motion.enabled && root.animateChanges
-                NumberAnimation { duration: Motion.dur(Motion.settleMs); easing.type: Easing.OutCubic }
+                NumberAnimation {
+                    duration: Motion.dur(Motion.settleMs)
+                    easing.type: Easing.OutCubic
+                }
             }
         }
     }

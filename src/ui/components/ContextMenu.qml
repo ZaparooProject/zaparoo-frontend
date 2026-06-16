@@ -29,6 +29,11 @@ Item {
     // dynamic per-owner menus silently re-shuffled the index/action map.
     property var entries: []
     property int currentIndex: 0
+    // False until the user moves the selection within an open menu. Gates the
+    // row border-color fade so the index reset on open (back to 0 from a stale
+    // prior selection) snaps instead of cross-fading the old row off and row 0
+    // on. Every user move arms it, so navigation fades exactly as before.
+    property bool _navArmed: false
     property int bottomUnsafeHeight: Sizing.pctH(6) + Sizing.pctH(2)
 
     // Push-in scale for the activated row, mirroring the tile push-in.
@@ -68,6 +73,7 @@ Item {
 
     onOpenChanged: {
         if (open) {
+            menu._navArmed = false;
             currentIndex = 0;
             menu._pressScale = 1.0;
             pressAnim.stop();
@@ -98,6 +104,7 @@ Item {
     function move(delta: int): void {
         if (menu.entries.length <= 0)
             return;
+        menu._navArmed = true;
         menu.currentIndex = ((menu.currentIndex + delta) % menu.entries.length + menu.entries.length) % menu.entries.length;
     }
 
@@ -242,8 +249,10 @@ Item {
                     scale: row.index === menu.currentIndex ? menu._pressScale : 1.0
 
                     Behavior on border.color {
-                        enabled: Motion.enabled
-                        ColorAnimation { duration: Motion.dur(Motion.settleMs) }
+                        enabled: Motion.enabled && menu._navArmed
+                        ColorAnimation {
+                            duration: Motion.dur(Motion.settleMs)
+                        }
                     }
 
                     Text {
@@ -265,7 +274,10 @@ Item {
                         hoverEnabled: true
                         acceptedButtons: Qt.LeftButton
                         cursorShape: Qt.PointingHandCursor
-                        onEntered: menu.currentIndex = row.index
+                        onEntered: {
+                            menu._navArmed = true;
+                            menu.currentIndex = row.index;
+                        }
                         onClicked: menu._commitAccept(row.modelData.id)
                     }
                 }

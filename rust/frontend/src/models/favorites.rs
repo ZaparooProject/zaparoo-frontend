@@ -23,6 +23,7 @@
 // QR/card-write payloads prefer Core's portable ZapScript.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
+use crate::media_meta_cache::{global_media_meta_cache, MetaLookup};
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
@@ -198,6 +199,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn system_id_at(self: &FavoritesModel, index: i32) -> QString;
+
+        #[qinvokable]
+        fn peek_detail_at(self: Pin<&mut FavoritesModel>, index: i32);
 
         #[qinvokable]
         fn load_detail_at(self: Pin<&mut FavoritesModel>, index: i32);
@@ -633,6 +637,61 @@ impl ffi::FavoritesModel {
         QString::from(self.entries[index as usize].system.id.as_str())
     }
 
+    // Immediate, non-debounced sibling of `load_detail_at`. Called the moment
+    // the focused row changes so the detail table reflects THIS row at once —
+    // cached metadata (instant), a memoized blank, or a clean blank while a
+    // fetch is pending — instead of holding the previous row's values through
+    // the load debounce. Also warms neighboring rows' metadata so the next
+    // move is a synchronous cache hit. Never issues a foreground RPC.
+    fn peek_detail_at(mut self: Pin<&mut Self>, index: i32) {
+        self.as_mut()
+            .rust_mut()
+            .detail_seq
+            .fetch_add(1, Ordering::SeqCst);
+        if index < 0 || index >= self.count {
+            clear_current_detail_state(self.as_mut());
+            return;
+        }
+        self.as_mut().rust_mut().detail_prefetch_row = Some(index);
+        prefetch_around_cursor(&self.entries, self.count, index, self.cover_requests_paused);
+        let entry = &self.entries[index as usize];
+        let system = entry.system.id.clone();
+        let path = entry.path.clone();
+        let media_id = entry.media_id;
+        if system.trim().is_empty() || path.trim().is_empty() {
+            clear_current_detail_state(self.as_mut());
+            return;
+        }
+        let detail_key = match media_id {
+            Some(id) => MediaKey::with_media_id(system.clone(), path.clone(), id),
+            None => MediaKey::new(system.clone(), path.clone()),
+        }
+        .with_current_cover_preference();
+        self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
+        self.as_mut().rust_mut().current_detail_media_id = media_id;
+        sync_current_detail_image_key(self.as_mut());
+        refresh_adjacent_cover_prefetch(self.as_mut());
+
+        let meta_key = MediaKey::new(system.clone(), path.clone());
+        match global_media_meta_cache().lookup(&meta_key) {
+            MetaLookup::Hit(meta) => {
+                self.as_mut()
+                    .set_current_detail_tags(QString::from(detail_tags_from_meta(&meta).as_str()));
+                self.as_mut().set_current_detail_loading(false);
+            }
+            MetaLookup::Negative => {
+                self.as_mut().set_current_detail_tags(QString::default());
+                self.as_mut().set_current_detail_loading(false);
+            }
+            MetaLookup::Miss => {
+                self.as_mut().set_current_detail_tags(QString::default());
+                self.as_mut().set_current_detail_loading(true);
+            }
+        }
+
+        enqueue_meta_prefetch(&self.entries, self.count, index);
+    }
+
     fn load_detail_at(mut self: Pin<&mut Self>, index: i32) {
         let ticket = self
             .as_mut()
@@ -666,16 +725,43 @@ impl ffi::FavoritesModel {
         self.as_mut().rust_mut().current_detail_media_id = media_id;
         sync_current_detail_image_key(self.as_mut());
         refresh_adjacent_cover_prefetch(self.as_mut());
+
+        // Resolve synchronously from the metadata cache when warm (a neighbor
+        // prefetched while dwelling on the previous row, or a revisit), so the
+        // table fills with the correct rows on this frame and never re-fetches.
+        let meta_key = MediaKey::new(system.clone(), path.clone());
+        match global_media_meta_cache().lookup(&meta_key) {
+            MetaLookup::Hit(meta) => {
+                self.as_mut()
+                    .set_current_detail_tags(QString::from(detail_tags_from_meta(&meta).as_str()));
+                self.as_mut().set_current_detail_loading(false);
+                return;
+            }
+            MetaLookup::Negative => {
+                self.as_mut().set_current_detail_tags(QString::default());
+                self.as_mut().set_current_detail_loading(false);
+                return;
+            }
+            MetaLookup::Miss => {}
+        }
+
         self.as_mut().set_current_detail_loading(true);
         self.as_mut().set_current_detail_tags(QString::default());
         let seq = self.rust().detail_seq.clone();
         let qt_thread = self.qt_thread();
         let store = global_store();
+        let store_key = meta_key.clone();
         global_handle().spawn(async move {
             let result = store
                 .client()
                 .media_meta(MediaMetaParams::for_media(system, path.clone()))
                 .await;
+            // Cache the outcome (positive or negative) regardless of whether
+            // this callback is still current, so a later revisit is instant.
+            match &result {
+                Ok(r) => global_media_meta_cache().store(store_key, Some(r.media.clone())),
+                Err(_) => global_media_meta_cache().store(store_key, None),
+            }
             let _ = qt_thread.queue(move |mut model| {
                 if seq.load(Ordering::SeqCst) != ticket {
                     return;
@@ -842,6 +928,32 @@ fn detail_tags_from_meta(meta: &MediaMeta) -> String {
         .map(|(label, value)| format!("{label}\t{value}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+// Warm the metadata cache for the rows immediately around `row` so a move to
+// a neighbor is a synchronous cache hit. Best-effort and fire-and-forget;
+// already-cached or in-flight keys are skipped inside the cache.
+fn enqueue_meta_prefetch(entries: &[MediaItem], count: i32, row: i32) {
+    let mut requests = Vec::new();
+    for delta in [-2_i32, -1, 1, 2] {
+        let i = row + delta;
+        if i < 0 || i >= count {
+            continue;
+        }
+        let entry = &entries[i as usize];
+        let system = entry.system.id.clone();
+        let path = entry.path.clone();
+        if system.trim().is_empty() || path.trim().is_empty() {
+            continue;
+        }
+        requests.push((
+            MediaKey::new(system.clone(), path.clone()),
+            MediaMetaParams::for_media(system, path),
+        ));
+    }
+    if !requests.is_empty() {
+        global_media_meta_cache().prefetch(requests);
+    }
 }
 
 fn detail_value_for_aliases(source: &[TagInfo], aliases: &[&str]) -> String {
