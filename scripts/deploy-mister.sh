@@ -74,7 +74,9 @@ echo "=== Deploying to MiSTer at ${MISTER_IP} ==="
 # that stub. Here we only rotate after a size-verified upload, then force
 # the write to the card with `sync` — exFAT has no journal, so a metadata
 # update lost to a power cut is what leaks clusters.
-LOCAL_SIZE="$(stat -c %s "${BINARY}")"
+# `wc -c` is portable (GNU + BSD/macOS); `stat -c` is GNU-only. The remote
+# size check below runs on the MiSTer (always Linux) so it keeps `stat -c`.
+LOCAL_SIZE="$(wc -c < "${BINARY}" | tr -d '[:space:]')"
 scp "${BINARY}" "root@${MISTER_IP}:${REMOTE_PATH}.new"
 
 ssh "root@${MISTER_IP}" "

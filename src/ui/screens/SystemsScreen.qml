@@ -198,6 +198,9 @@ Item {
                 systems.requestContextMenu(idx, systems._listLayout ? listCard.currentCellRectIn(systems) : systems.systemsGrid.currentCellRectIn(systems));
             }
         } else if (action === "cancel") {
+            // Disarm a pending accept so a press-then-back inside the deferred
+            // window cannot drill into a system after the user has backed out.
+            pressCommit.stop();
             systems.requestHubScreen();
         }
     }

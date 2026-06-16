@@ -109,6 +109,9 @@ MediaListScreen {
         pressCommit.arm();
     }
     cancelAction: () => {
+        // Disarm any pending accept so a press-then-back inside the deferred
+        // window cannot launch/navigate after the user has backed out.
+        pressCommit.stop();
         games.flushSelectedPersist();
         if (games._atFolderLevel())
             games.requestNavigateOutOfFolder();

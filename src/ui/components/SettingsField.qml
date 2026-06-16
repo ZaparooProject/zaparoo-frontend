@@ -38,6 +38,14 @@ Item {
     // right ("In progress", "Paused", or "" when idle). The screen
     // owns the binding; the field treats it as a plain caption.
     property string actionStatus: ""
+    // Push-in cue, matching the tile vocabulary. The host increments this on
+    // accept; the focused row plays a one-shot tap (scale down then back). A
+    // tap rather than a held press because settings rows stay on screen (a
+    // picker opens a modal over the row, an action runs in place), so a held
+    // scale would look stuck. Toggle rows are exempt — the knob slide is their
+    // feedback — so they ignore the pulse below.
+    property int activatePulse: 0
+    property real _pressScale: 1.0
 
     signal hovered
     signal clicked
@@ -53,6 +61,35 @@ Item {
     // when one of the two is in flight — Core serialises them).
     opacity: enabled ? 1 : 0.4
     implicitHeight: Sizing.pctH(8)
+    scale: root._pressScale
+    transformOrigin: Item.Center
+
+    // One-shot push-in tap. Non-toggle rows only; the focused row plays it.
+    // `animateChanges` is false during a page switch (same gate the field's
+    // other animations use), so a reused delegate cannot tap as a new page
+    // mounts.
+    onActivatePulseChanged: {
+        if (root.isFocused && root.control !== "toggle" && root.animateChanges)
+            pressAnim.restart();
+    }
+
+    SequentialAnimation {
+        id: pressAnim
+        NumberAnimation {
+            target: root
+            property: "_pressScale"
+            to: Motion.rowPressScale
+            duration: Motion.dur(Motion.pressMs)
+            easing.type: Easing.OutQuad
+        }
+        NumberAnimation {
+            target: root
+            property: "_pressScale"
+            to: 1.0
+            duration: Motion.dur(Motion.settleMs)
+            easing.type: Easing.OutQuad
+        }
+    }
 
     Rectangle {
         id: surface

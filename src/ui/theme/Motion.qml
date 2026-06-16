@@ -30,9 +30,14 @@ QtObject {
     readonly property int pressMs: 80
     readonly property int settleMs: 110
 
-    // Scale target for the one-shot tile push-in cue, shared by every
-    // button-like action (navigation and game launch alike).
+    // Scale target for the one-shot push-in cue on squarish surfaces — tiles
+    // and dialog buttons.
     readonly property real pressScale: 0.96
+    // Gentler target for wide, short rows (list-detail rows, settings fields,
+    // menu/picker rows). The same scale factor moves a full-width row's edges
+    // far more than a squarish tile's, so a wider row needs a value closer to
+    // 1.0 to read as the same subtle press.
+    readonly property real rowPressScale: 0.985
 
     // Collapse all durations to 0 under reduce-motion so Behaviors that
     // use dur() resolve instantly without per-call branching.

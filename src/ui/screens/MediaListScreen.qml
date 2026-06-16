@@ -148,8 +148,8 @@ Item {
 
     // Layout-aware pulse routing. In grid layout this forwards to the
     // PagedGrid tile; in list layout it increments the BrowseListDetailView
-    // pulse so the selected row fires its activate nudge. The same push-in
-    // cue serves both forward navigation and game launch.
+    // pulse so the selected row fires its push-in. The same push-in cue
+    // serves both forward navigation and game launch.
     function pulseActivate(): void {
         if (root._listLayout)
             listCard.activatePulse++;
@@ -462,7 +462,6 @@ Item {
         detailTags: root._detailTags()
         detailLoading: root._detailLoading()
         detailSuppressed: root.detailRapidScrollActive
-        listRapidScrollActive: root.detailRapidScrollActive
         screenSettling: !root.active
         detailLoadingText: root.detailLoadingText
         detailCanPreviousImage: root.detailCanPreviousImage

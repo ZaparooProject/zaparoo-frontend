@@ -81,14 +81,18 @@ Item {
     z: 300
 
     onOpenChanged: {
-        if (modal.open && modal.kind === "confirm")
-            modal._focusYes = false;
-        if (modal.open) {
-            modal._pressScale = 1.0;
-            modal._pressTarget = "";
-            modal._pendingSignal = "";
-            pressAnim.stop();
+        if (!modal.open) {
+            // Disarm a pending deferred signal so a press-then-close inside the
+            // deferred window cannot emit confirmed/accepted after dismissal.
+            actionCommit.stop();
+            return;
         }
+        if (modal.kind === "confirm")
+            modal._focusYes = false;
+        modal._pressScale = 1.0;
+        modal._pressTarget = "";
+        modal._pendingSignal = "";
+        pressAnim.stop();
     }
 
     // confirm-only input dispatch. Main.qml routes key/controller

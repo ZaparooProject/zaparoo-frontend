@@ -94,8 +94,8 @@ Item {
     // tile is back at 1.0 before the screen is shown again.
     readonly property bool delegateSettling: parent.settling ?? false
     // `focusReady` gates whether this tile renders its focused styling at all
-    // (ring + focused cover ramp), not merely whether the ring fade animates.
-    // The host leaves it false until the screen's focus index is finalized
+    // (ring + focused cover ramp). The host leaves it false until the screen's
+    // focus index is finalized
     // (programmatic restore or first input). Before that, a tile that happens
     // to sit at the default index must not paint a ring, or the wrong tile
     // flashes focused for the frames before restore corrects the index.

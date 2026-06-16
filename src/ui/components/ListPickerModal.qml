@@ -69,8 +69,12 @@ Item {
     z: 300
 
     onOpenChanged: {
-        if (!modal.open)
+        if (!modal.open) {
+            // Disarm a pending accept so a press-then-close inside the deferred
+            // window cannot apply a selection after the modal is dismissed.
+            acceptCommit.stop();
             return;
+        }
         let next = 0;
         if (modal.initialId !== "") {
             for (let i = 0; i < modal.entries.length; ++i) {
@@ -129,7 +133,7 @@ Item {
         id: pressAnim
         target: modal
         property: "_pressScale"
-        to: Motion.pressScale
+        to: Motion.rowPressScale
         duration: Motion.dur(Motion.pressMs)
         easing.type: Easing.OutQuad
     }

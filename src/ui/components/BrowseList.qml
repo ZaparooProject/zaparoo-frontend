@@ -24,9 +24,6 @@ Item {
     property int targetVisibleRowCount: 0
     property bool showChrome: true
     property var layoutProfile: null
-    // When true, disables the focus-nudge Behavior and scroll-thumb
-    // glide so held-key rapid scroll stays responsive.
-    property bool rapidScrollActive: false
     // layoutProfile and its sub-objects (_list, _grid, _surface) are JS-object
     // vars; the QML compiler cannot statically type their properties. Suppress
     // the compiler category for these bindings only.
@@ -64,17 +61,17 @@ Item {
     readonly property int _favoriteRightPadding: root._list ? root._list.favoriteRightPadding : Sizing.pctW(1.6)
     // qmllint enable compiler
 
-    // Pulse counter for the one-shot row nudge. Callers increment via
+    // Pulse counter for the one-shot row push-in. Callers increment via
     // activatePulse; only the selected row fires its animation, matching
     // the Tile activation-pulse vocabulary. Forward navigation and game
     // launch share this single cue.
     property int activatePulse: 0
-    // Release counter for the row nudge. Incremented by the host to settle the
-    // selected row's slide back to 0 after a launch that keeps the frontend on
-    // the same screen. Forward navigation never increments it (the screen
-    // transition resets the nudge off-screen via screenSettling).
+    // Release counter for the row push-in. Incremented by the host to settle
+    // the selected row's scale back to 1.0 after a launch that keeps the
+    // frontend on the same screen. Forward navigation never increments it (the
+    // screen transition resets the push-in off-screen via screenSettling).
     property int releasePulse: 0
-    // When true, resets the row nudge back to 0 so a held slide does
+    // When true, resets the row push-in scale back to 1.0 so a held press does
     // not persist when the screen is shown again. Set by the host to
     // !active while the screen is off-screen.
     property bool screenSettling: false
@@ -170,7 +167,7 @@ Item {
             width: listView.width
             height: root.rowHeight
             // One-shot push-in cue, identical to the tile vocabulary: the
-            // selected row scales to Motion.pressScale on accept/activate.
+            // selected row scales to Motion.rowPressScale on accept/activate.
             scale: row._activateScale
             transformOrigin: Item.Center
 
@@ -192,7 +189,7 @@ Item {
                 id: activateAnim
                 target: row
                 property: "_activateScale"
-                to: Motion.pressScale
+                to: Motion.rowPressScale
                 duration: Motion.dur(Motion.pressMs)
                 easing.type: Easing.OutQuad
             }

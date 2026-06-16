@@ -27,7 +27,6 @@ Item {
     property alias detailLoading: detailPane.loading
     property alias detailLoadingText: detailPane.loadingText
     property alias detailSuppressed: detailPane.detailSuppressed
-    property alias listRapidScrollActive: browseList.rapidScrollActive
     property alias activatePulse: browseList.activatePulse
     property alias releasePulse: browseList.releasePulse
     property alias screenSettling: browseList.screenSettling

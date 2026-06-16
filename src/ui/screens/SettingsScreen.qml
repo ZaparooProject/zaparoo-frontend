@@ -59,6 +59,10 @@ Item {
     // Incremented when the user accepts a category tile so it plays the
     // push-in animation. Forwarded to all category TileLoaders.
     property int activatePulse: 0
+    // Sibling of `activatePulse` for the in-page SettingsField rows: bumped on
+    // a field accept so the focused non-toggle row plays its push-in tap.
+    // Toggle rows ignore it (their knob slide is the feedback).
+    property int fieldActivatePulse: 0
     // True for one event-loop tick during a page switch. Passed as
     // `animateChanges: false` to SettingsField delegates so a reused delegate
     // does not animate its toggle-knob slide when the new page's field model
@@ -944,6 +948,10 @@ Item {
     }
 
     function _goBack(): void {
+        // Disarm pending accepts so a press-then-back inside the deferred
+        // window cannot drill into a subpage / open a picker after backing out.
+        pressCommit.stop();
+        fieldCommit.stop();
         if (settings.currentPage !== settings.pageRoot) {
             settings._switchPage(settings.pageRoot);
             return;
@@ -983,28 +991,31 @@ Item {
             const id = settings.fields[settings.currentIndex].id;
             if (settings._openPage(id))
                 return;
-            if (id === "mouseEnabled")
-                settings._toggleMouseEnabled();
-            else if (id === "showHidden")
-                settings._toggleShowHidden();
-            else if (id === "discoverArcadeAlternateVersions")
-                settings._toggleDiscoverArcadeAlternateVersions();
-            else if (id === "debugLogging")
-                settings._toggleDebugLogging();
-            else if (id === "rescrapeExisting")
-                settings._toggleRescrapeExisting();
-            else if (id === "reduceMotion")
-                settings._toggleReduceMotion();
-            else if (id === "updateMediaDb")
-                settings._triggerIndex();
-            else if (id === "runScraper")
-                settings._triggerScrape();
-            else if (id === "uploadLog")
-                settings.requestAccept("uploadLog");
-            else if (id === "aboutLicense")
-                settings.requestAccept("aboutLicense");
-            else
-                settings._openPickerForField(id);
+            // Toggles flip in place — the knob slide is their cue, so act now
+            // and skip the push-in.
+            if (settings._fieldControl(id) === "toggle") {
+                if (id === "mouseEnabled")
+                    settings._toggleMouseEnabled();
+                else if (id === "showHidden")
+                    settings._toggleShowHidden();
+                else if (id === "discoverArcadeAlternateVersions")
+                    settings._toggleDiscoverArcadeAlternateVersions();
+                else if (id === "debugLogging")
+                    settings._toggleDebugLogging();
+                else if (id === "rescrapeExisting")
+                    settings._toggleRescrapeExisting();
+                else if (id === "reduceMotion")
+                    settings._toggleReduceMotion();
+                return;
+            }
+            // Picker / action / about either open a modal or navigate away,
+            // which would cover or replace the row before its push-in could
+            // show. Play the cue, then run the action deferred (the same
+            // deferred-flip the tiles use) so the press is visible on the
+            // still-static settings screen first.
+            settings.fieldActivatePulse++;
+            fieldCommit._id = id;
+            fieldCommit.arm();
         } else if (action === "cancel") {
             settings._goBack();
         }
@@ -1019,6 +1030,29 @@ Item {
             const p = _page;
             _page = "";
             settings._switchPage(p);
+        }
+    }
+
+    // Deferred-flip for non-toggle field activations: the focused row's push-in
+    // plays on the still-visible settings screen, then this fires `pressMs`
+    // later to open the modal / navigate. Without the defer the modal scrim or
+    // screen change covers the row before the cue can render.
+    DeferredAction {
+        id: fieldCommit
+        property string _id: ""
+        onDeferred: {
+            const id = fieldCommit._id;
+            fieldCommit._id = "";
+            if (id === "updateMediaDb")
+                settings._triggerIndex();
+            else if (id === "runScraper")
+                settings._triggerScrape();
+            else if (id === "uploadLog")
+                settings.requestAccept("uploadLog");
+            else if (id === "aboutLicense")
+                settings.requestAccept("aboutLicense");
+            else
+                settings._openPickerForField(id);
         }
     }
 
@@ -1234,6 +1268,7 @@ Item {
                         anchors.right: parent.right
                         isFocused: row.index === settings.currentIndex
                         animateChanges: !settings._pageSwitching
+                        activatePulse: settings.fieldActivatePulse
                         // Index and scrape can't run together; while
                         // one operation is in flight the other row
                         // dims and its MouseArea stops responding.
@@ -1271,16 +1306,12 @@ Item {
                             settings.currentIndex = row.index;
                             if (settings._openPage(row.modelData.id))
                                 return;
-                            if (row.modelData.id === "updateMediaDb")
-                                settings._triggerIndex();
-                            else if (row.modelData.id === "runScraper")
-                                settings._triggerScrape();
-                            else if (row.modelData.id === "uploadLog")
-                                settings.requestAccept("uploadLog");
-                            else if (row.modelData.id === "aboutLicense")
-                                settings.requestAccept("aboutLicense");
-                            else
-                                settings._openPickerForField(row.modelData.id);
+                            // Non-toggle rows route here (toggles use onClicked).
+                            // Defer like the keyboard path so the push-in shows
+                            // before the modal opens / the screen navigates.
+                            settings.fieldActivatePulse++;
+                            fieldCommit._id = row.modelData.id;
+                            fieldCommit.arm();
                         }
                     }
                 }

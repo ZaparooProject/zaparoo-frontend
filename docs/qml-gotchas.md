@@ -77,7 +77,7 @@ Frame cost on raster ≈ **painted pixels per frame × per-pixel cost**. The
 animation type matters less than people expect — what matters is what each
 animation choice does to that product:
 
-1. **How big is the dirty rectangle?** Animating a 20×20 page-dot dirties
+1. **How big is the dirty rectangle?** Animating a 20×20 scroll-thumb dirties
    400 pixels. Animating a full-screen overlay dirties ~2 M pixels. Same
    property (`opacity`), 5000× the cost.
 2. **What's *in* the dirty rectangle?** A cached pixmap blit is cheap.
@@ -98,7 +98,7 @@ mark dirty per frame?**" and pick whatever keeps that small.
 Two follow-on rules from the same model:
 
 - **Translation is free, but its content isn't.** Moving an Item by 1 px
-  costs almost nothing if the Item is small (a page-dot, a single tile).
+  costs almost nothing if the Item is small (a single tile, the scroll-thumb).
   Moving a band of 12 tiles costs the rasterize of all 12 tiles per
   frame, because the dirty rectangle covers the whole band.
 - **Fractional DPR is the absolute version of this.** When Qt's screen
@@ -114,8 +114,8 @@ Pick animations from the cheap column when targeting MiSTer.
 
 | Cheap on raster | Expensive on raster |
 |---|---|
-| Instant cut + small animated cue (page-dot pulse, focus-ring blink) | Translucent overlays of any size (see below) |
-| Translation of small items (one Tile, page dots) | Translation of large content (band of N tiles) |
+| Instant cut + small one-shot cue (the tile/row push-in) | Translucent overlays of any size (see below) |
+| Translation/scale of small items (one Tile, the scroll-thumb) | Translation of large content (band of N tiles) |
 | ColorAnimation on tints / borders | Concurrent slide + scale (compounds raster cost) |
 | Static scenes with one ramping property on a small element | `ShaderEffect` of any kind, `Qt5Compat.GraphicalEffects` |
 | `layer.enabled` for caching a complex sub-tree | `Animator` types (no benefit on basic render loop) |
@@ -162,7 +162,7 @@ plain animations, and `layer.enabled` without an effect.
 ### Recommendation
 
 For state-change feedback, prefer instant cuts with a small localized cue
-(page-dot pulse, focus-ring blink, help-bar text change) over any fade.
+(the push-in cue, a help-bar text change) over any fade.
 Cues are small elements with small dirty rectangles; they paint cheaply
 on raster regardless of DPR or partial-update status. Reach for a fade
 only after diagnosing DPR and ensuring the destination scene is
@@ -175,18 +175,16 @@ The rule above bans **persistent** motion that runs every frame while content
 is busy (e.g., a scale held on every focused tile on every d-pad move). It
 does NOT ban short one-shot animations on a single small element triggered
 at a state-change moment (activate/launch, selection land). Those are cheap
-for the same reason page-dot pulses are cheap: one element, one short burst,
-then back to a static scene.
+for the same reason a single-tile push-in is cheap: one element, one short
+burst, then back to a static scene.
 
 Sanctioned patterns and why they are safe:
 
 | Cue | Cost analysis |
 |---|---|
-| Tile push-in on activate or launch (single scale leg, ~90 ms, held) | Single tile's pixmap scales transiently; dirty rect = one tile; the host screen's `settling` flag resets `scale` to 1.0 off-screen so there is no resampling per frame once the screen is hidden. One shared cue covers both forward navigation and game launch |
-| Row focus nudge on list selection (x offset, ~140 ms) | One row's three sub-elements translate right; dirty rect = one row height; all neighboring rows are static |
-| Scroll-thumb glide (y, ~140 ms) | One small Rectangle; dirty rect negligible |
-| Settings toggle handle slide (x, ~140 ms) | One tiny Rectangle handle; 1 pctW |
-| Focus-border color fade (ColorAnimation, ~140 ms) | Border only; no pixmap, no text; cheapest possible paint |
+| Tile push-in on activate or launch (single scale leg, ~80 ms, held) | Single tile's pixmap scales transiently; dirty rect = one tile; the host screen's `settling` flag resets `scale` to 1.0 off-screen so there is no resampling per frame once the screen is hidden. One shared cue covers both forward navigation and game launch |
+| List-detail row push-in on activate or launch (single scale leg, ~80 ms, held) | The same cue as the tile, applied to the selected list row; dirty rect = one row; all neighboring rows are static |
+| Settings toggle-knob slide (x, ~110 ms) | One tiny Rectangle handle; 1 pctW |
 
 The shared constraint: the source scene must be static or near-static during
 the cue. The tile grid is not scrolling; the list row content is not
@@ -234,9 +232,12 @@ Token summary (`Motion.qml`):
 
 | Token | Value | Use |
 |---|---|---|
-| `pressMs` | 90 | Push-in cue; at the perceivable-motion floor |
-| `settleMs` | 140 | Nudge, glide, toggle, border fade |
+| `pressMs` | 80 | Push-in cue (accept/activate) |
+| `settleMs` | 110 | Push-in release leg; toggle-knob slide |
 | `pressScale` | 0.96 | Push-in target |
+
+Both durations sit just above MiSTer's frame-budget floor (~3 frames at
+~30fps); see the comments in `Motion.qml` before lowering them.
 
 Pulse counter pattern (how hosts trigger tile cues without coupling to
 animation internals): the host increments the `activatePulse` int property

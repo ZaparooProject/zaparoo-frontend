@@ -125,7 +125,7 @@ Item {
         id: pressAnim
         target: menu
         property: "_pressScale"
-        to: Motion.pressScale
+        to: Motion.rowPressScale
         duration: Motion.dur(Motion.pressMs)
         easing.type: Easing.OutQuad
     }

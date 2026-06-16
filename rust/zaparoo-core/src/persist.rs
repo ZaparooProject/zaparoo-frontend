@@ -362,6 +362,8 @@ resolution = "1920x1080"
         assert_eq!(state.hub.hidden_categories, Vec::<String>::new());
         assert_eq!(state.systems.hidden_system_ids, Vec::<String>::new());
         assert!(!state.settings.show_hidden);
+        // reduce_motion absent from an older state file defaults to false.
+        assert!(!state.settings.reduce_motion);
     }
 
     #[test]
