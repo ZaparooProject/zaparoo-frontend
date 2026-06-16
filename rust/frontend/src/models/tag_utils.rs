@@ -41,7 +41,10 @@ pub fn disambiguating_tag_labels(tags: &[TagInfo]) -> Vec<String> {
 }
 
 fn format_disambiguating_tag(tag: &TagInfo) -> Option<String> {
-    let value = tag.tag.trim();
+    // Normalize the value to trimmed lowercase up front so the type-specific
+    // compaction below matches its canonical (lowercase) keys regardless of how
+    // Core cased the value: `World` -> `W`, `Revision-A` -> `RA`.
+    let value = tag.tag.trim().to_ascii_lowercase();
     if value.is_empty() {
         return None;
     }
@@ -59,12 +62,12 @@ fn format_disambiguating_tag(tag: &TagInfo) -> Option<String> {
         // Compact alphanumeric forms: D2 / R1 / 2P. The rev value may itself be
         // spelled "revision-a"/"v1" in arcade sets; strip that prefix first.
         "disc" => format!("D{value}").to_ascii_uppercase(),
-        "rev" => format!("R{}", strip_rev_prefix(value)).to_ascii_uppercase(),
+        "rev" => format!("R{}", strip_rev_prefix(&value)).to_ascii_uppercase(),
         "players" => format!("{value}P").to_ascii_uppercase(),
         // Normalized to `YYYY-MM-DD`; the two-digit year differentiates siblings
         // in the least space (`'96`).
-        "builddate" => format_year_token(value),
-        "edition" => compact_edition(value),
+        "builddate" => format_year_token(&value),
+        "edition" => compact_edition(&value),
         // Free-text / flag types: lowercase readable value with its dashes kept
         // (they double as word breaks for the sibling-diff), hard-capped so it
         // can't run away.
@@ -275,6 +278,18 @@ mod tests {
         assert_eq!(
             disambiguating_tag_labels(&[tag("world", "region")]),
             vec!["W"]
+        );
+    }
+
+    #[test]
+    fn mixed_case_values_are_normalized_before_compaction() {
+        assert_eq!(
+            disambiguating_tag_labels(&[tag("World", "region")]),
+            vec!["W"]
+        );
+        assert_eq!(
+            disambiguating_tag_labels(&[tag("Revision-A", "rev")]),
+            vec!["RA"]
         );
     }
 

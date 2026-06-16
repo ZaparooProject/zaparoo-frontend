@@ -454,8 +454,14 @@ Item {
         return from;
     }
 
-    readonly property int rootGridColumns: 3
     readonly property int rootGridRows: 2
+    // Columns track the (fixed) category count so the menu auto-balances into
+    // `rootGridRows` rows (six categories -> 3x2) instead of a hardcoded count.
+    // This is chrome with a known small item set, not content that should
+    // reflow with screen width; the cell geometry below is already
+    // sizing-driven (pctW/pctH with a maxCellSize cap), so the cells shrink to
+    // fit any screen while the layout stays a deliberate balanced grid.
+    readonly property int rootGridColumns: Math.ceil(settings.categoryFields.length / settings.rootGridRows)
 
     function _moveRootGrid(dx: int, dy: int): void {
         if (settings.fieldCount <= 0)
