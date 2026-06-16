@@ -43,8 +43,9 @@ QtObject {
     // not the amber accent, so these markers stay distinct from the focus
     // ring/logo tint instead of melting into them — amber means "selected"
     // exclusively. Paired with a dark `bgBar` outline/border for visibility on
-    // light cover art. `resources/images/icons/Heart.svg` bakes this same hex
-    // (an SVG can't reference Theme); update both together.
+    // light cover art. The hidden badge uses it directly (TileBadge); the
+    // favorite heart is tinted to it on the fly via the tinted-svg provider
+    // (Heart.svg is a neutral grayscale source), so the color lives only here.
     readonly property color stateMarker: "#9898CC"
     // System logo tint tokens — two ramps, selected by Tile based on focus state.
     // Inactive ramp: medium purple so unfocused tiles read as secondary

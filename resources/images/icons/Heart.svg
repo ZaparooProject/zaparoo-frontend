@@ -1,13 +1,16 @@
 <svg width="256" height="256" viewBox="-16 -16 288 288" xmlns="http://www.w3.org/2000/svg">
-  <!-- Two-tone favorite marker: a lavender (Theme.stateMarker) heart with a
-       near-black (Theme.bgBar) keyline, built as a keyline-coloured heart under
-       the lavender fill of the same path. The keyline layer extends past the
-       fill so its outset reads as an outline; the widened viewBox keeps it from
-       clipping. Plain fill + stroke only (no paint-order/effects) so it renders
-       identically under Qt's software SVG path. The dark keyline keeps the
-       marker readable on light cover art, and lavender (not the amber accent)
-       keeps it distinct from the focus ring/logo tint. These hexes mirror
-       Theme.stateMarker / Theme.bgBar; update both together. -->
-  <path fill="#0a0a15" stroke="#0a0a15" stroke-width="22" stroke-linejoin="round" stroke-linecap="round" d="M128 224 34 132C12 110 10 75 29 52c22-27 62-29 86-5l13 13 13-13c24-24 64-22 86 5 19 23 17 58-5 80l-94 92Z"/>
-  <path fill="#9898CC" d="M128 224 34 132C12 110 10 75 29 52c22-27 62-29 86-5l13 13 13-13c24-24 64-22 86 5 19 23 17 58-5 80l-94 92Z"/>
+  <!-- Two-tone favorite marker, authored as a NEUTRAL GRAYSCALE source so the
+       tinted-svg image provider can recolor it on the fly from theme tokens
+       (like every other icon) instead of baking brand colors here. The provider
+       maps the darkest source pixels to its background token and the brightest
+       to its foreground token: the black keyline becomes the dark outline
+       (Theme.bgBar) and the white fill becomes the marker color
+       (Theme.stateMarker). Tile.qml requests it via
+       Resources.coverUrl("icons/Heart", stateMarker, stateMarker, bgBar). The
+       keyline layer extends past the fill so its outset reads as an outline; the
+       widened viewBox keeps it from clipping. Plain fill + stroke only (no
+       paint-order/effects) so it renders identically under Qt's software SVG
+       path. -->
+  <path fill="#000" stroke="#000" stroke-width="22" stroke-linejoin="round" stroke-linecap="round" d="M128 224 34 132C12 110 10 75 29 52c22-27 62-29 86-5l13 13 13-13c24-24 64-22 86 5 19 23 17 58-5 80l-94 92Z"/>
+  <path fill="#fff" d="M128 224 34 132C12 110 10 75 29 52c22-27 62-29 86-5l13 13 13-13c24-24 64-22 86 5 19 23 17 58-5 80l-94 92Z"/>
 </svg>

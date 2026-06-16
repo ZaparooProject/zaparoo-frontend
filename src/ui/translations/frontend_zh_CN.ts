@@ -1452,7 +1452,7 @@ Euskara - devilschile2</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="509"/>
+        <location filename="../components/Tile.qml" line="512"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>

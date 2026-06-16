@@ -489,7 +489,10 @@ Item {
         anchors.topMargin: Sizing.px(parent.width / 12)
         width: Sizing.px(parent.width / 6)
         height: width
-        source: Resources.iconUrl("Heart")
+        // Tinted on the fly from theme tokens (fill -> stateMarker lavender,
+        // keyline -> bgBar dark outline) via the tinted-svg provider, like every
+        // other icon. The source SVG is neutral grayscale; colors live in Theme.
+        source: Resources.coverUrl("icons/Heart", Theme.stateMarker, Theme.stateMarker, Theme.bgBar)
         sourceSize.width: Sizing.px(width)
         sourceSize.height: Sizing.px(height)
         fillMode: Image.PreserveAspectFit
