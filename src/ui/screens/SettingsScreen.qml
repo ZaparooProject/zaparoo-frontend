@@ -59,17 +59,11 @@ Item {
     // Incremented when the user accepts a category tile so it plays the
     // push-in animation. Forwarded to all category TileLoaders.
     property int activatePulse: 0
-    // False until the user takes control of focus (first input). Forwarded
-    // to the category tiles as `ringFadeReady` so the programmatic focus
-    // settle on load snaps instead of cross-fading the wrong tile's focus
-    // ring. User navigation, which always follows input, cross-fades as
-    // before.
-    property bool _focusArmed: false
     // True for one event-loop tick during a page switch. Passed as
-    // `animateChanges: false` to SettingsField delegates so reused
-    // delegates do not animate focus-border or toggle-position changes
-    // when the new page's field model lands. Normal user navigation
-    // animates because `_pageSwitching` is false at that point.
+    // `animateChanges: false` to SettingsField delegates so a reused delegate
+    // does not animate its toggle-knob slide when the new page's field model
+    // lands. Normal user navigation animates because `_pageSwitching` is false
+    // at that point.
     property bool _pageSwitching: false
 
     // Page-aware field registries. The root mirrors console settings
@@ -454,7 +448,6 @@ Item {
     function _focusRootIndex(index: int): void {
         if (index < 0 || index >= settings.fieldCount)
             return;
-        settings._focusArmed = true;
         settings.currentIndex = index;
     }
 
@@ -964,7 +957,6 @@ Item {
                 settings._goBack();
             return;
         }
-        settings._focusArmed = true;
         if (action === "up") {
             if (settings.showingRootGrid)
                 settings._moveRootGrid(0, -1);
@@ -1133,15 +1125,6 @@ Item {
                     name: categoryCell.modelData.label
                     coverKey: categoryCell.modelData.coverKey
                     activatePulse: settings.activatePulse
-                    // Suppress the ring fade during a page switch. Returning to
-                    // the root grid rebuilds these tiles with the stale
-                    // subpage currentIndex (tile 0) before `_restorePageFocus`
-                    // points it at the remembered root tile, so an armed fade
-                    // would cross-fade the ring off tile 0 and onto the real
-                    // tile — the visible "tile 0 flashes then focus jumps" bug.
-                    // `_pageSwitching` gates it the same way SettingsField rows
-                    // suppress their own Behaviors during the switch.
-                    ringFadeReady: settings._focusArmed && !settings._pageSwitching
                 }
 
                 MouseArea {

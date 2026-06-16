@@ -80,9 +80,9 @@ Item {
     property bool active: true
     property bool gridFocused: true
     property bool optimisticLoading: false
-    // False until the user takes control of focus (first input). Forwarded to
-    // the grid tiles as `ringFadeReady` so the programmatic restore reseat
-    // snaps instead of cross-fading the wrong tile's ring.
+    // False until the user takes control of focus (first input). Combined with
+    // `_restoreDone` into `_focusReady`, which gates whether the grid tiles and
+    // list rows render selection at all.
     property bool _focusArmed: false
     // Set true once the selection has been finalized from persisted state
     // (restoreSelection for favorites/recents; Main.qml's
@@ -492,7 +492,6 @@ Item {
         anchors.bottomMargin: root.gridBottomMargin
         focused: root.gridFocused
         screenSettling: !root.active
-        ringFadeReady: root._focusArmed
         focusReady: root._focusReady
         model: root.mediaModel
         delegate: Tile {

@@ -169,6 +169,10 @@ Item {
 
             width: listView.width
             height: root.rowHeight
+            // One-shot push-in cue, identical to the tile vocabulary: the
+            // selected row scales to Motion.pressScale on accept/activate.
+            scale: row._activateScale
+            transformOrigin: Item.Center
 
             readonly property bool selected: row.index === root.currentIndex
             // Visual highlight is withheld until the host marks focus ready, so
@@ -177,34 +181,49 @@ Item {
             // still track content during the pre-restore window.
             readonly property bool _highlightVisible: row.selected && root.focusReady
             readonly property string displayTitle: row.name !== "" ? row.name : row.fileStem
-            // Activate nudge: selected row slides right on accept/activate,
-            // identical to the tile push-in trigger. Driven by root.activatePulse
-            // incrementing (only for the selected row); the Behavior below
-            // animates the transition. Not triggered by focus movement —
-            // matches the tile vocabulary where push-in = navigation.
-            property real _nudge: 0
+            property real _activateScale: 1.0
 
-            Behavior on _nudge {
-                enabled: Motion.enabled && !root.rapidScrollActive
-                NumberAnimation {
-                    duration: Motion.dur(Motion.settleMs)
-                    easing.type: Easing.OutCubic
-                }
+            // Push in and hold — mirrors Tile.qml. The activate leg has no
+            // return-to-rest because a forward navigation holds the row pressed
+            // while the screen transitions; the release leg settles it back only
+            // when the launch stays on this screen (e.g. an Audio track), and
+            // `screenSettling` resets it off-screen so it is clean on return.
+            NumberAnimation {
+                id: activateAnim
+                target: row
+                property: "_activateScale"
+                to: Motion.pressScale
+                duration: Motion.dur(Motion.pressMs)
+                easing.type: Easing.OutQuad
+            }
+
+            NumberAnimation {
+                id: releaseAnim
+                target: row
+                property: "_activateScale"
+                to: 1.0
+                duration: Motion.dur(Motion.settleMs)
+                easing.type: Easing.OutQuad
             }
 
             Connections {
                 target: root
                 function onActivatePulseChanged(): void {
                     if (row.selected)
-                        row._nudge = Sizing.pctW(1.2);
+                        activateAnim.restart();
                 }
                 function onReleasePulseChanged(): void {
-                    if (row.selected)
-                        row._nudge = 0;
+                    if (row.selected) {
+                        activateAnim.stop();
+                        releaseAnim.restart();
+                    }
                 }
                 function onScreenSettlingChanged(): void {
-                    if (root.screenSettling)
-                        row._nudge = 0;
+                    if (root.screenSettling) {
+                        activateAnim.stop();
+                        releaseAnim.stop();
+                        row._activateScale = 1.0;
+                    }
                 }
             }
 
@@ -225,8 +244,7 @@ Item {
             }
 
             Item {
-                x: row._nudge
-                width: parent.width - row._nudge
+                width: parent.width
                 height: parent.height
                 visible: row._highlightVisible
 
@@ -246,7 +264,6 @@ Item {
             }
 
             Rectangle {
-                x: row._nudge
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: root._selectionAccentWidth
@@ -257,7 +274,7 @@ Item {
 
             Text {
                 anchors.left: parent.left
-                anchors.leftMargin: root._rowTextLeftPadding + row._nudge
+                anchors.leftMargin: root._rowTextLeftPadding
                 anchors.right: parent.right
                 anchors.rightMargin: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) + root._rowTextRightPadding : root._rowTextRightPadding
                 anchors.verticalCenter: parent.verticalCenter

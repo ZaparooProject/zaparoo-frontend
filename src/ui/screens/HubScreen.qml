@@ -96,11 +96,9 @@ Item {
     // animation. Forwarded to every TileLoader; only the focused+selected
     // Tile fires its animation.
     property int activatePulse: 0
-    // False until the user takes control of focus (first input). Forwarded
-    // to the tiles as `ringFadeReady` so the programmatic focus reseat that
-    // state restore performs on load snaps instead of cross-fading the
-    // wrong tile's focus ring. Every user-driven focus move happens after
-    // this is armed, so navigation cross-fades exactly as before.
+    // False until the user takes control of focus (first input). Combined
+    // with `_restoreDone` into `_focusReady`, which gates whether the tiles
+    // render focus at all.
     property bool _focusArmed: false
     // Set true once the load-time category restore has run. Combined with
     // `_focusArmed` into `_focusReady`, which gates whether the tiles render
@@ -570,7 +568,6 @@ Item {
                     hidden: cellItem.modelData.hidden ?? false
                     activatePulse: hub.activatePulse
                     settling: !hub.visible
-                    ringFadeReady: hub._focusArmed
                     focusReady: hub._focusReady
                 }
 
@@ -658,7 +655,6 @@ Item {
                     coverKey: actionCellItem.modelData.coverKey
                     activatePulse: hub.activatePulse
                     settling: !hub.visible
-                    ringFadeReady: hub._focusArmed
                     focusReady: hub._focusReady
                 }
 

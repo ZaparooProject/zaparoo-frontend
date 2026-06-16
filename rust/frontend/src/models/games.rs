@@ -909,7 +909,6 @@ impl ffi::GamesModel {
 
         let description = entry.description.clone();
         let detail_tags = detail_tags_from_entry(entry);
-        let detail_image_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
         // Local tags paint immediately, so mark loading without blanking: the
         // detail pane shows this row's values while the richer media.meta fetch
         // is still pending.
@@ -918,7 +917,13 @@ impl ffi::GamesModel {
             .set_current_description(QString::from(description.as_str()));
         self.as_mut()
             .set_current_detail_tags(QString::from(detail_tags.as_str()));
-        set_single_detail_image_key(self.as_mut(), detail_image_key);
+        // Deliberately do NOT switch the visible cover here. The cover has its
+        // own grace-window hold (BrowseDetailPane coverHold) and is settled by
+        // the debounced `load_description_at`. Re-pointing the 512px cover Image
+        // on every keypress kept `_coverBusy` true through sustained navigation
+        // (tripping the hourglass after the grace) and monopolized Qt's async
+        // image loader so the next-row cover never got prefetched. Peek only
+        // updates the metadata table and warms the prefetch hints below.
         refresh_adjacent_cover_prefetch(self.as_mut());
     }
 

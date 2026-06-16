@@ -93,12 +93,6 @@ Item {
     // inactive (off-screen). Used to reset a held push-in scale so the
     // tile is back at 1.0 before the screen is shown again.
     readonly property bool delegateSettling: parent.settling ?? false
-    // `ringFadeReady` gates the focus-ring fade. The host screen leaves it
-    // false until the user takes control of focus (first input), so the
-    // programmatic focus reseat during state restore snaps instead of
-    // cross-fading the wrong tile's ring on load. Defaults true for hosts
-    // that do not wire it.
-    readonly property bool delegateRingFadeReady: parent.ringFadeReady ?? true
     // `focusReady` gates whether this tile renders its focused styling at all
     // (ring + focused cover ramp), not merely whether the ring fade animates.
     // The host leaves it false until the screen's focus index is finalized
@@ -136,19 +130,9 @@ Item {
     // marks focus ready via `delegateFocusReady`. This keeps a default-index
     // tile from painting a ring during the window between first paint and the
     // programmatic restore that finalizes the real selection — the source of
-    // the load-time "wrong tile flashes focused" bug. Once ready, the correct
-    // tile lights up; the `delegateRingFadeReady` gate below still governs
-    // whether that reveal snaps (restore) or cross-fades (user navigation).
+    // the load-time "wrong tile flashes focused" bug. The focus ring snaps on
+    // and off with selection; the only per-tile motion is the push-in cue.
     readonly property bool _focusedSelection: root.delegateIsSelected && root.delegateIsFocused && root.delegateFocusReady
-    // Ring opacity — fades 0→1 when focus lands, 1→0 when it leaves.
-    // The Behavior below animates transitions; initial binding eval does
-    // not trigger the Behavior, so a freshly-loaded focused delegate starts
-    // fully opaque without a fade-in delay. The two ring Rectangles use
-    // `opacity: root._ringOpacity` and `visible: root._ringOpacity > 0`
-    // so they paint during the fade and disappear once fully transparent.
-    // The fade is gated on `delegateRingFadeReady` so the programmatic
-    // focus reseat during state restore snaps instead of cross-fading.
-    property real _ringOpacity: root._focusedSelection ? 1.0 : 0.0
     // `coverKey` is the relative path under `resources/images/` without
     // extension — `systems/snes`, `categories/Consoles`, etc. The model
     // chooses the subdirectory; Tile is agnostic. Resources.coverUrl is
@@ -251,15 +235,6 @@ Item {
         }
     }
 
-    // Ring fade Behavior — see _ringOpacity above.
-    Behavior on _ringOpacity {
-        enabled: Motion.enabled && root.delegateRingFadeReady
-        NumberAnimation {
-            duration: Motion.dur(Motion.settleMs)
-            easing.type: Easing.OutQuad
-        }
-    }
-
     // Push in and hold — the single cue for every button-like action,
     // whether the press navigates forward or launches a game. The screen
     // changes while the tile is held at pressScale; the host screen's
@@ -352,19 +327,9 @@ Item {
     // rounded *borders* are tessellated without subpixel coverage and
     // step visibly at the corners (see QTBUG-123210). Both rectangles
     // are still inside the card edge by `_outlineGap`, so the ring
-    // never bleeds past the cell bounds.
-    //
-    // Fade mechanics: only the accent rect carries `opacity:
-    // _ringOpacity`. The inner mask stays fully opaque (`opacity: 1`)
-    // and is only hidden when the ring is invisible. On Qt's software
-    // renderer, `opacity` on an `Item` is NOT flattened to a texture
-    // first (that requires `layer.enabled`, which is forbidden here) —
-    // it propagates multiplicatively to each child independently. A
-    // shared-parent approach would therefore make the inner mask
-    // semi-transparent too, letting the accent fill bleed through the
-    // centre of the tile during the fade. Keeping the mask at full
-    // opacity ensures it always occludes the accent exactly in the ring
-    // band.
+    // never bleeds past the cell bounds. The ring is an accent rect with a
+    // surface-colored inner mask punched out of its center; both snap on and
+    // off with `_focusedSelection` (no fade).
     Rectangle {
         id: focusRingOuter
 
@@ -373,8 +338,7 @@ Item {
         color: Theme.accent
         radius: Math.max(0, root._tileCornerRadius - root._outlineGap)
         antialiasing: true
-        opacity: root._ringOpacity
-        visible: root._ringOpacity > 0
+        visible: root._focusedSelection
     }
 
     Rectangle {
@@ -388,9 +352,7 @@ Item {
         // negative-radius garbage.
         radius: Math.max(0, focusRingOuter.radius - root._outlineWidth)
         antialiasing: true
-        // Always fully opaque so it cleanly occludes the accent in the
-        // ring centre throughout the fade — see comment above.
-        visible: root._ringOpacity > 0
+        visible: root._focusedSelection
     }
 
     // Icon area — two stacked Images for the unfocused and focused tint ramps.

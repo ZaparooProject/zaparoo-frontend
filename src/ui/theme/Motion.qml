@@ -18,12 +18,17 @@ QtObject {
     // Master switch. Written from Main.qml via a Binding.
     property bool enabled: true
 
-    // Duration buckets (milliseconds).
-    // `pressMs` sits at the ~90ms perceivable-motion floor — feels
-    // instant but registers as tactile feedback.
-    // `settleMs` covers small-element motion (100-200ms band).
-    readonly property int pressMs: 90
-    readonly property int settleMs: 140
+    // Duration buckets (milliseconds). The practical floor here is the frame
+    // budget, not perception: on MiSTer's software renderer (~30fps) motion the
+    // eye tracks needs ~3 frames (~100ms) to read as smooth rather than a
+    // two-frame jump. So `settleMs` (tracked motion) stays above that floor,
+    // while `pressMs` can sit a little under it because it reads as a punchy
+    // tactile snap, not tracked motion. Don't drop these much further or the
+    // cues turn choppy on hardware.
+    // `pressMs`  — push-in feedback on accept/activate.
+    // `settleMs` — settle/release legs and the toggle-knob slide.
+    readonly property int pressMs: 80
+    readonly property int settleMs: 110
 
     // Scale target for the one-shot tile push-in cue, shared by every
     // button-like action (navigation and game launch alike).

@@ -37,11 +37,6 @@ Loader {
     // to 1.0 off-screen so a held push-in does not persist when the user
     // returns to the screen.
     property bool settling: false
-    // Gates the Tile focus-ring fade. The host leaves it false until the
-    // user takes control of focus (first input) so the programmatic reseat
-    // during state restore snaps instead of cross-fading. Default true so
-    // hosts that do not wire it keep the fade on every focus change.
-    property bool ringFadeReady: true
     // Gates whether the Tile renders its focused styling at all (ring +
     // focused cover ramp). The host leaves it false until the screen's focus
     // index is finalized (restore or first input) so a default-index tile

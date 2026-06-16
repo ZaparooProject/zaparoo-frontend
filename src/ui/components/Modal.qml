@@ -59,12 +59,6 @@ Item {
     // focused. Reset on every open so a previous Yes-focus doesn't leak
     // into the next prompt.
     property bool _focusYes: false
-    // False until the user moves between the confirm buttons. Gates the button
-    // border-color fade so the focus reset on open (back to "no" from a stale
-    // "yes" left over from a prior prompt) snaps instead of cross-fading the
-    // old button off and the default on. User left/right arms it, so moving
-    // between the buttons fades exactly as before.
-    property bool _navArmed: false
 
     // Push-in scale for button activation, mirroring the tile push-in.
     // _pressTarget identifies which button is currently scaled; the others
@@ -87,10 +81,8 @@ Item {
     z: 300
 
     onOpenChanged: {
-        if (modal.open && modal.kind === "confirm") {
-            modal._navArmed = false;
+        if (modal.open && modal.kind === "confirm")
             modal._focusYes = false;
-        }
         if (modal.open) {
             modal._pressScale = 1.0;
             modal._pressTarget = "";
@@ -105,10 +97,8 @@ Item {
         if (modal.kind !== "confirm")
             return;
         if (action === "left") {
-            modal._navArmed = true;
             modal._focusYes = false;
         } else if (action === "right") {
-            modal._navArmed = true;
             modal._focusYes = true;
         } else if (action === "accept") {
             if (modal._focusYes)
@@ -341,13 +331,6 @@ Item {
                             transformOrigin: Item.Center
                             scale: modal._pressTarget === "no" ? modal._pressScale : 1.0
 
-                            Behavior on border.color {
-                                enabled: Motion.enabled && modal._navArmed
-                                ColorAnimation {
-                                    duration: Motion.dur(Motion.settleMs)
-                                }
-                            }
-
                             Text {
                                 x: Sizing.center(parent.width, width)
                                 y: Sizing.center(parent.height, height)
@@ -377,13 +360,6 @@ Item {
                             radius: Sizing.cornerRadius
                             transformOrigin: Item.Center
                             scale: modal._pressTarget === "yes" ? modal._pressScale : 1.0
-
-                            Behavior on border.color {
-                                enabled: Motion.enabled && modal._navArmed
-                                ColorAnimation {
-                                    duration: Motion.dur(Motion.settleMs)
-                                }
-                            }
 
                             Text {
                                 x: Sizing.center(parent.width, width)

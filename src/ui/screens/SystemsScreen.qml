@@ -43,10 +43,9 @@ Item {
     // times. The ring restores automatically when the modal pops.
     property bool gridFocused: true
     property bool optimisticLoading: false
-    // False until the user takes control of focus (first input). Forwarded
-    // to the grid tiles as `ringFadeReady` so the programmatic focus reseat
-    // that state restore performs on load snaps instead of cross-fading the
-    // wrong tile's focus ring. User navigation cross-fades as before.
+    // False until the user takes control of focus (first input). Combined
+    // with `_restoreDone` into `_focusReady`, which gates whether the grid
+    // tiles render focus at all.
     property bool _focusArmed: false
     // Set true once the load-time system restore has run (see Main.qml's
     // `_restoreSystemsScreenSelection`). Combined with `_focusArmed` into
@@ -182,7 +181,14 @@ Item {
                 return;
             }
             const chosen = Browse.SystemsModel.system_id_at(systems.systemsGrid.currentIndex);
-            systems.systemsGrid.pulseActivate();
+            // Route the push-in cue to the visible layout. In list mode the
+            // grid is hidden and the BrowseList is shown, so pulsing the grid
+            // would animate nothing; mirror the layout-aware routing
+            // MediaListScreen.pulseActivate() uses.
+            if (systems._listLayout)
+                listCard.activatePulse++;
+            else
+                systems.systemsGrid.pulseActivate();
             pressCommit._systemId = chosen;
             pressCommit.arm();
         } else if (action === "context_menu") {
@@ -283,7 +289,6 @@ Item {
         anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.gridBottomMargin : (Sizing.pctH(8) + Sizing.pctH(7))
         focused: systems.gridFocused
         screenSettling: !systems.active
-        ringFadeReady: systems._focusArmed
         focusReady: systems._focusReady
         model: Browse.SystemsModel
         layoutProfile: systems._viewProfile

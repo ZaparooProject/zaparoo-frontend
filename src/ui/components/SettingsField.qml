@@ -62,13 +62,6 @@ Item {
         color: Theme.surfaceCard
         border.color: root.isFocused ? Theme.accent : Theme.borderMid
         border.width: root.isFocused ? Sizing.stroke(2) : Sizing.stroke(1)
-
-        Behavior on border.color {
-            enabled: Motion.enabled && root.animateChanges
-            ColorAnimation {
-                duration: Motion.dur(Motion.settleMs)
-            }
-        }
     }
 
     Text {
@@ -129,13 +122,6 @@ Item {
             // the always-on card behind the toggle a static pill
             // border read as chrome-on-chrome.
             color: root.checked ? Theme.accent : Theme.borderMid
-
-            Behavior on color {
-                enabled: Motion.enabled && root.animateChanges
-                ColorAnimation {
-                    duration: Motion.dur(Motion.settleMs)
-                }
-            }
         }
 
         Rectangle {
@@ -150,7 +136,7 @@ Item {
                 enabled: Motion.enabled && root.animateChanges
                 NumberAnimation {
                     duration: Motion.dur(Motion.settleMs)
-                    easing.type: Easing.OutCubic
+                    easing.type: Easing.OutQuad
                 }
             }
         }

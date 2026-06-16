@@ -727,19 +727,17 @@ impl ffi::RecentsModel {
         let entry = &self.entries[index as usize];
         let system = entry.system_id.clone();
         let path = entry.media_path.clone();
-        let media_id = entry.media_id;
         if system.trim().is_empty() || path.trim().is_empty() {
             clear_current_detail_state(self.as_mut());
             return;
         }
-        let detail_key = match media_id {
-            Some(id) => MediaKey::with_media_id(system.clone(), path.clone(), id),
-            None => MediaKey::new(system.clone(), path.clone()),
-        }
-        .with_current_cover_preference();
-        self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
-        self.as_mut().rust_mut().current_detail_media_id = media_id;
-        sync_current_detail_image_key(self.as_mut());
+        // Deliberately do NOT switch the visible cover here. The cover has its
+        // own grace-window hold (BrowseDetailPane coverHold) and is settled by
+        // the debounced `load_detail_at`. Re-pointing the 512px cover Image on
+        // every keypress kept `_coverBusy` true through sustained navigation
+        // (tripping the hourglass after the grace) and monopolized Qt's async
+        // image loader so the next-row cover never got prefetched. Peek only
+        // updates the metadata table and warms the prefetch hints below.
         refresh_adjacent_cover_prefetch(self.as_mut());
 
         let meta_key = MediaKey::new(system.clone(), path.clone());

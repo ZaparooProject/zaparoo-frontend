@@ -78,10 +78,6 @@ Item {
     // the screen is shown again. Set by the host screen to `!active`
     // (i.e. true while the screen is off-screen).
     property bool screenSettling: false
-    // Forwarded to each Tile's ring-fade gate. Host screens leave this
-    // false until the user takes control of focus so the restore reseat
-    // snaps; default true keeps the fade for hosts that do not wire it.
-    property bool ringFadeReady: true
     // Forwarded to each Tile's focus-visibility gate. Host screens leave this
     // false until the grid's selection is finalized (restore or first input)
     // so the default tile 0 never paints a ring before restore lands; default
@@ -702,7 +698,6 @@ Item {
                     activatePulse: root.activatePulse
                     releasePulse: root.releasePulse
                     settling: root.screenSettling
-                    ringFadeReady: root.ringFadeReady
                     focusReady: root.focusReady
                 }
 
