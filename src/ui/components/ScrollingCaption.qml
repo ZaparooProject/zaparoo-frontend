@@ -61,16 +61,20 @@ Item {
     readonly property bool _marquee: root.focused && !root._fits && Motion.enabled && root._scrollDist > 0
     readonly property bool _staticOverflow: !root._fits && !root._marquee
 
-    // Width policy for the static-overflow state: the name keeps at least
-    // `minNameFraction`; the suffix takes the rest. Both elide to their share.
+    // Width policy for the static-overflow state. The name takes its natural
+    // width (never reserving more than it needs, so a short name leaves no gap
+    // before the suffix) but is protected by `minNameFraction` so a long suffix
+    // can't crush it. The suffix then takes whatever the name leaves — including
+    // the slack a short name gives back — so the block fills the width edge to
+    // edge instead of sitting in over-wide centered margins.
     readonly property int _nameMinW: Math.round(root._avail * root.minNameFraction)
-    readonly property int _suffixAllowedW: Math.max(0, root._avail - root._gapW - root._nameMinW)
-    readonly property int _tagsStaticW: Math.min(root._tagsFullW, root._suffixAllowedW)
-    readonly property int _nameStaticW: Math.max(0, root._avail - root._gapW - root._tagsStaticW)
+    readonly property int _nameStaticW: Math.min(root._nameFullW, Math.max(root._nameMinW, root._avail - root._gapW - root._tagsFullW))
+    readonly property int _tagsStaticW: Math.min(root._tagsFullW, Math.max(0, root._avail - root._gapW - root._nameStaticW))
 
     readonly property int _nameRenderW: root._staticOverflow ? root._nameStaticW : root._nameFullW
     readonly property int _tagsRenderW: root._staticOverflow ? root._tagsStaticW : root._tagsFullW
-    readonly property int _fitsOffset: root.centerContent ? Math.round((root._avail - root._blockW) / 2) : 0
+    readonly property int _staticBlockW: root._nameRenderW + root._gapW + root._tagsRenderW
+    readonly property int _fitsOffset: root.centerContent ? Math.round((root._avail - (root._fits ? root._blockW : root._staticBlockW)) / 2) : 0
 
     // Marquee scroll position (0 .. -_scrollDist), driven in whole pixels.
     property int _scrollX: 0
@@ -137,8 +141,10 @@ Item {
         y: 0
         width: root._nameRenderW + root._gapW + root._tagsRenderW
         height: parent.height
-        // Static: centered/left offset. Marquee: integer scroll position.
-        x: root._marquee ? root._scrollX : (root._fits ? root._fitsOffset : 0)
+        // Static: centered (grid) or left-aligned (list) offset; the block
+        // fills the width when overflowing, so `_fitsOffset` collapses to 0.
+        // Marquee: integer scroll position.
+        x: root._marquee ? root._scrollX : root._fitsOffset
 
         Text {
             id: nameText
@@ -167,7 +173,9 @@ Item {
             color: root.variantColor
             font.family: root.fontFamily
             font.pixelSize: root.fontPixelSize
-            elide: (!root._marquee && root._tagsRenderW < root._tagsFullW) ? Text.ElideRight : Text.ElideNone
+            // Elide from the LEFT so the specific, most-distinguishing end of a
+            // long token suffix (`...lightgun`, `...system-1`) stays visible.
+            elide: (!root._marquee && root._tagsRenderW < root._tagsFullW) ? Text.ElideLeft : Text.ElideNone
             horizontalAlignment: Text.AlignLeft
             verticalAlignment: Text.AlignVCenter
             renderType: Text.NativeRendering

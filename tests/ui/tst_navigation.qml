@@ -160,15 +160,18 @@ TestCase {
         main.activeScreen = main.screenSettings;
         main.settingsScreen.optimisticLoading = false;
         main.settingsScreen.currentPage = main.settingsScreen.pageRoot;
-        compare(main.settingsScreen.rootGridColumns, 5);
+        compare(main.settingsScreen.rootGridColumns, 3);
         compare(main.settingsScreen.rootGridRows, 2);
         main.settingsScreen.currentIndex = 0;
+        // 3x2 grid of six category tiles: down moves a full row, up returns.
         main.handleAction("down");
+        compare(main.settingsScreen.currentIndex, main.settingsScreen.rootGridColumns);
+        main.handleAction("up");
         compare(main.settingsScreen.currentIndex, 0);
         main.handleAction("right");
         compare(main.settingsScreen.currentIndex, 1);
         main.handleAction("accept");
-        compare(main.settingsScreen.currentPage, main.settingsScreen.pageControlsInput);
+        compare(main.settingsScreen.currentPage, main.settingsScreen.pageBrowsing);
         main.handleAction("cancel");
         compare(main.settingsScreen.currentPage, main.settingsScreen.pageRoot);
         main.handleAction("cancel");

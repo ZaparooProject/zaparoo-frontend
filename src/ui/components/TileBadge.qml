@@ -5,9 +5,10 @@
 import QtQuick
 import Zaparoo.Theme
 
-// Compact pill badge for tile state overlays. Filled accent surface
-// matches focus/action chrome while the dark label stays readable over
-// dimmed art and system icons.
+// Compact pill badge for tile state overlays. Filled lavender state-marker
+// surface (not the amber accent, so it stays distinct from the focus ring)
+// with a dark label and border that stay readable over dimmed art and system
+// icons.
 Rectangle {
     id: root
 
@@ -19,7 +20,7 @@ Rectangle {
     width: labelText.implicitWidth + 2 * root._horizontalPadding
     height: labelText.implicitHeight + 2 * root._verticalPadding
     radius: Sizing.half(height)
-    color: Theme.accent
+    color: Theme.stateMarker
     border.width: Sizing.stroke(1)
     border.color: Theme.bgBar
     antialiasing: true

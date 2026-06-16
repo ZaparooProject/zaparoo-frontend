@@ -27,12 +27,11 @@ const MAX_DISAMBIGUATING_TAGS: usize = 4;
 const MAX_FALLBACK_TOKEN_CHARS: usize = 14;
 
 /// Format Core's `disambiguatingTags` into compact inline tokens, preserving the
-/// server's display-priority order and capping the count. Tokens are short and
-/// lowercase (Core normalizes values to lowercase; uppercasing is purely
-/// stylistic and costs readability), e.g. `us`, `d2`, `r1`, `2p`, `'96`, `hack`.
-/// Free-text values are de-dashed into words (`atari-lightgun` -> `atari
-/// lightgun`) so the sibling-diff below can split them on whitespace. Tags with
-/// an empty value are skipped.
+/// server's display-priority order and capping the count. Short curated codes
+/// render UPPERCASE (`US`, `EU`, `D2`, `R1`, `2P`, `W`, `'96`); dynamic
+/// free-text values stay lowercase with their dashes intact (`unl-lives`,
+/// `atari-lightgun`). The dashes double as word boundaries for the sibling-diff
+/// below, which splits on them. Tags with an empty value are skipped.
 pub fn disambiguating_tag_labels(tags: &[TagInfo]) -> Vec<String> {
     tags.iter()
         .filter_map(format_disambiguating_tag)
@@ -47,27 +46,29 @@ fn format_disambiguating_tag(tag: &TagInfo) -> Option<String> {
         return None;
     }
     let token = match tag.tag_type.trim().to_ascii_lowercase().as_str() {
-        // Region/language can be multi-valued (e.g. `us,eu`); keep each part as
-        // its lowercase code, joined with `/`. `world` -> `w` (MiSTer Arcade's
-        // own shorthand) and a couple of long names get shortened.
+        // Region/language can be multi-valued (e.g. `us,eu`); each part is an
+        // uppercase code, joined with `/`. `world` -> `W` (MiSTer Arcade's own
+        // shorthand) and a couple of long names get shortened.
         "region" | "lang" => value
             .split(',')
             .map(|part| compact_region(part.trim()))
             .filter(|part| !part.is_empty())
             .collect::<Vec<_>>()
-            .join("/"),
-        // Compact alphanumeric forms: d2 / r1 / 2p. The rev value may itself be
+            .join("/")
+            .to_ascii_uppercase(),
+        // Compact alphanumeric forms: D2 / R1 / 2P. The rev value may itself be
         // spelled "revision-a"/"v1" in arcade sets; strip that prefix first.
-        "disc" => format!("d{value}"),
-        "rev" => format!("r{}", strip_rev_prefix(value)),
-        "players" => format!("{value}p"),
+        "disc" => format!("D{value}").to_ascii_uppercase(),
+        "rev" => format!("R{}", strip_rev_prefix(value)).to_ascii_uppercase(),
+        "players" => format!("{value}P").to_ascii_uppercase(),
         // Normalized to `YYYY-MM-DD`; the two-digit year differentiates siblings
         // in the least space (`'96`).
         "builddate" => format_year_token(value),
         "edition" => compact_edition(value),
-        // Free-text / flag types: lowercase readable value with dashes turned
-        // into word breaks, hard-capped so it can't run away.
-        _ => truncate_token(&dedash(&tag_display_value(tag))),
+        // Free-text / flag types: lowercase readable value with its dashes kept
+        // (they double as word breaks for the sibling-diff), hard-capped so it
+        // can't run away.
+        _ => truncate_token(&tag_display_value(tag).to_ascii_lowercase()),
     };
     Some(token.trim().to_string())
 }
@@ -103,19 +104,19 @@ fn strip_rev_prefix(value: &str) -> &str {
     value
 }
 
-/// Short forms for the common edition values; everything else falls back to the
-/// de-dashed, capped value.
+/// Uppercase short forms for the common edition values; everything else falls
+/// back to the lowercase, dash-preserving, capped value.
 fn compact_edition(value: &str) -> String {
     match value {
-        "directors-cut" => "dc".to_string(),
-        "collectors" => "ce".to_string(),
-        "limited" => "le".to_string(),
-        "special" => "se".to_string(),
-        "deluxe" => "dlx".to_string(),
-        "ultimate" => "ult".to_string(),
-        "anniversary" => "anniv".to_string(),
-        "remaster" | "remastered" => "remas".to_string(),
-        other => truncate_token(&dedash(other)),
+        "directors-cut" => "DC".to_string(),
+        "collectors" => "CE".to_string(),
+        "limited" => "LE".to_string(),
+        "special" => "SE".to_string(),
+        "deluxe" => "DLX".to_string(),
+        "ultimate" => "ULT".to_string(),
+        "anniversary" => "ANNIV".to_string(),
+        "remaster" | "remastered" => "REMAS".to_string(),
+        other => truncate_token(&other.to_ascii_lowercase()),
     }
 }
 
@@ -128,16 +129,6 @@ fn format_year_token(value: &str) -> String {
     } else {
         year.to_string()
     }
-}
-
-/// Replace dashes with spaces and collapse runs of whitespace, so a normalized
-/// value like `atari-lightgun` reads (and word-splits) as `atari lightgun`.
-fn dedash(value: &str) -> String {
-    value
-        .split(['-', ' '])
-        .filter(|w| !w.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// Hard-cap a free-text token to `MAX_FALLBACK_TOKEN_CHARS` on a char boundary.
@@ -164,38 +155,49 @@ pub fn sibling_disambiguation_displays(rows: &[(String, Vec<String>)]) -> Vec<St
         while j < rows.len() && rows[j].0 == rows[i].0 {
             j += 1;
         }
-        let members: Vec<Vec<String>> = rows[i..j]
+        let members: Vec<(Vec<String>, Vec<char>)> = rows[i..j]
             .iter()
-            .map(|(_, toks)| split_words(toks))
+            .map(|(_, toks)| split_words_with_sep(toks))
             .collect();
-        let (lead, trail) = common_affix(&members);
-        for member in &members {
-            out.push(join_trimmed(member, lead, trail));
+        let words_only: Vec<&[String]> = members.iter().map(|(w, _)| w.as_slice()).collect();
+        let (lead, trail) = common_affix(&words_only);
+        for (words, seps) in &members {
+            out.push(join_trimmed(words, seps, lead, trail));
         }
         i = j;
     }
     out
 }
 
-/// Flatten a row's tokens into whitespace-separated words. Compact structured
-/// tokens (`r1-2`, `us`) stay atomic; only free-text values were de-dashed into
-/// multiple words at format time, so this splits on spaces alone.
-fn split_words(tokens: &[String]) -> Vec<String> {
-    tokens
-        .iter()
-        .flat_map(|t| t.split(' '))
-        .filter(|w| !w.is_empty())
-        .map(str::to_string)
-        .collect()
+/// Split a row's tokens into words plus the separator that sits between each
+/// consecutive pair, so the trimmed result can be rejoined with the original
+/// delimiter (dashes preserved). Within a free-text token the separator is `-`
+/// (`atari-lightgun` -> words `atari`, `lightgun`); between two distinct tokens
+/// it is a space (`US`, `R1` -> `US R1`). Structured tokens (`US`, `D2`) have no
+/// internal dash and stay atomic. `seps` has one fewer entry than `words`.
+fn split_words_with_sep(tokens: &[String]) -> (Vec<String>, Vec<char>) {
+    let mut words: Vec<String> = Vec::new();
+    let mut seps: Vec<char> = Vec::new();
+    for token in tokens {
+        for (idx, seg) in token.split('-').filter(|s| !s.is_empty()).enumerate() {
+            if !words.is_empty() {
+                // First segment of a new token follows a space; later segments
+                // of the same token follow the dash they were split on.
+                seps.push(if idx == 0 { ' ' } else { '-' });
+            }
+            words.push(seg.to_string());
+        }
+    }
+    (words, seps)
 }
 
 /// Longest leading and trailing word-runs shared by ALL members, capped so no
 /// member is trimmed to empty. `(0, 0)` for groups smaller than two.
-fn common_affix(members: &[Vec<String>]) -> (usize, usize) {
+fn common_affix(members: &[&[String]]) -> (usize, usize) {
     if members.len() < 2 {
         return (0, 0);
     }
-    let min_len = members.iter().map(Vec::len).min().unwrap_or(0);
+    let min_len = members.iter().map(|m| m.len()).min().unwrap_or(0);
     if min_len == 0 {
         return (0, 0);
     }
@@ -220,9 +222,18 @@ fn common_affix(members: &[Vec<String>]) -> (usize, usize) {
     (lead, trail)
 }
 
-fn join_trimmed(words: &[String], lead: usize, trail: usize) -> String {
+/// Rejoin the kept `words[lead..len-trail]` range, placing the original
+/// separator (`seps[i - 1]`) between consecutive kept words so dashes survive.
+fn join_trimmed(words: &[String], seps: &[char], lead: usize, trail: usize) -> String {
     let end = words.len() - trail;
-    words[lead..end].join(" ")
+    let mut out = String::new();
+    for i in lead..end {
+        if i > lead {
+            out.push(seps[i - 1]);
+        }
+        out.push_str(&words[i]);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -238,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn formats_common_types_into_short_lowercase_tokens() {
+    fn formats_common_types_into_short_uppercase_tokens() {
         assert_eq!(
             disambiguating_tag_labels(&[
                 tag("us", "region"),
@@ -246,7 +257,7 @@ mod tests {
                 tag("2", "disc"),
                 tag("1", "rev"),
             ]),
-            vec!["us", "ja", "d2", "r1"]
+            vec!["US", "JA", "D2", "R1"]
         );
         assert_eq!(
             disambiguating_tag_labels(&[
@@ -254,7 +265,8 @@ mod tests {
                 tag("1996-10-04", "builddate"),
                 tag("hack", "unlicensed"),
             ]),
-            vec!["2p", "'96", "hack"]
+            // Curated codes uppercase; free-text flag stays lowercase.
+            vec!["2P", "'96", "hack"]
         );
     }
 
@@ -262,7 +274,7 @@ mod tests {
     fn region_world_uses_mister_shorthand() {
         assert_eq!(
             disambiguating_tag_labels(&[tag("world", "region")]),
-            vec!["w"]
+            vec!["W"]
         );
     }
 
@@ -270,11 +282,11 @@ mod tests {
     fn rev_strips_spelled_out_prefix() {
         assert_eq!(
             disambiguating_tag_labels(&[tag("revision-a", "rev")]),
-            vec!["ra"]
+            vec!["RA"]
         );
         assert_eq!(
             disambiguating_tag_labels(&[tag("1-2", "rev")]),
-            vec!["r1-2"]
+            vec!["R1-2"]
         );
     }
 
@@ -282,20 +294,20 @@ mod tests {
     fn region_multi_value_joins_with_slash() {
         assert_eq!(
             disambiguating_tag_labels(&[tag("us,eu", "region")]),
-            vec!["us/eu"]
+            vec!["US/EU"]
         );
     }
 
     #[test]
-    fn free_text_is_dedashed_and_capped() {
+    fn free_text_keeps_dashes_lowercase_and_is_capped() {
         assert_eq!(
             disambiguating_tag_labels(&[tag("atari-lightgun", "unknown")]),
-            vec!["atari lightgun"]
+            vec!["atari-lightgun"]
         );
-        // de-dashed to "homebrew translation" (20 chars) -> hard cut to 14.
+        // "homebrew-translation" (20 chars) -> hard cut to 14 with the dash kept.
         assert_eq!(
             disambiguating_tag_labels(&[tag("homebrew-translation", "unknown")]),
-            vec!["homebrew trans"]
+            vec!["homebrew-trans"]
         );
     }
 
@@ -315,8 +327,8 @@ mod tests {
     #[test]
     fn sibling_diff_strips_common_leading_word() {
         let rows = vec![
-            ("Crossbow".into(), vec!["atari joystick".into()]),
-            ("Crossbow".into(), vec!["atari lightgun".into()]),
+            ("Crossbow".into(), vec!["atari-joystick".into()]),
+            ("Crossbow".into(), vec!["atari-lightgun".into()]),
         ];
         assert_eq!(
             sibling_disambiguation_displays(&rows),
@@ -325,41 +337,41 @@ mod tests {
     }
 
     #[test]
-    fn sibling_diff_keeps_each_member_nonempty() {
+    fn sibling_diff_keeps_each_member_nonempty_and_preserves_dashes() {
         let rows = vec![
-            ("Arkanoid".into(), vec!["unl lives slow".into()]),
-            ("Arkanoid".into(), vec!["unl lives".into()]),
+            ("Arkanoid".into(), vec!["unl-lives-slow".into()]),
+            ("Arkanoid".into(), vec!["unl-lives".into()]),
         ];
         assert_eq!(
             sibling_disambiguation_displays(&rows),
-            vec!["lives slow", "lives"]
+            vec!["lives-slow", "lives"]
         );
     }
 
     #[test]
     fn sibling_diff_drops_shared_trailing_token() {
         let rows = vec![
-            ("Game".into(), vec!["us".into(), "r1".into()]),
-            ("Game".into(), vec!["eu".into(), "r1".into()]),
+            ("Game".into(), vec!["US".into(), "R1".into()]),
+            ("Game".into(), vec!["EU".into(), "R1".into()]),
         ];
-        assert_eq!(sibling_disambiguation_displays(&rows), vec!["us", "eu"]);
+        assert_eq!(sibling_disambiguation_displays(&rows), vec!["US", "EU"]);
     }
 
     #[test]
     fn sibling_diff_singleton_is_unchanged() {
-        let rows = vec![("Solo".into(), vec!["us".into(), "r1".into()])];
-        assert_eq!(sibling_disambiguation_displays(&rows), vec!["us r1"]);
+        let rows = vec![("Solo".into(), vec!["US".into(), "R1".into()])];
+        assert_eq!(sibling_disambiguation_displays(&rows), vec!["US R1"]);
     }
 
     #[test]
     fn sibling_diff_distinct_names_not_grouped() {
         let rows = vec![
-            ("A".into(), vec!["atari joystick".into()]),
-            ("B".into(), vec!["atari lightgun".into()]),
+            ("A".into(), vec!["atari-joystick".into()]),
+            ("B".into(), vec!["atari-lightgun".into()]),
         ];
         assert_eq!(
             sibling_disambiguation_displays(&rows),
-            vec!["atari joystick", "atari lightgun"]
+            vec!["atari-joystick", "atari-lightgun"]
         );
     }
 }

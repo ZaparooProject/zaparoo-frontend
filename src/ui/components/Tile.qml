@@ -77,9 +77,10 @@ Item {
     // qmllint disable missing-property compiler
     readonly property bool delegateHidden: parent.hidden === true
     // qmllint disable missing-property compiler
-    // Newline-joined disambiguating-tag tokens (region, disc, rev, ...).
-    // Empty for items with no variants. Rendered as pills over the cover in
-    // the default theme; appended inline to the caption in CRT mode.
+    // Sibling-diffed disambiguating-tag display string (region, disc, rev, ...).
+    // Empty for items with no variants. Rendered as a dim inline suffix after
+    // the name in the bottom caption (see ScrollingCaption), identically on the
+    // default and CRT paths.
     readonly property string delegateDisambiguatingTags: parent.disambiguatingTags ?? ""
     // Pulse counter forwarded by TileLoader — increment to trigger the
     // push-in cue on the focused tile. Every button-like action (folder

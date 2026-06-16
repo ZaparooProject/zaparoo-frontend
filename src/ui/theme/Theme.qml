@@ -39,6 +39,13 @@ QtObject {
     readonly property color textVariant: "#8a8ab2"
     // Accent — static warm amber used for selection highlights.
     readonly property color accent: "#FFB347"
+    // Persistent-state marker tint (favorite heart, hidden badge). Lavender,
+    // not the amber accent, so these markers stay distinct from the focus
+    // ring/logo tint instead of melting into them — amber means "selected"
+    // exclusively. Paired with a dark `bgBar` outline/border for visibility on
+    // light cover art. `resources/images/icons/Heart.svg` bakes this same hex
+    // (an SVG can't reference Theme); update both together.
+    readonly property color stateMarker: "#9898CC"
     // System logo tint tokens — two ramps, selected by Tile based on focus state.
     // Inactive ramp: medium purple so unfocused tiles read as secondary
     // against the amber focused ramp. Was near-white (#E4E4F6) which

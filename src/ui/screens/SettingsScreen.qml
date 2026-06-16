@@ -50,6 +50,8 @@ Item {
 
     readonly property string pageRoot: "root"
     readonly property string pageDisplayInterface: "displayInterface"
+    readonly property string pageBrowsing: "browsing"
+    readonly property string pageLanguage: "language"
     readonly property string pageControlsInput: "controlsInput"
     readonly property string pageLibraryData: "libraryData"
     readonly property string pageSupportAbout: "supportAbout"
@@ -83,6 +85,18 @@ Item {
         },
         {
             kind: "field",
+            id: "pageBrowsing",
+            label: qsTr("Browsing"),
+            coverKey: "icons/Browsing"
+        },
+        {
+            kind: "field",
+            id: "pageLanguage",
+            label: qsTr("Language"),
+            coverKey: "icons/Language"
+        },
+        {
+            kind: "field",
             id: "pageControlsInput",
             label: qsTr("Controls"),
             coverKey: "icons/Controls"
@@ -100,6 +114,8 @@ Item {
             coverKey: "icons/Support"
         }
     ]
+    // Display = video output only. Resolution is MiSTer-only (changes startup
+    // video config, applies on restart).
     readonly property var displayInterfaceFields: {
         const out = [];
         if (Browse.Settings.is_mister) {
@@ -116,46 +132,52 @@ Item {
         });
         out.push({
             kind: "field",
-            id: "browseLayout",
-            label: qsTr("Browsing layout")
-        });
-        out.push({
-            kind: "field",
-            id: "mediaImageType",
-            label: qsTr("Preferred artwork")
-        });
-        out.push({
-            kind: "field",
             id: "screensaverTimeout",
             label: qsTr("Screensaver")
         });
-        out.push({
+        return out;
+    }
+    // Browsing = how the library is presented and which items show.
+    readonly property var browsingFields: [
+        {
             kind: "field",
-            id: "clockFormat",
-            label: qsTr("Clock format")
-        });
-        out.push({
+            id: "browseLayout",
+            label: qsTr("Browsing layout")
+        },
+        {
             kind: "field",
-            id: "region",
-            label: qsTr("System names")
-        });
-        out.push({
-            kind: "field",
-            id: "language",
-            label: qsTr("Language")
-        });
-        out.push({
+            id: "mediaImageType",
+            label: qsTr("Preferred artwork")
+        },
+        {
             kind: "field",
             id: "showHidden",
             label: qsTr("Show hidden items")
-        });
-        out.push({
+        },
+        {
             kind: "field",
             id: "showOriginalFilenames",
             label: qsTr("Show original filenames")
-        });
-        return out;
-    }
+        }
+    ]
+    // Language = locale/regional preferences.
+    readonly property var languageFields: [
+        {
+            kind: "field",
+            id: "language",
+            label: qsTr("Language")
+        },
+        {
+            kind: "field",
+            id: "region",
+            label: qsTr("System names")
+        },
+        {
+            kind: "field",
+            id: "clockFormat",
+            label: qsTr("Clock format")
+        }
+    ]
     readonly property var controlsInputFields: [
         {
             kind: "field",
@@ -215,6 +237,10 @@ Item {
     readonly property var fields: {
         if (settings.currentPage === settings.pageDisplayInterface)
             return settings.displayInterfaceFields;
+        if (settings.currentPage === settings.pageBrowsing)
+            return settings.browsingFields;
+        if (settings.currentPage === settings.pageLanguage)
+            return settings.languageFields;
         if (settings.currentPage === settings.pageControlsInput)
             return settings.controlsInputFields;
         if (settings.currentPage === settings.pageLibraryData)
@@ -226,6 +252,10 @@ Item {
     readonly property string pageTitle: {
         if (settings.currentPage === settings.pageDisplayInterface)
             return qsTr("Display");
+        if (settings.currentPage === settings.pageBrowsing)
+            return qsTr("Browsing");
+        if (settings.currentPage === settings.pageLanguage)
+            return qsTr("Language");
         if (settings.currentPage === settings.pageControlsInput)
             return qsTr("Controls");
         if (settings.currentPage === settings.pageLibraryData)
@@ -360,7 +390,7 @@ Item {
     function _fieldControl(id: string): string {
         if (id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion")
             return "toggle";
-        if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout")
+        if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout")
             return "navigate";
         if (id === "updateMediaDb" || id === "runScraper" || id === "uploadLog")
             return "action";
@@ -424,7 +454,7 @@ Item {
         return from;
     }
 
-    readonly property int rootGridColumns: 5
+    readonly property int rootGridColumns: 3
     readonly property int rootGridRows: 2
 
     function _moveRootGrid(dx: int, dy: int): void {
@@ -484,7 +514,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return settings.focusedFieldIsPicker || id === "updateMediaDb" || id === "runScraper" || id === "uploadLog" || id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout";
+        return settings.focusedFieldIsPicker || id === "updateMediaDb" || id === "runScraper" || id === "uploadLog" || id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout";
     }
     // Verb shown on the help-bar Accept hint for the focused action
     // row. Index/scrape flip between Start and Cancel because the press
@@ -950,6 +980,10 @@ Item {
         let page = "";
         if (id === "pageDisplayInterface")
             page = settings.pageDisplayInterface;
+        else if (id === "pageBrowsing")
+            page = settings.pageBrowsing;
+        else if (id === "pageLanguage")
+            page = settings.pageLanguage;
         else if (id === "pageControlsInput")
             page = settings.pageControlsInput;
         else if (id === "pageLibraryData")
