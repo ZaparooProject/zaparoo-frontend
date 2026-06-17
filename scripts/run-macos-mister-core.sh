@@ -15,7 +15,7 @@ if [ ! -x "${FRONTEND}" ]; then
     exit 1
 fi
 
-export ZAPAROO_CORE_ENDPOINT="ws://192.168.1.176:7497/api/v0.1"
+export ZAPAROO_CORE_ENDPOINT="ws://192.168.1.143:7497/api/v0.1"
 export ZAPAROO_CRT_PREVIEW_SCALE=3
 exec "${FRONTEND}"
 # exec "${FRONTEND}" --crt
