@@ -151,6 +151,7 @@ impl Default for FavoritesModelRust {
     fn default() -> Self {
         Self {
             entries: Vec::new(),
+            disambig_displays: Vec::new(),
             count: 0,
             loading: false,
             loading_more: false,
@@ -162,7 +163,11 @@ impl Default for FavoritesModelRust {
             current_detail_loading: false,
             current_detail_tags: QString::default(),
             current_detail_image_key: QString::default(),
+            detail_prefetch_key_next: QString::default(),
+            detail_prefetch_key_prev: QString::default(),
+            detail_prefetch_row: None,
             cover_requests_paused: true,
+            show_original_filenames: false,
             current_detail_media_key: None,
             current_detail_media_id: None,
             card_write_seq: Arc::new(AtomicU64::new(0)),
