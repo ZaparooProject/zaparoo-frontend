@@ -513,6 +513,7 @@ Item {
                 // fallback with `name` rendered large.
                 required property string coverKey
                 required property int favorite
+                required property bool hidden
 
                 readonly property int cellPage: Math.floor(index / root.pageSize)
                 readonly property int cellLocal: index % root.pageSize
@@ -652,6 +653,7 @@ Item {
                     name: cellItem.name
                     coverKey: cellItem._gatedCoverKey
                     favorite: cellItem.favorite
+                    hidden: cellItem.hidden
                 }
 
                 MouseArea {

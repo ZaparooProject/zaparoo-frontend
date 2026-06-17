@@ -23,6 +23,7 @@
 // QR/card-write payloads prefer Core's portable ZapScript.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
+use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
@@ -33,7 +34,7 @@ use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
@@ -55,6 +56,7 @@ const COVER_KEY_ROLE: i32 = 256 + 4;
 const ZAP_SCRIPT_ROLE: i32 = 256 + 5;
 const FAVORITE_ROLE: i32 = 256 + 6;
 const FILE_STEM_ROLE: i32 = 256 + 7;
+const HIDDEN_ROLE: i32 = 256 + 8;
 
 // Page size for the initial load and every cursor follow-up. Core caps
 // `maxResults` at 100; search rows are tiny (one tile + one caption per
@@ -112,6 +114,7 @@ pub struct FavoritesModelRust {
     // JoinHandle doesn't cancel a callback already queued onto the Qt
     // thread between sleep-completion and abort.
     cover_gate_seq: Arc<AtomicU64>,
+    nav_timing: Option<NavTiming>,
 }
 
 impl Default for FavoritesModelRust {
@@ -139,6 +142,7 @@ impl Default for FavoritesModelRust {
             pending_first_paint_keys: HashSet::new(),
             cover_gate_timer: None,
             cover_gate_seq: Arc::new(AtomicU64::new(0)),
+            nav_timing: None,
         }
     }
 }
@@ -308,7 +312,14 @@ fn apply_state(
     mut model: Pin<&mut ffi::FavoritesModel>,
     (data, err): (Option<PageSnapshot>, String),
 ) {
+    let apply_started = Instant::now();
     if let Some((entries, has_next_page, next_cursor)) = data {
+        if model.nav_timing.is_none() {
+            model.as_mut().rust_mut().nav_timing = Some(NavTiming::new("cache"));
+        }
+        if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+            timing.mark_request_done();
+        }
         // A fresh initial page resets the cursor chain — bump `seq` so
         // any in-flight `fetch_more` sees a stale ticket and bails.
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
@@ -324,6 +335,13 @@ fn apply_state(
         model.as_mut().rust_mut().next_cursor = next_cursor;
         model.as_mut().end_reset_model();
         model.as_mut().count_changed();
+        if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+            timing.mark_apply_done();
+        }
+        info!(
+            apply_ms = apply_started.elapsed().as_millis(),
+            "favorites: apply_state timing",
+        );
         if model.has_next_page != has_next_page {
             model.as_mut().set_has_next_page(has_next_page);
         }
@@ -335,6 +353,7 @@ fn apply_state(
             if model.loading {
                 model.as_mut().set_loading(false);
             }
+            finish_nav_timing(model.as_mut(), "covers-paused", 0);
         } else {
             // Decide whether to release `loading` immediately or hold it until
             // covers are cached. `arm_cover_gate` flips loading off itself when
@@ -352,6 +371,11 @@ fn apply_state(
             model.as_mut().fetch_more();
         }
     } else if err.is_empty() {
+        if model.nav_timing.is_none() {
+            model.as_mut().rust_mut().nav_timing = Some(NavTiming::new("network"));
+        } else if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+            timing.set_source("network");
+        }
         // Pending (Idle/Loading): show the spinner; don't touch results.
         // Disarm pagination so a grid scroll during a refetch doesn't
         // fire `fetch_more` against a stale cursor — `has_next_page`
@@ -382,6 +406,7 @@ fn apply_state(
         if model.loading {
             model.as_mut().set_loading(false);
         }
+        finish_nav_timing(model.as_mut(), "error", 0);
         if model.has_next_page {
             model.as_mut().set_has_next_page(false);
         }
@@ -418,6 +443,7 @@ impl ffi::FavoritesModel {
             FILE_STEM_ROLE => {
                 QVariant::from(&QString::from(file_stem_or_name(&entry.path, &entry.name)))
             }
+            HIDDEN_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -431,6 +457,7 @@ impl ffi::FavoritesModel {
         h.insert(ZAP_SCRIPT_ROLE, QByteArray::from("zapScript"));
         h.insert(FAVORITE_ROLE, QByteArray::from("favorite"));
         h.insert(FILE_STEM_ROLE, QByteArray::from("fileStem"));
+        h.insert(HIDDEN_ROLE, QByteArray::from("hidden"));
         h
     }
 
@@ -981,6 +1008,16 @@ fn enqueue_favorites_covers(results: &[MediaItem]) {
     }
 }
 
+fn finish_nav_timing(
+    mut model: Pin<&mut ffi::FavoritesModel>,
+    reason: &'static str,
+    pending_remaining: usize,
+) {
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.take() {
+        timing.log_release("favorites", reason, pending_remaining);
+    }
+}
+
 /// Emit `dataChanged(coverKey)` for every row whose entry's
 /// `(systemId, mediaPath)` matches `key`. Cheap walk of the current
 /// `entries` vec — favorites pages top out at a few hundred rows after
@@ -1058,6 +1095,7 @@ fn notify_cover_update(mut model: Pin<&mut ffi::FavoritesModel>, key: &MediaKey)
                     info!("favorites: cover gate released after decode-settle window");
                     model.as_mut().set_loading(false);
                 }
+                finish_nav_timing(model.as_mut(), "covers-ready", 0);
             });
         });
         model.as_mut().rust_mut().cover_gate_timer = Some(handle);
@@ -1100,16 +1138,27 @@ fn arm_cover_gate(mut model: Pin<&mut ffi::FavoritesModel>) {
         handle.abort();
     }
     let cache = global_media_image_cache();
+    let cover_keys = model
+        .entries
+        .iter()
+        .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
+        .collect::<Vec<_>>();
+    let cover_total = cover_keys.len();
+    let cover_cache_hits = cover_keys.iter().filter(|k| cache.is_cached(k)).count();
     let unresolved = compute_unresolved_keys(
         &model.entries,
         |k| cache.is_cached(k),
         |k| cache.is_negative(k) || cache.is_soft_no_image(k),
     );
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.start_gate(cover_total, cover_cache_hits, unresolved.len());
+    }
     if unresolved.is_empty() {
         model.as_mut().rust_mut().pending_first_paint_keys.clear();
         if model.loading {
             model.as_mut().set_loading(false);
         }
+        finish_nav_timing(model.as_mut(), "covers-ready", 0);
         return;
     }
     info!(
@@ -1154,6 +1203,7 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::FavoritesModel>) {
     if model.loading {
         model.as_mut().set_loading(false);
     }
+    finish_nav_timing(model.as_mut(), "timeout", pending);
 }
 
 /// Build the `text` payload sent to Core's `run` for a search entry.

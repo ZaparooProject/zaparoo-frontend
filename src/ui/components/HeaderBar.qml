@@ -69,10 +69,42 @@ Item {
         renderType: Text.NativeRendering
     }
 
+    function _clockLocale(): var {
+        const language = Browse.Settings.current_language;
+        if (language === "" || language === "auto")
+            return Qt.locale();
+        return Qt.locale(language);
+    }
+
+    function _clockUses12Hour(): bool {
+        const format = Browse.Settings.current_clock_format;
+        if (format === "12h")
+            return true;
+        if (format === "24h")
+            return false;
+        const localeFormat = header._clockLocale().timeFormat(Locale.ShortFormat);
+        if (localeFormat.indexOf("H") >= 0)
+            return false;
+        return localeFormat.indexOf("h") >= 0;
+    }
+
+    function _clockFormatString(): string {
+        return header._clockUses12Hour() ? "h:mm AP" : "HH:mm";
+    }
+
+    function _clockText(date: date): string {
+        return date.toLocaleTimeString(header._clockLocale(), header._clockFormatString());
+    }
+
+    function _clockMetricSample(): string {
+        const sample = header._clockUses12Hour() ? new Date(2000, 0, 1, 12, 59) : new Date(2000, 0, 1, 23, 59);
+        return header._clockText(sample);
+    }
+
     TextMetrics {
         id: clockMetrics
 
-        text: "23:59"
+        text: header._clockMetricSample()
         font.family: Theme.fontUi
         font.pixelSize: Sizing.headerRowHeight
     }
@@ -80,8 +112,7 @@ Item {
     // Host status row — NFC / Wi-Fi / LAN / Bluetooth icons plus the
     // wall clock, right-anchored so badges can appear and disappear
     // without nudging the clock away from the edge. Clock width is
-    // measured from "23:59", the widest minutes-only value we care
-    // about for fixed CRT bitmap font sizing.
+    // measured from the widest sample for the selected 12h/24h format.
     Row {
         id: topHud
 
@@ -131,7 +162,8 @@ Item {
             // wakeups; minutes-only display means we never need finer.
             // Fixed width avoids reflow on the minute boundary because
             // proportional digits make "11:11" narrower than "10:00".
-            property string currentTime: Qt.formatDateTime(new Date(), "HH:mm")
+            property date currentDate: new Date()
+            readonly property string currentTime: header._clockText(clockLabel.currentDate)
 
             anchors.verticalCenter: parent.verticalCenter
             height: parent.height
@@ -149,7 +181,7 @@ Item {
                 running: true
                 repeat: true
                 triggeredOnStart: true
-                onTriggered: clockLabel.currentTime = Qt.formatDateTime(new Date(), "HH:mm")
+                onTriggered: clockLabel.currentDate = new Date()
             }
         }
     }

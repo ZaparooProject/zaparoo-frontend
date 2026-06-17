@@ -1002,8 +1002,11 @@ ApplicationWindow {
                         // categories row is empty (0 systems indexed) — the
                         // help bar must reflect that the actions row is
                         // navigable, otherwise the user reads "Quit only"
-                        // and misses the Settings tile entirely.
-                        return [
+                        // and misses the Settings tile entirely. Category
+                        // tiles also expose an options menu for hide/scrape
+                        // actions; placeholders do not.
+                        const categoryOptionsAvailable = root.hubScreen !== null && root.hubScreen.currentRow === 0 && Browse.CategoriesModel.count > 0;
+                        let row = [
                             {
                                 button: "Dpad",
                                 label: qsTr("Move")
@@ -1011,12 +1014,18 @@ ApplicationWindow {
                             {
                                 button: "ButtonA",
                                 label: qsTr("Open")
-                            },
-                            {
-                                button: "ButtonB",
-                                label: qsTr("Quit")
                             }
                         ];
+                        if (categoryOptionsAvailable)
+                            row.push({
+                                button: "ButtonX",
+                                label: qsTr("Options")
+                            });
+                        row.push({
+                            button: "ButtonB",
+                            label: qsTr("Quit")
+                        });
+                        return row;
                     }
                     if (root.activeScreen === root.screenSystems) {
                         if (root.systemsScreenState === "loading")
@@ -1124,6 +1133,31 @@ ApplicationWindow {
                     if (root.activeScreen === root.screenSettings) {
                         if (root.settingsScreen === null)
                             return [];
+                        if (root.settingsScreen.showingRootGrid) {
+                            if (root.settingsScreen.optimisticLoading)
+                                return [
+                                    {
+                                        button: "ButtonB",
+                                        label: qsTr("Back")
+                                    }
+                                ];
+                            let gridRow = [];
+                            if (root.settingsScreen.fieldCount > 1)
+                                gridRow.push({
+                                    button: "Dpad",
+                                    label: qsTr("Move")
+                                });
+                            if (root.settingsScreen.fieldCount > 0)
+                                gridRow.push({
+                                    button: "ButtonA",
+                                    label: qsTr("Open")
+                                });
+                            gridRow.push({
+                                button: "ButtonB",
+                                label: qsTr("Back")
+                            });
+                            return gridRow;
+                        }
                         let row = [];
                         // Up/Down moves between fields; only useful when there
                         // are 2+ fields.

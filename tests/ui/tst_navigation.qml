@@ -108,26 +108,22 @@ TestCase {
         compare(main.activeScreen, main.screenSystems, "Enter on an empty systems screen must retry, not flip to games");
     }
 
-    // Escape on games goes back to systems (one peer up the stack) after
-    // a one-frame Loading cue, matching heavy forward transitions.
+    // Escape on games goes straight back to systems when the destination
+    // screen is already mounted and its model is idle.
     function test_escape_on_games_returns_to_systems(): void {
         main.activeScreen = main.screenGames;
         main.handleKey(Qt.Key_Escape);
-        compare(main.pendingTransition, "back");
-        compare(main.activeScreen, main.screenGames);
-        tryCompare(main, "activeScreen", main.screenSystems);
         compare(main.pendingTransition, "");
+        compare(main.activeScreen, main.screenSystems);
         tryCompare(main, "transitionCueVisible", false);
     }
 
-    // Escape on systems goes back to hub after the same Loading cue.
+    // Escape on systems goes straight back to Hub; Hub has no model fill to wait on.
     function test_escape_on_systems_returns_to_hub(): void {
         main.activeScreen = main.screenSystems;
         main.handleKey(Qt.Key_Escape);
-        compare(main.pendingTransition, "back");
-        compare(main.activeScreen, main.screenSystems);
-        tryCompare(main, "activeScreen", main.screenHub);
         compare(main.pendingTransition, "");
+        compare(main.activeScreen, main.screenHub);
         tryCompare(main, "transitionCueVisible", false);
     }
 
@@ -144,10 +140,28 @@ TestCase {
     function test_backspace_behaves_like_escape_on_games(): void {
         main.activeScreen = main.screenGames;
         main.handleKey(Qt.Key_Backspace);
-        compare(main.pendingTransition, "back");
-        tryCompare(main, "activeScreen", main.screenSystems);
         compare(main.pendingTransition, "");
+        compare(main.activeScreen, main.screenSystems);
         tryCompare(main, "transitionCueVisible", false);
+    }
+
+    function test_settings_root_grid_opens_category_and_returns(): void {
+        main.activeScreen = main.screenSettings;
+        main.settingsScreen.optimisticLoading = false;
+        main.settingsScreen.currentPage = main.settingsScreen.pageRoot;
+        compare(main.settingsScreen.rootGridColumns, 5);
+        compare(main.settingsScreen.rootGridRows, 2);
+        main.settingsScreen.currentIndex = 0;
+        main.handleAction("down");
+        compare(main.settingsScreen.currentIndex, 0);
+        main.handleAction("right");
+        compare(main.settingsScreen.currentIndex, 1);
+        main.handleAction("accept");
+        compare(main.settingsScreen.currentPage, main.settingsScreen.pageControlsInput);
+        main.handleAction("cancel");
+        compare(main.settingsScreen.currentPage, main.settingsScreen.pageRoot);
+        main.handleAction("cancel");
+        compare(main.activeScreen, main.screenHub);
     }
 
     // Cross-row mapping. The test harness has no live CategoriesModel
@@ -338,7 +352,7 @@ TestCase {
         // qmllint disable compiler
         compare(main._isRepeatableAction("accept"), false);
         compare(main._isRepeatableAction("cancel"), false);
-        compare(main._isRepeatableAction("write_card"), false);
+        compare(main._isRepeatableAction("context_menu"), false);
         compare(main._isRepeatableAction(""), false);
     // qmllint enable compiler
     }
@@ -453,18 +467,19 @@ TestCase {
 
     function test_context_menu_systems_owner_includes_media_actions(): void {
         // qmllint disable compiler
-        const entries = main.buildContextMenuEntries("systems", "", false, false, false, "");
-        compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system"], "Systems context menu includes system-scoped maintenance actions");
+        const entries = main.buildContextMenuEntries("systems", "", false, false, false, "", false);
+        compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system", "toggle_hide_system"], "Systems context menu includes system-scoped maintenance actions");
         verify(entries[0].label.length > 0, "Launch core label is set (not asserted in English for translation)");
         verify(entries[1].label.length > 0, "Update media database label is set");
         verify(entries[2].label.length > 0, "Scrape metadata label is set");
+        verify(entries[3].label.length > 0, "Hide label is set");
     // qmllint enable compiler
     }
 
     function test_context_menu_systems_has_nfc_does_not_add_entries(): void {
         // qmllint disable compiler
-        const entries = main.buildContextMenuEntries("systems", "", false, true, false, "");
-        compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system"], "has_nfc must not affect the systems menu");
+        const entries = main.buildContextMenuEntries("systems", "", false, true, false, "", false);
+        compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system", "toggle_hide_system"], "has_nfc must not affect the systems menu");
     // qmllint enable compiler
     }
 

@@ -22,6 +22,11 @@
 //   * `current_language` — READ + NOTIFY. Mirrors `[general].language`
 //     from frontend.toml and is also recorded in persisted state so the
 //     settings snapshot stays coherent.
+//   * `available_clock_formats` — CONSTANT. Tri-state wall-clock format:
+//     `auto` follows the effective UI locale, `12h` and `24h` force an
+//     override.
+//   * `current_clock_format` — READ + NOTIFY, persisted. Defaults to
+//     `auto` so existing installs keep locale-driven behavior.
 //   * `available_orientations` — CONSTANT. Three display transforms:
 //     horizontal (default), rotated clockwise, rotated counter-clockwise.
 //   * `current_orientation` — READ + NOTIFY, persisted. Applied live by
@@ -119,6 +124,8 @@ const LANGUAGE_ALIASES: &[(&str, &str)] = &[
     ("hi_IN", "hi"),
 ];
 const DEFAULT_LANGUAGE: &str = "auto";
+const CLOCK_FORMATS: &[&str] = &["auto", "12h", "24h"];
+const DEFAULT_CLOCK_FORMAT: &str = "auto";
 const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
 const DEFAULT_ORIENTATION: &str = "horizontal";
 const BROWSE_LAYOUTS: &[&str] = &["grid", "list"];
@@ -167,6 +174,8 @@ pub struct SettingsRust {
     current_resolution: QString,
     available_languages: QStringList,
     current_language: QString,
+    available_clock_formats: QStringList,
+    current_clock_format: QString,
     available_orientations: QStringList,
     current_orientation: QString,
     available_browse_layouts: QStringList,
@@ -176,6 +185,7 @@ pub struct SettingsRust {
     current_mouse_enabled: bool,
     current_discover_arcade_alternate_versions: bool,
     current_debug_logging: bool,
+    current_show_hidden: bool,
     available_screensaver_timeouts: QStringList,
     current_screensaver_timeout: QString,
     available_media_image_types: QStringList,
@@ -200,6 +210,8 @@ pub mod ffi {
         #[qproperty(QString, current_resolution, READ, WRITE = set_resolution, NOTIFY)]
         #[qproperty(QStringList, available_languages, READ, CONSTANT)]
         #[qproperty(QString, current_language, READ, WRITE = set_language, NOTIFY)]
+        #[qproperty(QStringList, available_clock_formats, READ, CONSTANT)]
+        #[qproperty(QString, current_clock_format, READ, WRITE = set_clock_format, NOTIFY)]
         #[qproperty(QStringList, available_orientations, READ, CONSTANT)]
         #[qproperty(QString, current_orientation, READ, WRITE = set_orientation, NOTIFY)]
         #[qproperty(QStringList, available_browse_layouts, READ, CONSTANT)]
@@ -209,6 +221,7 @@ pub mod ffi {
         #[qproperty(bool, current_mouse_enabled, READ, WRITE = set_mouse_enabled, NOTIFY)]
         #[qproperty(bool, current_discover_arcade_alternate_versions, READ, WRITE = set_discover_arcade_alternate_versions, NOTIFY)]
         #[qproperty(bool, current_debug_logging, READ, WRITE = set_debug_logging, NOTIFY)]
+        #[qproperty(bool, current_show_hidden, READ, WRITE = set_show_hidden, NOTIFY)]
         #[qproperty(QStringList, available_screensaver_timeouts, READ, CONSTANT)]
         #[qproperty(QString, current_screensaver_timeout, READ, WRITE = set_screensaver_timeout, NOTIFY)]
         #[qproperty(QStringList, available_media_image_types, READ, CONSTANT)]
@@ -220,6 +233,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_language(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_clock_format(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_orientation(self: Pin<&mut Settings>, value: QString);
@@ -244,6 +260,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_media_image_type(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_show_hidden(self: Pin<&mut Settings>, value: bool);
     }
 
     impl cxx_qt::Initialize for Settings {}
@@ -269,6 +288,8 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().current_resolution = QString::from(merged.resolution.as_str());
         self.as_mut().rust_mut().available_languages = languages();
         self.as_mut().rust_mut().current_language = QString::from(merged.language.as_str());
+        self.as_mut().rust_mut().available_clock_formats = clock_formats();
+        self.as_mut().rust_mut().current_clock_format = QString::from(merged.clock_format.as_str());
         self.as_mut().rust_mut().available_orientations = orientations();
         self.as_mut().rust_mut().current_orientation = QString::from(merged.orientation.as_str());
         self.as_mut().rust_mut().available_browse_layouts = browse_layouts();
@@ -282,6 +303,7 @@ impl Initialize for ffi::Settings {
             .rust_mut()
             .current_discover_arcade_alternate_versions = merged.discover_arcade_alternate_versions;
         self.as_mut().rust_mut().current_debug_logging = merged.debug_logging;
+        self.as_mut().rust_mut().current_show_hidden = merged.show_hidden;
         self.as_mut().rust_mut().available_screensaver_timeouts = screensaver_timeouts();
         self.as_mut().rust_mut().current_screensaver_timeout =
             QString::from(merged.screensaver_timeout.as_str());
@@ -322,6 +344,21 @@ impl ffi::Settings {
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
         self.as_mut().rust_mut().current_language = QString::from(value_str.as_str());
         self.as_mut().current_language_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_clock_format(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_clock_format(&value.to_string()).to_string();
+        if self.current_clock_format.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.clock_format.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_clock_format = QString::from(value_str.as_str());
+        self.as_mut().current_clock_format_changed();
     }
 
     #[allow(
@@ -431,6 +468,16 @@ impl ffi::Settings {
         self.as_mut().rust_mut().current_media_image_type = QString::from(value_str.as_str());
         self.as_mut().current_media_image_type_changed();
     }
+
+    fn set_show_hidden(mut self: Pin<&mut Self>, value: bool) {
+        if self.current_show_hidden == value {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.show_hidden = value);
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_show_hidden = value;
+        self.as_mut().current_show_hidden_changed();
+    }
 }
 
 fn persist_settings<F: FnOnce(&mut SettingsState)>(mutator: F) -> persist::PersistedState {
@@ -460,6 +507,7 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
             resolution: settings.resolution.as_str(),
             language: settings.language.as_str(),
             orientation: settings.orientation.as_str(),
+            clock_format: settings.clock_format.as_str(),
             browse_layout: settings.browse_layout.as_str(),
             button_layout: settings.button_layout.as_str(),
             mouse_enabled: settings.mouse_enabled,
@@ -467,6 +515,7 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
             debug_logging: settings.debug_logging,
             screensaver_timeout: settings.screensaver_timeout.as_str(),
             media_image_type: settings.media_image_type.as_str(),
+            show_hidden: settings.show_hidden,
         },
     ) {
         warn!(
@@ -490,6 +539,14 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
                 .orientation
                 .as_deref()
                 .unwrap_or(snapshot.orientation.as_str()),
+        )
+        .to_string(),
+        clock_format: normalize_clock_format(
+            config
+                .settings
+                .clock_format
+                .as_deref()
+                .unwrap_or(snapshot.clock_format.as_str()),
         )
         .to_string(),
         browse_layout: normalize_browse_layout(
@@ -535,6 +592,7 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
                 .unwrap_or(snapshot.media_image_type.as_str()),
         )
         .to_string(),
+        show_hidden: config.settings.show_hidden.unwrap_or(snapshot.show_hidden),
     }
 }
 
@@ -578,6 +636,14 @@ fn languages() -> QStringList {
     list
 }
 
+fn clock_formats() -> QStringList {
+    let mut list = QStringList::default();
+    for format in CLOCK_FORMATS {
+        list.append(QString::from(*format));
+    }
+    list
+}
+
 fn screensaver_timeouts() -> QStringList {
     let mut list = QStringList::default();
     #[cfg(debug_assertions)]
@@ -614,6 +680,15 @@ fn normalize_language(value: &str) -> &str {
         .iter()
         .find_map(|(alias, language)| (*alias == trimmed).then_some(*language))
         .unwrap_or(DEFAULT_LANGUAGE)
+}
+
+fn normalize_clock_format(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    CLOCK_FORMATS
+        .iter()
+        .copied()
+        .find(|format| *format == trimmed)
+        .unwrap_or(DEFAULT_CLOCK_FORMAT)
 }
 
 fn normalize_orientation(value: &str) -> &'static str {
@@ -681,9 +756,10 @@ fn normalize_button_layout(value: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        browse_layouts, button_layouts, curated_resolutions, languages, normalize_browse_layout,
-        normalize_button_layout, normalize_language, normalize_orientation, orientations,
-        BROWSE_LAYOUTS, BUTTON_LAYOUTS, DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT,
+        browse_layouts, button_layouts, clock_formats, curated_resolutions, languages,
+        normalize_browse_layout, normalize_button_layout, normalize_clock_format,
+        normalize_language, normalize_orientation, orientations, BROWSE_LAYOUTS, BUTTON_LAYOUTS,
+        CLOCK_FORMATS, DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT,
         DEFAULT_LANGUAGE, DEFAULT_ORIENTATION, LANGUAGES, MISTER_RESOLUTIONS, ORIENTATIONS,
     };
 
@@ -725,6 +801,14 @@ mod tests {
     }
 
     #[test]
+    fn clock_formats_preserve_order() {
+        let list = clock_formats();
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        let expected: Vec<String> = CLOCK_FORMATS.iter().map(|s| (*s).to_string()).collect();
+        assert_eq!(collected, expected);
+    }
+
+    #[test]
     fn orientations_preserve_order() {
         let list = orientations();
         let collected: Vec<String> = list.iter().map(String::from).collect();
@@ -746,6 +830,15 @@ mod tests {
         assert_eq!(normalize_browse_layout("detail"), DEFAULT_BROWSE_LAYOUT);
         assert_eq!(normalize_browse_layout("grid"), "grid");
         assert_eq!(normalize_browse_layout("list"), "list");
+    }
+
+    #[test]
+    fn clock_format_normalization_defaults_to_auto() {
+        assert_eq!(normalize_clock_format(""), DEFAULT_CLOCK_FORMAT);
+        assert_eq!(normalize_clock_format("system"), DEFAULT_CLOCK_FORMAT);
+        assert_eq!(normalize_clock_format("auto"), "auto");
+        assert_eq!(normalize_clock_format("12h"), "12h");
+        assert_eq!(normalize_clock_format("24h"), "24h");
     }
 
     #[test]

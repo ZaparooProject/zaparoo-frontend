@@ -137,13 +137,20 @@ _lint-cpp-target: _build-in-image
 _lint-qml-target: _build-in-image
     cmake --build build-docker --target all_qmllint
 
+# Container-internal: refresh Qt Linguist catalogs and fail if checked-in
+# translations are stale. `lupdate` updates source locations as well as strings,
+# so this catches missing line-number/catalog churn from QML/C++ edits.
+_lint-translations-internal:
+    test -f build-docker/build.ninja || cmake --preset desktop-docker-debug
+    bash scripts/check-translations-updated.sh build-docker
+
 # Container-internal: the rust lint surface (fmt --check + clippy + deny).
 _lint-rust-internal:
     cd rust && cargo fmt --all --check
     cd rust && cargo clippy --workspace --all-targets -- -D warnings
     cd rust && cargo deny check
 
-_lint-all-internal: _lint-rust-internal _lint-cpp-target
+_lint-all-internal: _lint-rust-internal _lint-cpp-target _lint-translations-internal
 
 # Container-internal: format-and-autofix surface. xargs -r skips the
 # invocation when the file list is empty.
@@ -174,6 +181,9 @@ lint-cpp:
 
 lint-qml:
     just _lint just _lint-qml-target
+
+lint-translations:
+    just _lint just _lint-translations-internal
 
 fmt:
     just _lint just _fmt-internal

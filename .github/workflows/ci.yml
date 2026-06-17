@@ -194,6 +194,8 @@ jobs:
         run: ctest --preset desktop-debug
       - name: Lint (clang-format + clang-tidy + qmllint)
         run: cmake --build build --target lint
+      - name: Check translations are up to date
+        run: bash scripts/check-translations-updated.sh build
       - name: Upload frontend binary
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

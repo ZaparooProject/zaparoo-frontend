@@ -52,7 +52,8 @@ Item {
     readonly property int _listOverlayBottomMargin: systems._listProfile ? systems._listProfile.overlayBottomMargin : Sizing.pctH(15)
     readonly property var _gridShape: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight)
     readonly property bool _loading: Browse.SystemsModel.loading || systems.optimisticLoading
-    readonly property bool _gateHide: systems.transitioning || systems._loading
+    readonly property bool _overlayLoadingVisible: stateOverlay.loadingVisible
+    readonly property bool _gateHide: systems.transitioning || systems._loading || systems._overlayLoadingVisible
 
     signal requestAccept(systemId: string)
     signal requestHubScreen
@@ -112,7 +113,7 @@ Item {
     // Mirrors ScreenStateOverlay's `state` ternary so accept routing and
     // the in-screen overlay agree on which state we're in.
     function _state(): string {
-        if (systems._loading)
+        if (systems._loading || systems._overlayLoadingVisible)
             return "loading";
         if ((Browse.SystemsModel.error_message ?? "") !== "")
             return "error";
@@ -122,6 +123,11 @@ Item {
     }
 
     function handleAction(action: string): void {
+        if ((action === "left" || action === "right" || action === "up" || action === "down" || action === "page_prev" || action === "page_next") && systems._overlayLoadingVisible)
+            return;
+        if (action === "context_menu" && systems._gateHide)
+            return;
+
         if (action === "left") {
             systems._performMove(-1, 0);
         } else if (action === "right") {
@@ -158,7 +164,7 @@ Item {
             }
             const chosen = Browse.SystemsModel.system_id_at(systems.systemsGrid.currentIndex);
             systems.requestAccept(chosen);
-        } else if (action === "write_card") {
+        } else if (action === "context_menu") {
             if (systems.systemsGrid.itemCount > 0) {
                 const idx = systems.systemsGrid.currentIndex;
                 Browse.SystemsState.system_id = Browse.SystemsModel.system_id_at(idx);
@@ -226,7 +232,7 @@ Item {
         }
         onItemRightClicked: index => {
             systems._focusIndex(index);
-            systems.handleAction("write_card");
+            systems.handleAction("context_menu");
         }
         onEmptyRightClicked: systems.handleAction("cancel")
         onPageWheelRequested: delta => systems.handleAction(delta > 0 ? "page_next" : "page_prev")
@@ -258,7 +264,7 @@ Item {
         }
         onItemRightClicked: index => {
             systems._focusIndex(index);
-            systems.handleAction("write_card");
+            systems.handleAction("context_menu");
         }
         onEmptyRightClicked: systems.handleAction("cancel")
         onPageWheelRequested: delta => systems.handleAction(delta > 0 ? "page_next" : "page_prev")
@@ -319,6 +325,8 @@ Item {
     }
 
     ScreenStateOverlay {
+        id: stateOverlay
+
         x: systems._listLayout ? 0 : systemsGrid.x
         y: systems._listLayout ? listCard.y : systemsGrid.y
         width: systems._listLayout ? systems.width : systemsGrid.width

@@ -101,7 +101,7 @@ Item {
         else if (action === "accept") {
             if (menu.currentIndex >= 0 && menu.currentIndex < menu.entries.length)
                 menu.accepted(menu.entries[menu.currentIndex].id);
-        } else if (action === "cancel" || action === "write_card")
+        } else if (action === "cancel" || action === "context_menu")
             menu.closeRequested();
     }
 
