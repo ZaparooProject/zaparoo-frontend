@@ -479,7 +479,7 @@ MainLayout {
     // issued.
     property bool _deferredCategoryPending: false
     property bool _deferredSystemPending: false
-    readonly property bool _systemsModelConnectionsEnabled: root.systemsScreenRequested || root._startupRestorePending || root._categoryReadyCallback !== null || root._deferredCategoryPending || root._catalogWaitCategory !== ""
+    readonly property bool _systemsModelConnectionsEnabled: root.systemsScreenRequested || (root._firstFrameSeen && root._startupRestorePending) || root._categoryReadyCallback !== null || root._deferredCategoryPending || root._catalogWaitCategory !== ""
     readonly property bool _gamesModelConnectionsEnabled: root.gamesScreenRequested || root._systemReadyCallback !== null || root._deferredSystemPending
     readonly property bool _favoritesModelConnectionsEnabled: root.favoritesScreenRequested || root._favoritesReadyCallback !== null
     readonly property bool _recentsModelConnectionsEnabled: root.recentsScreenRequested || root._recentsReadyCallback !== null || root._pendingResumeLaunch
