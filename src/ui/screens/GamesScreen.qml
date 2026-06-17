@@ -145,7 +145,12 @@ MediaListScreen {
     gridTotalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
     gridHasMorePages: Browse.GamesModel.has_next_page
     gridLoadMoreAction: urgent => {
-        if (urgent || games.detailRapidScrollActive)
+        // A letter jump bulk-loads to the target in one shot (overlay is up);
+        // page-wrap targets and fast-scroll stay on the rapid trickle, ordinary
+        // prefetch on the gentle one.
+        if (games.gamesGrid.hasPendingJump)
+            Browse.GamesModel.fetch_more_jump(games.gamesGrid.pendingJumpIndex);
+        else if (urgent || games.detailRapidScrollActive)
             Browse.GamesModel.fetch_more_rapid();
         else
             Browse.GamesModel.fetch_more();
@@ -321,5 +326,32 @@ MediaListScreen {
     // Drives folder-aware cancel routing.
     function _atFolderLevel(): bool {
         return Browse.GamesState.path_stack.length > 1;
+    }
+
+    // Jump-to-letter. `itemOffset` is the cumulative count of all buckets before
+    // the chosen letter (from the letter-index facet); the leading directories
+    // come first in the grid, so the letter's first item sits at
+    // `dir_count + itemOffset`. Driving the grid's page-jump there loads the
+    // intervening pages and lands on that absolute index, so the full list stays
+    // navigable both ways and the page counter reflects the real position.
+    function jumpToItem(itemOffset: int): void {
+        const absolute = Browse.GamesModel.dir_count + itemOffset;
+        const landed = games.gamesGrid.jumpToIndex(absolute);
+        // A deferred walk (target not yet loaded) returns false; show the
+        // standard centered loading cue over the stale source page until the
+        // walk commits. An already-loaded backward jump lands immediately, so
+        // no cue is needed.
+        games.jumpLoading = !landed;
+    }
+
+    // Clear the jump cue once the grid's pending-target walk resolves - on
+    // commit, or on an abort (model reset / directional clear) that flips
+    // `hasPendingTarget` back to false.
+    Connections {
+        target: games.gamesGrid
+        function onHasPendingTargetChanged(): void {
+            if (!games.gamesGrid.hasPendingTarget)
+                games.jumpLoading = false;
+        }
     }
 }

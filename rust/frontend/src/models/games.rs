@@ -54,8 +54,8 @@ use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
 use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::media_types::{
-    BrowseEntry, MediaBrowseParams, MediaBrowseResult, MediaMeta, MediaMetaParams,
-    MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
+    BrowseEntry, MediaBrowseIndexParams, MediaBrowseParams, MediaBrowseResult, MediaMeta,
+    MediaMetaParams, MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
 };
 use zaparoo_core::platform::{self, Platform};
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -121,6 +121,23 @@ const DEFAULT_PAGE_SIZE: i32 = 15;
 // longer floods the cover queue.
 const FETCH_MORE_CHUNK_SIZE: i32 = 100;
 const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 300;
+// Ceiling for a jump-to-letter fetch (Core's `max_results` cap). A position
+// jump must load every row up to the target before
+// `PagedGrid._commitPendingTarget` can land on it; doing that as the 12-row
+// frame-gapped trickle (`apply_append_page`) takes seconds on a far jump. The
+// jump path instead inserts the whole chunk in one shot (`bulk` append) — the
+// loading overlay is up and the appended rows sit far from `currentPage`, so
+// their Tile delegates stay unmaterialised (the per-cell Loader is
+// retention-gated), making the bulk insert cheap. `fetch_more_jump` sizes each
+// request to the gap remaining to the target (rounded up to whole `page_size`
+// pages, plus one page of margin) rather than always pulling the full
+// remainder, so a near/mid-folder jump transfers far less; a gap larger than
+// this ceiling chains another bulk call.
+const JUMP_FETCH_CHUNK_SIZE: i32 = 1000;
+// Stay within Core's `max_results` ceiling, and never smaller than the rapid
+// scroll chunk (a jump must not load slower than ordinary scrolling).
+const _: () = assert!(JUMP_FETCH_CHUNK_SIZE <= 1000);
+const _: () = assert!(JUMP_FETCH_CHUNK_SIZE >= FETCH_MORE_RAPID_CHUNK_SIZE);
 const COLLAPSED_DIRECTORY_BROWSE_PAGE_SIZE: u32 = 1000;
 const COVER_PREFETCH_NEXT_PAGES: i32 = 2;
 const COVER_PREFETCH_PREVIOUS_PAGES: i32 = 1;
@@ -297,6 +314,17 @@ pub struct GamesModelRust {
     // carousel once the cover lands and the type can be looked up, then clears
     // this field.
     pending_carousel_keys: Option<Vec<MediaKey>>,
+    // Latest `media.browse.index` facet for the current scope, surfaced to QML
+    // for the jump-to-letter rail. `letter_index_json` is a JSON array of
+    // `{key,label,count,cursor}` objects (the QML pickers consume `var` arrays,
+    // so a parsed-in-QML JSON string fits that convention without a second
+    // QAbstractListModel for transient modal data). `letter_index_scheme` is
+    // the facet scheme (`latin`/`none`); QML omits the menu entry when no rail
+    // applies. Bumped each `load_letter_index` so a stale in-flight facet from a
+    // prior scope can't overwrite the current one.
+    letter_index_json: QString,
+    letter_index_scheme: QString,
+    letter_index_seq: Arc<AtomicU64>,
 }
 
 impl Default for GamesModelRust {
@@ -348,6 +376,9 @@ impl Default for GamesModelRust {
             cover_max_size: 0,
             nav_timing: None,
             pending_carousel_keys: None,
+            letter_index_json: QString::default(),
+            letter_index_scheme: QString::default(),
+            letter_index_seq: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -400,6 +431,8 @@ pub mod ffi {
         #[qproperty(bool, show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
         #[qproperty(i32, visible_first_row)]
         #[qproperty(i32, cover_max_size, READ, WRITE = set_cover_max_size, NOTIFY)]
+        #[qproperty(QString, letter_index_json)]
+        #[qproperty(QString, letter_index_scheme)]
         type GamesModel = super::GamesModelRust;
 
         #[qinvokable]
@@ -419,6 +452,12 @@ pub mod ffi {
 
         #[qinvokable]
         fn fetch_more_rapid(self: Pin<&mut GamesModel>);
+
+        #[qinvokable]
+        fn fetch_more_jump(self: Pin<&mut GamesModel>, target_index: i32);
+
+        #[qinvokable]
+        fn load_letter_index(self: Pin<&mut GamesModel>);
 
         #[qinvokable]
         fn prefetch_around(self: Pin<&mut GamesModel>, first_visible_row: i32);
@@ -657,14 +696,26 @@ impl ffi::GamesModel {
     }
 
     fn fetch_more(self: Pin<&mut Self>) {
-        self.fetch_more_with_limit(FETCH_MORE_CHUNK_SIZE);
+        self.fetch_more_with_limit(FETCH_MORE_CHUNK_SIZE, false);
     }
 
     fn fetch_more_rapid(self: Pin<&mut Self>) {
-        self.fetch_more_with_limit(FETCH_MORE_RAPID_CHUNK_SIZE);
+        self.fetch_more_with_limit(FETCH_MORE_RAPID_CHUNK_SIZE, false);
     }
 
-    fn fetch_more_with_limit(mut self: Pin<&mut Self>, limit: i32) {
+    fn fetch_more_jump(self: Pin<&mut Self>, target_index: i32) {
+        // Size the fetch to the gap remaining to the jump target instead of
+        // always pulling the server max. `target_index` is the absolute grid
+        // row the cursor will land on (it shares the model's row space, so it
+        // includes leading directories); `count` is the rows already loaded.
+        // A near/mid-folder jump transfers far less than the full remainder; an
+        // under-shoot (huge folder, or the target moved) just re-enters here via
+        // the pending-target loop and converges.
+        let limit = jump_fetch_limit(target_index, self.count, self.page_size);
+        self.fetch_more_with_limit(limit, true);
+    }
+
+    fn fetch_more_with_limit(mut self: Pin<&mut Self>, limit: i32, bulk: bool) {
         // Debounce: PagedGrid fires `loadMoreRequested` once per page
         // turn, but a fast spinner on the last loaded page can fire
         // twice before the first follow-up returns. All three guards
@@ -695,6 +746,19 @@ impl ffi::GamesModel {
         let seq = self.seq.clone();
         let ticket = seq.load(Ordering::SeqCst);
         let max_results = u32::try_from(limit.max(1)).unwrap_or(u32::from(u16::MAX));
+        // Jump path: pause cover fetching for the duration of this request and
+        // drop anything queued. Covers travel over the same WebSocket as
+        // `media.browse`, so the cold-entry cover storm (the leaving page's
+        // covers) head-of-line-blocks the jump's browse request at Core — this
+        // is why the *first* jump after entering a folder is the slow one.
+        // Pausing dedicates the socket to the browse call; `apply_append_page`
+        // resumes covers and warms the landing page once the rows land, and
+        // `start_initial_browse` resets the flag if the user leaves mid-jump
+        // (the in-flight response is then ticket-rejected before it can resume).
+        if bulk {
+            self.as_mut().set_cover_requests_paused(true);
+            global_media_image_cache().clear_pending_requests();
+        }
         self.as_mut().set_loading_more(true);
         let qt_thread = self.qt_thread();
         let store = global_store();
@@ -720,7 +784,72 @@ impl ffi::GamesModel {
                 if seq.load(Ordering::SeqCst) != ticket {
                     return;
                 }
-                apply_append_page(model, result, expected_prev_cursor.as_deref());
+                apply_append_page(model, result, expected_prev_cursor.as_deref(), bulk);
+            });
+        });
+    }
+
+    /// Fetch the `media.browse.index` facet for the current scope and surface
+    /// it to QML as `letter_index_json` / `letter_index_scheme` for the
+    /// jump-to-letter rail. Fire-and-forget: the router calls this when the
+    /// page-ops menu opens so the buckets are likely ready by the time the
+    /// user picks "Jump to letter".
+    fn load_letter_index(mut self: Pin<&mut Self>) {
+        let path = self.current_path.to_string();
+        // A root listing has no meaningful first-character rail.
+        if path.is_empty() {
+            self.as_mut().set_letter_index_json(QString::from("[]"));
+            self.as_mut().set_letter_index_scheme(QString::from("none"));
+            return;
+        }
+        let sid = self.current_system_id.to_string();
+        let systems = if sid.is_empty() {
+            Vec::new()
+        } else {
+            vec![sid]
+        };
+        // Clear any facet from a prior scope to the loading state (empty groups,
+        // empty scheme) so the rail shows "loading" rather than the previous
+        // folder's buckets until the fresh fetch lands.
+        self.as_mut().set_letter_index_json(QString::from("[]"));
+        self.as_mut().set_letter_index_scheme(QString::default());
+        // Ticket so a stale facet from a prior scope can't overwrite a newer
+        // one if the user moves on before this resolves.
+        let seq = self.letter_index_seq.clone();
+        let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
+        let qt_thread = self.qt_thread();
+        let store = global_store();
+        global_handle().spawn(async move {
+            let result = store
+                .client()
+                .media_browse_index(MediaBrowseIndexParams {
+                    path,
+                    systems,
+                    sort: None,
+                })
+                .await;
+            let _ = qt_thread.queue(move |mut model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                match result {
+                    Ok(index) => {
+                        let json = index.groups_json();
+                        model
+                            .as_mut()
+                            .set_letter_index_json(QString::from(json.as_str()));
+                        model
+                            .as_mut()
+                            .set_letter_index_scheme(QString::from(index.scheme.as_str()));
+                    }
+                    Err(e) => {
+                        warn!("media.browse.index failed: {}", e.message);
+                        model.as_mut().set_letter_index_json(QString::from("[]"));
+                        model
+                            .as_mut()
+                            .set_letter_index_scheme(QString::from("none"));
+                    }
+                }
             });
         });
     }
@@ -1277,6 +1406,12 @@ impl ffi::GamesModel {
             .fetch_add(1, Ordering::SeqCst);
         self.as_mut().set_has_next_page(false);
         self.as_mut().set_loading_more(false);
+        // Clear any cover pause held by a jump fetch that's being abandoned by
+        // this scope swap. The in-flight jump response is ticket-rejected below
+        // (the `seq` bump), so it never reaches `apply_append_page` to resume
+        // covers itself; without this the new folder would render with covers
+        // stuck paused.
+        self.as_mut().set_cover_requests_paused(false);
         self.as_mut().rust_mut().auto_nav_eligible = eligible_for_auto_nav;
         // Cleared on every browse target swap: a new path needs the
         // full `apply_initial_page` reset to install fresh entries.
@@ -2575,6 +2710,21 @@ fn decide_initial(
 /// the `MiSTer` menu, which is a layout artifact not user-facing intent.
 /// Path stays untouched — launching/navigation still depend on the
 /// original.
+/// Rows a jump fetch should request to reach `target_index` from a model
+/// holding `count` rows. Pulls the gap plus one page of margin (so the landing
+/// page is full and there is a little look-ahead past it), rounded up to whole
+/// `page_size` pages — batch sizes always derive from the user-configurable
+/// page size — and clamped to `[page_size, JUMP_FETCH_CHUNK_SIZE]` (Core's
+/// `max_results` ceiling). Pure so it is unit-testable.
+fn jump_fetch_limit(target_index: i32, count: i32, page_size: i32) -> i32 {
+    let page = page_size.max(1);
+    let gap = (target_index - count).max(0) + page;
+    // Manual ceil-div: signed `i32::div_ceil` is still unstable. `gap` and
+    // `page` are both >= 1, so this can't overflow for realistic folder sizes.
+    let pages = (gap + page - 1) / page;
+    (pages * page).clamp(page, JUMP_FETCH_CHUNK_SIZE)
+}
+
 fn transform_entries(
     mut entries: Vec<BrowseEntry>,
     platform: Option<&Platform>,
@@ -2988,6 +3138,7 @@ fn apply_append_page(
     mut model: Pin<&mut ffi::GamesModel>,
     result: Result<MediaBrowseResult, ClientError>,
     expected_prev_cursor: Option<&str>,
+    bulk: bool,
 ) {
     // Cursor-chain check: if the model's `next_cursor` no longer
     // matches the cursor this append was advancing from, an
@@ -3038,6 +3189,37 @@ fn apply_append_page(
             // `start_initial_browse` lands during the trickle window.
             model.as_mut().rust_mut().next_cursor = next_cursor;
             model.as_mut().set_loading_more(false);
+            // Jump path: insert the whole chunk in one shot, no frame-gapped
+            // trickle. The appended rows sit far from `currentPage`, so their
+            // Tile delegates stay unmaterialised (per-cell Loader is
+            // retention-gated) and the bulk insert is cheap; the loading
+            // overlay is up so a single brief stall is invisible, and it lets
+            // `_commitPendingTarget` see the target as loaded in one step
+            // instead of creeping toward it over dozens of frames.
+            if bulk {
+                let had_entries = !entries.is_empty();
+                if had_entries {
+                    insert_sub_batch(model.as_mut(), entries);
+                }
+                // Resume covers (paused by `fetch_more_with_limit` for the jump
+                // request) BEFORE prefetching: the insert above drives
+                // `_commitPendingTarget` synchronously, which moves
+                // `visible_first_row` to the landing page, so prefetching now —
+                // with covers re-enabled — warms exactly that page. Resuming
+                // unconditionally (even on an empty page) guarantees the pause
+                // never sticks past the request that set it.
+                model.as_mut().set_cover_requests_paused(false);
+                if had_entries {
+                    let visible = model.visible_first_row;
+                    model.as_mut().prefetch_around(visible);
+                }
+                model.as_mut().set_has_next_page(has_next_page);
+                if model.total_files != total {
+                    model.as_mut().set_total_files(total);
+                }
+                release_initial_lookahead_gate(model.as_mut());
+                return;
+            }
             let mut batches = chunk_for_subbatching(entries, APPEND_SUB_BATCH_SIZE);
             if batches.is_empty() {
                 // No new rows landed (empty page). Finalise immediately
@@ -3149,12 +3331,13 @@ mod tests {
         child_launch_text_from_browse_result, chunk_for_subbatching, compute_unresolved_keys,
         cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
         detail_image_keys_from_meta, detail_tags_from_tags, display_name, display_title_for_entry,
-        entry_system_id, is_media_capable_entry, is_strict_ancestor_path, leading_dir_count,
-        media_capable_directory_browse_params, media_key_for, meta_params_for_entry,
-        ordered_detail_image_keys, position_of_game_path, prefetch_around_plan,
-        prefetch_cursor_window_plan, project_status, run_text_for_entry,
+        entry_system_id, is_media_capable_entry, is_strict_ancestor_path, jump_fetch_limit,
+        leading_dir_count, media_capable_directory_browse_params, media_key_for,
+        meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
+        prefetch_around_plan, prefetch_cursor_window_plan, project_status, run_text_for_entry,
         singleton_directory_needs_launch_resolution, transform_entries, InitialAction, Projection,
     };
+    use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
     use crate::media_image_cache::{MediaImageCache, MediaKey};
     use std::collections::HashSet;
     use zaparoo_core::media_types::{BrowseEntry, MediaBrowseResult, Pagination, TagInfo};
@@ -3990,6 +4173,58 @@ mod tests {
         let entries = vec![media("a", "/a", "NES")];
         let out = chunk_for_subbatching(entries, 0);
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn jump_fetch_limit_sizes_to_gap_plus_one_page_rounded_up() {
+        // Target 570, 113 loaded, page 100: gap = 457 + 100 margin = 557 ->
+        // 6 pages -> 600. Far less than the 1000 ceiling for a mid-folder jump.
+        assert_eq!(jump_fetch_limit(570, 113, 100), 600);
+    }
+
+    #[test]
+    fn jump_fetch_limit_clamps_to_ceiling_for_far_targets() {
+        // A target past what one ceiling-sized fetch covers clamps to the cap;
+        // the pending-target loop fetches the next slice afterward.
+        assert_eq!(jump_fetch_limit(5000, 113, 100), JUMP_FETCH_CHUNK_SIZE);
+    }
+
+    #[test]
+    fn jump_fetch_limit_floors_at_one_page_when_target_already_loaded() {
+        // Target at or behind the loaded count has no gap, but the one-page
+        // margin still pulls a single page (look-ahead past the landing page).
+        assert_eq!(jump_fetch_limit(113, 113, 100), 100);
+        assert_eq!(jump_fetch_limit(50, 113, 100), 100);
+    }
+
+    #[test]
+    fn jump_fetch_limit_margin_rounds_a_small_gap_up_to_two_pages() {
+        // A target just past the loaded slice: gap (7) + one-page margin (100)
+        // = 107 -> rounds up to 2 pages so the landing page is fully covered.
+        assert_eq!(jump_fetch_limit(120, 113, 100), 200);
+    }
+
+    #[test]
+    fn jump_fetch_limit_is_a_whole_number_of_pages() {
+        for target in [0, 37, 113, 251, 499, 800] {
+            let limit = jump_fetch_limit(target, 113, 100);
+            assert_eq!(limit % 100, 0, "limit {limit} not a page multiple");
+        }
+    }
+
+    #[test]
+    fn jump_fetch_limit_never_below_rapid_scroll_chunk_at_default_page() {
+        // A jump must not pull a smaller batch than ordinary rapid scrolling
+        // when the configured page is at least the rapid chunk.
+        let limit = jump_fetch_limit(2000, 0, FETCH_MORE_RAPID_CHUNK_SIZE);
+        assert!(limit >= FETCH_MORE_RAPID_CHUNK_SIZE);
+    }
+
+    #[test]
+    fn jump_fetch_limit_tolerates_nonpositive_page_size() {
+        // Defensive: a zero/negative page_size must not divide-by-zero; it
+        // floors to a single one-row page (gap = 0 + 1 margin = 1 page).
+        assert_eq!(jump_fetch_limit(0, 0, 0), 1);
     }
 
     #[test]

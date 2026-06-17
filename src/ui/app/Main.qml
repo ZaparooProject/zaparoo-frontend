@@ -41,6 +41,7 @@ MainLayout {
     readonly property string modalLogUpload: "log_upload"
     readonly property string modalQuitConfirm: "quit_confirm"
     readonly property string modalListPicker: "list_picker"
+    readonly property string modalLetterJump: "letter_jump"
     readonly property string modalSettingNeedsRestart: "restart_confirm"
 
     // One-shot session flag: the first-run modal is shown at most
@@ -225,6 +226,8 @@ MainLayout {
             root.quitConfirmModalRequested = true;
         else if (modal === root.modalListPicker)
             root.listPickerModalRequested = true;
+        else if (modal === root.modalLetterJump)
+            root.letterJumpModalRequested = true;
         else if (modal === root.modalSettingNeedsRestart)
             root.settingNeedsRestartModalRequested = true;
     }
@@ -1348,6 +1351,9 @@ MainLayout {
         function onRequestContextMenu(index: int, anchorRect): void {
             root.openContextMenu("games", index, anchorRect);
         }
+        function onRequestPageMenu(): void {
+            root.openPageMenu();
+        }
     }
 
     onActiveCardWritePendingChanged: root.handleCardWriteStatus()
@@ -1917,6 +1923,54 @@ MainLayout {
             ScreenManager.popModal();
     }
 
+    // Open the page/list-scoped operations menu (West button), the "View"
+    // counterpart to North's item-scoped "Options". For now it holds a single
+    // entry, Go to..., kept pre-focused so the common path is a fixed
+    // West-then-Accept chord; future list ops (sort/filter/layout) append here.
+    // The facet fetch is kicked off here so the buckets are likely ready by the
+    // time the user advances into the grid.
+    function openPageMenu(): void {
+        Browse.GamesModel.load_letter_index();
+        const entries = [
+            {
+                "id": "jump_letter",
+                "label": qsTr("Go to...")
+            }
+        ];
+        root.openListPickerModal(qsTr("View"), entries, "jump_letter", "page_menu");
+    }
+
+    // Re-parse the model's facet JSON into the live grid entries. Bound through
+    // a Connections below so the grid populates the instant the fetch lands.
+    function _refreshLetterJumpEntries(): void {
+        const scheme = Browse.GamesModel.letter_index_scheme;
+        let parsed = [];
+        try {
+            parsed = JSON.parse(Browse.GamesModel.letter_index_json);
+        } catch (e) {
+            parsed = [];
+        }
+        root.letterJumpEntries = Array.isArray(parsed) ? parsed : [];
+        // Empty scheme = facet still resolving; anything else is final.
+        root.letterJumpLoading = scheme === "";
+    }
+
+    function openLetterJumpModal(): void {
+        root._refreshLetterJumpEntries();
+        root._requestModal(root.modalLetterJump);
+        root.letterJumpModalVisible = true;
+        if (ScreenManager.topModal !== root.modalLetterJump)
+            ScreenManager.pushModal(root.modalLetterJump);
+    }
+
+    function closeLetterJumpModal(): void {
+        root.letterJumpModalVisible = false;
+        root.letterJumpEntries = [];
+        root.letterJumpLoading = false;
+        if (ScreenManager.topModal === root.modalLetterJump)
+            ScreenManager.popModal();
+    }
+
     function openSettingNeedsRestartModal(): void {
         root._requestModal(root.modalSettingNeedsRestart);
         root.settingNeedsRestartModalVisible = true;
@@ -2010,6 +2064,12 @@ MainLayout {
     }
 
     onListPickerAccepted: (fieldId, selectedId) => {
+        if (fieldId === "page_menu") {
+            root.closeListPickerModal();
+            if (selectedId === "jump_letter")
+                root.openLetterJumpModal();
+            return;
+        }
         if (fieldId === "system_launcher_pending")
             return;
         if (fieldId === "system_launcher_error") {
@@ -2056,6 +2116,29 @@ MainLayout {
         root.closeListPickerModal();
     }
     onListPickerCloseRequested: root.handleListPickerCloseRequested()
+
+    onLetterJumpAccepted: offset => {
+        root.closeLetterJumpModal();
+        if (root.gamesScreen !== null)
+            root.gamesScreen.jumpToItem(offset);
+    }
+    onLetterJumpCloseRequested: root.closeLetterJumpModal()
+
+    // Keep the open grid in sync with the facet as it lands. The model clears
+    // its facet to the loading state on `load_letter_index`, then fills it; this
+    // re-parses into the live grid entries each time either changes.
+    Connections {
+        target: Browse.GamesModel
+        enabled: root.letterJumpModalRequested
+        function onLetter_index_jsonChanged(): void {
+            if (root.letterJumpModalVisible)
+                root._refreshLetterJumpEntries();
+        }
+        function onLetter_index_schemeChanged(): void {
+            if (root.letterJumpModalVisible)
+                root._refreshLetterJumpEntries();
+        }
+    }
 
     Connections {
         target: Browse.SystemLaunchers
@@ -2230,6 +2313,9 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalListPicker) {
                 if (root.listPickerModal !== null)
                     root.listPickerModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalLetterJump) {
+                if (root.letterJumpModal !== null)
+                    root.letterJumpModal.handleAction(action);
             }
             // While a modal owns input, swallow everything not handled
             // above rather than leak it to the root screen.

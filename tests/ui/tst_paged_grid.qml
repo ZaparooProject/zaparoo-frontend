@@ -616,4 +616,134 @@ TestCase {
         compare(grid.hasPendingTarget, false, "commit must clear hasPendingTarget");
         _resetPartialLoadState();
     }
+
+    // ── jumpToIndex (jump-to-letter position jump) ──────────────────────
+
+    function test_jumpToIndex_loaded_target_lands_immediately(): void {
+        // Fully loaded — a jump to any in-range index lands at once (the
+        // backward-jump-to-already-loaded-letter case).
+        fillModel(60);
+        grid.setCurrentIndexImmediate(0);
+        compare(grid.jumpToIndex(37), true);
+        compare(grid.currentIndex, 37);
+    }
+
+    function test_jumpToIndex_clamps_to_last_item(): void {
+        fillModel(20);
+        compare(grid.jumpToIndex(999), true);
+        compare(grid.currentIndex, 19);
+    }
+
+    function test_jumpToIndex_unloaded_stashes_absolute_index(): void {
+        // 24/60 loaded. Jump to index 50 (unloaded): stash the ABSOLUTE
+        // target (not a page/row/col decomposition), fire loadMore, leave
+        // selection put. The page-wrap channel must stay clear so the two
+        // can't be confused at commit time.
+        _setupPartialLoad(24, 60);
+        loadMoreSpy.clear();
+        compare(grid.jumpToIndex(50), false);
+        compare(grid.currentIndex, 0, "must not move while loading");
+        compare(grid._pendingTargetIndex, 50, "stash the exact absolute target");
+        compare(grid._pendingTargetPage, -1, "page-wrap channel stays clear for a jump");
+        compare(grid.hasPendingJump, true);
+        verify(loadMoreSpy.count >= 1, "expected loadMoreRequested to fire");
+        _resetPartialLoadState();
+    }
+
+    function test_jumpToIndex_commits_exact_index_when_loaded(): void {
+        // The pending jump commits on the exact absolute target index once
+        // the data has loaded that far — never a page-aligned slot, never a
+        // page early.
+        _setupPartialLoad(24, 60);
+        compare(grid.jumpToIndex(50), false);
+        compare(grid._pendingTargetIndex, 50);
+        for (let i = 24; i < 60; i++)
+            model.append({
+                "name": "item-" + i,
+                "coverKey": "",
+                "favorite": 0
+            });
+        tryCompare(grid, "itemCount", 60);
+        compare(grid.currentIndex, 50, "lands on the exact target, mid-page");
+        compare(grid._pendingTargetIndex, -1, "pending jump clears after commit");
+        compare(grid.hasPendingJump, false);
+        _resetPartialLoadState();
+    }
+
+    function test_jumpToIndex_commits_on_first_crossing_not_a_page_early(): void {
+        // Grow the model one short of the target, then exactly across it.
+        // The commit must wait until itemCount actually passes the target and
+        // then land on the target itself — not settle a page (or any amount)
+        // early while the intervening rows trickle in.
+        _setupPartialLoad(24, 60);
+        compare(grid.jumpToIndex(50), false);
+        // Up to 50 rows loaded => target index 50 still not present
+        // (indices 0..49). Must remain pending, selection unmoved.
+        for (let i = 24; i < 50; i++)
+            model.append({
+                "name": "item-" + i,
+                "coverKey": "",
+                "favorite": 0
+            });
+        tryCompare(grid, "itemCount", 50);
+        compare(grid.currentIndex, 0, "target index 50 not loaded yet — stay parked");
+        compare(grid._pendingTargetIndex, 50);
+        // One more row => index 50 exists; commit lands exactly there.
+        model.append({
+            "name": "item-50",
+            "coverKey": "",
+            "favorite": 0
+        });
+        tryCompare(grid, "itemCount", 51);
+        compare(grid.currentIndex, 50);
+        compare(grid._pendingTargetIndex, -1);
+        _resetPartialLoadState();
+    }
+
+    function test_jumpToIndex_truncated_dataset_lands_on_nearest_loaded(): void {
+        // Jump to 50, but the dataset turns out shorter: only 45 rows ever
+        // arrive and the model declares no more pages. Settle on the nearest
+        // loaded item (44), never a full page back to a page boundary.
+        _setupPartialLoad(24, 60);
+        compare(grid.jumpToIndex(50), false);
+        compare(grid._pendingTargetIndex, 50);
+        for (let i = 24; i < 45; i++)
+            model.append({
+                "name": "item-" + i,
+                "coverKey": "",
+                "favorite": 0
+            });
+        tryCompare(grid, "itemCount", 45);
+        compare(grid.currentIndex, 0, "still pending — target 50 not loaded");
+        grid.hasMorePages = false;
+        compare(grid.currentIndex, 44, "settle on nearest loaded item, not a page early");
+        compare(grid._pendingTargetIndex, -1);
+        _resetPartialLoadState();
+    }
+
+    function test_jumpToIndex_pending_cleared_by_directional_move(): void {
+        // A pending jump is the user's last expressed intent only until they
+        // press a direction; a successful move must drop it.
+        fillModel(60);
+        grid.hasMorePages = true;
+        grid.totalItemsOverride = 120;
+        grid.setCurrentIndexImmediate(0);
+        compare(grid.jumpToIndex(100), false);
+        compare(grid.hasPendingJump, true);
+        compare(grid.moveSelection(1, 0), true, "right step within row succeeds");
+        compare(grid.hasPendingJump, false, "directional move clears the pending jump");
+        compare(grid._pendingTargetIndex, -1);
+        _resetPartialLoadState();
+    }
+
+    function test_hasPendingJump_false_for_page_wrap_target(): void {
+        // A page-wrap (pageBy / vertical wrap) onto an unloaded page arms
+        // hasPendingTarget but NOT hasPendingJump — only true letter jumps
+        // bulk-load.
+        _setupPartialLoad(24, 60);
+        compare(grid.moveSelection(0, -1), false);
+        compare(grid.hasPendingTarget, true, "page-wrap arms the generic pending flag");
+        compare(grid.hasPendingJump, false, "page-wrap is not a jump");
+        _resetPartialLoadState();
+    }
 }

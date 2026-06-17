@@ -92,6 +92,7 @@ ApplicationWindow {
     property bool logUploadModalRequested: false
     property bool quitConfirmModalRequested: false
     property bool listPickerModalRequested: false
+    property bool letterJumpModalRequested: false
 
     function _startupTrace(): void {
         if (!root._startupTraceActive)
@@ -231,6 +232,12 @@ ApplicationWindow {
     }
 
     Binding {
+        target: Motion
+        property: "crtNativePath"
+        value: root.crtNativePath
+    }
+
+    Binding {
         target: Sizing
         property: "swapPercentageAxes"
         value: root._sceneRotated
@@ -257,6 +264,7 @@ ApplicationWindow {
     property var quitConfirmModal: quitConfirmModalLoader.item
     property var settingNeedsRestartModal: settingNeedsRestartModalLoader.item
     property var listPickerModal: listPickerModalLoader.item
+    property var letterJumpModal: letterJumpModalLoader.item
     property alias headerBar: headerBar
     property alias screensaverOverlay: screensaverOverlay
     // Exposed so Main.qml binds Sizing.screenWidth/Height to the
@@ -274,6 +282,12 @@ ApplicationWindow {
     property bool quitConfirmModalVisible: false
     property bool listPickerModalVisible: false
     property bool settingNeedsRestartModalVisible: false
+    // Letter-jump grid. Entries are bound live from
+    // Browse.GamesModel.letter_index_json so the grid fills in when the facet
+    // lands; `letterJumpLoading` distinguishes "still fetching" from "no rail".
+    property bool letterJumpModalVisible: false
+    property var letterJumpEntries: []
+    property bool letterJumpLoading: false
     // Round-trip state for the list picker. The router writes these
     // when opening the modal (Settings emits requestListPicker with
     // fieldId so the accept handler can dispatch back to the right
@@ -383,6 +397,8 @@ ApplicationWindow {
     signal quitConfirmAccepted
     signal listPickerAccepted(string fieldId, string selectedId)
     signal listPickerCloseRequested(string fieldId)
+    signal letterJumpAccepted(int itemOffset)
+    signal letterJumpCloseRequested
     signal acceptRestart
     signal cancelRestart
 
@@ -839,6 +855,24 @@ ApplicationWindow {
                 }
             }
 
+            // Jump-to-letter grid (West button → "Jump to letter"). Entries are
+            // bound live so the grid populates when the facet lands.
+            Loader {
+                id: letterJumpModalLoader
+                anchors.fill: parent
+                active: root.letterJumpModalRequested
+                sourceComponent: Component {
+                    LetterJumpModal {
+                        anchors.fill: parent
+                        open: root.letterJumpModalVisible
+                        entries: root.letterJumpEntries
+                        loading: root.letterJumpLoading
+                        onAccepted: offset => root.letterJumpAccepted(offset)
+                        onCloseRequested: root.letterJumpCloseRequested()
+                    }
+                }
+            }
+
             // ── Instructions bar ──────────────────────────────────────────────────────
 
             Rectangle {
@@ -959,7 +993,7 @@ ApplicationWindow {
                                 label: qsTr("I understand")
                             }
                         ];
-                    if (root.quitConfirmModalVisible || root.settingNeedsRestartModalVisible || root.listPickerModalVisible)
+                    if (root.quitConfirmModalVisible || root.settingNeedsRestartModalVisible || root.listPickerModalVisible || root.letterJumpModalVisible)
                         return [
                             {
                                 button: "Dpad",
@@ -1038,22 +1072,17 @@ ApplicationWindow {
                         if (root.systemsScreenState === "ready") {
                             if (root.systemsScreen === null)
                                 return [];
-                            // L/R shoulders page jump; only advertise the cue
-                            // when there's a second page to jump to, so we
-                            // don't promise a press that no-ops on a single
-                            // page of systems.
+                            // D-pad moves; L/R shoulders page-jump. Folded into
+                            // one "Move" cue, with the shoulder glyphs shown only
+                            // when there's a second page to jump to so we don't
+                            // promise a press that no-ops on a single page.
                             const pages = root.systemsScreen.systemsGrid.pageCount;
                             let row = [
                                 {
-                                    button: "Dpad",
+                                    buttons: pages > 1 ? ["ButtonL", "ButtonR", "Dpad"] : ["Dpad"],
                                     label: qsTr("Move")
                                 }
                             ];
-                            if (pages > 1)
-                                row.push({
-                                    buttons: ["ButtonL", "ButtonR"],
-                                    label: qsTr("Page")
-                                });
                             row.push({
                                 button: "ButtonA",
                                 label: qsTr("Open")
@@ -1093,17 +1122,15 @@ ApplicationWindow {
                             ];
                         if (state === "ready") {
                             const pages = grid.pageCount;
+                            // D-pad moves; L/R shoulders page-jump. Folded into
+                            // one "Move" cue; shoulder glyphs appear only with a
+                            // second page.
                             let row = [
                                 {
-                                    button: "Dpad",
+                                    buttons: pages > 1 ? ["ButtonL", "ButtonR", "Dpad"] : ["Dpad"],
                                     label: qsTr("Move")
                                 }
                             ];
-                            if (pages > 1)
-                                row.push({
-                                    buttons: ["ButtonL", "ButtonR"],
-                                    label: qsTr("Page")
-                                });
                             row.push({
                                 button: "ButtonA",
                                 label: qsTr("Open")
@@ -1228,17 +1255,15 @@ ApplicationWindow {
                         // so they should advertise Options too.
                         const idx = root.gamesScreen.gamesGrid.currentIndex;
                         const mediaCapable = Browse.GamesModel.is_media_capable_at(idx);
+                        // D-pad moves; L/R shoulders page-jump. Folded into one
+                        // "Move" cue; shoulder glyphs appear only with a second
+                        // page.
                         let row = [
                             {
-                                button: "Dpad",
+                                buttons: pages > 1 ? ["ButtonL", "ButtonR", "Dpad"] : ["Dpad"],
                                 label: qsTr("Move")
                             }
                         ];
-                        if (pages > 1)
-                            row.push({
-                                buttons: ["ButtonL", "ButtonR"],
-                                label: qsTr("Page")
-                            });
                         row.push({
                             button: "ButtonA",
                             label: qsTr("Open")
@@ -1248,6 +1273,13 @@ ApplicationWindow {
                                 button: "ButtonX",
                                 label: qsTr("Options")
                             });
+                        // West (Y) opens the list-scoped "View" menu (go to
+                        // letter, and later sort/filter/layout). Mirrors North's
+                        // item-scoped Options; the menu stays page/list-scoped.
+                        row.push({
+                            button: "ButtonY",
+                            label: qsTr("View")
+                        });
                         row.push({
                             button: "ButtonB",
                             label: qsTr("Back")

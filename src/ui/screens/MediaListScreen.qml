@@ -81,6 +81,11 @@ Item {
     property bool active: true
     property bool gridFocused: true
     property bool optimisticLoading: false
+    // True while a jump-to-letter walk is loading the intervening pages. Folded
+    // into `_loading()` so the standard centered loading cue paints over the
+    // (stale) source page instead of leaving it frozen. Set/cleared by the
+    // consumer that owns the jump (GamesScreen).
+    property bool jumpLoading: false
     // False until the user takes control of focus (first input). Combined with
     // `_restoreDone` into `_focusReady`, which gates whether the grid tiles and
     // list rows render selection at all.
@@ -138,6 +143,10 @@ Item {
 
     signal requestHubScreen
     signal requestContextMenu(int index, var anchorRect)
+    // Page-scoped operations entry point (West button). The router decides
+    // what the menu contains; the screen just reports the press when the list
+    // is in a usable state.
+    signal requestPageMenu
 
     on_ListLayoutChanged: {
         if (!root._listLayout)
@@ -175,7 +184,7 @@ Item {
     }
 
     function _loading(): bool {
-        return root.optimisticLoading || (root.mediaModel !== null ? root.mediaModel.loading : false);
+        return root.optimisticLoading || root.jumpLoading || (root.mediaModel !== null ? root.mediaModel.loading : false);
     }
 
     function _errorMessage(): string {
@@ -353,6 +362,9 @@ Item {
         } else if (action === "page_next") {
             if (root._state() === "ready")
                 root._performPage(1);
+        } else if (action === "page_menu") {
+            if (root._state() === "ready")
+                root.requestPageMenu();
         } else if (action === "accept") {
             const state = root._state();
             if (state === "loading")

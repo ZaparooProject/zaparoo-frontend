@@ -18,6 +18,12 @@ QtObject {
     // Master switch. Written from Main.qml via a Binding.
     property bool enabled: true
 
+    // CRT native path. Bound from MainLayout (like Theme/Sizing) so this
+    // singleton stays dependency-free (no Theme import). At 240p the default
+    // press scales move an edge by under a pixel, so the push-in cue is
+    // deepened on this path to read as a tactile snap.
+    property bool crtNativePath: false
+
     // Duration buckets (milliseconds). The practical floor here is the frame
     // budget, not perception: on MiSTer's software renderer (~30fps) motion the
     // eye tracks needs ~3 frames (~100ms) to read as smooth rather than a
@@ -31,13 +37,14 @@ QtObject {
     readonly property int settleMs: 110
 
     // Scale target for the one-shot push-in cue on squarish surfaces — tiles
-    // and dialog buttons.
-    readonly property real pressScale: 0.96
+    // and dialog buttons. Deeper on the CRT path so a sub-pixel HD nudge
+    // becomes a visible snap at 240p.
+    readonly property real pressScale: crtNativePath ? 0.90 : 0.96
     // Gentler target for wide, short rows (list-detail rows, settings fields,
     // menu/picker rows). The same scale factor moves a full-width row's edges
     // far more than a squarish tile's, so a wider row needs a value closer to
-    // 1.0 to read as the same subtle press.
-    readonly property real rowPressScale: 0.985
+    // 1.0 to read as the same subtle press. Same CRT deepening as above.
+    readonly property real rowPressScale: crtNativePath ? 0.95 : 0.985
 
     // Collapse all durations to 0 under reduce-motion so Behaviors that
     // use dur() resolve instantly without per-call branching.

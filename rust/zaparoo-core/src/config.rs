@@ -582,9 +582,14 @@ mod tests {
     fn keyboard_override_replaces_default_for_that_action() {
         use crate::input_actions::{actions, qt_key_code};
 
+        // `page_menu` defaults to Space, so unbind it here (empty list =
+        // unbind) before reusing Space to demonstrate that an `accept`
+        // override replaces accept's own defaults. Without freeing Space the
+        // deterministic collision policy would hand it to `page_menu`.
         let toml = r#"
             [input.keyboard]
             accept = ["Space"]
+            page_menu = []
         "#;
         let f = write_tmp(toml);
         let cfg = load_config(f.path());

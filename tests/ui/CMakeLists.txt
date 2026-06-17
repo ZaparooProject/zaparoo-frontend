@@ -19,6 +19,7 @@ qt_add_qml_module(
         tst_browse_detail_pane.qml
         tst_media_list_titles.qml
         tst_list_picker_modal.qml
+        tst_letter_jump_modal.qml
         tst_motion.qml
         tst_deferred_action.qml
     IMPORTS

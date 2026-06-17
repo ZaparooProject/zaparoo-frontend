@@ -24,6 +24,7 @@ qt_add_qml_module(
         FocusedMediaDetailController.qml
         GameInfoModal.qml
         HeaderBar.qml
+        LetterJumpModal.qml
         LoadingIndicator.qml
         ListPickerModal.qml
         LogUploadModal.qml
