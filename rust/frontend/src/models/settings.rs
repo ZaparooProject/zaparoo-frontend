@@ -49,6 +49,9 @@
 //     selection across the rename.
 //   * `current_mouse_enabled` — READ + NOTIFY, persisted. Defaults to true
 //     so existing installs keep the visible cursor and mouse hit targets.
+//   * `current_reduce_motion` — READ + NOTIFY, persisted. Defaults to false
+//     (motion on). When true, all Behavior durations in the UI collapse to
+//     0 via Motion.dur() so animations complete in one frame.
 //   * `current_debug_logging` — READ + NOTIFY, persisted. Defaults to false.
 //     Toggling it writes `[logging] debug = …` into frontend.toml; the
 //     tracing subscriber is built once at startup so the change only takes
@@ -126,6 +129,8 @@ const LANGUAGE_ALIASES: &[(&str, &str)] = &[
 const DEFAULT_LANGUAGE: &str = "auto";
 const CLOCK_FORMATS: &[&str] = &["auto", "12h", "24h"];
 const DEFAULT_CLOCK_FORMAT: &str = "auto";
+const REGIONS: &[&str] = &["auto", "us", "eu", "jp"];
+const DEFAULT_REGION: &str = "auto";
 const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
 const DEFAULT_ORIENTATION: &str = "horizontal";
 const BROWSE_LAYOUTS: &[&str] = &["grid", "list"];
@@ -183,13 +188,17 @@ pub struct SettingsRust {
     available_button_layouts: QStringList,
     current_button_layout: QString,
     current_mouse_enabled: bool,
+    current_reduce_motion: bool,
     current_discover_arcade_alternate_versions: bool,
     current_debug_logging: bool,
     current_show_hidden: bool,
+    current_show_original_filenames: bool,
     available_screensaver_timeouts: QStringList,
     current_screensaver_timeout: QString,
     available_media_image_types: QStringList,
     current_media_image_type: QString,
+    available_regions: QStringList,
+    current_region: QString,
 }
 
 #[cxx_qt::bridge]
@@ -219,13 +228,17 @@ pub mod ffi {
         #[qproperty(QStringList, available_button_layouts, READ, CONSTANT)]
         #[qproperty(QString, current_button_layout, READ, WRITE = set_button_layout, NOTIFY)]
         #[qproperty(bool, current_mouse_enabled, READ, WRITE = set_mouse_enabled, NOTIFY)]
+        #[qproperty(bool, current_reduce_motion, READ, WRITE = set_reduce_motion, NOTIFY)]
         #[qproperty(bool, current_discover_arcade_alternate_versions, READ, WRITE = set_discover_arcade_alternate_versions, NOTIFY)]
         #[qproperty(bool, current_debug_logging, READ, WRITE = set_debug_logging, NOTIFY)]
         #[qproperty(bool, current_show_hidden, READ, WRITE = set_show_hidden, NOTIFY)]
+        #[qproperty(bool, current_show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
         #[qproperty(QStringList, available_screensaver_timeouts, READ, CONSTANT)]
         #[qproperty(QString, current_screensaver_timeout, READ, WRITE = set_screensaver_timeout, NOTIFY)]
         #[qproperty(QStringList, available_media_image_types, READ, CONSTANT)]
         #[qproperty(QString, current_media_image_type, READ, WRITE = set_media_image_type, NOTIFY)]
+        #[qproperty(QStringList, available_regions, READ, CONSTANT)]
+        #[qproperty(QString, current_region, READ, WRITE = set_region, NOTIFY)]
         type Settings = super::SettingsRust;
 
         #[qinvokable]
@@ -250,6 +263,9 @@ pub mod ffi {
         fn set_mouse_enabled(self: Pin<&mut Settings>, value: bool);
 
         #[qinvokable]
+        fn set_reduce_motion(self: Pin<&mut Settings>, value: bool);
+
+        #[qinvokable]
         fn set_discover_arcade_alternate_versions(self: Pin<&mut Settings>, value: bool);
 
         #[qinvokable]
@@ -263,6 +279,12 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_show_hidden(self: Pin<&mut Settings>, value: bool);
+
+        #[qinvokable]
+        fn set_show_original_filenames(self: Pin<&mut Settings>, value: bool);
+
+        #[qinvokable]
+        fn set_region(self: Pin<&mut Settings>, value: QString);
     }
 
     impl cxx_qt::Initialize for Settings {}
@@ -299,17 +321,21 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().current_button_layout =
             QString::from(merged.button_layout.as_str());
         self.as_mut().rust_mut().current_mouse_enabled = merged.mouse_enabled;
+        self.as_mut().rust_mut().current_reduce_motion = merged.reduce_motion;
         self.as_mut()
             .rust_mut()
             .current_discover_arcade_alternate_versions = merged.discover_arcade_alternate_versions;
         self.as_mut().rust_mut().current_debug_logging = merged.debug_logging;
         self.as_mut().rust_mut().current_show_hidden = merged.show_hidden;
+        self.as_mut().rust_mut().current_show_original_filenames = merged.show_original_filenames;
         self.as_mut().rust_mut().available_screensaver_timeouts = screensaver_timeouts();
         self.as_mut().rust_mut().current_screensaver_timeout =
             QString::from(merged.screensaver_timeout.as_str());
         self.as_mut().rust_mut().available_media_image_types = media_image_types();
         self.as_mut().rust_mut().current_media_image_type =
             QString::from(merged.media_image_type.as_str());
+        self.as_mut().rust_mut().available_regions = regions();
+        self.as_mut().rust_mut().current_region = QString::from(merged.region.as_str());
         crate::startup_trace(format!(
             "rust:model Settings init end dur_ms={}",
             started.elapsed().as_millis()
@@ -416,6 +442,16 @@ impl ffi::Settings {
         self.as_mut().current_mouse_enabled_changed();
     }
 
+    fn set_reduce_motion(mut self: Pin<&mut Self>, value: bool) {
+        if self.current_reduce_motion == value {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.reduce_motion = value);
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_reduce_motion = value;
+        self.as_mut().current_reduce_motion_changed();
+    }
+
     fn set_discover_arcade_alternate_versions(mut self: Pin<&mut Self>, value: bool) {
         if self.current_discover_arcade_alternate_versions == value {
             return;
@@ -478,6 +514,31 @@ impl ffi::Settings {
         self.as_mut().rust_mut().current_show_hidden = value;
         self.as_mut().current_show_hidden_changed();
     }
+
+    fn set_show_original_filenames(mut self: Pin<&mut Self>, value: bool) {
+        if self.current_show_original_filenames == value {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.show_original_filenames = value);
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_show_original_filenames = value;
+        self.as_mut().current_show_original_filenames_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_region(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_region(&value.to_string()).to_string();
+        if self.current_region.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.region.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_region = QString::from(value_str.as_str());
+        self.as_mut().current_region_changed();
+    }
 }
 
 fn persist_settings<F: FnOnce(&mut SettingsState)>(mutator: F) -> persist::PersistedState {
@@ -511,11 +572,14 @@ fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsS
             browse_layout: settings.browse_layout.as_str(),
             button_layout: settings.button_layout.as_str(),
             mouse_enabled: settings.mouse_enabled,
+            reduce_motion: settings.reduce_motion,
             discover_arcade_alternate_versions: settings.discover_arcade_alternate_versions,
             debug_logging: settings.debug_logging,
             screensaver_timeout: settings.screensaver_timeout.as_str(),
             media_image_type: settings.media_image_type.as_str(),
             show_hidden: settings.show_hidden,
+            show_original_filenames: settings.show_original_filenames,
+            region: settings.region.as_str(),
         },
     ) {
         warn!(
@@ -569,6 +633,10 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
             .settings
             .mouse_enabled
             .unwrap_or(snapshot.mouse_enabled),
+        reduce_motion: config
+            .settings
+            .reduce_motion
+            .unwrap_or(snapshot.reduce_motion),
         discover_arcade_alternate_versions: config
             .settings
             .discover_arcade_alternate_versions
@@ -593,6 +661,18 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
         )
         .to_string(),
         show_hidden: config.settings.show_hidden.unwrap_or(snapshot.show_hidden),
+        show_original_filenames: config
+            .settings
+            .show_original_filenames
+            .unwrap_or(snapshot.show_original_filenames),
+        region: normalize_region(
+            config
+                .settings
+                .region
+                .as_deref()
+                .unwrap_or(snapshot.region.as_str()),
+        )
+        .to_string(),
     }
 }
 
@@ -660,6 +740,14 @@ fn media_image_types() -> QStringList {
     let mut list = QStringList::default();
     for value in MEDIA_IMAGE_TYPES {
         list.append(QString::from(*value));
+    }
+    list
+}
+
+fn regions() -> QStringList {
+    let mut list = QStringList::default();
+    for region in REGIONS {
+        list.append(QString::from(*region));
     }
     list
 }
@@ -735,6 +823,15 @@ fn normalize_media_image_type(value: &str) -> &'static str {
         .unwrap_or(DEFAULT_MEDIA_IMAGE_TYPE)
 }
 
+fn normalize_region(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    REGIONS
+        .iter()
+        .copied()
+        .find(|r| *r == trimmed)
+        .unwrap_or(DEFAULT_REGION)
+}
+
 fn normalize_button_layout(value: &str) -> &'static str {
     let trimmed = value.trim();
     // Legacy alias map: state files written by builds before the
@@ -758,9 +855,10 @@ mod tests {
     use super::{
         browse_layouts, button_layouts, clock_formats, curated_resolutions, languages,
         normalize_browse_layout, normalize_button_layout, normalize_clock_format,
-        normalize_language, normalize_orientation, orientations, BROWSE_LAYOUTS, BUTTON_LAYOUTS,
-        CLOCK_FORMATS, DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT,
-        DEFAULT_LANGUAGE, DEFAULT_ORIENTATION, LANGUAGES, MISTER_RESOLUTIONS, ORIENTATIONS,
+        normalize_language, normalize_orientation, normalize_region, orientations, regions,
+        BROWSE_LAYOUTS, BUTTON_LAYOUTS, CLOCK_FORMATS, DEFAULT_BROWSE_LAYOUT,
+        DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT, DEFAULT_LANGUAGE, DEFAULT_ORIENTATION,
+        DEFAULT_REGION, LANGUAGES, MISTER_RESOLUTIONS, ORIENTATIONS, REGIONS,
     };
 
     #[test]
@@ -907,5 +1005,31 @@ mod tests {
         assert_eq!(normalize_button_layout("nintendo"), "a");
         assert_eq!(normalize_button_layout("xbox"), "b");
         assert_eq!(normalize_button_layout("sony"), "c");
+    }
+
+    #[test]
+    fn regions_preserve_order() {
+        let list = regions();
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        let expected: Vec<String> = REGIONS.iter().map(|s| (*s).to_string()).collect();
+        assert_eq!(collected, expected);
+    }
+
+    #[test]
+    fn region_normalization_defaults_to_auto() {
+        assert_eq!(normalize_region(""), DEFAULT_REGION);
+        assert_eq!(normalize_region("unknown"), DEFAULT_REGION);
+        assert_eq!(normalize_region("  "), DEFAULT_REGION);
+        assert_eq!(normalize_region("auto"), "auto");
+        assert_eq!(normalize_region("us"), "us");
+        assert_eq!(normalize_region("eu"), "eu");
+        assert_eq!(normalize_region("jp"), "jp");
+    }
+
+    #[test]
+    fn region_values_are_lowercase() {
+        for region in REGIONS {
+            assert_eq!(*region, region.to_ascii_lowercase());
+        }
     }
 }

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg enable-background="new 0 0 3839 841.8" version="1.1" viewBox="0 0 3839 841.8" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">
+<style type="text/css">
+	.st0{fill:#FFFFFF;}
+	.st1{fill:#E60012;}
+	.st2{fill-rule:evenodd;clip-rule:evenodd;fill:#E60012;}
+	.st3{filter:url(#b);}
+	.st4{fill-rule:evenodd;clip-rule:evenodd;fill:#FFFFFF;}
+	.st5{mask:url(#b_4_);fill-rule:evenodd;clip-rule:evenodd;fill:#FFFFFF;}
+	.st6{fill-rule:evenodd;clip-rule:evenodd;}
+	.st7{filter:url(#Adobe_OpacityMaskFilter_1_);}
+	.st8{mask:url(#b_1_);fill-rule:evenodd;clip-rule:evenodd;fill:#FFFFFF;}
+	.st9{filter:url(#Adobe_OpacityMaskFilter_2_);}
+	.st10{mask:url(#b_2_);fill-rule:evenodd;clip-rule:evenodd;}
+	.st11{filter:url(#Adobe_OpacityMaskFilter_3_);}
+	.st12{mask:url(#b_7_);fill-rule:evenodd;clip-rule:evenodd;}
+	.st13{filter:url(#Adobe_OpacityMaskFilter_4_);}
+	.st14{mask:url(#b_8_);fill-rule:evenodd;clip-rule:evenodd;fill:#FFFFFF;}
+	.st15{filter:url(#Adobe_OpacityMaskFilter_5_);}
+	.st16{mask:url(#b_9_);fill-rule:evenodd;clip-rule:evenodd;fill:#FFFFFF;}
+	.st17{filter:url(#Adobe_OpacityMaskFilter_6_);}
+	.st18{mask:url(#b_3_);fill-rule:evenodd;clip-rule:evenodd;fill:#E60012;}
+	.st19{filter:url(#Adobe_OpacityMaskFilter_7_);}
+	.st20{mask:url(#b_5_);fill-rule:evenodd;clip-rule:evenodd;fill:#FFFFFF;}
+	.st21{filter:url(#Adobe_OpacityMaskFilter_8_);}
+	.st22{mask:url(#b_6_);fill-rule:evenodd;clip-rule:evenodd;}
+	.st23{filter:url(#Adobe_OpacityMaskFilter_9_);}
+	.st24{mask:url(#b_12_);fill-rule:evenodd;clip-rule:evenodd;fill:#E60012;}
+	.st25{filter:url(#Adobe_OpacityMaskFilter_10_);}
+	.st26{mask:url(#b_10_);fill-rule:evenodd;clip-rule:evenodd;fill:#FFFFFF;}
+	.st27{filter:url(#Adobe_OpacityMaskFilter_11_);}
+	.st28{mask:url(#a);fill-rule:evenodd;clip-rule:evenodd;}
+</style>
+
+	<g transform="translate(0 -.187)">
+		<defs>
+			<filter id="b" x="0" y=".2" width="841.8" height="841.8" filterUnits="userSpaceOnUse">
+				<feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+			</filter>
+		</defs>
+		<mask id="a" x="0" y="0.2" width="841.8" height="841.8" maskUnits="userSpaceOnUse">
+			<g class="st3">
+				<path class="st4" d="M841.8,841.9H0V0.2h841.8V841.9z"/>
+			</g>
+		</mask>
+		<path class="st28" d="m131 252.7c0 43.7 35.4 79.2 79.2 79.2s79.2-35.4 79.2-79.2c0-43.7-35.4-79.1-79.1-79.1h-0.1c-43.7-0.1-79.1 35.3-79.2 79.1zm207.1 521.4h-122.2c-39.3 0.1-77-15.5-104.6-43.3-27.9-27.7-43.5-65.4-43.4-104.6v-410.2c0-39.5 15.4-76.7 43.3-104.6 27.7-27.9 65.4-43.5 104.7-43.4h122.3v706.1zm61.7-773.9h-184c-119.2 0-215.8 96.6-215.8 215.8v410.1c0 119.2 96.6 215.8 215.9 215.8h184c3.4 0 6.2-2.7 6.2-6.1v-0.1-829.4c-0.1-3.3-2.8-6.1-6.3-6.1zm257 377.8c47 1 84.3 39.8 83.4 86.9-0.9 45.7-37.7 82.5-83.4 83.4-47-1-84.3-39.8-83.4-86.9 0.9-45.7 37.7-82.5 83.4-83.4zm-160.4 463.9h129.6c119.2 0 215.9-96.6 215.9-215.8v-410.1c0-119.2-96.7-215.8-215.9-215.8h-130.3c-3 0-5.4 2.4-5.5 5.3v0.1 830.1c0.1 3.5 2.8 6.2 6.2 6.2z"/>
+	</g>
+	<path class="st6" d="m3318.7 203.6h-51.2v-136.1h51.2c37.6 0.1 68 30.5 68 68.1 0 37.5-30.4 68-68 68zm-2.4-185.4h-97v234.8h97.1c66.6 0 120.8-52.6 120.8-117.4-0.1-64.8-54.3-117.4-120.9-117.4zm-179.8 438.8c50 0 96.7 26.7 121.6 68.8l72.1-62.6c-43.8-65.5-117.5-104.7-196.3-104.6-130.4 0-236.5 106-236.5 236.4s106.1 236.4 236.5 236.4c79.3 0 152.1-39 196.3-104.6l-72.1-62.7c-24.9 42.1-71.6 68.8-121.6 68.8-77.5 0-140.5-61.9-140.5-137.9 0-76.1 63-138 140.5-138zm-683.2 10h141.5v349h95.3v-349h138.4v-94h-375.2v94zm1276.6 80.7h-206.8v-174.7h-91.6v443h91.6v-176.7h206.8v176.7h91.7v-443h-91.7v174.7zm-16-339c-40.3-0.1-72.9-32.8-72.9-73.1 0-40.2 32.8-73.1 72.9-73.1 40.3 0.1 72.9 32.8 73 73.1 0 40.3-32.7 73-73 73.1zm0-198.4c-68.9 0-125 56.2-125 125.3 0 69.2 56.1 125.4 125 125.4 69 0 125.1-56.2 125.1-125.4 0-69.1-56.1-125.3-125.1-125.3zm-1098.4 199.2h-134.9v-55h124.7v-42.5h-124.7v-50.7h134.9v-43.1l-182.5 0.1v234.7l182.5-0.1v-43.4zm405.2 43.5v-234.8h-47.7v154.2l-115.5-154.2h-47.4v234.8h47.6v-157l116.6 157h46.4zm-1565.7 0h52.2v-234.8h-52.2v234.8zm-203.7 293.9c-63.9-10.5-105.2-22.4-105.2-52.2 0-34.5 46-47.7 107.7-47.7 57.4 0 115.1 21.9 135.6 30.4l31.5-76.6c-22.4-8.9-93-34.1-171.6-34.1-95.7 0-197.5 46.7-197.5 133.2 0 70.1 49.4 106 176.5 127.8 89.5 15.5 138.8 23.9 137.4 62.4-0.8 21.2-17.2 56.7-118.1 56.7-81.3 0-138.4-29.4-158.3-41.4l-41.9 75.7c22.4 11.8 97.3 47 193.8 47 141 0 215.4-48.8 215.4-141.2 0.1-53.4-17.9-109.2-205.3-140zm703.3 147.6-93.8-321.5h-78.6l-93.5 320.2-85.1-320.2h-96.4l125.4 443h106.4l82.5-291.8 82.1 291.8h106.9l126-443h-96.3l-85.6 321.5zm-222.6-598.5 116.6 157h46.4v-234.8h-47.7v154.2l-115.5-154.2h-47.4v234.8h47.6v-157zm514.5 720h98.6v-443h-98.6v443zm14.6-797.8h-198.9v49.8h75v185h50.6v-185h73.3v-49.8zm-1146 77.8 116.7 157h46.3v-234.8h-47.6v154.2l-115.6-154.2h-47.4v234.8h47.5l0.1-157z"/>
+
+</svg>

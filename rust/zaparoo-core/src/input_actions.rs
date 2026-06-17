@@ -20,6 +20,7 @@ pub mod actions {
     pub const DETAILS: &str = "details";
     pub const PAGE_PREV: &str = "page_prev";
     pub const PAGE_NEXT: &str = "page_next";
+    pub const PAGE_MENU: &str = "page_menu";
     pub const QUIT: &str = "quit";
 }
 
@@ -68,6 +69,7 @@ pub fn default_bindings() -> HashMap<String, Vec<String>> {
     map.insert(actions::CONTEXT_MENU.into(), vec!["Tab".into()]);
     map.insert(actions::PAGE_PREV.into(), vec!["PageUp".into()]);
     map.insert(actions::PAGE_NEXT.into(), vec!["PageDown".into()]);
+    map.insert(actions::PAGE_MENU.into(), vec!["Space".into()]);
     map
 }
 
@@ -140,6 +142,10 @@ mod tests {
         assert_eq!(
             map.get(&qt_key_code("Tab").unwrap()).map(String::as_str),
             Some(actions::CONTEXT_MENU),
+        );
+        assert_eq!(
+            map.get(&qt_key_code("Space").unwrap()).map(String::as_str),
+            Some(actions::PAGE_MENU),
         );
     }
 

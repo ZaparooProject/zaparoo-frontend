@@ -13,8 +13,12 @@ import QtQuick
 QtObject {
     // Build a cover image URL from a `coverKey`.
     // Extension/scheme is chosen by directory:
-    //   * `systems/<id>` — the curated PNG set under
-    //     resources/images/systems/, ships as PNG.
+    //   * `systems/<id>` — the curated SVG set under
+    //     resources/images/systems/, tinted by the image provider.
+    //   * `system-image/<path>` — user-supplied override artwork from the
+    //     directory configured via `[images] system_dir` in frontend.toml.
+    //     Served as-is (no tint) by the `system-image` image provider; the
+    //     three theme color tokens are ignored for overrides.
     //   * `media-image/<encoded>` — media images (boxart, screenshot,
     //     wheel, titleshot, map, marquee, fanart, generic image)
     //     cached in process memory by `media_image_cache.rs`, served
@@ -36,15 +40,44 @@ QtObject {
 
     // Empty key returns an empty URL so the caller can use it as a
     // "no cover" sentinel.
-    function coverUrl(key: string): url {
+    function _colorToken(colorValue: var): string {
+        const text = String(colorValue === undefined ? "#ffffff" : colorValue);
+        return text.charAt(0) === "#" ? text.substring(1) : text;
+    }
+
+    function _systemArtworkKey(key: string): string {
+        if (key === "systems/MacPlus")
+            return "systems/MacOS";
+        if (key === "systems/SVI328")
+            return "systems/Spectravideo";
+        return key;
+    }
+
+    function coverUrl(key: string, foreground: var, secondary: var, background: var): url {
         if (key === "")
             return "";
+
+        if (key.startsWith("system-image/"))
+            return "image://system-image/" + key.substring("system-image/".length);
 
         if (key.startsWith("media-image/"))
             return "image://media-image/" + key.substring("media-image/".length);
 
-        const ext = key.startsWith("systems/") ? "png" : "svg";
-        return baseUrl + "images/" + key + "." + ext;
+        // System logos, Hub category icons, and UI glyphs (folders, file, action
+        // icons) all go through the tinted-svg provider so their color tracks the
+        // theme ramp. The _systemArtworkKey remap (MacPlus -> MacOS, SVI328 ->
+        // Spectravideo) applies only to systems/ paths.
+        if (key.startsWith("systems/") || key.startsWith("categories/") || key.startsWith("icons/")) {
+            const artworkKey = key.startsWith("systems/") ? _systemArtworkKey(key) : key;
+            const effectiveSecondary = background === undefined ? foreground : secondary;
+            const effectiveBackground = background === undefined ? secondary : background;
+            const fg = _colorToken(foreground);
+            const second = _colorToken(effectiveSecondary === undefined ? foreground : effectiveSecondary);
+            const bg = _colorToken(effectiveBackground === undefined ? "#000000" : effectiveBackground);
+            return "image://tinted-svg/" + fg + "/" + second + "/" + bg + "/images/" + artworkKey + ".svg";
+        }
+
+        return baseUrl + "images/" + key + ".svg";
     }
 
     // Top-right HUD host-status icons (NFC/Wi-Fi/LAN/Bluetooth).

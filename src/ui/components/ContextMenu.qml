@@ -31,6 +31,10 @@ Item {
     property int currentIndex: 0
     property int bottomUnsafeHeight: Sizing.pctH(6) + Sizing.pctH(2)
 
+    // Push-in scale for the activated row, mirroring the tile push-in.
+    property real _pressScale: 1.0
+    property string _pendingId: ""
+
     signal accepted(string id)
     signal closeRequested
 
@@ -63,8 +67,12 @@ Item {
     z: 250
 
     onOpenChanged: {
-        if (open)
+        if (open) {
             currentIndex = 0;
+            menu._pressScale = 1.0;
+            pressAnim.stop();
+            menu._pendingId = "";
+        }
     }
 
     onEntriesChanged: {
@@ -100,9 +108,36 @@ Item {
             menu.move(1);
         else if (action === "accept") {
             if (menu.currentIndex >= 0 && menu.currentIndex < menu.entries.length)
-                menu.accepted(menu.entries[menu.currentIndex].id);
+                menu._commitAccept(menu.entries[menu.currentIndex].id);
         } else if (action === "cancel" || action === "context_menu")
             menu.closeRequested();
+    }
+
+    // Play the push-in cue on the focused row, then emit accepted(id)
+    // deferred so the animation completes before the caller acts.
+    function _commitAccept(id: string): void {
+        menu._pendingId = id;
+        pressAnim.restart();
+        acceptCommit.arm();
+    }
+
+    NumberAnimation {
+        id: pressAnim
+        target: menu
+        property: "_pressScale"
+        to: Motion.rowPressScale
+        duration: Motion.dur(Motion.pressMs)
+        easing.type: Easing.OutQuad
+    }
+
+    DeferredAction {
+        id: acceptCommit
+        onDeferred: {
+            const id = menu._pendingId;
+            menu._pendingId = "";
+            if (id !== "")
+                menu.accepted(id);
+        }
     }
 
     FontMetrics {
@@ -203,6 +238,8 @@ Item {
                     border.width: index === menu.currentIndex ? Sizing.stroke(2) : Sizing.stroke(1)
                     border.color: index === menu.currentIndex ? Theme.accent : Theme.borderMid
                     radius: Sizing.cornerRadius
+                    transformOrigin: Item.Center
+                    scale: row.index === menu.currentIndex ? menu._pressScale : 1.0
 
                     Text {
                         anchors.left: parent.left
@@ -224,7 +261,7 @@ Item {
                         acceptedButtons: Qt.LeftButton
                         cursorShape: Qt.PointingHandCursor
                         onEntered: menu.currentIndex = row.index
-                        onClicked: menu.accepted(row.modelData.id)
+                        onClicked: menu._commitAccept(row.modelData.id)
                     }
                 }
             }

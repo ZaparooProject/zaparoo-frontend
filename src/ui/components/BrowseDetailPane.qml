@@ -17,6 +17,11 @@ Item {
     property string detailTags: ""
     property bool canPreviousImage: false
     property bool canNextImage: false
+    // Reserve the carousel gutter even before can_next/can_prev are known,
+    // so the cover footprint is stable from the first frame on screens that
+    // support image cycling. Set to true by GamesScreen; Recents/Favorites
+    // leave it false (they have no carousel wiring).
+    property bool reserveImageNav: false
     property bool loading: false
     property bool detailSuppressed: false
     property bool showChrome: true
@@ -56,31 +61,53 @@ Item {
     readonly property int _imageReservedHeight: root._detail && root._detail.imageReservedHeight !== undefined ? root._detail.imageReservedHeight : 0
     readonly property int _imageBottomMargin: root._detail && root._detail.imageBottomMargin !== undefined ? root._detail.imageBottomMargin : 0
     readonly property int _cardRadius: root._surface ? root._surface.cornerRadius : Sizing.cornerRadius
-    readonly property int _carouselGutter: (canPreviousImage || canNextImage) ? Sizing.pctW(4) : 0
+    // Reserve the side gutter whenever this screen supports image cycling
+    // (reserveImageNav) OR when can_prev/can_next are already known, so the
+    // cover footprint never changes when can_next flips async after meta loads.
+    readonly property int _carouselGutter: (root.reserveImageNav || canPreviousImage || canNextImage) ? Sizing.pctW(4) : 0
     readonly property bool _coverPending: coverKey === "icons/Loading"
-    readonly property url _coverSource: _coverPending ? "" : Resources.coverUrl(coverKey)
+    // During the loading grace window, hold the last good cover URL so the
+    // area does not blank while the new bytes arrive. Once the grace elapses
+    // without resolution the source becomes "" and the busy indicator shows.
+    readonly property url _coverSource: _coverPending ? (_coverLoadingDelayElapsed ? "" : _lastGoodCoverSource) : Resources.coverUrl(coverKey, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
+    // True whenever the cover Image is in flight (model pending, Qt async
+    // decode, or any non-media-image provider still loading).
     readonly property bool _coverMediaImagePending: coverKey.startsWith("media-image/") && cover.status !== Image.Ready && cover.status !== Image.Error
     readonly property bool _coverBusy: root._coverPending || root._coverMediaImagePending || cover.status === Image.Loading
     readonly property bool _paneLoading: root.loading
     readonly property bool _delayedPaneLoading: root._paneLoading && root._paneLoadingDelayElapsed
-    readonly property bool _coverBusyIndicatorVisible: root._coverPending || root._coverMediaImagePending || (cover.status === Image.Loading && root._coverLoadingDelayElapsed)
+    // Gate every busy-cover signal behind the same grace delay. A cover that
+    // resolves within `loadingDelayMs` (150 ms, the common warm case) never
+    // shows the hourglass. A genuinely cold cover still pending after the
+    // grace becomes visible because `_coverLoadingDelayElapsed` flips true.
+    readonly property bool _coverBusyIndicatorVisible: root._coverBusy && root._coverLoadingDelayElapsed
     readonly property bool _detailVisible: !root.detailSuppressed
-    readonly property bool _emptyPaneLoading: root._delayedPaneLoading && !root._coverBusyIndicatorVisible && root._coverSource === "" && root._detailRows.length === 0 && root.title === ""
-    readonly property bool _suppressedPlaceholderCover: root.detailSuppressed && coverKey.startsWith("icons/") && root._coverSource !== ""
+    readonly property bool _emptyPaneLoading: root._delayedPaneLoading && !root._coverBusyIndicatorVisible && root._coverSource === "" && root._displayRows.length === 0 && root.title === ""
     readonly property var _detailRows: _parseDetailTags(detailTags)
-    readonly property int _tagRowCount: _detailRows.length
+    readonly property int _tagRowCount: _displayRows.length
     readonly property int _tagTextSize: Sizing.fontSize(2.2)
     readonly property int _tagLabelGap: Sizing.pctW(1.4)
     readonly property int _metadataLabelMaxWidth: root._detail && root._detail.metadataLabelMaxWidth !== undefined ? root._detail.metadataLabelMaxWidth : 0
     readonly property int _labelColumnWidth: root._metadataLabelMaxWidth > 0 ? Math.min(root._labelColumnNaturalWidth, root._metadataLabelMaxWidth) : root._labelColumnNaturalWidth
     readonly property int _metadataNaturalHeight: _tagRowCount <= 0 ? 0 : (_tagRowCount * _tagRowHeight) + ((_tagRowCount - 1) * _tagRowSpacing)
     readonly property int _compactMetadataHeight: Math.min(Sizing.px(content.height * 0.38), _metadataNaturalHeight)
+    // True for system-logo cover keys; used to select the wordmark fallback
+    // instead of the generic File chip when no logo SVG exists.
+    readonly property bool _isSystemCover: root.coverKey.startsWith("systems/")
 
     property int _labelColumnNaturalWidth: 0
     property bool _paneLoadingDelayElapsed: false
     property bool _coverLoadingDelayElapsed: false
+    // Holds the last resolved cover URL so we can display it during the
+    // loading grace window instead of blanking the cover area.
+    property url _lastGoodCoverSource: ""
+    // The detail table tracks the focused row's metadata directly. The model
+    // keeps `current_detail_tags` identity-correct on every move — an immediate
+    // peek shows cached/local rows or a clean blank, never the previous row's
+    // values — so no client-side hold is needed. (The cover keeps its own hold;
+    // see `coverHold`/`_lastGoodCoverSource` below.)
+    readonly property var _displayRows: root._detailRows
 
-    onDetailTagsChanged: root._labelColumnNaturalWidth = 0
     onLoadingChanged: root._updatePaneLoadingDelay()
     onLoadingDelayMsChanged: {
         root._updatePaneLoadingDelay();
@@ -210,7 +237,12 @@ Item {
             if (root._horizontalSections)
                 return height;
             const availableWidth = Math.max(0, width - (2 * root._carouselGutter) - root._imagePaddingLeft - root._imagePaddingRight);
-            const imageLimit = titleText.visible ? Math.floor((height * root._imageHeightRatioWithTitle) / 100) : Math.max(0, height - root._compactMetadataHeight - root._imageBottomMargin);
+            // Title visible: use the fixed ratio from the profile.
+            // Title not visible (media screens): use the share-based primarySpan
+            // so the cover footprint is stable from the first frame regardless of
+            // whether metadata tags have loaded yet. _compactMetadataHeight
+            // is metadata-driven and would cause a reflow on every move.
+            const imageLimit = titleText.visible ? Math.floor((height * root._imageHeightRatioWithTitle) / 100) : Math.max(0, primarySpan - root._imageBottomMargin);
             return Math.max(0, Math.min(height, Math.min(availableWidth, imageLimit) + root._imageReservedHeight));
         }
         readonly property int metadataX: root._horizontalSections ? primarySpan + root._sectionGap : 0
@@ -234,16 +266,42 @@ Item {
                 anchors.topMargin: root._imagePaddingTop
                 anchors.bottomMargin: root._imagePaddingBottom
 
+                // Holds the previously decoded cover while the new one async-decodes.
+                // Prevents the slot from blanking during the brief Qt pixmap-decode
+                // window (typically < 150 ms for a cached JPEG). Dropped when the
+                // grace elapses without resolution so a genuinely cold cover shows a
+                // clean hourglass instead of a stale image persisting forever.
+                Image {
+                    id: coverHold
+
+                    objectName: "detailCoverHold"
+                    anchors.fill: parent
+                    source: root._lastGoodCoverSource
+                    fillMode: Image.PreserveAspectFit
+                    sourceSize.width: 512
+                    smooth: true
+                    asynchronous: false
+                    cache: true
+                    visible: root._lastGoodCoverSource !== "" && root._lastGoodCoverSource !== root._coverSource && cover.status !== Image.Ready && !root.detailSuppressed && !root._isSystemCover && !root._coverBusyIndicatorVisible
+                }
+
                 Image {
                     id: cover
 
+                    objectName: "detailCoverImage"
                     anchors.fill: parent
                     source: root._coverSource
                     fillMode: Image.PreserveAspectFit
                     sourceSize.width: 512
                     smooth: true
                     asynchronous: true
-                    visible: root._coverSource !== "" && status === Image.Ready && (!root.detailSuppressed || root._suppressedPlaceholderCover)
+                    visible: root._coverSource !== "" && status === Image.Ready && !root.detailSuppressed
+                    // Record the decoded cover URL so coverHold can display it
+                    // while the next cover async-decodes after a d-pad move.
+                    onStatusChanged: {
+                        if (status === Image.Ready)
+                            root._lastGoodCoverSource = source;
+                    }
                 }
 
                 Image {
@@ -252,15 +310,42 @@ Item {
                     objectName: "detailPlaceholderIcon"
                     x: Sizing.center(parent.width, width)
                     y: Sizing.center(parent.height, height)
-                    width: Math.min(Sizing.pctH(10), parent.width, parent.height)
+                    // Size the chip to ~50% of the cover-slot width so it reads
+                    // as a modest accent rather than a large placeholder icon.
+                    width: Math.round(parent.width * 0.5)
                     height: width
-                    source: Resources.iconUrl(root._coverBusy ? "Loading" : "File")
+                    source: root._coverBusy ? Resources.iconUrl("Loading") : Resources.coverUrl("icons/File", Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
                     sourceSize.width: Sizing.px(width)
                     sourceSize.height: Sizing.px(height)
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     asynchronous: false
-                    visible: !root._suppressedPlaceholderCover && (root.detailSuppressed || root._coverBusyIndicatorVisible || (!root._coverBusy && (root._coverSource === "" || cover.status === Image.Error)))
+                    visible: !root.detailSuppressed && !root._isSystemCover && (root._coverBusyIndicatorVisible || (!root._coverBusy && (root._coverSource === "" || cover.status === Image.Error)))
+                }
+
+                // Wordmark fallback for system entries with no curated logo SVG.
+                // Mirrors the grid Tile's fitted-text treatment: DemiBold, logo-focus
+                // tint, shrinks to fill. Hidden while a logo is loading so the busy
+                // window is brief. The File chip above is suppressed for system keys
+                // (via !_isSystemCover) so exactly one of the two placeholders shows.
+                Text {
+                    objectName: "detailLogoWordmark"
+
+                    anchors.fill: parent
+                    anchors.margins: Sizing.pctH(1)
+                    text: root.title
+                    font.family: Theme.fontUi
+                    font.pixelSize: Sizing.fontSize(5.8)
+                    fontSizeMode: Text.Fit
+                    minimumPixelSize: Sizing.fontSize(2.8)
+                    font.weight: Font.DemiBold
+                    color: Theme.logoFocusPrimary
+                    wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    renderType: Text.NativeRendering
+                    visible: root._isSystemCover && !root._coverBusy && cover.status !== Image.Ready && root.title !== "" && !root.detailSuppressed
+                    clip: true
                 }
             }
         }
@@ -355,10 +440,10 @@ Item {
                         anchors.bottom: root._metadataBottomAligned && !titleText.visible ? parent.bottom : undefined
                         spacing: root._tagRowSpacing
                         clip: true
-                        visible: root._detailVisible && root._detailRows.length > 0
+                        visible: root._detailVisible && root._displayRows.length > 0
 
                         Repeater {
-                            model: root._detailRows
+                            model: root._displayRows
 
                             delegate: Item {
                                 id: tagRow

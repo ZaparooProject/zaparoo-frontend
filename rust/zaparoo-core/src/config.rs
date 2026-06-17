@@ -40,6 +40,12 @@ pub struct Config {
     /// state is wiped on reboot — using state would re-show the notice
     /// every cold boot.
     pub notice: NoticeConfig,
+    /// Optional directory scanned at startup for user-supplied system
+    /// artwork. Files whose stem matches a Zaparoo system id (case-exact)
+    /// are served as-is — no tint pipeline — via the `system-image` image
+    /// provider. Configured via `[images] system_dir` in `frontend.toml`.
+    /// Absent/empty means the feature is off.
+    pub system_image_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -49,10 +55,13 @@ pub struct SettingsConfig {
     pub browse_layout: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
+    pub reduce_motion: Option<bool>,
     pub discover_arcade_alternate_versions: Option<bool>,
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
     pub show_hidden: Option<bool>,
+    pub show_original_filenames: Option<bool>,
+    pub region: Option<String>,
 }
 
 #[allow(
@@ -68,11 +77,14 @@ pub struct SettingsMirror<'a> {
     pub browse_layout: &'a str,
     pub button_layout: &'a str,
     pub mouse_enabled: bool,
+    pub reduce_motion: bool,
     pub discover_arcade_alternate_versions: bool,
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
     pub media_image_type: &'a str,
     pub show_hidden: bool,
+    pub show_original_filenames: bool,
+    pub region: &'a str,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -92,6 +104,7 @@ impl Default for Config {
             key_to_action: input_actions::invert(&input_actions::default_bindings()),
             settings: SettingsConfig::default(),
             notice: NoticeConfig::default(),
+            system_image_dir: None,
         }
     }
 }
@@ -112,6 +125,8 @@ struct RawConfig {
     settings: RawSettings,
     #[serde(default)]
     notice: RawNotice,
+    #[serde(default)]
+    images: RawImages,
 }
 
 #[derive(Deserialize, Default)]
@@ -148,15 +163,23 @@ struct RawSettings {
     browse_layout: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
+    reduce_motion: Option<bool>,
     discover_arcade_alternate_versions: Option<bool>,
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
     show_hidden: Option<bool>,
+    show_original_filenames: Option<bool>,
+    region: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
 struct RawNotice {
     commercial_ack: Option<bool>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawImages {
+    system_dir: Option<String>,
 }
 
 pub fn load_config(path: &Path) -> Config {
@@ -234,6 +257,7 @@ pub fn load_config(path: &Path) -> Config {
             .button_layout
             .map(|value| value.trim().to_string()),
         mouse_enabled: raw.settings.mouse_enabled,
+        reduce_motion: raw.settings.reduce_motion,
         discover_arcade_alternate_versions: raw.settings.discover_arcade_alternate_versions,
         screensaver_timeout: raw
             .settings
@@ -244,11 +268,31 @@ pub fn load_config(path: &Path) -> Config {
             .media_image_type
             .map(|value| value.trim().to_string()),
         show_hidden: raw.settings.show_hidden,
+        show_original_filenames: raw.settings.show_original_filenames,
+        region: raw.settings.region.map(|value| value.trim().to_string()),
     };
     cfg.notice = NoticeConfig {
         commercial_ack: raw.notice.commercial_ack.unwrap_or(false),
     };
+    cfg.system_image_dir = raw
+        .images
+        .system_dir
+        .map(|value| value.trim().to_string())
+        .filter(|s| !s.is_empty());
     cfg
+}
+
+/// Get a mutable reference to a TOML section table, creating it if absent.
+fn section_mut<'a>(
+    table: &'a mut toml::Table,
+    key: &'static str,
+    path: &Path,
+) -> Result<&'a mut toml::Table, String> {
+    let v = table
+        .entry(key)
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    v.as_table_mut()
+        .ok_or_else(|| format!("config key [{key}] in {} is not a table", path.display()))
 }
 
 pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(), String> {
@@ -261,29 +305,13 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         toml::Table::new()
     };
 
-    let general_value = table
-        .entry("general")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let Some(general) = general_value.as_table_mut() else {
-        return Err(format!(
-            "config key [general] in {} is not a table",
-            path.display()
-        ));
-    };
+    let general = section_mut(&mut table, "general", path)?;
     general.insert(
         "language".into(),
         toml::Value::String(normalize_language_override(mirror.language)),
     );
 
-    let video_value = table
-        .entry("video")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let Some(video) = video_value.as_table_mut() else {
-        return Err(format!(
-            "config key [video] in {} is not a table",
-            path.display()
-        ));
-    };
+    let video = section_mut(&mut table, "video", path)?;
     video.remove("backend");
     if let Some((width, height)) = parse_resolution_override(mirror.resolution) {
         video.insert("width".into(), toml::Value::Integer(i64::from(width)));
@@ -293,15 +321,7 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         video.remove("height");
     }
 
-    let settings_value = table
-        .entry("settings")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let Some(settings) = settings_value.as_table_mut() else {
-        return Err(format!(
-            "config key [settings] in {} is not a table",
-            path.display()
-        ));
-    };
+    let settings = section_mut(&mut table, "settings", path)?;
     settings.insert(
         "orientation".into(),
         toml::Value::String(mirror.orientation.trim().to_string()),
@@ -323,6 +343,10 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         toml::Value::Boolean(mirror.mouse_enabled),
     );
     settings.insert(
+        "reduce_motion".into(),
+        toml::Value::Boolean(mirror.reduce_motion),
+    );
+    settings.insert(
         "discover_arcade_alternate_versions".into(),
         toml::Value::Boolean(mirror.discover_arcade_alternate_versions),
     );
@@ -338,16 +362,16 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         "show_hidden".into(),
         toml::Value::Boolean(mirror.show_hidden),
     );
+    settings.insert(
+        "show_original_filenames".into(),
+        toml::Value::Boolean(mirror.show_original_filenames),
+    );
+    settings.insert(
+        "region".into(),
+        toml::Value::String(mirror.region.trim().to_string()),
+    );
 
-    let logging_value = table
-        .entry("logging")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let Some(logging) = logging_value.as_table_mut() else {
-        return Err(format!(
-            "config key [logging] in {} is not a table",
-            path.display()
-        ));
-    };
+    let logging = section_mut(&mut table, "logging", path)?;
     logging.insert("debug".into(), toml::Value::Boolean(mirror.debug_logging));
 
     let serialized =
@@ -478,9 +502,32 @@ mod tests {
         assert_eq!(cfg.settings.button_layout, None);
         assert_eq!(cfg.settings.mouse_enabled, None);
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, None);
+        assert_eq!(cfg.settings.region, None);
+        assert!(cfg.system_image_dir.is_none());
         assert!(!cfg.notice.commercial_ack);
         // Default keyboard bindings populate the map.
         assert!(!cfg.key_to_action.is_empty());
+    }
+
+    #[test]
+    fn system_image_dir_round_trips() {
+        let f = write_tmp("[images]\nsystem_dir = \"/mnt/art/systems\"\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.system_image_dir.as_deref(), Some("/mnt/art/systems"));
+    }
+
+    #[test]
+    fn system_image_dir_absent_is_none() {
+        let f = write_tmp("[core]\nendpoint = \"ws://example.com/api\"\n");
+        let cfg = load_config(f.path());
+        assert!(cfg.system_image_dir.is_none());
+    }
+
+    #[test]
+    fn region_setting_round_trips() {
+        let f = write_tmp("[settings]\nregion = \"jp\"\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.settings.region.as_deref(), Some("jp"));
     }
 
     #[test]
@@ -535,9 +582,14 @@ mod tests {
     fn keyboard_override_replaces_default_for_that_action() {
         use crate::input_actions::{actions, qt_key_code};
 
+        // `page_menu` defaults to Space, so unbind it here (empty list =
+        // unbind) before reusing Space to demonstrate that an `accept`
+        // override replaces accept's own defaults. Without freeing Space the
+        // deterministic collision policy would hand it to `page_menu`.
         let toml = r#"
             [input.keyboard]
             accept = ["Space"]
+            page_menu = []
         "#;
         let f = write_tmp(toml);
         let cfg = load_config(f.path());
@@ -656,11 +708,14 @@ mod tests {
                 browse_layout: "list",
                 button_layout: "b",
                 mouse_enabled: false,
+                reduce_motion: true,
                 discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "300",
                 media_image_type: "auto",
                 show_hidden: true,
+                show_original_filenames: true,
+                region: "us",
             },
         )
         .expect("save");
@@ -674,9 +729,12 @@ mod tests {
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
+        assert_eq!(cfg.settings.reduce_motion, Some(true));
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
         assert_eq!(cfg.settings.show_hidden, Some(true));
+        assert_eq!(cfg.settings.show_original_filenames, Some(true));
+        assert_eq!(cfg.settings.region.as_deref(), Some("us"));
         assert!(cfg.debug_logging);
     }
 
@@ -695,11 +753,14 @@ mod tests {
                 browse_layout: "grid",
                 button_layout: "a",
                 mouse_enabled: true,
+                reduce_motion: false,
                 discover_arcade_alternate_versions: false,
                 debug_logging: false,
                 screensaver_timeout: "60",
                 media_image_type: "auto",
                 show_hidden: false,
+                show_original_filenames: false,
+                region: "auto",
             },
         )
         .expect("save");
@@ -715,6 +776,7 @@ mod tests {
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("grid"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("a"));
         assert_eq!(cfg.settings.mouse_enabled, Some(true));
+        assert_eq!(cfg.settings.reduce_motion, Some(false));
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(false));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("60"));
         assert!(!cfg.debug_logging);
@@ -733,11 +795,14 @@ mod tests {
                 browse_layout: "list",
                 button_layout: "c",
                 mouse_enabled: false,
+                reduce_motion: false,
                 discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "off",
                 media_image_type: "auto",
                 show_hidden: false,
+                show_original_filenames: false,
+                region: "auto",
             },
         )
         .expect("save");
@@ -759,6 +824,7 @@ mod tests {
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("c"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
+        assert_eq!(cfg.settings.reduce_motion, Some(false));
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("off"));
         assert!(cfg.debug_logging);

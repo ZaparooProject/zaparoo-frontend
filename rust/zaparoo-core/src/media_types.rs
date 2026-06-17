@@ -95,6 +95,12 @@ pub struct MediaItem {
     pub system: System,
     #[serde(default)]
     pub tags: Vec<TagInfo>,
+    /// Subset of `tags` whose values differ across same-named siblings of this
+    /// title (region, disc, rev, builddate, lang, ...), already ordered by
+    /// Core's display priority. Omitted when the title has nothing to
+    /// disambiguate. Rendered as variant badges in the browse UI.
+    #[serde(default)]
+    pub disambiguating_tags: Vec<TagInfo>,
     /// Path relative to the system's root (`SearchResultMedia.relativePath`).
     /// `None` when Core was unable to derive one (e.g. media outside any
     /// indexed root).
@@ -238,6 +244,11 @@ pub struct BrowseEntry {
     /// Core can populate this on singleton media-container directories.
     #[serde(default)]
     pub tags: Vec<TagInfo>,
+    /// Subset of `tags` whose values differ across same-named siblings of this
+    /// title, ordered by Core's display priority. Omitted when there is
+    /// nothing to disambiguate. Rendered as variant badges in the browse UI.
+    #[serde(default)]
+    pub disambiguating_tags: Vec<TagInfo>,
     /// When `false`, Core has confirmed this media has no cover image in
     /// its properties tables. Defaults to `true` when the field is absent
     /// (older Core builds don't send it) so cover requests are still made.
@@ -261,6 +272,7 @@ impl Default for BrowseEntry {
             group: String::new(),
             description: String::new(),
             tags: Vec::new(),
+            disambiguating_tags: Vec::new(),
             // Default to true so callers that don't set this field (tests,
             // struct-update syntax) still request covers from Core.
             has_cover: true,
@@ -296,6 +308,71 @@ impl MediaBrowseResult {
 
     pub fn next_cursor(&self) -> Option<String> {
         self.pagination.as_ref().and_then(|p| p.next_cursor.clone())
+    }
+}
+
+// Parameters for `media.browse.index`. The scope fields mirror
+// `MediaBrowseParams` so the returned index describes the exact list
+// `media.browse` would page through for the same scope. As with browse, the
+// `fuzzySystem` flag is deliberately not surfaced: the frontend composes
+// canonical system ids, so a mismatch is a bug rather than something to fuzz
+// over.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaBrowseIndexParams {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub path: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub systems: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
+}
+
+/// One first-character section of a browse list. `key`/`label` are opaque so a
+/// future locale-aware scheme (pinyin/kana/hangul) needs no client change.
+/// `cursor` is an ordinary `media.browse` cursor positioned just before the
+/// bucket's first row; an empty string means the bucket begins the list (browse
+/// with no cursor).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowseIndexGroup {
+    pub key: String,
+    pub label: String,
+    #[serde(default)]
+    pub count: u32,
+    #[serde(default)]
+    pub cursor: String,
+    /// 0-based position of the bucket's first item among the scope's files
+    /// (excludes leading directories, which the client adds). Authoritative
+    /// browse-order position from Core, used to jump to the bucket.
+    #[serde(default)]
+    pub offset: u32,
+}
+
+/// Response for `media.browse.index`. `scheme` is the collation used to derive
+/// the buckets (`latin`, or `none` when no rail applies, in which case `groups`
+/// is empty).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaBrowseIndexResult {
+    #[serde(default)]
+    pub scheme: String,
+    #[serde(default)]
+    pub total_files: u32,
+    #[serde(default)]
+    pub groups: Vec<BrowseIndexGroup>,
+}
+
+impl MediaBrowseIndexResult {
+    /// Serialize the buckets as a JSON array of `{key,label,count,cursor}`
+    /// objects. The frontend surfaces this string to QML, where the
+    /// jump-to-letter picker parses it (the pickers already consume `var`
+    /// arrays, so a JSON string fits that convention). Returns `[]` on the
+    /// (practically impossible) serialize failure so QML always gets valid
+    /// JSON to parse.
+    #[must_use]
+    pub fn groups_json(&self) -> String {
+        serde_json::to_string(&self.groups).unwrap_or_else(|_| "[]".to_string())
     }
 }
 
@@ -1079,14 +1156,15 @@ mod tests {
     )]
 
     use super::{
-        BrowseEntry, HealthResult, IndexingStatusResponse, LaunchersResult, LogDownloadResult,
-        MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult, MediaHistoryParams,
-        MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams,
-        MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult, MediaMetaParams,
-        MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult,
-        MediaTagsParams, MediaTagsResult, ReaderInfo, ReadersResult, ScrapersResult,
-        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsResult, TagInfo,
-        TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
+        BrowseEntry, BrowseIndexGroup, HealthResult, IndexingStatusResponse, LaunchersResult,
+        LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams,
+        MediaBrowseResult, MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult,
+        MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams, MediaImageResult,
+        MediaIndexParams, MediaLookupParams, MediaLookupResult, MediaMetaParams, MediaMetaResult,
+        MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams,
+        MediaTagsResult, ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse,
+        SettingsResult, SystemDefault, SystemsResult, TagInfo, TokensHistoryResult, TokensResult,
+        UpdateSettingsParams, VersionResult,
     };
 
     #[test]
@@ -1192,7 +1270,35 @@ mod tests {
             r#"{"results":[{"name":"G","path":"/p","zapScript":"s","system":{"id":"NES"}}]}"#;
         let result: MediaSearchResult = serde_json::from_str(json).expect("parse");
         assert!(result.results[0].tags.is_empty());
+        assert!(result.results[0].disambiguating_tags.is_empty());
         assert!(result.results[0].relative_path.is_none());
+    }
+
+    #[test]
+    fn media_search_item_parses_disambiguating_tags() {
+        let json = r#"{"results":[{
+            "name":"Sonic","path":"/p","zapScript":"s","system":{"id":"Genesis"},
+            "tags":[{"tag":"us","type":"region"},{"tag":"1","type":"disc"}],
+            "disambiguatingTags":[{"tag":"us","type":"region"},{"tag":"1","type":"disc"}]
+        }]}"#;
+        let result: MediaSearchResult = serde_json::from_str(json).expect("parse");
+        let item = &result.results[0];
+        assert_eq!(item.disambiguating_tags.len(), 2);
+        assert_eq!(item.disambiguating_tags[0].tag, "us");
+        assert_eq!(item.disambiguating_tags[0].tag_type, "region");
+        assert_eq!(item.disambiguating_tags[1].tag_type, "disc");
+    }
+
+    #[test]
+    fn browse_entry_parses_disambiguating_tags() {
+        let json = r#"{
+            "name":"Sonic","path":"/p","type":"media",
+            "disambiguatingTags":[{"tag":"eu","type":"region"}]
+        }"#;
+        let entry: BrowseEntry = serde_json::from_str(json).expect("parse");
+        assert_eq!(entry.disambiguating_tags.len(), 1);
+        assert_eq!(entry.disambiguating_tags[0].tag, "eu");
+        assert_eq!(entry.disambiguating_tags[0].tag_type, "region");
     }
 
     #[test]
@@ -1292,6 +1398,83 @@ mod tests {
         let pagination = result.pagination.expect("pagination present");
         assert!(pagination.has_next_page);
         assert_eq!(pagination.next_cursor.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn media_browse_index_result_parses_scheme_and_groups() {
+        let json = r##"{
+            "scheme": "latin",
+            "totalFiles": 150,
+            "groups": [
+                {"key":"#","label":"#","count":3,"cursor":"","offset":0},
+                {"key":"A","label":"A","count":12,"cursor":"opaqueA","offset":10}
+            ]
+        }"##;
+        let result: MediaBrowseIndexResult = serde_json::from_str(json).expect("parse");
+        assert_eq!(result.scheme, "latin");
+        assert_eq!(result.total_files, 150);
+        assert_eq!(result.groups.len(), 2);
+        // The list-leading bucket has an empty cursor (browse from the top).
+        assert_eq!(result.groups[0].key, "#");
+        assert_eq!(result.groups[0].cursor, "");
+        assert_eq!(result.groups[0].offset, 0);
+        assert_eq!(result.groups[1].key, "A");
+        assert_eq!(result.groups[1].count, 12);
+        assert_eq!(result.groups[1].cursor, "opaqueA");
+        assert_eq!(result.groups[1].offset, 10);
+    }
+
+    #[test]
+    fn media_browse_index_groups_json_emits_camel_case_objects() {
+        let result = MediaBrowseIndexResult {
+            scheme: "latin".into(),
+            total_files: 4,
+            groups: vec![BrowseIndexGroup {
+                key: "A".into(),
+                label: "A".into(),
+                count: 4,
+                cursor: "opaqueA".into(),
+                offset: 10,
+            }],
+        };
+        // QML JSON.parse consumes this string; keys must match what the grid
+        // reads (key/label/count/cursor/offset).
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result.groups_json()).expect("parse json");
+        let first = &parsed.as_array().expect("array")[0];
+        assert_eq!(first.get("key").and_then(|v| v.as_str()), Some("A"));
+        assert_eq!(first.get("label").and_then(|v| v.as_str()), Some("A"));
+        assert_eq!(
+            first.get("count").and_then(serde_json::Value::as_u64),
+            Some(4)
+        );
+        assert_eq!(
+            first.get("cursor").and_then(|v| v.as_str()),
+            Some("opaqueA")
+        );
+        assert_eq!(
+            first.get("offset").and_then(serde_json::Value::as_u64),
+            Some(10)
+        );
+    }
+
+    #[test]
+    fn media_browse_index_params_systems_only_omits_path_and_sort() {
+        let params = MediaBrowseIndexParams {
+            systems: vec!["SNES".into()],
+            ..MediaBrowseIndexParams::default()
+        };
+        let json = serde_json::to_value(&params).expect("serialise");
+        let object = json.as_object().expect("object");
+        assert!(!object.contains_key("path"));
+        assert!(!object.contains_key("sort"));
+        assert_eq!(
+            object
+                .get("systems")
+                .and_then(|v| v.as_array())
+                .map(Vec::len),
+            Some(1)
+        );
     }
 
     #[test]

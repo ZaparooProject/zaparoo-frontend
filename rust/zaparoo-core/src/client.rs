@@ -14,11 +14,12 @@
 // instead of disappearing into a queue.
 
 use crate::media_types::{
-    HealthResult, LaunchersResult, LogDownloadResult, MediaBrowseParams, MediaBrowseResult,
-    MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams,
-    MediaHistoryTopResult, MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams,
-    MediaLookupResult, MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams,
-    MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
+    HealthResult, LaunchersResult, LogDownloadResult, MediaBrowseIndexParams,
+    MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult,
+    MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
+    MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
+    MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams,
+    MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
     MediaTagsUpdateResult, ReadersResult, ReadersWriteParams, RunParams, ScrapersResult,
     ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult,
     TokensResult, UpdateSettingsParams, VersionResult,
@@ -623,6 +624,20 @@ impl Client {
         let total_files = val.get("totalFiles").and_then(Value::as_u64).unwrap_or(0);
         debug!(entries_len, total_files, "media.browse response");
         deserialize_timed("media.browse", val)
+    }
+
+    pub async fn media_browse_index(
+        &self,
+        params: MediaBrowseIndexParams,
+    ) -> Result<MediaBrowseIndexResult, ClientError> {
+        debug!(
+            path = %params.path,
+            systems = ?params.systems,
+            sort = ?params.sort,
+            "media.browse.index request",
+        );
+        let val = self.call("media.browse.index", &params).await?;
+        deserialize_timed("media.browse.index", val)
     }
 
     /// Fetches a single best-match cover image for the given media row.

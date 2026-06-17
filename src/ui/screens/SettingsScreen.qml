@@ -50,12 +50,27 @@ Item {
 
     readonly property string pageRoot: "root"
     readonly property string pageDisplayInterface: "displayInterface"
+    readonly property string pageBrowsing: "browsing"
+    readonly property string pageLanguage: "language"
     readonly property string pageControlsInput: "controlsInput"
     readonly property string pageLibraryData: "libraryData"
     readonly property string pageSupportAbout: "supportAbout"
     property string currentPage: settings.pageRoot
     readonly property bool showingRootGrid: settings.currentPage === settings.pageRoot
     property var _pageIndexes: ({})
+    // Incremented when the user accepts a category tile so it plays the
+    // push-in animation. Forwarded to all category TileLoaders.
+    property int activatePulse: 0
+    // Sibling of `activatePulse` for the in-page SettingsField rows: bumped on
+    // a field accept so the focused non-toggle row plays its push-in tap.
+    // Toggle rows ignore it (their knob slide is the feedback).
+    property int fieldActivatePulse: 0
+    // True for one event-loop tick during a page switch. Passed as
+    // `animateChanges: false` to SettingsField delegates so a reused delegate
+    // does not animate its toggle-knob slide when the new page's field model
+    // lands. Normal user navigation animates because `_pageSwitching` is false
+    // at that point.
+    property bool _pageSwitching: false
 
     // Page-aware field registries. The root mirrors console settings
     // menus: stable domain categories first, short subpages second.
@@ -67,6 +82,18 @@ Item {
             id: "pageDisplayInterface",
             label: qsTr("Display"),
             coverKey: "icons/Display"
+        },
+        {
+            kind: "field",
+            id: "pageBrowsing",
+            label: qsTr("Browsing"),
+            coverKey: "icons/Browsing"
+        },
+        {
+            kind: "field",
+            id: "pageLanguage",
+            label: qsTr("Language"),
+            coverKey: "icons/Language"
         },
         {
             kind: "field",
@@ -87,6 +114,8 @@ Item {
             coverKey: "icons/Support"
         }
     ]
+    // Display = video output only. Resolution is MiSTer-only (changes startup
+    // video config, applies on restart).
     readonly property var displayInterfaceFields: {
         const out = [];
         if (Browse.Settings.is_mister) {
@@ -103,36 +132,52 @@ Item {
         });
         out.push({
             kind: "field",
-            id: "browseLayout",
-            label: qsTr("Browsing layout")
-        });
-        out.push({
-            kind: "field",
-            id: "mediaImageType",
-            label: qsTr("Preferred artwork")
-        });
-        out.push({
-            kind: "field",
             id: "screensaverTimeout",
             label: qsTr("Screensaver")
         });
-        out.push({
+        return out;
+    }
+    // Browsing = how the library is presented and which items show.
+    readonly property var browsingFields: [
+        {
             kind: "field",
-            id: "clockFormat",
-            label: qsTr("Clock format")
-        });
-        out.push({
+            id: "browseLayout",
+            label: qsTr("Browsing layout")
+        },
+        {
             kind: "field",
-            id: "language",
-            label: qsTr("Language")
-        });
-        out.push({
+            id: "mediaImageType",
+            label: qsTr("Preferred artwork")
+        },
+        {
             kind: "field",
             id: "showHidden",
             label: qsTr("Show hidden items")
-        });
-        return out;
-    }
+        },
+        {
+            kind: "field",
+            id: "showOriginalFilenames",
+            label: qsTr("Show original filenames")
+        }
+    ]
+    // Language = locale/regional preferences.
+    readonly property var languageFields: [
+        {
+            kind: "field",
+            id: "language",
+            label: qsTr("Language")
+        },
+        {
+            kind: "field",
+            id: "region",
+            label: qsTr("System names")
+        },
+        {
+            kind: "field",
+            id: "clockFormat",
+            label: qsTr("Clock format")
+        }
+    ]
     readonly property var controlsInputFields: [
         {
             kind: "field",
@@ -143,6 +188,11 @@ Item {
             kind: "field",
             id: "mouseEnabled",
             label: qsTr("Mouse support")
+        },
+        {
+            kind: "field",
+            id: "reduceMotion",
+            label: qsTr("Reduce motion")
         }
     ]
     readonly property var libraryDataFields: [
@@ -187,6 +237,10 @@ Item {
     readonly property var fields: {
         if (settings.currentPage === settings.pageDisplayInterface)
             return settings.displayInterfaceFields;
+        if (settings.currentPage === settings.pageBrowsing)
+            return settings.browsingFields;
+        if (settings.currentPage === settings.pageLanguage)
+            return settings.languageFields;
         if (settings.currentPage === settings.pageControlsInput)
             return settings.controlsInputFields;
         if (settings.currentPage === settings.pageLibraryData)
@@ -198,6 +252,10 @@ Item {
     readonly property string pageTitle: {
         if (settings.currentPage === settings.pageDisplayInterface)
             return qsTr("Display");
+        if (settings.currentPage === settings.pageBrowsing)
+            return qsTr("Browsing");
+        if (settings.currentPage === settings.pageLanguage)
+            return qsTr("Language");
         if (settings.currentPage === settings.pageControlsInput)
             return qsTr("Controls");
         if (settings.currentPage === settings.pageLibraryData)
@@ -322,15 +380,17 @@ Item {
             return settings._screensaverTimeoutDisplay(Browse.Settings.current_screensaver_timeout);
         if (id === "clockFormat")
             return settings._clockFormatDisplay(Browse.Settings.current_clock_format);
+        if (id === "region")
+            return settings._regionDisplay(Browse.Settings.current_region);
         if (id === "mediaImageType")
             return settings._mediaImageTypeDisplay(Browse.Settings.current_media_image_type);
         return "";
     }
 
     function _fieldControl(id: string): string {
-        if (id === "mouseEnabled" || id === "showHidden" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting")
+        if (id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion")
             return "toggle";
-        if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout")
+        if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout")
             return "navigate";
         if (id === "updateMediaDb" || id === "runScraper" || id === "uploadLog")
             return "action";
@@ -346,6 +406,10 @@ Item {
             return settings._visibleRescrapeExisting;
         if (id === "showHidden")
             return Browse.Settings.current_show_hidden;
+        if (id === "showOriginalFilenames")
+            return Browse.Settings.current_show_original_filenames;
+        if (id === "reduceMotion")
+            return Browse.Settings.current_reduce_motion;
         return Browse.Settings.current_mouse_enabled;
     }
 
@@ -390,8 +454,14 @@ Item {
         return from;
     }
 
-    readonly property int rootGridColumns: 5
     readonly property int rootGridRows: 2
+    // Columns track the (fixed) category count so the menu auto-balances into
+    // `rootGridRows` rows (six categories -> 3x2) instead of a hardcoded count.
+    // This is chrome with a known small item set, not content that should
+    // reflow with screen width; the cell geometry below is already
+    // sizing-driven (pctW/pctH with a maxCellSize cap), so the cells shrink to
+    // fit any screen while the layout stays a deliberate balanced grid.
+    readonly property int rootGridColumns: Math.ceil(settings.categoryFields.length / settings.rootGridRows)
 
     function _moveRootGrid(dx: int, dy: int): void {
         if (settings.fieldCount <= 0)
@@ -432,7 +502,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "mouseEnabled" || id === "showHidden" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting";
+        return id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion";
     }
     // True when the focused field is a list-picker row (Accept opens a
     // modal; left/right is a no-op — pickers don't cycle inline). Drives
@@ -441,7 +511,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "language" || id === "clockFormat" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType";
+        return id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType";
     }
     // True when focused row accepts A without left/right cycling:
     // pickers, jobs, modal/navigation rows, and root category rows.
@@ -450,7 +520,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return settings.focusedFieldIsPicker || id === "updateMediaDb" || id === "runScraper" || id === "uploadLog" || id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout";
+        return settings.focusedFieldIsPicker || id === "updateMediaDb" || id === "runScraper" || id === "uploadLog" || id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout";
     }
     // Verb shown on the help-bar Accept hint for the focused action
     // row. Index/scrape flip between Start and Cancel because the press
@@ -590,6 +660,21 @@ Item {
         return qsTr("Auto");
     }
 
+    function _regionList(): list<string> {
+        const raw = Browse.Settings.available_regions;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
+    function _regionDisplay(value: string): string {
+        if (value === "us")
+            return qsTr("Americas");
+        if (value === "eu")
+            return qsTr("Europe");
+        if (value === "jp")
+            return qsTr("Japan");
+        return qsTr("Automatic");
+    }
+
     function _orientationDisplay(value: string): string {
         if (value === "cw")
             return qsTr("Rotated CW");
@@ -710,6 +795,15 @@ Item {
                     label: settings._clockFormatDisplay(list[i])
                 });
             initialId = Browse.Settings.current_clock_format;
+        } else if (id === "region") {
+            title = qsTr("System names");
+            const list = settings._regionList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._regionDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_region;
         } else if (id === "orientation") {
             title = qsTr("Orientation");
             const list = settings._orientationList();
@@ -781,6 +875,14 @@ Item {
         settings._reprojectBrowseModels();
     }
 
+    function _setShowOriginalFilenames(direction: int): void {
+        Browse.Settings.set_show_original_filenames(direction > 0);
+    }
+
+    function _toggleShowOriginalFilenames(): void {
+        Browse.Settings.set_show_original_filenames(!Browse.Settings.current_show_original_filenames);
+    }
+
     function _setMouseEnabled(direction: int): void {
         Browse.Settings.set_mouse_enabled(direction > 0);
     }
@@ -795,6 +897,14 @@ Item {
 
     function _toggleDebugLogging(): void {
         Browse.Settings.set_debug_logging(!Browse.Settings.current_debug_logging);
+    }
+
+    function _setReduceMotion(direction: int): void {
+        Browse.Settings.set_reduce_motion(direction > 0);
+    }
+
+    function _toggleReduceMotion(): void {
+        Browse.Settings.set_reduce_motion(!Browse.Settings.current_reduce_motion);
     }
 
     function _setDiscoverArcadeAlternateVersions(direction: int): void {
@@ -828,12 +938,16 @@ Item {
             settings._setMouseEnabled(direction);
         else if (id === "showHidden")
             settings._setShowHidden(direction);
+        else if (id === "showOriginalFilenames")
+            settings._setShowOriginalFilenames(direction);
         else if (id === "discoverArcadeAlternateVersions")
             settings._setDiscoverArcadeAlternateVersions(direction);
         else if (id === "debugLogging")
             settings._setDebugLogging(direction);
         else if (id === "rescrapeExisting")
             settings._setRescrapeExisting(direction);
+        else if (id === "reduceMotion")
+            settings._setReduceMotion(direction);
     }
 
     function _rememberPageFocus(): void {
@@ -850,26 +964,51 @@ Item {
     }
 
     function _switchPage(page: string): void {
+        // Disable SettingsField Behaviors for this synchronous block so
+        // reused delegates don't animate focus-border or toggle-position
+        // changes when the new page's field model lands. The flag is
+        // cleared on the next event-loop tick so subsequent user moves
+        // still animate normally.
+        settings._pageSwitching = true;
         settings._rememberPageFocus();
         settings.currentPage = page;
         settings._restorePageFocus();
+        Qt.callLater(() => {
+            settings._pageSwitching = false;
+        });
     }
 
     function _openPage(id: string): bool {
+        // Resolve the target page first so we can return false quickly for
+        // non-page IDs. Then fire the pulse (cue plays on the still-visible
+        // tile) and defer _switchPage so the push-in's downward leg is
+        // fully visible before the page swaps out.
+        let page = "";
         if (id === "pageDisplayInterface")
-            settings._switchPage(settings.pageDisplayInterface);
+            page = settings.pageDisplayInterface;
+        else if (id === "pageBrowsing")
+            page = settings.pageBrowsing;
+        else if (id === "pageLanguage")
+            page = settings.pageLanguage;
         else if (id === "pageControlsInput")
-            settings._switchPage(settings.pageControlsInput);
+            page = settings.pageControlsInput;
         else if (id === "pageLibraryData")
-            settings._switchPage(settings.pageLibraryData);
+            page = settings.pageLibraryData;
         else if (id === "pageSupportAbout")
-            settings._switchPage(settings.pageSupportAbout);
+            page = settings.pageSupportAbout;
         else
             return false;
+        settings.activatePulse++;
+        pressCommit._page = page;
+        pressCommit.arm();
         return true;
     }
 
     function _goBack(): void {
+        // Disarm pending accepts so a press-then-back inside the deferred
+        // window cannot drill into a subpage / open a picker after backing out.
+        pressCommit.stop();
+        fieldCommit.stop();
         if (settings.currentPage !== settings.pageRoot) {
             settings._switchPage(settings.pageRoot);
             return;
@@ -909,17 +1048,61 @@ Item {
             const id = settings.fields[settings.currentIndex].id;
             if (settings._openPage(id))
                 return;
-            if (id === "mouseEnabled")
-                settings._toggleMouseEnabled();
-            else if (id === "showHidden")
-                settings._toggleShowHidden();
-            else if (id === "discoverArcadeAlternateVersions")
-                settings._toggleDiscoverArcadeAlternateVersions();
-            else if (id === "debugLogging")
-                settings._toggleDebugLogging();
-            else if (id === "rescrapeExisting")
-                settings._toggleRescrapeExisting();
-            else if (id === "updateMediaDb")
+            // Toggles flip in place — the knob slide is their cue, so act now
+            // and skip the push-in.
+            if (settings._fieldControl(id) === "toggle") {
+                if (id === "mouseEnabled")
+                    settings._toggleMouseEnabled();
+                else if (id === "showHidden")
+                    settings._toggleShowHidden();
+                else if (id === "showOriginalFilenames")
+                    settings._toggleShowOriginalFilenames();
+                else if (id === "discoverArcadeAlternateVersions")
+                    settings._toggleDiscoverArcadeAlternateVersions();
+                else if (id === "debugLogging")
+                    settings._toggleDebugLogging();
+                else if (id === "rescrapeExisting")
+                    settings._toggleRescrapeExisting();
+                else if (id === "reduceMotion")
+                    settings._toggleReduceMotion();
+                return;
+            }
+            // Picker / action / about either open a modal or navigate away,
+            // which would cover or replace the row before its push-in could
+            // show. Play the cue, then run the action deferred (the same
+            // deferred-flip the tiles use) so the press is visible on the
+            // still-static settings screen first.
+            settings.fieldActivatePulse++;
+            fieldCommit._id = id;
+            fieldCommit.arm();
+        } else if (action === "cancel") {
+            settings._goBack();
+        }
+    }
+
+    // ── Visual tree ───────────────────────────────────────────────────────────
+
+    DeferredAction {
+        id: pressCommit
+        property string _page: ""
+        onDeferred: {
+            const p = _page;
+            _page = "";
+            settings._switchPage(p);
+        }
+    }
+
+    // Deferred-flip for non-toggle field activations: the focused row's push-in
+    // plays on the still-visible settings screen, then this fires `pressMs`
+    // later to open the modal / navigate. Without the defer the modal scrim or
+    // screen change covers the row before the cue can render.
+    DeferredAction {
+        id: fieldCommit
+        property string _id: ""
+        onDeferred: {
+            const id = fieldCommit._id;
+            fieldCommit._id = "";
+            if (id === "updateMediaDb")
                 settings._triggerIndex();
             else if (id === "runScraper")
                 settings._triggerScrape();
@@ -929,12 +1112,8 @@ Item {
                 settings.requestAccept("aboutLicense");
             else
                 settings._openPickerForField(id);
-        } else if (action === "cancel") {
-            settings._goBack();
         }
     }
-
-    // ── Visual tree ───────────────────────────────────────────────────────────
 
     MouseArea {
         anchors.fill: parent
@@ -1038,6 +1217,7 @@ Item {
                     isFocused: true
                     name: categoryCell.modelData.label
                     coverKey: categoryCell.modelData.coverKey
+                    activatePulse: settings.activatePulse
                 }
 
                 MouseArea {
@@ -1146,6 +1326,8 @@ Item {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         isFocused: row.index === settings.currentIndex
+                        animateChanges: !settings._pageSwitching
+                        activatePulse: settings.fieldActivatePulse
                         // Index and scrape can't run together; while
                         // one operation is in flight the other row
                         // dims and its MouseArea stops responding.
@@ -1164,12 +1346,16 @@ Item {
                                 settings._toggleMouseEnabled();
                             else if (row.modelData.id === "showHidden")
                                 settings._toggleShowHidden();
+                            else if (row.modelData.id === "showOriginalFilenames")
+                                settings._toggleShowOriginalFilenames();
                             else if (row.modelData.id === "discoverArcadeAlternateVersions")
                                 settings._toggleDiscoverArcadeAlternateVersions();
                             else if (row.modelData.id === "debugLogging")
                                 settings._toggleDebugLogging();
                             else if (row.modelData.id === "rescrapeExisting")
                                 settings._toggleRescrapeExisting();
+                            else if (row.modelData.id === "reduceMotion")
+                                settings._toggleReduceMotion();
                         }
                         onRightClicked: settings._goBack()
                         // Picker, action, and navigate rows route
@@ -1181,16 +1367,12 @@ Item {
                             settings.currentIndex = row.index;
                             if (settings._openPage(row.modelData.id))
                                 return;
-                            if (row.modelData.id === "updateMediaDb")
-                                settings._triggerIndex();
-                            else if (row.modelData.id === "runScraper")
-                                settings._triggerScrape();
-                            else if (row.modelData.id === "uploadLog")
-                                settings.requestAccept("uploadLog");
-                            else if (row.modelData.id === "aboutLicense")
-                                settings.requestAccept("aboutLicense");
-                            else
-                                settings._openPickerForField(row.modelData.id);
+                            // Non-toggle rows route here (toggles use onClicked).
+                            // Defer like the keyboard path so the push-in shows
+                            // before the modal opens / the screen navigates.
+                            settings.fieldActivatePulse++;
+                            fieldCommit._id = row.modelData.id;
+                            fieldCommit.arm();
                         }
                     }
                 }

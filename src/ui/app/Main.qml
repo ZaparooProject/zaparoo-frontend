@@ -41,6 +41,7 @@ MainLayout {
     readonly property string modalLogUpload: "log_upload"
     readonly property string modalQuitConfirm: "quit_confirm"
     readonly property string modalListPicker: "list_picker"
+    readonly property string modalLetterJump: "letter_jump"
     readonly property string modalSettingNeedsRestart: "restart_confirm"
 
     // One-shot session flag: the first-run modal is shown at most
@@ -64,6 +65,37 @@ MainLayout {
     property int contextMenuIndex: -1
     readonly property bool activeCardWritePending: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_pending : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_pending : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_pending : false
     readonly property string activeCardWriteError: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_error : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_error : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_error : ""
+
+    // Feed the Motion singleton's master switch from the persisted
+    // reduce-motion setting. Keeping Motion dependency-free (no
+    // Browse import) means Zaparoo.Theme stays independent; the app
+    // layer is the only place that crosses the module boundary.
+    Binding {
+        target: Motion
+        property: "enabled"
+        value: !Browse.Settings.current_reduce_motion
+    }
+
+    // Mirror the "Show original filenames" setting onto every model that
+    // surfaces a game name. Bound centrally (not per-screen) so browse,
+    // favorites, recents, the resume banner, and launch/now-playing titles
+    // all flip together regardless of which screen is mounted. Each model's
+    // setter re-emits dataChanged so already-built delegates refresh in place.
+    Binding {
+        target: (root.gamesScreenRequested || root.activeScreen === root.screenGames) ? Browse.GamesModel : null
+        property: "show_original_filenames"
+        value: Browse.Settings.current_show_original_filenames
+    }
+    Binding {
+        target: (root.favoritesScreenRequested || root.activeScreen === root.screenFavorites) ? Browse.FavoritesModel : null
+        property: "show_original_filenames"
+        value: Browse.Settings.current_show_original_filenames
+    }
+    Binding {
+        target: (root._firstFrameSeen || root.recentsScreenRequested || root.activeScreen === root.screenRecents) ? Browse.RecentsModel : null
+        property: "show_original_filenames"
+        value: Browse.Settings.current_show_original_filenames
+    }
 
     // Bound here (not in GamesScreen.qml) because `set_system` can fire
     // from the accept handler before the games screen mounts; binding
@@ -193,6 +225,8 @@ MainLayout {
             root.quitConfirmModalRequested = true;
         else if (modal === root.modalListPicker)
             root.listPickerModalRequested = true;
+        else if (modal === root.modalLetterJump)
+            root.letterJumpModalRequested = true;
         else if (modal === root.modalSettingNeedsRestart)
             root.settingNeedsRestartModalRequested = true;
     }
@@ -213,12 +247,11 @@ MainLayout {
             root._startupRestoreScreen = savedScreen;
         }
         root._startupTrace("startup/qml Component.onCompleted", "savedScreen=" + savedScreen, "initialActiveScreen=" + root.activeScreen, "startupRestorePending=" + root._startupRestorePending, "connectionState=" + Browse.AppStatus.connection_state);
-        // If the catalog is already ready, restore Hub focus here
-        // without cascading into SystemsModel. First paint stays Hub
-        // only; the post-frame handler below runs the cascade needed
-        // by saved-screen restore and later drill-downs.
-        if (Browse.CategoriesModel.count > 0)
-            root.hubScreen.restoreFromCategoriesReset(false);
+        // Fire the focus restore here so Hub focus is seated and marked ready
+        // before first paint. Do not cascade into SystemsModel yet: first
+        // paint stays Hub-only, and the post-frame handler below runs the
+        // cascade needed by saved-screen restore and later drill-downs.
+        root.hubScreen.restoreFromCategoriesReset(false);
         root._maybeArmHubResumeFocus();
         // Open the commercial-use notice on first paint of an unacked
         // install. Sits in front of the media-DB first-run modal in the
@@ -461,6 +494,14 @@ MainLayout {
     property string _pendingFolderBackTargetPath: ""
     property string _pendingFolderBackSystemId: ""
     property var _folderBackReadyCallback: null
+    // System-cover prefetch gate. `_prefetchSystemCovers` populates
+    // `_systemCoverPrefetchUrls` with the first-page logos and stores the
+    // completion callback in `_systemCoverPrefetchCallback`. When every
+    // Image signals Ready/Error (or `systemCoverPrefetchTimer` expires),
+    // `_completePrefetchSystemCovers` fires the callback and clears state.
+    property var _systemCoverPrefetchUrls: []
+    property var _systemCoverPrefetchCallback: null
+    property int _systemCoverPrefetchPending: 0
 
     function _catalogStillBooting(): bool {
         return !Browse.CategoriesModel.loaded && (Browse.CategoriesModel.error_message ?? "") === "";
@@ -624,12 +665,9 @@ MainLayout {
     // populated — a re-Accept after Esc-back); the set_category call
     // is still made for parity with the prior behaviour even though
     // Rust early-returns when the category already matches. Async
-    // path waits for loadingChanged. When replacing an already-populated
-    // SystemsModel during a transition, defer until the delayed loading cue
-    // has had one frame to paint; otherwise set_category's synchronous
-    // delegate teardown can freeze the GUI before any feedback appears.
-    // Qt.callLater is not enough; it fires inside the same event loop
-    // iteration before the next render polish/sync pass.
+    // path waits for loadingChanged. The timer keeps the loadingChanged
+    // bookkeeping on the same asynchronous path without deliberately
+    // holding the transition long enough to show the global loading cue.
     function _ensureCategory(category: string, cb, waitForCatalog): void {
         if (waitForCatalog && root._catalogStillBooting()) {
             root._startupTrace("startup/qml catalog wait arm", "category=" + category);
@@ -647,7 +685,7 @@ MainLayout {
         root._categoryReadyCallback = cb;
         root._deferredCategoryPending = true;
         deferredCategorySetTimer.targetCategory = category;
-        deferredCategorySetTimer.interval = root.pendingTransition !== "" && Browse.SystemsModel.count > 0 ? root.loadingIndicatorDelayMs + 50 : 50;
+        deferredCategorySetTimer.interval = 1;
         deferredCategorySetTimer.restart();
     }
 
@@ -863,6 +901,10 @@ MainLayout {
         const savedSystem = root.activeScreen === root.screenGames ? (Browse.GamesState.system_id !== "" ? Browse.GamesState.system_id : Browse.SystemsState.system_id) : Browse.SystemsState.system_id;
         const idx = savedSystem === "" ? -1 : Browse.SystemsModel.index_for_system_id(savedSystem);
         root.systemsScreen.systemsGrid.setCurrentIndexImmediate(idx >= 0 ? idx : 0);
+        // Focus is now finalized from persisted state; let the grid render
+        // focus (snapped, since the screen's _focusArmed is still false until
+        // the first user input).
+        root.systemsScreen._restoreDone = true;
         if (idx >= 0) {
             Browse.GamesModel.set_system(savedSystem);
             const stack = Browse.GamesState.path_stack;
@@ -880,6 +922,9 @@ MainLayout {
         root.gamesScreen.suppressSelectionPersist = true;
         root.gamesScreen.gamesGrid.setCurrentIndexImmediate(index);
         root.gamesScreen.suppressSelectionPersist = false;
+        // Selection finalized from persisted state; let the grid render focus
+        // (snapped, since _focusArmed is still false until the first input).
+        root.gamesScreen._restoreDone = true;
     }
 
     function _restoreGamesScreenSelection(): bool {
@@ -1309,6 +1354,9 @@ MainLayout {
         function onRequestContextMenu(index: int, anchorRect): void {
             root.openContextMenu("games", index, anchorRect);
         }
+        function onRequestPageMenu(): void {
+            root.openPageMenu();
+        }
     }
 
     onActiveCardWritePendingChanged: root.handleCardWriteStatus()
@@ -1387,10 +1435,12 @@ MainLayout {
         }
         if (owner === "categories") {
             const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
-            const entries = [{
-                id: "toggle_hide_category",
-                label: isHidden ? qsTr("Unhide") : qsTr("Hide")
-            }];
+            const entries = [
+                {
+                    id: "toggle_hide_category",
+                    label: isHidden ? qsTr("Unhide") : qsTr("Hide")
+                }
+            ];
             if (!mediaBusy) {
                 entries.push({
                     id: "index_category",
@@ -1876,6 +1926,54 @@ MainLayout {
             ScreenManager.popModal();
     }
 
+    // Open the page/list-scoped operations menu (West button), the "View"
+    // counterpart to North's item-scoped "Options". For now it holds a single
+    // entry, Go to..., kept pre-focused so the common path is a fixed
+    // West-then-Accept chord; future list ops (sort/filter/layout) append here.
+    // The facet fetch is kicked off here so the buckets are likely ready by the
+    // time the user advances into the grid.
+    function openPageMenu(): void {
+        Browse.GamesModel.load_letter_index();
+        const entries = [
+            {
+                "id": "jump_letter",
+                "label": qsTr("Go to...")
+            }
+        ];
+        root.openListPickerModal(qsTr("View"), entries, "jump_letter", "page_menu");
+    }
+
+    // Re-parse the model's facet JSON into the live grid entries. Bound through
+    // a Connections below so the grid populates the instant the fetch lands.
+    function _refreshLetterJumpEntries(): void {
+        const scheme = Browse.GamesModel.letter_index_scheme;
+        let parsed = [];
+        try {
+            parsed = JSON.parse(Browse.GamesModel.letter_index_json);
+        } catch (e) {
+            parsed = [];
+        }
+        root.letterJumpEntries = Array.isArray(parsed) ? parsed : [];
+        // Empty scheme = facet still resolving; anything else is final.
+        root.letterJumpLoading = scheme === "";
+    }
+
+    function openLetterJumpModal(): void {
+        root._refreshLetterJumpEntries();
+        root._requestModal(root.modalLetterJump);
+        root.letterJumpModalVisible = true;
+        if (ScreenManager.topModal !== root.modalLetterJump)
+            ScreenManager.pushModal(root.modalLetterJump);
+    }
+
+    function closeLetterJumpModal(): void {
+        root.letterJumpModalVisible = false;
+        root.letterJumpEntries = [];
+        root.letterJumpLoading = false;
+        if (ScreenManager.topModal === root.modalLetterJump)
+            ScreenManager.popModal();
+    }
+
     function openSettingNeedsRestartModal(): void {
         root._requestModal(root.modalSettingNeedsRestart);
         root.settingNeedsRestartModalVisible = true;
@@ -1969,6 +2067,12 @@ MainLayout {
     }
 
     onListPickerAccepted: (fieldId, selectedId) => {
+        if (fieldId === "page_menu") {
+            root.closeListPickerModal();
+            if (selectedId === "jump_letter")
+                root.openLetterJumpModal();
+            return;
+        }
         if (fieldId === "system_launcher_pending")
             return;
         if (fieldId === "system_launcher_error") {
@@ -1995,7 +2099,11 @@ MainLayout {
             Browse.Settings.set_orientation(selectedId);
         } else if (fieldId === "clockFormat")
             Browse.Settings.set_clock_format(selectedId);
-        else if (fieldId === "browseLayout")
+        else if (fieldId === "region") {
+            Browse.Settings.set_region(selectedId);
+            Browse.SystemsModel.reproject();
+            Browse.CategoriesModel.reproject();
+        } else if (fieldId === "browseLayout")
             Browse.Settings.set_browse_layout(selectedId);
         else if (fieldId === "buttonLayout")
             Browse.Settings.set_button_layout(selectedId);
@@ -2011,6 +2119,29 @@ MainLayout {
         root.closeListPickerModal();
     }
     onListPickerCloseRequested: root.handleListPickerCloseRequested()
+
+    onLetterJumpAccepted: offset => {
+        root.closeLetterJumpModal();
+        if (root.gamesScreen !== null)
+            root.gamesScreen.jumpToItem(offset);
+    }
+    onLetterJumpCloseRequested: root.closeLetterJumpModal()
+
+    // Keep the open grid in sync with the facet as it lands. The model clears
+    // its facet to the loading state on `load_letter_index`, then fills it; this
+    // re-parses into the live grid entries each time either changes.
+    Connections {
+        target: root.letterJumpModalRequested ? Browse.GamesModel : null
+        enabled: root.letterJumpModalRequested
+        function onLetter_index_jsonChanged(): void {
+            if (root.letterJumpModalVisible)
+                root._refreshLetterJumpEntries();
+        }
+        function onLetter_index_schemeChanged(): void {
+            if (root.letterJumpModalVisible)
+                root._refreshLetterJumpEntries();
+        }
+    }
 
     Connections {
         target: Browse.SystemLaunchers
@@ -2185,6 +2316,9 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalListPicker) {
                 if (root.listPickerModal !== null)
                     root.listPickerModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalLetterJump) {
+                if (root.letterJumpModal !== null)
+                    root.letterJumpModal.handleAction(action);
             }
             // While a modal owns input, swallow everything not handled
             // above rather than leak it to the root screen.
@@ -2613,104 +2747,80 @@ MainLayout {
                 }
             }
         }
-    }
 
-    // Hidden cover-decode loop driven by `_prefetchSystemCovers`.
-    // While `active`, mounts an Image per SystemsModel row using
-    // the same `source` / `sourceSize.width` / `cache` /
-    // `asynchronous` settings as Tile.qml's cover Image so the
-    // prefetch and the visible Tile share a QPixmapCache slot.
-    // As each Image hits Ready or Error, the delegate calls back
-    // into `_onCoverDecoded`, which fires the doneCallback and
-    // unwinds once every cover is counted. Without this warmup
-    // the destination SystemsScreen paints with each Tile showing
-    // its procedural text fallback for tens of ms while the PNG
-    // decodes — the visible "text → logo pop-in" the deferred
-    // flip alone can't fix.
-    //
-    // Bounded by `systemsCoverPrefetchTimeout` so a missing PNG
-    // (silent decode failure that doesn't emit Image.Error) or a
-    // genuinely stuck async load never strands the user on the
-    // loading overlay.
-    Item {
-        id: systemsCoverPrefetcher
-        visible: false
-        property bool active: false
-        property var doneCallback: null
-        property int total: 0
-        property int done: 0
-
-        function _markDone(): void {
-            systemsCoverPrefetcher.done++;
-            if (systemsCoverPrefetcher.done >= systemsCoverPrefetcher.total) {
-                systemsCoverPrefetcher.active = false;
-                systemsCoverPrefetchTimeout.stop();
-                const cb = systemsCoverPrefetcher.doneCallback;
-                systemsCoverPrefetcher.doneCallback = null;
-                if (cb !== null)
-                    cb();
-            }
-        }
-
+        // Hidden Image pool driven by `_prefetchSystemCovers`. Each Image
+        // renders the tinted SVG logo off-screen at the same sourceSize as
+        // the visible Tile so they share one QPixmapCache entry. When every
+        // Image signals Ready or Error, `_systemCoverPrefetchPending` reaches
+        // zero and `_completePrefetchSystemCovers` fires the transition
+        // callback. `_systemCoverPrefetchUrls` is reset to [] when the gate
+        // resolves, which destroys the delegates immediately. No background
+        // fill is added — this Item is already a transparent overlay.
         Repeater {
-            model: systemsCoverPrefetcher.active ? Browse.SystemsModel : null
+            model: root._systemCoverPrefetchUrls
             delegate: Image {
-                required property string coverKey
-                source: coverKey === "" ? "" : Resources.coverUrl(coverKey)
+                required property url modelData
+                source: modelData
                 sourceSize.width: 256
                 asynchronous: true
-                cache: true
-
-                // Each delegate contributes exactly once.
-                // Component.onCompleted catches a synchronous Ready
-                // (cache hit during construction); onStatusChanged
-                // catches the normal async path. `_counted` dedupes
-                // so a delegate whose status flips Null → Ready
-                // inside construction (and again as the binding
-                // settles) tallies once.
-                property bool _counted: false
-                function _markDone(): void {
-                    if (_counted)
-                        return;
-                    _counted = true;
-                    systemsCoverPrefetcher._markDone();
-                }
-
-                Component.onCompleted: {
-                    if (status === Image.Ready || status === Image.Error || coverKey === "")
-                        _markDone();
-                }
+                visible: false
+                width: 0
+                height: 0
                 onStatusChanged: {
-                    if (status === Image.Ready || status === Image.Error)
-                        _markDone();
+                    if (status !== Image.Ready && status !== Image.Error)
+                        return;
+                    root._systemCoverPrefetchPending = Math.max(0, root._systemCoverPrefetchPending - 1);
+                    if (root._systemCoverPrefetchPending <= 0)
+                        root._completePrefetchSystemCovers();
                 }
             }
         }
     }
 
+    // System-cover prefetch gate. Holds the "Loading systems…" transition
+    // overlay until the first visible page of tinted SVG logos has decoded
+    // (or the cap timer fires), then calls cb(). This ensures the Systems
+    // grid reveals fully painted instead of showing name-text placeholders
+    // that pop into logos one-by-one. Fast/re-entry navigations complete
+    // within the 300ms DelayedLoadingIndicator threshold so no cue appears.
+    // The hidden prefetch Repeater lives in the transition-cue Item above;
+    // it watches `_systemCoverPrefetchUrls` and reports back via
+    // `_systemCoverPrefetchPending`.
     function _prefetchSystemCovers(cb): void {
-        systemsCoverPrefetcher.total = Browse.SystemsModel.count;
-        systemsCoverPrefetcher.done = 0;
-        if (systemsCoverPrefetcher.total === 0) {
+        const pageSize = Sizing.visibleCovers * 4;
+        const count = Math.min(Browse.SystemsModel.count, pageSize);
+        if (count === 0) {
             cb();
             return;
         }
-        systemsCoverPrefetcher.doneCallback = cb;
-        systemsCoverPrefetcher.active = true;
-        systemsCoverPrefetchTimeout.restart();
+        const urls = [];
+        for (let i = 0; i < count; ++i) {
+            const key = Browse.SystemsModel.cover_key_at(i);
+            // Warm both the unfocused and focused tint ramps up front so the
+            // first d-pad move never triggers an async SVG re-render.
+            const unfocusedUrl = Resources.coverUrl(key, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow);
+            urls.push(unfocusedUrl);
+            const focusedUrl = Resources.coverUrl(key, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow);
+            // system-image/ keys ignore tint params (served as-is), so both
+            // URLs are identical — skip the duplicate to avoid redundant fetches.
+            if (focusedUrl !== unfocusedUrl) {
+                urls.push(focusedUrl);
+            }
+        }
+        root._systemCoverPrefetchCallback = cb;
+        root._systemCoverPrefetchPending = urls.length;
+        root._systemCoverPrefetchUrls = urls;
+        systemCoverPrefetchTimer.restart();
     }
 
-    Timer {
-        id: systemsCoverPrefetchTimeout
-        interval: 1500
-        repeat: false
-        onTriggered: {
-            systemsCoverPrefetcher.active = false;
-            const cb = systemsCoverPrefetcher.doneCallback;
-            systemsCoverPrefetcher.doneCallback = null;
-            if (cb !== null)
-                cb();
-        }
+    function _completePrefetchSystemCovers(): void {
+        systemCoverPrefetchTimer.stop();
+        root._systemCoverPrefetchUrls = [];
+        root._systemCoverPrefetchPending = 0;
+        const cb = root._systemCoverPrefetchCallback;
+        root._systemCoverPrefetchCallback = null;
+        if (cb !== null)
+            cb();
     }
 
     Timer {
@@ -2746,6 +2856,19 @@ MainLayout {
         interval: root.loadingIndicatorDelayMs + 50
         repeat: false
         onTriggered: root._completeFolderBackTransition()
+    }
+
+    // Safety cap for the system-cover prefetch gate. If some logos haven't
+    // decoded by this deadline they paint in after the screen reveals,
+    // identical to the Games cover-gate timeout behavior. Cap = 300ms
+    // (loadingIndicatorDelayMs) — logos that land faster than the
+    // DelayedLoadingIndicator threshold complete the transition silently;
+    // logos that are slower get a brief "Loading systems…" cue then pop in.
+    Timer {
+        id: systemCoverPrefetchTimer
+        interval: root.loadingIndicatorDelayMs
+        repeat: false
+        onTriggered: root._completePrefetchSystemCovers()
     }
 
     // Deferred set_category trigger. When the existing model has rows,

@@ -166,6 +166,8 @@ pub fn media_browse_response(params: &Value) -> Value {
                 "systemId": system,
                 "zapScript": format!("@{system}/{file}"),
                 "relativePath": file,
+                "tags": disambiguating_tags_for(file),
+                "disambiguatingTags": disambiguating_tags_for(file),
             })
         })
         .collect();
@@ -274,9 +276,34 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
             "path": format!("/mock/{system}/{file}"),
             "zapScript": format!("@{system}/{file}"),
             "system": { "id": system, "name": system, "category": "" },
-            "tags": [],
+            "tags": disambiguating_tags_for(file),
+            "disambiguatingTags": disambiguating_tags_for(file),
         }))
     })
+}
+
+// Synthesize disambiguating tags for a handful of mock entries so the
+// variant-badge UI has something to render in `just run-dev`. Keyed on the
+// filename so the same game always gets the same badges. Real Core derives
+// these at index time from filename metadata across same-named siblings.
+fn disambiguating_tags_for(file: &str) -> Value {
+    match file {
+        "smb.nes" | "pang_u.zip" => json!([{ "tag": "us", "type": "region" }]),
+        "zelda.nes" => json!([{ "tag": "eu", "type": "region" }, { "tag": "1", "type": "rev" }]),
+        "metroid.nes" => json!([{ "tag": "us,eu", "type": "region" }]),
+        "sonic1.md" => json!([{ "tag": "1", "type": "disc" }]),
+        "sonic2.md" => json!([{ "tag": "2", "type": "disc" }, { "tag": "ja", "type": "region" }]),
+        // Arcade variants. `edition` is Core's catch-all for unrecognized
+        // qualifiers, so the messy normalized values arrive there.
+        "crossbow_joy.zip" => json!([{ "tag": "atari-joystick", "type": "edition" }]),
+        "crossbow_gun.zip" => json!([{ "tag": "atari-lightgun", "type": "edition" }]),
+        "arkanoid_uls.zip" => json!([{ "tag": "unl-lives-slow", "type": "edition" }]),
+        "arkanoid_ul.zip" => json!([{ "tag": "unl-lives", "type": "edition" }]),
+        "pang_w.zip" => json!([{ "tag": "world", "type": "region" }]),
+        "aliensyn_s4.zip" => json!([{ "tag": "set-4-system-1", "type": "edition" }]),
+        "aliensyn_s2.zip" => json!([{ "tag": "set-2-system-1", "type": "edition" }]),
+        _ => json!([]),
+    }
 }
 
 // (display name, filename, system id)
@@ -339,6 +366,17 @@ const ALL_GAMES: &[(&str, &str, &str)] = &[
     ("Galaga", "galaga.zip", "MAME"),
     ("Street Fighter II", "sf2.zip", "MAME"),
     ("Ms. Pac-Man", "mspacman.zip", "MAME"),
+    // Same-named arcade variants (kept adjacent) to exercise the sibling-diff +
+    // width policy: shared-prefix values, length-difference values, region
+    // world->w, and a long value that must not hide the title.
+    ("Crossbow", "crossbow_joy.zip", "MAME"),
+    ("Crossbow", "crossbow_gun.zip", "MAME"),
+    ("Arkanoid", "arkanoid_uls.zip", "MAME"),
+    ("Arkanoid", "arkanoid_ul.zip", "MAME"),
+    ("Pang", "pang_w.zip", "MAME"),
+    ("Pang", "pang_u.zip", "MAME"),
+    ("Alien Syndrome", "aliensyn_s4.zip", "MAME"),
+    ("Alien Syndrome", "aliensyn_s2.zip", "MAME"),
     // Neo Geo
     ("Metal Slug", "mslug.neo", "NeoGeo"),
     ("The King of Fighters '98", "kof98.neo", "NeoGeo"),

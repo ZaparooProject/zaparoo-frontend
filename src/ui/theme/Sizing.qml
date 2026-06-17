@@ -27,12 +27,15 @@ QtObject {
     // Systems tiles are squarer than box-art tiles, so they target a
     // slightly wider aspect while keeping the same preferred page size.
     readonly property var _systemsGridConfig: _gridConfig(_browseGridBaseConfig, {
-        "minCellHeight": crtNativePath ? 72 : 160,
-        "targetAspect": 1.0
+        "minCellHeight": crtNativePath ? 72 : 140,
+        "preferredPageSize": crtNativePath ? 6 : 12,
+        "targetAspect": crtNativePath ? 1.0 : 1.25
     })
     readonly property var _systemsGridShape: systemsGridShape(screenWidth, screenHeight)
+    // qmllint disable compiler
     readonly property int systemsGridColumns: _systemsGridShape.columns
     readonly property int systemsGridRows: _systemsGridShape.rows
+    // qmllint enable compiler
     // Games grid shape comes from the logical viewport, not from
     // screen-height-only breakpoints. The selector preserves a stable
     // tile aspect while respecting a minimum readable tile size, so
@@ -43,8 +46,10 @@ QtObject {
         "targetAspect": crtNativePath ? 0.78 : 0.71
     })
     readonly property var _gamesGridShape: gamesGridShape(screenWidth, screenHeight)
+    // qmllint disable compiler
     readonly property int gamesGridColumns: _gamesGridShape.columns
     readonly property int gamesGridRows: _gamesGridShape.rows
+    // qmllint enable compiler
     // Standard corner radius for rounded surfaces — tile cards, focus
     // rings (computed as `cornerRadius - outlineGap`), settings rows.
     // Pill controls (toggle track/thumb) use `height/2` instead and
@@ -115,6 +120,7 @@ QtObject {
         return merged;
     }
 
+    // qmllint disable compiler
     function _selectGridShape(viewportWidth: int, viewportHeight: int, options: var): var {
         const safeWidth = Math.max(1, viewportWidth);
         const safeHeight = Math.max(1, viewportHeight);
@@ -147,6 +153,7 @@ QtObject {
             "rows": bestRows
         };
     }
+    // qmllint enable compiler
 
     // Minimum 8px to remain legible on CRT 240p displays.
     function fontSize(percent: real): int {

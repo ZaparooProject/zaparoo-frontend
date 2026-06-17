@@ -96,6 +96,21 @@ Item {
     // without touching RecentsModel. MainLayout flips this after the
     // first frame, then Resume can hide/update from Core history.
     property bool resumeModelEnabled: false
+    // Incremented on each Accept so the focused tile plays its push-in
+    // animation. Forwarded to every TileLoader; only the focused+selected
+    // Tile fires its animation.
+    property int activatePulse: 0
+    // False until the user takes control of focus (first input). Combined
+    // with `_restoreDone` into `_focusReady`, which gates whether the tiles
+    // render focus at all.
+    property bool _focusArmed: false
+    // Set true once the load-time category restore has run. Combined with
+    // `_focusArmed` into `_focusReady`, which gates whether the tiles render
+    // focus at all — so the action row's default Resume selection never paints
+    // a ring during the window before `restoreFromCategoriesReset` corrects
+    // focus to the saved tile on a cold start.
+    property bool _restoreDone: false
+    readonly property bool _focusReady: hub._focusArmed || hub._restoreDone
     // Source-row index from the most recent cross. Used to make a
     // Down → Up (or Up → Down) round-trip return to the originating
     // tile, which the centered visual-nearest mapping in `_mapCrossRow`
@@ -228,6 +243,10 @@ Item {
     // category — otherwise the visible focus drifts off whichever
     // screen the user is on.
     function restoreFromCategoriesReset(cascadeSystems: bool): void {
+        // Focus is now being finalized from persisted state; let the tiles
+        // render focus from here on (snapped, since `_focusArmed` is still
+        // false until the first user input).
+        hub._restoreDone = true;
         const savedCategory = CategoryIds.canonicalize(Browse.HubState.category);
         const idx = savedCategory === "" ? -1 : Browse.CategoriesModel.index_for_category(savedCategory);
         const chosenCategoryIndex = idx >= 0 ? idx : 0;
@@ -264,6 +283,14 @@ Item {
         hub._crossSavedIndex = -1;
 
         if (!cascadeSystems)
+            return;
+        // Cold boot before Core delivers the catalog: focus was seated above
+        // (and `_restoreDone` set, so the focus ring paints immediately
+        // instead of waiting for the connection), but the set_category
+        // cascade needs the real catalog. Defer it — this function re-runs
+        // on CategoriesModel.onModelReset once the catalog lands, and the
+        // cascade fires then.
+        if (Browse.CategoriesModel.count <= 0)
             return;
         if (Browse.SystemsModel.current_category === chosenCategory && Browse.SystemsModel.count > 0)
             return;
@@ -380,6 +407,7 @@ Item {
     function _focusCategory(index: int): void {
         if (index < 0 || index >= hub.visibleCategoryEntries.length)
             return;
+        hub._focusArmed = true;
         hub.currentRow = 0;
         hub.currentIndex = index;
         // Mouse focus is a deliberate landing on a specific tile — any
@@ -391,14 +419,17 @@ Item {
     function _focusAction(index: int): void {
         if (index < 0 || index >= hub.actionEntries.length)
             return;
+        hub._focusArmed = true;
         hub.currentRow = 1;
         hub.currentIndex = index;
         hub._crossSavedIndex = -1;
         hub._commitActionSelection();
     }
 
-    function _activateCurrent(): void {
-        hub._commitCurrent();
+    // Emit the navigation signal for the currently selected entry.
+    // Separated from _activateCurrent so DeferredAction can call it
+    // after the push-in cue has had time to play.
+    function _emitActivate(): void {
         if (hub.currentRow === 0) {
             // During optimistic boot the visible category row is backed
             // by localized placeholder labels. Accept the stable category
@@ -419,6 +450,12 @@ Item {
             hub.requestSettingsScreen();
     }
 
+    function _activateCurrent(): void {
+        hub.activatePulse++;
+        hub._commitCurrent();
+        pressCommit.arm();
+    }
+
     // Returns the bounding rect of the currently focused category cell,
     // mapped to hub coordinates. Used to anchor the context menu.
     function _currentCategoryCellRect(): rect {
@@ -429,6 +466,7 @@ Item {
     }
 
     function handleAction(action: string): void {
+        hub._focusArmed = true;
         if (action === "left") {
             if (hub._navigate(-1))
                 hub._commitCurrent();
@@ -442,7 +480,7 @@ Item {
             hub._activateCurrent();
         } else if (action === "cancel") {
             hub.requestQuit();
-        } else if (action === "write_card") {
+        } else if (action === "context_menu") {
             // Only open the context menu for real (non-placeholder) category
             // tiles — placeholders have no category to hide or scrape.
             if (hub.currentRow === 0 && hub.currentIndex < Browse.CategoriesModel.count)
@@ -451,6 +489,11 @@ Item {
     }
 
     // ── Visual tree ───────────────────────────────────────────────────────────
+
+    DeferredAction {
+        id: pressCommit
+        onDeferred: hub._emitActivate()
+    }
 
     Item {
         id: categoriesRow
@@ -528,6 +571,9 @@ Item {
                     name: cellItem.modelData.name
                     coverKey: cellItem.modelData.coverKey
                     hidden: cellItem.modelData.hidden ?? false
+                    activatePulse: hub.activatePulse
+                    settling: !hub.visible
+                    focusReady: hub._focusReady
                 }
 
                 MouseArea {
@@ -537,7 +583,7 @@ Item {
                     cursorShape: Qt.PointingHandCursor
 
                     onEntered: hub._focusCategory(cellItem.index)
-                    onClicked: (mouse) => {
+                    onClicked: mouse => {
                         hub._focusCategory(cellItem.index);
                         if (mouse.button === Qt.RightButton) {
                             if (cellItem.index < Browse.CategoriesModel.count)
@@ -612,6 +658,9 @@ Item {
                     isFocused: hub.currentRow === 1
                     name: actionCellItem.modelData.text
                     coverKey: actionCellItem.modelData.coverKey
+                    activatePulse: hub.activatePulse
+                    settling: !hub.visible
+                    focusReady: hub._focusReady
                 }
 
                 MouseArea {

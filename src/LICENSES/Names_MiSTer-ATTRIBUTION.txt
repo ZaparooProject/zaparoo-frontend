@@ -1,0 +1,21 @@
+Names_MiSTer
+https://github.com/ThreepwoodLeBrush/Names_MiSTer
+
+Author: ThreepwoodLeBrush and contributors
+License: Creative Commons CC0 1.0 Universal (Public Domain Dedication)
+
+The files names_us.txt, names_eu.txt, and names_jp.txt under
+rust/frontend/src/data/ are derived from the Names_MiSTer project and used
+at compile time to provide localized system names for the regions Americas
+(US), Europe (EU), and Japan (JP).
+
+The source data has been adapted for this frontend: entries were re-keyed from
+MiSTer core names to Zaparoo Core canonical system IDs, restyled to an iconic
+naming convention (shortest unambiguous common name), test/dev/build-flavor
+entries with no corresponding Core system were removed, and regional values
+were curated to match the display names users expect for each region.
+
+The Names_MiSTer project provides human-readable display names for MiSTer
+FPGA cores, organized by region. The generation tooling was authored by
+theypsilon. The data has been released under CC0 1.0 Universal - see
+https://creativecommons.org/publicdomain/zero/1.0/ for the full license text.

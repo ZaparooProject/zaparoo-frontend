@@ -38,6 +38,10 @@ Item {
     property string initialId: ""
     property int currentIndex: 0
 
+    // Push-in scale for the activated row, mirroring the tile push-in.
+    property real _pressScale: 1.0
+    property string _pendingId: ""
+
     signal accepted(string id)
     signal closeRequested
 
@@ -65,8 +69,12 @@ Item {
     z: 300
 
     onOpenChanged: {
-        if (!modal.open)
+        if (!modal.open) {
+            // Disarm a pending accept so a press-then-close inside the deferred
+            // window cannot apply a selection after the modal is dismissed.
+            acceptCommit.stop();
             return;
+        }
         let next = 0;
         if (modal.initialId !== "") {
             for (let i = 0; i < modal.entries.length; ++i) {
@@ -79,6 +87,9 @@ Item {
         viewport.contentY = 0;
         modal.currentIndex = next;
         modal._scrollCurrentIntoView();
+        modal._pressScale = 1.0;
+        pressAnim.stop();
+        modal._pendingId = "";
     }
 
     function _scrollCurrentIntoView(): void {
@@ -106,9 +117,34 @@ Item {
             modal.move(1);
         } else if (action === "accept") {
             if (modal.currentIndex >= 0 && modal.currentIndex < modal.entries.length)
-                modal.accepted(modal.entries[modal.currentIndex].id);
+                modal._commitAccept(modal.entries[modal.currentIndex].id);
         } else if (action === "cancel") {
             modal.closeRequested();
+        }
+    }
+
+    function _commitAccept(id: string): void {
+        modal._pendingId = id;
+        pressAnim.restart();
+        acceptCommit.arm();
+    }
+
+    NumberAnimation {
+        id: pressAnim
+        target: modal
+        property: "_pressScale"
+        to: Motion.rowPressScale
+        duration: Motion.dur(Motion.pressMs)
+        easing.type: Easing.OutQuad
+    }
+
+    DeferredAction {
+        id: acceptCommit
+        onDeferred: {
+            const id = modal._pendingId;
+            modal._pendingId = "";
+            if (id !== "")
+                modal.accepted(id);
         }
     }
 
@@ -160,6 +196,8 @@ Item {
                             border.width: row.index === modal.currentIndex ? Sizing.stroke(2) : Sizing.stroke(1)
                             border.color: row.index === modal.currentIndex ? Theme.accent : Theme.borderMid
                             radius: Sizing.cornerRadius
+                            transformOrigin: Item.Center
+                            scale: row.index === modal.currentIndex ? modal._pressScale : 1.0
 
                             Text {
                                 anchors.left: parent.left
@@ -182,7 +220,7 @@ Item {
                                 acceptedButtons: Qt.LeftButton
                                 cursorShape: Qt.PointingHandCursor
                                 onEntered: modal.currentIndex = row.index
-                                onClicked: modal.accepted(row.modelData.id)
+                                onClicked: modal._commitAccept(row.modelData.id)
                             }
                         }
                     }

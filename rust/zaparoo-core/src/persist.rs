@@ -120,6 +120,8 @@ pub struct SettingsState {
     #[serde(default = "default_mouse_enabled")]
     pub mouse_enabled: bool,
     #[serde(default)]
+    pub reduce_motion: bool,
+    #[serde(default)]
     pub discover_arcade_alternate_versions: bool,
     #[serde(default)]
     pub debug_logging: bool,
@@ -131,6 +133,16 @@ pub struct SettingsState {
     /// dimmed with a "Hidden" badge and the options menu offers "Unhide".
     #[serde(default)]
     pub show_hidden: bool,
+    /// When true, game items display their original filename (without the
+    /// extension) instead of Core's cleaned display name, everywhere a game
+    /// name is shown.
+    #[serde(default)]
+    pub show_original_filenames: bool,
+    /// Region variant for system names and logos. `"auto"` (default) derives
+    /// the region from the effective UI locale: `en` → US, `ja` → JP, all
+    /// others → EU. Explicit values are `"us"`, `"eu"`, `"jp"`.
+    #[serde(default = "default_region")]
+    pub region: String,
 }
 
 impl Default for SettingsState {
@@ -143,13 +155,20 @@ impl Default for SettingsState {
             browse_layout: default_browse_layout(),
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
+            reduce_motion: false,
             discover_arcade_alternate_versions: false,
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
             show_hidden: false,
+            show_original_filenames: false,
+            region: default_region(),
         }
     }
+}
+
+fn default_region() -> String {
+    "auto".into()
 }
 
 fn default_clock_format() -> String {
@@ -315,11 +334,14 @@ mod tests {
                 browse_layout: "list".into(),
                 button_layout: "b".into(),
                 mouse_enabled: false,
+                reduce_motion: true,
                 discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),
                 show_hidden: true,
+                show_original_filenames: true,
+                region: "us".into(),
             },
         };
         save_to(&path, &original);
@@ -347,6 +369,8 @@ resolution = "1920x1080"
         assert_eq!(state.hub.hidden_categories, Vec::<String>::new());
         assert_eq!(state.systems.hidden_system_ids, Vec::<String>::new());
         assert!(!state.settings.show_hidden);
+        // reduce_motion absent from an older state file defaults to false.
+        assert!(!state.settings.reduce_motion);
     }
 
     #[test]

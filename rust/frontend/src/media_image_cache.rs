@@ -519,6 +519,14 @@ struct CacheState {
     /// cleaned up alongside the row in `evict_until_fits` so the
     /// sidecar can't outgrow the rest of the cache.
     media_ids: HashMap<MediaKey, i64>,
+    /// Short image type that Core resolved for each cached key.
+    /// Populated from `MediaImageResult.type_tag` (stripped of the
+    /// `property:image-` prefix) on every successful fetch. Used by the
+    /// carousel dedup: when the preference is "auto" (empty `imageTypes`),
+    /// Core may return e.g. `boxart` — the carousel tail can then drop
+    /// the concrete `boxart` key so left/right shows a genuinely different
+    /// image. Cleaned up alongside `map` in `evict_until_fits`.
+    resolved_types: HashMap<MediaKey, String>,
     /// Strictly increasing LRU clock. Bumped on every successful read
     /// or insert; the entry with the smallest value is the LRU.
     clock: u64,
@@ -535,6 +543,7 @@ impl CacheState {
             pending: HashSet::new(),
             attempts: HashMap::new(),
             media_ids: HashMap::new(),
+            resolved_types: HashMap::new(),
             clock: 0,
         }
     }
@@ -572,11 +581,11 @@ impl CacheState {
             };
             if let Some(entry) = self.map.remove(&victim) {
                 self.total_bytes = self.total_bytes.saturating_sub(entry.bytes.len());
-                // Keep the `media_ids` sidecar in lock-step with
-                // `map` — without this, the hint table grows
-                // unboundedly past `cap_bytes` because the eviction
-                // pass only touches the primary cache.
+                // Keep the sidecars in lock-step with `map` — without
+                // this the hint tables grow unboundedly past `cap_bytes`
+                // because the eviction pass only touches the primary cache.
                 self.media_ids.remove(&victim);
+                self.resolved_types.remove(&victim);
                 debug!(
                     system_id = %victim.system_id,
                     path = %victim.path,
@@ -695,6 +704,20 @@ impl MediaImageCache {
         #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
         let guard = self.state.read().unwrap();
         guard.soft_no_image.contains(key)
+    }
+
+    /// Return the short image type that Core resolved for `key` on its last
+    /// successful fetch (e.g. `"boxart"`). `None` when the key hasn't been
+    /// fetched successfully yet, when Core returned an empty `type_tag`
+    /// (older Core versions), or when the entry was evicted.
+    ///
+    /// Used by the carousel dedup: when the user's preference is "auto",
+    /// `ordered_detail_image_keys` needs Core's answer to know which
+    /// concrete type key in the carousel tail is a duplicate of index 0.
+    pub fn resolved_image_type(&self, key: &MediaKey) -> Option<String> {
+        #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
+        let guard = self.state.read().unwrap();
+        guard.resolved_types.get(key).cloned()
     }
 
     /// Subscribe to cache updates. Used by `GamesModel` to bridge image
@@ -947,6 +970,19 @@ impl MediaImageCache {
     pub fn image_key_for(key: &MediaKey) -> String {
         format!("media-image/{}", key.encode())
     }
+
+    /// Returns the user's configured preferred image type (e.g. `"boxart"`)
+    /// if one is set, or `None` when the preference is `"auto"` or unset.
+    /// Used by callers that need to deduplicate the cover-preference key
+    /// against a list of specific image-type keys.
+    pub fn current_cover_preference_type() -> Option<String> {
+        let value = crate::models::try_with_persist_read(|s| s.settings.media_image_type.clone())?;
+        let trimmed = value.trim().to_owned();
+        if trimmed.is_empty() || trimmed == "auto" {
+            return None;
+        }
+        Some(trimmed)
+    }
 }
 
 /// Pop one entry from the LIFO queue. Core now accepts only one
@@ -1142,6 +1178,10 @@ enum FetchOutcome {
     Success {
         bytes: Vec<u8>,
         ext: &'static str,
+        /// Short image type resolved by Core (e.g. `"boxart"`), stripped of
+        /// the `property:image-` prefix. Empty for older Core versions that
+        /// do not populate `type_tag`, or when the prefix is absent.
+        type_tag: String,
     },
     /// Core gave a "no image" answer for this `(system_id, path)` —
     /// empty payload, unsupported format, or per-item miss. The queue
@@ -1325,7 +1365,22 @@ fn classify_media_image_result(
         );
         return (FetchOutcome::NoImage, decode_duration);
     };
-    (FetchOutcome::Success { bytes, ext }, decode_duration)
+    // Strip the canonical prefix so the stored value is the bare type
+    // name (e.g. "boxart"), matching MediaKey::image_type values used by
+    // the carousel. Older Core versions return "" for type_tag.
+    let type_tag = image
+        .type_tag
+        .strip_prefix("property:image-")
+        .unwrap_or("")
+        .to_string();
+    (
+        FetchOutcome::Success {
+            bytes,
+            ext,
+            type_tag,
+        },
+        decode_duration,
+    )
 }
 
 fn finish_fetch(
@@ -1340,7 +1395,11 @@ fn finish_fetch(
     guard.pending.remove(key);
     let search_seen = guard.search_seen.contains(key);
     match outcome {
-        FetchOutcome::Success { bytes, ext } => {
+        FetchOutcome::Success {
+            bytes,
+            ext,
+            type_tag,
+        } => {
             if bytes.len() > cap_bytes {
                 warn!(
                     system_id = %key.system_id,
@@ -1352,8 +1411,12 @@ fn finish_fetch(
                 if no_image_policy == NoImagePolicy::Memoize && !search_seen {
                     if let Some(prev) = guard.map.remove(key) {
                         guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
-                        guard.media_ids.remove(key);
                     }
+                    // Remove unconditionally: media_ids is written in
+                    // enqueue_with_policy before the fetch result arrives, so it
+                    // may exist even when map had no entry.
+                    guard.media_ids.remove(key);
+                    guard.resolved_types.remove(key);
                     guard.soft_no_image.remove(key);
                     guard.negative.insert(key.clone());
                 } else if !guard.map.contains_key(key) {
@@ -1375,6 +1438,18 @@ fn finish_fetch(
             if let Some(prev) = guard.map.insert(key.clone(), entry) {
                 guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
             }
+            // Record the resolved type for carousel dedup. Non-empty only
+            // when Core populates type_tag (>=v0.7). Old Core versions get
+            // no dedup — the carousel may still show a duplicate in that
+            // case, which is no worse than today.
+            if type_tag.is_empty() {
+                // Empty type_tag means old Core; clear any stale entry from a
+                // previous fetch so resolved_image_type() doesn't deduplicate
+                // against outdated type information.
+                guard.resolved_types.remove(key);
+            } else {
+                guard.resolved_types.insert(key.clone(), type_tag);
+            }
             guard.soft_no_image.remove(key);
             guard.total_bytes = guard.total_bytes.saturating_add(bytes_len);
             guard.evict_until_fits(cap_bytes);
@@ -1387,8 +1462,9 @@ fn finish_fetch(
             if no_image_policy == NoImagePolicy::Memoize && !search_seen {
                 if let Some(prev) = guard.map.remove(key) {
                     guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
-                    guard.media_ids.remove(key);
                 }
+                guard.media_ids.remove(key);
+                guard.resolved_types.remove(key);
                 guard.soft_no_image.remove(key);
                 guard.negative.insert(key.clone());
             } else if !guard.map.contains_key(key) {
@@ -1743,6 +1819,7 @@ mod tests {
             FetchOutcome::Success {
                 bytes: vec![1, 2, 3],
                 ext: "png",
+                type_tag: String::new(),
             },
             NoImagePolicy::Memoize,
         )
@@ -1983,6 +2060,7 @@ mod tests {
             FetchOutcome::Success {
                 bytes: vec![0; n],
                 ext: "png",
+                type_tag: String::new(),
             },
             NoImagePolicy::Memoize,
         );
@@ -2149,6 +2227,7 @@ mod tests {
             FetchOutcome::Success {
                 bytes: vec![0; cap + 1],
                 ext: "png",
+                type_tag: String::new(),
             },
             NoImagePolicy::Memoize,
         )

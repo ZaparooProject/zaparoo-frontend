@@ -19,9 +19,11 @@ fill="none"):
   resources/images/categories/Console.svg
   resources/images/categories/Favorites.svg
   resources/images/categories/Media.svg
+  resources/images/icons/Browsing.svg
   resources/images/icons/Display.svg
   resources/images/icons/File.svg
   resources/images/icons/Folder.svg
+  resources/images/icons/Language.svg
   resources/images/icons/Library.svg
   resources/images/icons/Loading.svg
   resources/images/icons/NavDown.svg

@@ -67,22 +67,43 @@ fi
 echo ""
 echo "=== Deploying to MiSTer at ${MISTER_IP} ==="
 
+# Upload to a side path first so an interrupted transfer can never clobber
+# the working binary. The old flow scp'd straight over the live path and
+# pre-rotated it to .bak unconditionally: a failed transfer then left a
+# truncated frontend AND the next run would overwrite the good backup with
+# that stub. Here we only rotate after a size-verified upload, then force
+# the write to the card with `sync` — exFAT has no journal, so a metadata
+# update lost to a power cut is what leaks clusters.
+# `wc -c` is portable (GNU + BSD/macOS); `stat -c` is GNU-only. The remote
+# size check below runs on the MiSTer (always Linux) so it keeps `stat -c`.
+LOCAL_SIZE="$(wc -c < "${BINARY}" | tr -d '[:space:]')"
+scp "${BINARY}" "root@${MISTER_IP}:${REMOTE_PATH}.new"
+
 ssh "root@${MISTER_IP}" "
+    set -e
+    new_size=\$(stat -c %s '${REMOTE_PATH}.new' 2>/dev/null || echo 0)
+    if [ \$new_size -ne ${LOCAL_SIZE} ]; then
+        echo \"Upload incomplete (\$new_size of ${LOCAL_SIZE} bytes); existing binary left untouched\" >&2
+        rm -f '${REMOTE_PATH}.new'
+        exit 1
+    fi
     if [ -f '${REMOTE_PATH}' ]; then
         mv '${REMOTE_PATH}' '${REMOTE_PATH}.bak'
-        echo 'Moved existing binary to ${REMOTE_PATH}.bak'
     fi
+    mv '${REMOTE_PATH}.new' '${REMOTE_PATH}'
+    sync
+    echo 'Installed new binary (previous kept as ${REMOTE_PATH}.bak)'
 "
-
-scp "${BINARY}" "root@${MISTER_IP}:${REMOTE_PATH}"
 echo "Deployed ${BINARY} → root@${MISTER_IP}:${REMOTE_PATH}"
 
 ssh "root@${MISTER_IP}" "
     rm -f /tmp/zaparoo/frontend.log
-    # SIGKILL the running frontend; MiSTer's wrapper respawns it
-    # ~1s later with the new binary. SIGTERM here would be misclassified as
-    # an 'escape' and MiSTer would refuse to respawn. Note: counts as a crash
-    # toward the 3-strike give-up limit, so if you deploy 3 times without
-    # cleanly exiting the frontend in between, killall MiSTer_Zaparoo to reset.
+    # Flush pending card writes before disrupting the frontend so it is never
+    # pulled mid-write. The signal stays SIGKILL on purpose: MiSTer's wrapper
+    # respawns the frontend ~1s later with the new binary, whereas a clean
+    # SIGTERM exit is misclassified as an 'escape' and the wrapper refuses to
+    # respawn. (SIGKILL counts as a crash toward the 3-strike give-up limit,
+    # so after 3 deploys without a clean exit, killall MiSTer_Zaparoo to reset.)
+    sync
     killall -KILL frontend 2>/dev/null && echo 'Killed running frontend; MiSTer will respawn it' || echo 'No running frontend to kill'
 "

@@ -2,11 +2,15 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
+// cxx-qt 0.8 exposes singletons without `isFinal` on method entries, so every
+// Browse.Settings write trips "Member can be shadowed". The profile sub-property
+// accesses (layoutProfile.surface.cornerRadius etc.) are on JS-object vars and
+// cannot be statically typed. Both are structural; suppress the compiler category.
+// qmllint disable compiler
 import QtQuick
 import QtTest
 import Zaparoo.App
 import Zaparoo.Browse as Browse
-import Zaparoo.Theme
 
 // Verifies that browse screens route geometry through the shared
 // BrowseLayouts profiles instead of inlining CRT-specific numbers in

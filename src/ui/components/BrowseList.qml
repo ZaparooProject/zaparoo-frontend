@@ -11,12 +11,23 @@ Item {
 
     required property var model
     property int currentIndex: 0
+    // Gates whether the selected row paints its highlight (selection surface +
+    // accent bar + bright text). The host leaves it false until the screen's
+    // selection is finalized (restore or first input) so the default row 0
+    // never lights up during the window before restore points currentIndex at
+    // the saved item on a cold start. Default true so unwired hosts highlight
+    // the selection normally.
+    property bool focusReady: true
     property string currentName: ""
     property string currentCoverKey: ""
     property int totalItemsOverride: -1
     property int targetVisibleRowCount: 0
     property bool showChrome: true
     property var layoutProfile: null
+    // layoutProfile and its sub-objects (_list, _grid, _surface) are JS-object
+    // vars; the QML compiler cannot statically type their properties. Suppress
+    // the compiler category for these bindings only.
+    // qmllint disable compiler
     readonly property var _list: root.layoutProfile && root.layoutProfile.list ? root.layoutProfile.list : null
     readonly property var _grid: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
     readonly property var _surface: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
@@ -48,6 +59,22 @@ Item {
     readonly property int _rowTextLeftPadding: root._list ? root._list.rowTextLeftPadding : Sizing.pctW(1.6)
     readonly property int _rowTextRightPadding: root._list ? root._list.rowTextRightPadding : Sizing.pctW(1.6)
     readonly property int _favoriteRightPadding: root._list ? root._list.favoriteRightPadding : Sizing.pctW(1.6)
+    // qmllint enable compiler
+
+    // Pulse counter for the one-shot row push-in. Callers increment via
+    // activatePulse; only the selected row fires its animation, matching
+    // the Tile activation-pulse vocabulary. Forward navigation and game
+    // launch share this single cue.
+    property int activatePulse: 0
+    // Release counter for the row push-in. Incremented by the host to settle
+    // the selected row's scale back to 1.0 after a launch that keeps the
+    // frontend on the same screen. Forward navigation never increments it (the
+    // screen transition resets the push-in off-screen via screenSettling).
+    property int releasePulse: 0
+    // When true, resets the row push-in scale back to 1.0 so a held press does
+    // not persist when the screen is shown again. Set by the host to
+    // !active while the screen is off-screen.
+    property bool screenSettling: false
 
     signal itemHovered(int index)
     signal itemClicked(int index)
@@ -136,18 +163,77 @@ Item {
             required property string fileStem
             required property string coverKey
             required property int favorite
+            // Newline-joined disambiguating-tag tokens (empty for models
+            // without variants). Every Browse model exposes this role.
+            required property string disambiguatingTags
 
             width: listView.width
             height: root.rowHeight
+            // One-shot push-in cue, identical to the tile vocabulary: the
+            // selected row scales to Motion.rowPressScale on accept/activate.
+            scale: row._activateScale
+            transformOrigin: Item.Center
 
             readonly property bool selected: row.index === root.currentIndex
-            readonly property string displayTitle: row.name !== "" ? row.name : row.fileStem
+            // Visual highlight is withheld until the host marks focus ready, so
+            // the default row 0 never paints the accent before restore lands.
+            // `selected` itself stays ungated so the detail-pane bindings below
+            // still track content during the pre-restore window.
+            readonly property bool _highlightVisible: row.selected && root.focusReady
+            readonly property string _baseTitle: row.name !== "" ? row.name : row.fileStem
+            // Horizontal space reserved on the right for the favorite heart.
+            readonly property int _favoriteSlot: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) : 0
+            property real _activateScale: 1.0
+
+            // Push in and hold — mirrors Tile.qml. The activate leg has no
+            // return-to-rest because a forward navigation holds the row pressed
+            // while the screen transitions; the release leg settles it back only
+            // when the launch stays on this screen (e.g. an Audio track), and
+            // `screenSettling` resets it off-screen so it is clean on return.
+            NumberAnimation {
+                id: activateAnim
+                target: row
+                property: "_activateScale"
+                to: Motion.rowPressScale
+                duration: Motion.dur(Motion.pressMs)
+                easing.type: Easing.OutQuad
+            }
+
+            NumberAnimation {
+                id: releaseAnim
+                target: row
+                property: "_activateScale"
+                to: 1.0
+                duration: Motion.dur(Motion.settleMs)
+                easing.type: Easing.OutQuad
+            }
+
+            Connections {
+                target: root
+                function onActivatePulseChanged(): void {
+                    if (row.selected)
+                        activateAnim.restart();
+                }
+                function onReleasePulseChanged(): void {
+                    if (row.selected) {
+                        activateAnim.stop();
+                        releaseAnim.restart();
+                    }
+                }
+                function onScreenSettlingChanged(): void {
+                    if (root.screenSettling) {
+                        activateAnim.stop();
+                        releaseAnim.stop();
+                        row._activateScale = 1.0;
+                    }
+                }
+            }
 
             Binding {
                 target: root
                 property: "currentName"
                 when: row.selected
-                value: row.displayTitle
+                value: row._baseTitle
                 restoreMode: Binding.RestoreNone
             }
 
@@ -160,8 +246,9 @@ Item {
             }
 
             Item {
-                anchors.fill: parent
-                visible: row.selected
+                width: parent.width
+                height: parent.height
+                visible: row._highlightVisible
 
                 Rectangle {
                     anchors.fill: parent
@@ -179,28 +266,32 @@ Item {
             }
 
             Rectangle {
-                anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: root._selectionAccentWidth
                 color: Theme.accent
-                visible: row.selected
+                visible: row._highlightVisible
                 radius: Math.max(0, Sizing.px(width / 3))
             }
 
-            Text {
+            // Row title carrying the inline dim token suffix. ScrollingCaption
+            // left-aligns and elides it, pins the top token after the name
+            // elides, and marquees the full string while this row is the
+            // selection (reduce-motion falls back to a static elide). The right
+            // margin reserves the favorite-heart slot.
+            ScrollingCaption {
                 anchors.left: parent.left
                 anchors.leftMargin: root._rowTextLeftPadding
                 anchors.right: parent.right
-                anchors.rightMargin: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) + root._rowTextRightPadding : root._rowTextRightPadding
+                anchors.rightMargin: row._favoriteSlot + root._rowTextRightPadding
                 anchors.verticalCenter: parent.verticalCenter
-                text: row.displayTitle
-                color: row.selected ? Theme.textPrimary : Theme.textLabel
-                font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.9)
-                elide: Text.ElideRight
-                verticalAlignment: Text.AlignVCenter
-                renderType: Text.NativeRendering
+                height: parent.height
+                name: row._baseTitle
+                tags: row.disambiguatingTags
+                focused: row._highlightVisible
+                centerContent: false
+                fontPixelSize: Sizing.fontSize(2.9)
+                nameColor: row._highlightVisible ? Theme.textPrimary : Theme.textLabel
             }
 
             Image {

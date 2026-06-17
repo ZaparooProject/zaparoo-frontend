@@ -35,6 +35,10 @@ TestCase {
     }
 
     function init(): void {
+        // Disable motion so DeferredAction.arm() runs dispatch synchronously.
+        // Persistence tests assert state immediately after handleKey/handleAction;
+        // a 90 ms async lead would cause every accept test to fail.
+        Motion.enabled = false;
         // The cold-launch BootOverlay normally hides every screen until
         // Core's catalog reaches READY. Tests don't run a real Core, so
         // mark the boot complete up-front; otherwise visibility-driven
@@ -51,6 +55,7 @@ TestCase {
     // later suites — in particular tst_smoke's test_initial_state — see
     // a clean Component.onCompleted path.
     function cleanup(): void {
+        Motion.enabled = true;
         Browse.AppState.active_screen = "";
         Browse.HubState.category = "";
         Browse.HubState.selected_row = 0;

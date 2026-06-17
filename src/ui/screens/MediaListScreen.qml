@@ -1,6 +1,12 @@
 // Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// var-typed action/callback properties (acceptAction, cancelAction, gridMoveAction,
+// linearMoveAction, etc.) and layout profile bindings on QVariant-typed objects
+// cannot be statically typed. cxx-qt 0.8 singleton methods also trip "can be
+// shadowed". Both are structural; suppress compiler category file-wide.
+// qmllint disable compiler
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import Zaparoo.Theme
@@ -31,8 +37,14 @@ Item {
     property string detailLoadingText: qsTr("Loading…")
     property bool detailCanPreviousImage: false
     property bool detailCanNextImage: false
+    property bool detailReserveImageNav: false
     property var detailIdentityForIndex: null
     property var loadDetailForIndex: null
+    // Optional immediate (non-debounced) detail hook. Defaults (when null) to
+    // the model's `peek_detail_at`; GamesScreen overrides it with
+    // `peek_description_at`. Keeps the detail table identity-correct the instant
+    // the focus moves, so it never shows the previous row's metadata.
+    property var peekDetailForIndex: null
     property var clearDetailAction: null
     property var retryAction: null
     property var acceptAction: null
@@ -52,6 +64,7 @@ Item {
     property var topStripTotalTextProvider: null
     property var topStripRightTextProvider: null
     property var activeLabelTextProvider: null
+    property var activeLabelTagsProvider: null
     property var gridCurrentPageChangedAction: null
     property var gridCurrentIndexChangedAction: null
     property var gridLoadMoreAction: null
@@ -65,8 +78,26 @@ Item {
     property alias activeLabel: activeLabel
 
     property bool transitioning: false
+    property bool active: true
     property bool gridFocused: true
     property bool optimisticLoading: false
+    // True while a jump-to-letter walk is loading the intervening pages. Folded
+    // into `_loading()` so the standard centered loading cue paints over the
+    // (stale) source page instead of leaving it frozen. Set/cleared by the
+    // consumer that owns the jump (GamesScreen).
+    property bool jumpLoading: false
+    // False until the user takes control of focus (first input). Combined with
+    // `_restoreDone` into `_focusReady`, which gates whether the grid tiles and
+    // list rows render selection at all.
+    property bool _focusArmed: false
+    // Set true once the selection has been finalized from persisted state
+    // (restoreSelection for favorites/recents; Main.qml's
+    // `_setGamesRestoreIndex` for games). Combined with `_focusArmed` into
+    // `_focusReady`, which gates whether the grid tiles and list rows render
+    // selection at all - so the default index 0 never paints before restore
+    // lands on a cold-start / forward entry.
+    property bool _restoreDone: false
+    readonly property bool _focusReady: root._focusArmed || root._restoreDone
     property bool detailRapidScrollActive: false
     property bool detailRapidIndicatorActive: detailRapidScrollActive
     property string detailRapidScrollAction: ""
@@ -112,6 +143,10 @@ Item {
 
     signal requestHubScreen
     signal requestContextMenu(int index, var anchorRect)
+    // Page-scoped operations entry point (West button). The router decides
+    // what the menu contains; the screen just reports the press when the list
+    // is in a usable state.
+    signal requestPageMenu
 
     on_ListLayoutChanged: {
         if (!root._listLayout)
@@ -121,12 +156,35 @@ Item {
         focusedDetail.requestNow();
     }
 
+    // Layout-aware pulse routing. In grid layout this forwards to the
+    // PagedGrid tile; in list layout it increments the BrowseListDetailView
+    // pulse so the selected row fires its push-in. The same push-in cue
+    // serves both forward navigation and game launch.
+    function pulseActivate(): void {
+        if (root._listLayout)
+            listCard.activatePulse++;
+        else
+            mediaGrid.pulseActivate();
+    }
+
+    // Settle the push-in cue back to rest after a launch that keeps the
+    // frontend on the same screen (a launcher that does not take the FPGA or
+    // quit us, e.g. an Audio track). Routed like pulseActivate to whichever
+    // layout is live. Not called for forward navigation, which transitions the
+    // screen and resets the cue off-screen on its own.
+    function releaseActivate(): void {
+        if (root._listLayout)
+            listCard.releasePulse++;
+        else
+            mediaGrid.releaseActivate();
+    }
+
     function _count(): int {
         return root.mediaModel !== null ? root.mediaModel.count : 0;
     }
 
     function _loading(): bool {
-        return root.optimisticLoading || (root.mediaModel !== null ? root.mediaModel.loading : false);
+        return root.optimisticLoading || root.jumpLoading || (root.mediaModel !== null ? root.mediaModel.loading : false);
     }
 
     function _errorMessage(): string {
@@ -148,6 +206,9 @@ Item {
     function restoreSelection(): void {
         if (root._count() <= 0)
             return;
+        // The model is loaded; the selection is now finalized (either the
+        // saved path below or the default index 0). Let the tiles/rows render.
+        root._restoreDone = true;
         const path = typeof root.restoreSelectionPath === "function" ? (root.restoreSelectionPath() ?? "") : (root.mediaState !== null ? (root.mediaState.selected_path ?? "") : "");
         if (path === "")
             return;
@@ -174,6 +235,7 @@ Item {
     function _focusIndex(index: int): void {
         if (index < 0 || index >= mediaGrid.itemCount)
             return;
+        root._focusArmed = true;
         mediaGrid.currentIndex = index;
     }
 
@@ -264,6 +326,8 @@ Item {
         if ((action === "left" || action === "right" || action === "up" || action === "down" || action === "context_menu") && root._gateHide)
             return;
 
+        root._focusArmed = true;
+
         if (action === "left") {
             if (root._listLayout && typeof root.listLeftAction === "function")
                 root.listLeftAction();
@@ -298,6 +362,9 @@ Item {
         } else if (action === "page_next") {
             if (root._state() === "ready")
                 root._performPage(1);
+        } else if (action === "page_menu") {
+            if (root._state() === "ready")
+                root.requestPageMenu();
         } else if (action === "accept") {
             const state = root._state();
             if (state === "loading")
@@ -309,10 +376,13 @@ Item {
                     root.mediaModel.fetch_more();
                 return;
             }
-            if (typeof root.acceptAction === "function")
+            if (typeof root.acceptAction === "function") {
                 root.acceptAction(mediaGrid.currentIndex);
-            else
-                root.mediaModel.launch_at(mediaGrid.currentIndex);
+            } else {
+                root.pulseActivate();
+                defaultLaunchCommit._idx = mediaGrid.currentIndex;
+                defaultLaunchCommit.arm();
+            }
         } else if (action === "context_menu") {
             if (mediaGrid.itemCount > 0) {
                 const idx = mediaGrid.currentIndex;
@@ -330,6 +400,26 @@ Item {
         }
     }
 
+    // Defers the default launch_at call so the push-in cue (pulseActivate)
+    // completes on a static scene before Core takes the FPGA.
+    // Only used when no `acceptAction` override is provided (Favorites,
+    // Recents). GamesScreen owns its own pressCommit with folder routing.
+    DeferredAction {
+        id: defaultLaunchCommit
+        property int _idx: -1
+        onDeferred: {
+            const i = _idx;
+            _idx = -1;
+            if (i >= 0 && root.mediaModel !== null) {
+                root.mediaModel.launch_at(i);
+                // Settle the push-in back to rest. If the launch takes the FPGA
+                // or kills us the release is never seen; if it stays on the page
+                // (e.g. an Audio track) the cue does not stick pushed in.
+                root.releaseActivate();
+            }
+        }
+    }
+
     FocusedMediaDetailController {
         id: focusedDetail
 
@@ -339,6 +429,7 @@ Item {
         rapidScrollActive: root.detailRapidScrollActive
         identityForIndex: root.detailIdentityForIndex
         loadForIndex: root.loadDetailForIndex
+        peekForIndex: root.peekDetailForIndex
         clearDetail: root.clearDetailAction
         mediaModel: root.mediaModel
     }
@@ -376,6 +467,7 @@ Item {
         totalItemsOverride: root.totalItemsOverride
         targetVisibleRowCount: root.targetVisibleRowCount
         currentIndex: mediaGrid.currentIndex
+        focusReady: root._focusReady
         detailTitle: listCard.currentName
         detailCoverKey: root.detailRapidScrollActive ? root.detailPlaceholderKey : (root._detailImageKey() !== "" ? root._detailImageKey() : listCard.currentCoverKey)
         detailShowDescription: root.detailShowDescription
@@ -383,9 +475,11 @@ Item {
         detailTags: root._detailTags()
         detailLoading: root._detailLoading()
         detailSuppressed: root.detailRapidScrollActive
+        screenSettling: !root.active
         detailLoadingText: root.detailLoadingText
         detailCanPreviousImage: root.detailCanPreviousImage
         detailCanNextImage: root.detailCanNextImage
+        detailReserveImageNav: root.detailReserveImageNav
         onItemHovered: index => root._focusIndex(index)
         onItemClicked: index => {
             root._focusIndex(index);
@@ -409,6 +503,8 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: root.gridBottomMargin
         focused: root.gridFocused
+        screenSettling: !root.active
+        focusReady: root._focusReady
         model: root.mediaModel
         delegate: Tile {
             layoutProfile: root._gridLayoutProfile
@@ -459,6 +555,10 @@ Item {
         anchors.bottomMargin: root.activeLabelAtBottom ? root.activeLabelBottomMargin : 0
         height: root.activeLabelHeight
         text: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
+        // Full (untrimmed) disambiguation tokens for the focused item, shown as a
+        // dim suffix. Uses an explicit provider when given, else the model's
+        // disambiguating_tags_at; guarded so a plain ListModel (tests) is safe.
+        tags: typeof root.activeLabelTagsProvider === "function" ? root.activeLabelTagsProvider() : ((mediaGrid.itemCount > 0 && root.mediaModel && typeof root.mediaModel.disambiguating_tags_at === "function") ? root.mediaModel.disambiguating_tags_at(mediaGrid.currentIndex) : "")
     }
 
     Text {
@@ -504,9 +604,9 @@ Item {
     }
 
     RapidScrollIndicator {
-        visible: !root._gateHide && root._showRapidScrollIndicator && mediaGrid.itemCount > 0
+        visible: !root._gateHide && root._showRapidScrollIndicator && mediaGrid.itemCount > 0 && !root._listLayout
         x: Sizing.center(parent.width, width)
-        y: root._listLayout ? Sizing.center(parent.height, height) : Sizing.center(mediaGrid.height, height) + mediaGrid.y
+        y: Sizing.center(mediaGrid.height, height) + mediaGrid.y
         title: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 && root.mediaModel !== null ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
         z: 20
     }
@@ -524,5 +624,47 @@ Item {
         count: root._count()
         emptyText: root.emptyText
         loadingText: root.loadingText
+    }
+
+    // Adjacent-cover preload pool. While the user dwells on a list row
+    // these hidden Images decode the next and previous rows' covers into
+    // Qt's pixmap cache at the same sourceSize as the visible detail cover
+    // (512px wide), so the detail cover switch on a d-pad move is a
+    // synchronous cache hit rather than an async decode. Mirrors the
+    // system-cover prefetch pattern in Main.qml:2629. Active only in list
+    // layout; in grid layout there is no per-row detail pane.
+    // The source guard (`k.startsWith("media-image/")`) keeps the source
+    // empty for placeholder keys (`icons/*`) so no decode work is done for
+    // folder entries or cold-cache neighbors that haven't resolved yet.
+    Image {
+        id: prefetchNextCover
+        visible: false
+        width: 0
+        height: 0
+        asynchronous: true
+        cache: true
+        sourceSize.width: 512
+        source: {
+            if (!root._listLayout || root.mediaModel === null)
+                return "";
+            const k = root.mediaModel.detailPrefetchKeyNext ?? "";
+            return k.startsWith("media-image/") ? Resources.coverUrl(k, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : "";
+        }
+    }
+
+    Image {
+        id: prefetchPrevCover
+        visible: false
+        width: 0
+        height: 0
+        asynchronous: true
+        cache: true
+        sourceSize.width: 512
+        source: {
+            if (!root._listLayout || root.mediaModel === null)
+                return "";
+            const k = root.mediaModel.detailPrefetchKeyPrev ?? "";
+            return k.startsWith("media-image/") ? Resources.coverUrl(k, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : "";
+        }
     }
 }

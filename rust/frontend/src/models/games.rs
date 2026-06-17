@@ -32,7 +32,9 @@
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
 use crate::models::nav_timing::NavTiming;
-use crate::models::tag_utils::tag_display_value;
+use crate::models::tag_utils::{
+    disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
+};
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
@@ -52,8 +54,8 @@ use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
 use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::media_types::{
-    BrowseEntry, MediaBrowseParams, MediaBrowseResult, MediaMeta, MediaMetaParams,
-    MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
+    BrowseEntry, MediaBrowseIndexParams, MediaBrowseParams, MediaBrowseResult, MediaMeta,
+    MediaMetaParams, MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
 };
 use zaparoo_core::platform::{self, Platform};
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -75,6 +77,26 @@ const FAVORITE_ROLE: i32 = 256 + 8;
 const DESCRIPTION_ROLE: i32 = 256 + 9;
 const FILE_STEM_ROLE: i32 = 256 + 10;
 const HIDDEN_ROLE: i32 = 256 + 11;
+// Newline-joined short tokens for Core's `disambiguatingTags` (e.g.
+// "US\nDisc 2"), already ordered by display priority. Empty when the title
+// has nothing to disambiguate. A joined string (rather than a list role)
+// keeps the QVariant simple and is robust under MiSTer's AOT QML; the
+// delegate splits on newlines.
+const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 12;
+
+// Image types that Core's `media.image` endpoint can serve (per the API
+// docs). The carousel tail is filtered to this set so left/right never
+// lands on a type that would always return "no image".
+const CORE_SERVEABLE_IMAGE_TYPES: &[&str] = &[
+    "image",
+    "boxart",
+    "screenshot",
+    "wheel",
+    "titleshot",
+    "map",
+    "marquee",
+    "fanart",
+];
 
 // Default API page size before QML binds the model's `page_size` to the
 // grid's `pageSize`. 15 = 5 columns × 3 rows, the desktop default. The
@@ -99,9 +121,32 @@ const DEFAULT_PAGE_SIZE: i32 = 15;
 // longer floods the cover queue.
 const FETCH_MORE_CHUNK_SIZE: i32 = 100;
 const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 300;
+// Ceiling for a jump-to-letter fetch (Core's `max_results` cap). A position
+// jump must load every row up to the target before
+// `PagedGrid._commitPendingTarget` can land on it; doing that as the 12-row
+// frame-gapped trickle (`apply_append_page`) takes seconds on a far jump. The
+// jump path instead inserts the whole chunk in one shot (`bulk` append) — the
+// loading overlay is up and the appended rows sit far from `currentPage`, so
+// their Tile delegates stay unmaterialised (the per-cell Loader is
+// retention-gated), making the bulk insert cheap. `fetch_more_jump` sizes each
+// request to the gap remaining to the target (rounded up to whole `page_size`
+// pages, plus one page of margin) rather than always pulling the full
+// remainder, so a near/mid-folder jump transfers far less; a gap larger than
+// this ceiling chains another bulk call.
+const JUMP_FETCH_CHUNK_SIZE: i32 = 1000;
+// Stay within Core's `max_results` ceiling, and never smaller than the rapid
+// scroll chunk (a jump must not load slower than ordinary scrolling).
+const _: () = assert!(JUMP_FETCH_CHUNK_SIZE <= 1000);
+const _: () = assert!(JUMP_FETCH_CHUNK_SIZE >= FETCH_MORE_RAPID_CHUNK_SIZE);
 const COLLAPSED_DIRECTORY_BROWSE_PAGE_SIZE: u32 = 1000;
 const COVER_PREFETCH_NEXT_PAGES: i32 = 2;
 const COVER_PREFETCH_PREVIOUS_PAGES: i32 = 1;
+// Per-row cursor window used in list-detail layout to keep the byte-fetch
+// queue shallow. Two workers at ~250 ms/cover can drain ~6 covers/settle
+// cycle well within a normal dwell period, so the next cover is always
+// at the front of the queue when the user moves.
+const COVER_PREFETCH_CURSOR_NEXT: i32 = 4;
+const COVER_PREFETCH_CURSOR_PREV: i32 = 2;
 // Bound how long navigation waits for cold visible covers. After this,
 // the page becomes interactive and any remaining covers pop in via the
 // normal update path. Keeps cold pages from waiting on the slowest
@@ -137,6 +182,11 @@ const SUB_BATCH_FRAME_GAP_MS: u64 = 33;
 )]
 pub struct GamesModelRust {
     entries: Vec<BrowseEntry>,
+    // Parallel to `entries`: the sibling-diffed disambiguation display string
+    // per row (what tiles/list rows show as the inline token suffix). Recomputed
+    // whenever `entries` or `show_original_filenames` changes. See
+    // `compute_disambig_displays` / `recompute_disambig_tail`.
+    disambig_displays: Vec<String>,
     count: i32,
     loading: bool,
     loading_more: bool,
@@ -168,8 +218,25 @@ pub struct GamesModelRust {
     current_detail_image_count: i32,
     current_detail_image_can_prev: bool,
     current_detail_image_can_next: bool,
+    // Warm cover key for the item immediately after the current selection.
+    // Empty when there is no next item or the next item is not a media
+    // entry with cached bytes. Exposed as a qproperty so QML can mount
+    // a hidden Image that decodes the cover into Qt's pixmap cache while
+    // the user is still on the current row.
+    detail_prefetch_key_next: QString,
+    // Same as `detail_prefetch_key_next` but for the item immediately before
+    // the current selection.
+    detail_prefetch_key_prev: QString,
+    // The row whose adjacent covers are currently preloaded. None when no
+    // detail is active (cleared on reset, non-media, or out-of-range).
+    detail_prefetch_row: Option<i32>,
     cover_key_roles_enabled: bool,
     cover_requests_paused: bool,
+    // When true, the `name` role and `name_at()` return the original filename
+    // (without extension) instead of Core's cleaned display name. Bound from
+    // QML to the `Show original filenames` setting; flipping it re-emits
+    // `dataChanged(NAME_ROLE)` across every row so visible names update live.
+    show_original_filenames: bool,
     detail_image_keys: Vec<MediaKey>,
     // Watcher for the current initial-page subscription. Aborted on
     // every path swap so the prior watcher stops enqueuing callbacks
@@ -241,12 +308,30 @@ pub struct GamesModelRust {
     visible_first_row: i32,
     cover_max_size: i32,
     nav_timing: Option<NavTiming>,
+    // When the user's cover preference is "auto" and Core's `type_tag` for
+    // the index-0 key is not yet known (cover still in-flight), we stash the
+    // filtered concrete type keys here. `notify_cover_update` finalizes the
+    // carousel once the cover lands and the type can be looked up, then clears
+    // this field.
+    pending_carousel_keys: Option<Vec<MediaKey>>,
+    // Latest `media.browse.index` facet for the current scope, surfaced to QML
+    // for the jump-to-letter rail. `letter_index_json` is a JSON array of
+    // `{key,label,count,cursor}` objects (the QML pickers consume `var` arrays,
+    // so a parsed-in-QML JSON string fits that convention without a second
+    // QAbstractListModel for transient modal data). `letter_index_scheme` is
+    // the facet scheme (`latin`/`none`); QML omits the menu entry when no rail
+    // applies. Bumped each `load_letter_index` so a stale in-flight facet from a
+    // prior scope can't overwrite the current one.
+    letter_index_json: QString,
+    letter_index_scheme: QString,
+    letter_index_seq: Arc<AtomicU64>,
 }
 
 impl Default for GamesModelRust {
     fn default() -> Self {
         Self {
             entries: Vec::new(),
+            disambig_displays: Vec::new(),
             count: 0,
             loading: false,
             loading_more: false,
@@ -268,8 +353,12 @@ impl Default for GamesModelRust {
             current_detail_image_count: 0,
             current_detail_image_can_prev: false,
             current_detail_image_can_next: false,
+            detail_prefetch_key_next: QString::default(),
+            detail_prefetch_key_prev: QString::default(),
+            detail_prefetch_row: None,
             cover_key_roles_enabled: true,
             cover_requests_paused: false,
+            show_original_filenames: false,
             detail_image_keys: Vec::new(),
             watcher: None,
             seq: Arc::new(AtomicU64::new(0)),
@@ -286,6 +375,10 @@ impl Default for GamesModelRust {
             visible_first_row: 0,
             cover_max_size: 0,
             nav_timing: None,
+            pending_carousel_keys: None,
+            letter_index_json: QString::default(),
+            letter_index_scheme: QString::default(),
+            letter_index_seq: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -331,10 +424,15 @@ pub mod ffi {
         #[qproperty(i32, current_detail_image_count)]
         #[qproperty(bool, current_detail_image_can_prev)]
         #[qproperty(bool, current_detail_image_can_next)]
+        #[qproperty(QString, detail_prefetch_key_next)]
+        #[qproperty(QString, detail_prefetch_key_prev)]
         #[qproperty(bool, cover_key_roles_enabled)]
         #[qproperty(bool, cover_requests_paused)]
+        #[qproperty(bool, show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
         #[qproperty(i32, visible_first_row)]
         #[qproperty(i32, cover_max_size, READ, WRITE = set_cover_max_size, NOTIFY)]
+        #[qproperty(QString, letter_index_json)]
+        #[qproperty(QString, letter_index_scheme)]
         type GamesModel = super::GamesModelRust;
 
         #[qinvokable]
@@ -354,6 +452,12 @@ pub mod ffi {
 
         #[qinvokable]
         fn fetch_more_rapid(self: Pin<&mut GamesModel>);
+
+        #[qinvokable]
+        fn fetch_more_jump(self: Pin<&mut GamesModel>, target_index: i32);
+
+        #[qinvokable]
+        fn load_letter_index(self: Pin<&mut GamesModel>);
 
         #[qinvokable]
         fn prefetch_around(self: Pin<&mut GamesModel>, first_visible_row: i32);
@@ -383,10 +487,19 @@ pub mod ffi {
         fn cancel_card_write(self: Pin<&mut GamesModel>);
 
         #[qinvokable]
+        fn set_show_original_filenames(self: Pin<&mut GamesModel>, value: bool);
+
+        #[qinvokable]
         fn name_at(self: &GamesModel, index: i32) -> QString;
 
         #[qinvokable]
+        fn disambiguating_tags_at(self: &GamesModel, index: i32) -> QString;
+
+        #[qinvokable]
         fn description_at(self: &GamesModel, index: i32) -> QString;
+
+        #[qinvokable]
+        fn peek_description_at(self: Pin<&mut GamesModel>, index: i32);
 
         #[qinvokable]
         fn load_description_at(self: Pin<&mut GamesModel>, index: i32);
@@ -476,7 +589,9 @@ impl ffi::GamesModel {
         }
         let entry = &self.entries[index.row() as usize];
         match role {
-            NAME_ROLE => QVariant::from(&QString::from(display_title_for_entry(entry).as_ref())),
+            NAME_ROLE => QVariant::from(&QString::from(
+                display_name_for_entry(entry, self.show_original_filenames).as_ref(),
+            )),
             PATH_ROLE => QVariant::from(&QString::from(entry.path.as_str())),
             ZAP_SCRIPT_ROLE => QVariant::from(&QString::from(entry.zap_script.as_str())),
             SYSTEM_ID_ROLE => QVariant::from(&QString::from(entry_system_id(entry).as_str())),
@@ -500,6 +615,13 @@ impl ffi::GamesModel {
                 QVariant::from(&QString::from(file_stem_or_name(&entry.path, &entry.name)))
             }
             HIDDEN_ROLE => QVariant::from(&false),
+            // Sibling-diffed display string (common-affix trimmed against
+            // same-named neighbors); precomputed in `disambig_displays`.
+            DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::from(
+                self.disambig_displays
+                    .get(index.row() as usize)
+                    .map_or("", String::as_str),
+            )),
             _ => QVariant::default(),
         }
     }
@@ -517,6 +639,10 @@ impl ffi::GamesModel {
         h.insert(DESCRIPTION_ROLE, QByteArray::from("description"));
         h.insert(FILE_STEM_ROLE, QByteArray::from("fileStem"));
         h.insert(HIDDEN_ROLE, QByteArray::from("hidden"));
+        h.insert(
+            DISAMBIGUATING_TAGS_ROLE,
+            QByteArray::from("disambiguatingTags"),
+        );
         h
     }
 
@@ -570,14 +696,26 @@ impl ffi::GamesModel {
     }
 
     fn fetch_more(self: Pin<&mut Self>) {
-        self.fetch_more_with_limit(FETCH_MORE_CHUNK_SIZE);
+        self.fetch_more_with_limit(FETCH_MORE_CHUNK_SIZE, false);
     }
 
     fn fetch_more_rapid(self: Pin<&mut Self>) {
-        self.fetch_more_with_limit(FETCH_MORE_RAPID_CHUNK_SIZE);
+        self.fetch_more_with_limit(FETCH_MORE_RAPID_CHUNK_SIZE, false);
     }
 
-    fn fetch_more_with_limit(mut self: Pin<&mut Self>, limit: i32) {
+    fn fetch_more_jump(self: Pin<&mut Self>, target_index: i32) {
+        // Size the fetch to the gap remaining to the jump target instead of
+        // always pulling the server max. `target_index` is the absolute grid
+        // row the cursor will land on (it shares the model's row space, so it
+        // includes leading directories); `count` is the rows already loaded.
+        // A near/mid-folder jump transfers far less than the full remainder; an
+        // under-shoot (huge folder, or the target moved) just re-enters here via
+        // the pending-target loop and converges.
+        let limit = jump_fetch_limit(target_index, self.count, self.page_size);
+        self.fetch_more_with_limit(limit, true);
+    }
+
+    fn fetch_more_with_limit(mut self: Pin<&mut Self>, limit: i32, bulk: bool) {
         // Debounce: PagedGrid fires `loadMoreRequested` once per page
         // turn, but a fast spinner on the last loaded page can fire
         // twice before the first follow-up returns. All three guards
@@ -608,6 +746,19 @@ impl ffi::GamesModel {
         let seq = self.seq.clone();
         let ticket = seq.load(Ordering::SeqCst);
         let max_results = u32::try_from(limit.max(1)).unwrap_or(u32::from(u16::MAX));
+        // Jump path: pause cover fetching for the duration of this request and
+        // drop anything queued. Covers travel over the same WebSocket as
+        // `media.browse`, so the cold-entry cover storm (the leaving page's
+        // covers) head-of-line-blocks the jump's browse request at Core — this
+        // is why the *first* jump after entering a folder is the slow one.
+        // Pausing dedicates the socket to the browse call; `apply_append_page`
+        // resumes covers and warms the landing page once the rows land, and
+        // `start_initial_browse` resets the flag if the user leaves mid-jump
+        // (the in-flight response is then ticket-rejected before it can resume).
+        if bulk {
+            self.as_mut().set_cover_requests_paused(true);
+            global_media_image_cache().clear_pending_requests();
+        }
         self.as_mut().set_loading_more(true);
         let qt_thread = self.qt_thread();
         let store = global_store();
@@ -633,7 +784,72 @@ impl ffi::GamesModel {
                 if seq.load(Ordering::SeqCst) != ticket {
                     return;
                 }
-                apply_append_page(model, result, expected_prev_cursor.as_deref());
+                apply_append_page(model, result, expected_prev_cursor.as_deref(), bulk);
+            });
+        });
+    }
+
+    /// Fetch the `media.browse.index` facet for the current scope and surface
+    /// it to QML as `letter_index_json` / `letter_index_scheme` for the
+    /// jump-to-letter rail. Fire-and-forget: the router calls this when the
+    /// page-ops menu opens so the buckets are likely ready by the time the
+    /// user picks "Jump to letter".
+    fn load_letter_index(mut self: Pin<&mut Self>) {
+        let path = self.current_path.to_string();
+        // A root listing has no meaningful first-character rail.
+        if path.is_empty() {
+            self.as_mut().set_letter_index_json(QString::from("[]"));
+            self.as_mut().set_letter_index_scheme(QString::from("none"));
+            return;
+        }
+        let sid = self.current_system_id.to_string();
+        let systems = if sid.is_empty() {
+            Vec::new()
+        } else {
+            vec![sid]
+        };
+        // Clear any facet from a prior scope to the loading state (empty groups,
+        // empty scheme) so the rail shows "loading" rather than the previous
+        // folder's buckets until the fresh fetch lands.
+        self.as_mut().set_letter_index_json(QString::from("[]"));
+        self.as_mut().set_letter_index_scheme(QString::default());
+        // Ticket so a stale facet from a prior scope can't overwrite a newer
+        // one if the user moves on before this resolves.
+        let seq = self.letter_index_seq.clone();
+        let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
+        let qt_thread = self.qt_thread();
+        let store = global_store();
+        global_handle().spawn(async move {
+            let result = store
+                .client()
+                .media_browse_index(MediaBrowseIndexParams {
+                    path,
+                    systems,
+                    sort: None,
+                })
+                .await;
+            let _ = qt_thread.queue(move |mut model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                match result {
+                    Ok(index) => {
+                        let json = index.groups_json();
+                        model
+                            .as_mut()
+                            .set_letter_index_json(QString::from(json.as_str()));
+                        model
+                            .as_mut()
+                            .set_letter_index_scheme(QString::from(index.scheme.as_str()));
+                    }
+                    Err(e) => {
+                        warn!("media.browse.index failed: {}", e.message);
+                        model.as_mut().set_letter_index_json(QString::from("[]"));
+                        model
+                            .as_mut()
+                            .set_letter_index_scheme(QString::from("none"));
+                    }
+                }
             });
         });
     }
@@ -820,7 +1036,49 @@ impl ffi::GamesModel {
         if index < 0 || index >= self.count {
             return QString::default();
         }
-        QString::from(display_title_for_entry(&self.entries[index as usize]).as_ref())
+        QString::from(
+            display_name_for_entry(&self.entries[index as usize], self.show_original_filenames)
+                .as_ref(),
+        )
+    }
+
+    // Full (untrimmed) disambiguation tokens for the focused-item readout
+    // (ActiveLabel). Tiles show the sibling-diffed `disambig_displays`; the
+    // footer shows everything, space-joined.
+    fn disambiguating_tags_at(&self, index: i32) -> QString {
+        if index < 0 || index >= self.count {
+            return QString::default();
+        }
+        QString::from(
+            disambiguating_tag_labels(&self.entries[index as usize].disambiguating_tags)
+                .join(" ")
+                .as_str(),
+        )
+    }
+
+    fn set_show_original_filenames(mut self: Pin<&mut Self>, value: bool) {
+        if self.show_original_filenames == value {
+            return;
+        }
+        self.as_mut().rust_mut().show_original_filenames = value;
+        self.as_mut().show_original_filenames_changed();
+        // The displayed name drives sibling grouping, so the trimmed tag
+        // displays change too (with the toggle on, names are distinct and
+        // nothing groups). Recompute them before re-emitting.
+        let displays = compute_disambig_displays(&self.entries, value);
+        self.as_mut().rust_mut().disambig_displays = displays;
+        // Every visible name role is now stale — re-emit name + tags across all
+        // rows so the grid caption, list rows, and active label refresh in place.
+        let last_row = self.count - 1;
+        if last_row >= 0 {
+            let mut roles = QList::<i32>::default();
+            roles.append(NAME_ROLE);
+            roles.append(DISAMBIGUATING_TAGS_ROLE);
+            let parent = QModelIndex::default();
+            let top_left = self.as_mut().index(0, 0, &parent);
+            let bottom_right = self.as_mut().index(last_row, 0, &parent);
+            self.as_mut().data_changed(&top_left, &bottom_right, &roles);
+        }
     }
 
     fn description_at(&self, index: i32) -> QString {
@@ -830,6 +1088,60 @@ impl ffi::GamesModel {
         QString::from(self.entries[index as usize].description.as_str())
     }
 
+    // Immediate, non-debounced sibling of `load_description_at`. Called the
+    // moment the focused row changes so the detail pane reflects THIS row's
+    // local metadata (description + entry tags) at once, instead of holding the
+    // previous row's values through the load debounce. The debounced
+    // `load_description_at` then enriches it from media.meta. Games entries
+    // carry their own tags, so this needs no metadata cache.
+    fn peek_description_at(mut self: Pin<&mut Self>, index: i32) {
+        self.as_mut()
+            .rust_mut()
+            .description_seq
+            .fetch_add(1, Ordering::SeqCst);
+        if index < 0 || index >= self.count {
+            self.as_mut().set_current_detail_loading(false);
+            self.as_mut().set_current_description(QString::default());
+            self.as_mut().set_current_detail_tags(QString::default());
+            clear_detail_images(self.as_mut());
+            return;
+        }
+        self.as_mut().rust_mut().detail_prefetch_row = Some(index);
+        prefetch_cursor_window(&self, index);
+
+        let entry = &self.entries[index as usize];
+        if !is_media_capable_entry(entry) {
+            self.as_mut().set_current_detail_loading(false);
+            self.as_mut().set_current_description(QString::default());
+            self.as_mut().set_current_detail_tags(QString::default());
+            clear_detail_images(self.as_mut());
+            return;
+        }
+
+        let description = entry.description.clone();
+        let detail_tags = detail_tags_from_entry(entry);
+        // Local tags paint immediately, so mark loading without blanking: the
+        // detail pane shows this row's values while the richer media.meta fetch
+        // is still pending.
+        self.as_mut().set_current_detail_loading(true);
+        self.as_mut()
+            .set_current_description(QString::from(description.as_str()));
+        self.as_mut()
+            .set_current_detail_tags(QString::from(detail_tags.as_str()));
+        // Deliberately do NOT switch the visible cover here. The cover has its
+        // own grace-window hold (BrowseDetailPane coverHold) and is settled by
+        // the debounced `load_description_at`. Re-pointing the 512px cover Image
+        // on every keypress kept `_coverBusy` true through sustained navigation
+        // (tripping the hourglass after the grace) and monopolized Qt's async
+        // image loader so the next-row cover never got prefetched. Peek only
+        // updates the metadata table and warms the prefetch hints below.
+        refresh_adjacent_cover_prefetch(self.as_mut());
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Model method: closure bound to Qt-thread queue cannot easily be split further"
+    )]
     fn load_description_at(mut self: Pin<&mut Self>, index: i32) {
         let ticket = self
             .as_mut()
@@ -845,6 +1157,17 @@ impl ffi::GamesModel {
             return;
         }
 
+        // Record the settled row before borrowing entries, so
+        // `refresh_adjacent_cover_prefetch` can read it once entry borrows drop.
+        self.as_mut().rust_mut().detail_prefetch_row = Some(index);
+        // Re-center the byte-fetch queue on the cursor using a narrow window.
+        // The full-page `prefetch_around` enqueues ~120 covers per settle and
+        // floods the 2-worker queue so the next cover waits seconds behind the
+        // backlog. A tight window (4 forward + 2 back) keeps the queue shallow
+        // enough that the next cover is fetched first within ~250 ms, reliably
+        // warm before the user moves to it.
+        prefetch_cursor_window(&self, index);
+
         let entry = &self.entries[index as usize];
         if !is_media_capable_entry(entry) {
             self.as_mut().set_current_detail_loading(false);
@@ -856,7 +1179,10 @@ impl ffi::GamesModel {
 
         let description = entry.description.clone();
         let detail_tags = detail_tags_from_entry(entry);
-        let detail_image_key = media_key_for(entry);
+        // Use the cover-preference key as the synchronous primary so the detail
+        // pane requests the same cache entry that `prefetch_around` already
+        // warmed for the focused row — instant paint with no hourglass.
+        let detail_image_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
         let Some(params) = meta_params_for_entry(entry) else {
             self.as_mut().set_current_detail_loading(false);
             self.as_mut()
@@ -864,6 +1190,7 @@ impl ffi::GamesModel {
             self.as_mut()
                 .set_current_detail_tags(QString::from(detail_tags.as_str()));
             set_single_detail_image_key(self.as_mut(), detail_image_key);
+            refresh_adjacent_cover_prefetch(self.as_mut());
             return;
         };
 
@@ -873,6 +1200,7 @@ impl ffi::GamesModel {
         self.as_mut()
             .set_current_detail_tags(QString::from(detail_tags.as_str()));
         set_single_detail_image_key(self.as_mut(), detail_image_key);
+        refresh_adjacent_cover_prefetch(self.as_mut());
 
         let seq = self.rust().description_seq.clone();
         let qt_thread = self.qt_thread();
@@ -895,17 +1223,54 @@ impl ffi::GamesModel {
                         model.as_mut().set_current_detail_tags(QString::from(
                             detail_tags_from_meta(&meta).as_str(),
                         ));
-                        let mut detail_keys = detail_image_keys_from_meta(
+                        let cover_key = media_key_for(&model.entries[index as usize])
+                            .map(MediaKey::with_current_cover_preference);
+                        let type_keys = detail_image_keys_from_meta(
                             &meta,
                             meta.title.system.id.as_str(),
                             meta.path.as_str(),
                         );
-                        if detail_keys.is_empty() {
-                            if let Some(key) = media_key_for(&model.entries[index as usize]) {
-                                detail_keys.push(key);
+                        if type_keys.is_empty() {
+                            // No alternate images — just the cover; clear any
+                            // stale pending carousel from a previous selection.
+                            model.as_mut().rust_mut().pending_carousel_keys = None;
+                            let detail_keys = cover_key.into_iter().collect();
+                            set_detail_image_keys(model.as_mut(), detail_keys);
+                        } else if MediaImageCache::current_cover_preference_type().is_none() {
+                            // Auto preference: we need Core's resolved type_tag
+                            // for index-0 to drop its twin from the carousel tail.
+                            // Check the cache; if the cover is already warm the
+                            // type is known and we can dedup now. If not, stash
+                            // the candidate keys and let notify_cover_update finish
+                            // once the cover lands.
+                            let cache = global_media_image_cache();
+                            let resolved = cover_key
+                                .as_ref()
+                                .and_then(|k| cache.resolved_image_type(k));
+                            if resolved.is_some() || cover_key.is_none() {
+                                // Cover already fetched — dedup immediately.
+                                model.as_mut().rust_mut().pending_carousel_keys = None;
+                                let detail_keys = ordered_detail_image_keys(
+                                    cover_key,
+                                    type_keys,
+                                    resolved.as_deref(),
+                                );
+                                set_detail_image_keys(model.as_mut(), detail_keys);
+                            } else {
+                                // Cover still in-flight. Publish a single-image
+                                // carousel now (no arrows) and stash the candidates
+                                // so notify_cover_update can finalize once the type
+                                // is known.
+                                model.as_mut().rust_mut().pending_carousel_keys = Some(type_keys);
+                                let detail_keys = cover_key.into_iter().collect();
+                                set_detail_image_keys(model.as_mut(), detail_keys);
                             }
+                        } else {
+                            // Explicit preference — existing dedup path.
+                            model.as_mut().rust_mut().pending_carousel_keys = None;
+                            let detail_keys = ordered_detail_image_keys(cover_key, type_keys, None);
+                            set_detail_image_keys(model.as_mut(), detail_keys);
                         }
-                        set_detail_image_keys(model.as_mut(), detail_keys);
                     }
                     Err(e) => warn!("games detail fetch failed: {}", e.message),
                 }
@@ -1031,12 +1396,22 @@ impl ffi::GamesModel {
         self.as_mut().set_current_detail_loading(false);
         self.as_mut().set_current_description(QString::default());
         self.as_mut().set_current_detail_tags(QString::default());
+        // Stale adjacent preload keys from the prior path must not survive
+        // into the new browse target. `clear_detail_images` isn't called
+        // from this path, so clear explicitly here.
+        clear_adjacent_cover_prefetch(self.as_mut());
         self.as_mut()
             .rust()
             .description_seq
             .fetch_add(1, Ordering::SeqCst);
         self.as_mut().set_has_next_page(false);
         self.as_mut().set_loading_more(false);
+        // Clear any cover pause held by a jump fetch that's being abandoned by
+        // this scope swap. The in-flight jump response is ticket-rejected below
+        // (the `seq` bump), so it never reaches `apply_append_page` to resume
+        // covers itself; without this the new folder would render with covers
+        // stuck paused.
+        self.as_mut().set_cover_requests_paused(false);
         self.as_mut().rust_mut().auto_nav_eligible = eligible_for_auto_nav;
         // Cleared on every browse target swap: a new path needs the
         // full `apply_initial_page` reset to install fresh entries.
@@ -1061,6 +1436,7 @@ impl ffi::GamesModel {
         if !self.entries.is_empty() {
             self.as_mut().begin_reset_model();
             self.as_mut().rust_mut().entries.clear();
+            self.as_mut().rust_mut().disambig_displays.clear();
             self.as_mut().rust_mut().count = 0;
             self.as_mut().end_reset_model();
             self.as_mut().count_changed();
@@ -1353,8 +1729,51 @@ fn detail_image_keys_from_meta(meta: &MediaMeta, system: &str, path: &str) -> Ve
     }
     ordered
         .into_iter()
+        // Filter to the types Core can actually serve so a left/right cycle
+        // never lands on a key that will always return "no image".
+        .filter(|t| CORE_SERVEABLE_IMAGE_TYPES.contains(&t.as_str()))
         .map(|image_type| MediaKey::with_image_type(system, path, image_type))
         .collect()
+}
+
+/// Build the ordered key list for the detail image carousel: the cover-
+/// preference key at index 0 (so it reuses the prefetch-warmed cache entry)
+/// followed by the specific image-type keys from `media_meta` for cycling.
+///
+/// For explicit preferences (e.g. "boxart"), drops the matching concrete key
+/// so the same image doesn't appear twice when the user presses left/right.
+///
+/// For the "auto" preference (`current_cover_preference_type() == None`),
+/// `resolved_type` is Core's reported `type_tag` for the index-0 cover (the
+/// concrete type Core actually served). Pass `None` when it isn't known yet;
+/// the caller will call again once the cover fetch completes.
+fn ordered_detail_image_keys(
+    cover_key: Option<MediaKey>,
+    type_keys: Vec<MediaKey>,
+    resolved_type: Option<&str>,
+) -> Vec<MediaKey> {
+    let Some(cover) = cover_key else {
+        return type_keys;
+    };
+    // For explicit preferences use the locally-known pref string.
+    // For "auto" use Core's resolved type when available.
+    let explicit_pref = MediaImageCache::current_cover_preference_type();
+    let drop_type: Option<&str> = if let Some(ref p) = explicit_pref {
+        Some(p.as_str())
+    } else {
+        resolved_type
+    };
+    let mut keys = Vec::with_capacity(1 + type_keys.len());
+    keys.push(cover);
+    for k in type_keys {
+        if let Some(drop) = drop_type {
+            if k.image_type.as_deref() == Some(drop) {
+                continue;
+            }
+        }
+        keys.push(k);
+    }
+    keys
 }
 
 fn portable_text_for_entry(entry: &BrowseEntry) -> String {
@@ -1417,6 +1836,78 @@ fn display_title_for_entry(entry: &BrowseEntry) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// Resolve the user-visible name for an entry, honoring the
+/// `show_original_filenames` setting. When enabled, the original filename
+/// (without extension) is preferred over Core's cleaned display name.
+fn display_name_for_entry(
+    entry: &BrowseEntry,
+    show_original_filenames: bool,
+) -> std::borrow::Cow<'_, str> {
+    if show_original_filenames {
+        std::borrow::Cow::Owned(file_stem_or_name(&entry.path, &entry.name))
+    } else {
+        display_title_for_entry(entry)
+    }
+}
+
+/// Build the per-row sibling-diffed disambiguation display strings for the full
+/// `entries` slice. Grouping keys off the displayed name so the
+/// original-filename toggle (distinct names) naturally disables grouping.
+fn compute_disambig_displays(
+    entries: &[BrowseEntry],
+    show_original_filenames: bool,
+) -> Vec<String> {
+    let rows: Vec<(String, Vec<String>)> = entries
+        .iter()
+        .map(|e| {
+            (
+                display_name_for_entry(e, show_original_filenames).into_owned(),
+                disambiguating_tag_labels(&e.disambiguating_tags),
+            )
+        })
+        .collect();
+    sibling_disambiguation_displays(&rows)
+}
+
+/// After appending rows starting at `insert_first`, recompute the disambiguation
+/// displays for the boundary group (which may have grown) plus everything after
+/// it, and splice the result onto `disambig_displays`. Cheaper than recomputing
+/// the whole vec on every page append, and correct because sibling groups are
+/// local runs of equal name. Returns the boundary group's start index so the
+/// caller can re-emit `dataChanged` for the pre-existing rows it touched.
+fn recompute_disambig_tail(mut model: Pin<&mut ffi::GamesModel>, insert_first: usize) -> usize {
+    let show_original = model.show_original_filenames;
+    let (group_start, new_tail) = {
+        let entries = &model.entries;
+        let total = entries.len();
+        let mut group_start = insert_first.min(total);
+        if group_start > 0 {
+            let boundary =
+                display_name_for_entry(&entries[group_start - 1], show_original).into_owned();
+            while group_start > 0
+                && display_name_for_entry(&entries[group_start - 1], show_original).as_ref()
+                    == boundary.as_str()
+            {
+                group_start -= 1;
+            }
+        }
+        let rows: Vec<(String, Vec<String>)> = entries[group_start..total]
+            .iter()
+            .map(|e| {
+                (
+                    display_name_for_entry(e, show_original).into_owned(),
+                    disambiguating_tag_labels(&e.disambiguating_tags),
+                )
+            })
+            .collect();
+        (group_start, sibling_disambiguation_displays(&rows))
+    };
+    let displays = &mut model.as_mut().rust_mut().disambig_displays;
+    displays.truncate(group_start);
+    displays.extend(new_tail);
+    group_start
+}
+
 fn file_stem_or_name(path: &str, name: &str) -> String {
     let file = path
         .trim_end_matches(['/', '\\'])
@@ -1433,6 +1924,7 @@ fn file_stem_or_name(path: &str, name: &str) -> String {
 
 fn clear_detail_images(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().rust_mut().detail_image_keys.clear();
+    model.as_mut().rust_mut().pending_carousel_keys = None;
     model
         .as_mut()
         .set_current_detail_image_key(QString::default());
@@ -1440,6 +1932,88 @@ fn clear_detail_images(mut model: Pin<&mut ffi::GamesModel>) {
     model.as_mut().set_current_detail_image_count(0);
     model.as_mut().set_current_detail_image_can_prev(false);
     model.as_mut().set_current_detail_image_can_next(false);
+    clear_adjacent_cover_prefetch(model);
+}
+
+/// Clear the adjacent-cover preload keys and mark no selection active.
+/// Called from `clear_detail_images` (covers all its callers) and
+/// `start_initial_browse` (which resets state without going through
+/// `clear_detail_images`).
+fn clear_adjacent_cover_prefetch(mut model: Pin<&mut ffi::GamesModel>) {
+    model.as_mut().rust_mut().detail_prefetch_row = None;
+    if !model.detail_prefetch_key_next.is_empty() {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_next(QString::default());
+    }
+    if !model.detail_prefetch_key_prev.is_empty() {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_prev(QString::default());
+    }
+}
+
+/// Recompute and push the adjacent-cover preload keys for the
+/// `detail_prefetch_row` that `load_description_at` last settled on.
+/// Only promotes a key to `media-image/...` when its bytes are already in
+/// the cache; placeholder keys (`icons/*`) are passed through unchanged so
+/// the QML-side guard (`k.startsWith("media-image/")`) keeps the hidden
+/// Image source empty and does no decode work.
+///
+/// Called:
+///   - by `load_description_at` whenever the selection settles.
+///   - by `notify_cover_update` so that a neighbor's bytes landing
+///     during dwell immediately warms Qt's pixmap cache.
+///   - by `apply_initial_page` to start the warm-up from row 0 as soon
+///     as the page is interactive.
+fn refresh_adjacent_cover_prefetch(mut model: Pin<&mut ffi::GamesModel>) {
+    let Some(row) = model.rust().detail_prefetch_row else {
+        // No active selection — ensure both keys are empty.
+        if !model.detail_prefetch_key_next.is_empty() {
+            model
+                .as_mut()
+                .set_detail_prefetch_key_next(QString::default());
+        }
+        if !model.detail_prefetch_key_prev.is_empty() {
+            model
+                .as_mut()
+                .set_detail_prefetch_key_prev(QString::default());
+        }
+        return;
+    };
+    let count = model.count;
+    let page_size = u32::try_from(model.page_size.max(1)).unwrap_or(1);
+    let requests_enabled = !model.cover_requests_paused;
+
+    let next_key = if row + 1 < count {
+        cover_key_for(
+            &model.entries[(row + 1) as usize],
+            page_size,
+            requests_enabled,
+        )
+    } else {
+        String::new()
+    };
+    let prev_key = if row > 0 {
+        cover_key_for(
+            &model.entries[(row - 1) as usize],
+            page_size,
+            requests_enabled,
+        )
+    } else {
+        String::new()
+    };
+
+    if model.detail_prefetch_key_next.to_string() != next_key {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_next(QString::from(next_key.as_str()));
+    }
+    if model.detail_prefetch_key_prev.to_string() != prev_key {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_prev(QString::from(prev_key.as_str()));
+    }
 }
 
 fn set_detail_image_keys(mut model: Pin<&mut ffi::GamesModel>, keys: Vec<MediaKey>) {
@@ -1452,7 +2026,11 @@ fn set_detail_image_keys(mut model: Pin<&mut ffi::GamesModel>, keys: Vec<MediaKe
     sync_current_detail_image_key_with_page_size(model, 1);
 }
 
-fn set_single_detail_image_key(model: Pin<&mut ffi::GamesModel>, key: Option<MediaKey>) {
+fn set_single_detail_image_key(mut model: Pin<&mut ffi::GamesModel>, key: Option<MediaKey>) {
+    // Discard pending carousel candidates from the previous row so they
+    // cannot expand the carousel on a row whose meta_params returned None
+    // (and therefore never clears pending_carousel_keys itself).
+    model.as_mut().rust_mut().pending_carousel_keys = None;
     set_detail_image_keys(model, key.into_iter().collect());
 }
 
@@ -1646,6 +2224,64 @@ fn prefetch_around_plan(
     plan
 }
 
+/// Pure ordering helper for `prefetch_cursor_window`. Returns
+/// (`MediaKey`, `media_id`) pairs in desired fetch order: focused row first,
+/// then forward neighbors up to `COVER_PREFETCH_CURSOR_NEXT`, then reverse
+/// neighbors back to `COVER_PREFETCH_CURSOR_PREV`. Folders and entries
+/// without a cover or `media_key` are skipped. Split out so tests can drive
+/// the ordering logic without the global cache or tokio runtime.
+fn prefetch_cursor_window_plan(
+    entries: &[BrowseEntry],
+    count: i32,
+    index: i32,
+) -> Vec<(MediaKey, Option<i64>)> {
+    if count <= 0 {
+        return Vec::new();
+    }
+    let index = index.clamp(0, count - 1);
+    let fwd_end = (index + 1 + COVER_PREFETCH_CURSOR_NEXT).min(count);
+    let back_start = (index - COVER_PREFETCH_CURSOR_PREV).max(0);
+    let mut plan: Vec<(MediaKey, Option<i64>)> = Vec::new();
+    for row in index..fwd_end {
+        let entry = &entries[row as usize];
+        if !entry.has_cover {
+            continue;
+        }
+        if let Some(key) = media_key_for(entry) {
+            plan.push((key.with_current_cover_preference(), entry.media_id));
+        }
+    }
+    for row in (back_start..index).rev() {
+        let entry = &entries[row as usize];
+        if !entry.has_cover {
+            continue;
+        }
+        if let Some(key) = media_key_for(entry) {
+            plan.push((key.with_current_cover_preference(), entry.media_id));
+        }
+    }
+    plan
+}
+
+/// Rebuild the cover queue around the cursor, using a narrow forward-biased
+/// window instead of the full-page `prefetch_around`. Called on each settled
+/// row in list-detail layout so that the current cover and its immediate
+/// neighbors reach the front of the 2-worker fetch queue; a full-page
+/// re-enqueue would flood the queue with ~120 covers and bury the next cover
+/// several seconds deep.
+fn prefetch_cursor_window(model: &ffi::GamesModel, index: i32) {
+    let cache = global_media_image_cache();
+    if model.cover_requests_paused {
+        cache.clear_pending_requests();
+        return;
+    }
+    let count = model.count;
+    let page_size = model.page_size;
+    let plan = prefetch_cursor_window_plan(&model.entries, count, index);
+    let ps = u32::try_from(page_size.max(1)).unwrap_or(1);
+    cache.replace_pending_requests_ordered(plan, ps);
+}
+
 fn has_favorite_tag(tags: &[TagInfo]) -> bool {
     tags.iter()
         .any(|tag| tag.tag_type == "user" && tag.tag == "favorite")
@@ -1792,6 +2428,26 @@ fn notify_cover_update(mut model: Pin<&mut ffi::GamesModel>, key: &MediaKey) {
     {
         sync_current_detail_image_key(model.as_mut());
     }
+    // If this is the current detail cover key (index 0) and we have
+    // pending carousel candidates (deferred because the cover was in-flight
+    // when meta arrived), finalize the carousel now that the type is known.
+    let is_current_cover = model
+        .detail_image_keys
+        .first()
+        .is_some_and(|first| first == key);
+    if is_current_cover && model.rust().pending_carousel_keys.is_some() {
+        let cache = global_media_image_cache();
+        let resolved = cache.resolved_image_type(key);
+        let type_keys = model
+            .as_mut()
+            .rust_mut()
+            .pending_carousel_keys
+            .take()
+            .unwrap_or_default();
+        let cover_key = model.detail_image_keys.first().cloned();
+        let detail_keys = ordered_detail_image_keys(cover_key, type_keys, resolved.as_deref());
+        set_detail_image_keys(model.as_mut(), detail_keys);
+    }
     // Tick the gate's pending set down. `remove` returns false if the
     // key wasn't gated (broadcast events fire for every cache update,
     // including miss-recovery enqueues from `cover_key_for`); we only
@@ -1812,6 +2468,11 @@ fn notify_cover_update(mut model: Pin<&mut ffi::GamesModel>, key: &MediaKey) {
             maybe_start_initial_lookahead(model.as_mut());
         }
     }
+    // Re-check the adjacent preload keys: a neighbor's bytes may have
+    // just landed, which can flip its key from `icons/Loading` to
+    // `media-image/...` and trigger the hidden Image's decode while the
+    // user is still dwelling on the current item.
+    refresh_adjacent_cover_prefetch(model);
 }
 
 /// Compute the set of media keys on the current page whose covers we
@@ -2049,6 +2710,21 @@ fn decide_initial(
 /// the `MiSTer` menu, which is a layout artifact not user-facing intent.
 /// Path stays untouched — launching/navigation still depend on the
 /// original.
+/// Rows a jump fetch should request to reach `target_index` from a model
+/// holding `count` rows. Pulls the gap plus one page of margin (so the landing
+/// page is full and there is a little look-ahead past it), rounded up to whole
+/// `page_size` pages — batch sizes always derive from the user-configurable
+/// page size — and clamped to `[page_size, JUMP_FETCH_CHUNK_SIZE]` (Core's
+/// `max_results` ceiling). Pure so it is unit-testable.
+fn jump_fetch_limit(target_index: i32, count: i32, page_size: i32) -> i32 {
+    let page = page_size.max(1);
+    let gap = (target_index - count).max(0) + page;
+    // Manual ceil-div: signed `i32::div_ceil` is still unstable. `gap` and
+    // `page` are both >= 1, so this can't overflow for realistic folder sizes.
+    let pages = (gap + page - 1) / page;
+    (pages * page).clamp(page, JUMP_FETCH_CHUNK_SIZE)
+}
+
 fn transform_entries(
     mut entries: Vec<BrowseEntry>,
     platform: Option<&Platform>,
@@ -2281,8 +2957,10 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
         dir_count, total, has_next_page, "games: apply_initial_page"
     );
     let reset_started = Instant::now();
+    let displays = compute_disambig_displays(&entries, model.show_original_filenames);
     model.as_mut().begin_reset_model();
     model.as_mut().rust_mut().entries = entries;
+    model.as_mut().rust_mut().disambig_displays = displays;
     model.as_mut().rust_mut().count = count;
     model.as_mut().rust_mut().next_cursor = next_cursor;
     // Property setters run BEFORE `end_reset_model` so Main.qml's
@@ -2312,6 +2990,39 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     let prefetch_started = Instant::now();
     model.as_mut().prefetch_around(0);
     let prefetch_ms = prefetch_started.elapsed().as_millis();
+    // Seed the detail key for row 0 so the stale key from the previous
+    // folder cannot paint the instant the cover gate releases. The gate
+    // waits on the same warm cover key, so by the time `loading` flips
+    // false the cache-update handler has already promoted the key to its
+    // `media-image/...` form (or left it as the new folder/file chip).
+    // The `is_seeded` early-return above skips this for invalidation
+    // refetches; they share the same browse target and row 0 is already
+    // correct.
+    match model.entries.first() {
+        Some(entry) if is_media_capable_entry(entry) && !entry.is_folder() => {
+            let key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
+            set_single_detail_image_key(model.as_mut(), key);
+        }
+        Some(entry) => {
+            let placeholder = cover_placeholder_for(entry);
+            clear_detail_images(model.as_mut());
+            model
+                .as_mut()
+                .set_current_detail_image_key(QString::from(placeholder.as_str()));
+        }
+        None => {
+            clear_detail_images(model.as_mut());
+        }
+    }
+    // Seed the adjacent preload keys from row 0 so hidden Images start
+    // warming neighbor covers immediately rather than waiting for the
+    // FocusedMediaDetailController's 220ms debounce to fire.
+    model.as_mut().rust_mut().detail_prefetch_row = if model.entries.is_empty() {
+        None
+    } else {
+        Some(0)
+    };
+    refresh_adjacent_cover_prefetch(model.as_mut());
     if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
         timing.mark_apply_done();
     }
@@ -2402,14 +3113,32 @@ fn insert_sub_batch(mut model: Pin<&mut ffi::GamesModel>, batch: Vec<BrowseEntry
     model.as_mut().begin_insert_rows(&parent, first, last);
     model.as_mut().rust_mut().entries.extend(batch);
     model.as_mut().rust_mut().count = first.saturating_add(new_count);
+    // Recompute sibling-diff displays for the boundary group + the new rows
+    // before `end_insert_rows`, so the inserted delegates read fresh values on
+    // first paint.
+    let group_start = recompute_disambig_tail(model.as_mut(), first as usize);
     model.as_mut().end_insert_rows();
     model.as_mut().count_changed();
+    // Pre-existing rows in the boundary group may now trim differently because
+    // the group grew — refresh just those.
+    let group_start = i32::try_from(group_start).unwrap_or(0);
+    if group_start < first {
+        let mut roles = QList::<i32>::default();
+        roles.append(DISAMBIGUATING_TAGS_ROLE);
+        let parent = QModelIndex::default();
+        let top_left = model.as_mut().index(group_start, 0, &parent);
+        let bottom_right = model.as_mut().index(first - 1, 0, &parent);
+        model
+            .as_mut()
+            .data_changed(&top_left, &bottom_right, &roles);
+    }
 }
 
 fn apply_append_page(
     mut model: Pin<&mut ffi::GamesModel>,
     result: Result<MediaBrowseResult, ClientError>,
     expected_prev_cursor: Option<&str>,
+    bulk: bool,
 ) {
     // Cursor-chain check: if the model's `next_cursor` no longer
     // matches the cursor this append was advancing from, an
@@ -2419,6 +3148,15 @@ fn apply_append_page(
         // Clear the in-flight cue so the UI doesn't get stuck.
         if model.loading_more {
             model.as_mut().set_loading_more(false);
+        }
+        // A bulk jump paused covers for this request (`fetch_more_with_limit`).
+        // The intervening reset that tripped this mismatch was an `is_seeded`
+        // refetch on the same scope, which doesn't resume covers, so resume
+        // here or the page stays frozen with covers paused. `loading_more`
+        // forbids a second concurrent bulk fetch, so no other request is
+        // relying on the pause.
+        if bulk {
+            model.as_mut().set_cover_requests_paused(false);
         }
         return;
     }
@@ -2460,6 +3198,37 @@ fn apply_append_page(
             // `start_initial_browse` lands during the trickle window.
             model.as_mut().rust_mut().next_cursor = next_cursor;
             model.as_mut().set_loading_more(false);
+            // Jump path: insert the whole chunk in one shot, no frame-gapped
+            // trickle. The appended rows sit far from `currentPage`, so their
+            // Tile delegates stay unmaterialised (per-cell Loader is
+            // retention-gated) and the bulk insert is cheap; the loading
+            // overlay is up so a single brief stall is invisible, and it lets
+            // `_commitPendingTarget` see the target as loaded in one step
+            // instead of creeping toward it over dozens of frames.
+            if bulk {
+                let had_entries = !entries.is_empty();
+                if had_entries {
+                    insert_sub_batch(model.as_mut(), entries);
+                }
+                // Resume covers (paused by `fetch_more_with_limit` for the jump
+                // request) BEFORE prefetching: the insert above drives
+                // `_commitPendingTarget` synchronously, which moves
+                // `visible_first_row` to the landing page, so prefetching now —
+                // with covers re-enabled — warms exactly that page. Resuming
+                // unconditionally (even on an empty page) guarantees the pause
+                // never sticks past the request that set it.
+                model.as_mut().set_cover_requests_paused(false);
+                if had_entries {
+                    let visible = model.visible_first_row;
+                    model.as_mut().prefetch_around(visible);
+                }
+                model.as_mut().set_has_next_page(has_next_page);
+                if model.total_files != total {
+                    model.as_mut().set_total_files(total);
+                }
+                release_initial_lookahead_gate(model.as_mut());
+                return;
+            }
             let mut batches = chunk_for_subbatching(entries, APPEND_SUB_BATCH_SIZE);
             if batches.is_empty() {
                 // No new rows landed (empty page). Finalise immediately
@@ -2548,6 +3317,12 @@ fn apply_append_page(
                 .as_mut()
                 .set_error_message(QString::from(e.message.as_str()));
             model.as_mut().set_loading_more(false);
+            // A bulk jump paused covers for this request; resume on the error
+            // path too, mirroring the Ok path's unconditional resume, so a
+            // failed jump fetch never leaves the pause stuck.
+            if bulk {
+                model.as_mut().set_cover_requests_paused(false);
+            }
             // Even on a failed first prefetch, we have to release the
             // cover gate's hold or the user is stuck on Loading…
             // forever. The visible page is already in place from
@@ -2570,12 +3345,14 @@ mod tests {
     use super::{
         child_launch_text_from_browse_result, chunk_for_subbatching, compute_unresolved_keys,
         cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
-        detail_tags_from_tags, display_name, display_title_for_entry, entry_system_id,
-        is_media_capable_entry, is_strict_ancestor_path, leading_dir_count,
-        media_capable_directory_browse_params, media_key_for, meta_params_for_entry,
-        position_of_game_path, prefetch_around_plan, project_status, run_text_for_entry,
+        detail_image_keys_from_meta, detail_tags_from_tags, display_name, display_title_for_entry,
+        entry_system_id, is_media_capable_entry, is_strict_ancestor_path, jump_fetch_limit,
+        leading_dir_count, media_capable_directory_browse_params, media_key_for,
+        meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
+        prefetch_around_plan, prefetch_cursor_window_plan, project_status, run_text_for_entry,
         singleton_directory_needs_launch_resolution, transform_entries, InitialAction, Projection,
     };
+    use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
     use crate::media_image_cache::{MediaImageCache, MediaKey};
     use std::collections::HashSet;
     use zaparoo_core::media_types::{BrowseEntry, MediaBrowseResult, Pagination, TagInfo};
@@ -3414,6 +4191,58 @@ mod tests {
     }
 
     #[test]
+    fn jump_fetch_limit_sizes_to_gap_plus_one_page_rounded_up() {
+        // Target 570, 113 loaded, page 100: gap = 457 + 100 margin = 557 ->
+        // 6 pages -> 600. Far less than the 1000 ceiling for a mid-folder jump.
+        assert_eq!(jump_fetch_limit(570, 113, 100), 600);
+    }
+
+    #[test]
+    fn jump_fetch_limit_clamps_to_ceiling_for_far_targets() {
+        // A target past what one ceiling-sized fetch covers clamps to the cap;
+        // the pending-target loop fetches the next slice afterward.
+        assert_eq!(jump_fetch_limit(5000, 113, 100), JUMP_FETCH_CHUNK_SIZE);
+    }
+
+    #[test]
+    fn jump_fetch_limit_floors_at_one_page_when_target_already_loaded() {
+        // Target at or behind the loaded count has no gap, but the one-page
+        // margin still pulls a single page (look-ahead past the landing page).
+        assert_eq!(jump_fetch_limit(113, 113, 100), 100);
+        assert_eq!(jump_fetch_limit(50, 113, 100), 100);
+    }
+
+    #[test]
+    fn jump_fetch_limit_margin_rounds_a_small_gap_up_to_two_pages() {
+        // A target just past the loaded slice: gap (7) + one-page margin (100)
+        // = 107 -> rounds up to 2 pages so the landing page is fully covered.
+        assert_eq!(jump_fetch_limit(120, 113, 100), 200);
+    }
+
+    #[test]
+    fn jump_fetch_limit_is_a_whole_number_of_pages() {
+        for target in [0, 37, 113, 251, 499, 800] {
+            let limit = jump_fetch_limit(target, 113, 100);
+            assert_eq!(limit % 100, 0, "limit {limit} not a page multiple");
+        }
+    }
+
+    #[test]
+    fn jump_fetch_limit_never_below_rapid_scroll_chunk_at_default_page() {
+        // A jump must not pull a smaller batch than ordinary rapid scrolling
+        // when the configured page is at least the rapid chunk.
+        let limit = jump_fetch_limit(2000, 0, FETCH_MORE_RAPID_CHUNK_SIZE);
+        assert!(limit >= FETCH_MORE_RAPID_CHUNK_SIZE);
+    }
+
+    #[test]
+    fn jump_fetch_limit_tolerates_nonpositive_page_size() {
+        // Defensive: a zero/negative page_size must not divide-by-zero; it
+        // floors to a single one-row page (gap = 0 + 1 margin = 1 page).
+        assert_eq!(jump_fetch_limit(0, 0, 0), 1);
+    }
+
+    #[test]
     fn chunk_for_subbatching_under_size_returns_single_batch() {
         let entries: Vec<BrowseEntry> = (0..10)
             .map(|i| media(&format!("g{i}"), &format!("/g/{i}"), "NES"))
@@ -3521,6 +4350,73 @@ mod tests {
     }
 
     #[test]
+    fn prefetch_cursor_window_plan_focused_first_forward_bias() {
+        // 20 entries, cursor on row 5. Plan: 5,6,7,8,9 then 4,3 (fwd NEXT=4, back PREV=2).
+        let entries: Vec<BrowseEntry> = (0..20)
+            .map(|i| media(&format!("g{i}"), &format!("/g/{i}"), "NES"))
+            .collect();
+        let plan = prefetch_cursor_window_plan(&entries, 20, 5);
+        let paths: Vec<String> = plan.iter().map(|(k, _)| k.path.to_string()).collect();
+        let expected: Vec<String> = vec![
+            "/g/5", "/g/6", "/g/7", "/g/8", "/g/9", // fwd: row+1..row+1+NEXT
+            "/g/4", "/g/3", // back: row-1 down to row-PREV (reversed)
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        assert_eq!(paths, expected);
+    }
+
+    #[test]
+    fn prefetch_cursor_window_plan_clamps_at_boundaries() {
+        // Cursor near start: no back entries beyond 0; cursor near end: forward clamped.
+        let entries: Vec<BrowseEntry> = (0..20)
+            .map(|i| media(&format!("g{i}"), &format!("/g/{i}"), "NES"))
+            .collect();
+        // Cursor at 1: back window is only row 0; fwd window is 1..6.
+        let plan = prefetch_cursor_window_plan(&entries, 20, 1);
+        let paths: Vec<String> = plan.iter().map(|(k, _)| k.path.to_string()).collect();
+        let expected: Vec<String> = vec!["/g/1", "/g/2", "/g/3", "/g/4", "/g/5", "/g/0"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(paths, expected);
+        // Cursor at last row (19): no forward entries.
+        let plan_tail = prefetch_cursor_window_plan(&entries, 20, 19);
+        let paths_tail: Vec<String> = plan_tail.iter().map(|(k, _)| k.path.to_string()).collect();
+        let expected_tail: Vec<String> = vec!["/g/19", "/g/18", "/g/17"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(paths_tail, expected_tail);
+    }
+
+    #[test]
+    fn prefetch_cursor_window_plan_skips_no_cover_and_folders() {
+        let entries: Vec<BrowseEntry> = vec![
+            media("g0", "/g/0", "NES"),
+            media("g1", "/g/1", "NES"),
+            folder("dir", "/g/dir"),
+            {
+                let mut e = media("g3", "/g/3", "NES");
+                e.has_cover = false;
+                e
+            },
+            media("g4", "/g/4", "NES"),
+        ];
+        // Cursor on row 0; fwd 1..5. Rows 2 (folder) and 3 (no cover) skipped.
+        let plan = prefetch_cursor_window_plan(&entries, 5, 0);
+        let paths: Vec<String> = plan.iter().map(|(k, _)| k.path.to_string()).collect();
+        assert_eq!(paths, vec!["/g/0", "/g/1", "/g/4"]);
+    }
+
+    #[test]
+    fn prefetch_cursor_window_plan_empty_for_empty_model() {
+        let plan = prefetch_cursor_window_plan(&[], 0, 0);
+        assert!(plan.is_empty());
+    }
+
+    #[test]
     fn detail_tags_emit_fixed_rows_with_blank_values() {
         let tags = vec![TagInfo {
             tag_type: "genre".into(),
@@ -3582,5 +4478,78 @@ mod tests {
         let detail = detail_tags_from_tags(&tags);
         let rows: Vec<&str> = detail.split('\n').collect();
         assert_eq!(rows[3], "Developer\tNintendo");
+    }
+
+    #[test]
+    fn ordered_detail_image_keys_no_preference_prepends_cover_key() {
+        // No resolved_type -> no dedup (auto preference, type not yet known).
+        let cover = MediaKey::new("NES", "/p/smb");
+        let type_keys = vec![
+            MediaKey::with_image_type("NES", "/p/smb", "boxart"),
+            MediaKey::with_image_type("NES", "/p/smb", "screenshot"),
+        ];
+        let result = ordered_detail_image_keys(Some(cover.clone()), type_keys, None);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].encode(), cover.encode());
+        assert_eq!(result[1].image_type.as_deref(), Some("boxart"));
+        assert_eq!(result[2].image_type.as_deref(), Some("screenshot"));
+    }
+
+    #[test]
+    fn ordered_detail_image_keys_auto_dedup_drops_resolved_twin() {
+        // When resolved_type is known and matches a type key, that key is
+        // dropped so left/right browses genuinely different images.
+        let cover = MediaKey::new("NES", "/p/smb");
+        let type_keys = vec![
+            MediaKey::with_image_type("NES", "/p/smb", "boxart"),
+            MediaKey::with_image_type("NES", "/p/smb", "screenshot"),
+        ];
+        let result = ordered_detail_image_keys(Some(cover.clone()), type_keys, Some("boxart"));
+        assert_eq!(result.len(), 2, "boxart twin must be dropped");
+        assert_eq!(result[0].encode(), cover.encode());
+        assert_eq!(result[1].image_type.as_deref(), Some("screenshot"));
+    }
+
+    #[test]
+    fn ordered_detail_image_keys_no_cover_returns_type_keys_unchanged() {
+        let type_keys = vec![
+            MediaKey::with_image_type("NES", "/p/smb", "boxart"),
+            MediaKey::with_image_type("NES", "/p/smb", "screenshot"),
+        ];
+        let result = ordered_detail_image_keys(None, type_keys.clone(), None);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].image_type.as_deref(), Some("boxart"));
+        assert_eq!(result[1].image_type.as_deref(), Some("screenshot"));
+    }
+
+    #[test]
+    fn ordered_detail_image_keys_empty_type_keys_yields_single_cover_key() {
+        let cover = MediaKey::new("NES", "/p/smb");
+        let result = ordered_detail_image_keys(Some(cover.clone()), vec![], None);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].encode(), cover.encode());
+    }
+
+    #[test]
+    fn detail_image_keys_from_meta_filters_unsupported_types() {
+        use zaparoo_core::media_types::MediaMeta;
+        let meta = MediaMeta {
+            available_image_types: vec![
+                "boxart".to_string(),
+                "boxart3d".to_string(), // not in CORE_SERVEABLE_IMAGE_TYPES
+                "screenshot".to_string(),
+                "thumbnail".to_string(), // not in CORE_SERVEABLE_IMAGE_TYPES
+            ],
+            ..Default::default()
+        };
+        let keys = detail_image_keys_from_meta(&meta, "NES", "/p/smb");
+        let types: Vec<_> = keys
+            .iter()
+            .filter_map(|k| k.image_type.as_deref())
+            .collect();
+        assert!(types.contains(&"boxart"), "boxart must be included");
+        assert!(types.contains(&"screenshot"), "screenshot must be included");
+        assert!(!types.contains(&"boxart3d"), "boxart3d must be excluded");
+        assert!(!types.contains(&"thumbnail"), "thumbnail must be excluded");
     }
 }

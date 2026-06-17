@@ -53,8 +53,6 @@ MediaListScreen {
     detailShowTitle: false
     detailLoadingText: qsTr("Loading game…")
     pauseCoverRequestsDuringRapid: true
-    detailCanPreviousImage: Browse.GamesModel.current_detail_image_can_prev
-    detailCanNextImage: Browse.GamesModel.current_detail_image_can_next
     detailIdentityForIndex: function (index) {
         if (!Browse.GamesModel.is_media_capable_at(index))
             return "";
@@ -63,6 +61,7 @@ MediaListScreen {
         return systemId !== "" && path !== "" ? systemId + "\n" + path : "";
     }
     loadDetailForIndex: index => Browse.GamesModel.load_description_at(index)
+    peekDetailForIndex: index => Browse.GamesModel.peek_description_at(index)
     clearDetailAction: () => Browse.GamesModel.clear_current_detail()
     restoreSelectionPath: () => {
         const selected = Browse.GamesState.selected_at_level;
@@ -76,8 +75,6 @@ MediaListScreen {
     gridViewId: games._gridViewId
     listViewId: games._listViewId
     tateListViewId: games._tateListViewId
-    listLeftAction: () => Browse.GamesModel.cycle_detail_image(-1)
-    listRightAction: () => Browse.GamesModel.cycle_detail_image(1)
     contextMenuEnabledAt: index => Browse.GamesModel.is_media_capable_at(index)
     retryAction: () => {
         if (games._atFolderLevel()) {
@@ -93,15 +90,28 @@ MediaListScreen {
     acceptAction: index => {
         const entryType = Browse.GamesModel.entry_type_at(index);
         if ((entryType === "directory" || entryType === "root") && !Browse.GamesModel.is_media_capable_at(index)) {
+            // Persist synchronously (MiSTer may be killed at any time), then
+            // play the cue and defer the navigation signal so the push-in
+            // completes on a static scene before the model reload starts.
             games.flushSelectedPersist();
-            games.requestNavigateIntoFolder(Browse.GamesModel.path_at(index));
+            games.pulseActivate();
+            pressCommit._folderPath = Browse.GamesModel.path_at(index);
+            pressCommit.arm();
             return;
         }
+        // State persistence is synchronous; launch_at is deferred so the
+        // push-in cue plays on a fully static scene before Core takes the
+        // FPGA. Launch shares the same push-in as forward navigation.
         games._scheduleSelectedPersist(Browse.GamesModel.path_at(index));
         games.flushSelectedPersist();
-        Browse.GamesModel.launch_at(index);
+        games.pulseActivate();
+        pressCommit._launchIndex = index;
+        pressCommit.arm();
     }
     cancelAction: () => {
+        // Disarm any pending accept so a press-then-back inside the deferred
+        // window cannot launch/navigate after the user has backed out.
+        pressCommit.stop();
         games.flushSelectedPersist();
         if (games._atFolderLevel())
             games.requestNavigateOutOfFolder();
@@ -135,7 +145,12 @@ MediaListScreen {
     gridTotalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
     gridHasMorePages: Browse.GamesModel.has_next_page
     gridLoadMoreAction: urgent => {
-        if (urgent || games.detailRapidScrollActive)
+        // A letter jump bulk-loads to the target in one shot (overlay is up);
+        // page-wrap targets and fast-scroll stay on the rapid trickle, ordinary
+        // prefetch on the gentle one.
+        if (games.gamesGrid.hasPendingJump)
+            Browse.GamesModel.fetch_more_jump(games.gamesGrid.pendingJumpIndex);
+        else if (urgent || games.detailRapidScrollActive)
             Browse.GamesModel.fetch_more_rapid();
         else
             Browse.GamesModel.fetch_more();
@@ -189,6 +204,27 @@ MediaListScreen {
     // 250 ms interval is shorter than a deliberate single tap → hold
     // gap, so isolated presses still persist quickly.
     property string _pendingSelectedPath: ""
+
+    DeferredAction {
+        id: pressCommit
+        property string _folderPath: ""
+        property int _launchIndex: -1
+        onDeferred: {
+            if (_folderPath !== "") {
+                const p = _folderPath;
+                _folderPath = "";
+                games.requestNavigateIntoFolder(p);
+            } else if (_launchIndex >= 0) {
+                const idx = _launchIndex;
+                _launchIndex = -1;
+                Browse.GamesModel.launch_at(idx);
+                // Settle the push-in back to rest. Invisible when the launch
+                // takes the FPGA or kills us; prevents a stuck pushed-in tile
+                // when the launcher stays on the page (e.g. an Audio track).
+                games.releaseActivate();
+            }
+        }
+    }
 
     Timer {
         id: persistDebounce
@@ -290,5 +326,32 @@ MediaListScreen {
     // Drives folder-aware cancel routing.
     function _atFolderLevel(): bool {
         return Browse.GamesState.path_stack.length > 1;
+    }
+
+    // Jump-to-letter. `itemOffset` is the cumulative count of all buckets before
+    // the chosen letter (from the letter-index facet); the leading directories
+    // come first in the grid, so the letter's first item sits at
+    // `dir_count + itemOffset`. Driving the grid's page-jump there loads the
+    // intervening pages and lands on that absolute index, so the full list stays
+    // navigable both ways and the page counter reflects the real position.
+    function jumpToItem(itemOffset: int): void {
+        const absolute = Browse.GamesModel.dir_count + itemOffset;
+        const landed = games.gamesGrid.jumpToIndex(absolute);
+        // A deferred walk (target not yet loaded) returns false; show the
+        // standard centered loading cue over the stale source page until the
+        // walk commits. An already-loaded backward jump lands immediately, so
+        // no cue is needed.
+        games.jumpLoading = !landed;
+    }
+
+    // Clear the jump cue once the grid's pending-target walk resolves - on
+    // commit, or on an abort (model reset / directional clear) that flips
+    // `hasPendingTarget` back to false.
+    Connections {
+        target: games.gamesGrid
+        function onHasPendingTargetChanged(): void {
+            if (!games.gamesGrid.hasPendingTarget)
+                games.jumpLoading = false;
+        }
     }
 }

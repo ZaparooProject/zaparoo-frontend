@@ -77,7 +77,7 @@ Frame cost on raster ≈ **painted pixels per frame × per-pixel cost**. The
 animation type matters less than people expect — what matters is what each
 animation choice does to that product:
 
-1. **How big is the dirty rectangle?** Animating a 20×20 page-dot dirties
+1. **How big is the dirty rectangle?** Animating a 20×20 scroll-thumb dirties
    400 pixels. Animating a full-screen overlay dirties ~2 M pixels. Same
    property (`opacity`), 5000× the cost.
 2. **What's *in* the dirty rectangle?** A cached pixmap blit is cheap.
@@ -98,7 +98,7 @@ mark dirty per frame?**" and pick whatever keeps that small.
 Two follow-on rules from the same model:
 
 - **Translation is free, but its content isn't.** Moving an Item by 1 px
-  costs almost nothing if the Item is small (a page-dot, a single tile).
+  costs almost nothing if the Item is small (a single tile, the scroll-thumb).
   Moving a band of 12 tiles costs the rasterize of all 12 tiles per
   frame, because the dirty rectangle covers the whole band.
 - **Fractional DPR is the absolute version of this.** When Qt's screen
@@ -114,8 +114,8 @@ Pick animations from the cheap column when targeting MiSTer.
 
 | Cheap on raster | Expensive on raster |
 |---|---|
-| Instant cut + small animated cue (page-dot pulse, focus-ring blink) | Translucent overlays of any size (see below) |
-| Translation of small items (one Tile, page dots) | Translation of large content (band of N tiles) |
+| Instant cut + small one-shot cue (the tile/row push-in) | Translucent overlays of any size (see below) |
+| Translation/scale of small items (one Tile, the scroll-thumb) | Translation of large content (band of N tiles) |
 | ColorAnimation on tints / borders | Concurrent slide + scale (compounds raster cost) |
 | Static scenes with one ramping property on a small element | `ShaderEffect` of any kind, `Qt5Compat.GraphicalEffects` |
 | `layer.enabled` for caching a complex sub-tree | `Animator` types (no benefit on basic render loop) |
@@ -162,9 +162,88 @@ plain animations, and `layer.enabled` without an effect.
 ### Recommendation
 
 For state-change feedback, prefer instant cuts with a small localized cue
-(page-dot pulse, focus-ring blink, help-bar text change) over any fade.
+(the push-in cue, a help-bar text change) over any fade.
 Cues are small elements with small dirty rectangles; they paint cheaply
 on raster regardless of DPR or partial-update status. Reach for a fade
 only after diagnosing DPR and ensuring the destination scene is
 genuinely static — and then use `Item.grabToImage()` rather than a
 translucent overlay.
+
+### Sanctioned one-shot transient cues
+
+The rule above bans **persistent** motion that runs every frame while content
+is busy (e.g., a scale held on every focused tile on every d-pad move). It
+does NOT ban short one-shot animations on a single small element triggered
+at a state-change moment (activate/launch, selection land). Those are cheap
+for the same reason a single-tile push-in is cheap: one element, one short
+burst, then back to a static scene.
+
+Sanctioned patterns and why they are safe:
+
+| Cue | Cost analysis |
+|---|---|
+| Tile push-in on activate or launch (single scale leg, ~80 ms, held) | Single tile's pixmap scales transiently; dirty rect = one tile; the host screen's `settling` flag resets `scale` to 1.0 off-screen so there is no resampling per frame once the screen is hidden. One shared cue covers both forward navigation and game launch |
+| List-detail row push-in on activate or launch (single scale leg, ~80 ms, held) | The same cue as the tile, applied to the selected list row; dirty rect = one row; all neighboring rows are static |
+| Settings toggle-knob slide (x, ~110 ms) | One tiny Rectangle handle; 1 pctW |
+
+The shared constraint: the source scene must be static or near-static during
+the cue. The tile grid is not scrolling; the list row content is not
+changing. If there is any chance the surrounding content is busy (rapid
+scroll, prefetch, incoming model update), gate the Behavior off via a
+`rapidScrollActive` flag or equivalent so the cue collapses to instant.
+
+The previously removed 1.06x Tile focus scale was **persistent** - held
+across every d-pad move while the grid was live. Any tile that held the old
+scale forced its pixmap to be bilinear-filtered on every rendered frame,
+compounding across focus moves. That is the pattern being banned; the
+one-shot transients above do not share that cost profile.
+
+### Motion tokens and the reduce-motion convention
+
+All animation durations in QML go through the `Motion` singleton in
+`Zaparoo.Theme`. Never hardcode a duration inline:
+
+```qml
+// Good
+NumberAnimation { duration: Motion.dur(Motion.settleMs) }
+Behavior on x { enabled: Motion.enabled; NumberAnimation { duration: Motion.dur(Motion.settleMs) } }
+
+// Bad - not controlled by reduce-motion, not adjustable from one place
+NumberAnimation { duration: 140 }
+```
+
+`Motion.dur(ms)` returns `ms` when `Motion.enabled` is true and `0` when
+false. A duration of `0` causes a Behavior or SequentialAnimation to resolve
+in one frame (instant cut). This is the reduce-motion path: zero code
+branches, zero dead animation objects, no visible change to the rest of the
+logic.
+
+`Motion.enabled` is fed from the app layer via a `Binding` in `Main.qml`:
+
+```qml
+Binding { target: Motion; property: "enabled"; value: !Browse.Settings.current_reduce_motion }
+```
+
+The `Motion` singleton itself does not import `Zaparoo.Browse` - the app
+layer crosses the module boundary. This keeps `Zaparoo.Theme` free of
+dependencies on the models module, consistent with `Sizing` and `Theme`.
+
+Token summary (`Motion.qml`):
+
+| Token | Value | Use |
+|---|---|---|
+| `pressMs` | 80 | Push-in cue (accept/activate) |
+| `settleMs` | 110 | Push-in release leg; toggle-knob slide |
+| `pressScale` | 0.96 | Push-in target |
+
+Both durations sit just above MiSTer's frame-budget floor (~3 frames at
+~30fps); see the comments in `Motion.qml` before lowering them.
+
+Pulse counter pattern (how hosts trigger tile cues without coupling to
+animation internals): the host increments the `activatePulse` int property
+on the grid or TileLoader; `Tile.qml` watches the delegate contract
+`delegateActivatePulse` and fires the push-in `NumberAnimation` if
+`_focusedSelection` is true. This keeps the animation entirely inside
+`Tile.qml` - hosts only bump a counter. There is a single push-in cue for
+every button-like action: forward navigation and game launch both use it,
+so there is no separate launch animation or pulse counter.

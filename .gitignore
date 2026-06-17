@@ -75,3 +75,6 @@ rust/target/
 
 # cxx-qt 0.8 generates this with absolute paths for qmlls/qmllint
 rust/frontend/.qmlls.ini
+
+# Dev-run log that lands in the repo root (real log goes to ~/.local/share/zaparoo/logs/)
+/frontend.log

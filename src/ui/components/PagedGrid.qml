@@ -1,6 +1,9 @@
 // Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// layoutProfile and its sub-properties (_gridProfile.leftInset etc.) are
+// QVariant-typed JS objects; cannot be statically typed. Structural; suppress compiler.
+// qmllint disable compiler
 
 // Bound component behavior is required because the inner Repeater +
 // Loader bind to root.* properties (delegate, focused, cellWidth, …)
@@ -53,6 +56,33 @@ Item {
     property bool coverLoadingPaused: false
     property bool rapidRenderMode: false
     readonly property int _coverRetentionPages: Math.max(1, Math.ceil(Sizing.visibleCovers))
+    // Pulse counter for the one-shot tile push-in. Callers increment via
+    // pulseActivate(); TileLoader forwards the value to Tile where only the
+    // focused+selected delegate fires its cue. The same cue serves both
+    // forward navigation and game launch.
+    property int activatePulse: 0
+    function pulseActivate(): void {
+        root.activatePulse++;
+    }
+    // Release counter for the push-in cue. Callers increment via
+    // releaseActivate() to settle the focused tile back to rest after a launch
+    // that keeps the frontend on the same screen (e.g. an Audio track). Forward
+    // navigation never calls this — the screen transition + `settling` reset
+    // handle the held scale off-screen.
+    property int releasePulse: 0
+    function releaseActivate(): void {
+        root.releasePulse++;
+    }
+    // When true, Tile delegates reset their push-in scale back to 1.0
+    // so a held push-in from the previous visit does not persist when
+    // the screen is shown again. Set by the host screen to `!active`
+    // (i.e. true while the screen is off-screen).
+    property bool screenSettling: false
+    // Forwarded to each Tile's focus-visibility gate. Host screens leave this
+    // false until the grid's selection is finalized (restore or first input)
+    // so the default tile 0 never paints a ring before restore lands; default
+    // true keeps focus rendering on for hosts that do not wire it.
+    property bool focusReady: true
     property var layoutProfile: null
     readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
 
@@ -146,12 +176,40 @@ Item {
     property int _pendingTargetRow: 0
     property int _pendingTargetCol: 0
 
-    // True while a wrap / shoulder-jump / hold-Down-past-edge move is
-    // stashed waiting on a fetch. Screens use this to gate the
+    // Pending jump-to-index state. Set by `jumpToIndex` when the absolute
+    // target isn't loaded yet; the grid fetches until `itemCount` passes it
+    // and `_commitPendingTarget` lands on this exact index. Distinct from the
+    // page/row/col wrap-target above: a jump preserves the absolute position
+    // (pages stay fixed/global, the cursor lands mid-page on the true target),
+    // so it must not be re-derived from page/row/col. The two are mutually
+    // exclusive at any moment. -1 means "no pending jump".
+    property int _pendingTargetIndex: -1
+
+    // True while a wrap / shoulder-jump / hold-Down-past-edge / jump-to-index
+    // move is stashed waiting on a fetch. Screens use this to gate the
     // "Loading more..." indicator so background prefetches stay
     // silent — the indicator only paints when the user is genuinely
     // waiting on input they've already given.
-    readonly property bool hasPendingTarget: _pendingTargetPage >= 0
+    readonly property bool hasPendingTarget: _pendingTargetPage >= 0 || _pendingTargetIndex >= 0
+
+    // True only while a jump-to-index (letter jump) is waiting on a fetch, as
+    // opposed to a page-wrap target. Lets callers bulk-load aggressively for a
+    // jump (loading overlay up, target far away) while keeping ordinary
+    // page-turn prefetches on the gentle trickle.
+    readonly property bool hasPendingJump: _pendingTargetIndex >= 0
+
+    // Absolute row the pending jump will land on, or -1 when no jump is
+    // pending. Lets the model size its jump fetch to the gap remaining rather
+    // than always pulling the full remainder.
+    readonly property int pendingJumpIndex: _pendingTargetIndex
+
+    // Clear every pending-target channel at once. Used by all the
+    // "intent changed / resolved / reset" sites so neither the page/row/col
+    // wrap-target nor the jump-to-index target can leak across.
+    function _clearPendingTarget(): void {
+        root._pendingTargetPage = -1;
+        root._pendingTargetIndex = -1;
+    }
 
     // Reserved chrome around the cell area. Vertical insets must be
     // large enough to contain the focused tile's 1.06× scale bleed
@@ -233,14 +291,16 @@ Item {
             return false;
         if (targetPage > root.pageCount - 1) {
             // Target page hasn't been fetched yet. Stash the intent and
-            // let the itemCount-change watcher commit it.
+            // let the itemCount-change watcher commit it. A fresh page-nav
+            // supersedes any pending jump-to-index.
+            root._pendingTargetIndex = -1;
             root._pendingTargetPage = targetPage;
             root._pendingTargetRow = root.currentRow;
             root._pendingTargetCol = root.currentColumn;
             root.loadMoreRequested(true);
             return false;
         }
-        root._pendingTargetPage = -1;
+        root._clearPendingTarget();
         const targetSlot = targetPage * root.pageSize + root.currentRow * root.columns + root.currentColumn;
         const lastIdxOnPage = Math.min((targetPage + 1) * root.pageSize, root.itemCount) - 1;
         if (lastIdxOnPage < 0)
@@ -257,6 +317,36 @@ Item {
         return true;
     }
 
+    // Jump the selection to an exact absolute index over the full dataset
+    // (`totalItems`), loading the intervening pages if the target hasn't been
+    // fetched yet — the basis for "jump to letter". Mirrors `pageBy`'s
+    // pending-target machinery but lands on the exact index rather than
+    // preserving the current row/col. A target that is already loaded (e.g. a
+    // backward jump to an earlier letter) lands immediately; an unrealised
+    // target stashes the exact (page,row,col) slot and `_commitPendingTarget`
+    // commits it once `fetch_more` has loaded that far. Returns true if the
+    // index changed synchronously, false if a pending-jump was stashed.
+    function jumpToIndex(targetIndex: int): bool {
+        if (root.itemCount <= 0 || root.totalItems <= 0)
+            return false;
+        const target = Math.max(0, Math.min(targetIndex, root.totalItems - 1));
+        if (target < root.itemCount) {
+            // Already loaded — land immediately (no walk needed).
+            root._clearPendingTarget();
+            if (target !== root.currentIndex)
+                root.currentIndex = target;
+            if (root.currentPage >= root.pageCount - root.loadAheadPages - 1)
+                root.loadMoreRequested(false);
+            return true;
+        }
+        // Not fetched yet — stash the absolute target and load until the
+        // model has grown past it, then commit on the exact index.
+        root._pendingTargetPage = -1;
+        root._pendingTargetIndex = target;
+        root.loadMoreRequested(true);
+        return false;
+    }
+
     // Commit the pending target move once the destination slot is
     // loaded, or settle on the loaded last when the model says no more
     // pages are coming. Wired into `onItemCountChanged` so every
@@ -267,6 +357,33 @@ Item {
     // materialisation: the target page may report `pageCount` reached
     // while the row/col slot itself isn't realised yet.
     function _commitPendingTarget(): void {
+        // Jump-to-index: land on the exact absolute target. Pages stay
+        // fixed/global; the cursor lands mid-page on the true target and
+        // never a page early. No page-clamp and no settle-back fallback —
+        // those only existed to cope with a slow page-at-a-time walk.
+        if (root._pendingTargetIndex >= 0) {
+            const want = root._pendingTargetIndex;
+            if (want < root.itemCount) {
+                root._clearPendingTarget();
+                if (want !== root.currentIndex)
+                    root.currentIndex = want;
+                return;
+            }
+            if (root.hasMorePages) {
+                // Keep loading; `fetch_more_*` is debounced model-side via
+                // `loading_more`, so a redundant emit is cheap.
+                root.loadMoreRequested(true);
+                return;
+            }
+            // Dataset genuinely can't reach the target (Core revised the
+            // total down, or the listing is shorter than expected). Land on
+            // the nearest loaded item to the target — never a full page back.
+            root._clearPendingTarget();
+            const nearest = Math.min(want, root.itemCount - 1);
+            if (nearest >= 0 && nearest !== root.currentIndex)
+                root.currentIndex = nearest;
+            return;
+        }
         if (root._pendingTargetPage < 0)
             return;
         // Total may have shrunk under us (e.g. Core revised total_files
@@ -346,8 +463,8 @@ Item {
         // among its own items rather than walking through a hole.
         if (dCol !== 0) {
             // Sideways step changes the user's intent — drop any
-            // pending wrap-target chain we were waiting on.
-            root._pendingTargetPage = -1;
+            // pending wrap-target / jump we were waiting on.
+            root._clearPendingTarget();
             const rowFirstIndex = root.currentPage * root.pageSize + root.currentRow * root.columns;
             const rowLastIndex = Math.min(root.itemCount - 1, rowFirstIndex + root.columns - 1);
             const maxColOnRow = rowLastIndex - rowFirstIndex;
@@ -382,6 +499,7 @@ Item {
             if (rowCandidate < 0) {
                 const targetPage = root.currentPage === 0 ? root.totalPageCount - 1 : root.currentPage - 1;
                 if (targetPage > root.pageCount - 1) {
+                    root._pendingTargetIndex = -1;
                     root._pendingTargetPage = targetPage;
                     root._pendingTargetRow = root.rows - 1;
                     root._pendingTargetCol = root.currentColumn;
@@ -394,6 +512,7 @@ Item {
                 const lastPage = root.totalPageCount - 1;
                 const targetPage = root.currentPage === lastPage ? 0 : root.currentPage + 1;
                 if (targetPage > root.pageCount - 1) {
+                    root._pendingTargetIndex = -1;
                     root._pendingTargetPage = targetPage;
                     root._pendingTargetRow = 0;
                     root._pendingTargetCol = root.currentColumn;
@@ -428,9 +547,9 @@ Item {
                 root.loadMoreRequested(false);
             return false;
         }
-        // Successful directional move clears any pending wrap-target;
+        // Successful directional move clears any pending wrap-target / jump;
         // the user is no longer waiting on it.
-        root._pendingTargetPage = -1;
+        root._clearPendingTarget();
         root.currentIndex = newIndex;
         // Pre-fetch early - when the user enters within `loadAheadPages`
         // of the loaded edge, kick off the next fetch so the network
@@ -456,7 +575,7 @@ Item {
     // covers the case where the flag is updated without an item delta
     // (e.g. a final empty append).
     onHasMorePagesChanged: {
-        if (root._pendingTargetPage >= 0)
+        if (root.hasPendingTarget)
             root._commitPendingTarget();
     }
 
@@ -465,7 +584,7 @@ Item {
             // Model shed rows (reset, system change, path change). The
             // pending-target context no longer applies — drop it before
             // the row-count check below moves currentIndex.
-            root._pendingTargetPage = -1;
+            root._clearPendingTarget();
             if (root.currentIndex >= root.itemCount)
                 root.currentIndex = Math.max(0, root.itemCount - 1);
         } else if (root.itemCount > root._previousItemCount) {
@@ -514,6 +633,9 @@ Item {
                 required property string coverKey
                 required property int favorite
                 required property bool hidden
+                // Newline-joined disambiguating-tag tokens (empty for models
+                // without variants). Every Browse model exposes this role.
+                required property string disambiguatingTags
 
                 readonly property int cellPage: Math.floor(index / root.pageSize)
                 readonly property int cellLocal: index % root.pageSize
@@ -597,6 +719,17 @@ Item {
                     color: Theme.surfaceCard
                     border.color: Theme.borderMid
                     border.width: Sizing.stroke(1)
+                    // Track the loaded Tile's push-in scale so the card
+                    // silhouette and the Tile surface shrink together.
+                    // Falls back to 1.0 when no Tile is loaded (skeleton
+                    // state), so the placeholder stays full-size until
+                    // the Tile appears. `cardScale` is a readonly alias
+                    // for `_activateScale` exposed by Tile for exactly
+                    // this cross-sibling binding.
+                    transformOrigin: Item.Center
+                    // qmllint disable missing-property
+                    scale: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.cardScale : 1.0
+                    // qmllint enable missing-property
                 }
 
                 // Standalone selected-cell ring for skeleton/rapid mode.
@@ -613,7 +746,7 @@ Item {
                     color: Theme.accent
                     radius: Math.max(0, Sizing.cornerRadius - Sizing.pctH(0.4))
                     antialiasing: true
-                    visible: cellItem.isSelected && root.focused && (root.rapidRenderMode || tileLoader.status !== Loader.Ready)
+                    visible: cellItem.isSelected && root.focused && root.focusReady && (root.rapidRenderMode || tileLoader.status !== Loader.Ready)
                 }
 
                 Rectangle {
@@ -654,6 +787,11 @@ Item {
                     coverKey: cellItem._gatedCoverKey
                     favorite: cellItem.favorite
                     hidden: cellItem.hidden
+                    disambiguatingTags: cellItem.disambiguatingTags
+                    activatePulse: root.activatePulse
+                    releasePulse: root.releasePulse
+                    settling: root.screenSettling
+                    focusReady: root.focusReady
                 }
 
                 MouseArea {
@@ -688,10 +826,12 @@ Item {
     // Up arrow at the top, down arrow at the bottom, free-floating thumb
     // in between. No painted track — the indicator is just the arrows
     // and the thumb. Hidden when the dataset fits on a single page.
-    // Snaps page-by-page; no animation on the thumb (matches the instant
-    // page flip and keeps the software renderer's dirty rect off the
-    // cell area). Sits after the cell `track` in the visual tree so the
-    // indicator paints on top of any focus-scale bleed at the right edge.
+    // The thumb snaps to each page position with no glide animation:
+    // scrolling is a hot path (cover prefetch + data load run on the same
+    // frames), so an animated thumb would repaint while the system is
+    // already busy.
+    // Sits after the cell `track` in the visual tree so the indicator
+    // paints on top of any brief scale-animation bleed at the right edge.
     Item {
         id: scrollGutter
 

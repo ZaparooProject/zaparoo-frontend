@@ -23,8 +23,11 @@
 // QR/card-write payloads prefer Core's portable ZapScript.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
+use crate::media_meta_cache::{global_media_meta_cache, MetaLookup};
 use crate::models::nav_timing::NavTiming;
-use crate::models::tag_utils::tag_display_value;
+use crate::models::tag_utils::{
+    disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
+};
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
@@ -57,12 +60,21 @@ const ZAP_SCRIPT_ROLE: i32 = 256 + 5;
 const FAVORITE_ROLE: i32 = 256 + 6;
 const FILE_STEM_ROLE: i32 = 256 + 7;
 const HIDDEN_ROLE: i32 = 256 + 8;
+// Newline-joined short tokens for Core's `disambiguatingTags`, ordered by
+// display priority. Empty when nothing to disambiguate. Same shape and
+// rationale as the GamesModel role; the shared delegate splits on newlines.
+const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 9;
 
 // Page size for the initial load and every cursor follow-up. Core caps
 // `maxResults` at 100; search rows are tiny (one tile + one caption per
 // row) so 25 fills several screens of the favorites grid without
 // stressing the over-the-wire payload.
 const PAGE_SIZE: u32 = 25;
+// How many rows ahead/behind the settled cursor to warm in list-detail
+// layout. Kept small so the 2-worker byte queue stays shallow and the next
+// cover is fetched first within ~250 ms.
+const COVER_PREFETCH_CURSOR_NEXT: i32 = 4;
+const COVER_PREFETCH_CURSOR_PREV: i32 = 2;
 
 #[allow(
     clippy::struct_excessive_bools,
@@ -73,6 +85,10 @@ const PAGE_SIZE: u32 = 25;
 )]
 pub struct FavoritesModelRust {
     entries: Vec<MediaItem>,
+    // Parallel to `entries`: the sibling-diffed disambiguation display per row
+    // (see `compute_favorites_disambig_displays`). Recomputed on load/append and
+    // when `show_original_filenames` changes.
+    disambig_displays: Vec<String>,
     count: i32,
     loading: bool,
     loading_more: bool,
@@ -84,7 +100,21 @@ pub struct FavoritesModelRust {
     current_detail_loading: bool,
     current_detail_tags: QString,
     current_detail_image_key: QString,
+    // Warm cover key for the item immediately after the current selection.
+    // Empty when there is no next item or the next item has no cached bytes.
+    // Exposed as a qproperty so QML can mount a hidden Image that decodes the
+    // cover into Qt's pixmap cache while the user is still on the current row.
+    detail_prefetch_key_next: QString,
+    // Same as `detail_prefetch_key_next` but for the item immediately before.
+    detail_prefetch_key_prev: QString,
+    // Row whose adjacent covers are being preloaded. None when no detail
+    // is active (cleared on reset or out-of-range).
+    detail_prefetch_row: Option<i32>,
     cover_requests_paused: bool,
+    // Mirrors the global `Show original filenames` setting; when true the
+    // `name` role and `name_at()` return the original filename (sans
+    // extension). Bound from QML; flipping re-emits `dataChanged(NAME_ROLE)`.
+    show_original_filenames: bool,
     current_detail_media_key: Option<MediaKey>,
     current_detail_media_id: Option<i64>,
     card_write_seq: Arc<AtomicU64>,
@@ -178,7 +208,10 @@ pub mod ffi {
         #[qproperty(bool, current_detail_loading)]
         #[qproperty(QString, current_detail_tags)]
         #[qproperty(QString, current_detail_image_key)]
+        #[qproperty(QString, detail_prefetch_key_next)]
+        #[qproperty(QString, detail_prefetch_key_prev)]
         #[qproperty(bool, cover_requests_paused)]
+        #[qproperty(bool, show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
         type FavoritesModel = super::FavoritesModelRust;
 
         #[qinvokable]
@@ -203,13 +236,22 @@ pub mod ffi {
         fn cancel_card_write(self: Pin<&mut FavoritesModel>);
 
         #[qinvokable]
+        fn set_show_original_filenames(self: Pin<&mut FavoritesModel>, value: bool);
+
+        #[qinvokable]
         fn name_at(self: &FavoritesModel, index: i32) -> QString;
+
+        #[qinvokable]
+        fn disambiguating_tags_at(self: &FavoritesModel, index: i32) -> QString;
 
         #[qinvokable]
         fn path_at(self: &FavoritesModel, index: i32) -> QString;
 
         #[qinvokable]
         fn system_id_at(self: &FavoritesModel, index: i32) -> QString;
+
+        #[qinvokable]
+        fn peek_detail_at(self: Pin<&mut FavoritesModel>, index: i32);
 
         #[qinvokable]
         fn load_detail_at(self: Pin<&mut FavoritesModel>, index: i32);
@@ -329,8 +371,10 @@ fn apply_state(
         }
         let count = i32::try_from(entries.len()).unwrap_or(i32::MAX);
         clear_current_detail_state(model.as_mut());
+        let displays = compute_favorites_disambig_displays(&entries, model.show_original_filenames);
         model.as_mut().begin_reset_model();
         model.as_mut().rust_mut().entries = entries;
+        model.as_mut().rust_mut().disambig_displays = displays;
         model.as_mut().rust_mut().count = count;
         model.as_mut().rust_mut().next_cursor = next_cursor;
         model.as_mut().end_reset_model();
@@ -432,7 +476,9 @@ impl ffi::FavoritesModel {
         }
         let entry = &self.entries[index.row() as usize];
         match role {
-            NAME_ROLE => QVariant::from(&QString::from(entry.name.as_str())),
+            NAME_ROLE => QVariant::from(&QString::from(
+                display_name(&entry.name, &entry.path, self.show_original_filenames).as_str(),
+            )),
             PATH_ROLE => QVariant::from(&QString::from(entry.path.as_str())),
             SYSTEM_ID_ROLE => QVariant::from(&QString::from(entry.system.id.as_str())),
             COVER_KEY_ROLE => QVariant::from(&QString::from(
@@ -444,6 +490,12 @@ impl ffi::FavoritesModel {
                 QVariant::from(&QString::from(file_stem_or_name(&entry.path, &entry.name)))
             }
             HIDDEN_ROLE => QVariant::from(&false),
+            // Sibling-diffed display string; precomputed in `disambig_displays`.
+            DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::from(
+                self.disambig_displays
+                    .get(index.row() as usize)
+                    .map_or("", String::as_str),
+            )),
             _ => QVariant::default(),
         }
     }
@@ -458,6 +510,10 @@ impl ffi::FavoritesModel {
         h.insert(FAVORITE_ROLE, QByteArray::from("favorite"));
         h.insert(FILE_STEM_ROLE, QByteArray::from("fileStem"));
         h.insert(HIDDEN_ROLE, QByteArray::from("hidden"));
+        h.insert(
+            DISAMBIGUATING_TAGS_ROLE,
+            QByteArray::from("disambiguatingTags"),
+        );
         h
     }
 
@@ -628,7 +684,41 @@ impl ffi::FavoritesModel {
         if index < 0 || index >= self.count {
             return QString::default();
         }
-        QString::from(self.entries[index as usize].name.as_str())
+        let entry = &self.entries[index as usize];
+        QString::from(display_name(&entry.name, &entry.path, self.show_original_filenames).as_str())
+    }
+
+    // Full (untrimmed) disambiguation tokens for the focused-item readout.
+    fn disambiguating_tags_at(&self, index: i32) -> QString {
+        if index < 0 || index >= self.count {
+            return QString::default();
+        }
+        QString::from(
+            disambiguating_tag_labels(&self.entries[index as usize].disambiguating_tags)
+                .join(" ")
+                .as_str(),
+        )
+    }
+
+    fn set_show_original_filenames(mut self: Pin<&mut Self>, value: bool) {
+        if self.show_original_filenames == value {
+            return;
+        }
+        self.as_mut().rust_mut().show_original_filenames = value;
+        self.as_mut().show_original_filenames_changed();
+        // Displayed name drives sibling grouping, so recompute the trimmed tags.
+        let displays = compute_favorites_disambig_displays(&self.entries, value);
+        self.as_mut().rust_mut().disambig_displays = displays;
+        let last_row = self.count - 1;
+        if last_row >= 0 {
+            let mut roles = QList::<i32>::default();
+            roles.append(NAME_ROLE);
+            roles.append(DISAMBIGUATING_TAGS_ROLE);
+            let parent = QModelIndex::default();
+            let top_left = self.as_mut().index(0, 0, &parent);
+            let bottom_right = self.as_mut().index(last_row, 0, &parent);
+            self.as_mut().data_changed(&top_left, &bottom_right, &roles);
+        }
     }
 
     fn path_at(&self, index: i32) -> QString {
@@ -645,6 +735,59 @@ impl ffi::FavoritesModel {
         QString::from(self.entries[index as usize].system.id.as_str())
     }
 
+    // Immediate, non-debounced sibling of `load_detail_at`. Called the moment
+    // the focused row changes so the detail table reflects THIS row at once —
+    // cached metadata (instant), a memoized blank, or a clean blank while a
+    // fetch is pending — instead of holding the previous row's values through
+    // the load debounce. Also warms neighboring rows' metadata so the next
+    // move is a synchronous cache hit. Never issues a foreground RPC.
+    fn peek_detail_at(mut self: Pin<&mut Self>, index: i32) {
+        self.as_mut()
+            .rust_mut()
+            .detail_seq
+            .fetch_add(1, Ordering::SeqCst);
+        if index < 0 || index >= self.count {
+            clear_current_detail_state(self.as_mut());
+            return;
+        }
+        self.as_mut().rust_mut().detail_prefetch_row = Some(index);
+        prefetch_around_cursor(&self.entries, self.count, index, self.cover_requests_paused);
+        let entry = &self.entries[index as usize];
+        let system = entry.system.id.clone();
+        let path = entry.path.clone();
+        if system.trim().is_empty() || path.trim().is_empty() {
+            clear_current_detail_state(self.as_mut());
+            return;
+        }
+        // Deliberately do NOT switch the visible cover here. The cover has its
+        // own grace-window hold (BrowseDetailPane coverHold) and is settled by
+        // the debounced `load_detail_at`. Re-pointing the 512px cover Image on
+        // every keypress kept `_coverBusy` true through sustained navigation
+        // (tripping the hourglass after the grace) and monopolized Qt's async
+        // image loader so the next-row cover never got prefetched. Peek only
+        // updates the metadata table and warms the prefetch hints below.
+        refresh_adjacent_cover_prefetch(self.as_mut());
+
+        let meta_key = MediaKey::new(system.clone(), path.clone());
+        match global_media_meta_cache().lookup(&meta_key) {
+            MetaLookup::Hit(meta) => {
+                self.as_mut()
+                    .set_current_detail_tags(QString::from(detail_tags_from_meta(&meta).as_str()));
+                self.as_mut().set_current_detail_loading(false);
+            }
+            MetaLookup::Negative => {
+                self.as_mut().set_current_detail_tags(QString::default());
+                self.as_mut().set_current_detail_loading(false);
+            }
+            MetaLookup::Miss => {
+                self.as_mut().set_current_detail_tags(QString::default());
+                self.as_mut().set_current_detail_loading(true);
+            }
+        }
+
+        enqueue_meta_prefetch(&self.entries, self.count, index);
+    }
+
     fn load_detail_at(mut self: Pin<&mut Self>, index: i32) {
         let ticket = self
             .as_mut()
@@ -656,6 +799,11 @@ impl ffi::FavoritesModel {
             clear_current_detail_state(self.as_mut());
             return;
         }
+        // Record the settled row before borrowing entries.
+        self.as_mut().rust_mut().detail_prefetch_row = Some(index);
+        // Re-center the byte-fetch queue on the current row so it and
+        // its neighbors are fetched ahead of the stale list backlog.
+        prefetch_around_cursor(&self.entries, self.count, index, self.cover_requests_paused);
         let entry = &self.entries[index as usize];
         let system = entry.system.id.clone();
         let path = entry.path.clone();
@@ -672,16 +820,44 @@ impl ffi::FavoritesModel {
         self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
         self.as_mut().rust_mut().current_detail_media_id = media_id;
         sync_current_detail_image_key(self.as_mut());
+        refresh_adjacent_cover_prefetch(self.as_mut());
+
+        // Resolve synchronously from the metadata cache when warm (a neighbor
+        // prefetched while dwelling on the previous row, or a revisit), so the
+        // table fills with the correct rows on this frame and never re-fetches.
+        let meta_key = MediaKey::new(system.clone(), path.clone());
+        match global_media_meta_cache().lookup(&meta_key) {
+            MetaLookup::Hit(meta) => {
+                self.as_mut()
+                    .set_current_detail_tags(QString::from(detail_tags_from_meta(&meta).as_str()));
+                self.as_mut().set_current_detail_loading(false);
+                return;
+            }
+            MetaLookup::Negative => {
+                self.as_mut().set_current_detail_tags(QString::default());
+                self.as_mut().set_current_detail_loading(false);
+                return;
+            }
+            MetaLookup::Miss => {}
+        }
+
         self.as_mut().set_current_detail_loading(true);
         self.as_mut().set_current_detail_tags(QString::default());
         let seq = self.rust().detail_seq.clone();
         let qt_thread = self.qt_thread();
         let store = global_store();
+        let store_key = meta_key.clone();
         global_handle().spawn(async move {
             let result = store
                 .client()
                 .media_meta(MediaMetaParams::for_media(system, path.clone()))
                 .await;
+            // Cache the outcome (positive or negative) regardless of whether
+            // this callback is still current, so a later revisit is instant.
+            match &result {
+                Ok(r) => global_media_meta_cache().store(store_key, Some(r.media.clone())),
+                Err(_) => global_media_meta_cache().store(store_key, None),
+            }
             let _ = qt_thread.queue(move |mut model| {
                 if seq.load(Ordering::SeqCst) != ticket {
                     return;
@@ -850,6 +1026,32 @@ fn detail_tags_from_meta(meta: &MediaMeta) -> String {
         .join("\n")
 }
 
+// Warm the metadata cache for the rows immediately around `row` so a move to
+// a neighbor is a synchronous cache hit. Best-effort and fire-and-forget;
+// already-cached or in-flight keys are skipped inside the cache.
+fn enqueue_meta_prefetch(entries: &[MediaItem], count: i32, row: i32) {
+    let mut requests = Vec::new();
+    for delta in [-2_i32, -1, 1, 2] {
+        let i = row + delta;
+        if i < 0 || i >= count {
+            continue;
+        }
+        let entry = &entries[i as usize];
+        let system = entry.system.id.clone();
+        let path = entry.path.clone();
+        if system.trim().is_empty() || path.trim().is_empty() {
+            continue;
+        }
+        requests.push((
+            MediaKey::new(system.clone(), path.clone()),
+            MediaMetaParams::for_media(system, path),
+        ));
+    }
+    if !requests.is_empty() {
+        global_media_meta_cache().prefetch(requests);
+    }
+}
+
 fn detail_value_for_aliases(source: &[TagInfo], aliases: &[&str]) -> String {
     source
         .iter()
@@ -878,6 +1080,78 @@ fn file_stem_or_name(path: &str, name: &str) -> String {
     }
 }
 
+/// Resolve the user-visible name, honoring the `show_original_filenames`
+/// setting: the original filename (sans extension) when enabled, otherwise
+/// Core's cleaned display name.
+fn display_name(name: &str, path: &str, show_original_filenames: bool) -> String {
+    if show_original_filenames {
+        file_stem_or_name(path, name)
+    } else {
+        name.to_string()
+    }
+}
+
+/// Sibling-diffed disambiguation displays for the full `entries` slice (see the
+/// shared `sibling_disambiguation_displays`). Grouping keys off the displayed
+/// name so the original-filename toggle disables grouping naturally.
+fn compute_favorites_disambig_displays(entries: &[MediaItem], show_original: bool) -> Vec<String> {
+    let rows: Vec<(String, Vec<String>)> = entries
+        .iter()
+        .map(|e| {
+            (
+                display_name(&e.name, &e.path, show_original),
+                disambiguating_tag_labels(&e.disambiguating_tags),
+            )
+        })
+        .collect();
+    sibling_disambiguation_displays(&rows)
+}
+
+/// Recompute disambiguation displays for the boundary group + appended rows
+/// after an `extend` starting at `insert_first`, splicing onto
+/// `disambig_displays`. Returns the boundary group's start index.
+fn recompute_favorites_disambig_tail(
+    mut model: Pin<&mut ffi::FavoritesModel>,
+    insert_first: usize,
+) -> usize {
+    let show_original = model.show_original_filenames;
+    let (group_start, new_tail) = {
+        let entries = &model.entries;
+        let total = entries.len();
+        let mut group_start = insert_first.min(total);
+        if group_start > 0 {
+            let boundary = display_name(
+                &entries[group_start - 1].name,
+                &entries[group_start - 1].path,
+                show_original,
+            );
+            while group_start > 0
+                && display_name(
+                    &entries[group_start - 1].name,
+                    &entries[group_start - 1].path,
+                    show_original,
+                ) == boundary
+            {
+                group_start -= 1;
+            }
+        }
+        let rows: Vec<(String, Vec<String>)> = entries[group_start..total]
+            .iter()
+            .map(|e| {
+                (
+                    display_name(&e.name, &e.path, show_original),
+                    disambiguating_tag_labels(&e.disambiguating_tags),
+                )
+            })
+            .collect();
+        (group_start, sibling_disambiguation_displays(&rows))
+    };
+    let displays = &mut model.as_mut().rust_mut().disambig_displays;
+    displays.truncate(group_start);
+    displays.extend(new_tail);
+    group_start
+}
+
 fn clear_current_detail_state(mut model: Pin<&mut ffi::FavoritesModel>) {
     model
         .as_mut()
@@ -891,6 +1165,61 @@ fn clear_current_detail_state(mut model: Pin<&mut ffi::FavoritesModel>) {
     model
         .as_mut()
         .set_current_detail_image_key(QString::default());
+    clear_adjacent_cover_prefetch(model);
+}
+
+fn clear_adjacent_cover_prefetch(mut model: Pin<&mut ffi::FavoritesModel>) {
+    model.as_mut().rust_mut().detail_prefetch_row = None;
+    if !model.detail_prefetch_key_next.is_empty() {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_next(QString::default());
+    }
+    if !model.detail_prefetch_key_prev.is_empty() {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_prev(QString::default());
+    }
+}
+
+fn refresh_adjacent_cover_prefetch(mut model: Pin<&mut ffi::FavoritesModel>) {
+    let Some(row) = model.rust().detail_prefetch_row else {
+        if !model.detail_prefetch_key_next.is_empty() {
+            model
+                .as_mut()
+                .set_detail_prefetch_key_next(QString::default());
+        }
+        if !model.detail_prefetch_key_prev.is_empty() {
+            model
+                .as_mut()
+                .set_detail_prefetch_key_prev(QString::default());
+        }
+        return;
+    };
+    let count = model.count;
+    let requests_enabled = !model.cover_requests_paused;
+
+    let next_key = if row + 1 < count {
+        cover_key_for(&model.entries[(row + 1) as usize], requests_enabled)
+    } else {
+        String::new()
+    };
+    let prev_key = if row > 0 {
+        cover_key_for(&model.entries[(row - 1) as usize], requests_enabled)
+    } else {
+        String::new()
+    };
+
+    if model.detail_prefetch_key_next.to_string() != next_key {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_next(QString::from(next_key.as_str()));
+    }
+    if model.detail_prefetch_key_prev.to_string() != prev_key {
+        model
+            .as_mut()
+            .set_detail_prefetch_key_prev(QString::from(prev_key.as_str()));
+    }
 }
 
 fn sync_current_detail_image_key(mut model: Pin<&mut ffi::FavoritesModel>) {
@@ -1008,6 +1337,38 @@ fn enqueue_favorites_covers(results: &[MediaItem]) {
     }
 }
 
+/// Re-center the byte-fetch queue on the settled cursor row so covers
+/// for the current position and its immediate neighbors are fetched
+/// first, ahead of the stale top-of-list backlog. See recents.rs for
+/// rationale; identical logic adapted for `MediaItem` entries.
+fn prefetch_around_cursor(entries: &[MediaItem], count: i32, row: i32, requests_paused: bool) {
+    let cache = global_media_image_cache();
+    if requests_paused {
+        cache.clear_pending_requests();
+        return;
+    }
+    if count <= 0 {
+        return;
+    }
+    let row = row.clamp(0, count - 1);
+    let fwd_end = (row + 1 + COVER_PREFETCH_CURSOR_NEXT).min(count);
+    let back_start = (row - COVER_PREFETCH_CURSOR_PREV).max(0);
+    let mut plan: Vec<(MediaKey, Option<i64>)> = Vec::new();
+    for i in row..fwd_end {
+        let e = &entries[i as usize];
+        if let Some(key) = media_key_for(e).map(MediaKey::with_current_cover_preference) {
+            plan.push((key, e.media_id));
+        }
+    }
+    for i in (back_start..row).rev() {
+        let e = &entries[i as usize];
+        if let Some(key) = media_key_for(e).map(MediaKey::with_current_cover_preference) {
+            plan.push((key, e.media_id));
+        }
+    }
+    cache.replace_pending_requests_ordered(plan, PAGE_SIZE);
+}
+
 fn finish_nav_timing(
     mut model: Pin<&mut ffi::FavoritesModel>,
     reason: &'static str,
@@ -1100,6 +1461,10 @@ fn notify_cover_update(mut model: Pin<&mut ffi::FavoritesModel>, key: &MediaKey)
         });
         model.as_mut().rust_mut().cover_gate_timer = Some(handle);
     }
+    // Re-check the adjacent preload keys: a neighbor's bytes may have
+    // just landed, upgrading its key from `icons/Loading` to
+    // `media-image/...` so the hidden Image can start decoding.
+    refresh_adjacent_cover_prefetch(model);
 }
 
 /// Compute the set of media keys on the current page whose covers we
@@ -1259,8 +1624,20 @@ fn apply_append_page(
                 model.as_mut().begin_insert_rows(&parent, first, last);
                 model.as_mut().rust_mut().entries.extend(result.results);
                 model.as_mut().rust_mut().count = first.saturating_add(new_count);
+                let group_start = recompute_favorites_disambig_tail(model.as_mut(), first as usize);
                 model.as_mut().end_insert_rows();
                 model.as_mut().count_changed();
+                let group_start = i32::try_from(group_start).unwrap_or(0);
+                if group_start < first {
+                    let mut roles = QList::<i32>::default();
+                    roles.append(DISAMBIGUATING_TAGS_ROLE);
+                    let parent = QModelIndex::default();
+                    let top_left = model.as_mut().index(group_start, 0, &parent);
+                    let bottom_right = model.as_mut().index(first - 1, 0, &parent);
+                    model
+                        .as_mut()
+                        .data_changed(&top_left, &bottom_right, &roles);
+                }
             }
             model.as_mut().rust_mut().next_cursor = next_cursor;
             model.as_mut().set_has_next_page(has_next_page);

@@ -11,6 +11,7 @@ qt_add_qml_module(
     QML_FILES
         ActiveLabel.qml
         BootOverlay.qml
+        DeferredAction.qml
         BrowseDetailPane.qml
         BrowseList.qml
         BrowseListDetailView.qml
@@ -23,6 +24,7 @@ qt_add_qml_module(
         FocusedMediaDetailController.qml
         GameInfoModal.qml
         HeaderBar.qml
+        LetterJumpModal.qml
         LoadingIndicator.qml
         ListPickerModal.qml
         LogUploadModal.qml
@@ -32,6 +34,7 @@ qt_add_qml_module(
         RapidScrollIndicator.qml
         ScreensaverOverlay.qml
         ScreenStateOverlay.qml
+        ScrollingCaption.qml
         SettingsField.qml
         SettingsSectionHeader.qml
         StatusIcon.qml
