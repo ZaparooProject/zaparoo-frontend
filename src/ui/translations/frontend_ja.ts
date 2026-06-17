@@ -517,12 +517,12 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/LetterJumpModal.qml" line="211"/>
+        <location filename="../components/LetterJumpModal.qml" line="220"/>
         <source>Loading…</source>
         <translation type="unfinished">読み込み中…</translation>
     </message>
     <message>
-        <location filename="../components/LetterJumpModal.qml" line="211"/>
+        <location filename="../components/LetterJumpModal.qml" line="220"/>
         <source>No sections</source>
         <translation type="unfinished"></translation>
     </message>

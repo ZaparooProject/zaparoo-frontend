@@ -56,7 +56,7 @@ Item {
     // width and content margins below mirror `Modal`'s own math so the column
     // count we navigate by matches the grid the user sees.
     readonly property int _panelMax: Sizing.pctW(92)
-    readonly property int _panelWidth: Sizing.px(Math.min(width * 0.78, _panelMax))
+    readonly property int _panelWidth: Math.min(Sizing.pctW(78), _panelMax)
     readonly property int _contentWidth: Math.max(Sizing.pctW(10), _panelWidth - 2 * Sizing.pctW(4))
     readonly property int _gap: Sizing.pctW(1)
     // Cell-size bounds: a legibility floor and a cap so a few-bucket scope
@@ -77,6 +77,15 @@ Item {
     visible: modal.open
     anchors.fill: parent
     z: 300
+
+    // Clamp the cursor if the bucket list shrank under it (e.g. a facet
+    // refetch landed while the picker was open) so navigation and accept keep
+    // targeting a live cell instead of an empty index.
+    onEntriesChanged: {
+        const last = modal.entries.length - 1;
+        if (modal.currentIndex > last)
+            modal.currentIndex = last < 0 ? 0 : last;
+    }
 
     onOpenChanged: {
         if (!modal.open) {

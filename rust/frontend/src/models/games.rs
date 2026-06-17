@@ -3149,6 +3149,15 @@ fn apply_append_page(
         if model.loading_more {
             model.as_mut().set_loading_more(false);
         }
+        // A bulk jump paused covers for this request (`fetch_more_with_limit`).
+        // The intervening reset that tripped this mismatch was an `is_seeded`
+        // refetch on the same scope, which doesn't resume covers, so resume
+        // here or the page stays frozen with covers paused. `loading_more`
+        // forbids a second concurrent bulk fetch, so no other request is
+        // relying on the pause.
+        if bulk {
+            model.as_mut().set_cover_requests_paused(false);
+        }
         return;
     }
     match result {
@@ -3308,6 +3317,12 @@ fn apply_append_page(
                 .as_mut()
                 .set_error_message(QString::from(e.message.as_str()));
             model.as_mut().set_loading_more(false);
+            // A bulk jump paused covers for this request; resume on the error
+            // path too, mirroring the Ok path's unconditional resume, so a
+            // failed jump fetch never leaves the pause stuck.
+            if bulk {
+                model.as_mut().set_cover_requests_paused(false);
+            }
             // Even on a failed first prefetch, we have to release the
             // cover gate's hold or the user is stuck on Loading…
             // forever. The visible page is already in place from
