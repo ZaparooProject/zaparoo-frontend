@@ -128,11 +128,21 @@ pub fn override_path(namespace: &str, id: &str) -> Option<PathBuf> {
 /// Return `true` if `path` is inside the configured customization root.
 /// Used by the C++ `custom-image` provider to validate that the decoded path
 /// from the image URL has not been manipulated to escape the root.
+///
+/// Both the root and the candidate path are canonicalized first so the prefix
+/// check resolves symlinks and `..` components to their true on-disk targets.
+/// A lexical `starts_with` would let a symlink (or `custom/systems/../../etc`)
+/// under the root point outside it and still pass. Canonicalization requires
+/// the path to exist, so a missing file fails closed — which is correct, the
+/// provider only ever serves files that do exist.
 pub fn is_in_override_dir(path: &Path) -> bool {
-    match OVERRIDE_ROOT.get() {
-        Some(root) => path.starts_with(root),
-        None => false,
-    }
+    let Some(root) = OVERRIDE_ROOT.get() else {
+        return false;
+    };
+    let (Ok(root), Ok(path)) = (root.canonicalize(), path.canonicalize()) else {
+        return false;
+    };
+    path.starts_with(root)
 }
 
 /// FFI entry point for the C++ `custom-image` provider. Returns `true` when

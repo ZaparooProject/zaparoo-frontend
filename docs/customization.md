@@ -12,7 +12,7 @@ removing files, restart the frontend to pick them up.
 
 Override images go in a single customization root with one subfolder per kind:
 
-```
+```text
 <root>/
   systems/      # system artwork (the paged systems grid)
   hub/          # Hub menu icons (categories + actions)
@@ -41,7 +41,7 @@ whatever casing you like - just provide one file per id.
 **System art** (`systems/`) is keyed by the Zaparoo system id - the same id
 used by the bundled logos under `resources/images/systems/`:
 
-```
+```text
 systems/snes.png
 systems/genesis.svg
 systems/turbografx16.png
@@ -60,7 +60,7 @@ systems/turbografx16.png
 | `recents`   | Recently Played      |
 | `settings`  | Settings & Utilities |
 
-```
+```text
 hub/arcade.png
 hub/favorites.svg
 hub/settings.svg

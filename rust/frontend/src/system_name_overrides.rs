@@ -4,7 +4,7 @@
 //
 // User-supplied system display-name overrides.
 //
-// Populated once at startup from the `[system_names]` table in
+// Populated once at startup from the `[custom.system_names]` table in
 // `frontend.toml` (a `system_id = "Display Name"` map). A lookup here takes
 // priority over the bundled Names_MiSTer localized data and the Core catalog
 // name (see `models::systems::rows_for_category`).
