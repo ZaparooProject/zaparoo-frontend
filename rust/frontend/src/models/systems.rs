@@ -703,17 +703,26 @@ impl ffi::SystemsModel {
         let cat = category.to_string();
         let mut list = QStringList::default();
         if let Some(ref c) = self.rust().last_ready {
-            for sys in c.systems_by_category(&cat) {
-                // Skip launch-only systems: they have no indexed media, so
-                // category-level index/scrape must never target them.
-                if !sys.zap_script.trim().is_empty() {
-                    continue;
-                }
-                list.append(QString::from(sys.id.as_str()));
+            for id in indexable_system_ids(c, &cat) {
+                list.append(QString::from(id.as_str()));
             }
         }
         list
     }
+}
+
+/// Ids of the indexable systems in `category` (the ones a category-level
+/// index/scrape can act on). Launch-only systems carry a `zap_script` and
+/// have no indexed media, so they are skipped. A category whose members are
+/// all launch-only yields an empty list, which is how the systems context
+/// menu decides to omit the dead index/scrape actions.
+fn indexable_system_ids(catalog: &CatalogData, category: &str) -> Vec<String> {
+    catalog
+        .systems_by_category(category)
+        .into_iter()
+        .filter(|s| s.zap_script.trim().is_empty())
+        .map(|s| s.id)
+        .collect()
 }
 
 fn detail_tags_for_system(system: &SystemInfo) -> String {
@@ -758,8 +767,8 @@ mod tests {
     )]
 
     use super::{
-        detail_tags_for_system, is_launchable, launch_text_for, position_of_system_id, project,
-        rows_for_category, SystemInfo,
+        detail_tags_for_system, indexable_system_ids, is_launchable, launch_text_for,
+        position_of_system_id, project, rows_for_category, SystemInfo,
     };
     use crate::system_region::Region;
     use zaparoo_core::media_types::SystemInfo as MediaSystemInfo;
@@ -1011,5 +1020,35 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].zap_script, "zaparoo://abc/Chess");
         assert!(is_launchable(&rows[0]));
+    }
+
+    #[test]
+    fn indexable_system_ids_excludes_launch_only_in_mixed_category() {
+        // A category can mix indexable systems (NESMusic) with launch-only
+        // ones (a launchable in the same bucket). The category-level
+        // index/scrape must target only the indexable members, so the
+        // launch-only system's id must not appear.
+        let mut launchable = sys("chess", "Chess", "Other");
+        launchable.zap_script = "zaparoo://abc/Chess".into();
+        let catalog = catalog_with(vec![
+            sys("NESMusic", "NES Music", "Other"),
+            launchable,
+            sys("SNESMusic", "SNES Music", "Other"),
+        ]);
+        let ids = indexable_system_ids(&catalog, "Other");
+        assert_eq!(ids, vec!["NESMusic".to_string(), "SNESMusic".to_string()]);
+    }
+
+    #[test]
+    fn indexable_system_ids_empty_when_category_all_launch_only() {
+        // A category whose members are all launch-only yields no indexable
+        // ids; the context menu uses this to omit the dead index/scrape
+        // actions entirely.
+        let mut a = sys("a", "A", "Other");
+        a.zap_script = "zaparoo://abc/A".into();
+        let mut b = sys("b", "B", "Other");
+        b.zap_script = "zaparoo://abc/B".into();
+        let catalog = catalog_with(vec![a, b]);
+        assert!(indexable_system_ids(&catalog, "Other").is_empty());
     }
 }

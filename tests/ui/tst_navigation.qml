@@ -491,6 +491,33 @@ TestCase {
         compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system", "toggle_hide_system"], "has_nfc must not affect the systems menu");
     }
 
+    // Category index/scrape are gated on the category having at least one
+    // indexable (non-launch-only) system. The test Core is empty, so
+    // SystemsModel.system_ids_for_category returns nothing and the gate must
+    // omit the dead actions, leaving only Hide/Unhide. The positive branch
+    // (a mixed or fully-launchable category) is covered at the data layer by
+    // the Rust `indexable_system_ids` tests, which the empty test model can't
+    // exercise here.
+    function test_context_menu_categories_empty_category_omits_index_scrape(): void {
+        // Empty category short-circuits the gate (category !== "").
+        const entries = main.buildContextMenuEntries("categories", "", false, false, false, "", false, "");
+        compare(_idsOf(entries), ["toggle_hide_category"], "Empty category has no indexable systems, so index/scrape are omitted");
+    }
+
+    function test_context_menu_categories_no_indexable_systems_omits_index_scrape(): void {
+        // Non-empty category whose model yields no indexable systems.
+        const entries = main.buildContextMenuEntries("categories", "", false, false, false, "", false, "Other");
+        compare(_idsOf(entries), ["toggle_hide_category"], "A category with no indexable systems must not show index/scrape");
+    }
+
+    function test_context_menu_categories_hidden_label_toggles(): void {
+        const hideEntries = main.buildContextMenuEntries("categories", "", false, false, false, "", false, "Other");
+        const unhideEntries = main.buildContextMenuEntries("categories", "", false, false, false, "", true, "Other");
+        compare(hideEntries[0].id, "toggle_hide_category");
+        compare(unhideEntries[0].id, "toggle_hide_category");
+        verify(hideEntries[0].label !== unhideEntries[0].label, "Hide/Unhide label flips on isHidden");
+    }
+
     function test_context_menu_games_directory_returns_empty(): void {
         compare(main.buildContextMenuEntries("games", "directory", false, true, false, ""), [], "Folder tiles have no context menu, even with reader attached");
     }

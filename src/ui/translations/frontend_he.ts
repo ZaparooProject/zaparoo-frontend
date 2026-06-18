@@ -577,19 +577,19 @@ Euskara - devilschile2</source>
     </message>
     <message>
         <location filename="../app/Main.qml" line="1424"/>
-        <location filename="../app/Main.qml" line="1668"/>
+        <location filename="../app/Main.qml" line="1669"/>
         <source>Change launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../app/Main.qml" line="1431"/>
-        <location filename="../app/Main.qml" line="1459"/>
+        <location filename="../app/Main.qml" line="1460"/>
         <source>Update media database</source>
         <translation type="unfinished">עדכון מסד נתוני המדיה</translation>
     </message>
     <message>
         <location filename="../app/Main.qml" line="1434"/>
-        <location filename="../app/Main.qml" line="1462"/>
+        <location filename="../app/Main.qml" line="1463"/>
         <source>Scrape metadata</source>
         <translation type="unfinished">איסוף מטא-נתונים</translation>
     </message>
@@ -606,113 +606,113 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1471"/>
-        <location filename="../app/Main.qml" line="1506"/>
+        <location filename="../app/Main.qml" line="1472"/>
+        <location filename="../app/Main.qml" line="1507"/>
         <source>Launch game</source>
         <translation>הפעל משחק</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1487"/>
+        <location filename="../app/Main.qml" line="1488"/>
         <source>Remove from favorites</source>
         <translation>הסר מהמועדפים</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1487"/>
+        <location filename="../app/Main.qml" line="1488"/>
         <source>Add to favorites</source>
         <translation>הוסף למועדפים</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1492"/>
+        <location filename="../app/Main.qml" line="1493"/>
         <source>Write to NFC token</source>
         <translation>כתוב לטוקן NFC</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1496"/>
+        <location filename="../app/Main.qml" line="1497"/>
         <source>QR code</source>
         <translation>קוד QR</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1664"/>
+        <location filename="../app/Main.qml" line="1665"/>
         <source>Default</source>
         <translation type="unfinished">ברירת מחדל</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1664"/>
+        <location filename="../app/Main.qml" line="1665"/>
         <source>Current: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1952"/>
+        <location filename="../app/Main.qml" line="1953"/>
         <source>Go to...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1955"/>
+        <location filename="../app/Main.qml" line="1956"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2036"/>
+        <location filename="../app/Main.qml" line="2037"/>
         <source>Saving launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2040"/>
+        <location filename="../app/Main.qml" line="2041"/>
         <source>Saving…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2054"/>
+        <location filename="../app/Main.qml" line="2055"/>
         <source>Launcher update failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2058"/>
+        <location filename="../app/Main.qml" line="2059"/>
         <source>Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2062"/>
+        <location filename="../app/Main.qml" line="2063"/>
         <source>Retry</source>
         <translation type="unfinished">נסה שוב</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2066"/>
+        <location filename="../app/Main.qml" line="2067"/>
         <source>Cancel</source>
         <translation type="unfinished">ביטול</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2746"/>
+        <location filename="../app/Main.qml" line="2747"/>
         <source>Loading systems…</source>
         <translation>טוען מערכות…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2748"/>
+        <location filename="../app/Main.qml" line="2749"/>
         <source>Loading games…</source>
         <translation>טוען משחקים…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2750"/>
+        <location filename="../app/Main.qml" line="2751"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2752"/>
+        <location filename="../app/Main.qml" line="2753"/>
         <source>Loading favorites…</source>
         <translation>טוען מועדפים…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2754"/>
+        <location filename="../app/Main.qml" line="2755"/>
         <source>Loading recently played…</source>
         <translation>טוען את הפריטים ששוחקו לאחרונה…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2756"/>
+        <location filename="../app/Main.qml" line="2757"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2758"/>
+        <location filename="../app/Main.qml" line="2759"/>
         <source>Loading…</source>
         <translation>טוען…</translation>
     </message>
