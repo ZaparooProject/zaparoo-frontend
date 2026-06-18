@@ -1407,7 +1407,7 @@ MainLayout {
     // caller saw `entries.length === 0` despite the function pushing 3
     // items in. Plain `var` round-trips cleanly and silences the
     // "insufficiently annotated" coercion warning at the call site.
-    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool) {
+    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool, category: string) {
         if (owner === "systems") {
             const entries = [
                 {
@@ -1448,7 +1448,13 @@ MainLayout {
                     label: isHidden ? qsTr("Unhide") : qsTr("Hide")
                 }
             ];
-            if (!mediaBusy) {
+            // Index/scrape act on the category's indexable systems, which
+            // excludes launch-only ones. Show the actions only when the
+            // category has at least one indexable system; a category whose
+            // members are all launch-only yields none and the actions would
+            // no-op, so omit them rather than show dead entries.
+            const hasIndexable = category !== "" && Browse.SystemsModel.system_ids_for_category(category).length > 0;
+            if (!mediaBusy && hasIndexable) {
                 entries.push({
                     id: "index_category",
                     label: qsTr("Update media database")
@@ -1578,7 +1584,7 @@ MainLayout {
             if (index >= Browse.RecentsModel.count)
                 return;
         }
-        const entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden);
+        const entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category);
         if (entries.length === 0)
             return;
         root.contextMenuEntries = entries;
