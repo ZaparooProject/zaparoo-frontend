@@ -50,6 +50,28 @@ pub struct SystemInfo {
     /// True when the user has hidden this system and `show_hidden` is on.
     /// The tile renders dimmed with a "Hidden" badge.
     pub hidden: bool,
+    /// `zaparoo://...` launch URI for launch-only "virtual" systems
+    /// (Core's launchables). Empty for normal systems. When present the
+    /// system is launched by running this script directly instead of
+    /// being browsed via `media.browse`.
+    pub zap_script: String,
+}
+
+/// A launch-only system carries a `zaparoo://...` launch URI instead of
+/// browsable media. Trimmed so whitespace-only never reads as launchable.
+fn is_launchable(system: &SystemInfo) -> bool {
+    !system.zap_script.trim().is_empty()
+}
+
+/// `ZapScript` to run (or write to a card) for a system. Launchables run
+/// their own `zaparoo://...` URI; normal systems use the `**launch.system`
+/// directive that launches the system's default core/launcher.
+fn launch_text_for(system: &SystemInfo) -> String {
+    if is_launchable(system) {
+        system.zap_script.clone()
+    } else {
+        format!("**launch.system:{}", system.id)
+    }
 }
 
 #[derive(Default)]
@@ -141,6 +163,15 @@ pub mod ffi {
 
         #[qinvokable]
         fn launch_text_at(self: &SystemsModel, index: i32) -> QString;
+
+        /// True when the system with `system_id` is a launch-only (virtual)
+        /// system. The router launches it directly rather than browsing.
+        #[qinvokable]
+        fn is_launchable_system(self: &SystemsModel, system_id: &QString) -> bool;
+
+        /// Run the launch script for the launch-only system `system_id`.
+        #[qinvokable]
+        fn launch_system_id(self: Pin<&mut SystemsModel>, system_id: &QString);
 
         #[qinvokable]
         fn cancel_card_write(self: Pin<&mut SystemsModel>);
@@ -270,6 +301,7 @@ fn rows_for_category(
                     release_date: s.release_date,
                     manufacturer: s.manufacturer,
                     hidden: is_hidden,
+                    zap_script: s.zap_script,
                 })
             })
             .collect()
@@ -521,7 +553,7 @@ impl ffi::SystemsModel {
         if system.id.is_empty() {
             return QString::default();
         }
-        QString::from(format!("**launch.system:{}", system.id).as_str())
+        QString::from(launch_text_for(system).as_str())
     }
 
     fn write_card_at(mut self: Pin<&mut Self>, index: i32) {
@@ -538,7 +570,7 @@ impl ffi::SystemsModel {
             self.as_mut().set_card_write_pending(false);
             return;
         }
-        let text = format!("**launch.system:{}", system.id);
+        let text = launch_text_for(system);
         let name = system.name.clone();
         let store = global_store();
         let seq = self.rust().card_write_seq.clone();
@@ -575,7 +607,39 @@ impl ffi::SystemsModel {
         if system.id.is_empty() {
             return;
         }
-        let text = format!("**launch.system:{}", system.id);
+        let text = launch_text_for(system);
+        let name = system.name.clone();
+        let store = global_store();
+        global_handle().spawn(async move {
+            if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
+                warn!("run failed for {name}: {}", e.message);
+            }
+        });
+    }
+
+    /// True when the system with `system_id` is a launch-only (virtual)
+    /// system carrying a `zaparoo://...` script. The router uses this to
+    /// launch the system directly instead of routing into a games browse.
+    fn is_launchable_system(&self, system_id: &QString) -> bool {
+        let id = system_id.to_string();
+        if id.is_empty() {
+            return false;
+        }
+        self.systems
+            .iter()
+            .find(|s| s.id == id)
+            .is_some_and(is_launchable)
+    }
+
+    /// Run the launch script for the system with `system_id`. Used by the
+    /// router for launchable systems, where selection is an action rather
+    /// than navigation; lookup is by id since the router has no index.
+    fn launch_system_id(self: Pin<&mut Self>, system_id: &QString) {
+        let id = system_id.to_string();
+        let Some(system) = self.systems.iter().find(|s| s.id == id) else {
+            return;
+        };
+        let text = launch_text_for(system);
         let name = system.name.clone();
         let store = global_store();
         global_handle().spawn(async move {
@@ -640,6 +704,11 @@ impl ffi::SystemsModel {
         let mut list = QStringList::default();
         if let Some(ref c) = self.rust().last_ready {
             for sys in c.systems_by_category(&cat) {
+                // Skip launch-only systems: they have no indexed media, so
+                // category-level index/scrape must never target them.
+                if !sys.zap_script.trim().is_empty() {
+                    continue;
+                }
                 list.append(QString::from(sys.id.as_str()));
             }
         }
@@ -669,7 +738,11 @@ fn detail_tags_for_system(system: &SystemInfo) -> String {
                 .to_string(),
         ),
     ];
+    // Drop rows with no value so a system missing metadata (common for
+    // launch-only systems, which carry no releaseDate/manufacturer) shows
+    // only the fields it actually has rather than blank detail rows.
     rows.into_iter()
+        .filter(|(_, value)| !value.is_empty())
         .map(|(label, value)| format!("{label}\t{value}"))
         .collect::<Vec<_>>()
         .join("\n")
@@ -685,7 +758,8 @@ mod tests {
     )]
 
     use super::{
-        detail_tags_for_system, position_of_system_id, project, rows_for_category, SystemInfo,
+        detail_tags_for_system, is_launchable, launch_text_for, position_of_system_id, project,
+        rows_for_category, SystemInfo,
     };
     use crate::system_region::Region;
     use zaparoo_core::media_types::SystemInfo as MediaSystemInfo;
@@ -851,6 +925,7 @@ mod tests {
             release_date: None,
             manufacturer: None,
             hidden: false,
+            zap_script: String::new(),
         }
     }
 
@@ -881,5 +956,60 @@ mod tests {
     fn position_of_system_id_missing_returns_minus_one() {
         let systems = vec![local_sys("NES")];
         assert_eq!(position_of_system_id(&systems, "Missing"), -1);
+    }
+
+    #[test]
+    fn detail_tags_for_system_omits_empty_metadata_rows() {
+        // A launch-only system typically has no release date or
+        // manufacturer; those rows must be dropped, not rendered blank.
+        let system = local_sys("Chess");
+        assert_eq!(detail_tags_for_system(&system), "Category\tConsoles");
+    }
+
+    #[test]
+    fn detail_tags_for_system_keeps_populated_rows_only() {
+        let mut system = local_sys("NES");
+        system.manufacturer = Some("Nintendo".into());
+        // Release date stays None -> its row is dropped, Manufacturer kept.
+        assert_eq!(
+            detail_tags_for_system(&system),
+            "Category\tConsoles\nManufacturer\tNintendo"
+        );
+    }
+
+    #[test]
+    fn launchable_detection_ignores_whitespace_only_script() {
+        let mut system = local_sys("NES");
+        assert!(!is_launchable(&system));
+        system.zap_script = "   ".into();
+        assert!(!is_launchable(&system));
+        system.zap_script = "zaparoo://abc/Chess".into();
+        assert!(is_launchable(&system));
+    }
+
+    #[test]
+    fn launch_text_uses_zap_script_for_launchables() {
+        let mut system = local_sys("Chess");
+        system.zap_script = "zaparoo://abc/Chess".into();
+        assert_eq!(launch_text_for(&system), "zaparoo://abc/Chess");
+    }
+
+    #[test]
+    fn launch_text_uses_launch_system_directive_for_normal_systems() {
+        let system = local_sys("NES");
+        assert_eq!(launch_text_for(&system), "**launch.system:NES");
+    }
+
+    #[test]
+    fn rows_for_category_propagates_zap_script() {
+        // Launchables land in the synthesized "Other" bucket, which matches
+        // systems with an empty upstream category.
+        let mut chess = sys("chess", "Chess", "");
+        chess.zap_script = "zaparoo://abc/Chess".into();
+        let catalog = catalog_with(vec![chess]);
+        let rows = rows_for_category(Some(&catalog), "Other", &[], false, Region::Us);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].zap_script, "zaparoo://abc/Chess");
+        assert!(is_launchable(&rows[0]));
     }
 }

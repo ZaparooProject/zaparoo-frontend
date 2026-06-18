@@ -1293,6 +1293,13 @@ MainLayout {
                     Browse.SystemsModel.set_category(cat);
                 return;
             }
+            // Launch-only (virtual) systems carry a zapScript and have no
+            // browsable media. Run them directly and stay on the systems
+            // grid; never route into an empty games browse.
+            if (Browse.SystemsModel.is_launchable_system(systemId)) {
+                Browse.SystemsModel.launch_system_id(systemId);
+                return;
+            }
             root._navigateFromSystems(systemId);
         }
         function onRequestHubScreen(): void {
@@ -1408,14 +1415,17 @@ MainLayout {
                     label: qsTr("Launch core")
                 }
             ];
-            if (!Browse.SystemLaunchers.loading && Browse.SystemLaunchers.error_message === "" && Browse.SystemLaunchers.launcher_count_for_system(systemId) > 0) {
+            // Launch-only (virtual) systems have no media and no launcher
+            // choice, so omit launcher/index/scrape actions for them.
+            const launchable = Browse.SystemsModel.is_launchable_system(systemId);
+            if (!launchable && !Browse.SystemLaunchers.loading && Browse.SystemLaunchers.error_message === "" && Browse.SystemLaunchers.launcher_count_for_system(systemId) > 0) {
                 entries.push({
                     id: "change_launcher",
                     label: qsTr("Change launcher")
                 });
             }
             const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
-            if (!mediaBusy) {
+            if (!launchable && !mediaBusy) {
                 entries.push({
                     id: "index_system",
                     label: qsTr("Update media database")

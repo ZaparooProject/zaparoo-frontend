@@ -1,7 +1,8 @@
 Lucide Attribution
 ==================
 
-This software bundles UI glyphs under resources/images/icons/ derived
+This software bundles UI glyphs under resources/images/icons/,
+resources/images/status/, and resources/images/categories/ derived
 from:
 
   Lucide
@@ -21,6 +22,7 @@ attribute on the SVG root):
   resources/images/icons/History.svg
   resources/images/icons/PlayOutline.svg
   resources/images/status/NFC.svg
+  resources/images/categories/Other.svg
 
 The ISC license text from the upstream project follows.
 

@@ -35,6 +35,12 @@ pub struct SystemInfo {
     pub release_date: Option<String>,
     #[serde(default)]
     pub manufacturer: Option<String>,
+    /// `zaparoo://...` launch URI for launch-only "virtual" systems
+    /// (Core's launchables). Empty for normal indexed systems. When
+    /// present, the system must be launched by running this script
+    /// directly rather than used as a key for `media.browse`/search/tags.
+    #[serde(default)]
+    pub zap_script: String,
 }
 
 /// Parameters for `media.search`. Mirrors Core's `SearchParams`
@@ -127,6 +133,10 @@ pub struct System {
     pub release_date: Option<String>,
     #[serde(default)]
     pub manufacturer: Option<String>,
+    /// `zaparoo://...` launch URI for launch-only systems; mirrors
+    /// Core's `System.zapScript`. Empty for normal indexed systems.
+    #[serde(default)]
+    pub zap_script: String,
 }
 
 /// Trimmed `system` sub-object returned inside `media.meta`'s title
@@ -1214,6 +1224,19 @@ mod tests {
         let json = r#"{"systems":[{"id":"x","name":"X"}]}"#;
         let result: SystemsResult = serde_json::from_str(json).expect("parse");
         assert_eq!(result.systems[0].category, "");
+    }
+
+    #[test]
+    fn system_info_parses_zap_script_for_launchables() {
+        let json = r#"{"systems":[
+            {"id":"NES","name":"Nintendo","category":"Console"},
+            {"id":"abc","name":"Chess","category":"Other","zapScript":"zaparoo://abc/Chess"}
+        ]}"#;
+        let result: SystemsResult = serde_json::from_str(json).expect("parse");
+        // Normal system: no zapScript on the wire -> empty.
+        assert_eq!(result.systems[0].zap_script, "");
+        // Launchable virtual system carries its launch URI.
+        assert_eq!(result.systems[1].zap_script, "zaparoo://abc/Chess");
     }
 
     #[test]

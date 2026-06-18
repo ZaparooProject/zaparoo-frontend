@@ -13,5 +13,8 @@ Media.svg is bundled ahead of the Media screen (tracked in #21). The
 "Media" category is currently filtered from the carousel via
 HIDDEN_CATEGORIES in models/categories.rs.
 
-Iconography: Handheld is from streamlinehq.com; the rest are from iconoir.com.
-See src/LICENSES/ for upstream attribution.
+Other.svg is the icon for Core's synthesized "Other" category, which holds
+launchables (launch-only virtual systems) and other uncategorized systems.
+
+Iconography: Handheld is from streamlinehq.com; Other is from lucide.dev;
+the rest are from iconoir.com. See src/LICENSES/ for upstream attribution.
