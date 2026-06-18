@@ -1081,6 +1081,17 @@ ApplicationWindow {
                                 label: qsTr("Cancel")
                             }
                         ];
+                    if (root.crtCalibrationModalVisible)
+                        return [
+                            {
+                                button: "Dpad",
+                                label: qsTr("Adjust")
+                            },
+                            {
+                                button: "ButtonA",
+                                label: qsTr("Save")
+                            }
+                        ];
                     if (!root.bootComplete || root.startupRestoreCurtainVisible)
                         return [];
                     if (root.firstRunIndexModalVisible) {
