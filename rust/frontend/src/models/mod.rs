@@ -35,6 +35,7 @@ pub mod game_info;
 pub mod games;
 pub mod games_state;
 pub mod hub_state;
+pub mod image_overrides;
 pub mod input;
 pub mod log_upload;
 pub mod media_status;

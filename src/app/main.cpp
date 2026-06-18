@@ -6,9 +6,9 @@
 // zaparoo_frontend_rs staticlib; Qt plugin wiring is handled here so that
 // Qt's CMake (qt_import_qml_plugins) can emit the correct link flags.
 
+#include "custom_image_provider.h"
 #include "media_image_provider.h"
 #include "native_video_writer.h"
-#include "system_image_provider.h"
 #include "tinted_svg_image_provider.h"
 
 #include <QByteArray>
@@ -371,12 +371,12 @@ int main(int argc, char* argv[]) // NOLINT
     engine.addImageProvider(QStringLiteral("media-image"), new MediaImageProvider());
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     engine.addImageProvider(QStringLiteral("tinted-svg"), new TintedSvgImageProvider());
-    // User-supplied system artwork overrides. Files configured via
-    // `[images] system_dir` in `frontend.toml` are served as-is -- no tint
-    // pipeline. The provider validates that decoded paths stay inside the
-    // configured dir to prevent arbitrary filesystem reads.
+    // User-supplied customization images (system artwork and Hub icons).
+    // Files under the `[custom] dir` root in `frontend.toml` are served as-is
+    // -- no tint pipeline. The provider validates that decoded paths stay
+    // inside the customization root to prevent arbitrary filesystem reads.
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    engine.addImageProvider(QStringLiteral("system-image"), new SystemImageProvider());
+    engine.addImageProvider(QStringLiteral("custom-image"), new CustomImageProvider());
     startupTrace("cpp:QQmlApplicationEngine + image providers ready");
 
     QVariantMap initialProperties = {

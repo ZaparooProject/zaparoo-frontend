@@ -460,42 +460,42 @@ Euskara - devilschile2</source>
 <context>
     <name>HubScreen</name>
     <message>
-        <location filename="../screens/HubScreen.qml" line="56"/>
+        <location filename="../screens/HubScreen.qml" line="72"/>
         <source>Arcade</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="61"/>
+        <location filename="../screens/HubScreen.qml" line="77"/>
         <source>Computers</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="66"/>
+        <location filename="../screens/HubScreen.qml" line="82"/>
         <source>Consoles</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="71"/>
+        <location filename="../screens/HubScreen.qml" line="87"/>
         <source>Handhelds</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="154"/>
+        <location filename="../screens/HubScreen.qml" line="170"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="160"/>
+        <location filename="../screens/HubScreen.qml" line="176"/>
         <source>Favorites</source>
         <translation>즐겨찾기</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="165"/>
+        <location filename="../screens/HubScreen.qml" line="181"/>
         <source>Recently Played</source>
         <translation>최근 플레이</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="170"/>
+        <location filename="../screens/HubScreen.qml" line="186"/>
         <source>Settings &amp; Utilities</source>
         <translation type="unfinished"></translation>
     </message>
@@ -504,7 +504,7 @@ Euskara - devilschile2</source>
         <translation type="vanished">설정</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="718"/>
+        <location filename="../screens/HubScreen.qml" line="734"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>사용 가능한 시스템이 없습니다. 설정에서 미디어 데이터베이스 업데이트를 실행하세요.</translation>
     </message>
@@ -1482,7 +1482,7 @@ Euskara - devilschile2</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="512"/>
+        <location filename="../components/Tile.qml" line="513"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>

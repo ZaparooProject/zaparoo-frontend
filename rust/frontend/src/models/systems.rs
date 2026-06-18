@@ -4,7 +4,7 @@
 
 use crate::models::{global_handle, global_store, with_persist_read};
 use crate::system_region::Region;
-use crate::{system_image_overrides, system_logos, system_names, system_region};
+use crate::{image_overrides, system_logos, system_name_overrides, system_names, system_region};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QVariant,
@@ -41,7 +41,7 @@ pub struct SystemInfo {
     /// Cover key emitted to QML. One of:
     /// - `"systems/{stem}"` — tinted SVG via the `tinted-svg` provider
     ///   (stem comes from `system_logos::logo_artwork_stem` for regional variants).
-    /// - `"system-image/{path}"` — user-supplied override via the `system-image`
+    /// - `"custom-image/{path}"` — user-supplied override via the `custom-image`
     ///   provider; no tint applied.
     pub cover_key: String,
     pub category: String,
@@ -251,13 +251,16 @@ fn rows_for_category(
                 if is_hidden && !show_hidden {
                     return None;
                 }
-                // Localized display name: use Names_MiSTer data if available,
-                // fall back to the Core catalog name so unknown systems still show.
-                let name = system_names::localized_name(&s.id, region).unwrap_or(s.name);
+                // Display name priority: user `[system_names]` override, then
+                // Names_MiSTer localized data, then the Core catalog name so
+                // unknown systems still show.
+                let name = system_name_overrides::lookup(&s.id)
+                    .or_else(|| system_names::localized_name(&s.id, region))
+                    .unwrap_or(s.name);
                 // Cover key: user override takes priority over bundled art.
-                let cover_key = system_image_overrides::override_path(&s.id).map_or_else(
+                let cover_key = image_overrides::override_path("systems", &s.id).map_or_else(
                     || format!("systems/{}", system_logos::logo_artwork_stem(&s.id, region)),
-                    |p| format!("system-image/{}", p.display()),
+                    |p| format!("custom-image/{}", p.display()),
                 );
                 Some(SystemInfo {
                     id: s.id,
@@ -348,7 +351,7 @@ impl ffi::SystemsModel {
         match role {
             COVER_KEY_ROLE => {
                 // `cover_key` is set at row-build time in `rows_for_category`:
-                // either `"system-image/{path}"` for a user override or
+                // either `"custom-image/{path}"` for a user override or
                 // `"systems/{stem}"` for bundled artwork. `Resources.qml`
                 // resolves this to the appropriate image:// URL.
                 QVariant::from(&QString::from(s.cover_key.as_str()))

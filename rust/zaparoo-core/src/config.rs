@@ -40,12 +40,17 @@ pub struct Config {
     /// state is wiped on reboot — using state would re-show the notice
     /// every cold boot.
     pub notice: NoticeConfig,
-    /// Optional directory scanned at startup for user-supplied system
-    /// artwork. Files whose stem matches a Zaparoo system id (case-exact)
-    /// are served as-is — no tint pipeline — via the `system-image` image
-    /// provider. Configured via `[images] system_dir` in `frontend.toml`.
-    /// Absent/empty means the feature is off.
-    pub system_image_dir: Option<String>,
+    /// Optional override for the user customization root. When absent the
+    /// frontend uses `platform_paths::custom_dir()` (zero-config default).
+    /// The root holds `systems/` and `hub/` subfolders of override images
+    /// named by id, served as-is — no tint pipeline — via the `custom-image`
+    /// image provider. Configured via `[custom] dir` in `frontend.toml`.
+    pub custom_dir: Option<String>,
+    /// User-supplied system display-name overrides, keyed by system id.
+    /// Parsed from the `[custom.system_names]` table in `frontend.toml`. Takes
+    /// priority over the bundled `Names_MiSTer` localized data and the Core
+    /// catalog name. Empty when the table is absent.
+    pub system_names: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -104,7 +109,8 @@ impl Default for Config {
             key_to_action: input_actions::invert(&input_actions::default_bindings()),
             settings: SettingsConfig::default(),
             notice: NoticeConfig::default(),
-            system_image_dir: None,
+            custom_dir: None,
+            system_names: HashMap::new(),
         }
     }
 }
@@ -126,7 +132,7 @@ struct RawConfig {
     #[serde(default)]
     notice: RawNotice,
     #[serde(default)]
-    images: RawImages,
+    custom: RawCustom,
 }
 
 #[derive(Deserialize, Default)]
@@ -178,8 +184,10 @@ struct RawNotice {
 }
 
 #[derive(Deserialize, Default)]
-struct RawImages {
-    system_dir: Option<String>,
+struct RawCustom {
+    dir: Option<String>,
+    #[serde(default)]
+    system_names: HashMap<String, String>,
 }
 
 pub fn load_config(path: &Path) -> Config {
@@ -274,11 +282,20 @@ pub fn load_config(path: &Path) -> Config {
     cfg.notice = NoticeConfig {
         commercial_ack: raw.notice.commercial_ack.unwrap_or(false),
     };
-    cfg.system_image_dir = raw
-        .images
-        .system_dir
+    cfg.custom_dir = raw
+        .custom
+        .dir
         .map(|value| value.trim().to_string())
         .filter(|s| !s.is_empty());
+    // Trim keys and values; drop entries that are empty on either side so a
+    // stray `"" = "x"` line can't shadow a real system or render blank.
+    cfg.system_names = raw
+        .custom
+        .system_names
+        .into_iter()
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+        .collect();
     cfg
 }
 
@@ -503,24 +520,77 @@ mod tests {
         assert_eq!(cfg.settings.mouse_enabled, None);
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, None);
         assert_eq!(cfg.settings.region, None);
-        assert!(cfg.system_image_dir.is_none());
+        assert!(cfg.custom_dir.is_none());
+        assert!(cfg.system_names.is_empty());
         assert!(!cfg.notice.commercial_ack);
         // Default keyboard bindings populate the map.
         assert!(!cfg.key_to_action.is_empty());
     }
 
     #[test]
-    fn system_image_dir_round_trips() {
-        let f = write_tmp("[images]\nsystem_dir = \"/mnt/art/systems\"\n");
+    fn custom_dir_round_trips() {
+        let f = write_tmp("[custom]\ndir = \"/mnt/art\"\n");
         let cfg = load_config(f.path());
-        assert_eq!(cfg.system_image_dir.as_deref(), Some("/mnt/art/systems"));
+        assert_eq!(cfg.custom_dir.as_deref(), Some("/mnt/art"));
     }
 
     #[test]
-    fn system_image_dir_absent_is_none() {
+    fn custom_dir_absent_is_none() {
         let f = write_tmp("[core]\nendpoint = \"ws://example.com/api\"\n");
         let cfg = load_config(f.path());
-        assert!(cfg.system_image_dir.is_none());
+        assert!(cfg.custom_dir.is_none());
+    }
+
+    #[test]
+    fn custom_dir_empty_string_is_none() {
+        let f = write_tmp("[custom]\ndir = \"   \"\n");
+        let cfg = load_config(f.path());
+        assert!(cfg.custom_dir.is_none());
+    }
+
+    #[test]
+    fn system_names_table_round_trips() {
+        let f =
+            write_tmp("[custom.system_names]\nSNES = \"Super Nintendo\"\nPSX = \"PlayStation\"\n");
+        let cfg = load_config(f.path());
+        assert_eq!(
+            cfg.system_names.get("SNES").map(String::as_str),
+            Some("Super Nintendo")
+        );
+        assert_eq!(
+            cfg.system_names.get("PSX").map(String::as_str),
+            Some("PlayStation")
+        );
+    }
+
+    #[test]
+    fn system_names_coexists_with_custom_dir() {
+        // Both keys live under [custom]; setting one must not drop the other.
+        let f = write_tmp(
+            "[custom]\ndir = \"/mnt/art\"\n\n[custom.system_names]\nSNES = \"Super Nintendo\"\n",
+        );
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.custom_dir.as_deref(), Some("/mnt/art"));
+        assert_eq!(
+            cfg.system_names.get("SNES").map(String::as_str),
+            Some("Super Nintendo")
+        );
+    }
+
+    #[test]
+    fn system_names_absent_is_empty() {
+        let f = write_tmp("[core]\nendpoint = \"ws://example.com/api\"\n");
+        let cfg = load_config(f.path());
+        assert!(cfg.system_names.is_empty());
+    }
+
+    #[test]
+    fn system_names_drops_blank_entries() {
+        // A value that trims to empty must not register as an override, else
+        // it would blank out the real display name for that system.
+        let f = write_tmp("[custom.system_names]\nSNES = \"   \"\n");
+        let cfg = load_config(f.path());
+        assert!(cfg.system_names.is_empty());
     }
 
     #[test]

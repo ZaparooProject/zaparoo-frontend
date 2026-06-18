@@ -15,10 +15,11 @@ QtObject {
     // Extension/scheme is chosen by directory:
     //   * `systems/<id>` — the curated SVG set under
     //     resources/images/systems/, tinted by the image provider.
-    //   * `system-image/<path>` — user-supplied override artwork from the
-    //     directory configured via `[images] system_dir` in frontend.toml.
-    //     Served as-is (no tint) by the `system-image` image provider; the
-    //     three theme color tokens are ignored for overrides.
+    //   * `custom-image/<path>` — user-supplied override artwork (system art
+    //     or Hub icons) from the customization root (`[custom] dir` in
+    //     frontend.toml, or the default `.../zaparoo/custom/`). Served exactly
+    //     as-is by the `custom-image` image provider; it never enters the
+    //     tint pipeline and the three theme color tokens are ignored.
     //   * `media-image/<encoded>` — media images (boxart, screenshot,
     //     wheel, titleshot, map, marquee, fanart, generic image)
     //     cached in process memory by `media_image_cache.rs`, served
@@ -57,8 +58,8 @@ QtObject {
         if (key === "")
             return "";
 
-        if (key.startsWith("system-image/"))
-            return "image://system-image/" + key.substring("system-image/".length);
+        if (key.startsWith("custom-image/"))
+            return "image://custom-image/" + key.substring("custom-image/".length);
 
         if (key.startsWith("media-image/"))
             return "image://media-image/" + key.substring("media-image/".length);

@@ -45,7 +45,9 @@ const ID_ALIASES: &[(&str, &str)] = &[
 /// Strip all non-alphanumeric characters and lowercase the result.
 /// Applied identically to both file keys (at parse time) and
 /// Zaparoo system ids (at lookup time) so the match is fuzzy-by-convention.
-fn normalize_key(s: &str) -> String {
+/// Shared with `system_name_overrides` so user-config keys are matched with
+/// the exact same forgiving rule as the bundled names.
+pub(crate) fn normalize_key(s: &str) -> String {
     s.chars()
         .filter(|c| c.is_alphanumeric())
         .collect::<String>()

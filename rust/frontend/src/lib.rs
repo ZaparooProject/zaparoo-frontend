@@ -4,12 +4,13 @@
 
 #[macro_use]
 mod bind;
+pub mod image_overrides;
 mod media_image_cache;
 mod media_meta_cache;
 mod mister_runtime;
 mod models;
-pub mod system_image_overrides;
 pub mod system_logos;
+pub mod system_name_overrides;
 pub mod system_names;
 pub mod system_region;
 
@@ -50,7 +51,7 @@ use zaparoo_core::{
     config::load_config,
     logger::{debug_logging_enabled, install},
     persist, platform,
-    platform_paths::{config_file_path, log_file_path, stderr_log_path},
+    platform_paths::{config_file_path, custom_dir, log_file_path, stderr_log_path},
     store::Store,
 };
 
@@ -426,12 +427,18 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
     let persist_state = Arc::new(Mutex::new(persist::load()));
     startup_trace("rust:persist loaded");
 
-    // Scan the user-supplied system artwork directory once at startup.
-    // Files whose stem matches a Zaparoo system id are served by the
-    // `system-image` image provider as-is, bypassing the tint pipeline.
-    // Missing or unset dir → empty map (feature off).
-    system_image_overrides::scan(config.system_image_dir.as_deref());
-    startup_trace("rust:system image overrides scanned");
+    // Scan the user customization root once at startup. The `systems/` and
+    // `hub/` subfolders hold override images served by the `custom-image`
+    // provider as-is, bypassing the tint pipeline. `[custom] dir` overrides
+    // the default location; a missing root → empty map (feature off).
+    // System display-name overrides come from the same config.
+    let custom_root = config
+        .custom_dir
+        .clone()
+        .map_or_else(custom_dir, std::path::PathBuf::from);
+    image_overrides::scan(&custom_root);
+    system_name_overrides::set(config.system_names.clone());
+    startup_trace("rust:image and name overrides scanned");
 
     // init_globals takes the owning `Runtime` — the static holder is
     // what `zaparoo_rust_shutdown` later drains via `shutdown_timeout`.

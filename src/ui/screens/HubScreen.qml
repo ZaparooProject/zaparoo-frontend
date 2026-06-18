@@ -50,26 +50,42 @@ Item {
 
     Component.onCompleted: console.debug("startup/qml component HubScreen completed")
 
+    // Prefer a user override cover key over the bundled default. Pure: takes
+    // the override-lookup result (empty string when none) and the fallback,
+    // so it is unit-testable without the Browse.ImageOverrides singleton.
+    // Hub overrides live under the `hub/` customization subfolder, keyed by
+    // category id (Arcade/Computer/Console/Handheld) or action id
+    // (resume/favorites/recents/settings); see docs/customization.md.
+    function _preferOverride(overrideKey: string, fallbackKey: string): string {
+        return (overrideKey && overrideKey.length > 0) ? overrideKey : fallbackKey;
+    }
+
+    // Resolve the cover key for a Hub item: a user override from the `hub/`
+    // namespace if present, else the bundled key.
+    function _hubCoverKey(id: string, fallbackKey: string): string {
+        return hub._preferOverride(Browse.ImageOverrides.override_cover_key("hub", id), fallbackKey);
+    }
+
     readonly property var _placeholderCategories: [
         {
             id: CategoryIds.arcadeId,
             name: qsTr("Arcade"),
-            coverKey: CategoryIds.coverKey(CategoryIds.arcadeId)
+            coverKey: hub._hubCoverKey(CategoryIds.arcadeId, CategoryIds.coverKey(CategoryIds.arcadeId))
         },
         {
             id: CategoryIds.computerId,
             name: qsTr("Computers"),
-            coverKey: CategoryIds.coverKey(CategoryIds.computerId)
+            coverKey: hub._hubCoverKey(CategoryIds.computerId, CategoryIds.coverKey(CategoryIds.computerId))
         },
         {
             id: CategoryIds.consoleId,
             name: qsTr("Consoles"),
-            coverKey: CategoryIds.coverKey(CategoryIds.consoleId)
+            coverKey: hub._hubCoverKey(CategoryIds.consoleId, CategoryIds.coverKey(CategoryIds.consoleId))
         },
         {
             id: CategoryIds.handheldId,
             name: qsTr("Handhelds"),
-            coverKey: CategoryIds.coverKey(CategoryIds.handheldId)
+            coverKey: hub._hubCoverKey(CategoryIds.handheldId, CategoryIds.coverKey(CategoryIds.handheldId))
         }
     ]
     readonly property var visibleCategoryEntries: {
@@ -81,7 +97,7 @@ Item {
             entries.push({
                 id: name,
                 name: name,
-                coverKey: CategoryIds.coverKey(name),
+                coverKey: hub._hubCoverKey(name, CategoryIds.coverKey(name)),
                 hidden: Browse.CategoriesModel.is_hidden_at(i)
             });
         }
@@ -150,23 +166,23 @@ Item {
             const resumeName = Browse.RecentsModel.resume_name;
             entries.push({
                 id: "resume",
-                coverKey: "icons/PlayOutline",
+                coverKey: hub._hubCoverKey("resume", "icons/PlayOutline"),
                 text: resumeName.length > 0 ? resumeName : qsTr("Resume")
             });
         }
         entries.push({
             id: "favorites",
-            coverKey: "icons/HeartOutline",
+            coverKey: hub._hubCoverKey("favorites", "icons/HeartOutline"),
             text: qsTr("Favorites")
         });
         entries.push({
             id: "recents",
-            coverKey: "icons/History",
+            coverKey: hub._hubCoverKey("recents", "icons/History"),
             text: qsTr("Recently Played")
         });
         entries.push({
             id: "settings",
-            coverKey: "icons/Tools",
+            coverKey: hub._hubCoverKey("settings", "icons/Tools"),
             text: qsTr("Settings & Utilities")
         });
         return entries;

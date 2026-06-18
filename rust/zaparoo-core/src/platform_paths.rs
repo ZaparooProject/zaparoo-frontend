@@ -45,6 +45,21 @@ pub fn stderr_log_path() -> PathBuf {
     }
 }
 
+/// Root directory scanned at startup for user-supplied customization
+/// assets. Holds `systems/` and `hub/` subfolders of override images named
+/// by id. Returned even when it does not exist on disk — the scan treats a
+/// missing directory as "no overrides" so the feature works with zero
+/// config. `[custom] dir` in `frontend.toml` overrides this default.
+pub fn custom_dir() -> PathBuf {
+    if runtime::current().is_mister() {
+        PathBuf::from("/media/fat/zaparoo/custom")
+    } else {
+        let mut path = config_file_path();
+        path.set_file_name("custom");
+        path
+    }
+}
+
 pub fn state_file_path() -> PathBuf {
     // ZAPAROO_STATE_FILE lets tests (and ad-hoc runs) redirect state
     // persistence away from the real user path. Checked first so the
@@ -72,7 +87,7 @@ mod tests {
         reason = "tests should fail-fast on unexpected errors"
     )]
 
-    use super::{config_file_path, log_file_path, state_file_path, stderr_log_path};
+    use super::{config_file_path, custom_dir, log_file_path, state_file_path, stderr_log_path};
     use crate::runtime;
 
     #[test]
@@ -138,6 +153,21 @@ mod tests {
                 state.ends_with("zaparoo/state.toml"),
                 "state path did not end with zaparoo/state.toml: {state:?}"
             );
+        }
+    }
+
+    #[test]
+    fn custom_dir_resolves_per_runtime() {
+        let dir = custom_dir();
+        if runtime::current().is_mister() {
+            assert_eq!(dir.to_str(), Some("/media/fat/zaparoo/custom"));
+        } else {
+            assert!(
+                dir.ends_with("zaparoo/custom"),
+                "custom dir did not end with zaparoo/custom: {dir:?}"
+            );
+            // Sibling of frontend.toml, like state.toml.
+            assert_eq!(dir.parent(), config_file_path().parent());
         }
     }
 

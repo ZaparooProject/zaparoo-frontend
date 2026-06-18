@@ -219,6 +219,20 @@ TestCase {
         compare(map(2, 4, 0), 0, "Degenerate destCount=0 returns 0 — caller guards the no-op");
     }
 
+    // _preferOverride is the pure half of the Hub override resolution: given
+    // the override-lookup result (empty when none) and the bundled fallback,
+    // it picks the override when non-empty. The Browse.ImageOverrides lookup
+    // itself is exercised by the Rust image_overrides tests, not here.
+    function test_prefer_override_uses_override_when_present(): void {
+        const pick = main.hubScreen._preferOverride;
+        compare(pick("custom-image//media/fat/zaparoo/custom/hub/favorites.png", "icons/HeartOutline"), "custom-image//media/fat/zaparoo/custom/hub/favorites.png");
+    }
+
+    function test_prefer_override_falls_back_on_empty(): void {
+        const pick = main.hubScreen._preferOverride;
+        compare(pick("", "icons/HeartOutline"), "icons/HeartOutline", "Empty override falls back to bundled key");
+    }
+
     // Up on the top row wraps onto the bottom row (the two rows form a
     // closed loop). Test harness has no live categories, so we start
     // at top[0] and just verify currentRow flipped — the destination

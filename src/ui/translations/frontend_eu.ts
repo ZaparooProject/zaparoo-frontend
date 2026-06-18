@@ -468,42 +468,42 @@ Euskara - devilschile2</source>
         <translation type="vanished">Jokua berrekin</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="56"/>
+        <location filename="../screens/HubScreen.qml" line="72"/>
         <source>Arcade</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="61"/>
+        <location filename="../screens/HubScreen.qml" line="77"/>
         <source>Computers</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="66"/>
+        <location filename="../screens/HubScreen.qml" line="82"/>
         <source>Consoles</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="71"/>
+        <location filename="../screens/HubScreen.qml" line="87"/>
         <source>Handhelds</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="154"/>
+        <location filename="../screens/HubScreen.qml" line="170"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="160"/>
+        <location filename="../screens/HubScreen.qml" line="176"/>
         <source>Favorites</source>
         <translation>Gogokoak</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="165"/>
+        <location filename="../screens/HubScreen.qml" line="181"/>
         <source>Recently Played</source>
         <translation>Duela gutxi jolastuta</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="170"/>
+        <location filename="../screens/HubScreen.qml" line="186"/>
         <source>Settings &amp; Utilities</source>
         <translation type="unfinished"></translation>
     </message>
@@ -512,7 +512,7 @@ Euskara - devilschile2</source>
         <translation type="vanished">Ezarpenak</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="718"/>
+        <location filename="../screens/HubScreen.qml" line="734"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation type="unfinished">Ez dago sistemarik eskuragarri. Exekutatu Eguneratu baliabide datubasea Aukeretatik</translation>
     </message>
@@ -1490,7 +1490,7 @@ Euskara - devilschile2</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="512"/>
+        <location filename="../components/Tile.qml" line="513"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>

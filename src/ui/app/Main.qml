@@ -2798,7 +2798,7 @@ MainLayout {
             const unfocusedUrl = Resources.coverUrl(key, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow);
             urls.push(unfocusedUrl);
             const focusedUrl = Resources.coverUrl(key, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow);
-            // system-image/ keys ignore tint params (served as-is), so both
+            // custom-image/ keys ignore tint params (served as-is), so both
             // URLs are identical — skip the duplicate to avoid redundant fetches.
             if (focusedUrl !== unfocusedUrl) {
                 urls.push(focusedUrl);

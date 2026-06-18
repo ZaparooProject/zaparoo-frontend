@@ -12,6 +12,7 @@ qt_add_qml_module(
         tst_browse_layout_profiles.qml
         tst_smoke.qml
         tst_navigation.qml
+        tst_resources.qml
         tst_sizing.qml
         tst_persistence.qml
         tst_paged_grid.qml
