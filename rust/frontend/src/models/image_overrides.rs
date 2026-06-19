@@ -12,12 +12,19 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use std::pin::Pin;
 
+#[derive(Default, PartialEq, Eq)]
+enum ScanState {
+    #[default]
+    Idle,
+    Loading,
+}
+
 #[derive(Default)]
 pub struct ImageOverridesRust {
     hub_loaded: bool,
-    hub_loading: bool,
+    hub_scan_state: ScanState,
     systems_loaded: bool,
-    systems_loading: bool,
+    systems_scan_state: ScanState,
 }
 
 #[cxx_qt::bridge]
@@ -57,10 +64,10 @@ pub mod ffi {
 
 impl ffi::ImageOverrides {
     fn load_hub_overrides(mut self: Pin<&mut Self>) {
-        if self.hub_loaded || self.rust().hub_loading {
+        if self.hub_loaded || self.rust().hub_scan_state != ScanState::Idle {
             return;
         }
-        self.as_mut().rust_mut().hub_loading = true;
+        self.as_mut().rust_mut().hub_scan_state = ScanState::Loading;
         let qt_thread = self.qt_thread();
         crate::models::global_handle().spawn(async move {
             let result =
@@ -69,17 +76,17 @@ impl ffi::ImageOverrides {
                 tracing::warn!("hub image override scan failed: {e}");
             }
             let _ = qt_thread.queue(|mut model| {
-                model.as_mut().rust_mut().hub_loading = false;
+                model.as_mut().rust_mut().hub_scan_state = ScanState::Idle;
                 model.as_mut().set_hub_loaded(true);
             });
         });
     }
 
     fn load_system_overrides(mut self: Pin<&mut Self>) {
-        if self.systems_loaded || self.rust().systems_loading {
+        if self.systems_loaded || self.rust().systems_scan_state != ScanState::Idle {
             return;
         }
-        self.as_mut().rust_mut().systems_loading = true;
+        self.as_mut().rust_mut().systems_scan_state = ScanState::Loading;
         let qt_thread = self.qt_thread();
         crate::models::global_handle().spawn(async move {
             let result =
@@ -89,7 +96,7 @@ impl ffi::ImageOverrides {
                 tracing::warn!("system image override scan failed: {e}");
             }
             let _ = qt_thread.queue(|mut model| {
-                model.as_mut().rust_mut().systems_loading = false;
+                model.as_mut().rust_mut().systems_scan_state = ScanState::Idle;
                 model.as_mut().set_systems_loaded(true);
             });
         });
