@@ -219,6 +219,20 @@ TestCase {
         compare(map(2, 4, 0), 0, "Degenerate destCount=0 returns 0 — caller guards the no-op");
     }
 
+    // _preferOverride is the pure half of the Hub override resolution: given
+    // the override-lookup result (empty when none) and the bundled fallback,
+    // it picks the override when non-empty. The Browse.ImageOverrides lookup
+    // itself is exercised by the Rust image_overrides tests, not here.
+    function test_prefer_override_uses_override_when_present(): void {
+        const pick = main.hubScreen._preferOverride;
+        compare(pick("custom-image//media/fat/zaparoo/custom/hub/favorites.png", "icons/HeartOutline"), "custom-image//media/fat/zaparoo/custom/hub/favorites.png");
+    }
+
+    function test_prefer_override_falls_back_on_empty(): void {
+        const pick = main.hubScreen._preferOverride;
+        compare(pick("", "icons/HeartOutline"), "icons/HeartOutline", "Empty override falls back to bundled key");
+    }
+
     // Up on the top row wraps onto the bottom row (the two rows form a
     // closed loop). Test harness has no live categories, so we start
     // at top[0] and just verify currentRow flipped — the destination
@@ -475,6 +489,33 @@ TestCase {
     function test_context_menu_systems_has_nfc_does_not_add_entries(): void {
         const entries = main.buildContextMenuEntries("systems", "", false, true, false, "", false);
         compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system", "toggle_hide_system"], "has_nfc must not affect the systems menu");
+    }
+
+    // Category index/scrape are gated on the category having at least one
+    // indexable (non-launch-only) system. The test Core is empty, so
+    // SystemsModel.system_ids_for_category returns nothing and the gate must
+    // omit the dead actions, leaving only Hide/Unhide. The positive branch
+    // (a mixed or fully-launchable category) is covered at the data layer by
+    // the Rust `indexable_system_ids` tests, which the empty test model can't
+    // exercise here.
+    function test_context_menu_categories_empty_category_omits_index_scrape(): void {
+        // Empty category short-circuits the gate (category !== "").
+        const entries = main.buildContextMenuEntries("categories", "", false, false, false, "", false, "");
+        compare(_idsOf(entries), ["toggle_hide_category"], "Empty category has no indexable systems, so index/scrape are omitted");
+    }
+
+    function test_context_menu_categories_no_indexable_systems_omits_index_scrape(): void {
+        // Non-empty category whose model yields no indexable systems.
+        const entries = main.buildContextMenuEntries("categories", "", false, false, false, "", false, "Other");
+        compare(_idsOf(entries), ["toggle_hide_category"], "A category with no indexable systems must not show index/scrape");
+    }
+
+    function test_context_menu_categories_hidden_label_toggles(): void {
+        const hideEntries = main.buildContextMenuEntries("categories", "", false, false, false, "", false, "Other");
+        const unhideEntries = main.buildContextMenuEntries("categories", "", false, false, false, "", true, "Other");
+        compare(hideEntries[0].id, "toggle_hide_category");
+        compare(unhideEntries[0].id, "toggle_hide_category");
+        verify(hideEntries[0].label !== unhideEntries[0].label, "Hide/Unhide label flips on isHidden");
     }
 
     function test_context_menu_games_directory_returns_empty(): void {

@@ -6,9 +6,9 @@
 // zaparoo_frontend_rs staticlib; Qt plugin wiring is handled here so that
 // Qt's CMake (qt_import_qml_plugins) can emit the correct link flags.
 
+#include "custom_image_provider.h"
 #include "media_image_provider.h"
 #include "native_video_writer.h"
-#include "system_image_provider.h"
 #include "tinted_svg_image_provider.h"
 
 #include <QByteArray>
@@ -99,6 +99,11 @@ struct ParsedArguments
 {
     bool crtNativePathForced = false;
     std::vector<char*> argv;
+    // Unfiltered process arguments (nullptr-terminated). The restart
+    // execvp must use these, not `argv`: `argv` has `--crt` stripped
+    // for Qt, and restarting with the filtered vector would silently
+    // drop the native CRT path on any restart-applied setting change.
+    std::vector<char*> originalArgv;
 };
 
 static ParsedArguments extractCrtArgument(int argc, char* argv[])
@@ -106,6 +111,8 @@ static ParsedArguments extractCrtArgument(int argc, char* argv[])
     ParsedArguments parsed;
     parsed.argv.reserve(static_cast<size_t>(argc));
     std::copy_n(argv, argc, std::back_inserter(parsed.argv));
+    parsed.originalArgv = parsed.argv;
+    parsed.originalArgv.push_back(nullptr);
 
     std::vector<char*> filtered;
     filtered.reserve(parsed.argv.size());
@@ -371,12 +378,12 @@ int main(int argc, char* argv[]) // NOLINT
     engine.addImageProvider(QStringLiteral("media-image"), new MediaImageProvider());
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     engine.addImageProvider(QStringLiteral("tinted-svg"), new TintedSvgImageProvider());
-    // User-supplied system artwork overrides. Files configured via
-    // `[images] system_dir` in `frontend.toml` are served as-is -- no tint
-    // pipeline. The provider validates that decoded paths stay inside the
-    // configured dir to prevent arbitrary filesystem reads.
+    // User-supplied customization images (system artwork and Hub icons).
+    // Files under the `[custom] dir` root in `frontend.toml` are served as-is
+    // -- no tint pipeline. The provider validates that decoded paths stay
+    // inside the customization root to prevent arbitrary filesystem reads.
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    engine.addImageProvider(QStringLiteral("system-image"), new SystemImageProvider());
+    engine.addImageProvider(QStringLiteral("custom-image"), new CustomImageProvider());
     startupTrace("cpp:QQmlApplicationEngine + image providers ready");
 
     QVariantMap initialProperties = {
@@ -522,14 +529,18 @@ int main(int argc, char* argv[]) // NOLINT
     const int exitCode = QGuiApplication::exec();
     if (exitCode != kRestartExitCode)
     {
+        // Any other code propagates to the parent. On MiSTer, exit 42 is
+        // the Main_MiSTer fork's "re-read zaparoo_launcher_crt.bin and
+        // respawn me" protocol; it must reach the parent untouched.
         return exitCode;
     }
 
     // Restart as a fresh process so the Rust globals and cached config are
     // rebuilt from scratch. Re-entering main() in-process panics on the
-    // OnceLock-backed runtime/store singletons.
-    const char* programPath = parsedArgs.argv.front();
-    ::execvp(programPath, qtArgv);
+    // OnceLock-backed runtime/store singletons. Use the unfiltered argv so
+    // `--crt` survives the restart.
+    const char* programPath = parsedArgs.originalArgv.front();
+    ::execvp(programPath, parsedArgs.originalArgv.data());
     std::fprintf(stderr, "Failed to restart frontend via execvp(%s): %s\n", programPath,
                  std::strerror(errno));
     return EXIT_FAILURE;

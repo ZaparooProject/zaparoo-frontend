@@ -40,12 +40,17 @@ pub struct Config {
     /// state is wiped on reboot — using state would re-show the notice
     /// every cold boot.
     pub notice: NoticeConfig,
-    /// Optional directory scanned at startup for user-supplied system
-    /// artwork. Files whose stem matches a Zaparoo system id (case-exact)
-    /// are served as-is — no tint pipeline — via the `system-image` image
-    /// provider. Configured via `[images] system_dir` in `frontend.toml`.
-    /// Absent/empty means the feature is off.
-    pub system_image_dir: Option<String>,
+    /// Optional override for the user customization root. When absent the
+    /// frontend uses `platform_paths::custom_dir()` (zero-config default).
+    /// The root holds `systems/` and `hub/` subfolders of override images
+    /// named by id, served as-is — no tint pipeline — via the `custom-image`
+    /// image provider. Configured via `[custom] dir` in `frontend.toml`.
+    pub custom_dir: Option<String>,
+    /// User-supplied system display-name overrides, keyed by system id.
+    /// Parsed from the `[custom.system_names]` table in `frontend.toml`. Takes
+    /// priority over the bundled `Names_MiSTer` localized data and the Core
+    /// catalog name. Empty when the table is absent.
+    pub system_names: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -62,6 +67,9 @@ pub struct SettingsConfig {
     pub show_hidden: Option<bool>,
     pub show_original_filenames: Option<bool>,
     pub region: Option<String>,
+    pub crt_video_standard: Option<String>,
+    pub crt_h_offset: Option<i32>,
+    pub crt_v_offset: Option<i32>,
 }
 
 #[allow(
@@ -85,6 +93,9 @@ pub struct SettingsMirror<'a> {
     pub show_hidden: bool,
     pub show_original_filenames: bool,
     pub region: &'a str,
+    pub crt_video_standard: &'a str,
+    pub crt_h_offset: i32,
+    pub crt_v_offset: i32,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -104,7 +115,8 @@ impl Default for Config {
             key_to_action: input_actions::invert(&input_actions::default_bindings()),
             settings: SettingsConfig::default(),
             notice: NoticeConfig::default(),
-            system_image_dir: None,
+            custom_dir: None,
+            system_names: HashMap::new(),
         }
     }
 }
@@ -126,7 +138,7 @@ struct RawConfig {
     #[serde(default)]
     notice: RawNotice,
     #[serde(default)]
-    images: RawImages,
+    custom: RawCustom,
 }
 
 #[derive(Deserialize, Default)]
@@ -170,6 +182,9 @@ struct RawSettings {
     show_hidden: Option<bool>,
     show_original_filenames: Option<bool>,
     region: Option<String>,
+    crt_video_standard: Option<String>,
+    crt_h_offset: Option<i32>,
+    crt_v_offset: Option<i32>,
 }
 
 #[derive(Deserialize, Default)]
@@ -178,8 +193,10 @@ struct RawNotice {
 }
 
 #[derive(Deserialize, Default)]
-struct RawImages {
-    system_dir: Option<String>,
+struct RawCustom {
+    dir: Option<String>,
+    #[serde(default)]
+    system_names: HashMap<String, String>,
 }
 
 pub fn load_config(path: &Path) -> Config {
@@ -270,15 +287,30 @@ pub fn load_config(path: &Path) -> Config {
         show_hidden: raw.settings.show_hidden,
         show_original_filenames: raw.settings.show_original_filenames,
         region: raw.settings.region.map(|value| value.trim().to_string()),
+        crt_video_standard: raw
+            .settings
+            .crt_video_standard
+            .map(|value| value.trim().to_string()),
+        crt_h_offset: raw.settings.crt_h_offset,
+        crt_v_offset: raw.settings.crt_v_offset,
     };
     cfg.notice = NoticeConfig {
         commercial_ack: raw.notice.commercial_ack.unwrap_or(false),
     };
-    cfg.system_image_dir = raw
-        .images
-        .system_dir
+    cfg.custom_dir = raw
+        .custom
+        .dir
         .map(|value| value.trim().to_string())
         .filter(|s| !s.is_empty());
+    // Trim keys and values; drop entries that are empty on either side so a
+    // stray `"" = "x"` line can't shadow a real system or render blank.
+    cfg.system_names = raw
+        .custom
+        .system_names
+        .into_iter()
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+        .collect();
     cfg
 }
 
@@ -370,6 +402,19 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         "region".into(),
         toml::Value::String(mirror.region.trim().to_string()),
     );
+    settings.insert(
+        "crt_video_standard".into(),
+        toml::Value::String(normalize_crt_video_standard(mirror.crt_video_standard).to_string()),
+    );
+    let (crt_h, crt_v) = clamp_crt_offsets(mirror.crt_h_offset, mirror.crt_v_offset);
+    settings.insert(
+        "crt_h_offset".into(),
+        toml::Value::Integer(i64::from(crt_h)),
+    );
+    settings.insert(
+        "crt_v_offset".into(),
+        toml::Value::Integer(i64::from(crt_v)),
+    );
 
     let logging = section_mut(&mut table, "logging", path)?;
     logging.insert("debug".into(), toml::Value::Boolean(mirror.debug_logging));
@@ -412,6 +457,65 @@ pub fn save_notice_ack(path: &Path, commercial_ack: bool) -> Result<(), String> 
         toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
     write_atomic(path, serialized.as_bytes())
         .map_err(|e| format!("could not write {}: {e}", path.display()))
+}
+
+/// Offset ranges the Menu fork core honors before clamping in RTL
+/// (`native_video_reader.sv`). Mirrored by the C++ writer's
+/// `kNativeVideoHOffsetMin`/... constants in `native_video_writer.h`.
+pub const CRT_H_OFFSET_MIN: i32 = -8;
+pub const CRT_H_OFFSET_MAX: i32 = 8;
+pub const CRT_V_OFFSET_MIN: i32 = -8;
+pub const CRT_V_OFFSET_MAX: i32 = 2;
+
+/// Canonical native CRT video standard names. `"480i"` is accepted so
+/// it can be hand-set in `frontend.toml` for hardware smoke tests, but
+/// the settings UI only offers `"ntsc"` and `"pal"` until the 480i
+/// flicker-discipline UI pass lands. Anything unrecognised falls back
+/// to `"ntsc"`.
+pub fn normalize_crt_video_standard(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    if trimmed.eq_ignore_ascii_case("pal") {
+        "pal"
+    } else if trimmed.eq_ignore_ascii_case("480i") {
+        "480i"
+    } else {
+        "ntsc"
+    }
+}
+
+/// Framebuffer geometry for a native CRT video standard. The Menu fork
+/// core derives its mode from these exact shapes (352x240 -> mode 0,
+/// 720x480 -> mode 1, 352x288 -> mode 2), as does the C++ writer's fb0
+/// validation.
+pub fn crt_video_dimensions(standard: &str) -> (u32, u32) {
+    match normalize_crt_video_standard(standard) {
+        "pal" => (352, 288),
+        "480i" => (720, 480),
+        _ => (352, 240),
+    }
+}
+
+/// DDR word1 mode id for a native CRT video standard. Same vocabulary
+/// as the Menu fork core and `native_video_writer.cpp`, and also byte 1
+/// of `zaparoo_launcher_crt.bin` so `Main_MiSTer` programs the matching
+/// framebuffer geometry before spawning the frontend (Main's hardcoded
+/// 352x240 plus its post-spawn re-assert would otherwise stomp a PAL
+/// framebuffer).
+pub fn crt_mode_id(standard: &str) -> u8 {
+    match normalize_crt_video_standard(standard) {
+        "480i" => 1,
+        "pal" => 2,
+        _ => 0,
+    }
+}
+
+/// Clamp centering trims to the ranges the core honors, so persisted
+/// values never depend on the hardware's saturating clamp.
+pub fn clamp_crt_offsets(h_offset: i32, v_offset: i32) -> (i32, i32) {
+    (
+        h_offset.clamp(CRT_H_OFFSET_MIN, CRT_H_OFFSET_MAX),
+        v_offset.clamp(CRT_V_OFFSET_MIN, CRT_V_OFFSET_MAX),
+    )
 }
 
 fn normalize_language_override(value: &str) -> String {
@@ -503,24 +607,77 @@ mod tests {
         assert_eq!(cfg.settings.mouse_enabled, None);
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, None);
         assert_eq!(cfg.settings.region, None);
-        assert!(cfg.system_image_dir.is_none());
+        assert!(cfg.custom_dir.is_none());
+        assert!(cfg.system_names.is_empty());
         assert!(!cfg.notice.commercial_ack);
         // Default keyboard bindings populate the map.
         assert!(!cfg.key_to_action.is_empty());
     }
 
     #[test]
-    fn system_image_dir_round_trips() {
-        let f = write_tmp("[images]\nsystem_dir = \"/mnt/art/systems\"\n");
+    fn custom_dir_round_trips() {
+        let f = write_tmp("[custom]\ndir = \"/mnt/art\"\n");
         let cfg = load_config(f.path());
-        assert_eq!(cfg.system_image_dir.as_deref(), Some("/mnt/art/systems"));
+        assert_eq!(cfg.custom_dir.as_deref(), Some("/mnt/art"));
     }
 
     #[test]
-    fn system_image_dir_absent_is_none() {
+    fn custom_dir_absent_is_none() {
         let f = write_tmp("[core]\nendpoint = \"ws://example.com/api\"\n");
         let cfg = load_config(f.path());
-        assert!(cfg.system_image_dir.is_none());
+        assert!(cfg.custom_dir.is_none());
+    }
+
+    #[test]
+    fn custom_dir_empty_string_is_none() {
+        let f = write_tmp("[custom]\ndir = \"   \"\n");
+        let cfg = load_config(f.path());
+        assert!(cfg.custom_dir.is_none());
+    }
+
+    #[test]
+    fn system_names_table_round_trips() {
+        let f =
+            write_tmp("[custom.system_names]\nSNES = \"Super Nintendo\"\nPSX = \"PlayStation\"\n");
+        let cfg = load_config(f.path());
+        assert_eq!(
+            cfg.system_names.get("SNES").map(String::as_str),
+            Some("Super Nintendo")
+        );
+        assert_eq!(
+            cfg.system_names.get("PSX").map(String::as_str),
+            Some("PlayStation")
+        );
+    }
+
+    #[test]
+    fn system_names_coexists_with_custom_dir() {
+        // Both keys live under [custom]; setting one must not drop the other.
+        let f = write_tmp(
+            "[custom]\ndir = \"/mnt/art\"\n\n[custom.system_names]\nSNES = \"Super Nintendo\"\n",
+        );
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.custom_dir.as_deref(), Some("/mnt/art"));
+        assert_eq!(
+            cfg.system_names.get("SNES").map(String::as_str),
+            Some("Super Nintendo")
+        );
+    }
+
+    #[test]
+    fn system_names_absent_is_empty() {
+        let f = write_tmp("[core]\nendpoint = \"ws://example.com/api\"\n");
+        let cfg = load_config(f.path());
+        assert!(cfg.system_names.is_empty());
+    }
+
+    #[test]
+    fn system_names_drops_blank_entries() {
+        // A value that trims to empty must not register as an override, else
+        // it would blank out the real display name for that system.
+        let f = write_tmp("[custom.system_names]\nSNES = \"   \"\n");
+        let cfg = load_config(f.path());
+        assert!(cfg.system_names.is_empty());
     }
 
     #[test]
@@ -716,6 +873,9 @@ mod tests {
                 show_hidden: true,
                 show_original_filenames: true,
                 region: "us",
+                crt_video_standard: "pal",
+                crt_h_offset: -3,
+                crt_v_offset: 1,
             },
         )
         .expect("save");
@@ -735,6 +895,9 @@ mod tests {
         assert_eq!(cfg.settings.show_hidden, Some(true));
         assert_eq!(cfg.settings.show_original_filenames, Some(true));
         assert_eq!(cfg.settings.region.as_deref(), Some("us"));
+        assert_eq!(cfg.settings.crt_video_standard.as_deref(), Some("pal"));
+        assert_eq!(cfg.settings.crt_h_offset, Some(-3));
+        assert_eq!(cfg.settings.crt_v_offset, Some(1));
         assert!(cfg.debug_logging);
     }
 
@@ -761,6 +924,9 @@ mod tests {
                 show_hidden: false,
                 show_original_filenames: false,
                 region: "auto",
+                crt_video_standard: "ntsc",
+                crt_h_offset: 0,
+                crt_v_offset: 0,
             },
         )
         .expect("save");
@@ -803,6 +969,11 @@ mod tests {
                 show_hidden: false,
                 show_original_filenames: false,
                 region: "auto",
+                // Out-of-range offsets and an unknown standard must be
+                // normalised on the way to disk, not written verbatim.
+                crt_video_standard: "secam",
+                crt_h_offset: 99,
+                crt_v_offset: -99,
             },
         )
         .expect("save");
@@ -827,7 +998,47 @@ mod tests {
         assert_eq!(cfg.settings.reduce_motion, Some(false));
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("off"));
+        assert_eq!(cfg.settings.crt_video_standard.as_deref(), Some("ntsc"));
+        assert_eq!(cfg.settings.crt_h_offset, Some(8));
+        assert_eq!(cfg.settings.crt_v_offset, Some(-8));
         assert!(cfg.debug_logging);
+    }
+
+    #[test]
+    fn crt_video_standard_normalisation() {
+        use super::normalize_crt_video_standard;
+        assert_eq!(normalize_crt_video_standard("ntsc"), "ntsc");
+        assert_eq!(normalize_crt_video_standard("PAL"), "pal");
+        assert_eq!(normalize_crt_video_standard(" 480i "), "480i");
+        assert_eq!(normalize_crt_video_standard(""), "ntsc");
+        assert_eq!(normalize_crt_video_standard("secam"), "ntsc");
+    }
+
+    #[test]
+    fn crt_video_dimensions_per_standard() {
+        use super::crt_video_dimensions;
+        assert_eq!(crt_video_dimensions("ntsc"), (352, 240));
+        assert_eq!(crt_video_dimensions("pal"), (352, 288));
+        assert_eq!(crt_video_dimensions("480i"), (720, 480));
+        assert_eq!(crt_video_dimensions("garbage"), (352, 240));
+    }
+
+    #[test]
+    fn crt_mode_ids_match_ddr_contract() {
+        use super::crt_mode_id;
+        assert_eq!(crt_mode_id("ntsc"), 0);
+        assert_eq!(crt_mode_id("480i"), 1);
+        assert_eq!(crt_mode_id("PAL"), 2);
+        assert_eq!(crt_mode_id("garbage"), 0);
+    }
+
+    #[test]
+    fn crt_offsets_clamp_to_core_ranges() {
+        use super::clamp_crt_offsets;
+        assert_eq!(clamp_crt_offsets(0, 0), (0, 0));
+        assert_eq!(clamp_crt_offsets(-8, 2), (-8, 2));
+        assert_eq!(clamp_crt_offsets(9, 3), (8, 2));
+        assert_eq!(clamp_crt_offsets(-9, -9), (-8, -8));
     }
 
     // Single test because std::env is process-global; splitting into

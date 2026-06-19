@@ -339,6 +339,24 @@ Euskara - devilschile2</source>
     </message>
 </context>
 <context>
+    <name>CrtCalibrationModal</name>
+    <message>
+        <location filename="../components/CrtCalibrationModal.qml" line="159"/>
+        <source>H %1   V %2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/CrtCalibrationModal.qml" line="168"/>
+        <source>Arrows adjust position</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/CrtCalibrationModal.qml" line="177"/>
+        <source>Press any button to save</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>FavoritesScreen</name>
     <message>
         <location filename="../screens/FavoritesScreen.qml" line="24"/>
@@ -460,42 +478,42 @@ Euskara - devilschile2</source>
 <context>
     <name>HubScreen</name>
     <message>
-        <location filename="../screens/HubScreen.qml" line="56"/>
+        <location filename="../screens/HubScreen.qml" line="72"/>
         <source>Arcade</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="61"/>
+        <location filename="../screens/HubScreen.qml" line="77"/>
         <source>Computers</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="66"/>
+        <location filename="../screens/HubScreen.qml" line="82"/>
         <source>Consoles</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="71"/>
+        <location filename="../screens/HubScreen.qml" line="87"/>
         <source>Handhelds</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="154"/>
+        <location filename="../screens/HubScreen.qml" line="170"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="160"/>
+        <location filename="../screens/HubScreen.qml" line="176"/>
         <source>Favorites</source>
         <translation>收藏</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="165"/>
+        <location filename="../screens/HubScreen.qml" line="181"/>
         <source>Recently Played</source>
         <translation>最近游玩</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="170"/>
+        <location filename="../screens/HubScreen.qml" line="186"/>
         <source>Settings &amp; Utilities</source>
         <translation type="unfinished"></translation>
     </message>
@@ -504,7 +522,7 @@ Euskara - devilschile2</source>
         <translation type="vanished">设置</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="718"/>
+        <location filename="../screens/HubScreen.qml" line="734"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>没有可用系统。请在“设置”中运行“更新媒体数据库”。</translation>
     </message>
@@ -571,148 +589,148 @@ Euskara - devilschile2</source>
 <context>
     <name>Main</name>
     <message>
-        <location filename="../app/Main.qml" line="1408"/>
+        <location filename="../app/Main.qml" line="1428"/>
         <source>Launch core</source>
         <translation>启动核心</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1414"/>
-        <location filename="../app/Main.qml" line="1653"/>
+        <location filename="../app/Main.qml" line="1437"/>
+        <location filename="../app/Main.qml" line="1682"/>
         <source>Change launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1421"/>
         <location filename="../app/Main.qml" line="1444"/>
+        <location filename="../app/Main.qml" line="1473"/>
         <source>Update media database</source>
         <translation type="unfinished">更新媒体数据库</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1424"/>
         <location filename="../app/Main.qml" line="1447"/>
+        <location filename="../app/Main.qml" line="1476"/>
         <source>Scrape metadata</source>
         <translation type="unfinished">抓取元数据</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1429"/>
-        <location filename="../app/Main.qml" line="1438"/>
+        <location filename="../app/Main.qml" line="1452"/>
+        <location filename="../app/Main.qml" line="1461"/>
         <source>Unhide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1429"/>
-        <location filename="../app/Main.qml" line="1438"/>
+        <location filename="../app/Main.qml" line="1452"/>
+        <location filename="../app/Main.qml" line="1461"/>
         <source>Hide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1456"/>
-        <location filename="../app/Main.qml" line="1491"/>
+        <location filename="../app/Main.qml" line="1485"/>
+        <location filename="../app/Main.qml" line="1520"/>
         <source>Launch game</source>
         <translation>启动游戏</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1472"/>
+        <location filename="../app/Main.qml" line="1501"/>
         <source>Remove from favorites</source>
         <translation>从收藏中移除</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1472"/>
+        <location filename="../app/Main.qml" line="1501"/>
         <source>Add to favorites</source>
         <translation>添加到收藏</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1477"/>
+        <location filename="../app/Main.qml" line="1506"/>
         <source>Write to NFC token</source>
         <translation>写入 NFC 令牌</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1481"/>
+        <location filename="../app/Main.qml" line="1510"/>
         <source>QR code</source>
         <translation>二维码</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1649"/>
+        <location filename="../app/Main.qml" line="1678"/>
         <source>Default</source>
         <translation type="unfinished">默认</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1649"/>
+        <location filename="../app/Main.qml" line="1678"/>
         <source>Current: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1937"/>
+        <location filename="../app/Main.qml" line="1966"/>
         <source>Go to...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1940"/>
+        <location filename="../app/Main.qml" line="1969"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2021"/>
+        <location filename="../app/Main.qml" line="2109"/>
         <source>Saving launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2025"/>
+        <location filename="../app/Main.qml" line="2113"/>
         <source>Saving…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2039"/>
+        <location filename="../app/Main.qml" line="2127"/>
         <source>Launcher update failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2043"/>
+        <location filename="../app/Main.qml" line="2131"/>
         <source>Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2047"/>
+        <location filename="../app/Main.qml" line="2135"/>
         <source>Retry</source>
         <translation type="unfinished">重试</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2051"/>
+        <location filename="../app/Main.qml" line="2139"/>
         <source>Cancel</source>
         <translation type="unfinished">取消</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2731"/>
+        <location filename="../app/Main.qml" line="2828"/>
         <source>Loading systems…</source>
         <translation>正在加载系统…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2733"/>
+        <location filename="../app/Main.qml" line="2830"/>
         <source>Loading games…</source>
         <translation>正在加载游戏…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2735"/>
+        <location filename="../app/Main.qml" line="2832"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2737"/>
+        <location filename="../app/Main.qml" line="2834"/>
         <source>Loading favorites…</source>
         <translation>正在加载收藏…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2739"/>
+        <location filename="../app/Main.qml" line="2836"/>
         <source>Loading recently played…</source>
         <translation>正在加载最近游玩…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2741"/>
+        <location filename="../app/Main.qml" line="2838"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2743"/>
+        <location filename="../app/Main.qml" line="2840"/>
         <source>Loading…</source>
         <translation>正在加载…</translation>
     </message>
@@ -720,141 +738,151 @@ Euskara - devilschile2</source>
 <context>
     <name>MainLayout</name>
     <message>
-        <location filename="../app/MainLayout.qml" line="701"/>
+        <location filename="../app/MainLayout.qml" line="725"/>
         <source>Writing failed</source>
         <translation>写入失败</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="701"/>
+        <location filename="../app/MainLayout.qml" line="725"/>
         <source>Put a writable card near the reader</source>
         <translation>将可写卡片放在读卡器附近</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="172"/>
+        <location filename="../app/MainLayout.qml" line="173"/>
         <source>Zaparoo Frontend</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="382"/>
+        <location filename="../app/MainLayout.qml" line="385"/>
         <source>Favorites</source>
         <translation type="unfinished">收藏</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="384"/>
+        <location filename="../app/MainLayout.qml" line="387"/>
         <source>Recently Played</source>
         <translation type="unfinished">最近游玩</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="717"/>
+        <location filename="../app/MainLayout.qml" line="741"/>
         <source>Quit and restart Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="718"/>
+        <location filename="../app/MainLayout.qml" line="742"/>
         <source>In order to apply this setting we need to restart the frontend.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="828"/>
+        <location filename="../app/MainLayout.qml" line="852"/>
         <source>Quit Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="829"/>
+        <location filename="../app/MainLayout.qml" line="853"/>
         <source>Are you sure you want to exit?</source>
         <translation>确定要退出吗？</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="926"/>
-        <location filename="../app/MainLayout.qml" line="1000"/>
-        <location filename="../app/MainLayout.qml" line="1046"/>
-        <location filename="../app/MainLayout.qml" line="1083"/>
-        <location filename="../app/MainLayout.qml" line="1131"/>
-        <location filename="../app/MainLayout.qml" line="1175"/>
-        <location filename="../app/MainLayout.qml" line="1194"/>
-        <location filename="../app/MainLayout.qml" line="1264"/>
+        <location filename="../app/MainLayout.qml" line="999"/>
+        <location filename="../app/MainLayout.qml" line="1073"/>
+        <location filename="../app/MainLayout.qml" line="1130"/>
+        <location filename="../app/MainLayout.qml" line="1167"/>
+        <location filename="../app/MainLayout.qml" line="1215"/>
+        <location filename="../app/MainLayout.qml" line="1259"/>
+        <location filename="../app/MainLayout.qml" line="1278"/>
+        <location filename="../app/MainLayout.qml" line="1348"/>
         <source>Move</source>
         <translation>移动</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="930"/>
-        <location filename="../app/MainLayout.qml" line="1004"/>
+        <location filename="../app/MainLayout.qml" line="1003"/>
+        <location filename="../app/MainLayout.qml" line="1077"/>
         <source>Select</source>
         <translation>选择</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="934"/>
-        <location filename="../app/MainLayout.qml" line="938"/>
-        <location filename="../app/MainLayout.qml" line="952"/>
-        <location filename="../app/MainLayout.qml" line="967"/>
-        <location filename="../app/MainLayout.qml" line="978"/>
+        <location filename="../app/MainLayout.qml" line="1007"/>
+        <location filename="../app/MainLayout.qml" line="1011"/>
+        <location filename="../app/MainLayout.qml" line="1025"/>
+        <location filename="../app/MainLayout.qml" line="1040"/>
+        <location filename="../app/MainLayout.qml" line="1051"/>
         <source>Close</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="945"/>
-        <location filename="../app/MainLayout.qml" line="985"/>
-        <location filename="../app/MainLayout.qml" line="1008"/>
-        <location filename="../app/MainLayout.qml" line="1019"/>
+        <location filename="../app/MainLayout.qml" line="1018"/>
+        <location filename="../app/MainLayout.qml" line="1058"/>
+        <location filename="../app/MainLayout.qml" line="1081"/>
+        <location filename="../app/MainLayout.qml" line="1103"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="963"/>
+        <location filename="../app/MainLayout.qml" line="1036"/>
         <source>Done</source>
         <translation>完成</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="974"/>
-        <location filename="../app/MainLayout.qml" line="1101"/>
-        <location filename="../app/MainLayout.qml" line="1152"/>
-        <location filename="../app/MainLayout.qml" line="1292"/>
+        <location filename="../app/MainLayout.qml" line="1047"/>
+        <location filename="../app/MainLayout.qml" line="1185"/>
+        <location filename="../app/MainLayout.qml" line="1236"/>
+        <location filename="../app/MainLayout.qml" line="1376"/>
         <source>Retry</source>
         <translation>重试</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="993"/>
+        <location filename="../app/MainLayout.qml" line="1066"/>
         <source>I understand</source>
         <translation>我明白了</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1027"/>
+        <location filename="../app/MainLayout.qml" line="1088"/>
+        <source>Adjust</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/MainLayout.qml" line="1092"/>
+        <source>Save</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/MainLayout.qml" line="1111"/>
         <source>Start</source>
         <translation>开始</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1050"/>
-        <location filename="../app/MainLayout.qml" line="1088"/>
-        <location filename="../app/MainLayout.qml" line="1136"/>
-        <location filename="../app/MainLayout.qml" line="1180"/>
-        <location filename="../app/MainLayout.qml" line="1269"/>
+        <location filename="../app/MainLayout.qml" line="1134"/>
+        <location filename="../app/MainLayout.qml" line="1172"/>
+        <location filename="../app/MainLayout.qml" line="1220"/>
+        <location filename="../app/MainLayout.qml" line="1264"/>
+        <location filename="../app/MainLayout.qml" line="1353"/>
         <source>Open</source>
         <translation>打开</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1060"/>
+        <location filename="../app/MainLayout.qml" line="1144"/>
         <source>Quit</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1069"/>
-        <location filename="../app/MainLayout.qml" line="1094"/>
-        <location filename="../app/MainLayout.qml" line="1105"/>
-        <location filename="../app/MainLayout.qml" line="1120"/>
-        <location filename="../app/MainLayout.qml" line="1145"/>
-        <location filename="../app/MainLayout.qml" line="1156"/>
-        <location filename="../app/MainLayout.qml" line="1168"/>
-        <location filename="../app/MainLayout.qml" line="1184"/>
-        <location filename="../app/MainLayout.qml" line="1218"/>
-        <location filename="../app/MainLayout.qml" line="1236"/>
-        <location filename="../app/MainLayout.qml" line="1245"/>
-        <location filename="../app/MainLayout.qml" line="1285"/>
-        <location filename="../app/MainLayout.qml" line="1296"/>
+        <location filename="../app/MainLayout.qml" line="1153"/>
+        <location filename="../app/MainLayout.qml" line="1178"/>
+        <location filename="../app/MainLayout.qml" line="1189"/>
+        <location filename="../app/MainLayout.qml" line="1204"/>
+        <location filename="../app/MainLayout.qml" line="1229"/>
+        <location filename="../app/MainLayout.qml" line="1240"/>
+        <location filename="../app/MainLayout.qml" line="1252"/>
+        <location filename="../app/MainLayout.qml" line="1268"/>
+        <location filename="../app/MainLayout.qml" line="1302"/>
+        <location filename="../app/MainLayout.qml" line="1320"/>
+        <location filename="../app/MainLayout.qml" line="1329"/>
+        <location filename="../app/MainLayout.qml" line="1369"/>
+        <location filename="../app/MainLayout.qml" line="1380"/>
         <source>Back</source>
         <translation>返回</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1281"/>
+        <location filename="../app/MainLayout.qml" line="1365"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
@@ -863,25 +891,25 @@ Euskara - devilschile2</source>
         <translation type="vanished">页面</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1056"/>
-        <location filename="../app/MainLayout.qml" line="1091"/>
-        <location filename="../app/MainLayout.qml" line="1141"/>
-        <location filename="../app/MainLayout.qml" line="1274"/>
+        <location filename="../app/MainLayout.qml" line="1140"/>
+        <location filename="../app/MainLayout.qml" line="1175"/>
+        <location filename="../app/MainLayout.qml" line="1225"/>
+        <location filename="../app/MainLayout.qml" line="1358"/>
         <source>Options</source>
         <translation>选项</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1203"/>
+        <location filename="../app/MainLayout.qml" line="1287"/>
         <source>Change</source>
         <translation>更改</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1209"/>
+        <location filename="../app/MainLayout.qml" line="1293"/>
         <source>Toggle</source>
         <translation>切换</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1232"/>
+        <location filename="../app/MainLayout.qml" line="1316"/>
         <source>Scroll</source>
         <translation>滚动</translation>
     </message>
@@ -971,65 +999,65 @@ Euskara - devilschile2</source>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="95"/>
-        <location filename="../screens/SettingsScreen.qml" line="168"/>
-        <location filename="../screens/SettingsScreen.qml" line="258"/>
-        <location filename="../screens/SettingsScreen.qml" line="781"/>
+        <location filename="../screens/SettingsScreen.qml" line="195"/>
+        <location filename="../screens/SettingsScreen.qml" line="285"/>
+        <location filename="../screens/SettingsScreen.qml" line="824"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="131"/>
-        <location filename="../screens/SettingsScreen.qml" line="808"/>
+        <location filename="../screens/SettingsScreen.qml" line="851"/>
         <source>Orientation</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="145"/>
-        <location filename="../screens/SettingsScreen.qml" line="817"/>
+        <location filename="../screens/SettingsScreen.qml" line="172"/>
+        <location filename="../screens/SettingsScreen.qml" line="860"/>
         <source>Browsing layout</source>
         <translation>浏览布局</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="185"/>
-        <location filename="../screens/SettingsScreen.qml" line="826"/>
+        <location filename="../screens/SettingsScreen.qml" line="212"/>
+        <location filename="../screens/SettingsScreen.qml" line="869"/>
         <source>Button style</source>
         <translation>按钮样式</translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="136"/>
-        <location filename="../screens/SettingsScreen.qml" line="835"/>
+        <location filename="../screens/SettingsScreen.qml" line="878"/>
         <source>Screensaver</source>
         <translation>屏幕保护程序</translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="107"/>
-        <location filename="../screens/SettingsScreen.qml" line="262"/>
+        <location filename="../screens/SettingsScreen.qml" line="289"/>
         <source>Library</source>
         <translation>资料库</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="207"/>
+        <location filename="../screens/SettingsScreen.qml" line="234"/>
         <source>Discover arcade alternate versions</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="150"/>
-        <location filename="../screens/SettingsScreen.qml" line="844"/>
+        <location filename="../screens/SettingsScreen.qml" line="177"/>
+        <location filename="../screens/SettingsScreen.qml" line="887"/>
         <source>Preferred artwork</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="202"/>
+        <location filename="../screens/SettingsScreen.qml" line="229"/>
         <source>Update media database</source>
         <translation>更新媒体数据库</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="212"/>
+        <location filename="../screens/SettingsScreen.qml" line="239"/>
         <source>Scrape metadata</source>
         <translation>抓取元数据</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="217"/>
+        <location filename="../screens/SettingsScreen.qml" line="244"/>
         <source>Re-scrape existing</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1038,418 +1066,454 @@ Euskara - devilschile2</source>
         <translation type="vanished">高级</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="190"/>
+        <location filename="../screens/SettingsScreen.qml" line="217"/>
         <source>Mouse support</source>
         <translation>鼠标支持</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="229"/>
+        <location filename="../screens/SettingsScreen.qml" line="256"/>
         <source>Debug logging</source>
         <translation>调试日志</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="234"/>
+        <location filename="../screens/SettingsScreen.qml" line="261"/>
         <source>Upload log file</source>
         <translation>上传日志文件</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="224"/>
+        <location filename="../screens/SettingsScreen.qml" line="251"/>
         <source>About / License</source>
         <translation>关于 / 许可</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="178"/>
-        <location filename="../screens/SettingsScreen.qml" line="790"/>
+        <location filename="../screens/SettingsScreen.qml" line="205"/>
+        <location filename="../screens/SettingsScreen.qml" line="833"/>
         <source>Clock format</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="173"/>
-        <location filename="../screens/SettingsScreen.qml" line="799"/>
+        <location filename="../screens/SettingsScreen.qml" line="200"/>
+        <location filename="../screens/SettingsScreen.qml" line="842"/>
         <source>System names</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="89"/>
-        <location filename="../screens/SettingsScreen.qml" line="256"/>
+        <location filename="../screens/SettingsScreen.qml" line="283"/>
         <source>Browsing</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="155"/>
+        <location filename="../screens/SettingsScreen.qml" line="145"/>
+        <source>Analog video</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="150"/>
+        <source>CRT mode</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="156"/>
+        <location filename="../screens/SettingsScreen.qml" line="896"/>
+        <source>Video standard</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="161"/>
+        <source>Screen position</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="182"/>
         <source>Show hidden items</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="160"/>
+        <location filename="../screens/SettingsScreen.qml" line="187"/>
         <source>Show original filenames</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="195"/>
+        <location filename="../screens/SettingsScreen.qml" line="222"/>
         <source>Reduce motion</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="279"/>
+        <location filename="../screens/SettingsScreen.qml" line="306"/>
         <source>Optimizing</source>
         <translation>正在优化</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="281"/>
-        <location filename="../screens/SettingsScreen.qml" line="290"/>
+        <location filename="../screens/SettingsScreen.qml" line="308"/>
+        <location filename="../screens/SettingsScreen.qml" line="317"/>
         <source>Paused</source>
         <translation>已暂停</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="281"/>
-        <location filename="../screens/SettingsScreen.qml" line="290"/>
+        <location filename="../screens/SettingsScreen.qml" line="308"/>
+        <location filename="../screens/SettingsScreen.qml" line="317"/>
         <source>In progress</source>
         <translation>进行中</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="284"/>
+        <location filename="../screens/SettingsScreen.qml" line="311"/>
         <source>%1 indexed</source>
         <translation>已索引 %1 个</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="293"/>
+        <location filename="../screens/SettingsScreen.qml" line="320"/>
         <source>%1 scraped</source>
         <translation>已抓取 %1 个</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="535"/>
+        <location filename="../screens/SettingsScreen.qml" line="565"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="535"/>
+        <location filename="../screens/SettingsScreen.qml" line="565"/>
         <source>Start</source>
         <translation>开始</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="537"/>
+        <location filename="../screens/SettingsScreen.qml" line="567"/>
         <source>Upload</source>
         <translation>上传</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="538"/>
+        <location filename="../screens/SettingsScreen.qml" line="568"/>
         <source>Open</source>
         <translation>打开</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="589"/>
+        <location filename="../screens/SettingsScreen.qml" line="619"/>
         <source>Default</source>
         <translation>默认</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="619"/>
+        <location filename="../screens/SettingsScreen.qml" line="649"/>
         <source>English</source>
         <translation>英语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="621"/>
+        <location filename="../screens/SettingsScreen.qml" line="651"/>
         <source>Italian</source>
         <translation>意大利语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="623"/>
+        <location filename="../screens/SettingsScreen.qml" line="653"/>
         <source>Spanish</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="625"/>
+        <location filename="../screens/SettingsScreen.qml" line="655"/>
         <source>Basque</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="627"/>
+        <location filename="../screens/SettingsScreen.qml" line="657"/>
         <source>German</source>
         <translation>德语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="629"/>
+        <location filename="../screens/SettingsScreen.qml" line="659"/>
         <source>Greek</source>
         <translation>希腊语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="631"/>
+        <location filename="../screens/SettingsScreen.qml" line="661"/>
         <source>Japanese</source>
         <translation>日语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="633"/>
+        <location filename="../screens/SettingsScreen.qml" line="663"/>
         <source>Korean</source>
         <translation>韩语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="635"/>
+        <location filename="../screens/SettingsScreen.qml" line="665"/>
         <source>Dutch</source>
         <translation>荷兰语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="637"/>
+        <location filename="../screens/SettingsScreen.qml" line="667"/>
         <source>Romanian</source>
         <translation>罗马尼亚语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="639"/>
+        <location filename="../screens/SettingsScreen.qml" line="669"/>
         <source>Slovak</source>
         <translation>斯洛伐克语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="641"/>
+        <location filename="../screens/SettingsScreen.qml" line="671"/>
         <source>Ukrainian</source>
         <translation>乌克兰语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="643"/>
+        <location filename="../screens/SettingsScreen.qml" line="673"/>
         <source>Chinese (Simplified)</source>
         <translation>简体中文</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="645"/>
+        <location filename="../screens/SettingsScreen.qml" line="675"/>
         <source>Chinese (Traditional)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="647"/>
+        <location filename="../screens/SettingsScreen.qml" line="677"/>
         <source>Hebrew</source>
         <translation>希伯来语</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="649"/>
+        <location filename="../screens/SettingsScreen.qml" line="679"/>
         <source>Arabic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="651"/>
+        <location filename="../screens/SettingsScreen.qml" line="681"/>
         <source>Hindi</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="652"/>
-        <location filename="../screens/SettingsScreen.qml" line="660"/>
-        <location filename="../screens/SettingsScreen.qml" line="734"/>
+        <location filename="../screens/SettingsScreen.qml" line="682"/>
+        <location filename="../screens/SettingsScreen.qml" line="690"/>
+        <location filename="../screens/SettingsScreen.qml" line="777"/>
         <source>Auto</source>
         <translation>自动</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="657"/>
+        <location filename="../screens/SettingsScreen.qml" line="687"/>
         <source>12-hour</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="659"/>
+        <location filename="../screens/SettingsScreen.qml" line="689"/>
         <source>24-hour</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="670"/>
+        <location filename="../screens/SettingsScreen.qml" line="700"/>
         <source>Americas</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="672"/>
+        <location filename="../screens/SettingsScreen.qml" line="702"/>
         <source>Europe</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="674"/>
+        <location filename="../screens/SettingsScreen.qml" line="704"/>
         <source>Japan</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="675"/>
+        <location filename="../screens/SettingsScreen.qml" line="705"/>
         <source>Automatic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="680"/>
+        <location filename="../screens/SettingsScreen.qml" line="710"/>
         <source>Rotated CW</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="682"/>
+        <location filename="../screens/SettingsScreen.qml" line="712"/>
         <source>Rotated CCW</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="683"/>
+        <location filename="../screens/SettingsScreen.qml" line="713"/>
         <source>Horizontal</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="688"/>
+        <location filename="../screens/SettingsScreen.qml" line="718"/>
         <source>Detailed list view</source>
         <translation>详细列表视图</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="689"/>
+        <location filename="../screens/SettingsScreen.qml" line="719"/>
         <source>Grid view</source>
         <translation>网格视图</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="694"/>
+        <location filename="../screens/SettingsScreen.qml" line="724"/>
         <source>Style B</source>
         <translation>样式 B</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="696"/>
+        <location filename="../screens/SettingsScreen.qml" line="726"/>
         <source>Style C</source>
         <translation>样式 C</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="698"/>
+        <location filename="../screens/SettingsScreen.qml" line="728"/>
         <source>Style D</source>
         <translation>样式 D</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="699"/>
+        <location filename="../screens/SettingsScreen.qml" line="729"/>
         <source>Style A</source>
         <translation>样式 A</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="714"/>
+        <location filename="../screens/SettingsScreen.qml" line="744"/>
         <source>Off</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="716"/>
+        <location filename="../screens/SettingsScreen.qml" line="746"/>
         <source>1 second (testing)</source>
         <translation>1 秒（测试）</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="718"/>
+        <location filename="../screens/SettingsScreen.qml" line="748"/>
         <source>1 minute</source>
         <translation>1 分钟</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="720"/>
+        <location filename="../screens/SettingsScreen.qml" line="750"/>
         <source>2 minutes</source>
         <translation>2 分钟</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="722"/>
+        <location filename="../screens/SettingsScreen.qml" line="752"/>
         <source>5 minutes</source>
         <translation>5 分钟</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="724"/>
+        <location filename="../screens/SettingsScreen.qml" line="754"/>
         <source>10 minutes</source>
         <translation>10 分钟</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="726"/>
+        <location filename="../screens/SettingsScreen.qml" line="756"/>
         <source>15 minutes</source>
         <translation>15 分钟</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="728"/>
+        <location filename="../screens/SettingsScreen.qml" line="758"/>
         <source>30 minutes</source>
         <translation>30 分钟</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="729"/>
+        <location filename="../screens/SettingsScreen.qml" line="759"/>
         <source>%1 seconds</source>
         <translation>%1 秒</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1443"/>
+        <location filename="../screens/SettingsScreen.qml" line="769"/>
+        <source>PAL (50 Hz)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="771"/>
+        <source>480i (60 Hz)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="772"/>
+        <source>NTSC (60 Hz)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/SettingsScreen.qml" line="1512"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="125"/>
-        <location filename="../screens/SettingsScreen.qml" line="772"/>
+        <location filename="../screens/SettingsScreen.qml" line="815"/>
         <source>Resolution</source>
         <translation>分辨率</translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="83"/>
-        <location filename="../screens/SettingsScreen.qml" line="254"/>
+        <location filename="../screens/SettingsScreen.qml" line="281"/>
         <source>Display</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="101"/>
-        <location filename="../screens/SettingsScreen.qml" line="260"/>
+        <location filename="../screens/SettingsScreen.qml" line="287"/>
         <source>Controls</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="113"/>
-        <location filename="../screens/SettingsScreen.qml" line="264"/>
+        <location filename="../screens/SettingsScreen.qml" line="291"/>
         <source>Support</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="736"/>
+        <location filename="../screens/SettingsScreen.qml" line="779"/>
         <source>Image</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="738"/>
+        <location filename="../screens/SettingsScreen.qml" line="781"/>
         <source>Thumbnail</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="740"/>
+        <location filename="../screens/SettingsScreen.qml" line="783"/>
         <source>Box art</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="742"/>
+        <location filename="../screens/SettingsScreen.qml" line="785"/>
         <source>3D box art</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="744"/>
+        <location filename="../screens/SettingsScreen.qml" line="787"/>
         <source>Screenshot</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="746"/>
+        <location filename="../screens/SettingsScreen.qml" line="789"/>
         <source>Wheel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="748"/>
+        <location filename="../screens/SettingsScreen.qml" line="791"/>
         <source>Title screen</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="750"/>
+        <location filename="../screens/SettingsScreen.qml" line="793"/>
         <source>Map</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="752"/>
+        <location filename="../screens/SettingsScreen.qml" line="795"/>
         <source>Marquee</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="754"/>
+        <location filename="../screens/SettingsScreen.qml" line="797"/>
         <source>Fan art</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="756"/>
+        <location filename="../screens/SettingsScreen.qml" line="799"/>
         <source>Box side</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="758"/>
+        <location filename="../screens/SettingsScreen.qml" line="801"/>
         <source>Box back</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="265"/>
+        <location filename="../screens/SettingsScreen.qml" line="292"/>
         <source>Settings</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1431"/>
+        <location filename="../screens/SettingsScreen.qml" line="1500"/>
         <source>No settings available on this platform</source>
         <translation>此平台上没有可用设置</translation>
     </message>
@@ -1482,7 +1546,7 @@ Euskara - devilschile2</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="512"/>
+        <location filename="../components/Tile.qml" line="513"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>

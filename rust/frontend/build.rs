@@ -7,6 +7,7 @@ use cxx_qt_build::{CxxQtBuilder, QmlModule};
 const MODEL_FILES: &[&str] = &[
     "src/models/alternate_versions.rs",
     "src/models/categories.rs",
+    "src/models/crt_video.rs",
     "src/models/systems.rs",
     "src/models/game_info.rs",
     "src/models/games.rs",
@@ -16,6 +17,7 @@ const MODEL_FILES: &[&str] = &[
     "src/models/build_info.rs",
     "src/models/app_status.rs",
     "src/models/hub_state.rs",
+    "src/models/image_overrides.rs",
     "src/models/systems_state.rs",
     "src/models/games_state.rs",
     "src/models/favorites_state.rs",

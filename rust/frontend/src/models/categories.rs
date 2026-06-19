@@ -15,11 +15,12 @@ const NAME_ROLE: i32 = 256 + 1; // Qt::UserRole + 1
 const COVER_KEY_ROLE: i32 = 256 + 2;
 const HIDDEN_ROLE: i32 = 256 + 3;
 
-// Categories Core surfaces but the frontend doesn't expose. `Other` is
-// the synthesized bucket for systems with no upstream category and adds
-// no value in the UI; `Media` is reserved for non-game content the
-// frontend doesn't have a screen for yet. Tracked in #21.
-const HIDDEN_CATEGORIES: &[&str] = &["Other", "Media"];
+// Categories Core surfaces but the frontend doesn't expose. `Media` is
+// reserved for non-game content the frontend doesn't have a screen for
+// yet (tracked in #21). `Other` — the synthesized bucket for systems with
+// no upstream category — is now surfaced: Core's launchables (launch-only
+// virtual systems) land there, so it carries real, launchable content.
+const HIDDEN_CATEGORIES: &[&str] = &["Media"];
 
 #[derive(Default)]
 pub struct CategoriesModelRust {
@@ -327,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn other_and_media_are_filtered_case_insensitively() {
+    fn media_is_filtered_case_insensitively_but_other_is_surfaced() {
         let raw = vec![
             "Arcade".to_string(),
             "Other".to_string(),
@@ -335,8 +336,9 @@ mod tests {
             "Consoles".to_string(),
         ];
         let (names, flags) = visible_categories(&raw, &[], false);
-        assert_eq!(names, vec!["Arcade", "Consoles"]);
-        assert_eq!(flags, vec![false, false]);
+        // `media` is dropped; `Other` now passes through (it holds launchables).
+        assert_eq!(names, vec!["Arcade", "Other", "Consoles"]);
+        assert_eq!(flags, vec![false, false, false]);
     }
 
     #[test]
@@ -383,14 +385,14 @@ mod tests {
 
     #[test]
     fn builtin_hidden_categories_never_user_unhideable() {
-        // Even if "Other" somehow ends up in user_hidden (which should never
+        // Even if "Media" somehow ends up in user_hidden (which should never
         // happen since it's never surfaced as a tile), the builtin filter
         // still drops it before we check user_hidden.
-        let raw = vec!["Arcade".to_string(), "Other".to_string()];
-        let user_hidden = vec!["Other".to_string(), "Media".to_string()];
+        let raw = vec!["Arcade".to_string(), "Media".to_string()];
+        let user_hidden = vec!["Media".to_string()];
         let (names_off, _) = visible_categories(&raw, &user_hidden, false);
         let (names_on, flags_on) = visible_categories(&raw, &user_hidden, true);
-        // Other is always gone, regardless of show_hidden.
+        // Media is always gone, regardless of show_hidden.
         assert_eq!(names_off, vec!["Arcade"]);
         assert_eq!(names_on, vec!["Arcade"]);
         assert_eq!(flags_on, vec![false]);

@@ -241,6 +241,7 @@ starts our `frontend`; do not replace that flow with a new wrapper script.
 - `docs/qml-gotchas.md` — QML issues qmllint often catches late
 - `docs/style.md` — corner-radius token, tile aspect, pill vs. sharp shapes
 - `docs/cxx-qt-bridge.md` — cxx-qt 0.8 bridge constraints
+- `docs/customization.md` — user overrides: `custom/` image folder, `[custom.system_names]`
 - `docs/translations.md` — `qsTr()`/`tr()` pipeline and locale catalogs
 - `design/README.md` — Qt Design Studio workflow and designer boundaries
 - `src/LICENSES/` — Qt LGPL notices

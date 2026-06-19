@@ -143,6 +143,18 @@ pub struct SettingsState {
     /// others → EU. Explicit values are `"us"`, `"eu"`, `"jp"`.
     #[serde(default = "default_region")]
     pub region: String,
+    /// Native CRT video standard: `"ntsc"` (352x240@60), `"pal"`
+    /// (352x288@50), or `"480i"` (720x480@60i, not exposed in the UI
+    /// yet). Restart-applied; only meaningful when the frontend runs
+    /// with `--crt`.
+    #[serde(default = "default_crt_video_standard")]
+    pub crt_video_standard: String,
+    /// Native CRT centering trims in pixels/lines, within the Menu
+    /// fork core's honored ranges (-8..=8 horizontal, -8..=2 vertical).
+    #[serde(default)]
+    pub crt_h_offset: i32,
+    #[serde(default)]
+    pub crt_v_offset: i32,
 }
 
 impl Default for SettingsState {
@@ -163,12 +175,19 @@ impl Default for SettingsState {
             show_hidden: false,
             show_original_filenames: false,
             region: default_region(),
+            crt_video_standard: default_crt_video_standard(),
+            crt_h_offset: 0,
+            crt_v_offset: 0,
         }
     }
 }
 
 fn default_region() -> String {
     "auto".into()
+}
+
+fn default_crt_video_standard() -> String {
+    "ntsc".into()
 }
 
 fn default_clock_format() -> String {
@@ -342,6 +361,9 @@ mod tests {
                 show_hidden: true,
                 show_original_filenames: true,
                 region: "us".into(),
+                crt_video_standard: "pal".into(),
+                crt_h_offset: -3,
+                crt_v_offset: 2,
             },
         };
         save_to(&path, &original);
@@ -464,6 +486,9 @@ resolution = "1920x1080"
         assert_eq!(state.settings.button_layout, "a");
         assert!(state.settings.mouse_enabled);
         assert!(!state.settings.debug_logging);
+        assert_eq!(state.settings.crt_video_standard, "ntsc");
+        assert_eq!(state.settings.crt_h_offset, 0);
+        assert_eq!(state.settings.crt_v_offset, 0);
     }
 
     #[test]

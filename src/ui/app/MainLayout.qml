@@ -93,6 +93,7 @@ ApplicationWindow {
     property bool quitConfirmModalRequested: false
     property bool listPickerModalRequested: false
     property bool letterJumpModalRequested: false
+    property bool crtCalibrationModalRequested: false
 
     function _startupTrace(): void {
         if (!root._startupTraceActive)
@@ -265,6 +266,7 @@ ApplicationWindow {
     property var settingNeedsRestartModal: settingNeedsRestartModalLoader.item
     property var listPickerModal: listPickerModalLoader.item
     property var letterJumpModal: letterJumpModalLoader.item
+    property var crtCalibrationModal: crtCalibrationModalLoader.item
     property alias headerBar: headerBar
     property alias screensaverOverlay: screensaverOverlay
     // Exposed so Main.qml binds Sizing.screenWidth/Height to the
@@ -288,6 +290,7 @@ ApplicationWindow {
     property bool letterJumpModalVisible: false
     property var letterJumpEntries: []
     property bool letterJumpLoading: false
+    property bool crtCalibrationModalVisible: false
     // Round-trip state for the list picker. The router writes these
     // when opening the modal (Settings emits requestListPicker with
     // fieldId so the accept handler can dispatch back to the right
@@ -403,6 +406,7 @@ ApplicationWindow {
     signal letterJumpCloseRequested
     signal acceptRestart
     signal cancelRestart
+    signal closeCrtCalibrationRequested
 
     // Two-way sync between root.activeScreen and ScreenManager.activeScreen.
     // Binding-breaking assignments (tests setting root.activeScreen = "games")
@@ -442,6 +446,19 @@ ApplicationWindow {
     // when --crt is set, so logical pixels map 1:1 to physical pixels
     // and the GL backend's final logical-to-physical present step is
     // a no-op (no bilinear filtering smearing the integer upscale).
+
+    // Native CRT safe-area inset. The 352-px active line fills a
+    // standard NTSC/PAL raster edge-to-edge, so the outer few percent
+    // of the framebuffer is cropped on most tubes (broadcast
+    // overscan). Shrinking `scene` by 5% per side keeps every
+    // interactive element inside the SMPTE action-safe area - and
+    // because Main.qml binds Sizing.screenWidth/Height to the scene,
+    // every pct-derived size re-solves automatically. The background
+    // items below restore full bleed with negative margins so the
+    // cropped band still shows intentional content.
+    readonly property int _crtInsetW: root.crtNativePath ? 2 * Math.round(framebufferScene.width * 0.05) : 0
+    readonly property int _crtInsetH: root.crtNativePath ? 2 * Math.round(framebufferScene.height * 0.05) : 0
+
     Item {
         id: framebufferScene
 
@@ -481,8 +498,10 @@ ApplicationWindow {
 
             x: Sizing.center(framebufferScene.width, width)
             y: Sizing.center(framebufferScene.height, height)
-            width: root._sceneRotated ? framebufferScene.height : framebufferScene.width
-            height: root._sceneRotated ? framebufferScene.width : framebufferScene.height
+            // Subtract the safe-area inset on the framebuffer axis each
+            // scene dimension spans (the swap mirrors the rotation).
+            width: root._sceneRotated ? framebufferScene.height - root._crtInsetH : framebufferScene.width - root._crtInsetW
+            height: root._sceneRotated ? framebufferScene.width - root._crtInsetW : framebufferScene.height - root._crtInsetH
             clip: false
             transformOrigin: Item.Center
             rotation: root.displayOrientation === "cw" ? 90 : root.displayOrientation === "ccw" ? -90 : 0
@@ -491,6 +510,9 @@ ApplicationWindow {
 
             Rectangle {
                 anchors.fill: parent
+                // Full bleed: overscan back past the safe-area inset so
+                // the background reaches the true framebuffer edge.
+                anchors.margins: -Math.max(root._crtInsetW, root._crtInsetH)
                 color: Theme.bgDeep
             }
 
@@ -506,6 +528,8 @@ ApplicationWindow {
                 id: backgroundTexture
 
                 anchors.fill: parent
+                // Full bleed past the safe-area inset, same as bgDeep.
+                anchors.margins: -Math.max(root._crtInsetW, root._crtInsetH)
                 source: "qrc:/qt/qml/Zaparoo/App/resources/images/bg-circuit.png"
                 fillMode: Image.Tile
                 cache: true
@@ -876,6 +900,55 @@ ApplicationWindow {
                 }
             }
 
+            // Modal scrim backstop for the CRT overscan band. Modal
+            // scrims fill `scene`, which is inset by the safe area, so
+            // the full-bleed background would otherwise glow undimmed
+            // around every open modal. Four edge strips extend the same
+            // Theme.scrim into the band - strips rather than one big
+            // rectangle because a full overlay would double-dim the
+            // scene area on top of the modal's own scrim. Strip
+            // thickness follows the framebuffer axis each scene edge
+            // maps to (the swap mirrors the rotation).
+            Item {
+                id: crtScrimBackstop
+
+                readonly property int bandX: (root._sceneRotated ? root._crtInsetH : root._crtInsetW) / 2
+                readonly property int bandY: (root._sceneRotated ? root._crtInsetW : root._crtInsetH) / 2
+
+                anchors.fill: parent
+                visible: root.crtNativePath && ScreenManager.hasModal
+                z: 350
+
+                Rectangle {
+                    x: -crtScrimBackstop.bandX
+                    y: -crtScrimBackstop.bandY
+                    width: crtScrimBackstop.width + 2 * crtScrimBackstop.bandX
+                    height: crtScrimBackstop.bandY
+                    color: Theme.scrim
+                }
+                Rectangle {
+                    x: -crtScrimBackstop.bandX
+                    y: crtScrimBackstop.height
+                    width: crtScrimBackstop.width + 2 * crtScrimBackstop.bandX
+                    height: crtScrimBackstop.bandY
+                    color: Theme.scrim
+                }
+                Rectangle {
+                    x: -crtScrimBackstop.bandX
+                    y: 0
+                    width: crtScrimBackstop.bandX
+                    height: crtScrimBackstop.height
+                    color: Theme.scrim
+                }
+                Rectangle {
+                    x: crtScrimBackstop.width
+                    y: 0
+                    width: crtScrimBackstop.bandX
+                    height: crtScrimBackstop.height
+                    color: Theme.scrim
+                }
+            }
+
             // ── Instructions bar ──────────────────────────────────────────────────────
 
             Rectangle {
@@ -1009,6 +1082,17 @@ ApplicationWindow {
                             {
                                 button: "ButtonB",
                                 label: qsTr("Cancel")
+                            }
+                        ];
+                    if (root.crtCalibrationModalVisible)
+                        return [
+                            {
+                                button: "Dpad",
+                                label: qsTr("Adjust")
+                            },
+                            {
+                                button: "ButtonA",
+                                label: qsTr("Save")
                             }
                         ];
                     if (!root.bootComplete || root.startupRestoreCurtainVisible)
@@ -1371,7 +1455,31 @@ ApplicationWindow {
                 id: screensaverOverlay
 
                 anchors.fill: parent
+                // Cover the full framebuffer, not just the safe-area-
+                // inset scene - the overscan band's background must not
+                // sit static on a CRT while the screensaver runs.
+                anchors.margins: -Math.max(root._crtInsetW, root._crtInsetH)
                 z: 500
+            }
+        }
+
+        // CRT screen-position calibration. Mounted as a sibling of
+        // `scene` (painted after it, so on top of everything inside)
+        // because the test pattern must address the TRUE framebuffer
+        // edges - it opts out of both the safe-area inset and the
+        // orientation rotation, which a border/grid pattern doesn't
+        // need. Input still routes through Main.qml's modal chain via
+        // ScreenManager.
+        Loader {
+            id: crtCalibrationModalLoader
+            anchors.fill: parent
+            active: root.crtCalibrationModalRequested
+            sourceComponent: Component {
+                CrtCalibrationModal {
+                    anchors.fill: parent
+                    open: root.crtCalibrationModalVisible
+                    onCloseRequested: root.closeCrtCalibrationRequested()
+                }
             }
         }
     }

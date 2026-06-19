@@ -156,10 +156,11 @@ Item {
     readonly property bool _systemCover: root.delegateCoverKey.startsWith("systems/")
     // True for any built-in icon routed through the tinted-svg provider:
     // system logos, hub category icons, folder/file/action UI glyphs.
-    // False for real art (media-image/, system-image/) which is never recolored.
+    // False for real art (media-image/, custom-image/) which is never recolored
+    // — a user override is shown exactly as it is on disk.
     readonly property bool _isTinted: root.delegateCoverKey.startsWith("systems/") || root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey.startsWith("icons/")
     // Unfocused ramp — always loaded for tinted keys; also the sole source for
-    // real art (media-image/, system-image/) which is focus-independent.
+    // real art (media-image/, custom-image/) which is focus-independent.
     readonly property url _coverBaseSrc: root._coverPending ? "" : Resources.coverUrl(root.delegateCoverKey, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow)
     // Focused ramp — only loaded for tinted icons; empty string for real art so
     // the Image item never initiates a second fetch for cover/boxart tiles.
@@ -366,7 +367,7 @@ Item {
     // Icon area — two stacked Images for the unfocused and focused tint ramps.
     // Both share identical geometry; `coverFocus` sits above `coverBase` (z: 1)
     // and is only loaded for tinted keys (system logos, category icons, UI
-    // glyphs). Real art (media-image/, system-image/) uses only `coverBase`.
+    // glyphs). Real art (media-image/, custom-image/) uses only `coverBase`.
     //
     // Focus transitions are an instant visibility swap with zero async work:
     // both ramps are decoded while the tile is idle (coverBase during the

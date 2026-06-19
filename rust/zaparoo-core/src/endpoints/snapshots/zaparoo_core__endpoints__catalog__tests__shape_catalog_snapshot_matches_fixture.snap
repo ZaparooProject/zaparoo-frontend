@@ -11,6 +11,7 @@ CatalogData {
             category: "Handhelds",
             release_date: None,
             manufacturer: None,
+            zap_script: "",
         },
         SystemInfo {
             id: "MAME",
@@ -18,6 +19,7 @@ CatalogData {
             category: "arcade",
             release_date: None,
             manufacturer: None,
+            zap_script: "",
         },
         SystemInfo {
             id: "NES",
@@ -25,6 +27,7 @@ CatalogData {
             category: "Consoles",
             release_date: None,
             manufacturer: None,
+            zap_script: "",
         },
         SystemInfo {
             id: "odd",
@@ -32,6 +35,7 @@ CatalogData {
             category: "",
             release_date: None,
             manufacturer: None,
+            zap_script: "",
         },
         SystemInfo {
             id: "SNES",
@@ -39,6 +43,7 @@ CatalogData {
             category: "Consoles",
             release_date: None,
             manufacturer: None,
+            zap_script: "",
         },
     ],
     categories: [

@@ -43,6 +43,7 @@ MainLayout {
     readonly property string modalListPicker: "list_picker"
     readonly property string modalLetterJump: "letter_jump"
     readonly property string modalSettingNeedsRestart: "restart_confirm"
+    readonly property string modalCrtCalibration: "crt_calibration"
 
     // One-shot session flag: the first-run modal is shown at most
     // once per frontend process, even if the WS link drops and the
@@ -50,6 +51,12 @@ MainLayout {
     property bool _firstRunIndexShown: false
     property string _pendingLanguageSelection: ""
     property string _pendingResolutionSelection: ""
+    property string _pendingCrtStandardSelection: ""
+    // Staged CRT-mode toggle awaiting the restart-confirm modal:
+    // "" (none), "on", or "off". Confirming writes the 1-byte enable
+    // file and exits with code 42 so Main_MiSTer respawns the frontend
+    // with the new mode (see Browse.CrtVideo).
+    property string _pendingCrtToggle: ""
     property bool _discoverMenuPending: false
     property bool _pendingResumeLaunch: false
     property bool _startupRestorePending: false
@@ -229,6 +236,8 @@ MainLayout {
             root.letterJumpModalRequested = true;
         else if (modal === root.modalSettingNeedsRestart)
             root.settingNeedsRestartModalRequested = true;
+        else if (modal === root.modalCrtCalibration)
+            root.crtCalibrationModalRequested = true;
     }
 
     Component.onCompleted: {
@@ -1271,6 +1280,10 @@ MainLayout {
                 root.openLogUploadModal();
             else if (actionId === "aboutLicense")
                 root._navigateToAbout();
+            else if (actionId === "crtEnable" || actionId === "crtDisable")
+                root.stageCrtToggle(actionId === "crtEnable");
+            else if (actionId === "crtCalibration")
+                root.openCrtCalibrationModal();
         }
         function onRequestListPicker(title: string, entries: var, initialId: string, fieldId: string): void {
             root.openListPickerModal(title, entries, initialId, fieldId);
@@ -1294,6 +1307,13 @@ MainLayout {
                 const cat = Browse.SystemsModel.current_category;
                 if (cat !== "")
                     Browse.SystemsModel.set_category(cat);
+                return;
+            }
+            // Launch-only (virtual) systems carry a zapScript and have no
+            // browsable media. Run them directly and stay on the systems
+            // grid; never route into an empty games browse.
+            if (Browse.SystemsModel.is_launchable_system(systemId)) {
+                Browse.SystemsModel.launch_system_id(systemId);
                 return;
             }
             root._navigateFromSystems(systemId);
@@ -1403,7 +1423,7 @@ MainLayout {
     // caller saw `entries.length === 0` despite the function pushing 3
     // items in. Plain `var` round-trips cleanly and silences the
     // "insufficiently annotated" coercion warning at the call site.
-    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool) {
+    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool, category: string) {
         if (owner === "systems") {
             const entries = [
                 {
@@ -1411,14 +1431,17 @@ MainLayout {
                     label: qsTr("Launch core")
                 }
             ];
-            if (!Browse.SystemLaunchers.loading && Browse.SystemLaunchers.error_message === "" && Browse.SystemLaunchers.launcher_count_for_system(systemId) > 0) {
+            // Launch-only (virtual) systems have no media and no launcher
+            // choice, so omit launcher/index/scrape actions for them.
+            const launchable = Browse.SystemsModel.is_launchable_system(systemId);
+            if (!launchable && !Browse.SystemLaunchers.loading && Browse.SystemLaunchers.error_message === "" && Browse.SystemLaunchers.launcher_count_for_system(systemId) > 0) {
                 entries.push({
                     id: "change_launcher",
                     label: qsTr("Change launcher")
                 });
             }
             const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
-            if (!mediaBusy) {
+            if (!launchable && !mediaBusy) {
                 entries.push({
                     id: "index_system",
                     label: qsTr("Update media database")
@@ -1441,7 +1464,13 @@ MainLayout {
                     label: isHidden ? qsTr("Unhide") : qsTr("Hide")
                 }
             ];
-            if (!mediaBusy) {
+            // Index/scrape act on the category's indexable systems, which
+            // excludes launch-only ones. Show the actions only when the
+            // category has at least one indexable system; a category whose
+            // members are all launch-only yields none and the actions would
+            // no-op, so omit them rather than show dead entries.
+            const hasIndexable = category !== "" && Browse.SystemsModel.system_ids_for_category(category).length > 0;
+            if (!mediaBusy && hasIndexable) {
                 entries.push({
                     id: "index_category",
                     label: qsTr("Update media database")
@@ -1571,7 +1600,7 @@ MainLayout {
             if (index >= Browse.RecentsModel.count)
                 return;
         }
-        const entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden);
+        const entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category);
         if (entries.length === 0)
             return;
         root.contextMenuEntries = entries;
@@ -1992,31 +2021,90 @@ MainLayout {
             root._pendingLanguageSelection = selectedId;
         else if (fieldId === "resolution")
             root._pendingResolutionSelection = selectedId;
+        else if (fieldId === "crtVideoStandard")
+            root._pendingCrtStandardSelection = selectedId;
+        root.openSettingNeedsRestartModal();
+    }
+
+    function stageCrtToggle(enable: bool): void {
+        root._pendingCrtToggle = enable ? "on" : "off";
         root.openSettingNeedsRestartModal();
     }
 
     function cancelPendingRestart(): void {
         root._pendingLanguageSelection = "";
         root._pendingResolutionSelection = "";
+        root._pendingCrtStandardSelection = "";
+        root._pendingCrtToggle = "";
         root.closeSettingNeedsRestartModal();
     }
 
     function confirmPendingRestart(): void {
+        // CRT-mode toggle takes a different exit: Main_MiSTer owns the
+        // respawn (the new mode needs a different fb setup and --crt
+        // flag), so persist the flag byte and exit with the reserved
+        // reload code instead of the in-process execvp restart. If the
+        // flag write fails, stay up rather than respawn into the old
+        // mode and let the user retry.
+        if (root._pendingCrtToggle !== "") {
+            const enable = root._pendingCrtToggle === "on";
+            root._pendingCrtToggle = "";
+            root.closeSettingNeedsRestartModal();
+            if (Browse.CrtVideo.write_crt_enable_file(enable))
+                Qt.exit(42);
+            return;
+        }
         const language = root._pendingLanguageSelection;
         const resolution = root._pendingResolutionSelection;
+        const crtStandard = root._pendingCrtStandardSelection;
         root._pendingLanguageSelection = "";
         root._pendingResolutionSelection = "";
+        root._pendingCrtStandardSelection = "";
         root.closeSettingNeedsRestartModal();
         if (language !== "")
             Browse.Settings.set_language(language);
         if (resolution !== "")
             Browse.Settings.set_resolution(resolution);
+        if (crtStandard !== "") {
+            Browse.CrtVideo.set_video_standard(crtStandard);
+            // A standard change must respawn through Main_MiSTer (exit
+            // 42), not the in-process execvp restart: Main owns the fb
+            // geometry (programs it pre-spawn and re-asserts ~1 s in,
+            // reading the mode byte from the CRT state file), so it
+            // has to re-read the new mode before the next frontend
+            // boots. The desktop preview has no Main; the execvp
+            // restart below re-reads frontend.toml and resizes the
+            // preview canvas.
+            if (Browse.Settings.is_mister) {
+                if (Browse.CrtVideo.write_crt_enable_file(true))
+                    Qt.exit(42);
+                return;
+            }
+        }
         root.restartApp();
     }
 
     function restartApp() {
         Qt.exit(1000);
     }
+
+    // CRT calibration lifecycle. Full-bleed test pattern mounted
+    // outside the safe-area inset (see MainLayout); arrows nudge the
+    // centering trims live through Browse.CrtVideo.
+    function openCrtCalibrationModal(): void {
+        root._requestModal(root.modalCrtCalibration);
+        root.crtCalibrationModalVisible = true;
+        if (ScreenManager.topModal !== root.modalCrtCalibration)
+            ScreenManager.pushModal(root.modalCrtCalibration);
+    }
+
+    function closeCrtCalibrationModal(): void {
+        root.crtCalibrationModalVisible = false;
+        if (ScreenManager.topModal === root.modalCrtCalibration)
+            ScreenManager.popModal();
+    }
+
+    onCloseCrtCalibrationRequested: root.closeCrtCalibrationModal()
 
     function beginSystemLauncherUpdate(systemId: string, selectedId: string): void {
         root._pendingLauncherSystemId = systemId;
@@ -2116,6 +2204,12 @@ MainLayout {
             Browse.Settings.set_screensaver_timeout(selectedId);
         else if (fieldId === "mediaImageType")
             Browse.Settings.set_media_image_type(selectedId);
+        else if (fieldId === "crtVideoStandard") {
+            root.closeListPickerModal();
+            if (selectedId !== Browse.CrtVideo.current_video_standard)
+                root.stageSettingRestart(fieldId, selectedId);
+            return;
+        }
         root.closeListPickerModal();
     }
     onListPickerCloseRequested: root.handleListPickerCloseRequested()
@@ -2319,6 +2413,9 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalLetterJump) {
                 if (root.letterJumpModal !== null)
                     root.letterJumpModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalCrtCalibration) {
+                if (root.crtCalibrationModal !== null)
+                    root.crtCalibrationModal.handleAction(action);
             }
             // While a modal owns input, swallow everything not handled
             // above rather than leak it to the root screen.
@@ -2801,7 +2898,7 @@ MainLayout {
             const unfocusedUrl = Resources.coverUrl(key, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow);
             urls.push(unfocusedUrl);
             const focusedUrl = Resources.coverUrl(key, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow);
-            // system-image/ keys ignore tint params (served as-is), so both
+            // custom-image/ keys ignore tint params (served as-is), so both
             // URLs are identical — skip the duplicate to avoid redundant fetches.
             if (focusedUrl !== unfocusedUrl) {
                 urls.push(focusedUrl);

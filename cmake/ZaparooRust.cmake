@@ -65,8 +65,8 @@ qt_add_executable(
     "${CMAKE_SOURCE_DIR}/src/app/media_image_provider.cpp"
     "${CMAKE_SOURCE_DIR}/src/app/tinted_svg_image_provider.h"
     "${CMAKE_SOURCE_DIR}/src/app/tinted_svg_image_provider.cpp"
-    "${CMAKE_SOURCE_DIR}/src/app/system_image_provider.h"
-    "${CMAKE_SOURCE_DIR}/src/app/system_image_provider.cpp"
+    "${CMAKE_SOURCE_DIR}/src/app/custom_image_provider.h"
+    "${CMAKE_SOURCE_DIR}/src/app/custom_image_provider.cpp"
     "${CMAKE_SOURCE_DIR}/src/app/native_video_writer.h"
     "${CMAKE_SOURCE_DIR}/src/app/native_video_writer.cpp"
 )

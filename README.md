@@ -21,6 +21,11 @@ just lint                 # clang-format, clang-tidy, qmllint, rustfmt, clippy, 
 The MiSTer ARM32 path uses the official Docker Buildx toolchain image and does
 not need Qt, CMake, Rust, or `just` installed on the host.
 
+## Customize
+
+You can override system artwork, the Hub menu icons, and system display names
+without rebuilding. See [docs/customization.md](docs/customization.md).
+
 `just test` and `just lint` need `cargo-nextest` and `cargo-deny`:
 
 ```bash

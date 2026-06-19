@@ -23,7 +23,12 @@ impl CatalogData {
             .iter()
             .filter(|s| {
                 if is_other {
-                    s.category.is_empty()
+                    // "Other" is the catch-all bucket: it collects both
+                    // systems with no upstream category (synthesized into
+                    // "Other" by `derive_categories`) and systems Core
+                    // tags with a literal "Other" category, such as the
+                    // MiSTer launchables (`misterLaunchableCategoryOther`).
+                    s.category.is_empty() || s.category.eq_ignore_ascii_case("Other")
                 } else {
                     s.category.eq_ignore_ascii_case(category)
                 }
@@ -64,18 +69,23 @@ mod tests {
     }
 
     #[test]
-    fn systems_by_category_other_selects_uncategorised() {
+    fn systems_by_category_other_selects_uncategorised_and_literal_other() {
         let data = CatalogData {
             systems: vec![
                 sys("a", "A", ""),
                 sys("b", "B", "Consoles"),
                 sys("c", "C", ""),
+                // A launchable Core tags with a literal "Other" category.
+                sys("chess", "Chess", "Other"),
             ],
             categories: vec!["Consoles".into(), "Other".into()],
         };
         let other = data.systems_by_category("Other");
-        assert_eq!(other.len(), 2);
-        assert!(other.iter().all(|s| s.category.is_empty()));
+        assert_eq!(other.len(), 3);
+        assert!(other
+            .iter()
+            .all(|s| s.category.is_empty() || s.category.eq_ignore_ascii_case("Other")));
+        assert!(other.iter().any(|s| s.id == "chess"));
     }
 
     #[test]

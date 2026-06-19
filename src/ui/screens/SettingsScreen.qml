@@ -135,6 +135,33 @@ Item {
             id: "screensaverTimeout",
             label: qsTr("Screensaver")
         });
+        if (Browse.Settings.is_mister) {
+            // Native CRT video path (Menu fork DDR writer). The toggle is
+            // always offered on MiSTer so HDMI users can switch in; the
+            // standard picker and calibration screen only matter once the
+            // frontend is running with --crt.
+            out.push({
+                kind: "header",
+                label: qsTr("Analog video")
+            });
+            out.push({
+                kind: "field",
+                id: "crtEnabled",
+                label: qsTr("CRT mode")
+            });
+            if (Browse.CrtVideo.crt_enabled) {
+                out.push({
+                    kind: "field",
+                    id: "crtVideoStandard",
+                    label: qsTr("Video standard")
+                });
+                out.push({
+                    kind: "field",
+                    id: "crtCalibration",
+                    label: qsTr("Screen position")
+                });
+            }
+        }
         return out;
     }
     // Browsing = how the library is presented and which items show.
@@ -384,16 +411,17 @@ Item {
             return settings._regionDisplay(Browse.Settings.current_region);
         if (id === "mediaImageType")
             return settings._mediaImageTypeDisplay(Browse.Settings.current_media_image_type);
+        if (id === "crtVideoStandard")
+            return settings._videoStandardDisplay(Browse.CrtVideo.current_video_standard);
         return "";
     }
 
     function _fieldControl(id: string): string {
-        if (id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion")
+        if (id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion" || id === "crtEnabled")
             return "toggle";
-        if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout")
-            return "navigate";
-        if (id === "updateMediaDb" || id === "runScraper" || id === "uploadLog")
-            return "action";
+        if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration")
+            if (id === "updateMediaDb" || id === "runScraper" || id === "uploadLog")
+                return "action";
         return "picker";
     }
 
@@ -410,6 +438,8 @@ Item {
             return Browse.Settings.current_show_original_filenames;
         if (id === "reduceMotion")
             return Browse.Settings.current_reduce_motion;
+        if (id === "crtEnabled")
+            return Browse.CrtVideo.crt_enabled;
         return Browse.Settings.current_mouse_enabled;
     }
 
@@ -502,7 +532,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion";
+        return id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion" || id === "crtEnabled";
     }
     // True when the focused field is a list-picker row (Accept opens a
     // modal; left/right is a no-op — pickers don't cycle inline). Drives
@@ -511,7 +541,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType";
+        return id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "browseLayout" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
     }
     // True when focused row accepts A without left/right cycling:
     // pickers, jobs, modal/navigation rows, and root category rows.
@@ -520,7 +550,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return settings.focusedFieldIsPicker || id === "updateMediaDb" || id === "runScraper" || id === "uploadLog" || id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout";
+        return settings.focusedFieldIsPicker || id === "updateMediaDb" || id === "runScraper" || id === "uploadLog" || id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration";
     }
     // Verb shown on the help-bar Accept hint for the focused action
     // row. Index/scrape flip between Start and Cancel because the press
@@ -729,6 +759,19 @@ Item {
         return qsTr("%1 seconds").arg(value);
     }
 
+    function _videoStandardList(): list<string> {
+        const raw = Browse.CrtVideo.available_video_standards;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
+    function _videoStandardDisplay(value: string): string {
+        if (value === "pal")
+            return qsTr("PAL (50 Hz)");
+        if (value === "480i")
+            return qsTr("480i (60 Hz)");
+        return qsTr("NTSC (60 Hz)");
+    }
+
     function _mediaImageTypeDisplay(value: string): string {
         if (value === "auto")
             return qsTr("Auto");
@@ -849,6 +892,15 @@ Item {
                     label: settings._mediaImageTypeDisplay(list[i])
                 });
             initialId = Browse.Settings.current_media_image_type;
+        } else if (id === "crtVideoStandard") {
+            title = qsTr("Video standard");
+            const list = settings._videoStandardList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._videoStandardDisplay(list[i])
+                });
+            initialId = Browse.CrtVideo.current_video_standard;
         } else {
             return;
         }
@@ -927,6 +979,15 @@ Item {
         settings.rescrapeExisting = !settings.rescrapeExisting;
     }
 
+    // CRT mode is confirm-gated: the pill never flips locally. The
+    // request routes to Main.qml, which stages the restart-confirm
+    // modal; the actual flip happens on the post-exit-42 respawn.
+    function _requestCrtEnabled(enable: bool): void {
+        if (enable === Browse.CrtVideo.crt_enabled)
+            return;
+        settings.requestAccept(enable ? "crtEnable" : "crtDisable");
+    }
+
     function _cycleFocused(direction: int): void {
         if (!settings._isField(settings.currentIndex))
             return;
@@ -948,6 +1009,8 @@ Item {
             settings._setRescrapeExisting(direction);
         else if (id === "reduceMotion")
             settings._setReduceMotion(direction);
+        else if (id === "crtEnabled")
+            settings._requestCrtEnabled(direction > 0);
     }
 
     function _rememberPageFocus(): void {
@@ -1065,6 +1128,8 @@ Item {
                     settings._toggleRescrapeExisting();
                 else if (id === "reduceMotion")
                     settings._toggleReduceMotion();
+                else if (id === "crtEnabled")
+                    settings._requestCrtEnabled(!Browse.CrtVideo.crt_enabled);
                 return;
             }
             // Picker / action / about either open a modal or navigate away,
@@ -1110,6 +1175,8 @@ Item {
                 settings.requestAccept("uploadLog");
             else if (id === "aboutLicense")
                 settings.requestAccept("aboutLicense");
+            else if (id === "crtCalibration")
+                settings.requestAccept("crtCalibration");
             else
                 settings._openPickerForField(id);
         }
@@ -1356,6 +1423,8 @@ Item {
                                 settings._toggleRescrapeExisting();
                             else if (row.modelData.id === "reduceMotion")
                                 settings._toggleReduceMotion();
+                            else if (row.modelData.id === "crtEnabled")
+                                settings._requestCrtEnabled(!Browse.CrtVideo.crt_enabled);
                         }
                         onRightClicked: settings._goBack()
                         // Picker, action, and navigate rows route
