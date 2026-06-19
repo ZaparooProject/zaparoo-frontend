@@ -63,10 +63,8 @@ impl ffi::ImageOverrides {
         self.as_mut().rust_mut().hub_loading = true;
         let qt_thread = self.qt_thread();
         crate::models::global_handle().spawn(async move {
-            let result = tokio::task::spawn_blocking(|| {
-                crate::image_overrides::scan_namespace("hub")
-            })
-            .await;
+            let result =
+                tokio::task::spawn_blocking(|| crate::image_overrides::scan_namespace("hub")).await;
             if let Err(e) = result {
                 tracing::warn!("hub image override scan failed: {e}");
             }
@@ -84,10 +82,9 @@ impl ffi::ImageOverrides {
         self.as_mut().rust_mut().systems_loading = true;
         let qt_thread = self.qt_thread();
         crate::models::global_handle().spawn(async move {
-            let result = tokio::task::spawn_blocking(|| {
-                crate::image_overrides::scan_namespace("systems")
-            })
-            .await;
+            let result =
+                tokio::task::spawn_blocking(|| crate::image_overrides::scan_namespace("systems"))
+                    .await;
             if let Err(e) = result {
                 tracing::warn!("system image override scan failed: {e}");
             }
