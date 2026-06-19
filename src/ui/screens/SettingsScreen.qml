@@ -1128,6 +1128,8 @@ Item {
                     settings._toggleRescrapeExisting();
                 else if (id === "reduceMotion")
                     settings._toggleReduceMotion();
+                else if (id === "crtEnabled")
+                    settings._requestCrtEnabled(!Browse.CrtVideo.crt_enabled);
                 return;
             }
             // Picker / action / about either open a modal or navigate away,
@@ -1173,8 +1175,6 @@ Item {
                 settings.requestAccept("uploadLog");
             else if (id === "aboutLicense")
                 settings.requestAccept("aboutLicense");
-            else if (id === "crtEnabled")
-                settings._requestCrtEnabled(!Browse.CrtVideo.crt_enabled);
             else if (id === "crtCalibration")
                 settings.requestAccept("crtCalibration");
             else
