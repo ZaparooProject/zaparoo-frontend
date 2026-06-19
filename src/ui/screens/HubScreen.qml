@@ -61,8 +61,12 @@ Item {
     }
 
     // Resolve the cover key for a Hub item: a user override from the `hub/`
-    // namespace if present, else the bundled key.
+    // namespace if present, else the bundled key. Before the deferred scan
+    // completes, return empty so first paint does no icon image work and avoids
+    // a bundled-to-custom flash.
     function _hubCoverKey(id: string, fallbackKey: string): string {
+        if (!Browse.ImageOverrides.hub_loaded)
+            return "";
         return hub._preferOverride(Browse.ImageOverrides.override_cover_key("hub", id), fallbackKey);
     }
 

@@ -460,18 +460,16 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
     let persist_state = Arc::new(Mutex::new(persist::load()));
     startup_trace("rust:persist loaded");
 
-    // Scan the user customization root once at startup. The `systems/` and
-    // `hub/` subfolders hold override images served by the `custom-image`
-    // provider as-is, bypassing the tint pipeline. `[custom] dir` overrides
-    // the default location; a missing root → empty map (feature off).
-    // System display-name overrides come from the same config.
+    // Register the customization root without scanning it. Hub and system
+    // image scans run asynchronously after first paint; system display-name
+    // overrides are already in the parsed config and need no filesystem work.
     let custom_root = config
         .custom_dir
         .clone()
         .map_or_else(custom_dir, std::path::PathBuf::from);
-    image_overrides::scan(&custom_root);
+    image_overrides::configure(&custom_root);
     system_name_overrides::set(config.system_names.clone());
-    startup_trace("rust:image and name overrides scanned");
+    startup_trace("rust:image override root and name overrides configured");
 
     // init_globals takes the owning `Runtime` — the static holder is
     // what `zaparoo_rust_shutdown` later drains via `shutdown_timeout`.

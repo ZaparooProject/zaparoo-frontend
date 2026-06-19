@@ -278,9 +278,22 @@ MainLayout {
 
     on_FirstFrameSeenChanged: {
         if (root._firstFrameSeen) {
+            Browse.ImageOverrides.load_hub_overrides();
             if (Browse.CategoriesModel.count > 0)
                 root.hubScreen.restoreFromCategoriesReset(true);
             root._maybeStartStartupRestore();
+        }
+    }
+
+    Connections {
+        target: Browse.ImageOverrides
+        function onHub_loadedChanged(): void {
+            if (Browse.ImageOverrides.hub_loaded)
+                Browse.ImageOverrides.load_system_overrides();
+        }
+        function onSystems_loadedChanged(): void {
+            if (Browse.ImageOverrides.systems_loaded && Browse.CategoriesModel.count > 0)
+                Browse.SystemsModel.reproject();
         }
     }
 

@@ -4,9 +4,9 @@
 //
 // User-supplied image overrides.
 //
-// The frontend scans a single customization root once at startup (the
-// `[custom] dir` config value, or `platform_paths::custom_dir()` when
-// unset). Inside that root, two namespaced subfolders hold override images:
+// The frontend registers one customization root at startup (the `[custom]
+// dir` config value, or `platform_paths::custom_dir()` when unset). After
+// first paint it scans two namespaced subfolders asynchronously:
 //
 //   * `systems/` — system artwork, keyed by Zaparoo system id (case-exact).
 //   * `hub/`     — Hub icons, keyed by category id (`Arcade`, `Console`, …)
@@ -22,14 +22,14 @@
 // configured root.
 //
 // MiSTer note: the root is typically `/media/fat/zaparoo/custom/` (SD card).
-// Scanning once at startup keeps the `/tmp` tmpfs free from copies and avoids
-// repeated SD reads during browse. The user must restart the frontend after
-// adding or removing override images. A missing root or subfolder is the
+// Scanning once per namespace keeps the `/tmp` tmpfs free from copies and
+// avoids repeated SD reads during browse. The user must restart the frontend
+// after adding or removing override images. A missing root or subfolder is the
 // normal zero-config case and is treated as "no overrides".
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 use tracing::{debug, info};
 
 /// Image extensions accepted as user override artwork.
@@ -39,7 +39,7 @@ const ALLOWED_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp", "svg"
 /// Override namespaces. Each maps to a same-named subfolder under the root.
 const NAMESPACES: &[&str] = &["systems", "hub"];
 
-static OVERRIDES: OnceLock<HashMap<(String, String), PathBuf>> = OnceLock::new();
+static OVERRIDES: OnceLock<RwLock<HashMap<(String, String), PathBuf>>> = OnceLock::new();
 static OVERRIDE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
 /// Normalize a file stem or lookup id for matching. Matching is
@@ -50,70 +50,69 @@ fn match_key(id: &str) -> String {
     id.to_ascii_lowercase()
 }
 
-/// Scan `root`'s namespace subfolders and build the lookup map. Pure: takes a
-/// root path and returns the map without touching globals, so it is unit
-/// testable (the `OnceLock`-backed `scan` is process-global and set-once).
-fn scan_root(root: &Path) -> HashMap<(String, String), PathBuf> {
+/// Scan one namespace below `root` and build its lookup map. Pure: takes a
+/// root path and namespace without touching globals, so it is unit testable.
+fn scan_namespace_root(root: &Path, ns: &str) -> HashMap<(String, String), PathBuf> {
     let mut map = HashMap::new();
-    for &ns in NAMESPACES {
-        let dir = root.join(ns);
-        match std::fs::read_dir(&dir) {
-            Ok(entries) => {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if !path.is_file() {
-                        continue;
-                    }
-                    let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
-                        continue;
-                    };
-                    if !ALLOWED_EXTENSIONS
-                        .iter()
-                        .any(|&a| a.eq_ignore_ascii_case(ext))
-                    {
-                        continue;
-                    }
-                    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-                        continue;
-                    };
-                    info!("{ns} image override: {} -> {}", stem, path.display());
-                    // Last writer wins if multiple files map to the same key
-                    // (different extensions like `SNES.png`/`SNES.jpg`, or just
-                    // different case like `SNES.png`/`snes.png`). The directory
-                    // iteration order is OS-defined; users should provide only
-                    // one file per id.
-                    map.insert((ns.to_string(), match_key(stem)), path);
+    let dir = root.join(ns);
+    match std::fs::read_dir(&dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
                 }
+                let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+                    continue;
+                };
+                if !ALLOWED_EXTENSIONS
+                    .iter()
+                    .any(|&a| a.eq_ignore_ascii_case(ext))
+                {
+                    continue;
+                }
+                let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                info!("{ns} image override: {} -> {}", stem, path.display());
+                map.insert((ns.to_string(), match_key(stem)), path);
             }
-            Err(e) => {
-                // A missing subfolder is the common zero-config case, not an
-                // error — log at debug so a real permission problem is still
-                // discoverable without spamming every clean startup.
-                debug!("no {ns} overrides in {}: {e}", dir.display());
-            }
+        }
+        Err(e) => {
+            debug!("no {ns} overrides in {}: {e}", dir.display());
         }
     }
     map
 }
 
-/// Scan the configured customization root and populate the lookup map.
-/// Call exactly once during `zaparoo_rust_init`. Subsequent calls are
-/// silent no-ops (`OnceLock` semantics).
-pub fn scan(root: &Path) {
+/// Register the customization root without touching the filesystem. Namespace
+/// scans are started after first paint by `Browse.ImageOverrides`.
+pub fn configure(root: &Path) {
     let _ = OVERRIDE_ROOT.set(root.to_path_buf());
-    if !root.exists() {
-        debug!(
-            "customization root {} does not exist; no overrides loaded",
-            root.display()
-        );
+    let _ = OVERRIDES.set(RwLock::new(HashMap::new()));
+}
+
+/// Scan one known namespace and merge its results into the process map.
+pub fn scan_namespace(namespace: &str) -> usize {
+    if !NAMESPACES.contains(&namespace) {
+        return 0;
     }
-    let map = scan_root(root);
-    info!(
-        "image overrides: {} file(s) loaded from {}",
-        map.len(),
-        root.display()
-    );
-    let _ = OVERRIDES.set(map);
+    let Some(root) = OVERRIDE_ROOT.get() else {
+        return 0;
+    };
+    let found = scan_namespace_root(root, namespace);
+    let count = found.len();
+    if let Some(overrides) = OVERRIDES.get() {
+        match overrides.write() {
+            Ok(mut map) => {
+                map.retain(|(ns, _), _| ns != namespace);
+                map.extend(found);
+            }
+            Err(e) => tracing::warn!("image override map poisoned: {e}"),
+        }
+    }
+    info!("{namespace} image overrides: {count} file(s) loaded");
+    count
 }
 
 /// Return the override path for `id` in `namespace` (case-insensitive stem
@@ -121,6 +120,8 @@ pub fn scan(root: &Path) {
 pub fn override_path(namespace: &str, id: &str) -> Option<PathBuf> {
     OVERRIDES
         .get()?
+        .read()
+        .ok()?
         .get(&(namespace.to_string(), match_key(id)))
         .cloned()
 }
@@ -185,7 +186,7 @@ mod tests {
         reason = "tests should fail-fast on unexpected errors"
     )]
 
-    use super::{match_key, scan_root};
+    use super::{match_key, scan_namespace_root};
     use std::fs;
 
     #[test]
@@ -205,7 +206,8 @@ mod tests {
         fs::write(root.join("systems/SNES.png"), b"x").expect("write");
         fs::write(root.join("hub/Favorites.svg"), b"<svg/>").expect("write");
 
-        let map = scan_root(root);
+        let mut map = scan_namespace_root(root, "systems");
+        map.extend(scan_namespace_root(root, "hub"));
         assert_eq!(
             map.get(&("systems".to_string(), "snes".to_string())),
             Some(&root.join("systems/SNES.png"))
@@ -226,7 +228,7 @@ mod tests {
         fs::write(root.join("systems/SNES.txt"), b"x").expect("write");
         fs::write(root.join("systems/Genesis.png"), b"x").expect("write");
 
-        let map = scan_root(root);
+        let map = scan_namespace_root(root, "systems");
         assert!(!map.contains_key(&("systems".to_string(), "snes".to_string())));
         assert_eq!(
             map.get(&("systems".to_string(), "genesis".to_string())),
@@ -237,7 +239,7 @@ mod tests {
     #[test]
     fn scan_root_missing_subfolders_is_empty() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let map = scan_root(dir.path());
+        let map = scan_namespace_root(dir.path(), "systems");
         assert!(map.is_empty());
     }
 
@@ -248,7 +250,7 @@ mod tests {
         fs::create_dir_all(root.join("systems")).expect("mk systems");
         // Both the extension case (.PNG) and the stem case (NES) are ignored.
         fs::write(root.join("systems/NES.PNG"), b"x").expect("write");
-        let map = scan_root(root);
+        let map = scan_namespace_root(root, "systems");
         assert_eq!(
             map.get(&("systems".to_string(), "nes".to_string())),
             Some(&root.join("systems/NES.PNG"))
