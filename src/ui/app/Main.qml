@@ -254,6 +254,14 @@ MainLayout {
         if (savedScreen !== "" && savedScreen !== root.screenHub) {
             root._startupRestorePending = true;
             root._startupRestoreScreen = savedScreen;
+            // Raise the curtain before first paint so the ghost Hub never
+            // shows during a warm resume of a non-Hub screen. The screen
+            // stack hides (MainLayout `visible: !startupRestoreCurtainVisible`)
+            // and only the "Loading xxx…" cue paints until
+            // `_finishStartupRestore()` lifts the curtain onto the target.
+            // Cold boots that land on Hub leave the curtain down, so the
+            // ghost Hub still paints there as before.
+            root.startupRestoreCurtainVisible = true;
         }
         root._startupTrace("startup/qml Component.onCompleted", "savedScreen=" + savedScreen, "initialActiveScreen=" + root.activeScreen, "startupRestorePending=" + root._startupRestorePending, "connectionState=" + Browse.AppStatus.connection_state);
         // Fire the focus restore here so Hub focus is seated and marked ready
@@ -782,6 +790,18 @@ MainLayout {
             root._goto(root.screenHub);
     }
 
+    // Fire the actual resume launch and arm the desktop safety-clear. The
+    // "Loading game…" cue (pendingTransition === "resume") stays up through
+    // the launch: on MiSTer the process is replaced by the game before the
+    // timer fires, so the cue covers the core swap; on desktop nothing
+    // replaces us, so resumeLaunchCueTimer clears the cue and restores input.
+    // Started only here, at dispatch — never while still waiting on the
+    // connection — so a slow coalesce keeps the cue for as long as it needs.
+    function _dispatchResumeLaunch(): void {
+        Browse.RecentsModel.launch_resume();
+        resumeLaunchCueTimer.restart();
+    }
+
     function _maybeCompletePendingResumeLaunch(): void {
         if (!root._pendingResumeLaunch || root.pendingTransition !== "resume")
             return;
@@ -789,7 +809,7 @@ MainLayout {
             return;
         if (Browse.RecentsModel.resume_available) {
             root._pendingResumeLaunch = false;
-            Browse.RecentsModel.launch_resume();
+            root._dispatchResumeLaunch();
             return;
         }
         if (Browse.AppStatus.connection_state === 2 || Browse.AppStatus.connection_state === 3)
@@ -804,12 +824,16 @@ MainLayout {
     }
 
     function _navigateResumeFromHub(): void {
+        // Optimistic loader, same contract as the other Hub actions: paint
+        // the "Loading game…" cue (and hide the ghost-Hub tiles / gate input)
+        // immediately, before we know whether the launch can proceed.
+        // _cancelResumeLaunch clears it on the no-resumable-game branch.
+        root.pendingTransition = "resume";
         if (!Browse.RecentsModel.resume_loading && Browse.RecentsModel.resume_available) {
-            Browse.RecentsModel.launch_resume();
+            root._dispatchResumeLaunch();
             return;
         }
         if (Browse.RecentsModel.resume_loading || Browse.AppStatus.connection_state !== 2) {
-            root.pendingTransition = "resume";
             resumeLaunchTimer.restart();
             return;
         }
@@ -2370,7 +2394,10 @@ MainLayout {
         // press goes through the normal routing below.
         if (root._maybeDismissScreensaver())
             return;
-        if (root._startupRestorePending && root.startupRestoreCurtainVisible && root.activeScreen === root._startupRestoreScreen && !ScreenManager.hasModal)
+        // Swallow input while the warm-resume curtain is up. The target
+        // screen restores behind a hidden Hub (activeScreen stays Hub), so
+        // any press here would drive the ghost Hub the user can't see.
+        if (root._startupRestorePending && root.startupRestoreCurtainVisible && !ScreenManager.hasModal)
             return;
         root._resetIdle();
         // Input gate. While a forward transition is in flight, swallow
@@ -2938,6 +2965,20 @@ MainLayout {
         interval: 50
         repeat: false
         onTriggered: root._startResumeLaunch()
+    }
+
+    // Desktop safety-clear for the resume "Loading game…" cue. On MiSTer the
+    // launch replaces this process before this fires, so it never triggers and
+    // the cue covers the core swap. On desktop nothing replaces us, so clear
+    // the cue (and ungate input) once the launch has had time to take.
+    Timer {
+        id: resumeLaunchCueTimer
+        interval: 8000
+        repeat: false
+        onTriggered: {
+            if (root.pendingTransition === "resume")
+                root.pendingTransition = "";
+        }
     }
 
     Timer {

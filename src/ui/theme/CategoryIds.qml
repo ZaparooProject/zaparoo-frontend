@@ -10,6 +10,7 @@ QtObject {
     readonly property string computerId: "Computer"
     readonly property string consoleId: "Console"
     readonly property string handheldId: "Handheld"
+    readonly property string otherId: "Other"
 
     function canonicalize(id: string): string {
         if (id === "Computers")

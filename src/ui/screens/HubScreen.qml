@@ -90,6 +90,11 @@ Item {
             id: CategoryIds.handheldId,
             name: qsTr("Handhelds"),
             coverKey: hub._hubCoverKey(CategoryIds.handheldId, CategoryIds.coverKey(CategoryIds.handheldId))
+        },
+        {
+            id: CategoryIds.otherId,
+            name: qsTr("Other"),
+            coverKey: hub._hubCoverKey(CategoryIds.otherId, CategoryIds.coverKey(CategoryIds.otherId))
         }
     ]
     readonly property var visibleCategoryEntries: {
@@ -234,7 +239,15 @@ Item {
     }
 
     onActionEntriesChanged: {
-        if (hub.currentRow === 1 && Browse.HubState.selected_action === "resume" && !hub.resumeActionVisible) {
+        // Only treat a vanishing Resume tile as a real removal once the user
+        // is driving focus (_focusArmed). During the cold-boot settle the
+        // resume fetch can briefly read unavailable before it resolves to the
+        // just-played game; reacting then would jump focus to Arcade and
+        // persist it, stranding the user off the (about-to-reappear) Resume
+        // tile. While !_focusArmed, fall through to _remapActionFocus, which
+        // keeps the actions row aligned to the saved "resume" intent without
+        // overwriting persisted state.
+        if (hub._focusArmed && hub.currentRow === 1 && Browse.HubState.selected_action === "resume" && !hub.resumeActionVisible) {
             hub._focusFallbackAfterResumeRemoved();
             return;
         }
