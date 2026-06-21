@@ -1092,6 +1092,13 @@ ApplicationWindow {
                                 label: qsTr("I understand")
                             }
                         ];
+                    if (root.coreVersionModalVisible)
+                        return [
+                            {
+                                button: "ButtonA",
+                                label: qsTr("OK")
+                            }
+                        ];
                     if (root.quitConfirmModalVisible || root.settingNeedsRestartModalVisible || root.listPickerModalVisible || root.letterJumpModalVisible)
                         return [
                             {

@@ -289,8 +289,10 @@ RUN rustup toolchain install 1.90.0 --profile minimal \
 # recompile the workspace crates, not the whole dependency tree. Installed
 # here once; the binary rides into the runtime stage via the
 # `COPY --from=builder /root/.cargo` below and is on PATH through
-# /root/.cargo/bin. `--locked` pins cargo-chef's own dependency versions.
-RUN cargo install cargo-chef --locked
+# /root/.cargo/bin. The version is pinned (and `--locked` pins cargo-chef's own
+# dependency versions) so rebuilding this toolchain tag reproduces the same
+# cargo-chef build.
+RUN cargo install cargo-chef@0.1.77 --locked
 
 # Strip DWARF debug info from Qt artifacts before they're copied into the
 # slim runtime stage. `--strip-debug` preserves all symbols needed for

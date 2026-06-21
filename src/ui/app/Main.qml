@@ -1877,6 +1877,12 @@ MainLayout {
         // we avoid stacking two modals at the same time.
         if (!Browse.Notice.commercial_ack)
             return;
+        // Never open while the Core-version warning is still on screen —
+        // `_coreVersionWarningShown` flips true when the warning *opens*, so
+        // without this guard a model signal arriving before the user
+        // dismisses it would stack the first-run modal on top.
+        if (root.coreVersionModalVisible)
+            return;
         // Defer to the Core-version warning, which sits between the notice
         // and this modal in the chain. Until that gate has resolved (shown
         // or skipped, flipping `_coreVersionWarningShown`), hand off to it
