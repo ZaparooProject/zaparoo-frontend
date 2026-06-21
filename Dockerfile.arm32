@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.6
 # Zaparoo Frontend
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
@@ -5,7 +6,9 @@
 # Cross-compiles the zaparoo-frontend application for ARM32 / MiSTer FPGA.
 #
 # Requires the prebuilt toolchain image to exist locally — the tag is
-# derived from scripts/toolchain/VERSION (e.g. zaparoo/qt6-arm32-mister:6.10.3-1).
+# derived from scripts/toolchain/VERSION (e.g. zaparoo/qt6-arm32-mister:6.10.3-2).
+# That image ships the `cargo-chef` binary used by the planner/cook stages
+# below.
 #
 # Build the toolchain image first (one-time, ~45 min):
 #   ./scripts/build-toolchain.sh
@@ -13,13 +16,37 @@
 # Then build the application (fast, < 1 min):
 #   ./scripts/build-arm32.sh
 #
+# Dependency caching uses cargo-chef instead of BuildKit cache mounts: the
+# `planner` stage distills the workspace into a recipe.json, the `cook` step
+# compiles every third-party dependency into Corrosion's target dir, and that
+# compiled-deps layer is reused on every subsequent build whose Cargo
+# manifests/lock are unchanged. A source-only edit then recompiles just the
+# workspace crates (and the C++/Qt app), not the whole dependency tree. Unlike
+# cache mounts, the cook layer is a real image layer, so it survives on fresh
+# CI runners with no persisted BuildKit cache.
+#
 # scripts/build-arm32.sh passes TOOLCHAIN_IMAGE as a build-arg; this default
 # is only a safety net for someone invoking `docker build` directly, and
 # intentionally matches no real tag so the build fails loudly rather than
 # using a stale image.
 
 ARG TOOLCHAIN_IMAGE=zaparoo/qt6-arm32-mister:unset
-FROM ${TOOLCHAIN_IMAGE} AS app-build
+
+FROM ${TOOLCHAIN_IMAGE} AS chef
+WORKDIR /src
+
+# ── Planner ──────────────────────────────────────────────────────────────
+# Distill the Rust workspace into a dependency recipe. Only the Rust tree and
+# the toolchain pin are copied here, so this layer — and therefore the cook
+# layer that consumes its output — is invalidated only when the Cargo
+# manifests or lockfile change, not on every source edit.
+FROM chef AS planner
+COPY rust-toolchain.toml ./
+COPY rust/ rust/
+RUN cd rust && cargo chef prepare --recipe-path /recipe.json
+
+# ── Builder ──────────────────────────────────────────────────────────────
+FROM chef AS app-build
 
 # Forwarded by scripts/build-arm32.sh when invoked through `just release`.
 # Empty by default so dev builds report channel = "dev". The build.rs check is
@@ -41,26 +68,63 @@ RUN mkdir -p /opt/gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf/arm-none-
     ln -s /opt/qt6-arm32 \
           /opt/gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf/arm-none-linux-gnueabihf/libc/opt/qt6-arm32
 
-WORKDIR /src
+# ── Cook dependencies ────────────────────────────────────────────────────
+# Compile every third-party dependency from the recipe into the *exact* target
+# dir and build-script environment Corrosion uses at build time, so the
+# fingerprints line up and the cmake build below reuses these artifacts
+# instead of recompiling them. Two details have to match Corrosion exactly or
+# reuse silently fails (the build still works, just recompiles everything):
+#
+#   * Target dir. Corrosion builds into
+#     ${CMAKE_BINARY_DIR}/cargo/<workspace-dir>_<sha1(manifest-path)[:5]>
+#     (see corrosion-src/cmake/Corrosion.cmake — the per-workspace hash keeps
+#     multiple projects from colliding). The source is always at /src here, so
+#     the manifest path /src/rust/Cargo.toml is fixed and the hash is stable;
+#     we recompute it rather than hardcode it so a future layout change can't
+#     desync it quietly.
+#   * Build-script env. Corrosion passes the cross CXX as an absolute path
+#     (CC/AR come from the toolchain image's cargo config and already match).
+#     The cc-based crates (cxx, cxx-qt) record CXX in their build-script
+#     fingerprint, so a bare-vs-absolute mismatch forces them to recompile.
+#     QMAKE / ZAPAROO_RUNTIME / CORROSION_BUILD_DIR round out the env those
+#     scripts read.
+#   * Package scope. Corrosion builds only the zaparoo-frontend-rs package, so
+#     features resolve for that crate's subtree alone. Cooking the whole
+#     workspace would unify in mock-core's extra tokio features and the
+#     resulting fingerprints wouldn't match, so we cook `--package
+#     zaparoo-frontend-rs` to mirror Corrosion's resolution exactly.
+#
+# This whole RUN is cached as a layer keyed on recipe.json — it only re-runs
+# when dependencies change.
+COPY rust-toolchain.toml ./
+COPY --from=planner /recipe.json /recipe.json
+RUN mkdir -p rust && cd rust && \
+    target_hash="$(printf '%s' "/src/rust/Cargo.toml" | sha1sum | cut -c1-5)" && \
+    env QMAKE=/opt/qt6-arm32/bin/qmake6 \
+        ZAPAROO_RUNTIME=mister \
+        CORROSION_BUILD_DIR=/src/build \
+        "CXX_armv7-unknown-linux-gnueabihf=/opt/gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf/bin/arm-none-linux-gnueabihf-g++" \
+        "CARGO_TARGET_DIR=/src/build/cargo/rust_${target_hash}" \
+        cargo chef cook --release \
+            --target armv7-unknown-linux-gnueabihf \
+            --package zaparoo-frontend-rs \
+            --recipe-path /recipe.json
 
-# rust-toolchain.toml pins the toolchain the toolchain image pre-warms;
-# without it cargo would fall back to the image's default toolchain.
-COPY CMakeLists.txt rust-toolchain.toml ./
+# ── Application source + build ───────────────────────────────────────────
+# Copy the real tree last so source edits invalidate only from here down.
+# The rust/ copy overwrites the cook skeleton with the actual crates; their
+# dependencies are already compiled in /src/build/cargo from the cook step.
+COPY CMakeLists.txt ./
 COPY cmake/ cmake/
 COPY src/ src/
 COPY resources/ resources/
 COPY rust/ rust/
 
-# /src/build and the cargo registry are BuildKit cache mounts so source
-# changes (which bust the COPY layers above) still reuse ninja and cargo
-# incremental state from prior builds. Cache mounts are not image layers:
-# anything the export stage needs must be cp'd out within this RUN, and
-# the cmake configure is skipped when the cached build dir already
-# generated build.ninja (the provenance ARGs are env for cargo, not
-# cmake variables, so a stale configure is safe).
-RUN --mount=type=cache,target=/src/build,sharing=locked \
-    --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
-    mkdir -p build && cd build && \
+# Configure + build. The cmake configure is skipped when build.ninja already
+# exists (the provenance ARGs are env for cargo, not cmake variables, so a
+# stale configure is safe). Corrosion's cargo build reuses the cooked deps in
+# /src/build/cargo and recompiles only the workspace crates.
+RUN mkdir -p build && cd build && \
     if [ -n "${ZAPAROO_OFFICIAL_BUILD}" ]; then \
         export ZAPAROO_OFFICIAL_BUILD="${ZAPAROO_OFFICIAL_BUILD}"; \
     fi && \

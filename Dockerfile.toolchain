@@ -284,6 +284,14 @@ AR_armv7-unknown-linux-gnueabihf = "arm-none-linux-gnueabihf-ar"\n\
 RUN rustup toolchain install 1.90.0 --profile minimal \
     && rustup target add --toolchain 1.90.0 armv7-unknown-linux-gnueabihf
 
+# cargo-chef: caches the Rust dependency build as a Docker layer in
+# Dockerfile.arm32 (planner → cook → build), so per-commit ARM builds only
+# recompile the workspace crates, not the whole dependency tree. Installed
+# here once; the binary rides into the runtime stage via the
+# `COPY --from=builder /root/.cargo` below and is on PATH through
+# /root/.cargo/bin. `--locked` pins cargo-chef's own dependency versions.
+RUN cargo install cargo-chef --locked
+
 # Strip DWARF debug info from Qt artifacts before they're copied into the
 # slim runtime stage. `--strip-debug` preserves all symbols needed for
 # linking (this is what Debian's qt6 packages do); the ELF size impact
