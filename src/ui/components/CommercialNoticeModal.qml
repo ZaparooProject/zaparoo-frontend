@@ -29,14 +29,57 @@ Item {
 
     property bool open: false
 
+    // Push-in scale for the "I understand" button, mirroring the shared
+    // Modal shell's prebaked buttons. The button renders at this scale so
+    // both mouse and key/controller accept play the same press cue before
+    // the modal dismisses.
+    property real _pressScale: 1.0
+
     signal closeRequested
 
     visible: modal.open
     anchors.fill: parent
     z: 310
 
+    onOpenChanged: {
+        if (!modal.open) {
+            // Disarm a pending deferred accept so a press-then-close inside
+            // the cue window can't ack twice after dismissal.
+            actionCommit.stop();
+            return;
+        }
+        modal._pressScale = 1.0;
+        pressAnim.stop();
+    }
+
     function handleAction(action: string): void {
-        if (action === "accept") {
+        if (action === "accept")
+            modal._commit();
+    // No cancel path. The notice is informational, not a license
+    // condition — but it must be acknowledged once so the user has
+    // demonstrably seen the non-commercial-use message before the
+    // frontend becomes interactive.
+    }
+
+    // Play the push-in cue on the button, then ack + close deferred so the
+    // animation completes before the router pops the modal.
+    function _commit(): void {
+        pressAnim.restart();
+        actionCommit.arm();
+    }
+
+    NumberAnimation {
+        id: pressAnim
+        target: modal
+        property: "_pressScale"
+        to: Motion.pressScale
+        duration: Motion.dur(Motion.pressMs)
+        easing.type: Easing.OutQuad
+    }
+
+    DeferredAction {
+        id: actionCommit
+        onDeferred: {
             // Persist before signalling close so the next Component
             // construction (warm-restart on MiSTer) sees the ack flag
             // already written. The Rust slot is synchronous on the Qt
@@ -45,10 +88,6 @@ Item {
             Browse.Notice.acknowledge_commercial();
             modal.closeRequested();
         }
-    // No cancel path. The notice is informational, not a license
-    // condition — but it must be acknowledged once so the user has
-    // demonstrably seen the non-commercial-use message before the
-    // frontend becomes interactive.
     }
 
     Modal {
@@ -155,6 +194,8 @@ Item {
                     border.width: Sizing.stroke(2)
                     border.color: Theme.accent
                     radius: Sizing.cornerRadius
+                    transformOrigin: Item.Center
+                    scale: modal._pressScale
 
                     Text {
                         x: Sizing.center(parent.width, width)
@@ -169,7 +210,8 @@ Item {
                     MouseArea {
                         anchors.fill: parent
                         acceptedButtons: Qt.LeftButton
-                        onClicked: modal.handleAction("accept")
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: modal._commit()
                     }
                 }
             }

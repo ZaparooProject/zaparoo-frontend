@@ -51,10 +51,29 @@ pub const LINK_CONNECTED: i32 = 2;
 pub const LINK_RECONNECTING: i32 = 3;
 pub const LINK_UNREACHABLE: i32 = 4;
 
+/// Minimum Zaparoo Core version this frontend supports. Older Core builds
+/// still connect, but the startup warning in `Main.qml` nudges the user to
+/// update because some features may not work. Bump this in lockstep with
+/// the features the frontend relies on.
+pub const MIN_CORE_VERSION: &str = "2.15.0";
+
 pub struct AppStatusRust {
     connection_state: i32,
     last_error: QString,
     link_state: i32,
+    /// Core version string reported by `version` (e.g. "2.15.0"). Empty
+    /// until the first fetch resolves.
+    core_version: QString,
+    /// True when the connected Core is at or above `MIN_CORE_VERSION` (or
+    /// is a dev build). Defaults true so the warning never flashes before
+    /// we've actually checked.
+    core_version_supported: bool,
+    /// Sticky-true once a `version` fetch has resolved. The startup warning
+    /// gate fires on this edge so it doesn't run before Core has answered.
+    core_version_checked: bool,
+    /// `MIN_CORE_VERSION` as a `QString`, exposed so the warning message has
+    /// a single source of truth for the required version.
+    min_core_version: QString,
 }
 
 impl Default for AppStatusRust {
@@ -63,7 +82,31 @@ impl Default for AppStatusRust {
             connection_state: DISCONNECTED,
             last_error: QString::default(),
             link_state: LINK_DISCONNECTED,
+            core_version: QString::default(),
+            core_version_supported: true,
+            core_version_checked: false,
+            min_core_version: QString::from(MIN_CORE_VERSION),
         }
+    }
+}
+
+/// Decide whether a Core version string meets `MIN_CORE_VERSION`.
+///
+/// Dev builds are always treated as supported: a version ending in `-dev`
+/// or the literal `DEVELOPMENT` (what Core reports for unversioned local
+/// builds). Anything that fails to parse as semver also returns true —
+/// fail open rather than nag on an unexpected version shape.
+fn version_supported(raw: &str) -> bool {
+    let v = raw.trim();
+    if v == "DEVELOPMENT" || v.ends_with("-dev") {
+        return true;
+    }
+    match (
+        semver::Version::parse(v),
+        semver::Version::parse(MIN_CORE_VERSION),
+    ) {
+        (Ok(current), Ok(min)) => current >= min,
+        _ => true,
     }
 }
 
@@ -82,6 +125,10 @@ pub mod ffi {
         #[qproperty(i32, connection_state)]
         #[qproperty(QString, last_error)]
         #[qproperty(i32, link_state)]
+        #[qproperty(QString, core_version)]
+        #[qproperty(bool, core_version_supported)]
+        #[qproperty(bool, core_version_checked)]
+        #[qproperty(QString, min_core_version)]
         type AppStatus = super::AppStatusRust;
     }
 
@@ -94,7 +141,8 @@ impl Initialize for ffi::AppStatus {
         let started = std::time::Instant::now();
         crate::startup_trace("rust:model AppStatus init start");
         bind_catalog_status(self.as_mut());
-        bind_link_state(self);
+        bind_link_state(self.as_mut());
+        bind_core_version(self);
         crate::startup_trace(format!(
             "rust:model AppStatus init end dur_ms={}",
             started.elapsed().as_millis()
@@ -138,6 +186,49 @@ fn bind_link_state(mut model: Pin<&mut ffi::AppStatus>) {
         while rx.changed().await.is_ok() {
             let projected = project_link(&rx.borrow_and_update());
             let _ = qt_thread.queue(move |m| apply_link_state(m, projected));
+        }
+    });
+}
+
+/// Fetch Core's version on every successful connect and drive the
+/// `core_version` / `core_version_supported` / `core_version_checked`
+/// properties. Subscribing to the raw `Client::connection` watch (rather
+/// than firing once at startup) means a reconnect to a different Core
+/// re-evaluates the version — the warning follows whatever Core we're
+/// actually talking to.
+fn bind_core_version(mut model: Pin<&mut ffi::AppStatus>) {
+    // Seed the minimum so the QML message has the required version even
+    // before the first fetch lands.
+    let min = QString::from(MIN_CORE_VERSION);
+    if model.min_core_version != min {
+        model.as_mut().set_min_core_version(min);
+    }
+
+    let client = crate::models::global_store().client();
+    let mut rx = client.connection.subscribe();
+    let qt_thread = model.qt_thread();
+    crate::models::global_handle().spawn(async move {
+        loop {
+            // Bind the read in its own scope so the watch guard is dropped
+            // before the await below.
+            let connected = { matches!(&*rx.borrow_and_update(), ConnectionState::Connected) };
+            if connected {
+                // Flip `core_version_checked` whether or not the fetch
+                // succeeds: the first-run modal chain in Main.qml waits on
+                // it, so a failed `version` RPC must still resolve the gate.
+                // On error we fail open (supported = true, empty version).
+                let (version, supported) = match client.version().await {
+                    Ok(result) => {
+                        let supported = version_supported(&result.version);
+                        (result.version, supported)
+                    }
+                    Err(_) => (String::new(), true),
+                };
+                let _ = qt_thread.queue(move |m| apply_core_version(m, &version, supported));
+            }
+            if rx.changed().await.is_err() {
+                break;
+            }
         }
     });
 }
@@ -186,6 +277,19 @@ fn apply_catalog_state(mut model: Pin<&mut ffi::AppStatus>, (state, err): (i32, 
 fn apply_link_state(mut model: Pin<&mut ffi::AppStatus>, state: i32) {
     if model.link_state != state {
         model.as_mut().set_link_state(state);
+    }
+}
+
+fn apply_core_version(mut model: Pin<&mut ffi::AppStatus>, version: &str, supported: bool) {
+    let qversion = QString::from(version);
+    if model.core_version != qversion {
+        model.as_mut().set_core_version(qversion);
+    }
+    if model.core_version_supported != supported {
+        model.as_mut().set_core_version_supported(supported);
+    }
+    if !model.core_version_checked {
+        model.as_mut().set_core_version_checked(true);
     }
 }
 
@@ -239,6 +343,36 @@ mod tests {
         });
         assert_eq!(state, ERROR);
         assert_eq!(err, "connection refused");
+    }
+
+    #[test]
+    fn version_at_or_above_min_is_supported() {
+        assert!(version_supported("2.15.0"));
+        assert!(version_supported("2.15.1"));
+        assert!(version_supported("3.0.0"));
+        assert!(version_supported(" 2.16.0 ")); // surrounding whitespace
+    }
+
+    #[test]
+    fn version_below_min_is_unsupported() {
+        assert!(!version_supported("2.14.9"));
+        assert!(!version_supported("2.0.0"));
+        assert!(!version_supported("1.9.9"));
+    }
+
+    #[test]
+    fn dev_builds_are_always_supported() {
+        assert!(version_supported("DEVELOPMENT"));
+        assert!(version_supported("2.14.0-dev"));
+        // A -dev suffix below the minimum is still exempt.
+        assert!(version_supported("1.0.0-dev"));
+    }
+
+    #[test]
+    fn unparseable_version_fails_open() {
+        assert!(version_supported(""));
+        assert!(version_supported("garbage"));
+        assert!(version_supported("v2.15"));
     }
 
     #[test]

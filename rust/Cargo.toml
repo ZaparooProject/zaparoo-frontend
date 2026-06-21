@@ -34,6 +34,7 @@ qrcode          = { version = "0.14.1", default-features = false }
 insta           = { version = "1", features = ["yaml"] }
 tempfile        = "3"
 base64          = "0.22"
+semver          = "1"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn        = "deny"

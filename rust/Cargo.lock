@@ -1658,6 +1658,7 @@ dependencies = [
  "cxx-qt-lib",
  "libc",
  "qrcode",
+ "semver",
  "tempfile",
  "time",
  "tokio",

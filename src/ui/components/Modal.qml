@@ -95,9 +95,17 @@ Item {
         pressAnim.stop();
     }
 
-    // confirm-only input dispatch. Main.qml routes key/controller
-    // actions here while this modal is on top of the stack.
+    // Input dispatch. Main.qml routes key/controller actions here while
+    // this modal is on top of the stack.
     function handleAction(action: string): void {
+        // action_error has a single OK button — accept plays the push cue
+        // then emits `accepted`, matching the mouse path so key/controller
+        // dismissal animates identically.
+        if (modal.kind === "action_error") {
+            if (action === "accept")
+                modal._commit("ok", "accepted");
+            return;
+        }
         if (modal.kind !== "confirm")
             return;
         if (action === "left") {

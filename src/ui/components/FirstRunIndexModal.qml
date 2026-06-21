@@ -44,6 +44,12 @@ Item {
     // "completed" → finished, completionTimer ticking down to dismiss.
     property string phase: "idle"
 
+    // Push-in scale for the single phase button, mirroring the shared
+    // Modal shell's prebaked buttons. Both mouse and key/controller accept
+    // play the same press cue before the action fires.
+    property real _pressScale: 1.0
+    property string _pendingAction: ""
+
     signal closeRequested
 
     visible: modal.open
@@ -53,9 +59,15 @@ Item {
     onOpenChanged: {
         if (modal.open) {
             modal.phase = Browse.MediaStatus.indexing ? "running" : "idle";
+            modal._pressScale = 1.0;
+            pressAnim.stop();
         } else {
             modal.phase = "idle";
             completionTimer.stop();
+            // Disarm a pending deferred action so a press-then-close inside
+            // the cue window can't fire after dismissal.
+            actionCommit.stop();
+            modal._pendingAction = "";
         }
     }
 
@@ -75,12 +87,14 @@ Item {
                 return;
             }
             if (modal.phase === "running") {
-                // Use catalog count (not total_files) as the success
-                // signal: cancel_index() flips indexing=false even after
-                // partial work, so a non-zero total_files alone would
-                // claim "Done" on a cancelled scan. The catalog only
-                // populates when Core has actually finished and reindexed.
-                if (Browse.CategoriesModel.count > 0) {
+                // Use the indexed-system count (not total_files) as the
+                // success signal: cancel_index() flips indexing=false even
+                // after partial work, so a non-zero total_files alone would
+                // claim "Done" on a cancelled scan. The catalog only gains
+                // indexed systems when Core has actually finished and
+                // reindexed. We check indexed_count, not count, because
+                // launchables keep count non-zero before any scan runs.
+                if (Browse.CategoriesModel.indexed_count > 0) {
                     modal.phase = "completed";
                     completionTimer.restart();
                 } else {
@@ -93,29 +107,68 @@ Item {
         }
     }
 
-    // If the catalog acquires systems out of band — restart, manual
-    // TUI-driven index in another session, a reconnect to a different
-    // Core — the first-run gate has nothing left to defend, so we
-    // close. Catalog count is the authoritative "are there games?"
-    // signal (mirrors the modal's open gate in Main.qml).
+    // If the catalog acquires indexed systems out of band — restart,
+    // manual TUI-driven index in another session, a reconnect to a
+    // different Core — the first-run gate has nothing left to defend, so
+    // we close. indexed_count is the authoritative "are there indexed
+    // games?" signal (mirrors the modal's open gate in Main.qml). We must
+    // watch indexed_count, not count: launchables make count non-zero the
+    // instant the modal opens, which would otherwise slam it shut here.
     Connections {
         target: Browse.CategoriesModel
-        function onCountChanged(): void {
-            if (modal.open && Browse.CategoriesModel.count > 0 && modal.phase !== "completed") {
+        function onIndexed_countChanged(): void {
+            if (modal.open && Browse.CategoriesModel.indexed_count > 0 && modal.phase !== "completed") {
                 modal.closeRequested();
             }
         }
     }
 
+    // Input hook called from the button and from Main.qml's modal-dispatch
+    // branch. Only the actionable cases play the cue: Start in idle, Cancel
+    // in running. A stray accept while running (or vice versa) is a no-op,
+    // so it neither pulses the button nor arms the deferred action.
     function handleAction(action: string): void {
+        if (action === "accept" && modal.phase === "idle")
+            modal._commit("accept");
+        else if (action === "cancel" && modal.phase === "running")
+            modal._commit("cancel");
+    }
+
+    // Play the push-in cue on the button, then run the action deferred so
+    // the animation completes before the phase flips under it.
+    function _commit(action: string): void {
+        modal._pendingAction = action;
+        pressAnim.restart();
+        actionCommit.arm();
+    }
+
+    function _apply(action: string): void {
         if (action === "accept") {
-            if (modal.phase === "idle") {
-                Browse.MediaStatus.start_index();
-                modal.phase = "running";
-            }
+            // Optimistically flip to "running" so the "Preparing…" body
+            // paints before Core's first indexing notification lands; the
+            // Connections below confirms or unwinds.
+            Browse.MediaStatus.start_index();
+            modal.phase = "running";
         } else if (action === "cancel") {
-            if (modal.phase === "running")
-                Browse.MediaStatus.cancel_index();
+            Browse.MediaStatus.cancel_index();
+        }
+    }
+
+    NumberAnimation {
+        id: pressAnim
+        target: modal
+        property: "_pressScale"
+        to: Motion.pressScale
+        duration: Motion.dur(Motion.pressMs)
+        easing.type: Easing.OutQuad
+    }
+
+    DeferredAction {
+        id: actionCommit
+        onDeferred: {
+            const action = modal._pendingAction;
+            modal._pendingAction = "";
+            modal._apply(action);
         }
     }
 
@@ -256,6 +309,8 @@ Item {
                     border.width: Sizing.stroke(2)
                     border.color: Theme.accent
                     radius: Sizing.cornerRadius
+                    transformOrigin: Item.Center
+                    scale: modal._pressScale
 
                     Text {
                         x: Sizing.center(parent.width, width)

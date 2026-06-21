@@ -17,6 +17,21 @@ pub struct CatalogData {
 }
 
 impl CatalogData {
+    /// Count of indexed (non-launchable) systems. A launchable is a
+    /// launch-only "virtual" system Core synthesizes without a media-db
+    /// index — it carries a non-empty `zap_script`. Since Core's
+    /// launchables feature, a device with no `media.db` still returns
+    /// these, so "is the catalog empty?" no longer answers "are there
+    /// indexed games?". This count does: it ignores launchables and only
+    /// tallies real, indexed systems. The first-run scan prompt gates on
+    /// it (see `Main.qml` → `_maybeOpenFirstRunIndex`).
+    pub fn indexed_count(&self) -> usize {
+        self.systems
+            .iter()
+            .filter(|s| s.zap_script.is_empty())
+            .count()
+    }
+
     pub fn systems_by_category(&self, category: &str) -> Vec<SystemInfo> {
         let is_other = category.eq_ignore_ascii_case("Other");
         self.systems
@@ -86,6 +101,51 @@ mod tests {
             .iter()
             .all(|s| s.category.is_empty() || s.category.eq_ignore_ascii_case("Other")));
         assert!(other.iter().any(|s| s.id == "chess"));
+    }
+
+    fn launchable(id: &str, name: &str, category: &str) -> SystemInfo {
+        SystemInfo {
+            id: id.into(),
+            name: name.into(),
+            category: category.into(),
+            zap_script: format!("zaparoo://launch/{id}"),
+            ..SystemInfo::default()
+        }
+    }
+
+    #[test]
+    fn indexed_count_ignores_launchables() {
+        let data = CatalogData {
+            systems: vec![
+                sys("snes", "Super Nintendo", "Consoles"),
+                sys("nes", "Nintendo", "Consoles"),
+                launchable("chess", "Chess", "Other"),
+                launchable("2048", "2048", "Other"),
+            ],
+            categories: vec!["Consoles".into(), "Other".into()],
+        };
+        assert_eq!(data.indexed_count(), 2);
+    }
+
+    #[test]
+    fn indexed_count_zero_when_only_launchables() {
+        let data = CatalogData {
+            systems: vec![
+                launchable("chess", "Chess", "Other"),
+                launchable("2048", "2048", "Other"),
+            ],
+            categories: vec!["Other".into()],
+        };
+        assert_eq!(data.indexed_count(), 0);
+    }
+
+    #[test]
+    fn indexed_count_zero_when_empty() {
+        let data = CatalogData {
+            systems: Vec::new(),
+            categories: Vec::new(),
+        };
+        assert_eq!(data.indexed_count(), 0);
     }
 
     #[test]

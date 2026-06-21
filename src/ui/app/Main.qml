@@ -37,6 +37,7 @@ MainLayout {
     readonly property string modalGameInfo: "game_info"
     readonly property string modalQrCode: "qr_code"
     readonly property string modalCommercialNotice: "commercial_notice"
+    readonly property string modalCoreVersion: "core_version_warning"
     readonly property string modalFirstRunIndex: "first_run_index"
     readonly property string modalLogUpload: "log_upload"
     readonly property string modalQuitConfirm: "quit_confirm"
@@ -49,6 +50,10 @@ MainLayout {
     // once per frontend process, even if the WS link drops and the
     // mediadb-empty condition would otherwise be satisfied again.
     property bool _firstRunIndexShown: false
+    // One-shot guard for the Core-version warning, same lifetime as
+    // _firstRunIndexShown: show it at most once per process even if the
+    // link drops and reconnects to the same old Core.
+    property bool _coreVersionWarningShown: false
     property string _pendingLanguageSelection: ""
     property string _pendingResolutionSelection: ""
     property string _pendingCrtStandardSelection: ""
@@ -224,6 +229,8 @@ MainLayout {
             root.qrCodeModalRequested = true;
         else if (modal === root.modalCommercialNotice)
             root.commercialNoticeModalRequested = true;
+        else if (modal === root.modalCoreVersion)
+            root.coreVersionModalRequested = true;
         else if (modal === root.modalFirstRunIndex)
             root.firstRunIndexModalRequested = true;
         else if (modal === root.modalLogUpload)
@@ -1849,17 +1856,19 @@ MainLayout {
     }
 
     // First-run modal lifecycle. Push exactly once per session, the
-    // moment the catalog resolves Ready and reports zero systems
-    // (`CategoriesModel.loaded === true && count === 0`). 0 visible
-    // categories implies a 0-system response from `media.systems` — a
-    // mediadb that's missing or never indexed — and the frontend has
-    // no UI to render past the hub. The `loaded` gate is critical:
-    // the singleton's Default state has `count: 0` before the catalog
-    // fetch lands, so without it we'd fire the modal on cold launch
-    // before Core has answered. Gating on the catalog instead of
-    // MediaStatus.exists/seeded avoids the case where Core reports
-    // `database.exists: true` for an empty file — there the catalog
-    // is the authoritative "are there games to show?" signal.
+    // moment the catalog resolves Ready and reports zero *indexed*
+    // systems (`CategoriesModel.loaded === true && indexed_count === 0`).
+    // We gate on `indexed_count`, not `count`: since Core's launchables
+    // feature, a device with no mediadb still returns launch-only virtual
+    // systems (non-empty `zapScript`) that land in the `Other` category,
+    // so `count`/`raw_count` are non-zero even when nothing is indexed.
+    // `indexed_count` ignores launchables, so it answers "are there
+    // indexed games to show?" — which is exactly the first-run question.
+    // The `loaded` gate is critical: the singleton's Default state has
+    // `indexed_count: 0` before the catalog fetch lands, so without it
+    // we'd fire the modal on cold launch before Core has answered. Gating
+    // on the catalog instead of MediaStatus.exists/seeded avoids the case
+    // where Core reports `database.exists: true` for an empty file.
     function _maybeOpenFirstRunIndex(): void {
         if (root._firstRunIndexShown)
             return;
@@ -1868,11 +1877,20 @@ MainLayout {
         // we avoid stacking two modals at the same time.
         if (!Browse.Notice.commercial_ack)
             return;
+        // Defer to the Core-version warning, which sits between the notice
+        // and this modal in the chain. Until that gate has resolved (shown
+        // or skipped, flipping `_coreVersionWarningShown`), hand off to it
+        // and let it call back here — so the two never stack and the
+        // warning always comes first.
+        if (!root._coreVersionWarningShown) {
+            root._maybeOpenCoreVersionWarning();
+            return;
+        }
         if (Browse.AppStatus.connection_state !== 2)
             return;
         if (!Browse.CategoriesModel.loaded)
             return;
-        if (Browse.CategoriesModel.count > 0)
+        if (Browse.CategoriesModel.indexed_count > 0)
             return;
         root._firstRunIndexShown = true;
         root._requestModal(root.modalFirstRunIndex);
@@ -1916,9 +1934,49 @@ MainLayout {
         root.commercialNoticeModalVisible = false;
         if (ScreenManager.topModal === root.modalCommercialNotice)
             ScreenManager.popModal();
-        // Now that the notice is dismissed, re-check the media-DB gate
-        // — if the catalog had already settled empty behind the notice,
-        // this opens that modal as the next step in the chain.
+        // Now that the notice is dismissed, advance the first-run chain:
+        // commercial notice → Core-version warning → media-DB first run.
+        // Each gate early-returns until its own condition holds, so this
+        // is safe to call unconditionally.
+        root._maybeOpenCoreVersionWarning();
+    }
+
+    // Core-version warning lifecycle. Shown once per session, behind the
+    // commercial notice, when Core reports a version older than the
+    // frontend's minimum. Warn-only: the OK button dismisses it and the
+    // chain advances to the media-DB first-run check. `core_version_checked`
+    // gates the open so we don't evaluate before the async `version` fetch
+    // has answered; `core_version_supported` defaults true so we never
+    // flash the warning pre-check.
+    function _maybeOpenCoreVersionWarning(): void {
+        if (root._coreVersionWarningShown) {
+            // Already handled this session — make sure the next gate still
+            // runs so a re-entry from another trigger doesn't stall the chain.
+            root._maybeOpenFirstRunIndex();
+            return;
+        }
+        if (!Browse.Notice.commercial_ack)
+            return;
+        if (!Browse.AppStatus.core_version_checked)
+            return;
+        if (Browse.AppStatus.core_version_supported) {
+            // Version is fine — skip straight to the media-DB gate.
+            root._coreVersionWarningShown = true;
+            root._maybeOpenFirstRunIndex();
+            return;
+        }
+        root._coreVersionWarningShown = true;
+        root._requestModal(root.modalCoreVersion);
+        root.coreVersionModalVisible = true;
+        if (ScreenManager.topModal !== root.modalCoreVersion)
+            ScreenManager.pushModal(root.modalCoreVersion);
+    }
+
+    function closeCoreVersionModal(): void {
+        root.coreVersionModalVisible = false;
+        if (ScreenManager.topModal === root.modalCoreVersion)
+            ScreenManager.popModal();
+        // Advance to the media-DB first-run check.
         root._maybeOpenFirstRunIndex();
     }
 
@@ -2296,6 +2354,11 @@ MainLayout {
             root._maybeStartStartupRestore();
             root._maybeCompletePendingResumeLaunch();
         }
+        // The version fetch resolves asynchronously after connect; this is
+        // the edge that lets the chain advance past the version-warning gate.
+        function onCore_version_checkedChanged(): void {
+            root._maybeOpenCoreVersionWarning();
+        }
     }
 
     // One-shot dismiss for the cold-launch curtain. The first time the
@@ -2335,6 +2398,7 @@ MainLayout {
 
     onCloseFirstRunIndexRequested: root.closeFirstRunIndexModal()
     onCloseCommercialNoticeRequested: root.closeCommercialNoticeModal()
+    onCloseCoreVersionRequested: root.closeCoreVersionModal()
 
     function beginCardWrite(owner: string): void {
         if (owner === "systems")
@@ -2438,6 +2502,9 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalCommercialNotice) {
                 if (root.commercialNoticeModal !== null)
                     root.commercialNoticeModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalCoreVersion) {
+                if (root.coreVersionModal !== null)
+                    root.coreVersionModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalLogUpload) {
                 if (root.logUploadModal !== null)
                     root.logUploadModal.handleAction(action);

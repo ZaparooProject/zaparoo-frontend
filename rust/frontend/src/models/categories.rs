@@ -34,6 +34,14 @@ pub struct CategoriesModelRust {
     hidden_flags: Vec<bool>,
     count: i32,
     raw_count: i32,
+    /// Count of indexed (non-launchable) systems in the catalog. Distinct
+    /// from `count` (visible categories) and `raw_count` (all categories):
+    /// Core's launchables surface as systems under the `Other` category
+    /// even with no media-db index, so `count`/`raw_count` are non-zero on
+    /// a fresh device. `indexed_count` ignores launchables, so the first-
+    /// run scan prompt in `Main.qml` can tell "no games indexed yet" apart
+    /// from "only launchables present".
+    indexed_count: i32,
     // Sticky-true flag: flips to true the first time the catalog
     // resolves Ready, never resets. The first-run modal in
     // `Main.qml` gates on `loaded && count === 0` so it only fires
@@ -67,6 +75,7 @@ pub mod ffi {
         #[qml_singleton]
         #[qproperty(i32, count)]
         #[qproperty(i32, raw_count)]
+        #[qproperty(i32, indexed_count)]
         #[qproperty(bool, loaded)]
         #[qproperty(QString, error_message)]
         type CategoriesModel = super::CategoriesModelRust;
@@ -121,9 +130,12 @@ crate::bind_to_endpoint! {
 /// surfaced error message (empty unless `Errored`). Filtering is deferred to
 /// `apply_state` / `reproject_inner` so `reproject()` can re-filter in-place
 /// without waiting for a catalog refetch.
-fn project(status: &ResourceStatus<CatalogData>) -> (Option<Vec<String>>, String) {
+fn project(status: &ResourceStatus<CatalogData>) -> (Option<(Vec<String>, i32)>, String) {
     match status {
-        ResourceStatus::Ready(data) => (Some(data.categories.clone()), String::new()),
+        ResourceStatus::Ready(data) => (
+            Some((data.categories.clone(), data.indexed_count() as i32)),
+            String::new(),
+        ),
         ResourceStatus::Errored { message, .. } => (None, message.clone()),
         ResourceStatus::Idle | ResourceStatus::Loading => (None, String::new()),
     }
@@ -201,14 +213,18 @@ fn reproject_inner(mut model: Pin<&mut ffi::CategoriesModel>) {
 
 fn apply_state(
     mut model: Pin<&mut ffi::CategoriesModel>,
-    (raw_categories, err): (Option<Vec<String>>, String),
+    (ready, err): (Option<(Vec<String>, i32)>, String),
 ) {
-    if let Some(raw) = raw_categories {
+    if let Some((raw, indexed_count)) = ready {
         let raw_count = raw.len() as i32;
         model.as_mut().rust_mut().raw = raw;
         if model.raw_count != raw_count {
             model.as_mut().rust_mut().raw_count = raw_count;
             model.as_mut().raw_count_changed();
+        }
+        if model.indexed_count != indexed_count {
+            model.as_mut().rust_mut().indexed_count = indexed_count;
+            model.as_mut().indexed_count_changed();
         }
         reproject_inner(model.as_mut());
     }

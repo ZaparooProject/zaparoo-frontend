@@ -89,6 +89,7 @@ ApplicationWindow {
     property bool gameInfoModalRequested: false
     property bool firstRunIndexModalRequested: false
     property bool commercialNoticeModalRequested: false
+    property bool coreVersionModalRequested: false
     property bool logUploadModalRequested: false
     property bool quitConfirmModalRequested: false
     property bool listPickerModalRequested: false
@@ -259,6 +260,7 @@ ApplicationWindow {
     property var contextMenu: contextMenuLoader.item
     property var qrCodeModal: qrCodeModalLoader.item
     property var commercialNoticeModal: commercialNoticeModalLoader.item
+    property var coreVersionModal: coreVersionModalLoader.item
     property var firstRunIndexModal: firstRunIndexModalLoader.item
     property var gameInfoModal: gameInfoModalLoader.item
     property var logUploadModal: logUploadModalLoader.item
@@ -278,6 +280,7 @@ ApplicationWindow {
     property bool cardWriteFailed: false
     property bool qrCodeModalVisible: false
     property bool commercialNoticeModalVisible: false
+    property bool coreVersionModalVisible: false
     property bool firstRunIndexModalVisible: false
     property bool gameInfoModalVisible: false
     property bool logUploadModalVisible: false
@@ -396,6 +399,7 @@ ApplicationWindow {
     signal cancelCardWriteRequested
     signal closeQrCodeRequested
     signal closeCommercialNoticeRequested
+    signal closeCoreVersionRequested
     signal closeFirstRunIndexRequested
     signal closeLogUploadRequested
     signal closeQuitConfirmRequested
@@ -745,6 +749,25 @@ ApplicationWindow {
                         body: qsTr("In order to apply this setting we need to restart the frontend.")
                         onConfirmed: root.acceptRestart()
                         onCancelRequested: root.cancelRestart()
+                    }
+                }
+            }
+
+            // Core version warning. Pushed by Main.qml on startup when the
+            // connected Core is older than the frontend's minimum. Warn-only:
+            // a single OK button dismisses it, nothing is locked out.
+            Loader {
+                id: coreVersionModalLoader
+                anchors.fill: parent
+                active: root.coreVersionModalRequested
+                sourceComponent: Component {
+                    Modal {
+                        open: root.coreVersionModalVisible
+                        kind: "action_error"
+                        title: qsTr("Update Zaparoo Core")
+                        body: qsTr("This frontend needs Zaparoo Core %1 or newer. You're running %2. Some features may not work until you update.").arg(Browse.AppStatus.min_core_version).arg(Browse.AppStatus.core_version)
+                        buttonLabel: qsTr("OK")
+                        onAccepted: root.closeCoreVersionRequested()
                     }
                 }
             }
