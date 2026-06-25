@@ -1515,40 +1515,44 @@ ApplicationWindow {
                 z: 500
             }
 
-            Item {
-                id: debugCrtSafeAreaGuide
+        }
 
-                visible: root._debugCrtSafeAreaGuideVisible
-                anchors.fill: parent
-                z: 20000
+        Item {
+            id: debugCrtSafeAreaGuide
 
-                readonly property int insetX: Sizing.pctW(5)
-                readonly property int insetY: Sizing.pctH(5)
-                readonly property int deepInsetX: Sizing.pctW(10)
-                readonly property int deepInsetY: Sizing.pctH(10)
-                readonly property int line: Sizing.stroke(1)
-                readonly property color guideColor: "#ff4fd8"
-                readonly property color deepGuideColor: "#31d7ff"
+            objectName: "debugCrtSafeAreaGuide"
+            visible: root._debugCrtSafeAreaGuideVisible
+            anchors.fill: parent
+            z: 20000
 
-                Rectangle {
-                    x: debugCrtSafeAreaGuide.insetX
-                    y: debugCrtSafeAreaGuide.insetY
-                    width: Math.max(1, Sizing.px(parent.width - 2 * debugCrtSafeAreaGuide.insetX))
-                    height: Math.max(1, Sizing.px(parent.height - 2 * debugCrtSafeAreaGuide.insetY))
-                    color: "transparent"
-                    border.color: debugCrtSafeAreaGuide.guideColor
-                    border.width: debugCrtSafeAreaGuide.line
-                }
+            readonly property int insetX: Sizing.px(parent.width * 0.05)
+            readonly property int insetY: Sizing.px(parent.height * 0.05)
+            readonly property int deepInsetX: Sizing.px(parent.width * 0.10)
+            readonly property int deepInsetY: Sizing.px(parent.height * 0.10)
+            readonly property int line: Sizing.stroke(1)
+            readonly property color guideColor: "#ff4fd8"
+            readonly property color deepGuideColor: "#31d7ff"
 
-                Rectangle {
-                    x: debugCrtSafeAreaGuide.deepInsetX
-                    y: debugCrtSafeAreaGuide.deepInsetY
-                    width: Math.max(1, Sizing.px(parent.width - 2 * debugCrtSafeAreaGuide.deepInsetX))
-                    height: Math.max(1, Sizing.px(parent.height - 2 * debugCrtSafeAreaGuide.deepInsetY))
-                    color: "transparent"
-                    border.color: debugCrtSafeAreaGuide.deepGuideColor
-                    border.width: debugCrtSafeAreaGuide.line
-                }
+            Rectangle {
+                objectName: "debugCrtActionSafeRect"
+                x: debugCrtSafeAreaGuide.insetX
+                y: debugCrtSafeAreaGuide.insetY
+                width: Math.max(1, Sizing.px(parent.width - 2 * debugCrtSafeAreaGuide.insetX))
+                height: Math.max(1, Sizing.px(parent.height - 2 * debugCrtSafeAreaGuide.insetY))
+                color: "transparent"
+                border.color: debugCrtSafeAreaGuide.guideColor
+                border.width: debugCrtSafeAreaGuide.line
+            }
+
+            Rectangle {
+                objectName: "debugCrtTitleSafeRect"
+                x: debugCrtSafeAreaGuide.deepInsetX
+                y: debugCrtSafeAreaGuide.deepInsetY
+                width: Math.max(1, Sizing.px(parent.width - 2 * debugCrtSafeAreaGuide.deepInsetX))
+                height: Math.max(1, Sizing.px(parent.height - 2 * debugCrtSafeAreaGuide.deepInsetY))
+                color: "transparent"
+                border.color: debugCrtSafeAreaGuide.deepGuideColor
+                border.width: debugCrtSafeAreaGuide.line
             }
         }
 
