@@ -26,7 +26,9 @@
       "comment_id": 4373604752,
       "created_at": "2026-05-04T18:47:41Z",
       "repoId": 1216829727,
-      "pullRequestNo": 70
+      "pullRequestNo": 70,
+      "cla_version": "1.0",
+      "cla_signed_at": "2026-05-04T18:47:41Z"
     },
     {
       "name": "devilschile2",
@@ -37,6 +39,16 @@
       "pullRequestNo": 201,
       "cla_version": "1.0",
       "cla_signed_at": "2026-06-06T08:31:52Z"
+    },
+    {
+      "name": "theypsilon",
+      "id": 852246,
+      "comment_id": 4794915493,
+      "created_at": "2026-06-25T01:01:29Z",
+      "repoId": 1216829727,
+      "pullRequestNo": 271,
+      "cla_version": "1.0",
+      "cla_signed_at": "2026-06-25T01:01:29Z"
     }
   ]
 }
