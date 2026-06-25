@@ -234,9 +234,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdf26e5ee4375a85799d0fe436662e5a8ef099bd0964b84bce8812c35c7daea"
 dependencies = [
  "cxx",
- "cxx-qt-build",
+ "cxx-qt-build 0.8.1",
  "cxx-qt-macro",
- "qt-build-utils",
+ "qt-build-utils 0.8.1",
  "static_assertions",
  "thiserror 1.0.69",
 ]
@@ -250,9 +250,26 @@ dependencies = [
  "cc",
  "codespan-reporting 0.11.1",
  "cxx-gen",
- "cxx-qt-gen",
+ "cxx-qt-gen 0.8.1",
  "proc-macro2",
- "qt-build-utils",
+ "qt-build-utils 0.8.1",
+ "quote",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "cxx-qt-build"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7a6879e91a33fe26683be9b4c0a865dd2abdaf9bb3d8e999a4b859c2d998c58"
+dependencies = [
+ "cc",
+ "codespan-reporting 0.11.1",
+ "cxx-gen",
+ "cxx-qt-gen 0.9.0",
+ "proc-macro2",
+ "qt-build-utils 0.9.0",
  "quote",
  "serde",
  "serde_json",
@@ -274,6 +291,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "cxx-qt-gen"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f98b51c4bc2aa9d12db7de9ad7a7db8c49e326b9eb5261b8bac148400c681444"
+dependencies = [
+ "clang-format",
+ "convert_case",
+ "cxx-gen",
+ "indoc",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "cxx-qt-lib"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -281,8 +313,8 @@ checksum = "d7b3de184cff59ad29d657021f933380e584d9b70265247f6a96098bef964211"
 dependencies = [
  "cxx",
  "cxx-qt",
- "cxx-qt-build",
- "qt-build-utils",
+ "cxx-qt-build 0.8.1",
+ "qt-build-utils 0.8.1",
 ]
 
 [[package]]
@@ -291,7 +323,7 @@ version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230b0d8b20d3d02a85885742be4fabc0382fead4e382dd8c9c9ff1827f221e8c"
 dependencies = [
- "cxx-qt-gen",
+ "cxx-qt-gen 0.8.1",
  "proc-macro2",
  "quote",
  "syn",
@@ -774,6 +806,20 @@ dependencies = [
  "semver",
  "serde",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "qt-build-utils"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcfb3d8489f811e89e63ffc7184eb5063a74baf7825e4c9e14e7607a3c546578"
+dependencies = [
+ "anyhow",
+ "cc",
+ "semver",
+ "serde",
+ "thiserror 1.0.69",
+ "which",
 ]
 
 [[package]]
@@ -1478,6 +1524,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "which"
+version = "8.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48d7cd18d4acb58fb3cdfe9ea54e6cd96a4e7d4cc45c56338b236e82dad47248"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1654,7 +1709,7 @@ dependencies = [
  "base64",
  "cxx",
  "cxx-qt",
- "cxx-qt-build",
+ "cxx-qt-build 0.9.0",
  "cxx-qt-lib",
  "libc",
  "qrcode",
