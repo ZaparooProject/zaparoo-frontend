@@ -79,10 +79,11 @@ src/app/main.cpp
 `engine.loadFromModule("Zaparoo.App", "Main")` is the only entry point. Keep
 `qrc:/` strings out of the rest of the app.
 
-The Update bounded context is enabled by default through the
-`zaparoo-frontend-rs/update` Cargo feature. CMake owns the app-level toggle:
-build with `-DZAPAROO_WITH_UPDATE=OFF` to pass `--no-default-features` to Cargo,
-skip the `Zaparoo.Update` QML module, and omit the Hub Update tile.
+The Update bounded context is enabled by default through CMake's
+`ZAPAROO_WITH_UPDATE` option. CMake opts out of Cargo default features and adds
+the `zaparoo-frontend-rs/update` feature explicitly when enabled; build with
+`-DZAPAROO_WITH_UPDATE=OFF` to skip the `Zaparoo.Update` QML module and omit the
+Hub Update tile.
 
 ## Key constraints
 

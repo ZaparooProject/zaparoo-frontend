@@ -503,7 +503,7 @@ mod tests {
             // Long-running fetch keeps the spawned task in Loading; it
             // never publishes Ready while we're checking the seed.
             let res = RemoteResource::<i32>::spawn_with(conn_rx, runtime.handle(), || async {
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                tokio::time::sleep(Duration::from_mins(1)).await;
                 Ok(0)
             });
             let sub = res.subscribe();

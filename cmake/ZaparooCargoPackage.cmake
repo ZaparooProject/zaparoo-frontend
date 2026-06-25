@@ -27,28 +27,39 @@ function(zaparoo_find_cargo_package_root package_name out_var)
     endif()
 
     string(JSON _zaparoo_package_count LENGTH "${_zaparoo_cargo_metadata}" packages)
-    math(EXPR _zaparoo_last_package "${_zaparoo_package_count} - 1")
+    set(_zaparoo_manifest_paths "")
+    if(_zaparoo_package_count GREATER 0)
+        math(EXPR _zaparoo_last_package "${_zaparoo_package_count} - 1")
 
-    set(_zaparoo_manifest_path "")
-    foreach(_zaparoo_index RANGE 0 ${_zaparoo_last_package})
-        string(JSON _zaparoo_current_name GET "${_zaparoo_cargo_metadata}" packages
-               ${_zaparoo_index} name
-        )
-        if(_zaparoo_current_name STREQUAL package_name)
-            string(JSON _zaparoo_manifest_path GET "${_zaparoo_cargo_metadata}" packages
-                   ${_zaparoo_index} manifest_path
+        foreach(_zaparoo_index RANGE 0 ${_zaparoo_last_package})
+            string(JSON _zaparoo_current_name GET "${_zaparoo_cargo_metadata}" packages
+                   ${_zaparoo_index} name
             )
-            break()
-        endif()
-    endforeach()
+            if(_zaparoo_current_name STREQUAL package_name)
+                string(JSON _zaparoo_current_manifest_path GET "${_zaparoo_cargo_metadata}"
+                       packages ${_zaparoo_index} manifest_path
+                )
+                list(APPEND _zaparoo_manifest_paths "${_zaparoo_current_manifest_path}")
+            endif()
+        endforeach()
+    endif()
 
-    if(_zaparoo_manifest_path STREQUAL "")
+    list(LENGTH _zaparoo_manifest_paths _zaparoo_manifest_match_count)
+    if(_zaparoo_manifest_match_count EQUAL 0)
         message(
             FATAL_ERROR
                 "Cargo package '${package_name}' was not found in cargo metadata. Check rust/Cargo.toml and Cargo.lock."
         )
     endif()
+    if(_zaparoo_manifest_match_count GREATER 1)
+        string(REPLACE ";" "\n  " _zaparoo_manifest_match_list "${_zaparoo_manifest_paths}")
+        message(
+            FATAL_ERROR
+                "Cargo package '${package_name}' resolved to multiple manifest paths:\n  ${_zaparoo_manifest_match_list}"
+        )
+    endif()
 
+    list(GET _zaparoo_manifest_paths 0 _zaparoo_manifest_path)
     get_filename_component(_zaparoo_package_root "${_zaparoo_manifest_path}" DIRECTORY)
     set(${out_var} "${_zaparoo_package_root}" PARENT_SCOPE)
 endfunction()

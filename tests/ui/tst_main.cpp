@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QQmlEngine>
 #include <QQuickStyle>
+#include <QTemporaryDir>
 #include <QtQml/qqmlextensionplugin.h>
 #include <QtQuickTest/quicktest.h>
 
@@ -37,12 +38,19 @@ class UiSetup : public QObject
         // Redirect persistent UI state to a throwaway temp file so the
         // Browse.AppState/HubState/GamesState setters don't clobber the
         // real ~/.config/zaparoo/state.toml when tests drive navigation.
-        const QString tmpState = QDir::temp().filePath("zaparoo-test-state.toml");
+        static QTemporaryDir tmpRoot(QDir::temp().filePath("zaparoo-ui-test-XXXXXX"));
+        if (!tmpRoot.isValid())
+        {
+            qFatal("Failed to create a temporary UI test directory");
+        }
+
+        const QDir tmpRootDir(tmpRoot.path());
+        const QString tmpState = tmpRootDir.filePath("state.toml");
         QFile::remove(tmpState);
         qputenv("ZAPAROO_STATE_FILE", tmpState.toUtf8());
 
-        const QString tmpConfigHome = QDir::temp().filePath("zaparoo-ui-test-config");
-        const QString tmpDataHome = QDir::temp().filePath("zaparoo-ui-test-data");
+        const QString tmpConfigHome = tmpRootDir.filePath("config");
+        const QString tmpDataHome = tmpRootDir.filePath("data");
         QDir().mkpath(tmpConfigHome);
         QDir().mkpath(tmpDataHome);
         qputenv("XDG_CONFIG_HOME", tmpConfigHome.toUtf8());

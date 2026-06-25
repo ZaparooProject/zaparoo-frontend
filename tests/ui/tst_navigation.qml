@@ -62,21 +62,6 @@ TestCase {
         Motion.enabled = true;
     }
 
-    function _bottomCount(): int {
-        // The Update action is compiled out of the Hub row when the
-        // update feature is disabled.
-        return main.updateEnabled ? 4 : 3;
-    }
-
-    function _initialBottomIndex(): int {
-        // Test harness has no live categories, so Down from top[0]
-        // maps from a zero-width top row into the action row.
-        // qmllint disable compiler
-        const index = main.hubScreen._mapCrossRow(0, 0, _bottomCount());
-        // qmllint enable compiler
-        return index;
-    }
-
     function test_initial_state_is_hub(): void {
         compare(main.activeScreen, main.screenHub);
         compare(main.hubScreen.visible, true);

@@ -37,8 +37,9 @@ corrosion_import_crate(
     MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust/Cargo.toml" CRATES zaparoo-frontend-rs
 )
 
-if(NOT ZAPAROO_WITH_UPDATE)
-    corrosion_set_features(zaparoo_frontend_rs NO_DEFAULT_FEATURES)
+corrosion_set_features(zaparoo_frontend_rs NO_DEFAULT_FEATURES)
+if(ZAPAROO_WITH_UPDATE)
+    corrosion_set_features(zaparoo_frontend_rs FEATURES update)
 endif()
 
 # ── Environment variables for cxx_qt_build's build.rs ─────────────────────── QMAKE: cxx_qt_build

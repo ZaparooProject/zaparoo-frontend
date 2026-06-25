@@ -49,10 +49,8 @@ if [ ! -f "${ENV_FILE}" ]; then
     exit 1
 fi
 
-set -a
 # shellcheck source=/dev/null
 source "${ENV_FILE}"
-set +a
 
 if [ -z "${MISTER_IP}" ]; then
     echo "Error: MISTER_IP is not set in ${ENV_FILE}"
@@ -60,19 +58,31 @@ if [ -z "${MISTER_IP}" ]; then
 fi
 
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
+USE_SSHPASS=0
 if [ -n "${MISTER_PW:-}" ]; then
     if ! command -v sshpass > /dev/null 2>&1; then
         echo "Error: MISTER_PW is set in ${ENV_FILE}, but sshpass is not installed." >&2
         echo "Install sshpass or remove MISTER_PW to use SSH keys/password prompts." >&2
         exit 1
     fi
-    export SSHPASS="${MISTER_PW}"
-    SSH_CMD=(sshpass -e ssh "${SSH_OPTS[@]}")
-    SCP_CMD=(sshpass -e scp "${SSH_OPTS[@]}")
-else
-    SSH_CMD=(ssh "${SSH_OPTS[@]}")
-    SCP_CMD=(scp "${SSH_OPTS[@]}")
+    USE_SSHPASS=1
 fi
+
+run_ssh() {
+    if [ "${USE_SSHPASS}" -eq 1 ]; then
+        SSHPASS="${MISTER_PW}" sshpass -e ssh "${SSH_OPTS[@]}" "$@"
+    else
+        ssh "${SSH_OPTS[@]}" "$@"
+    fi
+}
+
+run_scp() {
+    if [ "${USE_SSHPASS}" -eq 1 ]; then
+        SSHPASS="${MISTER_PW}" sshpass -e scp "${SSH_OPTS[@]}" "$@"
+    else
+        scp "${SSH_OPTS[@]}" "$@"
+    fi
+}
 
 if [ "${SKIP_BUILD}" -eq 1 ]; then
     echo "=== Skipping ARM32 build ==="
@@ -102,9 +112,9 @@ echo "=== Deploying to MiSTer at ${MISTER_IP} ==="
 # `wc -c` is portable (GNU + BSD/macOS); `stat -c` is GNU-only. The remote
 # size check below runs on the MiSTer (always Linux) so it keeps `stat -c`.
 LOCAL_SIZE="$(wc -c < "${BINARY}" | tr -d '[:space:]')"
-"${SCP_CMD[@]}" "${BINARY}" "root@${MISTER_IP}:${REMOTE_PATH}.new"
+run_scp "${BINARY}" "root@${MISTER_IP}:${REMOTE_PATH}.new"
 
-"${SSH_CMD[@]}" "root@${MISTER_IP}" "
+run_ssh "root@${MISTER_IP}" "
     set -e
     new_size=\$(stat -c %s '${REMOTE_PATH}.new' 2>/dev/null || echo 0)
     if [ \$new_size -ne ${LOCAL_SIZE} ]; then
@@ -121,7 +131,7 @@ LOCAL_SIZE="$(wc -c < "${BINARY}" | tr -d '[:space:]')"
 "
 echo "Deployed ${BINARY} → root@${MISTER_IP}:${REMOTE_PATH}"
 
-"${SSH_CMD[@]}" "root@${MISTER_IP}" "
+run_ssh "root@${MISTER_IP}" "
     rm -f /tmp/zaparoo/frontend.log
     # Flush pending card writes before disrupting the frontend so it is never
     # pulled mid-write. The signal stays SIGKILL on purpose: MiSTer's wrapper

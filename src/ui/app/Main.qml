@@ -312,8 +312,14 @@ MainLayout {
         }
     }
 
-    function _validStartupScreen(screen: string): string {
+    function _isStableNavigationScreen(screen: string): bool {
         if (screen === root.screenHub || screen === root.screenSystems || screen === root.screenGames || screen === root.screenFavorites || screen === root.screenRecents || screen === root.screenSettings || screen === root.screenAbout)
+            return true;
+        return false;
+    }
+
+    function _validStartupScreen(screen: string): string {
+        if (root._isStableNavigationScreen(screen))
             return screen;
         return "";
     }
@@ -443,7 +449,7 @@ MainLayout {
     // Long-running operational screens should not be restored after the
     // process is killed. Resume only stable navigation destinations.
     function _isLaunchResumeScreen(screen: string): bool {
-        return screen === root.screenHub || screen === root.screenSystems || screen === root.screenGames || screen === root.screenFavorites || screen === root.screenRecents || screen === root.screenSettings || screen === root.screenAbout;
+        return root._isStableNavigationScreen(screen);
     }
 
     function _allowsScreensaver(screen: string): bool {

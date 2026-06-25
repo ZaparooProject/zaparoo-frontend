@@ -503,22 +503,27 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="183"/>
+        <location filename="../screens/HubScreen.qml" line="186"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="189"/>
+        <location filename="../screens/HubScreen.qml" line="193"/>
         <source>Favorites</source>
         <translation>즐겨찾기</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="194"/>
+        <location filename="../screens/HubScreen.qml" line="199"/>
         <source>Recently Played</source>
         <translation>최근 플레이</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="199"/>
+        <location filename="../screens/HubScreen.qml" line="206"/>
+        <source>Update</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../screens/HubScreen.qml" line="213"/>
         <source>Settings &amp; Utilities</source>
         <translation type="unfinished"></translation>
     </message>
@@ -527,7 +532,7 @@ Euskara - devilschile2</source>
         <translation type="vanished">설정</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="756"/>
+        <location filename="../screens/HubScreen.qml" line="776"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>사용 가능한 시스템이 없습니다. 설정에서 미디어 데이터베이스 업데이트를 실행하세요.</translation>
     </message>
@@ -594,148 +599,148 @@ Euskara - devilschile2</source>
 <context>
     <name>Main</name>
     <message>
-        <location filename="../app/Main.qml" line="1475"/>
+        <location filename="../app/Main.qml" line="1508"/>
         <source>Launch core</source>
         <translation>코어 실행</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1484"/>
-        <location filename="../app/Main.qml" line="1729"/>
+        <location filename="../app/Main.qml" line="1517"/>
+        <location filename="../app/Main.qml" line="1762"/>
         <source>Change launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1491"/>
-        <location filename="../app/Main.qml" line="1520"/>
+        <location filename="../app/Main.qml" line="1524"/>
+        <location filename="../app/Main.qml" line="1553"/>
         <source>Update media database</source>
         <translation type="unfinished">미디어 데이터베이스 업데이트</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1494"/>
-        <location filename="../app/Main.qml" line="1523"/>
+        <location filename="../app/Main.qml" line="1527"/>
+        <location filename="../app/Main.qml" line="1556"/>
         <source>Scrape metadata</source>
         <translation type="unfinished">메타데이터 수집</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1499"/>
-        <location filename="../app/Main.qml" line="1508"/>
+        <location filename="../app/Main.qml" line="1532"/>
+        <location filename="../app/Main.qml" line="1541"/>
         <source>Unhide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1499"/>
-        <location filename="../app/Main.qml" line="1508"/>
+        <location filename="../app/Main.qml" line="1532"/>
+        <location filename="../app/Main.qml" line="1541"/>
         <source>Hide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1532"/>
-        <location filename="../app/Main.qml" line="1567"/>
+        <location filename="../app/Main.qml" line="1565"/>
+        <location filename="../app/Main.qml" line="1600"/>
         <source>Launch game</source>
         <translation>게임 실행</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1548"/>
+        <location filename="../app/Main.qml" line="1581"/>
         <source>Remove from favorites</source>
         <translation>즐겨찾기에서 제거</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1548"/>
+        <location filename="../app/Main.qml" line="1581"/>
         <source>Add to favorites</source>
         <translation>즐겨찾기에 추가</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1553"/>
+        <location filename="../app/Main.qml" line="1586"/>
         <source>Write to NFC token</source>
         <translation>NFC 토큰에 쓰기</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1557"/>
+        <location filename="../app/Main.qml" line="1590"/>
         <source>QR code</source>
         <translation>QR 코드</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1725"/>
+        <location filename="../app/Main.qml" line="1758"/>
         <source>Default</source>
         <translation type="unfinished">기본값</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1725"/>
+        <location filename="../app/Main.qml" line="1758"/>
         <source>Current: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2070"/>
+        <location filename="../app/Main.qml" line="2103"/>
         <source>Go to...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2073"/>
+        <location filename="../app/Main.qml" line="2106"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2213"/>
+        <location filename="../app/Main.qml" line="2246"/>
         <source>Saving launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2217"/>
+        <location filename="../app/Main.qml" line="2250"/>
         <source>Saving…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2231"/>
+        <location filename="../app/Main.qml" line="2264"/>
         <source>Launcher update failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2235"/>
+        <location filename="../app/Main.qml" line="2268"/>
         <source>Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2239"/>
+        <location filename="../app/Main.qml" line="2272"/>
         <source>Retry</source>
         <translation type="unfinished">다시 시도</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2243"/>
+        <location filename="../app/Main.qml" line="2276"/>
         <source>Cancel</source>
         <translation type="unfinished">취소</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2944"/>
+        <location filename="../app/Main.qml" line="2980"/>
         <source>Loading systems…</source>
         <translation>시스템 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2946"/>
+        <location filename="../app/Main.qml" line="2982"/>
         <source>Loading games…</source>
         <translation>게임 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2948"/>
+        <location filename="../app/Main.qml" line="2984"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2950"/>
+        <location filename="../app/Main.qml" line="2986"/>
         <source>Loading favorites…</source>
         <translation>즐겨찾기 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2952"/>
+        <location filename="../app/Main.qml" line="2988"/>
         <source>Loading recently played…</source>
         <translation>최근 플레이 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2954"/>
+        <location filename="../app/Main.qml" line="2990"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2956"/>
+        <location filename="../app/Main.qml" line="2992"/>
         <source>Loading…</source>
         <translation>불러오는 중…</translation>
     </message>
@@ -743,167 +748,167 @@ Euskara - devilschile2</source>
 <context>
     <name>MainLayout</name>
     <message>
-        <location filename="../app/MainLayout.qml" line="732"/>
+        <location filename="../app/MainLayout.qml" line="752"/>
         <source>Writing failed</source>
         <translation>쓰기 실패</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="732"/>
+        <location filename="../app/MainLayout.qml" line="752"/>
         <source>Put a writable card near the reader</source>
         <translation>기록 가능한 카드를 리더 근처에 놓으세요</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="174"/>
+        <location filename="../app/MainLayout.qml" line="178"/>
         <source>Zaparoo Frontend</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="390"/>
+        <location filename="../app/MainLayout.qml" line="395"/>
         <source>Favorites</source>
         <translation type="unfinished">즐겨찾기</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="392"/>
+        <location filename="../app/MainLayout.qml" line="397"/>
         <source>Recently Played</source>
         <translation type="unfinished">최근 플레이</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="748"/>
+        <location filename="../app/MainLayout.qml" line="768"/>
         <source>Quit and restart Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="749"/>
+        <location filename="../app/MainLayout.qml" line="769"/>
         <source>In order to apply this setting we need to restart the frontend.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="767"/>
+        <location filename="../app/MainLayout.qml" line="787"/>
         <source>Update Zaparoo Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="768"/>
+        <location filename="../app/MainLayout.qml" line="788"/>
         <source>This frontend needs Zaparoo Core %1 or newer. You&apos;re running %2. Some features may not work until you update.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="769"/>
-        <location filename="../app/MainLayout.qml" line="1099"/>
+        <location filename="../app/MainLayout.qml" line="789"/>
+        <location filename="../app/MainLayout.qml" line="1119"/>
         <source>OK</source>
         <translation type="unfinished">확인</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="878"/>
+        <location filename="../app/MainLayout.qml" line="898"/>
         <source>Quit Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="879"/>
+        <location filename="../app/MainLayout.qml" line="899"/>
         <source>Are you sure you want to exit?</source>
         <translation>정말 종료하시겠습니까?</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1025"/>
-        <location filename="../app/MainLayout.qml" line="1106"/>
-        <location filename="../app/MainLayout.qml" line="1163"/>
-        <location filename="../app/MainLayout.qml" line="1200"/>
-        <location filename="../app/MainLayout.qml" line="1248"/>
-        <location filename="../app/MainLayout.qml" line="1292"/>
-        <location filename="../app/MainLayout.qml" line="1311"/>
-        <location filename="../app/MainLayout.qml" line="1381"/>
+        <location filename="../app/MainLayout.qml" line="1045"/>
+        <location filename="../app/MainLayout.qml" line="1126"/>
+        <location filename="../app/MainLayout.qml" line="1183"/>
+        <location filename="../app/MainLayout.qml" line="1220"/>
+        <location filename="../app/MainLayout.qml" line="1268"/>
+        <location filename="../app/MainLayout.qml" line="1312"/>
+        <location filename="../app/MainLayout.qml" line="1331"/>
+        <location filename="../app/MainLayout.qml" line="1404"/>
         <source>Move</source>
         <translation>이동</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1029"/>
-        <location filename="../app/MainLayout.qml" line="1110"/>
+        <location filename="../app/MainLayout.qml" line="1049"/>
+        <location filename="../app/MainLayout.qml" line="1130"/>
         <source>Select</source>
         <translation>선택</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1033"/>
-        <location filename="../app/MainLayout.qml" line="1037"/>
-        <location filename="../app/MainLayout.qml" line="1051"/>
-        <location filename="../app/MainLayout.qml" line="1066"/>
-        <location filename="../app/MainLayout.qml" line="1077"/>
+        <location filename="../app/MainLayout.qml" line="1053"/>
+        <location filename="../app/MainLayout.qml" line="1057"/>
+        <location filename="../app/MainLayout.qml" line="1071"/>
+        <location filename="../app/MainLayout.qml" line="1086"/>
+        <location filename="../app/MainLayout.qml" line="1097"/>
         <source>Close</source>
         <translation>닫기</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1044"/>
-        <location filename="../app/MainLayout.qml" line="1084"/>
-        <location filename="../app/MainLayout.qml" line="1114"/>
-        <location filename="../app/MainLayout.qml" line="1136"/>
+        <location filename="../app/MainLayout.qml" line="1064"/>
+        <location filename="../app/MainLayout.qml" line="1104"/>
+        <location filename="../app/MainLayout.qml" line="1134"/>
+        <location filename="../app/MainLayout.qml" line="1156"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1062"/>
+        <location filename="../app/MainLayout.qml" line="1082"/>
         <source>Done</source>
         <translation>완료</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1073"/>
-        <location filename="../app/MainLayout.qml" line="1218"/>
-        <location filename="../app/MainLayout.qml" line="1269"/>
-        <location filename="../app/MainLayout.qml" line="1409"/>
+        <location filename="../app/MainLayout.qml" line="1093"/>
+        <location filename="../app/MainLayout.qml" line="1238"/>
+        <location filename="../app/MainLayout.qml" line="1289"/>
+        <location filename="../app/MainLayout.qml" line="1432"/>
         <source>Retry</source>
         <translation>다시 시도</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1092"/>
+        <location filename="../app/MainLayout.qml" line="1112"/>
         <source>I understand</source>
         <translation>이해했습니다</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1121"/>
+        <location filename="../app/MainLayout.qml" line="1141"/>
         <source>Adjust</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1125"/>
+        <location filename="../app/MainLayout.qml" line="1145"/>
         <source>Save</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1144"/>
+        <location filename="../app/MainLayout.qml" line="1164"/>
         <source>Start</source>
         <translation>시작</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1167"/>
-        <location filename="../app/MainLayout.qml" line="1205"/>
-        <location filename="../app/MainLayout.qml" line="1253"/>
-        <location filename="../app/MainLayout.qml" line="1297"/>
-        <location filename="../app/MainLayout.qml" line="1386"/>
+        <location filename="../app/MainLayout.qml" line="1187"/>
+        <location filename="../app/MainLayout.qml" line="1225"/>
+        <location filename="../app/MainLayout.qml" line="1273"/>
+        <location filename="../app/MainLayout.qml" line="1317"/>
+        <location filename="../app/MainLayout.qml" line="1409"/>
         <source>Open</source>
         <translation>열기</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1177"/>
+        <location filename="../app/MainLayout.qml" line="1197"/>
         <source>Quit</source>
         <translation>종료</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1186"/>
-        <location filename="../app/MainLayout.qml" line="1211"/>
-        <location filename="../app/MainLayout.qml" line="1222"/>
-        <location filename="../app/MainLayout.qml" line="1237"/>
-        <location filename="../app/MainLayout.qml" line="1262"/>
-        <location filename="../app/MainLayout.qml" line="1273"/>
-        <location filename="../app/MainLayout.qml" line="1285"/>
-        <location filename="../app/MainLayout.qml" line="1301"/>
-        <location filename="../app/MainLayout.qml" line="1335"/>
-        <location filename="../app/MainLayout.qml" line="1353"/>
-        <location filename="../app/MainLayout.qml" line="1362"/>
-        <location filename="../app/MainLayout.qml" line="1402"/>
-        <location filename="../app/MainLayout.qml" line="1413"/>
+        <location filename="../app/MainLayout.qml" line="1206"/>
+        <location filename="../app/MainLayout.qml" line="1231"/>
+        <location filename="../app/MainLayout.qml" line="1242"/>
+        <location filename="../app/MainLayout.qml" line="1257"/>
+        <location filename="../app/MainLayout.qml" line="1282"/>
+        <location filename="../app/MainLayout.qml" line="1293"/>
+        <location filename="../app/MainLayout.qml" line="1305"/>
+        <location filename="../app/MainLayout.qml" line="1321"/>
+        <location filename="../app/MainLayout.qml" line="1355"/>
+        <location filename="../app/MainLayout.qml" line="1376"/>
+        <location filename="../app/MainLayout.qml" line="1385"/>
+        <location filename="../app/MainLayout.qml" line="1425"/>
+        <location filename="../app/MainLayout.qml" line="1436"/>
         <source>Back</source>
         <translation>뒤로</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1398"/>
+        <location filename="../app/MainLayout.qml" line="1421"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
@@ -912,25 +917,25 @@ Euskara - devilschile2</source>
         <translation type="vanished">페이지</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1173"/>
-        <location filename="../app/MainLayout.qml" line="1208"/>
-        <location filename="../app/MainLayout.qml" line="1258"/>
-        <location filename="../app/MainLayout.qml" line="1391"/>
+        <location filename="../app/MainLayout.qml" line="1193"/>
+        <location filename="../app/MainLayout.qml" line="1228"/>
+        <location filename="../app/MainLayout.qml" line="1278"/>
+        <location filename="../app/MainLayout.qml" line="1414"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1320"/>
+        <location filename="../app/MainLayout.qml" line="1340"/>
         <source>Change</source>
         <translation>변경</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1326"/>
+        <location filename="../app/MainLayout.qml" line="1346"/>
         <source>Toggle</source>
         <translation>전환</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1349"/>
+        <location filename="../app/MainLayout.qml" line="1372"/>
         <source>Scroll</source>
         <translation>스크롤</translation>
     </message>

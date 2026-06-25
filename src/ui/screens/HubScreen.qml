@@ -182,29 +182,34 @@ Item {
             entries.push({
                 id: "resume",
                 coverKey: hub._hubCoverKey("resume", "icons/PlayOutline"),
+                enabled: true,
                 text: resumeName.length > 0 ? resumeName : qsTr("Resume")
             });
         }
         entries.push({
             id: "favorites",
             coverKey: hub._hubCoverKey("favorites", "icons/HeartOutline"),
+            enabled: true,
             text: qsTr("Favorites")
         });
         entries.push({
             id: "recents",
             coverKey: hub._hubCoverKey("recents", "icons/History"),
+            enabled: true,
             text: qsTr("Recently Played")
         });
         if (Browse.BuildInfo.update_enabled) {
             entries.push({
                 id: "update",
                 coverKey: hub._hubCoverKey("update", "icons/RefreshCw"),
+                enabled: true,
                 text: qsTr("Update")
             });
         }
         entries.push({
             id: "settings",
             coverKey: hub._hubCoverKey("settings", "icons/Tools"),
+            enabled: true,
             text: qsTr("Settings & Utilities")
         });
         return entries;
