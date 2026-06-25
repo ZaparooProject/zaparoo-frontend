@@ -36,6 +36,14 @@ const MODEL_FILES: &[&str] = &[
 ];
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=ZAPAROO_CARGO_CHEF");
+    if std::env::var_os("ZAPAROO_CARGO_CHEF").is_some() {
+        // cargo-chef builds a synthetic crate graph to cache dependencies.
+        // That graph does not contain the real CXX-Qt bridge source files,
+        // so skip bridge generation for the dependency layer only.
+        return;
+    }
+
     // cxx_qt_build compiles the CXX-Qt bridge code and registers the
     // Zaparoo.Browse QML module. Qt is located via the QMAKE env var
     // (set by ZaparooRust.cmake for ARM32 cross) or PATH qmake6 on desktop.

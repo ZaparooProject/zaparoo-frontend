@@ -121,6 +121,13 @@ TestCase {
         compare(Browse.AppState.active_screen, "", "Pending optimistic transition must not persist a completed screen flip yet");
     }
 
+    function test_update_screen_does_not_persist_active_screen(): void {
+        Browse.AppState.active_screen = main.screenSystems;
+        main._goto(main.screenUpdate);
+        compare(main.activeScreen, main.screenUpdate);
+        compare(Browse.AppState.active_screen, main.screenSystems, "Update is an operational screen and must not become the next launch target");
+    }
+
     // Symmetric to the Hub test above: that one proves the flip *does*
     // write AppState; this one proves Systems retry *doesn't*. Seed a
     // sentinel because test isolation clears AppState in cleanup() and

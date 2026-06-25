@@ -87,26 +87,6 @@ fn run_vmode_with_format(width: u32, height: u32, pixel_format: &str) {
     }
 }
 
-/// Parse a `"WxH"` resolution string like `"1920x1080"` (case-insensitive
-/// `x`) into `(width, height)`. Returns `None` on empty input, missing
-/// separator, non-numeric components, or zero values.
-#[cfg(test)]
-pub fn parse_resolution(value: &str) -> Option<(u32, u32)> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let (w_str, h_str) = trimmed
-        .split_once('x')
-        .or_else(|| trimmed.split_once('X'))?;
-    let w: u32 = w_str.trim().parse().ok()?;
-    let h: u32 = h_str.trim().parse().ok()?;
-    if w == 0 || h == 0 {
-        return None;
-    }
-    Some((w, h))
-}
-
 /// Fire-and-forget `zaparoo.sh -service start`. No-op on non-MiSTer builds.
 pub fn ensure_core_service_running() {
     #[cfg(zaparoo_runtime = "mister")]
@@ -119,49 +99,5 @@ pub fn ensure_core_service_running() {
         {
             warn!("failed to start zaparoo.sh: {e}");
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_resolution;
-
-    #[test]
-    fn parse_resolution_accepts_lower_x() {
-        assert_eq!(parse_resolution("1920x1080"), Some((1920, 1080)));
-    }
-
-    #[test]
-    fn parse_resolution_accepts_upper_x() {
-        assert_eq!(parse_resolution("640X480"), Some((640, 480)));
-    }
-
-    #[test]
-    fn parse_resolution_trims_whitespace() {
-        assert_eq!(parse_resolution("  1280x720 "), Some((1280, 720)));
-    }
-
-    #[test]
-    fn parse_resolution_rejects_empty() {
-        assert!(parse_resolution("").is_none());
-        assert!(parse_resolution("   ").is_none());
-    }
-
-    #[test]
-    fn parse_resolution_rejects_missing_separator() {
-        assert!(parse_resolution("1920").is_none());
-        assert!(parse_resolution("1920-1080").is_none());
-    }
-
-    #[test]
-    fn parse_resolution_rejects_non_numeric() {
-        assert!(parse_resolution("widexheight").is_none());
-        assert!(parse_resolution("1920xfoo").is_none());
-    }
-
-    #[test]
-    fn parse_resolution_rejects_zero_components() {
-        assert!(parse_resolution("0x1080").is_none());
-        assert!(parse_resolution("1920x0").is_none());
     }
 }

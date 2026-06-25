@@ -84,6 +84,8 @@ pub fn init_globals(
     input_bindings: HashMap<i32, String>,
     core_is_local: bool,
 ) {
+    #[cfg(feature = "update")]
+    zaparoo_update::init_runtime(runtime.handle().clone());
     HANDLE
         .set(runtime.handle().clone())
         .unwrap_or_else(|_| panic!("HANDLE already initialized"));

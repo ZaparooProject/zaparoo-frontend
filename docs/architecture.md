@@ -73,9 +73,16 @@ src/app/main.cpp
 | zaparoo_ui_screens | `Zaparoo.Screens` | `qrc:/qt/qml/Zaparoo/Screens/` |
 | zaparoo_ui_components | `Zaparoo.Ui` | `qrc:/qt/qml/Zaparoo/Ui/` |
 | zaparoo_ui_theme | `Zaparoo.Theme` | `qrc:/qt/qml/Zaparoo/Theme/` |
+| zaparoo_update_qml (optional) | `Zaparoo.Update` | `qrc:/qt/qml/Zaparoo/Update/` |
+| zaparoo-update (optional plugin) | `Zaparoo.Update.Native` | `qrc:/qt/qml/Zaparoo/Update/Native/` |
 
 `engine.loadFromModule("Zaparoo.App", "Main")` is the only entry point. Keep
 `qrc:/` strings out of the rest of the app.
+
+The Update bounded context is enabled by default through the
+`zaparoo-frontend-rs/update` Cargo feature. CMake owns the app-level toggle:
+build with `-DZAPAROO_WITH_UPDATE=OFF` to pass `--no-default-features` to Cargo,
+skip the `Zaparoo.Update` QML module, and omit the Hub Update tile.
 
 ## Key constraints
 
@@ -233,9 +240,13 @@ screen-specific hooks where the data model or navigation semantics differ.
 
 #### Screen flow
 
-- **Hub** (`HubScreen.qml`) — static centered row of category tiles.
-  Left/Right cycles categories and writes `HubState.category`. Accept emits
-  `requestAccept(category)`; Escape emits `requestQuit`.
+- **Hub** (`HubScreen.qml`) — two centered rows: category tiles plus action
+  tiles for Favorites, Recently Played, optional Update, and Settings.
+  Left/Right cycles within the focused row and writes `HubState`. Accept
+  emits the matching forward/action signal; Escape emits `requestQuit`.
+- **Update** (`zaparoo-update` package `qml/UpdateScreen.qml`) — crate-owned update screen
+  with a Rust-driven progress value surfaced through `Zaparoo.Update.Native`.
+  Accept is a no-op for now; Escape emits `requestHubScreen`.
 - **Systems** (`SystemsScreen.qml`) — paged grid of systems for the active
   category. Directional moves write `SystemsState.system_id`. Accept on a
   Ready system emits `requestAccept(systemId)`; Accept on Empty/Error emits

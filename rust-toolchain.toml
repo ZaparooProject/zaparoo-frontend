@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 [toolchain]
-channel    = "1.90.0"
+channel    = "1.96.0"
 components = ["rustfmt", "clippy"]
 targets    = ["armv7-unknown-linux-gnueabihf"]
 profile    = "minimal"

@@ -47,6 +47,9 @@ CMakeUserPresets.json
 # Deployment output
 deploy/
 
+# Local MiSTer drive mirror used for ad-hoc runs
+.local_drv/
+
 # ARM32 cross-build output
 output/
 

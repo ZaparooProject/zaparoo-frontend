@@ -21,12 +21,29 @@ TestCase {
         height: 720
     }
 
+    function cleanup(): void {
+        main.debugCrtSafeAreaOverlay = false;
+        main.crtNativePath = false;
+    }
+
     function setResolution(w: int, h: int): void {
+        setResolutionExpect(w, h, w, h);
+    }
+
+    function setResolutionExpect(w: int, h: int, expectedW: int, expectedH: int): void {
         main.width = w;
         main.height = h;
         // Main.qml's onWidthChanged/onHeightChanged propagate to Sizing.
-        tryCompare(Sizing, "screenWidth", w);
-        tryCompare(Sizing, "screenHeight", h);
+        tryCompare(Sizing, "screenWidth", expectedW);
+        tryCompare(Sizing, "screenHeight", expectedH);
+    }
+
+    function crtSafeWidth(w: int): int {
+        return w - 2 * Math.round(w * 0.05);
+    }
+
+    function crtSafeHeight(h: int): int {
+        return h - 2 * Math.round(h * 0.05);
     }
 
     function test_pct_helpers_scale_with_window_size(): void {
@@ -61,6 +78,29 @@ TestCase {
 
         setResolution(1920, 1080);
         compare(Sizing.visibleCovers, 5);
+    }
+
+    function test_debug_crt_safe_area_guide_visibility(): void {
+        main.debugCrtSafeAreaOverlay = false;
+        main.crtNativePath = true;
+        setResolutionExpect(320, 240, crtSafeWidth(320), crtSafeHeight(240));
+        compare(main._debugCrtSafeAreaGuideVisible, false);
+
+        main.debugCrtSafeAreaOverlay = true;
+        compare(main._debugCrtSafeAreaGuideVisible, true);
+
+        main.crtNativePath = false;
+        compare(main._debugCrtSafeAreaGuideVisible, false);
+
+        main.crtNativePath = true;
+        setResolutionExpect(640, 480, crtSafeWidth(640), crtSafeHeight(480));
+        compare(main._debugCrtSafeAreaGuideVisible, false);
+
+        setResolutionExpect(640, 288, crtSafeWidth(640), crtSafeHeight(288));
+        compare(main._debugCrtSafeAreaGuideVisible, true);
+
+        main.debugCrtSafeAreaOverlay = false;
+        main.crtNativePath = false;
     }
 
     function test_sizing_updates_propagate_proportionally(): void {

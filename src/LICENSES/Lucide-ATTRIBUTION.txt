@@ -20,6 +20,7 @@ attribute on the SVG root):
   resources/images/icons/Heart.svg
   resources/images/icons/HeartOutline.svg
   resources/images/icons/History.svg
+  resources/images/icons/RefreshCw.svg
   resources/images/icons/PlayOutline.svg
   resources/images/status/NFC.svg
   resources/images/categories/Other.svg

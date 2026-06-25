@@ -428,18 +428,28 @@ MainLayout {
     }
 
     // Cross-screen transitions: each screen signals its intent and this
-    // router writes persistence + flips ScreenManager. Keeps the screens
-    // themselves ignorant of AppState so they can be reused in test
-    // harnesses that don't wire the full persistence layer.
-    //
-    // The runtime + persistence writes always go together — naming the
-    // pair as a single helper makes the invariant explicit and keeps
-    // the four request handlers below a single line each.
+    // router flips ScreenManager, then applies route policy such as
+    // launch-resume persistence. Keeps the screens themselves ignorant
+    // of AppState so they can be reused in test harnesses that don't
+    // wire the full persistence layer.
     function _goto(screen: string): void {
         root._requestScreen(screen);
         root._startupTrace("startup/qml goto", "from=" + root.activeScreen, "to=" + screen, "pendingTransition=" + root.pendingTransition);
         ScreenManager.activeScreen = screen;
-        Browse.AppState.active_screen = screen;
+        if (root._isLaunchResumeScreen(screen))
+            Browse.AppState.active_screen = screen;
+    }
+
+    // Long-running operational screens should not be restored after the
+    // process is killed. Resume only stable navigation destinations.
+    function _isLaunchResumeScreen(screen: string): bool {
+        return screen === root.screenHub || screen === root.screenSystems || screen === root.screenGames || screen === root.screenFavorites || screen === root.screenRecents || screen === root.screenSettings || screen === root.screenAbout;
+    }
+
+    function _allowsScreensaver(screen: string): bool {
+        if (screen === root.screenUpdate)
+            return root.updateScreen !== null && root.updateScreen.allowsScreensaver;
+        return true;
     }
 
     function _backTargetReady(screen: string): bool {
@@ -911,6 +921,14 @@ MainLayout {
         recentsTransitionTimer.restart();
     }
 
+    // Hub → Update transition. Placeholder screen with no async data,
+    // so the flip is instant.
+    function _navigateToUpdate(): void {
+        if (!root.updateEnabled)
+            return;
+        root._goto(root.screenUpdate);
+    }
+
     function _resumeFavoritesCovers(): void {
         Browse.FavoritesModel.cover_requests_paused = false;
         if (root.favoritesScreen === null)
@@ -1289,6 +1307,9 @@ MainLayout {
         function onRequestRecentsScreen(): void {
             root._navigateToRecents();
         }
+        function onRequestUpdateScreen(): void {
+            root._navigateToUpdate();
+        }
         function onRequestSettingsScreen(): void {
             root._navigateToSettings();
         }
@@ -1312,6 +1333,12 @@ MainLayout {
         }
         function onRequestContextMenu(index: int, anchorRect): void {
             root.openContextMenu("recents", index, anchorRect);
+        }
+    }
+    Connections {
+        target: root.updateScreen
+        function onRequestHubScreen(): void {
+            root._goto(root.screenHub);
         }
     }
     Connections {
@@ -2547,6 +2574,9 @@ MainLayout {
         } else if (root.activeScreen === root.screenRecents) {
             if (root.recentsScreen !== null)
                 root.recentsScreen.handleAction(action);
+        } else if (root.activeScreen === root.screenUpdate) {
+            if (root.updateScreen !== null)
+                root.updateScreen.handleAction(action);
         } else if (root.activeScreen === root.screenSettings) {
             if (root.settingsScreen !== null)
                 root.settingsScreen.handleAction(action);
@@ -2746,7 +2776,7 @@ MainLayout {
     }
 
     function _resetIdle(): void {
-        if (root._idleScreensaverMs <= 0) {
+        if (root._idleScreensaverMs <= 0 || !root._allowsScreensaver(root.activeScreen)) {
             idleTimer.stop();
             return;
         }
@@ -2774,7 +2804,7 @@ MainLayout {
         // `_maybeCompleteBoot` and `_completeTransition` call
         // `_resetIdle()` so the countdown restarts cleanly the moment
         // the gate clears.
-        if (!root.bootComplete || root.pendingTransition !== "" || root.transitionCueVisible)
+        if (!root.bootComplete || root.pendingTransition !== "" || root.transitionCueVisible || !root._allowsScreensaver(root.activeScreen))
             return;
         const lg = root.headerBar.logoItem;
         if (!lg)
@@ -2793,7 +2823,7 @@ MainLayout {
         id: idleTimer
         interval: root._idleScreensaverMs > 0 ? root._idleScreensaverMs : 60000
         repeat: false
-        running: root._idleScreensaverMs > 0
+        running: root._idleScreensaverMs > 0 && root._allowsScreensaver(root.activeScreen)
         onTriggered: root._activateScreensaver()
     }
 

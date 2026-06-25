@@ -33,6 +33,15 @@
             }
         },
         {
+            "name": "desktop-dev-no-update",
+            "displayName": "Desktop Dev without Update",
+            "inherits": "desktop-dev",
+            "binaryDir": "${sourceDir}/build-dev-no-update",
+            "cacheVariables": {
+                "ZAPAROO_WITH_UPDATE": "OFF"
+            }
+        },
+        {
             "name": "desktop-sanitized",
             "displayName": "Desktop Debug + ASan + UBSan",
             "inherits": "desktop-debug",
@@ -54,6 +63,7 @@
         { "name": "desktop-debug",        "configurePreset": "desktop-debug" },
         { "name": "desktop-release",      "configurePreset": "desktop-release" },
         { "name": "desktop-dev",          "configurePreset": "desktop-dev" },
+        { "name": "desktop-dev-no-update", "configurePreset": "desktop-dev-no-update" },
         { "name": "desktop-sanitized",    "configurePreset": "desktop-sanitized" },
         { "name": "desktop-docker-debug", "configurePreset": "desktop-docker-debug" }
     ],

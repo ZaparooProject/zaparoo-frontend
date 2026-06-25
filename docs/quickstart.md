@@ -95,6 +95,18 @@ just run-dev
 the production-style runner: it reads `~/.config/zaparoo/frontend.toml`
 instead.
 
+For a desktop CRT preview, use:
+
+```bash
+ZAPAROO_CRT_PREVIEW_RESOLUTION=320x240 just run-dev
+```
+
+Setting `ZAPAROO_CRT_PREVIEW_RESOLUTION` also enables CRT preview mode. It
+accepts direct `WxH` values and aliases from Update All's CRT selector:
+`ntsc-720`, `ntsc-640`, `ntsc-512`, `ntsc-352`, `ntsc-336`, `ntsc-320a`,
+`ntsc-320b`, `ntsc-304`, `pal-640`, `pal-512`, `pal-384`, `pal-352`, and
+`pal-320`. `ZAPAROO_CRT_PREVIEW_SCALE` controls the integer desktop scale.
+
 ## 5. Check the result
 
 - The frontend window opens.
@@ -102,6 +114,9 @@ instead.
   "Arcade", "Consoles", "Handhelds". Left/Right cycles between them.
   ("Favorites" is a placeholder until a real Favorites endpoint
   lands in Core; selecting it shows an empty systems grid.)
+- A second action row contains "Favorites", "Recently Played", optional
+  "Update", and "Settings". "Update" opens the update screen and starts
+  the Rust-driven progress bar when the update feature is enabled.
 - Pressing Enter drops you into the **paged systems grid** for that
   category. Use Left/Right to move within a page; the grid wraps to
   the next page at the row edge.

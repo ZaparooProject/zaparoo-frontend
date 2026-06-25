@@ -58,6 +58,9 @@ QtObject {
     readonly property color logoFocusPrimary: "#FFE3B8"
     readonly property color logoFocusSecondary: accent
     readonly property color logoFocusShadow: "#9E5E15"
+    // Error emphasis, kept distinct from the amber selection accent.
+    readonly property string errorHex: "#ff8a7a"
+    readonly property color error: errorHex
     // Fonts
     readonly property string fontUi: crtNativePath ? "MxPlus HP 100LX 6x8" : "Noto Sans"
     readonly property string fontMono: crtNativePath ? "MxPlus HP 100LX 6x8" : "monospace"

@@ -272,7 +272,7 @@ AR_armv7-unknown-linux-gnueabihf = "arm-none-linux-gnueabihf-ar"\n\
 
 # Pre-warm rustup with the exact toolchain pinned by the repo-root
 # rust-toolchain.toml
-# (1.90.0 + armv7-unknown-linux-gnueabihf target). Without this, the first
+# (1.96.0 + armv7-unknown-linux-gnueabihf target). Without this, the first
 # `cargo` invocation inside Dockerfile.arm32 has to download the pinned
 # toolchain on every build because rustup's override falls through to the
 # default `stable` channel installed above. The shipped toolchain.toml is
@@ -281,8 +281,8 @@ AR_armv7-unknown-linux-gnueabihf = "arm-none-linux-gnueabihf-ar"\n\
 # without this line, just deferred. Pre-installing here shifts that
 # work into the toolchain-image build (which is rare) instead of every
 # arm32 build (which is per-commit).
-RUN rustup toolchain install 1.90.0 --profile minimal \
-    && rustup target add --toolchain 1.90.0 armv7-unknown-linux-gnueabihf
+RUN rustup toolchain install 1.96.0 --profile minimal \
+    && rustup target add --toolchain 1.96.0 armv7-unknown-linux-gnueabihf
 
 # cargo-chef: caches the Rust dependency build as a Docker layer in
 # Dockerfile.arm32 (planner → cook → build), so per-commit ARM builds only
@@ -351,7 +351,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   - host Qt (qt-cmake, qmake, qmllint, qmlformat, lupdate, lrelease,
 #     LinguistTools cmake config)
 #   - ARM32 static Qt (.a libraries, plugins, lib/cmake configs)
-#   - cargo config + rustup toolchain caches (1.90.0 + armv7 target)
+#   - cargo config + rustup toolchain caches (1.96.0 + armv7 target)
 #   - the cmake toolchain file referenced from qt-cmake
 COPY --from=builder /opt/gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf \
                     /opt/gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf

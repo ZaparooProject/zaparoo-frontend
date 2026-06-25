@@ -21,7 +21,7 @@ import Zaparoo.Browse as Browse
 //   * Top row: dynamic categories from Browse.CategoriesModel (Arcade,
 //     Computer, Console, Handheld).
 //   * Bottom row: actions — optional Resume Game, Favorites,
-//     Recently Played and Settings.
+//     Recently Played, optional Update and Settings.
 //
 // Both rows wrap left/right modulo their own count, and Up/Down flip
 // between rows in a closed loop (Up from top wraps to bottom, Down
@@ -39,7 +39,7 @@ import Zaparoo.Browse as Browse
 //
 // Pure input dispatcher: emits one of `requestAccept(payload)`,
 // `requestFavoritesScreen`, `requestRecentsScreen`,
-// `requestSettingsScreen`, or `requestQuit`.
+// `requestUpdateScreen`, `requestSettingsScreen`, or `requestQuit`.
 //
 // All cross-screen orchestration (model fills, deferred set_category,
 // cover prefetch, transition overlay, screen flip) lives in Main.qml.
@@ -55,7 +55,7 @@ Item {
     // so it is unit-testable without the Browse.ImageOverrides singleton.
     // Hub overrides live under the `hub/` customization subfolder, keyed by
     // category id (Arcade/Computer/Console/Handheld) or action id
-    // (resume/favorites/recents/settings); see docs/customization.md.
+    // (resume/favorites/recents/update/settings); see docs/customization.md.
     function _preferOverride(overrideKey: string, fallbackKey: string): string {
         return (overrideKey && overrideKey.length > 0) ? overrideKey : fallbackKey;
     }
@@ -150,6 +150,7 @@ Item {
     signal requestQuit
     signal requestFavoritesScreen
     signal requestRecentsScreen
+    signal requestUpdateScreen
     signal requestSettingsScreen
     // Emitted when the user opens the options menu on a category tile.
     // `anchorRect` is the tile's bounding rect mapped to hub coordinates,
@@ -168,6 +169,7 @@ Item {
 
     readonly property bool resumeKnownUnavailable: hub.resumeModelEnabled && !Browse.RecentsModel.resume_loading && !Browse.RecentsModel.resume_available && Browse.AppStatus.connection_state === 2
     readonly property bool resumeActionVisible: !hub.resumeKnownUnavailable
+    readonly property string _emptyCatalogFallbackAction: Browse.BuildInfo.update_enabled ? "update" : "settings"
 
     // Action-row data. Resume is visible by default while Core history
     // is unknown; hide it only after Recents proves there is nothing
@@ -193,6 +195,13 @@ Item {
             coverKey: hub._hubCoverKey("recents", "icons/History"),
             text: qsTr("Recently Played")
         });
+        if (Browse.BuildInfo.update_enabled) {
+            entries.push({
+                id: "update",
+                coverKey: hub._hubCoverKey("update", "icons/RefreshCw"),
+                text: qsTr("Update")
+            });
+        }
         entries.push({
             id: "settings",
             coverKey: hub._hubCoverKey("settings", "icons/Tools"),
@@ -290,8 +299,8 @@ Item {
         // treated as 0 — same belt-and-braces stance as the category
         // fallback above. When the catalog reports 0 categories the
         // top row has no tiles to focus, so we drop focus onto
-        // Settings — the only meaningful action ("Run Update media
-        // database from Settings") the empty-hub message points at.
+        // Update when it exists, otherwise Settings so the user lands
+        // on an actionable tile.
         const savedRow = Browse.HubState.selected_row;
         const savedAction = Browse.HubState.selected_action;
         if (savedRow === 1 && savedAction !== "") {
@@ -304,7 +313,7 @@ Item {
             hub.focusResumeIfVisible();
         } else if (Browse.CategoriesModel.count === 0) {
             hub.currentRow = 1;
-            hub.currentIndex = hub._actionIndexForId("settings");
+            hub.currentIndex = hub._actionIndexForId(hub._emptyCatalogFallbackAction);
         } else {
             hub.currentRow = 0;
             hub.currentIndex = chosenCategoryIndex;
@@ -472,13 +481,19 @@ Item {
             return;
         }
 
-        const id = hub.actionEntries[hub.currentIndex].id;
+        const entry = hub.actionEntries[hub.currentIndex];
+        if (!entry || entry.enabled === false)
+            return;
+
+        const id = entry.id;
         if (id === "resume")
             hub.requestAccept("resume");
         else if (id === "favorites")
             hub.requestFavoritesScreen();
         else if (id === "recents")
             hub.requestRecentsScreen();
+        else if (id === "update")
+            hub.requestUpdateScreen();
         else if (id === "settings")
             hub.requestSettingsScreen();
     }
@@ -699,8 +714,8 @@ Item {
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
-                    acceptedButtons: Qt.LeftButton
-                    cursorShape: Qt.PointingHandCursor
+                    acceptedButtons: actionCellItem.modelData.enabled === false ? Qt.NoButton : Qt.LeftButton
+                    cursorShape: actionCellItem.modelData.enabled === false ? Qt.ArrowCursor : Qt.PointingHandCursor
 
                     onEntered: hub._focusAction(actionCellItem.index)
                     onClicked: {

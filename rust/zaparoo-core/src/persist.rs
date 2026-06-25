@@ -41,8 +41,8 @@ pub struct HubState {
     /// (categories), 1 = bottom (action tiles).
     pub selected_row: u32,
     /// The bottom-row action tile that last had focus. One of
-    /// `"favorites"`, `"recents"` or `"settings"`. Empty defaults
-    /// to the leftmost action when restored.
+    /// `"favorites"`, `"recents"`, `"update"` or `"settings"`.
+    /// Empty defaults to the leftmost action when restored.
     pub selected_action: String,
     /// User-hidden category names. Built-in always-hidden categories
     /// (`Other`, `Media`) are never added here — they are filtered in

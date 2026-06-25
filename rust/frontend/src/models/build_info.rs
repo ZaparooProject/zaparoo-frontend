@@ -28,6 +28,7 @@ pub struct BuildInfoRust {
     commit: QString,
     build_date: QString,
     channel: QString,
+    update_enabled: bool,
 }
 
 #[cxx_qt::bridge]
@@ -48,6 +49,7 @@ pub mod ffi {
         #[qproperty(QString, commit, READ, CONSTANT, FINAL)]
         #[qproperty(QString, build_date, READ, CONSTANT, FINAL)]
         #[qproperty(QString, channel, READ, CONSTANT, FINAL)]
+        #[qproperty(bool, update_enabled, READ, CONSTANT, FINAL)]
         type BuildInfo = super::BuildInfoRust;
     }
 
@@ -60,6 +62,7 @@ impl Initialize for ffi::BuildInfo {
         rust.commit = QString::from(BUILD_COMMIT);
         rust.build_date = QString::from(BUILD_DATE);
         rust.channel = QString::from(BUILD_CHANNEL);
+        rust.update_enabled = cfg!(feature = "update");
     }
 }
 

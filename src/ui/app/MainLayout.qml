@@ -33,6 +33,7 @@ ApplicationWindow {
     readonly property string screenGames: ScreenManager.screenGames
     readonly property string screenFavorites: ScreenManager.screenFavorites
     readonly property string screenRecents: ScreenManager.screenRecents
+    readonly property string screenUpdate: ScreenManager.screenUpdate
     readonly property string screenSettings: ScreenManager.screenSettings
     readonly property string screenAbout: ScreenManager.screenAbout
 
@@ -50,7 +51,9 @@ ApplicationWindow {
     // Desktop preview sets fullScreen=false via initialProperties.
     property bool fullScreen: true
     property bool crtNativePath: false
+    property bool debugCrtSafeAreaOverlay: false
     property string activeScreen: ScreenManager.activeScreen
+    readonly property bool updateEnabled: Browse.BuildInfo.update_enabled
 
     // Desktop CRT preview. When `crtPreview` is true and `videoWidth` /
     // `videoHeight` are nonzero, the visual scene renders at the
@@ -76,6 +79,7 @@ ApplicationWindow {
     property bool _statusIconsEnabled: false
     property bool _headerMediaActivityEnabled: false
     property bool _firstFrameSeen: false
+    readonly property bool _debugCrtSafeAreaGuideVisible: root.debugCrtSafeAreaOverlay && root.crtNativePath && Sizing.screenHeight <= 300
     property bool systemsScreenRequested: false
     property bool gamesScreenRequested: false
     property bool favoritesScreenRequested: false
@@ -254,6 +258,7 @@ ApplicationWindow {
     property var gamesScreen: gamesScreenLoader.item
     property var favoritesScreen: favoritesScreenLoader.item
     property var recentsScreen: recentsScreenLoader.item
+    property var updateScreen: updateScreenLoader.item
     property var settingsScreen: settingsScreenLoader.item
     property var aboutScreen: aboutScreenLoader.item
     property var cardWriteModal: cardWriteModalLoader.item
@@ -689,6 +694,21 @@ ApplicationWindow {
                             optimisticLoading: root.activeScreen === root.screenRecents && root.catalogStillBooting
                         }
                     }
+                }
+
+                Loader {
+                    id: updateScreenLoader
+                    anchors.fill: parent
+                    active: root.updateEnabled && root.activeScreen === root.screenUpdate
+                    visible: status === Loader.Ready && root.activeScreen === root.screenUpdate
+                    source: active ? "qrc:/qt/qml/Zaparoo/App/UpdateEntry.qml" : ""
+                }
+
+                Binding {
+                    target: updateScreenLoader.item
+                    property: "transitioning"
+                    value: root.pendingTransition !== ""
+                    when: updateScreenLoader.item !== null
                 }
 
                 Loader {
@@ -1336,6 +1356,9 @@ ApplicationWindow {
                         });
                         return row;
                     }
+                    if (root.activeScreen === root.screenUpdate) {
+                        return root.updateScreen !== null ? root.updateScreen.helpEntries : [];
+                    }
                     if (root.activeScreen === root.screenAbout) {
                         if (root.aboutScreen === null)
                             return [];
@@ -1490,6 +1513,42 @@ ApplicationWindow {
                 // sit static on a CRT while the screensaver runs.
                 anchors.margins: -Math.max(root._crtInsetW, root._crtInsetH)
                 z: 500
+            }
+
+            Item {
+                id: debugCrtSafeAreaGuide
+
+                visible: root._debugCrtSafeAreaGuideVisible
+                anchors.fill: parent
+                z: 20000
+
+                readonly property int insetX: Sizing.pctW(5)
+                readonly property int insetY: Sizing.pctH(5)
+                readonly property int deepInsetX: Sizing.pctW(10)
+                readonly property int deepInsetY: Sizing.pctH(10)
+                readonly property int line: Sizing.stroke(1)
+                readonly property color guideColor: "#ff4fd8"
+                readonly property color deepGuideColor: "#31d7ff"
+
+                Rectangle {
+                    x: debugCrtSafeAreaGuide.insetX
+                    y: debugCrtSafeAreaGuide.insetY
+                    width: Math.max(1, Sizing.px(parent.width - 2 * debugCrtSafeAreaGuide.insetX))
+                    height: Math.max(1, Sizing.px(parent.height - 2 * debugCrtSafeAreaGuide.insetY))
+                    color: "transparent"
+                    border.color: debugCrtSafeAreaGuide.guideColor
+                    border.width: debugCrtSafeAreaGuide.line
+                }
+
+                Rectangle {
+                    x: debugCrtSafeAreaGuide.deepInsetX
+                    y: debugCrtSafeAreaGuide.deepInsetY
+                    width: Math.max(1, Sizing.px(parent.width - 2 * debugCrtSafeAreaGuide.deepInsetX))
+                    height: Math.max(1, Sizing.px(parent.height - 2 * debugCrtSafeAreaGuide.deepInsetY))
+                    color: "transparent"
+                    border.color: debugCrtSafeAreaGuide.deepGuideColor
+                    border.width: debugCrtSafeAreaGuide.line
+                }
             }
         }
 
