@@ -22,6 +22,9 @@ option(BUILD_SHARED_LIBS "Build shared libraries (required for LGPL desktop buil
 option(ZAPAROO_BUILD_TESTS "Build unit/smoke tests" ON)
 option(ZAPAROO_DEV "Development mode: windowed window and dev core endpoint" OFF)
 option(ZAPAROO_EMBEDDED "Embedded device build (MiSTer): default fullscreen, no window chrome" OFF)
+option(ZAPAROO_WITH_UPDATE "Build with zaparoo-update integration" ON)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 if(ZAPAROO_DEV)
     add_compile_definitions(ZAPAROO_DEV_BUILD)
@@ -39,7 +42,12 @@ if(CCACHE_PROGRAM AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
 endif()
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+message(STATUS "Update integration: ${ZAPAROO_WITH_UPDATE}")
+
+if(ZAPAROO_WITH_UPDATE)
+    add_compile_definitions(ZAPAROO_UPDATE_ENABLED)
+endif()
+
 include(ZaparooCompileOptions)
 include(ZaparooQmlModule)
 
@@ -65,6 +73,26 @@ set(QML_IMPORT_PATH
 
 add_subdirectory(src/ui/theme)
 add_subdirectory(src/ui/components)
+if(ZAPAROO_WITH_UPDATE)
+    add_subdirectory(src/ui/update_host)
+    set(
+        ZAPAROO_UPDATE_PACKAGE_ROOT
+        ""
+        CACHE PATH "Optional path to the zaparoo-update Cargo package root. Empty resolves via cargo metadata."
+    )
+    if(NOT ZAPAROO_UPDATE_PACKAGE_ROOT)
+        include(ZaparooCargoPackage)
+        zaparoo_find_cargo_package_root("zaparoo-update" ZAPAROO_UPDATE_PACKAGE_ROOT)
+    endif()
+    if(NOT EXISTS "${ZAPAROO_UPDATE_PACKAGE_ROOT}/cmake/ZaparooUpdate.cmake")
+        message(
+            FATAL_ERROR
+                "zaparoo-update package at '${ZAPAROO_UPDATE_PACKAGE_ROOT}' does not provide cmake/ZaparooUpdate.cmake"
+        )
+    endif()
+    include("${ZAPAROO_UPDATE_PACKAGE_ROOT}/cmake/ZaparooUpdate.cmake")
+    zaparoo_update_add_qml_module()
+endif()
 add_subdirectory(src/ui/screens)
 add_subdirectory(src/ui/app)
 

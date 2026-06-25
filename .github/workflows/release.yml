@@ -133,7 +133,7 @@ jobs:
 
       - name: Install Rust and just
         run: |
-          rustup toolchain install 1.90.0 \
+          rustup toolchain install 1.96.0 \
             --profile minimal \
             --component rustfmt \
             --component clippy \

@@ -4,9 +4,15 @@
 
 use crate::config::Config;
 use crate::platform_paths::log_file_path;
-use std::path::Path;
+use std::{
+    ffi::c_void,
+    io::{self, Write},
+    path::Path,
+};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+const LOG_TERMINAL_FD_ENV: &str = "ZAPAROO_LOG_TERMINAL_FD";
 
 // Returned from install(); must be held for the process lifetime to keep the
 // file-appender thread alive. Drop causes a flush + shutdown.
@@ -35,6 +41,7 @@ pub fn debug_logging_enabled(config: &Config) -> bool {
 
 pub fn install_at(config: &Config, log_path: &Path) -> LoggerGuard {
     let debug = debug_logging_enabled(config);
+    let terminal_fd = terminal_log_fd();
 
     let file_appender = tracing_appender::rolling::never(
         log_path.parent().unwrap_or(Path::new(".")),
@@ -43,7 +50,7 @@ pub fn install_at(config: &Config, log_path: &Path) -> LoggerGuard {
     let (non_blocking_file, file_guard) = tracing_appender::non_blocking(file_appender);
 
     let stderr_layer = fmt::layer()
-        .with_writer(std::io::stderr)
+        .with_writer(io::stderr)
         .with_ansi(false)
         .with_target(false)
         .with_timer(fmt::time::UtcTime::rfc_3339());
@@ -53,6 +60,14 @@ pub fn install_at(config: &Config, log_path: &Path) -> LoggerGuard {
         .with_ansi(false)
         .json()
         .with_timer(fmt::time::UtcTime::rfc_3339());
+
+    let terminal_layer = terminal_fd.map(|fd| {
+        fmt::layer()
+            .with_writer(move || TerminalFdWriter { fd })
+            .with_ansi(false)
+            .with_target(false)
+            .with_timer(fmt::time::UtcTime::rfc_3339())
+    });
 
     let filter = if debug {
         EnvFilter::new("debug")
@@ -64,11 +79,54 @@ pub fn install_at(config: &Config, log_path: &Path) -> LoggerGuard {
         .with(filter)
         .with(stderr_layer)
         .with(file_layer)
+        .with(terminal_layer)
         .init();
 
     LoggerGuard {
         _file_guard: file_guard,
     }
+}
+
+fn terminal_log_fd() -> Option<i32> {
+    std::env::var(LOG_TERMINAL_FD_ENV)
+        .ok()
+        .and_then(|value| value.parse::<i32>().ok())
+        .filter(|fd| *fd >= 0)
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TerminalFdWriter {
+    fd: i32,
+}
+
+impl Write for TerminalFdWriter {
+    fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
+        let original_len = buf.len();
+        while !buf.is_empty() {
+            // SAFETY: `buf` points to live memory for `buf.len()` bytes, and
+            // `write` does not retain the pointer after returning.
+            let written = unsafe { write(self.fd, buf.as_ptr().cast(), buf.len()) };
+            if written < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            if written == 0 {
+                break;
+            }
+
+            let written = usize::try_from(written)
+                .map_err(|_| io::Error::other("terminal log write length overflow"))?;
+            buf = &buf[written.min(buf.len())..];
+        }
+        Ok(original_len - buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+unsafe extern "C" {
+    fn write(fd: i32, buf: *const c_void, count: usize) -> isize;
 }
 
 #[cfg(test)]

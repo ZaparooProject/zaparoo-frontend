@@ -55,6 +55,14 @@ shared QML, not behind a `crtNativePath` branch.
   itself on an integer `x` (via `Sizing.center()`), then render with
   `horizontalAlignment: Text.AlignLeft` inside that box.
 
+- **Center native text items, not glyphs inside a tall box.** On the CRT path,
+  `Text.NativeRendering` with the bitmap font can visually clip or punch out
+  glyph rows when a `Text` item fills a taller capsule/card and relies on
+  `verticalAlignment: Text.AlignVCenter`. Use the text's natural height
+  (`height: Sizing.px(implicitHeight)`) and center the `Text` item itself with
+  `y: Sizing.center(parent.height, height)`. This keeps capsule fills behind
+  the text without blurring or z-order hacks.
+
 - **Quantize CRT font sizes.** `Sizing.fontSize()` snaps to `8` or `16`
   pixels when `crtNativePath` is active. This is a runtime quantization,
   not a design rule — call `fontSize()` everywhere; the singleton handles

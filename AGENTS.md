@@ -35,7 +35,7 @@ raw cargo as the default path; the justfile carries the expected environment.
 - Qt 6.7+ with Qt Quick, QuickControls2, QML, QuickTest, and LinguistTools.
 - C++17 executable at `src/app/main.cpp`; Rust static library linked through
   Corrosion and cxx-qt.
-- Rust workspace is under `rust/`, edition 2021, MSRV 1.90, cxx-qt 0.8.
+- Rust workspace is under `rust/`, edition 2021, MSRV 1.96, cxx-qt 0.8.
 - Desktop builds link Qt dynamically for LGPL compliance.
 - MiSTer ARM32 builds use the Docker toolchain and static Qt.
 

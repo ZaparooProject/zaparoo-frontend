@@ -64,7 +64,8 @@ run-dev *args: build-dev
 # Run a local mock Zaparoo Core (ws://127.0.0.1:27497/api/v0.1).
 # Deliberately offset from the real Core's 7497 so dev never collides
 # with a running Core. `just run-dev` automatically points the frontend
-# here via ZAPAROO_CORE_ENDPOINT. See docs/quickstart.md.
+# here via ZAPAROO_CORE_ENDPOINT.
+# See docs/quickstart.md.
 mock-core:
     cd rust && cargo run --bin mock-core
 
@@ -200,10 +201,10 @@ install-tools:
     cargo install --locked cargo-nextest
 
 # --- deploy ---
-deploy-mister:
-    ./scripts/deploy-mister.sh
+deploy-mister *args:
+    ./scripts/deploy-mister.sh {{args}}
 
 # --- clean ---
 clean:
-    rm -rf build build-release build-dev build-san build-docker output
+    rm -rf build build-release build-dev build-dev-no-update build-san build-docker output
     cd rust && cargo clean

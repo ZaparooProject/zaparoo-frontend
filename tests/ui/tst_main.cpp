@@ -4,6 +4,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QQmlEngine>
 #include <QQuickStyle>
 #include <QtQml/qqmlextensionplugin.h>
 #include <QtQuickTest/quicktest.h>
@@ -12,6 +13,12 @@ Q_IMPORT_QML_PLUGIN(Zaparoo_AppPlugin)
 Q_IMPORT_QML_PLUGIN(Zaparoo_Browse_plugin)
 Q_IMPORT_QML_PLUGIN(Zaparoo_UiPlugin)
 Q_IMPORT_QML_PLUGIN(Zaparoo_ThemePlugin)
+#ifdef ZAPAROO_UPDATE_STATIC_QML_PLUGIN
+Q_IMPORT_QML_PLUGIN(Zaparoo_UpdatePlugin)
+#endif
+#ifdef ZAPAROO_UPDATE_STATIC_NATIVE_PLUGIN
+Q_IMPORT_QML_PLUGIN(Zaparoo_Update_Native_plugin)
+#endif
 
 extern "C" int zaparoo_rust_init();
 
@@ -34,6 +41,13 @@ class UiSetup : public QObject
         QFile::remove(tmpState);
         qputenv("ZAPAROO_STATE_FILE", tmpState.toUtf8());
 
+        const QString tmpConfigHome = QDir::temp().filePath("zaparoo-ui-test-config");
+        const QString tmpDataHome = QDir::temp().filePath("zaparoo-ui-test-data");
+        QDir().mkpath(tmpConfigHome);
+        QDir().mkpath(tmpDataHome);
+        qputenv("XDG_CONFIG_HOME", tmpConfigHome.toUtf8());
+        qputenv("XDG_DATA_HOME", tmpDataHome.toUtf8());
+
         // Match the real frontend's style selection. Also forces the test
         // binary to reference QQuickStyle, which keeps libQt6QuickControls2
         // on the link line under GNU ld --as-needed (cxx-qt-lib's
@@ -41,6 +55,16 @@ class UiSetup : public QObject
         // other consumer and appears later on the command line).
         QQuickStyle::setStyle("Basic");
         zaparoo_rust_init();
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static) — Qt slot, must be a member
+    void qmlEngineAvailable(QQmlEngine* engine)
+    {
+#ifdef ZAPAROO_UPDATE_RUNTIME_QML_IMPORT_PATH
+        engine->addImportPath(QStringLiteral(ZAPAROO_UPDATE_RUNTIME_QML_IMPORT_PATH));
+#else
+        Q_UNUSED(engine)
+#endif
     }
 };
 

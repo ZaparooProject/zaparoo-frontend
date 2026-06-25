@@ -69,7 +69,13 @@ Q_IMPORT_QML_PLUGIN(Zaparoo_AppPlugin)
 Q_IMPORT_QML_PLUGIN(Zaparoo_UiPlugin)
 Q_IMPORT_QML_PLUGIN(Zaparoo_ThemePlugin)
 Q_IMPORT_QML_PLUGIN(Zaparoo_ScreensPlugin)
+#ifdef ZAPAROO_UPDATE_STATIC_QML_PLUGIN
+Q_IMPORT_QML_PLUGIN(Zaparoo_UpdatePlugin)
+#endif
 Q_IMPORT_QML_PLUGIN(Zaparoo_Browse_plugin)
+#ifdef ZAPAROO_UPDATE_STATIC_NATIVE_PLUGIN
+Q_IMPORT_QML_PLUGIN(Zaparoo_Update_Native_plugin)
+#endif
 
 // For static Qt builds (MiSTer ARM32): the QtQuick.Controls plugin chain and
 // platform plugin are embedded in the binary, not found on disk, so they
@@ -137,6 +143,12 @@ static ParsedArguments extractCrtArgument(int argc, char* argv[])
     return parsed;
 }
 
+static bool envFlagEnabled(const char* name)
+{
+    const QByteArray value = qgetenv(name).trimmed().toLower();
+    return value == "1" || value == "true" || value == "yes" || value == "on";
+}
+
 constexpr int kRestartExitCode = 1000;
 
 static void startupTrace(const char* stage)
@@ -154,7 +166,10 @@ static void startupTrace(const char* stage)
 int main(int argc, char* argv[]) // NOLINT
 {
     ParsedArguments parsedArgs = extractCrtArgument(argc, argv);
-    const bool crtNativePathForced = parsedArgs.crtNativePathForced;
+    const bool crtPreviewResolutionForced =
+        !qEnvironmentVariableIsEmpty("ZAPAROO_CRT_PREVIEW_RESOLUTION");
+    const bool crtNativePathForced = parsedArgs.crtNativePathForced || crtPreviewResolutionForced;
+    const bool debugCrtSafeAreaOverlay = envFlagEnabled("ZAPAROO_DEBUG");
     int qtArgc = static_cast<int>(parsedArgs.argv.size()) - 1;
 
     char** qtArgv = parsedArgs.argv.data();
@@ -384,10 +399,14 @@ int main(int argc, char* argv[]) // NOLINT
     // inside the customization root to prevent arbitrary filesystem reads.
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     engine.addImageProvider(QStringLiteral("custom-image"), new CustomImageProvider());
+#ifdef ZAPAROO_UPDATE_RUNTIME_QML_IMPORT_PATH
+    engine.addImportPath(QStringLiteral(ZAPAROO_UPDATE_RUNTIME_QML_IMPORT_PATH));
+#endif
     startupTrace("cpp:QQmlApplicationEngine + image providers ready");
 
     QVariantMap initialProperties = {
         {"crtNativePath", crtNativePathEnabled},
+        {"debugCrtSafeAreaOverlay", debugCrtSafeAreaOverlay},
     };
 #ifdef ZAPAROO_EMBEDDED_BUILD
     // MainLayout's `fullScreen` defaults true so the binding pass during
@@ -401,13 +420,15 @@ int main(int argc, char* argv[]) // NOLINT
     // FullScreen→Windowed transition during construction isn't visible
     // — the desktop compositor buffers until the first paint.
     initialProperties.insert(QStringLiteral("fullScreen"), false);
-    // Desktop CRT preview: when --crt is passed off-MiSTer, render the
-    // QML scene at the configured logical video size and integer-
-    // upscale via a layered wrapper Item in MainLayout. Scale defaults
-    // to 0 (sentinel for "auto-pick the largest integer that fits the
-    // primary screen with a 5% margin"); ZAPAROO_CRT_PREVIEW_SCALE
-    // overrides for ad-hoc testing without rebuilding (e.g. =2 for
-    // half-size, =8 to inspect a single tile).
+    // Desktop CRT preview: when --crt is passed off-MiSTer, or
+    // ZAPAROO_CRT_PREVIEW_RESOLUTION is set, render the QML scene at
+    // the configured logical video size and integer-upscale via a
+    // layered wrapper Item in MainLayout. Scale defaults to 0
+    // (sentinel for "auto-pick the largest integer that fits the
+    // primary screen with a 5% margin"); ZAPAROO_CRT_PREVIEW_RESOLUTION
+    // also selects the logical CRT canvas on desktop, and
+    // ZAPAROO_CRT_PREVIEW_SCALE overrides the integer window scale for
+    // ad-hoc testing without rebuilding.
     if (crtNativePathEnabled)
     {
         int previewScale = 0;

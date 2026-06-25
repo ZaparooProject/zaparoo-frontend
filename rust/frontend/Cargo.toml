@@ -19,9 +19,14 @@ path       = "src/lib.rs"
 [lints]
 workspace = true
 
+[features]
+default = ["update"]
+update  = ["dep:zaparoo-update"]
+
 [dependencies]
 zaparoo-core       = { path = "../zaparoo-core" }
 zaparoo-build-info = { path = "../build-info" }
+zaparoo-update = { version = "0.1.6", optional = true }
 cxx          = { workspace = true }
 cxx-qt       = { workspace = true }
 cxx-qt-lib   = { workspace = true, features = ["qt_gui", "qt_qml", "qt_quickcontrols"] }

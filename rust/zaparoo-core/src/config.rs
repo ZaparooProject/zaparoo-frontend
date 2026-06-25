@@ -845,6 +845,52 @@ mod tests {
     }
 
     #[test]
+    fn parse_resolution_override_accepts_lower_x() {
+        use super::parse_resolution_override;
+        assert_eq!(parse_resolution_override("1920x1080"), Some((1920, 1080)));
+    }
+
+    #[test]
+    fn parse_resolution_override_accepts_upper_x() {
+        use super::parse_resolution_override;
+        assert_eq!(parse_resolution_override("640X480"), Some((640, 480)));
+    }
+
+    #[test]
+    fn parse_resolution_override_trims_whitespace() {
+        use super::parse_resolution_override;
+        assert_eq!(parse_resolution_override("  1280x720 "), Some((1280, 720)));
+    }
+
+    #[test]
+    fn parse_resolution_override_rejects_empty() {
+        use super::parse_resolution_override;
+        assert!(parse_resolution_override("").is_none());
+        assert!(parse_resolution_override("   ").is_none());
+    }
+
+    #[test]
+    fn parse_resolution_override_rejects_missing_separator() {
+        use super::parse_resolution_override;
+        assert!(parse_resolution_override("1920").is_none());
+        assert!(parse_resolution_override("1920-1080").is_none());
+    }
+
+    #[test]
+    fn parse_resolution_override_rejects_non_numeric() {
+        use super::parse_resolution_override;
+        assert!(parse_resolution_override("widexheight").is_none());
+        assert!(parse_resolution_override("1920xfoo").is_none());
+    }
+
+    #[test]
+    fn parse_resolution_override_rejects_zero_components() {
+        use super::parse_resolution_override;
+        assert!(parse_resolution_override("0x1080").is_none());
+        assert!(parse_resolution_override("1920x0").is_none());
+    }
+
+    #[test]
     fn empty_file_returns_defaults() {
         let f = write_tmp("");
         let cfg = load_config(f.path());

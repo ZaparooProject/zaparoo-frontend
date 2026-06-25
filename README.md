@@ -54,6 +54,13 @@ Third-party components:
   [legal@zaparoo.org](mailto:legal@zaparoo.org).
   See [`src/LICENSES/Qt-LGPL-NOTICE.txt`](src/LICENSES/Qt-LGPL-NOTICE.txt)
   and [`src/LICENSES/LGPLv3.txt`](src/LICENSES/LGPLv3.txt).
+- **zaparoo-update**: optional third-party update integration, separately owned
+  and licensed under PolyForm Noncommercial License 1.0.0. Commercial licenses
+  for Zaparoo Frontend do not grant commercial rights to zaparoo-update;
+  commercial use, distribution, or bundling with the update integration enabled
+  requires a separate license from the zaparoo-update copyright holder,
+  José Manuel Barroso Galindo <theypsilon@gmail.com>. See
+  [`src/LICENSES/zaparoo-update-NOTICE.txt`](src/LICENSES/zaparoo-update-NOTICE.txt).
 - **Noto Sans** fonts: SIL Open Font License 1.1, © The Noto Project Authors.
   See [`src/LICENSES/NotoSans-ATTRIBUTION.txt`](src/LICENSES/NotoSans-ATTRIBUTION.txt)
   and [`src/LICENSES/NotoSans-OFL.txt`](src/LICENSES/NotoSans-OFL.txt).

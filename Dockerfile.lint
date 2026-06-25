@@ -47,7 +47,7 @@ ARG JUST_VERSION=1.50.0
 # download the pinned toolchain (+ rustfmt, clippy, armv7 target) inside
 # the ephemeral container on every cargo invocation — both locally via
 # `just *-docker` and in CI lint jobs.
-ARG RUST_TOOLCHAIN=1.90.0
+ARG RUST_TOOLCHAIN=1.96.0
 
 # Apt-installed packages. clang-format / clang-tidy are pinned to a
 # specific major because Trixie ships 17, 18, and 19 side-by-side and

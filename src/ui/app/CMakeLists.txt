@@ -58,6 +58,25 @@ foreach(_res IN LISTS _APP_RESOURCES)
     set_source_files_properties("${_res}" PROPERTIES QT_RESOURCE_ALIAS "${_alias}")
 endforeach()
 
+set(_APP_IMPORTS Zaparoo.Ui Zaparoo.Theme Zaparoo.Screens Zaparoo.Browse)
+set(_APP_QML_FILES)
+set(
+    _APP_LINK_LIBRARIES
+    Qt6::Quick
+    # Pulls in libQt6Svg so `Image { source: "...svg" }` resolves
+    # via the QSvgPlugin image format. For shared Qt the plugin is
+    # auto-discovered at runtime; the static MiSTer build wires the
+    # plugin import explicitly in cmake/ZaparooRust.cmake.
+    Qt6::Svg
+    zaparoo_ui_componentsplugin
+    zaparoo_ui_screensplugin
+    zaparoo_ui_themeplugin
+)
+if(ZAPAROO_WITH_UPDATE)
+    list(APPEND _APP_LINK_LIBRARIES zaparoo_update_qmlplugin)
+    list(APPEND _APP_QML_FILES UpdateEntry.qml)
+endif()
+
 qt_add_qml_module(
     zaparoo_ui_app
     URI Zaparoo.App
@@ -65,26 +84,14 @@ qt_add_qml_module(
     QML_FILES
         Main.qml
         MainLayout.qml
+        ${_APP_QML_FILES}
     RESOURCES ${_APP_RESOURCES}
-    IMPORTS
-        Zaparoo.Ui
-        Zaparoo.Theme
-        Zaparoo.Screens
-        Zaparoo.Browse
+    IMPORTS ${_APP_IMPORTS}
 )
 
 target_link_libraries(
     zaparoo_ui_app
-    PUBLIC
-        Qt6::Quick
-        # Pulls in libQt6Svg so `Image { source: "...svg" }` resolves
-        # via the QSvgPlugin image format. For shared Qt the plugin is
-        # auto-discovered at runtime; the static MiSTer build wires the
-        # plugin import explicitly in cmake/ZaparooRust.cmake.
-        Qt6::Svg
-        zaparoo_ui_componentsplugin
-        zaparoo_ui_screensplugin
-        zaparoo_ui_themeplugin
+    PUBLIC ${_APP_LINK_LIBRARIES}
     PRIVATE
         Zaparoo::CompileOptions
 )

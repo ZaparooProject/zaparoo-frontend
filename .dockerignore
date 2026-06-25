@@ -1,0 +1,14 @@
+# Keep Docker build contexts small and deterministic.
+.git
+
+# Host build outputs and cargo artifacts are regenerated inside the image.
+build/
+build-*/
+build-docker/
+output/
+rust/target/
+**/target/
+
+# Local editor/OS noise.
+.DS_Store
+*.swp

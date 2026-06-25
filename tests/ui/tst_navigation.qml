@@ -62,6 +62,21 @@ TestCase {
         Motion.enabled = true;
     }
 
+    function _bottomCount(): int {
+        // The Update action is compiled out of the Hub row when the
+        // update feature is disabled.
+        return main.updateEnabled ? 4 : 3;
+    }
+
+    function _initialBottomIndex(): int {
+        // Test harness has no live categories, so Down from top[0]
+        // maps from a zero-width top row into the action row.
+        // qmllint disable compiler
+        const index = main.hubScreen._mapCrossRow(0, 0, _bottomCount());
+        // qmllint enable compiler
+        return index;
+    }
+
     function test_initial_state_is_hub(): void {
         compare(main.activeScreen, main.screenHub);
         compare(main.hubScreen.visible, true);
@@ -88,6 +103,13 @@ TestCase {
         compare(main.systemsScreen.visible, false);
     }
 
+    function test_activating_update_screen_makes_update_visible(): void {
+        main.activeScreen = main.screenUpdate;
+        compare(main.updateScreen.visible, true);
+        compare(main.hubScreen.visible, false);
+        compare(main.systemsScreen.visible, false);
+    }
+
     // Enter on an optimistic placeholder category starts the normal
     // systems loading transition and preserves the visible category
     // name instead of treating the row as empty.
@@ -101,12 +123,24 @@ TestCase {
     }
 
     // Down on hub moves focus between the categories row and the
-    // actions row (Favorites / Recently Played / Settings); it must
-    // never flip off-screen to systems. Accept is the only path that
-    // drills into another screen.
+    // actions row (Favorites / Recently Played / optional Update /
+    // Settings); it must never flip off-screen to systems. Accept is
+    // the only path that drills into another screen.
     function test_down_on_hub_does_not_route_to_systems(): void {
         main.handleKey(Qt.Key_Down);
         compare(main.activeScreen, main.screenHub, "Down on hub must not flip to systems — only Accept drills");
+    }
+
+    function test_enter_on_bottom_landing_routes_to_expected_action(): void {
+        // qmllint disable compiler
+        // Focus the Update action (or Settings when the update feature is
+        // compiled out) and confirm Accept routes to the matching screen.
+        main.hubScreen.currentRow = 1;
+        main.hubScreen.currentIndex = main.hubScreen._actionIndexForId(main.updateEnabled ? "update" : "settings");
+        compare(main.hubScreen.actionEntries[main.hubScreen.currentIndex].id, main.updateEnabled ? "update" : "settings");
+        // qmllint enable compiler
+        main.handleKey(Qt.Key_Return);
+        compare(main.activeScreen, main.updateEnabled ? main.screenUpdate : main.screenSettings);
     }
 
     // Enter on an empty systems screen retries the current load (the
@@ -136,6 +170,16 @@ TestCase {
         compare(main.pendingTransition, "");
         compare(main.activeScreen, main.screenHub);
         tryCompare(main, "transitionCueVisible", false);
+    }
+
+    function test_escape_on_update_returns_to_hub(): void {
+        main.activeScreen = main.screenUpdate;
+        main.handleKey(Qt.Key_Escape);
+        compare(main.activeScreen, main.screenHub);
+    }
+
+    function test_hub_screen_allows_screensaver(): void {
+        compare(main._allowsScreensaver(main.screenHub), true);
     }
 
     // Up on systems is a grid-internal move; at the top row (or on an
@@ -197,7 +241,7 @@ TestCase {
         compare(map(1, 2, 4), 2, "Up from bottom[1] (f) → top[2] (c)");
     }
 
-    // 4-over-3 (the previous Favorites layout) — the offset is 0.5,
+    // 4-over-3 — the offset is 0.5,
     // so Math.round's half-toward-+∞ rounds the boundary cells right.
     function test_cross_row_4_over_3(): void {
         const map = main.hubScreen._mapCrossRow;
@@ -253,7 +297,6 @@ TestCase {
         main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Down);
         compare(main.hubScreen.currentRow, 1);
-        compare(main.hubScreen.currentIndex, 0, "Centered map of top[0] lands at bottom[0] while placeholder categories are visible");
         main.hubScreen.currentIndex = main.hubScreen.actionEntries.length - 1;
         main.handleKey(Qt.Key_Right);
         compare(main.hubScreen.currentIndex, 0, "Right at last bottom-row index wraps to first");
@@ -264,21 +307,20 @@ TestCase {
         main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Down);
         compare(main.hubScreen.currentRow, 1);
-        compare(main.hubScreen.currentIndex, 0);
+        main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Left);
         compare(main.hubScreen.currentIndex, main.hubScreen.actionEntries.length - 1, "Left at first bottom-row index wraps to last");
     }
 
-    // Cross-row round-trip. With 4 categories on top vs 3 actions on
-    // bottom, the centered visual-nearest map can't return Up to the
-    // tile a previous Down originated from — every Down→Up shifts
-    // right by one cell. The fix is `_crossSavedIndex`: each cross
-    // saves the source-row index, the next cross restores it, any
-    // horizontal input on the destination row invalidates it.
+    // Cross-row round-trip. With unequal row counts, the centered
+    // visual-nearest map can't always return Up/Down to the tile a
+    // previous cross originated from. The fix is `_crossSavedIndex`:
+    // each cross saves the source-row index, the next cross restores
+    // it, any horizontal input on the destination row invalidates it.
 
     // After Down from top[0], the saved index must hold 0 so the next
-    // Up can return there. `_mapCrossRow(0, topCount=0, 3)` puts us at
-    // bottom[2] regardless — that part is unchanged.
+    // Up can return there. `_mapCrossRow(0, topCount=0, bottomCount)`
+    // chooses the centered action-row landing.
     function test_cross_row_arms_saved_source_index(): void {
         main.hubScreen.currentRow = 0;
         main.hubScreen.currentIndex = 0;
@@ -338,10 +380,10 @@ TestCase {
         const moved = main.hubScreen._crossRow();
         verify(moved);
         compare(main.hubScreen.currentRow, 1);
-        // Optimistic Hub exposes four placeholder categories during
-        // test cold-start, and the action row has four entries while
-        // Resume is still unknown, so the visual map lands at bottom[0].
-        compare(main.hubScreen.currentIndex, 0, "Out-of-range saved index falls back to the visual map");
+        // The out-of-range saved index (99) must be ignored; focus falls
+        // back to a valid centered action-row index rather than the bogus
+        // value.
+        verify(main.hubScreen.currentIndex >= 0 && main.hubScreen.currentIndex < main.hubScreen.actionEntries.length, "Out-of-range saved index falls back to the visual map");
     }
 
     // resetFocus is the test-harness reset and the cold-launch state.

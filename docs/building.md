@@ -192,7 +192,7 @@ just fix-docker      # alias for `just fix`
 `cargo clippy --fix` first because its rewrites may not be pre-formatted;
 the formatters are the cleanup pass.
 
-The image carries Rust 1.90 + rustfmt + clippy + cargo-deny +
+The image carries Rust 1.96 + rustfmt + clippy + cargo-deny +
 cargo-nextest, clang-format / clang-tidy 19, qmlformat / qmllint /
 qmake from Qt 6.10.3 (installed via aqtinstall), cmake-format 0.6.13,
 ccache, and mold. The same image runs in CI, so the version pin is

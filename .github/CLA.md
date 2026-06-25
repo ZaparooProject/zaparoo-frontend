@@ -25,6 +25,11 @@ transfer.
 - **"Contribution"** means any code, documentation, translation, asset,
   configuration, or other material you submit to the project in any form (pull
   request, patch, issue comment containing code, etc.).
+- **"Contribution"** does not include third-party dependencies, packages,
+  tools, services, or repositories that are merely referenced, declared,
+  downloaded, linked, invoked, or integrated by your Contribution, unless you
+  submit their source code, assets, or other copyrightable material directly to
+  this project. Those external materials remain governed by their own licenses.
 - **"You"** means the individual signing this CLA. If you are
   contributing on behalf of an employer, "You" means both you and
   your employer, and you confirm you have authority to sign on their

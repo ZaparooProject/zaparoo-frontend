@@ -9,7 +9,7 @@ resolver = "2"
 [workspace.package]
 version      = "1.1.1"
 edition      = "2021"
-rust-version = "1.90"
+rust-version = "1.96"
 license      = "LicenseRef-PolyForm-Noncommercial-1.0.0"
 authors      = ["Wizzo Pty Ltd and the Zaparoo Project contributors"]
 

@@ -18,8 +18,10 @@ allow = [
     "MIT",
     "Apache-2.0",
     "BSD-2-Clause",
+    "BSD-3-Clause",
     "Zlib",
     "Unicode-3.0",
+    "PolyForm-Noncommercial-1.0.0",
     "LicenseRef-PolyForm-Noncommercial-1.0.0",
 ]
 confidence-threshold = 0.93
@@ -43,7 +45,7 @@ skip = [
     # tempfile+uuid hold getrandom 0.4; rand 0.9 (via tungstenite) brings 0.3.
     # (0.3 is build-script-only in the linux/armv7 filtered graph so cargo-deny
     # doesn't surface it; listing it here would warn as unmatched.)
-    { crate = "getrandom@0.4.2" },
+    { crate = "getrandom@0.4.3" },
     # tracing-appender + tungstenite are on thiserror 2; cxx-qt still on 1.
     { crate = "thiserror@1.0.69" },
     { crate = "thiserror@2.0.18" },
