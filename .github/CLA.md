@@ -1,6 +1,6 @@
 # Zaparoo Frontend Contributor License Agreement
 
-**Version:** 1.0 · effective 2026-04-25
+**Version:** 1.1 · effective 2026-06-26
 
 Thank you for contributing to Zaparoo Frontend.
 
@@ -30,6 +30,8 @@ transfer.
   downloaded, linked, invoked, or integrated by your Contribution, unless you
   submit their source code, assets, or other copyrightable material directly to
   this project. Those external materials remain governed by their own licenses.
+  For clarity, any build files, bindings, configuration, or other glue code you
+  submit to integrate such external materials is itself a Contribution.
 - **"You"** means the individual signing this CLA. If you are
   contributing on behalf of an employer, "You" means both you and
   your employer, and you confirm you have authority to sign on their
