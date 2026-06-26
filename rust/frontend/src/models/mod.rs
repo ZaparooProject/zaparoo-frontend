@@ -58,8 +58,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tokio::runtime::{Handle, Runtime};
-use tracing::error;
-use zaparoo_core::{persist::PersistedState, store::Store};
+use tracing::{error, warn};
+use zaparoo_core::{
+    config::save_hidden_browse_prefs, persist::PersistedState, platform_paths::config_file_path,
+    store::Store,
+};
 
 // `RUNTIME_OWNER` holds the actual `Runtime` and is the only thing that
 // can call `shutdown_timeout`. `HANDLE` is what callers spawn through —
@@ -73,7 +76,14 @@ use zaparoo_core::{persist::PersistedState, store::Store};
 static RUNTIME_OWNER: Mutex<Option<Runtime>> = Mutex::new(None);
 static HANDLE: OnceLock<Handle> = OnceLock::new();
 static STORE: OnceLock<Arc<Store>> = OnceLock::new();
+#[derive(Debug, Clone, Default)]
+pub struct HiddenBrowsePrefs {
+    pub hidden_categories: Vec<String>,
+    pub hidden_system_ids: Vec<String>,
+}
+
 static PERSIST_STATE: OnceLock<Arc<Mutex<PersistedState>>> = OnceLock::new();
+static HIDDEN_BROWSE_PREFS: OnceLock<Arc<Mutex<HiddenBrowsePrefs>>> = OnceLock::new();
 static INPUT_BINDINGS: OnceLock<HashMap<i32, String>> = OnceLock::new();
 static CORE_IS_LOCAL: OnceLock<bool> = OnceLock::new();
 
@@ -81,6 +91,7 @@ pub fn init_globals(
     runtime: Runtime,
     store: Arc<Store>,
     persist_state: Arc<Mutex<PersistedState>>,
+    hidden_browse_prefs: Arc<Mutex<HiddenBrowsePrefs>>,
     input_bindings: HashMap<i32, String>,
     core_is_local: bool,
 ) {
@@ -100,6 +111,9 @@ pub fn init_globals(
     PERSIST_STATE
         .set(persist_state)
         .unwrap_or_else(|_| panic!("PERSIST_STATE already initialized"));
+    HIDDEN_BROWSE_PREFS
+        .set(hidden_browse_prefs)
+        .unwrap_or_else(|_| panic!("HIDDEN_BROWSE_PREFS already initialized"));
     INPUT_BINDINGS
         .set(input_bindings)
         .unwrap_or_else(|_| panic!("INPUT_BINDINGS already initialized"));
@@ -159,6 +173,39 @@ pub fn persist_state() -> Arc<Mutex<PersistedState>> {
         .get()
         .expect("PERSIST_STATE not initialized")
         .clone()
+}
+
+fn hidden_browse_prefs() -> Arc<Mutex<HiddenBrowsePrefs>> {
+    HIDDEN_BROWSE_PREFS
+        .get()
+        .expect("HIDDEN_BROWSE_PREFS not initialized")
+        .clone()
+}
+
+pub fn with_hidden_browse_prefs_read<R>(f: impl FnOnce(&HiddenBrowsePrefs) -> R) -> R {
+    let shared = hidden_browse_prefs();
+    let guard = shared
+        .lock()
+        .inspect_err(|e| error!("hidden browse prefs mutex poisoned: {e}"))
+        .expect("hidden browse prefs mutex poisoned");
+    f(&guard)
+}
+
+pub fn with_hidden_browse_prefs_mut<R>(f: impl FnOnce(&mut HiddenBrowsePrefs) -> R) -> R {
+    let shared = hidden_browse_prefs();
+    let mut guard = shared
+        .lock()
+        .inspect_err(|e| error!("hidden browse prefs mutex poisoned: {e}"))
+        .expect("hidden browse prefs mutex poisoned");
+    let result = f(&mut guard);
+    if let Err(e) = save_hidden_browse_prefs(
+        &config_file_path(),
+        &guard.hidden_categories,
+        &guard.hidden_system_ids,
+    ) {
+        warn!("could not save hidden browse prefs: {e}");
+    }
+    result
 }
 
 pub fn try_with_persist_read<R>(f: impl FnOnce(&PersistedState) -> R) -> Option<R> {

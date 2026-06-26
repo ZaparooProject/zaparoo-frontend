@@ -261,14 +261,12 @@ MainLayout {
         if (savedScreen !== "" && savedScreen !== root.screenHub) {
             root._startupRestorePending = true;
             root._startupRestoreScreen = savedScreen;
-            // Raise the curtain before first paint so the ghost Hub never
-            // shows during a warm resume of a non-Hub screen. The screen
-            // stack hides (MainLayout `visible: !startupRestoreCurtainVisible`)
-            // and only the "Loading xxx…" cue paints until
-            // `_finishStartupRestore()` lifts the curtain onto the target.
-            // Cold boots that land on Hub leave the curtain down, so the
-            // ghost Hub still paints there as before.
+            // MainLayout seeds this before Component.onCompleted so no first-frame
+            // ghost Hub can leak during non-Hub restores; assign here to break the
+            // initial binding and keep the router-owned curtain explicit.
             root.startupRestoreCurtainVisible = true;
+        } else {
+            root.startupRestoreCurtainVisible = false;
         }
         root._startupTrace("startup/qml Component.onCompleted", "savedScreen=" + savedScreen, "initialActiveScreen=" + root.activeScreen, "startupRestorePending=" + root._startupRestorePending, "connectionState=" + Browse.AppStatus.connection_state);
         // Fire the focus restore here so Hub focus is seated and marked ready
@@ -1111,13 +1109,15 @@ MainLayout {
     }
 
     function _finishStartupRestore(): void {
-        root._startupTrace("startup/qml finishStartupRestore", "target=" + root._startupRestoreScreen, "activeScreen=" + root.activeScreen);
+        const restoredScreen = root._startupRestoreScreen;
+        root._startupTrace("startup/qml finishStartupRestore", "target=" + restoredScreen, "activeScreen=" + root.activeScreen);
         startupRestoreKickTimer.stop();
         root._startupRestorePending = false;
         root._startupRestoreStarted = false;
         root._startupRestoreScreen = "";
         root.startupRestoreCurtainVisible = false;
-        root._maybeArmHubResumeFocus();
+        if (restoredScreen === "" || restoredScreen === root.screenHub)
+            root._maybeArmHubResumeFocus();
     }
 
     function _maybeArmHubResumeFocus(): void {
@@ -2928,13 +2928,14 @@ MainLayout {
         visible: transitionCueActive || transitionCue.showing
         z: 100
 
-        readonly property bool transitionCueActive: (root.pendingTransition !== "" && !root.startupRestoreCurtainVisible) || (root.startupRestoreCurtainVisible && root._startupRestoreScreen !== "")
+        readonly property bool startupRestoreCueActive: root.bootComplete && root.startupRestoreCurtainVisible && root._startupRestoreScreen !== ""
+        readonly property bool transitionCueActive: (root.pendingTransition !== "" && !root.startupRestoreCurtainVisible) || startupRestoreCueActive
         readonly property string cueScreen: root.pendingTransition !== "" ? root.pendingTransition : root._startupRestoreScreen
 
         DelayedLoadingIndicator {
             id: transitionCue
             active: parent.transitionCueActive
-            delayMs: root.loadingIndicatorDelayMs
+            delayMs: parent.startupRestoreCueActive ? 0 : root.loadingIndicatorDelayMs
             minimumVisibleMs: 0
             x: Sizing.center(parent.width, width)
             y: Sizing.center(parent.height, height)

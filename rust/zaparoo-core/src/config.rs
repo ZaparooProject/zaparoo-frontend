@@ -67,6 +67,8 @@ pub struct SettingsConfig {
     pub media_image_type: Option<String>,
     pub show_hidden: Option<bool>,
     pub show_original_filenames: Option<bool>,
+    pub hidden_categories: Vec<String>,
+    pub hidden_system_ids: Vec<String>,
     pub region: Option<String>,
     pub crt_video_standard: Option<String>,
     pub crt_h_offset: Option<i32>,
@@ -184,6 +186,10 @@ struct RawSettings {
     media_image_type: Option<String>,
     show_hidden: Option<bool>,
     show_original_filenames: Option<bool>,
+    #[serde(default)]
+    hidden_categories: Vec<String>,
+    #[serde(default)]
+    hidden_system_ids: Vec<String>,
     region: Option<String>,
     crt_video_standard: Option<String>,
     crt_h_offset: Option<i32>,
@@ -284,6 +290,27 @@ fn trim_opt(value: Option<String>) -> Option<String> {
     value.map(|s| s.trim().to_string())
 }
 
+fn normalize_string_list(values: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(values.len());
+    for value in values {
+        let trimmed = value.trim().to_string();
+        if !trimmed.is_empty() && !out.contains(&trimmed) {
+            out.push(trimmed);
+        }
+    }
+    out
+}
+
+fn toml_array_from_strings(values: &[String]) -> toml::Value {
+    toml::Value::Array(
+        values
+            .iter()
+            .map(|value| toml::Value::String(value.trim().to_string()))
+            .filter(|value| value.as_str().is_some_and(|s| !s.is_empty()))
+            .collect(),
+    )
+}
+
 fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
     SettingsConfig {
         orientation: trim_opt(raw.orientation),
@@ -298,6 +325,8 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         media_image_type: trim_opt(raw.media_image_type),
         show_hidden: raw.show_hidden,
         show_original_filenames: raw.show_original_filenames,
+        hidden_categories: normalize_string_list(raw.hidden_categories),
+        hidden_system_ids: normalize_string_list(raw.hidden_system_ids),
         region: trim_opt(raw.region),
         crt_video_standard: trim_opt(raw.crt_video_standard),
         crt_h_offset: raw.crt_h_offset,
@@ -413,6 +442,40 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
 
     let logging = section_mut(&mut table, "logging", path)?;
     logging.insert("debug".into(), toml::Value::Boolean(mirror.debug_logging));
+
+    let serialized =
+        toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
+    write_atomic(path, serialized.as_bytes())
+        .map_err(|e| format!("could not write {}: {e}", path.display()))
+}
+
+/// Persist hidden browse filters into `frontend.toml`.
+///
+/// Hidden categories/systems are durable user preferences, not volatile
+/// navigation state, so `MiSTer`'s `/tmp` state file must not carry them.
+pub fn save_hidden_browse_prefs(
+    path: &Path,
+    hidden_categories: &[String],
+    hidden_system_ids: &[String],
+) -> Result<(), String> {
+    let mut table = if path.exists() {
+        let src = std::fs::read_to_string(path)
+            .map_err(|e| format!("could not read {}: {e}", path.display()))?;
+        toml::from_str::<toml::Table>(&src)
+            .map_err(|e| format!("config parse error in {}: {e}", path.display()))?
+    } else {
+        toml::Table::new()
+    };
+
+    let settings = section_mut(&mut table, "settings", path)?;
+    settings.insert(
+        "hidden_categories".into(),
+        toml_array_from_strings(hidden_categories),
+    );
+    settings.insert(
+        "hidden_system_ids".into(),
+        toml_array_from_strings(hidden_system_ids),
+    );
 
     let serialized =
         toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
@@ -578,7 +641,10 @@ mod tests {
         reason = "tests should fail-fast on unexpected errors"
     )]
 
-    use super::{load_config, save_notice_ack, save_settings_mirror, Config, SettingsMirror};
+    use super::{
+        load_config, save_hidden_browse_prefs, save_notice_ack, save_settings_mirror, Config,
+        SettingsMirror,
+    };
     use std::io::Write;
 
     fn write_tmp(contents: &str) -> tempfile::NamedTempFile {
@@ -601,6 +667,8 @@ mod tests {
         assert_eq!(cfg.settings.button_layout, None);
         assert_eq!(cfg.settings.mouse_enabled, None);
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, None);
+        assert!(cfg.settings.hidden_categories.is_empty());
+        assert!(cfg.settings.hidden_system_ids.is_empty());
         assert_eq!(cfg.settings.region, None);
         assert!(cfg.custom_dir.is_none());
         assert!(cfg.system_names.is_empty());
@@ -680,6 +748,34 @@ mod tests {
         let f = write_tmp("[settings]\nregion = \"jp\"\n");
         let cfg = load_config(f.path());
         assert_eq!(cfg.settings.region.as_deref(), Some("jp"));
+    }
+
+    #[test]
+    fn hidden_browse_prefs_round_trip_from_settings() {
+        let f = write_tmp(
+            "[settings]\nhidden_categories = [\"Arcade\", \"  Consoles  \", \"Arcade\", \"\"]\nhidden_system_ids = [\"NES\", \"SNES\"]\n",
+        );
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.settings.hidden_categories, vec!["Arcade", "Consoles"]);
+        assert_eq!(cfg.settings.hidden_system_ids, vec!["NES", "SNES"]);
+    }
+
+    #[test]
+    fn save_hidden_browse_prefs_preserves_other_config() {
+        let f = write_tmp(
+            "[core]\nendpoint = \"ws://example.com/api\"\n[settings]\nbutton_layout = \"b\"\n",
+        );
+        save_hidden_browse_prefs(
+            f.path(),
+            &["Arcade".to_string(), "Consoles".to_string()],
+            &["NES".to_string()],
+        )
+        .expect("save");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.core_endpoint, "ws://example.com/api");
+        assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
+        assert_eq!(cfg.settings.hidden_categories, vec!["Arcade", "Consoles"]);
+        assert_eq!(cfg.settings.hidden_system_ids, vec!["NES"]);
     }
 
     #[test]
@@ -903,7 +999,7 @@ mod tests {
     #[test]
     fn save_settings_mirror_preserves_other_sections() {
         let f = write_tmp(
-            "[core]\nendpoint = \"ws://example.com/api\"\n[video]\nbackend = \"native-core-poc\"\nwidth = 1280\nheight = 720\n",
+            "[core]\nendpoint = \"ws://example.com/api\"\n[video]\nbackend = \"native-core-poc\"\nwidth = 1280\nheight = 720\n[settings]\nhidden_categories = [\"Arcade\"]\nhidden_system_ids = [\"NES\"]\n",
         );
         save_settings_mirror(
             f.path(),
@@ -946,6 +1042,8 @@ mod tests {
         assert_eq!(cfg.settings.reduce_motion, Some(false));
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(false));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("60"));
+        assert_eq!(cfg.settings.hidden_categories, vec!["Arcade"]);
+        assert_eq!(cfg.settings.hidden_system_ids, vec!["NES"]);
         assert!(!cfg.debug_logging);
     }
 

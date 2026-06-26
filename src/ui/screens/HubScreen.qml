@@ -98,8 +98,22 @@ Item {
         }
     ]
     readonly property var visibleCategoryEntries: {
-        if (!Browse.CategoriesModel.loaded || Browse.CategoriesModel.raw_count <= 0)
-            return hub._placeholderCategories;
+        if (!Browse.CategoriesModel.loaded || Browse.CategoriesModel.raw_count <= 0) {
+            const placeholders = [];
+            for (let i = 0; i < hub._placeholderCategories.length; i++) {
+                const entry = hub._placeholderCategories[i];
+                const hidden = Browse.HubState.is_category_hidden(entry.id);
+                if (hidden && !Browse.Settings.current_show_hidden)
+                    continue;
+                placeholders.push({
+                    id: entry.id,
+                    name: entry.name,
+                    coverKey: entry.coverKey,
+                    hidden: hidden
+                });
+            }
+            return placeholders;
+        }
         const entries = [];
         for (let i = 0; i < Browse.CategoriesModel.count; i++) {
             const name = Browse.CategoriesModel.category_at(i);
