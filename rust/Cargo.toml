@@ -15,9 +15,9 @@ authors      = ["Wizzo Pty Ltd and the Zaparoo Project contributors"]
 
 [workspace.dependencies]
 cxx             = "1"
-cxx-qt          = "0.8"
-cxx-qt-lib      = "0.8"
-cxx-qt-build    = "0.8"
+cxx-qt          = "0.9"
+cxx-qt-lib      = "0.9"
+cxx-qt-build    = "0.9"
 serde           = { version = "1", features = ["derive"] }
 serde_json      = "1"
 toml            = "1.1"

@@ -68,11 +68,13 @@ hub/settings.svg
 
 ### Rendered as-is (no tinting)
 
-The bundled system logos and Hub icons are monochrome SVGs that the app tints
-to match the active theme. **Your override images are not tinted** - they are
-shown exactly as they are on disk, in full color. If you want an image that
-tracks the theme colors, supply a monochrome SVG drawn in the theme's terms;
-otherwise expect your PNG/JPG to appear unchanged.
+The bundled system logos default to tintable SVGs that match the active theme.
+Settings → Browsing → System logos can switch bundled system art to the restored
+full-color logo set where available. Hub icons remain theme-tinted. **Your
+override images are not tinted** - they are shown exactly as they are on disk,
+in full color. If you want an image that tracks the theme colors, supply a
+monochrome SVG drawn in the theme's terms; otherwise expect your PNG/JPG to
+appear unchanged.
 
 ## System display names
 

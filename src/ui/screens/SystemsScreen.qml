@@ -262,6 +262,7 @@ Item {
         model: Browse.SystemsModel
         currentIndex: systemsGrid.currentIndex
         focusReady: systems._focusReady
+        screenSettling: !systems.active
         layoutProfile: systems._viewProfile
         detailTitle: listCard.currentName
         detailCoverKey: listCard.currentCoverKey

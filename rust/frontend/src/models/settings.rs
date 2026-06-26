@@ -37,6 +37,10 @@
 //     placeholder until the new browsing screen is built.
 //   * `current_browse_layout` — READ + NOTIFY, persisted. Defaults to
 //     "grid" so existing installs keep current behavior.
+//   * `available_system_logo_styles` — CONSTANT. "tinted" keeps the default
+//     theme-colored SVGs; "color" opts into restored full-color logos.
+//   * `current_system_logo_style` — READ + NOTIFY, persisted. Defaults to
+//     "tinted" so existing installs keep current behavior.
 //   * `available_button_layouts` — CONSTANT. Single-letter ids used to
 //     compose resources/images/buttons/<layout>/Button*.png. User-facing
 //     labels are "Style A/B/C/D" (see
@@ -135,6 +139,8 @@ const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
 const DEFAULT_ORIENTATION: &str = "horizontal";
 const BROWSE_LAYOUTS: &[&str] = &["grid", "list"];
 const DEFAULT_BROWSE_LAYOUT: &str = "grid";
+const SYSTEM_LOGO_STYLES: &[&str] = &["tinted", "color"];
+const DEFAULT_SYSTEM_LOGO_STYLE: &str = "tinted";
 const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
 const DEFAULT_BUTTON_LAYOUT: &str = "a";
 // Screensaver idle-timeout choices. Values are seconds as ASCII
@@ -185,6 +191,8 @@ pub struct SettingsRust {
     current_orientation: QString,
     available_browse_layouts: QStringList,
     current_browse_layout: QString,
+    available_system_logo_styles: QStringList,
+    current_system_logo_style: QString,
     available_button_layouts: QStringList,
     current_button_layout: QString,
     current_mouse_enabled: bool,
@@ -225,6 +233,8 @@ pub mod ffi {
         #[qproperty(QString, current_orientation, READ, WRITE = set_orientation, NOTIFY)]
         #[qproperty(QStringList, available_browse_layouts, READ, CONSTANT)]
         #[qproperty(QString, current_browse_layout, READ, WRITE = set_browse_layout, NOTIFY)]
+        #[qproperty(QStringList, available_system_logo_styles, READ, CONSTANT)]
+        #[qproperty(QString, current_system_logo_style, READ, WRITE = set_system_logo_style, NOTIFY)]
         #[qproperty(QStringList, available_button_layouts, READ, CONSTANT)]
         #[qproperty(QString, current_button_layout, READ, WRITE = set_button_layout, NOTIFY)]
         #[qproperty(bool, current_mouse_enabled, READ, WRITE = set_mouse_enabled, NOTIFY)]
@@ -255,6 +265,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_browse_layout(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_system_logo_style(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_button_layout(self: Pin<&mut Settings>, value: QString);
@@ -317,6 +330,9 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().available_browse_layouts = browse_layouts();
         self.as_mut().rust_mut().current_browse_layout =
             QString::from(merged.browse_layout.as_str());
+        self.as_mut().rust_mut().available_system_logo_styles = system_logo_styles();
+        self.as_mut().rust_mut().current_system_logo_style =
+            QString::from(merged.system_logo_style.as_str());
         self.as_mut().rust_mut().available_button_layouts = button_layouts();
         self.as_mut().rust_mut().current_button_layout =
             QString::from(merged.button_layout.as_str());
@@ -415,6 +431,21 @@ impl ffi::Settings {
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
         self.as_mut().rust_mut().current_browse_layout = QString::from(value_str.as_str());
         self.as_mut().current_browse_layout_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_system_logo_style(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_system_logo_style(&value.to_string()).to_string();
+        if self.current_system_logo_style.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.system_logo_style.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_system_logo_style = QString::from(value_str.as_str());
+        self.as_mut().current_system_logo_style_changed();
     }
 
     #[allow(
@@ -572,6 +603,7 @@ pub(super) fn mirror_settings_to_config(config_path: &std::path::Path, settings:
             orientation: settings.orientation.as_str(),
             clock_format: settings.clock_format.as_str(),
             browse_layout: settings.browse_layout.as_str(),
+            system_logo_style: settings.system_logo_style.as_str(),
             button_layout: settings.button_layout.as_str(),
             mouse_enabled: settings.mouse_enabled,
             reduce_motion: settings.reduce_motion,
@@ -652,6 +684,14 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
                 .unwrap_or(snapshot.browse_layout.as_str()),
         )
         .to_string(),
+        system_logo_style: normalize_system_logo_style(
+            config
+                .settings
+                .system_logo_style
+                .as_deref()
+                .unwrap_or(snapshot.system_logo_style.as_str()),
+        )
+        .to_string(),
         button_layout: normalize_button_layout(
             config
                 .settings
@@ -722,6 +762,14 @@ fn button_layouts() -> QStringList {
     let mut list = QStringList::default();
     for layout in BUTTON_LAYOUTS {
         list.append(QString::from(*layout));
+    }
+    list
+}
+
+fn system_logo_styles() -> QStringList {
+    let mut list = QStringList::default();
+    for style in SYSTEM_LOGO_STYLES {
+        list.append(QString::from(*style));
     }
     list
 }
@@ -831,6 +879,15 @@ fn normalize_browse_layout(value: &str) -> &'static str {
         .unwrap_or(DEFAULT_BROWSE_LAYOUT)
 }
 
+fn normalize_system_logo_style(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    SYSTEM_LOGO_STYLES
+        .iter()
+        .copied()
+        .find(|style| *style == trimmed)
+        .unwrap_or(DEFAULT_SYSTEM_LOGO_STYLE)
+}
+
 fn normalize_screensaver_timeout(value: &str) -> &'static str {
     let trimmed = value.trim();
     #[cfg(debug_assertions)]
@@ -889,10 +946,11 @@ mod tests {
     use super::{
         browse_layouts, button_layouts, clock_formats, curated_resolutions, languages,
         normalize_browse_layout, normalize_button_layout, normalize_clock_format,
-        normalize_language, normalize_orientation, normalize_region, orientations, regions,
-        BROWSE_LAYOUTS, BUTTON_LAYOUTS, CLOCK_FORMATS, DEFAULT_BROWSE_LAYOUT,
-        DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT, DEFAULT_LANGUAGE, DEFAULT_ORIENTATION,
-        DEFAULT_REGION, LANGUAGES, MISTER_RESOLUTIONS, ORIENTATIONS, REGIONS,
+        normalize_language, normalize_orientation, normalize_region, normalize_system_logo_style,
+        orientations, regions, system_logo_styles, BROWSE_LAYOUTS, BUTTON_LAYOUTS, CLOCK_FORMATS,
+        DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT, DEFAULT_LANGUAGE,
+        DEFAULT_ORIENTATION, DEFAULT_REGION, DEFAULT_SYSTEM_LOGO_STYLE, LANGUAGES,
+        MISTER_RESOLUTIONS, ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
     };
 
     #[test]
@@ -957,11 +1015,33 @@ mod tests {
     }
 
     #[test]
+    fn system_logo_styles_preserve_order() {
+        let list = system_logo_styles();
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        let expected: Vec<String> = SYSTEM_LOGO_STYLES
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        assert_eq!(collected, expected);
+    }
+
+    #[test]
     fn browse_layout_normalization_defaults_to_grid() {
         assert_eq!(normalize_browse_layout(""), DEFAULT_BROWSE_LAYOUT);
         assert_eq!(normalize_browse_layout("detail"), DEFAULT_BROWSE_LAYOUT);
         assert_eq!(normalize_browse_layout("grid"), "grid");
         assert_eq!(normalize_browse_layout("list"), "list");
+    }
+
+    #[test]
+    fn system_logo_style_normalization_defaults_to_tinted() {
+        assert_eq!(normalize_system_logo_style(""), DEFAULT_SYSTEM_LOGO_STYLE);
+        assert_eq!(
+            normalize_system_logo_style("sepia"),
+            DEFAULT_SYSTEM_LOGO_STYLE
+        );
+        assert_eq!(normalize_system_logo_style("tinted"), "tinted");
+        assert_eq!(normalize_system_logo_style("color"), "color");
     }
 
     #[test]

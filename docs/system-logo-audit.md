@@ -78,3 +78,4 @@ Naming convention: `{id}.{region}.svg` where `{region}` is `us`, `eu`, or `jp`.
 | `MegaCD` | `MegaCD.us` (Sega CD) | `MegaCD` (base) | `MegaCD` (base) | resolved |
 | `Sega32X` | `Sega32X` (base) | `Sega32X` (base) | `Sega32X.jp` (Super 32X) | placeholder - Wikimedia `Sega_32X_logo.svg`; no upstream Super 32X JP art found |
 | `TurboGrafx16` | `TurboGrafx16` (base) | `TurboGrafx16.eu` (PC Engine) | `TurboGrafx16.jp` (PC Engine) | resolved |
+| `TurboGrafx16CD` | `TurboGrafx16CD` (base) | `TurboGrafx16CD.eu` (PC Engine CD) | `TurboGrafx16CD.jp` (PC Engine CD) | resolved |

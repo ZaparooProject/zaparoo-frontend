@@ -460,6 +460,15 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
     let persist_state = Arc::new(Mutex::new(persist::load()));
     startup_trace("rust:persist loaded");
 
+    // Hidden browse filters are durable preferences, not volatile
+    // navigation state. Source them only from frontend.toml so they
+    // survive MiSTer's /tmp lifecycle without polluting state.toml.
+    let hidden_browse_prefs = Arc::new(Mutex::new(models::HiddenBrowsePrefs {
+        hidden_categories: config.settings.hidden_categories.clone(),
+        hidden_system_ids: config.settings.hidden_system_ids.clone(),
+    }));
+    startup_trace("rust:hidden browse prefs loaded");
+
     // Register the customization root without scanning it. Hub and system
     // image scans run asynchronously after first paint; system display-name
     // overrides are already in the parsed config and need no filesystem work.
@@ -479,6 +488,7 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
         runtime,
         store,
         persist_state,
+        hidden_browse_prefs,
         config.key_to_action.clone(),
         core_is_local,
     );

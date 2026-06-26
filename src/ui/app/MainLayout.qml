@@ -226,6 +226,12 @@ ApplicationWindow {
     }
 
     Binding {
+        target: Resources
+        property: "systemLogoStyle"
+        value: Browse.Settings.current_system_logo_style
+    }
+
+    Binding {
         target: Theme
         property: "crtNativePath"
         value: root.crtNativePath
@@ -333,16 +339,14 @@ ApplicationWindow {
     readonly property int minimumLoadingVisibleMs: 200
     property bool transitionCueVisible: false
 
-    // Cold-launch curtain. False until the catalog has loaded for the
-    // first time this session; while false the host screens are
-    // hidden and `BootOverlay` paints alone over the global
-    // background. Flipped exactly once by Main.qml's connection-state
-    // watcher when `connection_state` first reaches READY. After that,
-    // the Loader unmounts the overlay and a subsequent disconnect
-    // surfaces only via the top-right status pill — the user keeps
-    // their cached catalog and just sees the link state change.
+    // Cold-launch boot gate. Non-Hub restores stay behind BootOverlay /
+    // startupRestoreCurtain until the target can paint; Hub restores take the
+    // optimistic path and show placeholder Hub immediately while Core/catalog
+    // boot in the background.
     property bool bootComplete: false
-    property bool startupRestoreCurtainVisible: false
+    property bool startupRestoreCurtainVisible: Browse.AppState.active_screen !== "" && Browse.AppState.active_screen !== root.screenHub
+    readonly property bool optimisticHubVisible: !root.bootComplete && !root.startupRestoreCurtainVisible && root.activeScreen === root.screenHub
+    readonly property bool coreIndependentStartupVisible: !root.bootComplete && !root.startupRestoreCurtainVisible && (root.activeScreen === root.screenSettings || root.activeScreen === root.screenAbout)
     readonly property bool catalogStillBooting: !Browse.CategoriesModel.loaded && (Browse.CategoriesModel.error_message ?? "") === ""
 
     // Per-screen state derivation. Shape mirrors ScreenStateOverlay's
@@ -622,7 +626,7 @@ ApplicationWindow {
                 id: stackedScreens
 
                 anchors.fill: parent
-                visible: !root.startupRestoreCurtainVisible
+                visible: !root.startupRestoreCurtainVisible && (root.bootComplete || root.optimisticHubVisible || root.coreIndependentStartupVisible)
 
                 HubScreen {
                     id: hubScreen
@@ -737,6 +741,17 @@ ApplicationWindow {
                         }
                     }
                 }
+            }
+
+            // ── Boot overlay ─────────────────────────────────────────────────────────
+            // Mounted until Core/catalog boot reaches READY, except for the
+            // optimistic Hub path. Non-Hub restores must not flash placeholder Hub
+            // tiles or blank deferred icons underneath.
+            Loader {
+                anchors.fill: parent
+                active: !root.bootComplete && !root.optimisticHubVisible && !root.coreIndependentStartupVisible
+                z: 50
+                sourceComponent: BootOverlay {}
             }
 
             // ── Card writer modal ────────────────────────────────────────────────────
@@ -1145,7 +1160,7 @@ ApplicationWindow {
                                 label: qsTr("Save")
                             }
                         ];
-                    if (!root.bootComplete || root.startupRestoreCurtainVisible)
+                    if ((!root.bootComplete && !root.coreIndependentStartupVisible) || root.startupRestoreCurtainVisible)
                         return [];
                     if (root.firstRunIndexModalVisible) {
                         const phase = root.firstRunIndexModal ? root.firstRunIndexModal.phase : "";

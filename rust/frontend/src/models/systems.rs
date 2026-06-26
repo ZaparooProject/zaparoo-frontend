@@ -2,7 +2,9 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-use crate::models::{global_handle, global_store, with_persist_read};
+use crate::models::{
+    global_handle, global_store, with_hidden_browse_prefs_read, with_persist_read,
+};
 use crate::system_region::Region;
 use crate::{image_overrides, system_logos, system_name_overrides, system_names, system_region};
 use cxx_qt::{CxxQtType, Threading};
@@ -322,9 +324,8 @@ fn apply_state(mut model: Pin<&mut ffi::SystemsModel>, (data, err): (Option<Cata
             // authoritative writer for the moment, and stale rows
             // win.
             model.rust().seq.fetch_add(1, Ordering::SeqCst);
-            let (hidden_ids, show_hidden) = with_persist_read(|s| {
-                (s.systems.hidden_system_ids.clone(), s.settings.show_hidden)
-            });
+            let hidden_ids = with_hidden_browse_prefs_read(|p| p.hidden_system_ids.clone());
+            let show_hidden = with_persist_read(|s| s.settings.show_hidden);
             let region = system_region::current_region();
             let rows = rows_for_category(Some(&data), &cat, &hidden_ids, show_hidden, region);
             let count = rows.len() as i32;
@@ -475,8 +476,8 @@ impl ffi::SystemsModel {
         // microseconds on ARM) and unavoidable without Arc-wrapping
         // `last_ready`, which is out of scope.
         let catalog = self.rust().last_ready.clone();
-        let (hidden_ids, show_hidden) =
-            with_persist_read(|s| (s.systems.hidden_system_ids.clone(), s.settings.show_hidden));
+        let hidden_ids = with_hidden_browse_prefs_read(|p| p.hidden_system_ids.clone());
+        let show_hidden = with_persist_read(|s| s.settings.show_hidden);
         // Resolve region on the Qt thread so the async worker captures a
         // snapshot rather than reading global state from a tokio thread.
         let region = system_region::current_region();
@@ -678,8 +679,8 @@ impl ffi::SystemsModel {
         if cat.is_empty() {
             return;
         }
-        let (hidden_ids, show_hidden) =
-            with_persist_read(|s| (s.systems.hidden_system_ids.clone(), s.settings.show_hidden));
+        let hidden_ids = with_hidden_browse_prefs_read(|p| p.hidden_system_ids.clone());
+        let show_hidden = with_persist_read(|s| s.settings.show_hidden);
         let region = system_region::current_region();
         // Bump seq to invalidate any in-flight set_category workers; their
         // stale result would undo the reproject if they ran after us.

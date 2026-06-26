@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-use crate::models::with_persist_read;
+use crate::models::{with_hidden_browse_prefs_read, with_persist_read};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use std::pin::Pin;
@@ -194,8 +194,8 @@ fn visible_categories(
 /// Re-run the visibility filter in-place using the current persisted state.
 /// Wraps `begin/endResetModel` + `count_changed` + the `loaded` sticky flag.
 fn reproject_inner(mut model: Pin<&mut ffi::CategoriesModel>) {
-    let (user_hidden, show_hidden) =
-        with_persist_read(|s| (s.hub.hidden_categories.clone(), s.settings.show_hidden));
+    let user_hidden = with_hidden_browse_prefs_read(|p| p.hidden_categories.clone());
+    let show_hidden = with_persist_read(|s| s.settings.show_hidden);
     let raw = model.rust().raw.clone();
     let (names, flags) = visible_categories(&raw, &user_hidden, show_hidden);
     let count = names.len() as i32;

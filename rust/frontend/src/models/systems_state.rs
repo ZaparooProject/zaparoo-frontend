@@ -7,7 +7,10 @@
 // Schema version is checked independently from other screens on load
 // (see `zaparoo_core::persist`).
 
-use crate::models::{with_persist_mut, with_persist_read};
+use crate::models::{
+    with_hidden_browse_prefs_mut, with_hidden_browse_prefs_read, with_persist_mut,
+    with_persist_read,
+};
 use cxx_qt::{CxxQtType, Initialize};
 use cxx_qt_lib::QString;
 use std::pin::Pin;
@@ -81,21 +84,21 @@ impl ffi::SystemsState {
         if id_str.is_empty() {
             return;
         }
-        persist_systems(|s| {
-            if !s.hidden_system_ids.contains(&id_str) {
-                s.hidden_system_ids.push(id_str);
+        with_hidden_browse_prefs_mut(|p| {
+            if !p.hidden_system_ids.contains(&id_str) {
+                p.hidden_system_ids.push(id_str);
             }
         });
     }
 
     fn unhide_system(self: Pin<&mut Self>, id: &QString) {
         let id_str = id.to_string();
-        persist_systems(|s| s.hidden_system_ids.retain(|x| x != &id_str));
+        with_hidden_browse_prefs_mut(|p| p.hidden_system_ids.retain(|x| x != &id_str));
     }
 
     fn is_system_hidden(&self, id: &QString) -> bool {
         let id_str = id.to_string();
-        with_persist_read(|s| s.systems.hidden_system_ids.contains(&id_str))
+        with_hidden_browse_prefs_read(|p| p.hidden_system_ids.contains(&id_str))
     }
 }
 

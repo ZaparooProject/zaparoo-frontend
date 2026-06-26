@@ -58,6 +58,7 @@ pub struct SettingsConfig {
     pub orientation: Option<String>,
     pub clock_format: Option<String>,
     pub browse_layout: Option<String>,
+    pub system_logo_style: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
     pub reduce_motion: Option<bool>,
@@ -66,6 +67,8 @@ pub struct SettingsConfig {
     pub media_image_type: Option<String>,
     pub show_hidden: Option<bool>,
     pub show_original_filenames: Option<bool>,
+    pub hidden_categories: Vec<String>,
+    pub hidden_system_ids: Vec<String>,
     pub region: Option<String>,
     pub crt_video_standard: Option<String>,
     pub crt_h_offset: Option<i32>,
@@ -83,6 +86,7 @@ pub struct SettingsMirror<'a> {
     pub orientation: &'a str,
     pub clock_format: &'a str,
     pub browse_layout: &'a str,
+    pub system_logo_style: &'a str,
     pub button_layout: &'a str,
     pub mouse_enabled: bool,
     pub reduce_motion: bool,
@@ -173,6 +177,7 @@ struct RawSettings {
     orientation: Option<String>,
     clock_format: Option<String>,
     browse_layout: Option<String>,
+    system_logo_style: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
     reduce_motion: Option<bool>,
@@ -181,6 +186,10 @@ struct RawSettings {
     media_image_type: Option<String>,
     show_hidden: Option<bool>,
     show_original_filenames: Option<bool>,
+    #[serde(default)]
+    hidden_categories: Vec<String>,
+    #[serde(default)]
+    hidden_system_ids: Vec<String>,
     region: Option<String>,
     crt_video_standard: Option<String>,
     crt_h_offset: Option<i32>,
@@ -256,44 +265,7 @@ pub fn load_config(path: &Path) -> Config {
         }
         cfg.key_to_action = input_actions::invert(&merged);
     }
-    cfg.settings = SettingsConfig {
-        orientation: raw
-            .settings
-            .orientation
-            .map(|value| value.trim().to_string()),
-        clock_format: raw
-            .settings
-            .clock_format
-            .map(|value| value.trim().to_string()),
-        browse_layout: raw
-            .settings
-            .browse_layout
-            .map(|value| value.trim().to_string()),
-        button_layout: raw
-            .settings
-            .button_layout
-            .map(|value| value.trim().to_string()),
-        mouse_enabled: raw.settings.mouse_enabled,
-        reduce_motion: raw.settings.reduce_motion,
-        discover_arcade_alternate_versions: raw.settings.discover_arcade_alternate_versions,
-        screensaver_timeout: raw
-            .settings
-            .screensaver_timeout
-            .map(|value| value.trim().to_string()),
-        media_image_type: raw
-            .settings
-            .media_image_type
-            .map(|value| value.trim().to_string()),
-        show_hidden: raw.settings.show_hidden,
-        show_original_filenames: raw.settings.show_original_filenames,
-        region: raw.settings.region.map(|value| value.trim().to_string()),
-        crt_video_standard: raw
-            .settings
-            .crt_video_standard
-            .map(|value| value.trim().to_string()),
-        crt_h_offset: raw.settings.crt_h_offset,
-        crt_v_offset: raw.settings.crt_v_offset,
-    };
+    cfg.settings = settings_config_from_raw(raw.settings);
     cfg.notice = NoticeConfig {
         commercial_ack: raw.notice.commercial_ack.unwrap_or(false),
     };
@@ -312,6 +284,54 @@ pub fn load_config(path: &Path) -> Config {
         .filter(|(k, v)| !k.is_empty() && !v.is_empty())
         .collect();
     cfg
+}
+
+fn trim_opt(value: Option<String>) -> Option<String> {
+    value.map(|s| s.trim().to_string())
+}
+
+fn normalize_string_list(values: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(values.len());
+    for value in values {
+        let trimmed = value.trim().to_string();
+        if !trimmed.is_empty() && !out.contains(&trimmed) {
+            out.push(trimmed);
+        }
+    }
+    out
+}
+
+fn toml_array_from_strings(values: &[String]) -> toml::Value {
+    toml::Value::Array(
+        values
+            .iter()
+            .map(|value| toml::Value::String(value.trim().to_string()))
+            .filter(|value| value.as_str().is_some_and(|s| !s.is_empty()))
+            .collect(),
+    )
+}
+
+fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
+    SettingsConfig {
+        orientation: trim_opt(raw.orientation),
+        clock_format: trim_opt(raw.clock_format),
+        browse_layout: trim_opt(raw.browse_layout),
+        system_logo_style: trim_opt(raw.system_logo_style),
+        button_layout: trim_opt(raw.button_layout),
+        mouse_enabled: raw.mouse_enabled,
+        reduce_motion: raw.reduce_motion,
+        discover_arcade_alternate_versions: raw.discover_arcade_alternate_versions,
+        screensaver_timeout: trim_opt(raw.screensaver_timeout),
+        media_image_type: trim_opt(raw.media_image_type),
+        show_hidden: raw.show_hidden,
+        show_original_filenames: raw.show_original_filenames,
+        hidden_categories: normalize_string_list(raw.hidden_categories),
+        hidden_system_ids: normalize_string_list(raw.hidden_system_ids),
+        region: trim_opt(raw.region),
+        crt_video_standard: trim_opt(raw.crt_video_standard),
+        crt_h_offset: raw.crt_h_offset,
+        crt_v_offset: raw.crt_v_offset,
+    }
 }
 
 /// Get a mutable reference to a TOML section table, creating it if absent.
@@ -367,6 +387,10 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         toml::Value::String(mirror.browse_layout.trim().to_string()),
     );
     settings.insert(
+        "system_logo_style".into(),
+        toml::Value::String(mirror.system_logo_style.trim().to_string()),
+    );
+    settings.insert(
         "button_layout".into(),
         toml::Value::String(mirror.button_layout.trim().to_string()),
     );
@@ -418,6 +442,40 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
 
     let logging = section_mut(&mut table, "logging", path)?;
     logging.insert("debug".into(), toml::Value::Boolean(mirror.debug_logging));
+
+    let serialized =
+        toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
+    write_atomic(path, serialized.as_bytes())
+        .map_err(|e| format!("could not write {}: {e}", path.display()))
+}
+
+/// Persist hidden browse filters into `frontend.toml`.
+///
+/// Hidden categories/systems are durable user preferences, not volatile
+/// navigation state, so `MiSTer`'s `/tmp` state file must not carry them.
+pub fn save_hidden_browse_prefs(
+    path: &Path,
+    hidden_categories: &[String],
+    hidden_system_ids: &[String],
+) -> Result<(), String> {
+    let mut table = if path.exists() {
+        let src = std::fs::read_to_string(path)
+            .map_err(|e| format!("could not read {}: {e}", path.display()))?;
+        toml::from_str::<toml::Table>(&src)
+            .map_err(|e| format!("config parse error in {}: {e}", path.display()))?
+    } else {
+        toml::Table::new()
+    };
+
+    let settings = section_mut(&mut table, "settings", path)?;
+    settings.insert(
+        "hidden_categories".into(),
+        toml_array_from_strings(hidden_categories),
+    );
+    settings.insert(
+        "hidden_system_ids".into(),
+        toml_array_from_strings(hidden_system_ids),
+    );
 
     let serialized =
         toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
@@ -583,7 +641,10 @@ mod tests {
         reason = "tests should fail-fast on unexpected errors"
     )]
 
-    use super::{load_config, save_notice_ack, save_settings_mirror, Config, SettingsMirror};
+    use super::{
+        load_config, save_hidden_browse_prefs, save_notice_ack, save_settings_mirror, Config,
+        SettingsMirror,
+    };
     use std::io::Write;
 
     fn write_tmp(contents: &str) -> tempfile::NamedTempFile {
@@ -606,6 +667,8 @@ mod tests {
         assert_eq!(cfg.settings.button_layout, None);
         assert_eq!(cfg.settings.mouse_enabled, None);
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, None);
+        assert!(cfg.settings.hidden_categories.is_empty());
+        assert!(cfg.settings.hidden_system_ids.is_empty());
         assert_eq!(cfg.settings.region, None);
         assert!(cfg.custom_dir.is_none());
         assert!(cfg.system_names.is_empty());
@@ -685,6 +748,34 @@ mod tests {
         let f = write_tmp("[settings]\nregion = \"jp\"\n");
         let cfg = load_config(f.path());
         assert_eq!(cfg.settings.region.as_deref(), Some("jp"));
+    }
+
+    #[test]
+    fn hidden_browse_prefs_round_trip_from_settings() {
+        let f = write_tmp(
+            "[settings]\nhidden_categories = [\"Arcade\", \"  Consoles  \", \"Arcade\", \"\"]\nhidden_system_ids = [\"NES\", \"SNES\"]\n",
+        );
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.settings.hidden_categories, vec!["Arcade", "Consoles"]);
+        assert_eq!(cfg.settings.hidden_system_ids, vec!["NES", "SNES"]);
+    }
+
+    #[test]
+    fn save_hidden_browse_prefs_preserves_other_config() {
+        let f = write_tmp(
+            "[core]\nendpoint = \"ws://example.com/api\"\n[settings]\nbutton_layout = \"b\"\n",
+        );
+        save_hidden_browse_prefs(
+            f.path(),
+            &["Arcade".to_string(), "Consoles".to_string()],
+            &["NES".to_string()],
+        )
+        .expect("save");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.core_endpoint, "ws://example.com/api");
+        assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
+        assert_eq!(cfg.settings.hidden_categories, vec!["Arcade", "Consoles"]);
+        assert_eq!(cfg.settings.hidden_system_ids, vec!["NES"]);
     }
 
     #[test]
@@ -827,6 +918,7 @@ mod tests {
             orientation = "cw"
             clock_format = "12h"
             browse_layout = "list"
+            system_logo_style = "color"
             button_layout = "c"
             mouse_enabled = false
         "#;
@@ -840,6 +932,7 @@ mod tests {
         assert_eq!(cfg.settings.orientation.as_deref(), Some("cw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("12h"));
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("color"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("c"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
     }
@@ -909,6 +1002,7 @@ mod tests {
                 orientation: "cw",
                 clock_format: "24h",
                 browse_layout: "list",
+                system_logo_style: "color",
                 button_layout: "b",
                 mouse_enabled: false,
                 reduce_motion: true,
@@ -933,6 +1027,7 @@ mod tests {
         assert_eq!(cfg.settings.orientation.as_deref(), Some("cw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("24h"));
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("color"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
         assert_eq!(cfg.settings.reduce_motion, Some(true));
@@ -950,7 +1045,7 @@ mod tests {
     #[test]
     fn save_settings_mirror_preserves_other_sections() {
         let f = write_tmp(
-            "[core]\nendpoint = \"ws://example.com/api\"\n[video]\nbackend = \"native-core-poc\"\nwidth = 1280\nheight = 720\n",
+            "[core]\nendpoint = \"ws://example.com/api\"\n[video]\nbackend = \"native-core-poc\"\nwidth = 1280\nheight = 720\n[settings]\nhidden_categories = [\"Arcade\"]\nhidden_system_ids = [\"NES\"]\n",
         );
         save_settings_mirror(
             f.path(),
@@ -960,6 +1055,7 @@ mod tests {
                 orientation: "horizontal",
                 clock_format: "auto",
                 browse_layout: "grid",
+                system_logo_style: "tinted",
                 button_layout: "a",
                 mouse_enabled: true,
                 reduce_motion: false,
@@ -986,11 +1082,14 @@ mod tests {
         assert_eq!(cfg.settings.orientation.as_deref(), Some("horizontal"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("auto"));
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("grid"));
+        assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("tinted"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("a"));
         assert_eq!(cfg.settings.mouse_enabled, Some(true));
         assert_eq!(cfg.settings.reduce_motion, Some(false));
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(false));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("60"));
+        assert_eq!(cfg.settings.hidden_categories, vec!["Arcade"]);
+        assert_eq!(cfg.settings.hidden_system_ids, vec!["NES"]);
         assert!(!cfg.debug_logging);
     }
 
@@ -1005,6 +1104,7 @@ mod tests {
                 orientation: "ccw",
                 clock_format: "12h",
                 browse_layout: "list",
+                system_logo_style: "color",
                 button_layout: "c",
                 mouse_enabled: false,
                 reduce_motion: false,
@@ -1028,6 +1128,7 @@ mod tests {
         assert!(written.contains("orientation = \"ccw\""));
         assert!(written.contains("clock_format = \"12h\""));
         assert!(written.contains("browse_layout = \"list\""));
+        assert!(written.contains("system_logo_style = \"color\""));
         assert!(written.contains("button_layout = \"c\""));
         assert!(written.contains("mouse_enabled = false"));
         assert!(written.contains("discover_arcade_alternate_versions = true"));
@@ -1039,6 +1140,7 @@ mod tests {
         assert_eq!(cfg.settings.orientation.as_deref(), Some("ccw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("12h"));
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("color"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("c"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
         assert_eq!(cfg.settings.reduce_motion, Some(false));

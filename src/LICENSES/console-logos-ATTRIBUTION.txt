@@ -9,7 +9,9 @@ resources/images/systems/ derived from:
   https://archive.org/details/console-logos-professionally-redrawn-plus-official-versions
 
 The bundled system SVGs are optimized copies from the "Dark - Black & White"
-SVG set in the GitHub mirror, tinted at runtime by the frontend:
+SVG set in the GitHub mirror, tinted at runtime by the frontend. Optional
+full-color system PNGs are restored from earlier bundled assets and regional
+"Dark - Color" variants from the same mirror:
 
   https://github.com/PRO100BYTE/console-logos
   Mirror copyright (c) 2023 #TheDayG0ne and PRO100BYTE Team

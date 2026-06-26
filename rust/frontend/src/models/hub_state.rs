@@ -8,7 +8,10 @@
 // row action they were on. Schema version is checked independently from
 // other screens on load (see `zaparoo_core::persist`).
 
-use crate::models::{with_persist_mut, with_persist_read};
+use crate::models::{
+    with_hidden_browse_prefs_mut, with_hidden_browse_prefs_read, with_persist_mut,
+    with_persist_read,
+};
 use cxx_qt::{CxxQtType, Initialize};
 use cxx_qt_lib::QString;
 use std::pin::Pin;
@@ -113,21 +116,21 @@ impl ffi::HubState {
         if name_str.is_empty() {
             return;
         }
-        persist_hub(|h| {
-            if !h.hidden_categories.contains(&name_str) {
-                h.hidden_categories.push(name_str);
+        with_hidden_browse_prefs_mut(|p| {
+            if !p.hidden_categories.contains(&name_str) {
+                p.hidden_categories.push(name_str);
             }
         });
     }
 
     fn unhide_category(self: Pin<&mut Self>, name: &QString) {
         let name_str = name.to_string();
-        persist_hub(|h| h.hidden_categories.retain(|x| x != &name_str));
+        with_hidden_browse_prefs_mut(|p| p.hidden_categories.retain(|x| x != &name_str));
     }
 
     fn is_category_hidden(&self, name: &QString) -> bool {
         let name_str = name.to_string();
-        with_persist_read(|s| s.hub.hidden_categories.contains(&name_str))
+        with_hidden_browse_prefs_read(|p| p.hidden_categories.contains(&name_str))
     }
 }
 
