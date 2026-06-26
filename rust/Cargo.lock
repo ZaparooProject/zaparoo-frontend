@@ -638,7 +638,7 @@ dependencies = [
 
 [[package]]
 name = "mock-core"
-version = "1.1.1"
+version = "1.2.0"
 dependencies = [
  "futures-util",
  "serde",
@@ -1450,11 +1450,11 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "zaparoo-build-info"
-version = "1.1.1"
+version = "1.2.0"
 
 [[package]]
 name = "zaparoo-core"
-version = "1.1.1"
+version = "1.2.0"
 dependencies = [
  "dirs-next",
  "futures-util",
@@ -1474,7 +1474,7 @@ dependencies = [
 
 [[package]]
 name = "zaparoo-frontend-rs"
-version = "1.1.1"
+version = "1.2.0"
 dependencies = [
  "base64",
  "cxx",
