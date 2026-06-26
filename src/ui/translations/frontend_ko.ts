@@ -1559,23 +1559,23 @@ Euskara - devilschile2</source>
     <name>SystemsScreen</name>
     <message>
         <location filename="../screens/SystemsScreen.qml" line="245"/>
-        <location filename="../screens/SystemsScreen.qml" line="346"/>
+        <location filename="../screens/SystemsScreen.qml" line="347"/>
         <source>%1 systems</source>
         <translation>시스템 %1개</translation>
     </message>
     <message>
         <location filename="../screens/SystemsScreen.qml" line="246"/>
-        <location filename="../screens/SystemsScreen.qml" line="363"/>
+        <location filename="../screens/SystemsScreen.qml" line="364"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="381"/>
+        <location filename="../screens/SystemsScreen.qml" line="382"/>
         <source>No systems in this category</source>
         <translation>이 카테고리에는 시스템이 없습니다</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="382"/>
+        <location filename="../screens/SystemsScreen.qml" line="383"/>
         <source>Loading systems…</source>
         <translation>시스템 불러오는 중…</translation>
     </message>

@@ -1559,23 +1559,23 @@ Euskara - devilschile2</source>
     <name>SystemsScreen</name>
     <message>
         <location filename="../screens/SystemsScreen.qml" line="245"/>
-        <location filename="../screens/SystemsScreen.qml" line="346"/>
+        <location filename="../screens/SystemsScreen.qml" line="347"/>
         <source>%1 systems</source>
         <translation>%1 أنظمة</translation>
     </message>
     <message>
         <location filename="../screens/SystemsScreen.qml" line="246"/>
-        <location filename="../screens/SystemsScreen.qml" line="363"/>
+        <location filename="../screens/SystemsScreen.qml" line="364"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="381"/>
+        <location filename="../screens/SystemsScreen.qml" line="382"/>
         <source>No systems in this category</source>
         <translation>لا توجد أنظمة في هذه الفئة</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="382"/>
+        <location filename="../screens/SystemsScreen.qml" line="383"/>
         <source>Loading systems…</source>
         <translation>جارٍ تحميل الأنظمة…</translation>
     </message>
