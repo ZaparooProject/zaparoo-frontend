@@ -341,6 +341,7 @@ ApplicationWindow {
     property bool bootComplete: false
     property bool startupRestoreCurtainVisible: Browse.AppState.active_screen !== "" && Browse.AppState.active_screen !== root.screenHub
     readonly property bool optimisticHubVisible: !root.bootComplete && !root.startupRestoreCurtainVisible && root.activeScreen === root.screenHub
+    readonly property bool coreIndependentStartupVisible: !root.bootComplete && !root.startupRestoreCurtainVisible && (root.activeScreen === root.screenSettings || root.activeScreen === root.screenAbout)
     readonly property bool catalogStillBooting: !Browse.CategoriesModel.loaded && (Browse.CategoriesModel.error_message ?? "") === ""
 
     // Per-screen state derivation. Shape mirrors ScreenStateOverlay's
@@ -620,7 +621,7 @@ ApplicationWindow {
                 id: stackedScreens
 
                 anchors.fill: parent
-                visible: !root.startupRestoreCurtainVisible && (root.bootComplete || root.optimisticHubVisible)
+                visible: !root.startupRestoreCurtainVisible && (root.bootComplete || root.optimisticHubVisible || root.coreIndependentStartupVisible)
 
                 HubScreen {
                     id: hubScreen
@@ -728,7 +729,7 @@ ApplicationWindow {
             // tiles or blank deferred icons underneath.
             Loader {
                 anchors.fill: parent
-                active: !root.bootComplete && !root.optimisticHubVisible
+                active: !root.bootComplete && !root.optimisticHubVisible && !root.coreIndependentStartupVisible
                 z: 50
                 sourceComponent: BootOverlay {}
             }
@@ -1139,7 +1140,7 @@ ApplicationWindow {
                                 label: qsTr("Save")
                             }
                         ];
-                    if (!root.bootComplete || root.startupRestoreCurtainVisible)
+                    if ((!root.bootComplete && !root.coreIndependentStartupVisible) || root.startupRestoreCurtainVisible)
                         return [];
                     if (root.firstRunIndexModalVisible) {
                         const phase = root.firstRunIndexModal ? root.firstRunIndexModal.phase : "";
