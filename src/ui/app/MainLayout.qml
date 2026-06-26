@@ -222,6 +222,12 @@ ApplicationWindow {
     }
 
     Binding {
+        target: Resources
+        property: "systemLogoStyle"
+        value: Browse.Settings.current_system_logo_style
+    }
+
+    Binding {
         target: Theme
         property: "crtNativePath"
         value: root.crtNativePath

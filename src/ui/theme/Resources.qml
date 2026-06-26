@@ -13,8 +13,9 @@ import QtQuick
 QtObject {
     // Build a cover image URL from a `coverKey`.
     // Extension/scheme is chosen by directory:
-    //   * `systems/<id>` — the curated SVG set under
-    //     resources/images/systems/, tinted by the image provider.
+    //   * `systems/<id>` — the curated SVG set under resources/images/systems/,
+    //     tinted by the image provider unless the optional color style has a
+    //     matching PNG under resources/images/systems-color/.
     //   * `custom-image/<path>` — user-supplied override artwork (system art
     //     or Hub icons) from the customization root (`[custom] dir` in
     //     frontend.toml, or the default `.../zaparoo/custom/`). Served exactly
@@ -38,6 +39,50 @@ QtObject {
     // Browse.Settings.current_button_layout; the default keeps early
     // evaluation on Style A (the legacy glyph set).
     property string buttonLayout: "a"
+    // "tinted" is the default theme-tracking SVG style. "color" opts system
+    // logos into the restored full-color PNG set when a matching asset exists.
+    property string systemLogoStyle: "tinted"
+    readonly property var _coloredSystemStems: [
+        "3DO", "3DS", "AcornElectron", "AdventureVision",
+        "Amiga", "Amiga1200", "Amiga500", "AmigaCD32",
+        "Amstrad", "Android", "AppleII", "Aquarius",
+        "Arcade", "Arcadia", "Archimedes", "Astrocade",
+        "Atari2600", "Atari5200", "Atari7800", "Atari800",
+        "AtariLynx", "AtariST", "AtariXEGS", "Atomiswave",
+        "BBCMicro", "C16", "C64", "CDI",
+        "CPS1", "CPS2", "CPS3", "CasioPV1000",
+        "ChannelF", "ColecoAdam", "ColecoVision", "CreatiVision",
+        "DAPHNE", "DOS", "Dreamcast", "FDS",
+        "FM7", "FMTowns", "GBA", "GBA2P",
+        "Gaelco", "Gamate", "GameCom", "GameCube",
+        "GameGear", "GameMaster", "GameNWatch", "Gameboy",
+        "Gameboy2P", "GameboyColor", "Genesis", "Genesis.eu",
+        "Genesis.jp", "GenesisMSU", "Hikaru", "Intellivision",
+        "Jaguar", "JaguarCD", "Lynx48", "MSX",
+        "MSX1", "MSX2", "MSX2Plus", "MacOS",
+        "MasterSystem", "MasterSystem.jp", "MegaCD", "MegaCD.us",
+        "MegaDuck", "Model1", "Model2", "Model3",
+        "NAOMI", "NAOMI2", "NDS", "NES",
+        "NES.jp", "NGage", "Namco22", "NeoGeo",
+        "NeoGeoAES", "NeoGeoCD", "NeoGeoMVS", "NeoGeoPocket",
+        "NeoGeoPocketColor", "Nintendo64", "Odyssey2", "Oric",
+        "PC88", "PC98", "PCFX", "PET2001",
+        "PS2", "PS3", "PS4", "PS5",
+        "PSP", "PSX", "Pico8", "PokemonMini",
+        "SAMCoupe", "SG1000", "SGBMSU1", "SNES",
+        "SNES.jp", "SNESMSU1", "Saturn", "ScummVM",
+        "Sega32X", "Sega32X.jp", "SeriesXS", "Singe", "SordM5",
+        "Spectravideo", "Sufami", "SuperACan", "SuperGameboy",
+        "SuperGrafx", "SuperVision", "Switch", "TI994A",
+        "TIC80", "TRS80", "Thomson", "TomyTutor",
+        "Triforce", "TurboGrafx16", "TurboGrafx16.eu", "TurboGrafx16.jp",
+        "TurboGrafx16CD", "TurboGrafx16CD.eu", "TurboGrafx16CD.jp", "VIC20",
+        "Vectrex", "VideopacPlus", "VirtualBoy", "Vita",
+        "Wii", "WiiU", "Windows", "WonderSwan",
+        "WonderSwanColor", "X1", "X68000", "Xbox",
+        "Xbox360", "XboxOne", "ZX81", "ZXSpectrum",
+        "iOS"
+    ]
 
     // Empty key returns an empty URL so the caller can use it as a
     // "no cover" sentinel.
@@ -54,6 +99,13 @@ QtObject {
         return key;
     }
 
+    function _coloredSystemUrl(artworkKey: string): string {
+        const stem = artworkKey.substring("systems/".length);
+        if (systemLogoStyle === "color" && _coloredSystemStems.indexOf(stem) >= 0)
+            return baseUrl + "images/systems-color/" + stem + ".png";
+        return "";
+    }
+
     function coverUrl(key: string, foreground: var, secondary: var, background: var): url {
         if (key === "")
             return "";
@@ -64,12 +116,18 @@ QtObject {
         if (key.startsWith("media-image/"))
             return "image://media-image/" + key.substring("media-image/".length);
 
-        // System logos, Hub category icons, and UI glyphs (folders, file, action
-        // icons) all go through the tinted-svg provider so their color tracks the
-        // theme ramp. The _systemArtworkKey remap (MacPlus -> MacOS, SVI328 ->
+        // System logos normally go through the tinted-svg provider so their
+        // color tracks the theme. The optional color style short-circuits to the
+        // restored PNG set when available. Hub category icons and UI glyphs stay
+        // tinted. The _systemArtworkKey remap (MacPlus -> MacOS, SVI328 ->
         // Spectravideo) applies only to systems/ paths.
         if (key.startsWith("systems/") || key.startsWith("categories/") || key.startsWith("icons/")) {
             const artworkKey = key.startsWith("systems/") ? _systemArtworkKey(key) : key;
+            if (key.startsWith("systems/")) {
+                const colored = _coloredSystemUrl(artworkKey);
+                if (colored !== "")
+                    return colored;
+            }
             const effectiveSecondary = background === undefined ? foreground : secondary;
             const effectiveBackground = background === undefined ? secondary : background;
             const fg = _colorToken(foreground);

@@ -28,8 +28,8 @@ QtObject {
     // slightly wider aspect while keeping the same preferred page size.
     readonly property var _systemsGridConfig: _gridConfig(_browseGridBaseConfig, {
         "minCellHeight": crtNativePath ? 72 : 140,
-        "preferredPageSize": crtNativePath ? 6 : 12,
-        "targetAspect": crtNativePath ? 1.0 : 1.25
+        "preferredPageSize": crtNativePath ? 9 : 12,
+        "targetAspect": 1.25
     })
     readonly property var _systemsGridShape: systemsGridShape(screenWidth, screenHeight)
     // qmllint disable compiler

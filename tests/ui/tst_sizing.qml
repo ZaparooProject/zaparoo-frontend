@@ -73,4 +73,16 @@ TestCase {
         // 1080/720 = 1.5 → 72 * 1.5 = 108. Allow ±1px for rounding.
         verify(Math.abs(scaled - baseline * 1.5) <= 1, "pctH scaling should track screen height proportionally");
     }
+
+    function test_crt_systems_grid_is_three_by_three(): void {
+        Sizing.crtNativePath = true;
+        setResolution(352, 240);
+        compare(Sizing.systemsGridColumns, 3);
+        compare(Sizing.systemsGridRows, 3);
+
+        setResolution(352, 288);
+        compare(Sizing.systemsGridColumns, 3);
+        compare(Sizing.systemsGridRows, 3);
+        Sizing.crtNativePath = false;
+    }
 }

@@ -115,6 +115,8 @@ pub struct SettingsState {
     pub orientation: String,
     #[serde(default = "default_browse_layout")]
     pub browse_layout: String,
+    #[serde(default = "default_system_logo_style")]
+    pub system_logo_style: String,
     #[serde(default = "default_button_layout")]
     pub button_layout: String,
     #[serde(default = "default_mouse_enabled")]
@@ -165,6 +167,7 @@ impl Default for SettingsState {
             clock_format: default_clock_format(),
             orientation: default_orientation(),
             browse_layout: default_browse_layout(),
+            system_logo_style: default_system_logo_style(),
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
             reduce_motion: false,
@@ -200,6 +203,10 @@ fn default_orientation() -> String {
 
 fn default_browse_layout() -> String {
     "grid".into()
+}
+
+fn default_system_logo_style() -> String {
+    "tinted".into()
 }
 
 fn default_button_layout() -> String {
@@ -351,6 +358,7 @@ mod tests {
                 clock_format: "24h".into(),
                 orientation: "cw".into(),
                 browse_layout: "list".into(),
+                system_logo_style: "color".into(),
                 button_layout: "b".into(),
                 mouse_enabled: false,
                 reduce_motion: true,

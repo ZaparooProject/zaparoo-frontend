@@ -31,9 +31,24 @@ TestCase {
     function test_bundled_keys_still_route_through_tinted_svg(): void {
         // Contrast case: bundled category/system/icon keys DO go through the
         // tint provider so their color tracks the theme.
+        Resources.systemLogoStyle = "tinted";
         const cat = String(Resources.coverUrl("categories/Arcade", "#ffffff", "#888888", "#000000"));
         verify(cat.startsWith("image://tinted-svg/"));
         const sys = String(Resources.coverUrl("systems/SNES", "#ffffff", "#888888", "#000000"));
+        verify(sys.startsWith("image://tinted-svg/"));
+    }
+
+    function test_color_system_logo_style_uses_png_when_available(): void {
+        Resources.systemLogoStyle = "color";
+        const sys = String(Resources.coverUrl("systems/SNES", "#ffffff", "#888888", "#000000"));
+        compare(sys, "qrc:/qt/qml/Zaparoo/App/resources/images/systems-color/SNES.png");
+        const regional = String(Resources.coverUrl("systems/TurboGrafx16CD.jp", "#ffffff", "#888888", "#000000"));
+        compare(regional, "qrc:/qt/qml/Zaparoo/App/resources/images/systems-color/TurboGrafx16CD.jp.png");
+    }
+
+    function test_color_system_logo_style_falls_back_to_tinted_svg(): void {
+        Resources.systemLogoStyle = "color";
+        const sys = String(Resources.coverUrl("systems/AliceMC10", "#ffffff", "#888888", "#000000"));
         verify(sys.startsWith("image://tinted-svg/"));
     }
 

@@ -21,6 +21,7 @@
 //   - MasterSystem / Mark III  (JP):    MasterSystem.jp.svg
 //   - MegaCD / Sega CD         (US):    MegaCD.us.svg
 //   - TurboGrafx16 / PC Engine (EU/JP): TurboGrafx16.eu.svg, TurboGrafx16.jp.svg
+//   - TurboGrafx-CD / PCE CD   (EU/JP): TurboGrafx16CD.eu.svg, TurboGrafx16CD.jp.svg
 //   - Sega32X / Super 32X      (JP):    Sega32X.jp.svg  [Wikimedia placeholder]
 
 use crate::system_region::Region;
@@ -39,6 +40,8 @@ const REGIONAL_LOGOS: &[(&str, Region, &str)] = &[
     ("MegaCD", Region::Us, "MegaCD.us"),
     ("TurboGrafx16", Region::Eu, "TurboGrafx16.eu"),
     ("TurboGrafx16", Region::Jp, "TurboGrafx16.jp"),
+    ("TurboGrafx16CD", Region::Eu, "TurboGrafx16CD.eu"),
+    ("TurboGrafx16CD", Region::Jp, "TurboGrafx16CD.jp"),
     ("Sega32X", Region::Jp, "Sega32X.jp"), // Wikimedia placeholder pending real Super 32X JP art
 ];
 
@@ -81,6 +84,14 @@ mod tests {
         assert_eq!(
             logo_artwork_stem("TurboGrafx16", Region::Jp),
             "TurboGrafx16.jp"
+        );
+        assert_eq!(
+            logo_artwork_stem("TurboGrafx16CD", Region::Eu),
+            "TurboGrafx16CD.eu"
+        );
+        assert_eq!(
+            logo_artwork_stem("TurboGrafx16CD", Region::Jp),
+            "TurboGrafx16CD.jp"
         );
         assert_eq!(logo_artwork_stem("Sega32X", Region::Jp), "Sega32X.jp");
     }

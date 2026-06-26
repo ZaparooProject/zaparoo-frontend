@@ -29,7 +29,9 @@ set(_APP_RESOURCES
 
 # System logos are black/white SVGs (curated from PRO100BYTE/console-logos — see
 # src/LICENSES/console-logos-ATTRIBUTION.txt) tinted at load time by the
-# tinted-svg image provider. Categories and status icons accept either PNG or SVG
+# tinted-svg image provider by default. Optional full-color PNG system logos live
+# under resources/images/systems-color/ and are selected by Settings. Categories
+# and status icons accept either PNG or SVG
 # so SVGs can be dropped straight in without a pre-render step; QtSvg rasterizes
 # once on first load and the result is cached in QPixmapCache. Top-level icons
 # (folder, file, loading, settings, navigation arrows, D-pad, ...) live under
@@ -39,6 +41,8 @@ set(_APP_RESOURCES
 # on the next build.
 file(GLOB _SYSTEM_LOGOS CONFIGURE_DEPENDS
     "${_RESOURCE_ROOT}/images/systems/*.svg")
+file(GLOB _SYSTEM_COLOR_LOGOS CONFIGURE_DEPENDS
+    "${_RESOURCE_ROOT}/images/systems-color/*.png")
 file(GLOB _CATEGORY_LOGOS CONFIGURE_DEPENDS
     "${_RESOURCE_ROOT}/images/categories/*.png"
     "${_RESOURCE_ROOT}/images/categories/*.svg")
@@ -50,8 +54,8 @@ file(GLOB _UI_ICONS CONFIGURE_DEPENDS
 file(GLOB _BUTTON_ICONS CONFIGURE_DEPENDS
     "${_RESOURCE_ROOT}/images/buttons/*/*.png")
 list(APPEND _APP_RESOURCES
-    ${_SYSTEM_LOGOS} ${_CATEGORY_LOGOS} ${_STATUS_ICONS} ${_UI_ICONS}
-    ${_BUTTON_ICONS})
+    ${_SYSTEM_LOGOS} ${_SYSTEM_COLOR_LOGOS} ${_CATEGORY_LOGOS} ${_STATUS_ICONS}
+    ${_UI_ICONS} ${_BUTTON_ICONS})
 
 foreach(_res IN LISTS _APP_RESOURCES)
     file(RELATIVE_PATH _alias "${_RESOURCE_ROOT}/.." "${_res}")
