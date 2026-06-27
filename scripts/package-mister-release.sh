@@ -158,7 +158,7 @@ MENU_DIR="$TMP_DIR/menu"
 MAIN_DIR="$TMP_DIR/main"
 mkdir -p "$MENU_DIR" "$MAIN_DIR"
 
-MENU_TAG="${MENU_MISTER_TAG:-${MENU_TAG:-}}"
+MENU_TAG="${MENU_MISTER_TAG:-}"
 if [ -z "$MENU_TAG" ]; then
     error "MENU_MISTER_TAG is required; pass the exact ${MENU_REPO} release tag to package reproducibly"
 fi
@@ -170,7 +170,7 @@ gh release download "$MENU_TAG" \
     --dir "$MENU_DIR" \
     --clobber
 
-MAIN_TAG="${MAIN_MISTER_TAG:-${MAIN_TAG:-}}"
+MAIN_TAG="${MAIN_MISTER_TAG:-}"
 if [ -z "$MAIN_TAG" ]; then
     error "MAIN_MISTER_TAG is required; pass the exact ${MAIN_REPO} release tag to package reproducibly"
 fi
