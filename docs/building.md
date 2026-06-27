@@ -351,6 +351,34 @@ height = 720
 debug = true
 ```
 
+## Cutting a release
+
+A MiSTer release bundles three independently versioned components: the
+**frontend** binary (this repo), the **`MiSTer_Zaparoo`** host wrapper
+(`ZaparooProject/Main_MiSTer`), and the **`menu_zaparoo.rbf`** menu core
+(`ZaparooProject/Menu_MiSTer`). The analog video path depends on all three
+matching. The release workflow resolves the host wrapper and menu core to their
+latest published releases automatically, so a normal release is just a version
+bump and a tag.
+
+1. **Bump the version.** Update `project(... VERSION ...)` in `CMakeLists.txt`
+   and `version` in `rust/Cargo.toml` (`[workspace.package]`), then regenerate
+   the lockfile with `cargo update --workspace` from `rust/`. These are the only
+   two places to edit; the About page version is derived from the CMake version
+   at build time.
+2. **Tag and publish.** Push a `vX.Y.Z` tag (or run the `Build release ZIP`
+   workflow with `upload` enabled). The workflow resolves the latest
+   `Main_MiSTer` and `Menu_MiSTer` releases, packages the bundle, and uploads the
+   GitHub release.
+3. **Update the downloader database.** In `ZaparooProject/Zaparoo_MiSTer`,
+   update `db.json` (`archives.zaparoo_frontend` url/hash/size and the
+   `summary_inline.files` hashes), then regenerate its distributed zip(s).
+4. **Verify** on a clean unit installed via the downloader.
+
+To bundle a specific menu or host build instead of latest, set the workflow's
+`menu_tag` input (or `MENU_MISTER_TAG` / `MAIN_MISTER_TAG` when running
+`scripts/package-mister-release.sh` directly).
+
 ## Run on framebuffer (desktop headless)
 
 Use this to reproduce the MiSTer rendering path on a desktop:

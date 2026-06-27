@@ -10,7 +10,6 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="${PROJECT_ROOT}/output"
 RELEASE_DIR="${OUTPUT_DIR}/release"
 MENU_REPO="ZaparooProject/Menu_MiSTer"
-MENU_TAG="v20260510"
 MENU_ASSET="menu_zaparoo.rbf"
 MAIN_REPO="ZaparooProject/Main_MiSTer"
 MAIN_ASSET="MiSTer_Zaparoo"
@@ -158,6 +157,11 @@ mkdir -p "$STAGE/zaparoo"
 MENU_DIR="$TMP_DIR/menu"
 MAIN_DIR="$TMP_DIR/main"
 mkdir -p "$MENU_DIR" "$MAIN_DIR"
+
+MENU_TAG="${MENU_MISTER_TAG:-${MENU_TAG:-}}"
+if [ -z "$MENU_TAG" ]; then
+    error "MENU_MISTER_TAG is required; pass the exact ${MENU_REPO} release tag to package reproducibly"
+fi
 
 echo "Downloading ${MENU_REPO}@${MENU_TAG}/${MENU_ASSET}"
 gh release download "$MENU_TAG" \

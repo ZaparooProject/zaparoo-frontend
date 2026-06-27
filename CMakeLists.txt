@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 
 project(
     zaparoo-frontend
-    VERSION 1.2.0
+    VERSION 1.2.1
     DESCRIPTION "Zaparoo Core frontend"
     HOMEPAGE_URL "https://zaparoo.org"
     LANGUAGES CXX
