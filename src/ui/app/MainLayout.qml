@@ -1479,7 +1479,7 @@ ApplicationWindow {
                                 model: helpEntry.buttonList
                                 delegate: Image {
                                     required property string modelData
-                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.verticalCenter: helpEntry.verticalCenter
                                     height: Sizing.pctH(4)
                                     width: height
                                     fillMode: Image.PreserveAspectFit
