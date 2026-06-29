@@ -758,6 +758,7 @@ ApplicationWindow {
 
             Loader {
                 id: cardWriteModalLoader
+                anchors.fill: parent
                 active: root.cardWriteModalRequested
                 sourceComponent: Component {
                     Modal {
