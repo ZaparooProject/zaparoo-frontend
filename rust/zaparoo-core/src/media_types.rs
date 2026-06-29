@@ -307,8 +307,7 @@ pub struct MediaBrowseResult {
     pub entries: Vec<BrowseEntry>,
     #[serde(default)]
     pub total_files: u32,
-    #[serde(default)]
-    pub total_dirs: u32,
+    pub total_dirs: Option<u32>,
     #[serde(default)]
     pub pagination: Option<Pagination>,
 }
@@ -1421,19 +1420,19 @@ mod tests {
         assert_eq!(result.entries[1].relative_path, "NES/smb.nes");
         assert_eq!(result.entries[1].description, "A platformer.");
         assert_eq!(result.total_files, 150);
-        assert_eq!(result.total_dirs, 7);
+        assert_eq!(result.total_dirs, Some(7));
         let pagination = result.pagination.expect("pagination present");
         assert!(pagination.has_next_page);
         assert_eq!(pagination.next_cursor.as_deref(), Some("x"));
     }
 
     #[test]
-    fn media_browse_result_total_dirs_defaults_to_zero_when_absent() {
-        // Legacy Core (pre-dir-pagination) omits totalDirs; it must default
-        // to 0 rather than failing to deserialize.
+    fn media_browse_result_total_dirs_preserves_absence() {
+        // Legacy Core (pre-dir-pagination) omits totalDirs; it must preserve
+        // absence rather than failing to deserialize or collapsing to zero.
         let json = r#"{"path":"/games","entries":[],"totalFiles":0}"#;
         let result: MediaBrowseResult = serde_json::from_str(json).expect("parse");
-        assert_eq!(result.total_dirs, 0);
+        assert_eq!(result.total_dirs, None);
     }
 
     #[test]

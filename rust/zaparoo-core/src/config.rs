@@ -1209,13 +1209,31 @@ mod tests {
 
     // Single test because std::env is process-global; splitting into
     // separate #[test]s would race against each other. The env_guard() lock
-    // also serialises against the core_endpoint reader tests, which would
+    // also serializes against the core_endpoint reader tests, which would
     // otherwise observe this env var under threaded `cargo test`.
     #[test]
     fn env_var_overrides_endpoint_and_empty_string_is_ignored() {
         const KEY: &str = "ZAPAROO_CORE_ENDPOINT";
+
+        struct RestoreEnv {
+            key: &'static str,
+            prior: Option<String>,
+        }
+
+        impl Drop for RestoreEnv {
+            fn drop(&mut self) {
+                match &self.prior {
+                    Some(v) => std::env::set_var(self.key, v),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+
         let _env = env_guard();
-        let prior = std::env::var(KEY).ok();
+        let _restore = RestoreEnv {
+            key: KEY,
+            prior: std::env::var(KEY).ok(),
+        };
         let f = write_tmp("[core]\nendpoint = \"ws://example.com/api\"\n");
 
         std::env::set_var(KEY, "ws://localhost:27497/api/v0.1");
@@ -1247,10 +1265,5 @@ mod tests {
             load_config(bad.path()).core_endpoint,
             "ws://10.0.0.115:7497/api/v0.1"
         );
-
-        match prior {
-            Some(v) => std::env::set_var(KEY, v),
-            None => std::env::remove_var(KEY),
-        }
     }
 }

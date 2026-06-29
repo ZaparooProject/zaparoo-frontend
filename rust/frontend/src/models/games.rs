@@ -2916,11 +2916,53 @@ fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<Med
 // paths (`apply_favorite_tags`) keep the visible model in sync. Loading was set
 // true by the preceding Pending — clear it so a transient blip doesn't leave
 // the spinner stuck on after the refetch lands.
+fn result_total_dirs(result: &MediaBrowseResult) -> i32 {
+    let total_dirs = result.total_dirs.map_or_else(
+        || {
+            result
+                .entries
+                .iter()
+                .filter(|entry| entry.is_folder())
+                .count()
+        },
+        |total_dirs| usize::try_from(total_dirs).unwrap_or(usize::MAX),
+    );
+    i32::try_from(total_dirs).unwrap_or(i32::MAX)
+}
+
+fn seeded_refetch_has_seed_page_only(model_count: i32, seed_entry_count: usize) -> bool {
+    usize::try_from(model_count).is_ok_and(|count| count == seed_entry_count)
+}
+
+fn seeded_refetch_pagination_state(
+    model_count: i32,
+    seed_entry_count: usize,
+    current_next_cursor: Option<String>,
+    current_has_next_page: bool,
+    result_next_cursor: Option<String>,
+    result_has_next_page: bool,
+) -> (Option<String>, bool) {
+    if seeded_refetch_has_seed_page_only(model_count, seed_entry_count) {
+        (result_next_cursor, result_has_next_page)
+    } else {
+        (current_next_cursor, current_has_next_page)
+    }
+}
+
 fn apply_seeded_refetch(mut model: Pin<&mut ffi::GamesModel>, result: &MediaBrowseResult) {
-    let has_next_page = result.has_next_page();
+    let (next_cursor, has_next_page) = seeded_refetch_pagination_state(
+        model.count,
+        result.entries.len(),
+        model.next_cursor.clone(),
+        model.has_next_page,
+        result.next_cursor(),
+        result.has_next_page(),
+    );
     let total = i32::try_from(result.total_files).unwrap_or(i32::MAX);
-    let total_dirs = i32::try_from(result.total_dirs).unwrap_or(i32::MAX);
-    model.as_mut().rust_mut().next_cursor = result.next_cursor();
+    let total_dirs = result_total_dirs(result);
+    if model.next_cursor != next_cursor {
+        model.as_mut().rust_mut().next_cursor = next_cursor;
+    }
     if model.has_next_page != has_next_page {
         model.as_mut().set_has_next_page(has_next_page);
     }
@@ -2932,6 +2974,9 @@ fn apply_seeded_refetch(mut model: Pin<&mut ffi::GamesModel>, result: &MediaBrow
     }
     if model.loading {
         model.as_mut().set_loading(false);
+    }
+    if !model.error_message.is_empty() {
+        model.as_mut().set_error_message(QString::default());
     }
     finish_nav_timing(model.as_mut(), "already-seeded", 0);
 }
@@ -2945,7 +2990,7 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     let has_next_page = result.has_next_page();
     let next_cursor = result.next_cursor();
     let total = i32::try_from(result.total_files).unwrap_or(i32::MAX);
-    let total_dirs = i32::try_from(result.total_dirs).unwrap_or(i32::MAX);
+    let total_dirs = result_total_dirs(&result);
     let platform = platform::current();
     let transform_started = Instant::now();
     let entries = transform_entries(result.entries, platform.as_ref());
@@ -3349,8 +3394,9 @@ mod tests {
         entry_system_id, is_media_capable_entry, is_strict_ancestor_path, jump_fetch_limit,
         media_capable_directory_browse_params, media_key_for, meta_params_for_entry,
         ordered_detail_image_keys, position_of_game_path, prefetch_around_plan,
-        prefetch_cursor_window_plan, project_status, run_text_for_entry,
-        singleton_directory_needs_launch_resolution, transform_entries, InitialAction, Projection,
+        prefetch_cursor_window_plan, project_status, result_total_dirs, run_text_for_entry,
+        seeded_refetch_pagination_state, singleton_directory_needs_launch_resolution,
+        transform_entries, InitialAction, Projection,
     };
     use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -3449,7 +3495,7 @@ mod tests {
             path: "/games/NES".into(),
             entries: vec![media("smb", "/games/NES/smb.nes", "NES")],
             total_files: 1,
-            total_dirs: 0,
+            total_dirs: Some(0),
             pagination: None,
         };
         match project_status(ResourceStatus::Ready(result)) {
@@ -3470,6 +3516,58 @@ mod tests {
             Projection::Errored { message } => assert_eq!(message, "rpc kaboom"),
             other => panic!("expected Errored, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn total_dirs_uses_present_zero_without_fallback() {
+        let result = MediaBrowseResult {
+            entries: vec![folder("Dir", "/games/Dir")],
+            total_dirs: Some(0),
+            ..MediaBrowseResult::default()
+        };
+        assert_eq!(result_total_dirs(&result), 0);
+    }
+
+    #[test]
+    fn total_dirs_falls_back_to_folder_count_when_missing() {
+        let result = MediaBrowseResult {
+            entries: vec![
+                folder("Dir", "/games/Dir"),
+                media("Game", "/games/game.rom", "NES"),
+                root("NES", "/games/NES", "NES"),
+            ],
+            total_dirs: None,
+            ..MediaBrowseResult::default()
+        };
+        assert_eq!(result_total_dirs(&result), 2);
+    }
+
+    #[test]
+    fn seeded_refetch_after_append_keeps_pagination_cursor() {
+        let (next_cursor, has_next_page) = seeded_refetch_pagination_state(
+            24,
+            12,
+            Some("page-3".into()),
+            true,
+            Some("page-2".into()),
+            true,
+        );
+        assert_eq!(next_cursor.as_deref(), Some("page-3"));
+        assert!(has_next_page);
+    }
+
+    #[test]
+    fn seeded_refetch_on_seed_page_refreshes_pagination_cursor() {
+        let (next_cursor, has_next_page) = seeded_refetch_pagination_state(
+            12,
+            12,
+            Some("stale".into()),
+            true,
+            Some("page-2".into()),
+            false,
+        );
+        assert_eq!(next_cursor.as_deref(), Some("page-2"));
+        assert!(!has_next_page);
     }
 
     #[test]
@@ -3950,7 +4048,7 @@ mod tests {
                 },
             ],
             total_files: 2,
-            total_dirs: 0,
+            total_dirs: Some(0),
             pagination: None,
         };
         assert_eq!(
@@ -3980,7 +4078,7 @@ mod tests {
                 ..BrowseEntry::default()
             }],
             total_files: 1,
-            total_dirs: 0,
+            total_dirs: Some(0),
             pagination: None,
         };
         assert!(singleton_directory_needs_launch_resolution(&parent));
