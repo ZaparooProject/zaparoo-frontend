@@ -47,7 +47,7 @@ MediaListScreen {
     mediaModel: Browse.GamesModel
     emptyText: qsTr("No games in this system")
     loadingText: qsTr("Loading games…")
-    totalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
+    totalItemsOverride: Browse.GamesModel.total_dirs + Browse.GamesModel.total_files
     targetVisibleRowCount: games._listPageSize
     detailShowDescription: false
     detailShowTitle: false
@@ -127,7 +127,7 @@ MediaListScreen {
         return idx >= 0 ? Browse.SystemsModel.system_name_at(idx) : sid;
     }
     topStripCurrentPageProvider: () => Math.floor(games.gamesGrid.currentIndex / games._browsePageSize)
-    topStripTotalPagesProvider: () => games._footerProfile && games._footerProfile.bottomStatusVisible ? 1 : Math.max(1, Math.ceil((Browse.GamesModel.dir_count + Browse.GamesModel.total_files) / games._browsePageSize))
+    topStripTotalPagesProvider: () => games._footerProfile && games._footerProfile.bottomStatusVisible ? 1 : Math.max(1, Math.ceil((Browse.GamesModel.total_dirs + Browse.GamesModel.total_files) / games._browsePageSize))
     topStripTotalTextProvider: () => games._listLayout || (games._footerProfile && games._footerProfile.bottomStatusVisible) ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : "")
     topStripRightTextProvider: () => {
         if (!games._listLayout)
@@ -136,13 +136,13 @@ MediaListScreen {
             return qsTr("Loading more…");
         if (games.gamesGrid.itemCount <= 0)
             return "";
-        const total = Math.max(1, Browse.GamesModel.dir_count + Browse.GamesModel.total_files);
+        const total = Math.max(1, Browse.GamesModel.total_dirs + Browse.GamesModel.total_files);
         return qsTr("%1 / %2").arg(games.gamesGrid.currentIndex + 1).arg(total);
     }
     gridBottomMargin: games._footerProfile ? games._footerProfile.gridBottomMargin : (Sizing.pctH(8) + Sizing.pctH(7))
     gridColumnsOverride: games._gridColumns
     gridRowsOverride: games._gridRows
-    gridTotalItemsOverride: Browse.GamesModel.dir_count + Browse.GamesModel.total_files
+    gridTotalItemsOverride: Browse.GamesModel.total_dirs + Browse.GamesModel.total_files
     gridHasMorePages: Browse.GamesModel.has_next_page
     gridLoadMoreAction: urgent => {
         // A letter jump bulk-loads to the target in one shot (overlay is up);
@@ -169,7 +169,7 @@ MediaListScreen {
     bottomStatusLeftMargin: games._footerProfile ? games._footerProfile.bottomStatusLeftMargin : 0
     bottomStatusRightMargin: games._footerProfile ? games._footerProfile.bottomStatusRightMargin : 0
     bottomStatusLeftText: games._footerProfile && games._footerProfile.bottomStatusVisible && Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : ""
-    bottomStatusRightText: games._footerProfile && games._footerProfile.bottomStatusVisible && Math.ceil((Browse.GamesModel.dir_count + Browse.GamesModel.total_files) / games._browsePageSize) > 1 ? qsTr("%1 / %2").arg(Math.floor(games.gamesGrid.currentIndex / games._browsePageSize) + 1).arg(Math.max(1, Math.ceil((Browse.GamesModel.dir_count + Browse.GamesModel.total_files) / games._browsePageSize))) : ""
+    bottomStatusRightText: games._footerProfile && games._footerProfile.bottomStatusVisible && Math.ceil((Browse.GamesModel.total_dirs + Browse.GamesModel.total_files) / games._browsePageSize) > 1 ? qsTr("%1 / %2").arg(Math.floor(games.gamesGrid.currentIndex / games._browsePageSize) + 1).arg(Math.max(1, Math.ceil((Browse.GamesModel.total_dirs + Browse.GamesModel.total_files) / games._browsePageSize))) : ""
     pageLoadingVisible: !games._listLayout && Browse.GamesModel.loading_more && games.gamesGrid.hasPendingTarget
     pageLoadingLeftMargin: games._footerProfile && games._footerProfile.bottomStatusVisible && games.bottomStatusLeftText !== "" ? Sizing.px(games.width / 3) : games.gamesGrid.leftInset
 
@@ -272,7 +272,7 @@ MediaListScreen {
         if (next < 0)
             next = count - 1;
         else if (next >= count) {
-            const knownTotal = Browse.GamesModel.dir_count + Browse.GamesModel.total_files;
+            const knownTotal = Browse.GamesModel.total_dirs + Browse.GamesModel.total_files;
             if (games._listHasMore(count, knownTotal)) {
                 Browse.GamesModel.fetch_more();
                 return;
@@ -306,7 +306,7 @@ MediaListScreen {
         if (!games._listLayout || Browse.GamesModel.loading_more)
             return;
         const count = games.gamesGrid.itemCount;
-        const knownTotal = Browse.GamesModel.dir_count + Browse.GamesModel.total_files;
+        const knownTotal = Browse.GamesModel.total_dirs + Browse.GamesModel.total_files;
         if (index >= count - games._listPageSize && games._listHasMore(count, knownTotal))
             Browse.GamesModel.fetch_more();
     }
@@ -329,13 +329,13 @@ MediaListScreen {
     }
 
     // Jump-to-letter. `itemOffset` is the cumulative count of all buckets before
-    // the chosen letter (from the letter-index facet); the leading directories
-    // come first in the grid, so the letter's first item sits at
-    // `dir_count + itemOffset`. Driving the grid's page-jump there loads the
+    // the chosen letter (from the letter-index facet); all directories come
+    // before files in the grid, so the letter's first item sits at
+    // `total_dirs + itemOffset`. Driving the grid's page-jump there loads the
     // intervening pages and lands on that absolute index, so the full list stays
     // navigable both ways and the page counter reflects the real position.
     function jumpToItem(itemOffset: int): void {
-        const absolute = Browse.GamesModel.dir_count + itemOffset;
+        const absolute = Browse.GamesModel.total_dirs + itemOffset;
         const landed = games.gamesGrid.jumpToIndex(absolute);
         // A deferred walk (target not yet loaded) returns false; show the
         // standard centered loading cue over the stale source page until the

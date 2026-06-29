@@ -653,6 +653,18 @@ mod tests {
         f
     }
 
+    // `load_config` consults the process-global ZAPAROO_CORE_ENDPOINT env var,
+    // so any test that sets it or asserts on `core_endpoint` must hold this
+    // lock to avoid cross-test pollution under threaded runners like plain
+    // `cargo test` (nextest isolates each test in its own process).
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[test]
     fn defaults_match_production_values() {
         let cfg = Config::default();
@@ -762,6 +774,7 @@ mod tests {
 
     #[test]
     fn save_hidden_browse_prefs_preserves_other_config() {
+        let _env = env_guard();
         let f = write_tmp(
             "[core]\nendpoint = \"ws://example.com/api\"\n[settings]\nbutton_layout = \"b\"\n",
         );
@@ -787,6 +800,7 @@ mod tests {
 
     #[test]
     fn save_notice_ack_creates_section_and_preserves_others() {
+        let _env = env_guard();
         let f = write_tmp(
             "[core]\nendpoint = \"ws://example.com/api\"\n[settings]\nbutton_layout = \"b\"\n",
         );
@@ -884,6 +898,7 @@ mod tests {
 
     #[test]
     fn malformed_toml_returns_defaults() {
+        let _env = env_guard();
         let f = write_tmp("this is not = valid toml [[[");
         let cfg = load_config(f.path());
         assert_eq!(cfg.core_endpoint, Config::default().core_endpoint);
@@ -891,6 +906,7 @@ mod tests {
 
     #[test]
     fn partial_config_merges_with_defaults() {
+        let _env = env_guard();
         let f = write_tmp("[video]\nwidth = 1280\n");
         let cfg = load_config(f.path());
         assert_eq!(cfg.video_width, 1280);
@@ -900,6 +916,7 @@ mod tests {
 
     #[test]
     fn full_config_overrides_all_fields() {
+        let _env = env_guard();
         let toml = r#"
             [general]
             language = "it_IT"
@@ -1044,6 +1061,7 @@ mod tests {
 
     #[test]
     fn save_settings_mirror_preserves_other_sections() {
+        let _env = env_guard();
         let f = write_tmp(
             "[core]\nendpoint = \"ws://example.com/api\"\n[video]\nbackend = \"native-core-poc\"\nwidth = 1280\nheight = 720\n[settings]\nhidden_categories = [\"Arcade\"]\nhidden_system_ids = [\"NES\"]\n",
         );
@@ -1190,10 +1208,13 @@ mod tests {
     }
 
     // Single test because std::env is process-global; splitting into
-    // separate #[test]s would race when nextest runs them in parallel.
+    // separate #[test]s would race against each other. The env_guard() lock
+    // also serialises against the core_endpoint reader tests, which would
+    // otherwise observe this env var under threaded `cargo test`.
     #[test]
     fn env_var_overrides_endpoint_and_empty_string_is_ignored() {
         const KEY: &str = "ZAPAROO_CORE_ENDPOINT";
+        let _env = env_guard();
         let prior = std::env::var(KEY).ok();
         let f = write_tmp("[core]\nendpoint = \"ws://example.com/api\"\n");
 

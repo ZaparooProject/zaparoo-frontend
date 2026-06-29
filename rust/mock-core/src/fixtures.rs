@@ -176,6 +176,8 @@ pub fn media_browse_response(params: &Value) -> Value {
         "path": path,
         "entries": entries,
         "totalFiles": total_files,
+        // Mock browse returns only media entries (no subdirectories).
+        "totalDirs": 0,
         "pagination": {
             "hasNextPage": false,
             "pageSize": 100,
