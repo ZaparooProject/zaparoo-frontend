@@ -310,7 +310,7 @@ pub struct GamesModelRust {
     // Bounding-box size requested for detail-pane images, baked into the
     // detail keys so the pane fetches its own larger resolution instead of
     // sharing the grid's cover entry. `0` keeps the legacy shared-key
-    // behaviour (no separate detail fetch).
+    // behavior (no separate detail fetch).
     detail_cover_max_size: i32,
     nav_timing: Option<NavTiming>,
     // When the user's cover preference is "auto" and Core's `type_tag` for
@@ -666,7 +666,15 @@ impl ffi::GamesModel {
     // rather than pushed to the cache's global default, so it stays independent
     // of the grid's `set_cover_max_size`.
     fn set_detail_cover_max_size(mut self: Pin<&mut Self>, size: i32) {
-        self.as_mut().rust_mut().detail_cover_max_size = size.max(0);
+        let clamped = size.max(0);
+        if self.detail_cover_max_size == clamped {
+            return;
+        }
+        self.as_mut().rust_mut().detail_cover_max_size = clamped;
+        let keys = self.detail_image_keys.clone();
+        if !keys.is_empty() {
+            set_detail_image_keys(self.as_mut(), keys);
+        }
     }
 
     fn set_system(mut self: Pin<&mut Self>, system_id: QString) {
@@ -2035,15 +2043,12 @@ fn refresh_adjacent_cover_prefetch(mut model: Pin<&mut ffi::GamesModel>) {
 fn set_detail_image_keys(mut model: Pin<&mut ffi::GamesModel>, keys: Vec<MediaKey>) {
     // Bake the detail-pane size into every detail image so it fetches its own
     // (larger) resolution rather than sharing the grid's cover entry. `0`
-    // leaves keys unsized, preserving the shared-key instant-paint behaviour.
+    // clears sizing, preserving the shared-key instant-paint behavior.
     let detail_size = u32::try_from(model.detail_cover_max_size.max(0)).unwrap_or(0);
-    let keys = if detail_size > 0 {
-        keys.into_iter()
-            .map(|k| k.with_max_size(detail_size))
-            .collect()
-    } else {
-        keys
-    };
+    let keys = keys
+        .into_iter()
+        .map(|k| k.with_max_size(detail_size))
+        .collect();
     model.as_mut().rust_mut().detail_image_keys = keys;
     model.as_mut().set_current_detail_image_index(0);
     let count = i32::try_from(model.detail_image_keys.len()).unwrap_or(i32::MAX);

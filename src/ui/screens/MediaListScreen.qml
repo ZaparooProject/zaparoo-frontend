@@ -114,8 +114,11 @@ Item {
     property int bottomStatusLeftMargin: 0
     property int bottomStatusRightMargin: 0
     property int pageLoadingLeftMargin: 0
-    property int gridColumnsOverride: Sizing.gamesGridColumns
-    property int gridRowsOverride: Sizing.gamesGridRows
+    readonly property int _gridViewportWidth: Math.max(1, root.width)
+    readonly property int _gridViewportHeight: Math.max(1, root.height - (topStrip.y + topStrip.height) - root.gridBottomMargin)
+    readonly property var _gridViewportShape: Sizing.gamesGridShape(root._gridViewportWidth, root._gridViewportHeight)
+    property int gridColumnsOverride: root._gridViewportShape.columns
+    property int gridRowsOverride: root._gridViewportShape.rows
     property bool pageLoadingVisible: false
     property string bottomStatusLeftText: ""
     property string bottomStatusRightText: ""
@@ -509,7 +512,7 @@ Item {
         delegate: Tile {
             layoutProfile: root._gridLayoutProfile
             showCaption: true
-            coverSourceSize: Sizing.gamesGridCoverSourceSize(Sizing.screenWidth, Sizing.screenHeight)
+            coverSourceSize: Sizing.gamesGridCoverSourceSize(root._gridViewportWidth, root._gridViewportHeight)
         }
         layoutProfile: root._gridLayoutProfile
         columnsOverride: root.gridColumnsOverride

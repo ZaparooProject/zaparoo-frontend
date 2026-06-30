@@ -168,7 +168,7 @@ Item {
     // to the built-in tinted vector assets (system logos, category/UI glyphs).
     // Drives the cover decode size below; defined on the art's own identity
     // (its key prefix), not on `_isTinted`, so the decode policy stays correct
-    // independently of theme-tint behaviour.
+    // independently of theme-tint behavior.
     readonly property bool _coverIsRealArt: root.delegateCoverKey.startsWith("media-image/") || root.delegateCoverKey.startsWith("custom-image/")
     // Real raster art still in flight: the key is media/custom art but the
     // Image has not reached a terminal state. Paired with _coverPending below

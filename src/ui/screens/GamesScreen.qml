@@ -27,7 +27,7 @@ MediaListScreen {
     readonly property bool _portraitNonCrtList: !Theme.crtNativePath && Browse.Settings.current_orientation !== "horizontal"
     readonly property int _listPageSize: games._portraitNonCrtList ? 16 : 10
     readonly property bool _tateOrientation: Browse.Settings.current_orientation !== "horizontal"
-    readonly property var _gridShape: Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight)
+    readonly property var _gridShape: Sizing.gamesGridShape(games._gridViewportWidth, games._gridViewportHeight)
     readonly property int _gridColumns: games._gridShape.columns
     readonly property int _gridRows: games._gridShape.rows
     readonly property int _browsePageSize: games._listLayout ? Math.max(1, games.listCard.visibleRowCount) : games.gamesGrid.pageSize

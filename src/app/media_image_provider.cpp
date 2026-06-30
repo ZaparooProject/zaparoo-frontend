@@ -306,6 +306,11 @@ MediaImageProvider::MediaImageProvider() : m_decodedCache(kDecodedCacheMaxBytes)
     m_pool.setMaxThreadCount(4);
 }
 
+MediaImageProvider::~MediaImageProvider()
+{
+    m_pool.waitForDone();
+}
+
 QQuickImageResponse* MediaImageProvider::requestImageResponse(const QString& id,
                                                               const QSize& requestedSize)
 {

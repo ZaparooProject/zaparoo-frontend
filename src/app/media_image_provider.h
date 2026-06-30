@@ -69,7 +69,11 @@ class MediaImageProvider : public QQuickAsyncImageProvider
 {
   public:
     MediaImageProvider();
-    ~MediaImageProvider() override = default;
+    ~MediaImageProvider() override;
+    MediaImageProvider(const MediaImageProvider&) = delete;
+    MediaImageProvider& operator=(const MediaImageProvider&) = delete;
+    MediaImageProvider(MediaImageProvider&&) = delete;
+    MediaImageProvider& operator=(MediaImageProvider&&) = delete;
 
     QQuickImageResponse* requestImageResponse(const QString& id,
                                               const QSize& requestedSize) override;
