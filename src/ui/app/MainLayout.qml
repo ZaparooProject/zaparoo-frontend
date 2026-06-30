@@ -1530,7 +1530,6 @@ ApplicationWindow {
                 anchors.margins: -Math.max(root._crtInsetW, root._crtInsetH)
                 z: 500
             }
-
         }
 
         Item {

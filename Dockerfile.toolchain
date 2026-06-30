@@ -94,7 +94,8 @@ RUN git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtbase.git
     git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtdeclarative.git && \
     git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qttools.git && \
     git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtwebsockets.git && \
-    git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtsvg.git
+    git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtsvg.git && \
+    git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtimageformats.git
 
 # Stage 1: Qt6 host build (provides native tools: moc, rcc, qmllint, etc.)
 # PrintSupport is intentionally enabled here even though the frontend itself
@@ -167,6 +168,18 @@ RUN mkdir qtwebsockets-host-build && cd qtwebsockets-host-build && \
 # version so qt-configure-module's prefix probe finds matching host tools.
 RUN mkdir qtsvg-host-build && cd qtsvg-host-build && \
     /opt/qt6-host/bin/qt-configure-module ../qtsvg \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+# qtimageformats (host build): provides a matching host module for the ARM32
+# cross-build below. Only WebP is enabled because Core can return WebP covers
+# and MiSTer does not need the other optional image codecs.
+RUN mkdir qtimageformats-host-build && cd qtimageformats-host-build && \
+    /opt/qt6-host/bin/qt-configure-module ../qtimageformats \
+        -feature-webp \
+        -no-feature-jasper \
+        -no-feature-mng \
+        -no-feature-tiff \
     && cmake --build . --parallel $(nproc) \
     && cmake --install .
 
@@ -245,6 +258,18 @@ RUN mkdir qtwebsockets-arm-build && cd qtwebsockets-arm-build && \
 # into the frontend via Qt6::QSvgPlugin in cmake/ZaparooRust.cmake.
 RUN mkdir qtsvg-arm-build && cd qtsvg-arm-build && \
     /opt/qt6-arm32/bin/qt-configure-module ../qtsvg \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+# qtimageformats (ARM32 cross-build): provides QWebpPlugin so Core-returned
+# WebP covers decode in the static MiSTer build. The plugin is statically
+# linked into the frontend via Qt6::QWebpPlugin in cmake/ZaparooRust.cmake.
+RUN mkdir qtimageformats-arm-build && cd qtimageformats-arm-build && \
+    /opt/qt6-arm32/bin/qt-configure-module ../qtimageformats \
+        -feature-webp \
+        -no-feature-jasper \
+        -no-feature-mng \
+        -no-feature-tiff \
     && cmake --build . --parallel $(nproc) \
     && cmake --install .
 

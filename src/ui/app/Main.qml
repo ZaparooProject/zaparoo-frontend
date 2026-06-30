@@ -125,16 +125,18 @@ MainLayout {
         if (root.gamesScreenRequested || root.activeScreen === root.screenGames)
             root._syncGamesModelLayout();
     }
-    // Maximum cover dimension requested from Core. Computed from the tile
-    // pixel size with 2x headroom so the resized image looks sharp even
-    // when the grid zooms slightly. Core fits the image within a
-    // maxSize x maxSize box before returning it, so the cache holds far
-    // more covers at the same byte cap.
-    readonly property int _gamesCoverMaxSize: {
-        const tileW = Math.ceil(Sizing.screenWidth / Math.max(1, root._gamesGridColumns));
-        const tileH = Math.ceil(Sizing.screenHeight / Math.max(1, root._gamesGridRows));
-        return Math.max(tileW, tileH) * 2;
-    }
+    // Cover size requested from Core for grid tiles. Same per-view, snapped tier
+    // (128/256/512/768) the grid tile decodes at (Tile.qml drives sourceSize off
+    // the identical helper), so the request matches what is shown and Core caches
+    // one resized WebP per tier, keeping the constantly-browsed grid small in RAM.
+    readonly property int _gamesCoverMaxSize: Sizing.gamesGridCoverSourceSize(Sizing.screenWidth, Sizing.screenHeight)
+    // The detail pane shows the cover larger than a grid tile, so it requests its
+    // own snapped tier (a step above the grid). Baked into the detail keys, this
+    // gives the pane an independent, crisper cache entry instead of sharing the
+    // grid's smaller image.
+    readonly property int _gamesDetailCoverMaxSize: Sizing.detailCoverSourceSize(Sizing.screenWidth, Sizing.screenHeight)
+    // _gamesDetailCoverMaxSize derives from _gamesCoverMaxSize, so this one
+    // handler re-syncs both sizes whenever the grid shape changes.
     on_GamesCoverMaxSizeChanged: {
         if (root.gamesScreenRequested || root.activeScreen === root.screenGames)
             root._syncGamesModelLayout();
@@ -176,6 +178,7 @@ MainLayout {
     function _syncGamesModelLayout(): void {
         Browse.GamesModel.page_size = root._gamesPageSize;
         Browse.GamesModel.set_cover_max_size(root._gamesCoverMaxSize);
+        Browse.GamesModel.set_detail_cover_max_size(root._gamesDetailCoverMaxSize);
     }
 
     function _screenItem(screen: string): var {

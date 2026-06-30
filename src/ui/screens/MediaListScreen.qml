@@ -509,6 +509,7 @@ Item {
         delegate: Tile {
             layoutProfile: root._gridLayoutProfile
             showCaption: true
+            coverSourceSize: Sizing.gamesGridCoverSourceSize(Sizing.screenWidth, Sizing.screenHeight)
         }
         layoutProfile: root._gridLayoutProfile
         columnsOverride: root.gridColumnsOverride

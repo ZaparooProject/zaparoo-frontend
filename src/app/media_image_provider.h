@@ -21,7 +21,10 @@
 
 #pragma once
 
+#include <QCache>
+#include <QElapsedTimer>
 #include <QImage>
+#include <QMutex>
 #include <QQuickAsyncImageProvider>
 #include <QQuickImageResponse>
 #include <QQuickTextureFactory>
@@ -34,7 +37,8 @@
 class MediaImageResponse : public QQuickImageResponse, public QRunnable
 {
   public:
-    MediaImageResponse(QString id, QSize requestedSize);
+    MediaImageResponse(QString id, QSize requestedSize, QMutex* cacheMutex,
+                       QCache<QString, QImage>* decodedCache);
     ~MediaImageResponse() override = default;
 
     [[nodiscard]] QQuickTextureFactory* textureFactory() const override;
@@ -51,6 +55,14 @@ class MediaImageResponse : public QQuickImageResponse, public QRunnable
     // pointer to QtQuick (which will own and destroy it), so the
     // const method needs to release ownership of the cached unique_ptr.
     mutable std::unique_ptr<QQuickTextureFactory> m_factory;
+    QMutex* m_cacheMutex;
+    QCache<QString, QImage>* m_decodedCache;
+    // Started when the response is constructed (i.e. enqueued onto the
+    // pool). Read at run() start it yields queue_wait (time spent waiting
+    // for a free worker); read before each finished() it yields the total
+    // request lifetime. Both are otherwise invisible in the decode-only
+    // trace and are the segments most likely to dominate on a fresh page.
+    QElapsedTimer m_lifetime;
 };
 
 class MediaImageProvider : public QQuickAsyncImageProvider
@@ -69,4 +81,13 @@ class MediaImageProvider : public QQuickAsyncImageProvider
     // beyond that, context-switch cost outweighs parallel decode on
     // the software-rendered build.
     QThreadPool m_pool;
+    // Process-memory cache for decoded covers. The WebP→QImage decode
+    // is the dominant cost (measured ~424 ms mean, p90 775 ms on MiSTer),
+    // and PagedGrid tears tiles down on rapid scroll so the same cover
+    // re-decodes on revisit (~3.76× per cover in a browse session). The
+    // decoded image is deterministic per (id, requestedSize), so caching
+    // it lets a re-invocation skip the FFI fetch and decode entirely.
+    // Cost is tracked in bytes; maxCost caps the footprint on MiSTer.
+    QMutex m_cacheMutex;
+    QCache<QString, QImage> m_decodedCache;
 };

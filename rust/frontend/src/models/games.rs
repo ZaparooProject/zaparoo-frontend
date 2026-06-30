@@ -307,6 +307,11 @@ pub struct GamesModelRust {
     // window for whatever row the user is currently looking at.
     visible_first_row: i32,
     cover_max_size: i32,
+    // Bounding-box size requested for detail-pane images, baked into the
+    // detail keys so the pane fetches its own larger resolution instead of
+    // sharing the grid's cover entry. `0` keeps the legacy shared-key
+    // behaviour (no separate detail fetch).
+    detail_cover_max_size: i32,
     nav_timing: Option<NavTiming>,
     // When the user's cover preference is "auto" and Core's `type_tag` for
     // the index-0 key is not yet known (cover still in-flight), we stash the
@@ -374,6 +379,7 @@ impl Default for GamesModelRust {
             pending_initial_lookahead: false,
             visible_first_row: 0,
             cover_max_size: 0,
+            detail_cover_max_size: 0,
             nav_timing: None,
             pending_carousel_keys: None,
             letter_index_json: QString::default(),
@@ -431,12 +437,16 @@ pub mod ffi {
         #[qproperty(bool, show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
         #[qproperty(i32, visible_first_row)]
         #[qproperty(i32, cover_max_size, READ, WRITE = set_cover_max_size, NOTIFY)]
+        #[qproperty(i32, detail_cover_max_size, READ, WRITE = set_detail_cover_max_size, NOTIFY)]
         #[qproperty(QString, letter_index_json)]
         #[qproperty(QString, letter_index_scheme)]
         type GamesModel = super::GamesModelRust;
 
         #[qinvokable]
         fn set_cover_max_size(self: Pin<&mut GamesModel>, size: i32);
+
+        #[qinvokable]
+        fn set_detail_cover_max_size(self: Pin<&mut GamesModel>, size: i32);
 
         #[qinvokable]
         fn set_system(self: Pin<&mut GamesModel>, system_id: QString);
@@ -650,6 +660,13 @@ impl ffi::GamesModel {
         let clamped = size.max(0);
         self.as_mut().rust_mut().cover_max_size = clamped;
         global_media_image_cache().set_max_cover_size(u32::try_from(clamped).unwrap_or(0));
+    }
+
+    // The detail size is baked into the detail keys (see `set_detail_image_keys`)
+    // rather than pushed to the cache's global default, so it stays independent
+    // of the grid's `set_cover_max_size`.
+    fn set_detail_cover_max_size(mut self: Pin<&mut Self>, size: i32) {
+        self.as_mut().rust_mut().detail_cover_max_size = size.max(0);
     }
 
     fn set_system(mut self: Pin<&mut Self>, system_id: QString) {
@@ -2016,6 +2033,17 @@ fn refresh_adjacent_cover_prefetch(mut model: Pin<&mut ffi::GamesModel>) {
 }
 
 fn set_detail_image_keys(mut model: Pin<&mut ffi::GamesModel>, keys: Vec<MediaKey>) {
+    // Bake the detail-pane size into every detail image so it fetches its own
+    // (larger) resolution rather than sharing the grid's cover entry. `0`
+    // leaves keys unsized, preserving the shared-key instant-paint behaviour.
+    let detail_size = u32::try_from(model.detail_cover_max_size.max(0)).unwrap_or(0);
+    let keys = if detail_size > 0 {
+        keys.into_iter()
+            .map(|k| k.with_max_size(detail_size))
+            .collect()
+    } else {
+        keys
+    };
     model.as_mut().rust_mut().detail_image_keys = keys;
     model.as_mut().set_current_detail_image_index(0);
     let count = i32::try_from(model.detail_image_keys.len()).unwrap_or(i32::MAX);

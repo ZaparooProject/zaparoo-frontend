@@ -93,10 +93,10 @@ if(TARGET all_qmllint)
     # individually.
     if(TARGET zaparoo_cxxqt_qml_sync)
         add_dependencies(all_qmllint zaparoo_cxxqt_qml_sync)
-        foreach(_qmllint_target IN
-                ITEMS zaparoo_ui_app_qmllint zaparoo_ui_components_qmllint
-                      zaparoo_ui_screens_qmllint zaparoo_ui_theme_qmllint
-                      zaparoo_update_qml_qmllint tst_ui_qmllint
+        foreach(
+            _qmllint_target IN
+            ITEMS zaparoo_ui_app_qmllint zaparoo_ui_components_qmllint zaparoo_ui_screens_qmllint
+                  zaparoo_ui_theme_qmllint zaparoo_update_qml_qmllint tst_ui_qmllint
         )
             if(TARGET ${_qmllint_target})
                 add_dependencies(${_qmllint_target} zaparoo_cxxqt_qml_sync)

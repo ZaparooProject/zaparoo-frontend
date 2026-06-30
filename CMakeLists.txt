@@ -75,10 +75,11 @@ add_subdirectory(src/ui/theme)
 add_subdirectory(src/ui/components)
 if(ZAPAROO_WITH_UPDATE)
     add_subdirectory(src/ui/update_host)
-    set(
-        ZAPAROO_UPDATE_PACKAGE_ROOT
+    set(ZAPAROO_UPDATE_PACKAGE_ROOT
         ""
-        CACHE PATH "Optional path to the zaparoo-update Cargo package root. Empty resolves via cargo metadata."
+        CACHE
+            PATH
+            "Optional path to the zaparoo-update Cargo package root. Empty resolves via cargo metadata."
     )
     if(NOT ZAPAROO_UPDATE_PACKAGE_ROOT)
         include(ZaparooCargoPackage)

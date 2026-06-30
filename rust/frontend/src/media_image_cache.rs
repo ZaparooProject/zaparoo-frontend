@@ -173,6 +173,12 @@ pub struct MediaKey {
     pub path: Arc<str>,
     pub media_id: Option<i64>,
     pub image_type: Option<Arc<str>>,
+    // Requested `max_size` (bounding-box px) baked into the key so views
+    // that want a different resolution (e.g. the larger detail pane vs the
+    // grid) get independent cache entries instead of sharing one image.
+    // `0` means "unsized" — the fetch falls back to the global default and
+    // the key encodes/compares exactly as it did before this field existed.
+    pub max_size: u32,
 }
 
 impl MediaKey {
@@ -182,6 +188,7 @@ impl MediaKey {
             path: path.into(),
             media_id: None,
             image_type: None,
+            max_size: 0,
         }
     }
 
@@ -195,6 +202,7 @@ impl MediaKey {
             path: path.into(),
             media_id: Some(media_id),
             image_type: None,
+            max_size: 0,
         }
     }
 
@@ -202,6 +210,12 @@ impl MediaKey {
         if let Some(pref) = current_cover_preference_marker() {
             self.image_type = Some(pref);
         }
+        self
+    }
+
+    /// Bake a requested bounding-box size into the key. `0` clears it.
+    pub fn with_max_size(mut self, max_size: u32) -> Self {
+        self.max_size = max_size;
         self
     }
 
@@ -226,6 +240,7 @@ impl MediaKey {
             path: path.into(),
             media_id: None,
             image_type: Some(image_type.into()),
+            max_size: 0,
         }
     }
 
@@ -241,13 +256,50 @@ impl MediaKey {
             path: path.into(),
             media_id: Some(media_id),
             image_type: Some(image_type.into()),
+            max_size: 0,
         }
     }
 
     /// Encode this key as a single URL path segment using
-    /// base64url-no-pad. New keys include `media_id` when available;
-    /// legacy `(system_id, path)` and v2 typed keys still decode.
+    /// base64url-no-pad. Sized keys use `v4`; otherwise new keys include
+    /// `media_id` when available (`v3`); legacy `(system_id, path)` and v2
+    /// typed keys still decode.
     pub fn encode(&self) -> String {
+        if self.max_size > 0 {
+            let sys = self.system_id.as_bytes();
+            let typ = self.image_type.as_deref().unwrap_or("").as_bytes();
+            let path = self.path.as_bytes();
+            let sys_len = sys.len().to_string();
+            let typ_len = typ.len().to_string();
+            let size = self.max_size.to_string();
+            // Empty id field == `media_id: None`.
+            let id = self.media_id.map(|i| i.to_string()).unwrap_or_default();
+            let mut buf = Vec::with_capacity(
+                7 + size.len()
+                    + id.len()
+                    + sys_len.len()
+                    + typ_len.len()
+                    + sys.len()
+                    + typ.len()
+                    + path.len(),
+            );
+            buf.extend_from_slice(b"v4");
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(size.as_bytes());
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(id.as_bytes());
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(sys_len.as_bytes());
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(sys);
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(typ_len.as_bytes());
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(typ);
+            buf.push(KEY_SEPARATOR);
+            buf.extend_from_slice(path);
+            return URL_SAFE_NO_PAD.encode(&buf);
+        }
         if let Some(media_id) = self.media_id {
             let sys = self.system_id.as_bytes();
             let typ = self.image_type.as_deref().unwrap_or("").as_bytes();
@@ -304,6 +356,9 @@ impl MediaKey {
 
     pub fn decode(encoded: &str) -> Option<Self> {
         let bytes = URL_SAFE_NO_PAD.decode(encoded.as_bytes()).ok()?;
+        if bytes.starts_with(b"v4") && bytes.get(2) == Some(&KEY_SEPARATOR) {
+            return Self::decode_v4(&bytes);
+        }
         if bytes.starts_with(b"v3") && bytes.get(2) == Some(&KEY_SEPARATOR) {
             return Self::decode_v3(&bytes);
         }
@@ -389,12 +444,68 @@ impl MediaKey {
             path: Arc::from(path),
             media_id: Some(media_id),
             image_type,
+            max_size: 0,
+        })
+    }
+
+    fn decode_v4(bytes: &[u8]) -> Option<Self> {
+        let mut pos = 3; // "v4" + separator
+        let size_end = bytes[pos..].iter().position(|b| *b == KEY_SEPARATOR)? + pos;
+        let max_size = std::str::from_utf8(&bytes[pos..size_end])
+            .ok()?
+            .parse::<u32>()
+            .ok()?;
+        pos = size_end + 1;
+        let id_end = bytes[pos..].iter().position(|b| *b == KEY_SEPARATOR)? + pos;
+        let id_field = std::str::from_utf8(&bytes[pos..id_end]).ok()?;
+        // Empty id field == no media_id.
+        let media_id = if id_field.is_empty() {
+            None
+        } else {
+            Some(id_field.parse::<i64>().ok()?)
+        };
+        pos = id_end + 1;
+        let sys_len_end = bytes[pos..].iter().position(|b| *b == KEY_SEPARATOR)? + pos;
+        let sys_len = std::str::from_utf8(&bytes[pos..sys_len_end])
+            .ok()?
+            .parse::<usize>()
+            .ok()?;
+        pos = sys_len_end + 1;
+        let sys_end = pos.checked_add(sys_len)?;
+        let system_id = std::str::from_utf8(bytes.get(pos..sys_end)?).ok()?;
+        if bytes.get(sys_end) != Some(&KEY_SEPARATOR) {
+            return None;
+        }
+        pos = sys_end + 1;
+        let type_len_end = bytes[pos..].iter().position(|b| *b == KEY_SEPARATOR)? + pos;
+        let type_len = std::str::from_utf8(&bytes[pos..type_len_end])
+            .ok()?
+            .parse::<usize>()
+            .ok()?;
+        pos = type_len_end + 1;
+        let type_end = pos.checked_add(type_len)?;
+        let image_type = std::str::from_utf8(bytes.get(pos..type_end)?).ok()?;
+        if bytes.get(type_end) != Some(&KEY_SEPARATOR) {
+            return None;
+        }
+        let path = std::str::from_utf8(bytes.get(type_end + 1..)?).ok()?;
+        let image_type = (!image_type.is_empty()).then(|| Arc::<str>::from(image_type));
+        Some(Self {
+            system_id: Arc::from(system_id),
+            path: Arc::from(path),
+            media_id,
+            image_type,
+            max_size,
         })
     }
 }
 
 impl PartialEq for MediaKey {
     fn eq(&self, other: &Self) -> bool {
+        // Distinct requested sizes are distinct cache entries.
+        if self.max_size != other.max_size {
+            return false;
+        }
         match (self.media_id, other.media_id) {
             (Some(a), Some(b)) => a == b && self.image_type == other.image_type,
             (None, None) => {
@@ -410,6 +521,7 @@ impl Eq for MediaKey {}
 
 impl std::hash::Hash for MediaKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.max_size.hash(state);
         if let Some(media_id) = self.media_id {
             media_id.hash(state);
             self.image_type.hash(state);
@@ -1235,7 +1347,13 @@ async fn fetch_one(
     } else if let Some(image_type) = key.image_type.as_ref() {
         params.image_types.push(image_type.to_string());
     }
-    let max_size = max_cover_size.load(Ordering::Relaxed);
+    // A size baked into the key (e.g. the detail pane's larger request)
+    // wins; otherwise fall back to the global default the grid drives.
+    let max_size = if key.max_size > 0 {
+        key.max_size
+    } else {
+        max_cover_size.load(Ordering::Relaxed)
+    };
     if max_size > 0 {
         params.max_size = Some(max_size);
     }
@@ -1766,6 +1884,67 @@ mod tests {
         assert_eq!(decoded.system_id.as_ref(), "SNES");
         assert_eq!(decoded.path.as_ref(), "/p");
         assert_eq!(decoded.image_type.as_deref(), Some("boxart"));
+    }
+
+    #[test]
+    fn media_key_round_trips_max_size() {
+        // Sized key with a media_id, image_type, and a slashed path.
+        let key = MediaKey::with_media_id("SNES", "/roms/snes/Super Mario.sfc", 42)
+            .with_current_cover_preference()
+            .with_max_size(768);
+        let encoded = key.encode();
+        assert!(!encoded.contains('='), "no padding: {encoded}");
+        let decoded = MediaKey::decode(&encoded).expect("round-trip");
+        assert_eq!(decoded, key);
+        assert_eq!(decoded.max_size, 768);
+        assert_eq!(decoded.media_id, Some(42));
+    }
+
+    #[test]
+    fn media_key_round_trips_max_size_without_media_id() {
+        // v4 must carry the empty-id form for keys that have no media_id.
+        let key = MediaKey::new("Arcade", "/media/fat/_Arcade/game.mra").with_max_size(256);
+        let decoded = MediaKey::decode(&key.encode()).expect("round-trip");
+        assert_eq!(decoded, key);
+        assert_eq!(decoded.max_size, 256);
+        assert_eq!(decoded.media_id, None);
+        assert_eq!(decoded.system_id.as_ref(), "Arcade");
+        assert_eq!(decoded.path.as_ref(), "/media/fat/_Arcade/game.mra");
+    }
+
+    #[test]
+    fn distinct_max_size_are_distinct_keys() {
+        // The grid (unsized / one size) and detail pane (larger size) must not
+        // collide in the cache map: differing max_size => not equal, and the
+        // hashes must agree with eq for the HashMap contract.
+        let grid = MediaKey::with_media_id("SNES", "/p", 7).with_max_size(256);
+        let detail = MediaKey::with_media_id("SNES", "/p", 7).with_max_size(768);
+        assert_ne!(grid, detail);
+
+        let mut map = std::collections::HashMap::new();
+        map.insert(grid.clone(), "grid");
+        map.insert(detail.clone(), "detail");
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get(&grid), Some(&"grid"));
+        assert_eq!(map.get(&detail), Some(&"detail"));
+
+        // Same identity + same size still collapses to one entry.
+        let detail_again = MediaKey::with_media_id("SNES", "/p", 7).with_max_size(768);
+        assert_eq!(detail, detail_again);
+        assert_eq!(map.get(&detail_again), Some(&"detail"));
+    }
+
+    #[test]
+    fn unsized_key_encodes_without_v4_prefix() {
+        // max_size == 0 must keep the legacy v3 encoding so existing keys and
+        // their URLs are byte-identical to before this field existed.
+        let plain = MediaKey::with_media_id("SNES", "/p", 7);
+        let sized = MediaKey::with_media_id("SNES", "/p", 7).with_max_size(512);
+        assert_ne!(plain.encode(), sized.encode());
+        // The unsized encoding still decodes back to an unsized key.
+        let back = MediaKey::decode(&plain.encode()).expect("round-trip");
+        assert_eq!(back.max_size, 0);
+        assert_eq!(back, plain);
     }
 
     #[test]

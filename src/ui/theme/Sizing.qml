@@ -107,6 +107,52 @@ QtObject {
         return root._selectGridShape(viewportWidth, viewportHeight, root._gamesGridConfig);
     }
 
+    // Cover decode tiers, mirroring Core's resize ladder. A cover's source
+    // size must be one of these so the QML-decoded texture matches the WebP
+    // Core delivers (no resample) and small resolution wobble does not move the
+    // tier. Snaps up to the smallest tier that covers `px`.
+    function snapCoverTier(px: real): int {
+        if (px <= 128)
+            return 128;
+        if (px <= 256)
+            return 256;
+        if (px <= 512)
+            return 512;
+        return 768;
+    }
+
+    // Raw painted height (px) of a games-grid cover in caption mode: the cell
+    // height minus the top padding and the bottom caption band. Box art is
+    // portrait, so this height is the bounding side. Pure function of the
+    // resolution — the same value for every grid tile — so callers use it as a
+    // stable Image.sourceSize input rather than the live painted height, which
+    // fluctuates per layout/recycle and would make Qt reload the Image on every
+    // change. The percentage bands track Tile.qml's _padding / _captionHeight /
+    // _captionGap; exact agreement is not required since the result is snapped.
+    // qmllint disable compiler
+    function _gamesGridCoverBox(viewportWidth: int, viewportHeight: int): int {
+        const shape = gamesGridShape(viewportWidth, viewportHeight);
+        const tileHeight = Math.ceil(Math.max(1, viewportHeight) / Math.max(1, shape.rows));
+        const coverBox = tileHeight - pctH(2) - (pctH(5.5) + pctH(0.4));
+        return Math.max(1, coverBox);
+    }
+    // qmllint enable compiler
+
+    // Stable per-view cover decode size (px), snapped to a Core tier. One source
+    // of truth for both the Core fetch request (Main.qml) and the grid tile's
+    // Image.sourceSize (Tile.qml), so request size == decode size.
+    function gamesGridCoverSourceSize(viewportWidth: int, viewportHeight: int): int {
+        return snapCoverTier(_gamesGridCoverBox(viewportWidth, viewportHeight));
+    }
+
+    // Detail-pane cover decode size: ~2x the grid cover, snapped to its own
+    // tier. The detail view paints one large cover, so it lands a tier above the
+    // grid (e.g. 768 vs 512 at 1080p), keeping the two views distinct. A future
+    // metadata modal adds its own ...CoverSourceSize here.
+    function detailCoverSourceSize(viewportWidth: int, viewportHeight: int): int {
+        return snapCoverTier(_gamesGridCoverBox(viewportWidth, viewportHeight) * 2);
+    }
+
     function systemsGridShape(viewportWidth: int, viewportHeight: int): var {
         return root._selectGridShape(viewportWidth, viewportHeight, root._systemsGridConfig);
     }
