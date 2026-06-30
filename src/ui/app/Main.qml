@@ -2618,6 +2618,12 @@ MainLayout {
     readonly property int _repeatInitialMs: 350
     readonly property int _repeatTickMs: 90
     readonly property int _rapidNavigationQuietMs: 260
+    // Window for collapsing a second delivery of the same key into one
+    // press — hardware contact bounce or input-stack double send. Far
+    // below _repeatInitialMs and the repeat tick so it never touches
+    // hold-repeat, and below the floor for a deliberate human re-tap.
+    readonly property int _duplicateInputWindowMs: 40
+    property int _lastPressedKey: 0
     property string _heldAction: ""
     property int _heldKey: 0
     property bool rapidNavigationActive: false
@@ -2728,6 +2734,14 @@ MainLayout {
 
     function _isRepeatableAction(action: string): bool {
         return action === "up" || action === "down" || action === "left" || action === "right" || action === "page_prev" || action === "page_next";
+    }
+
+    // Drop a second delivery of the same key while the guard window is
+    // open — hardware contact bounce or input-stack double send. A
+    // different key, or the same key after the window closes, is not a
+    // duplicate. Pure so tst_navigation can assert it without a clock.
+    function _isDuplicateInput(key: int, lastKey: int, withinWindow: bool): bool {
+        return withinWindow && key === lastKey;
     }
 
     // State-machine half of handleKey: records the held key/action and
@@ -2906,6 +2920,14 @@ MainLayout {
         }
     }
 
+    // Open while a duplicate-input guard window is active; see the
+    // Keys.onPressed handler below.
+    Timer {
+        id: duplicateInputGuard
+        interval: root._duplicateInputWindowMs
+        repeat: false
+    }
+
     Timer {
         id: repeatInitial
         interval: root._repeatInitialMs
@@ -2948,9 +2970,19 @@ MainLayout {
         // that walk back through games → systems → hub → quit on
         // a single press. Our own controlled repeat (above) takes
         // over for dpad directions only.
+        //
+        // Then drop a second delivery of the same key inside the
+        // duplicate-input window: some controllers / input stacks
+        // double-send a single press, which would otherwise act
+        // twice. Returning before restart() keeps the window anchored
+        // to the first accepted press so a bounce can't extend it.
         Keys.onPressed: event => {
             if (event.isAutoRepeat)
                 return;
+            if (root._isDuplicateInput(event.key, root._lastPressedKey, duplicateInputGuard.running))
+                return;
+            root._lastPressedKey = event.key;
+            duplicateInputGuard.restart();
             root.handleKey(event.key);
         }
         Keys.onReleased: event => {

@@ -710,37 +710,37 @@ Euskara - devilschile2</source>
         <translation type="unfinished">취소</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2993"/>
+        <location filename="../app/Main.qml" line="3025"/>
         <source>Loading systems…</source>
         <translation>시스템 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2995"/>
+        <location filename="../app/Main.qml" line="3027"/>
         <source>Loading games…</source>
         <translation>게임 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2997"/>
+        <location filename="../app/Main.qml" line="3029"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2999"/>
+        <location filename="../app/Main.qml" line="3031"/>
         <source>Loading favorites…</source>
         <translation>즐겨찾기 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3001"/>
+        <location filename="../app/Main.qml" line="3033"/>
         <source>Loading recently played…</source>
         <translation>최근 플레이 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3003"/>
+        <location filename="../app/Main.qml" line="3035"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3005"/>
+        <location filename="../app/Main.qml" line="3037"/>
         <source>Loading…</source>
         <translation>불러오는 중…</translation>
     </message>

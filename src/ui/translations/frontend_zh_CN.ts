@@ -710,37 +710,37 @@ Euskara - devilschile2</source>
         <translation type="unfinished">取消</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2993"/>
+        <location filename="../app/Main.qml" line="3025"/>
         <source>Loading systems…</source>
         <translation>正在加载系统…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2995"/>
+        <location filename="../app/Main.qml" line="3027"/>
         <source>Loading games…</source>
         <translation>正在加载游戏…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2997"/>
+        <location filename="../app/Main.qml" line="3029"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2999"/>
+        <location filename="../app/Main.qml" line="3031"/>
         <source>Loading favorites…</source>
         <translation>正在加载收藏…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3001"/>
+        <location filename="../app/Main.qml" line="3033"/>
         <source>Loading recently played…</source>
         <translation>正在加载最近游玩…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3003"/>
+        <location filename="../app/Main.qml" line="3035"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3005"/>
+        <location filename="../app/Main.qml" line="3037"/>
         <source>Loading…</source>
         <translation>正在加载…</translation>
     </message>
