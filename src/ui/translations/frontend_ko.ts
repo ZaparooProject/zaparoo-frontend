@@ -443,8 +443,8 @@ Euskara - devilschile2</source>
 <context>
     <name>GamesScreen</name>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="131"/>
-        <location filename="../screens/GamesScreen.qml" line="171"/>
+        <location filename="../screens/GamesScreen.qml" line="134"/>
+        <location filename="../screens/GamesScreen.qml" line="174"/>
         <source>%1 files</source>
         <translation>파일 %1개</translation>
     </message>
@@ -454,8 +454,8 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="140"/>
-        <location filename="../screens/GamesScreen.qml" line="172"/>
+        <location filename="../screens/GamesScreen.qml" line="143"/>
+        <location filename="../screens/GamesScreen.qml" line="175"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -470,7 +470,7 @@ Euskara - devilschile2</source>
         <translation>게임 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="136"/>
+        <location filename="../screens/GamesScreen.qml" line="139"/>
         <source>Loading more…</source>
         <translation>더 불러오는 중…</translation>
     </message>
