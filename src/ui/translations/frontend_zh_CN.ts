@@ -443,8 +443,8 @@ Euskara - devilschile2</source>
 <context>
     <name>GamesScreen</name>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="134"/>
-        <location filename="../screens/GamesScreen.qml" line="174"/>
+        <location filename="../screens/GamesScreen.qml" line="137"/>
+        <location filename="../screens/GamesScreen.qml" line="177"/>
         <source>%1 files</source>
         <translation>%1 个文件</translation>
     </message>
@@ -454,8 +454,8 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="143"/>
-        <location filename="../screens/GamesScreen.qml" line="175"/>
+        <location filename="../screens/GamesScreen.qml" line="146"/>
+        <location filename="../screens/GamesScreen.qml" line="178"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -470,7 +470,7 @@ Euskara - devilschile2</source>
         <translation>正在加载游戏…</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="139"/>
+        <location filename="../screens/GamesScreen.qml" line="142"/>
         <source>Loading more…</source>
         <translation>正在加载更多…</translation>
     </message>

@@ -88,6 +88,11 @@ MediaListScreen {
             Browse.GamesModel.set_system(sid);
     }
     acceptAction: index => {
+        // Debounce the whole accept path: while a prior Accept's deferred
+        // leg is still pending, ignore repeats so neither the folder nor the
+        // launch branch re-fires the cue or reassigns the pending target.
+        if (pressCommit.running)
+            return;
         const entryType = Browse.GamesModel.entry_type_at(index);
         if ((entryType === "directory" || entryType === "root") && !Browse.GamesModel.is_media_capable_at(index)) {
             // Persist synchronously (MiSTer may be killed at any time), then
@@ -102,8 +107,6 @@ MediaListScreen {
         // Launch is dispatched immediately so the run command races the
         // push-in cue rather than waiting it out; the deferred leg only
         // settles the tile back to rest. State persistence is synchronous.
-        if (pressCommit.running)
-            return; // debounce a double Accept
         games._scheduleSelectedPersist(Browse.GamesModel.path_at(index));
         games.flushSelectedPersist();
         games.pulseActivate();
