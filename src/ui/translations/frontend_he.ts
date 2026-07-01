@@ -532,7 +532,7 @@ Euskara - devilschile2</source>
         <translation type="vanished">הגדרות</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="790"/>
+        <location filename="../screens/HubScreen.qml" line="796"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>אין מערכות זמינות. הפעילו &quot;עדכון מסד נתוני מדיה&quot; מההגדרות.</translation>
     </message>
