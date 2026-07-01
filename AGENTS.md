@@ -234,6 +234,24 @@ and clears `/tmp/zaparoo/frontend.log`.
 `/media/fat/MiSTer_Zaparoo` is the integration binary shipped with MiSTer. It
 starts our `frontend`; do not replace that flow with a new wrapper script.
 
+## Release
+
+A MiSTer release bundles three independently versioned components: the
+**frontend** (this repo), the **`MiSTer_Zaparoo`** host wrapper (`Main_MiSTer`),
+and the **`menu_zaparoo.rbf`** menu core (`Menu_MiSTer`). The analog video path
+depends on all three matching. Full checklist: `docs/building.md` → "Cutting a
+release". Key points:
+
+- The version lives in two places: `project(... VERSION ...)` in `CMakeLists.txt`
+  and `version` in `rust/Cargo.toml`. Bump both and regenerate `rust/Cargo.lock`
+  (`cargo update --workspace`). The About page derives its version from the CMake
+  version (`ZAPAROO_VERSION`); do not hardcode it in `main.cpp` or QML.
+- The release workflow auto-resolves the latest `Main_MiSTer` and `Menu_MiSTer`
+  releases; override with the `menu_tag` workflow input or
+  `MENU_MISTER_TAG` / `MAIN_MISTER_TAG` when running the packaging script.
+- After publishing, update the downloader DB in `Zaparoo_MiSTer` (`db.json` and
+  its distributed zip(s)).
+
 ## Further Reading
 
 - `docs/architecture.md` — module graph, data flow, runtime/platform split

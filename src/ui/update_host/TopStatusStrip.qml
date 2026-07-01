@@ -6,5 +6,4 @@ import Zaparoo.Ui as Ui
 
 // Stable host-facing name for update QML. The frontend can change where the
 // concrete status strip lives while keeping this wrapper's API compatible.
-Ui.TopStatusStrip {
-}
+Ui.TopStatusStrip {}

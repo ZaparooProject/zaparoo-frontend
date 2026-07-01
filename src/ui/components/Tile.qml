@@ -114,6 +114,11 @@ Item {
     // keep their full-bleed logo layout. Cover-art screens (Games,
     // Recents) flip this on at the delegate template.
     property bool showCaption: false
+    // Decode size (px) for real cover art, set by the owning screen to its
+    // per-view, resolution-derived tier (see Sizing.…CoverSourceSize). Held
+    // stable while browsing so Qt's pixmap cache short-circuits reloads instead
+    // of re-decoding; default 256 matches the built-in tinted-asset raster.
+    property int coverSourceSize: 256
     // Equal cover padding on top, left, and right — the bottom is
     // owned by the caption strip in caption mode and matches `_padding`
     // visually in non-caption mode. pctH(2) is enough to read as
@@ -159,6 +164,22 @@ Item {
     // False for real art (media-image/, custom-image/) which is never recolored
     // — a user override is shown exactly as it is on disk.
     readonly property bool _isTinted: root.delegateCoverKey.startsWith("systems/") || root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey.startsWith("icons/")
+    // True for real raster cover art (a fetched media/custom image) as opposed
+    // to the built-in tinted vector assets (system logos, category/UI glyphs).
+    // Drives the cover decode size below; defined on the art's own identity
+    // (its key prefix), not on `_isTinted`, so the decode policy stays correct
+    // independently of theme-tint behavior.
+    readonly property bool _coverIsRealArt: root.delegateCoverKey.startsWith("media-image/") || root.delegateCoverKey.startsWith("custom-image/")
+    // Real raster art still in flight: the key is media/custom art but the
+    // Image has not reached a terminal state. Paired with _coverPending below
+    // so the busy state stays continuously true across the model's
+    // pending-sentinel -> real-key handoff (both derive from delegateCoverKey
+    // and flip together), which is what keeps the loading cue from blinking.
+    readonly property bool _coverMediaImagePending: root._coverIsRealArt && coverBase.status !== Image.Ready && coverBase.status !== Image.Error
+    // Single combined "waiting on a cover" predicate. Mirrors
+    // BrowseDetailPane._coverBusy — the loading cue is gated on this one value
+    // so an internal state change mid-wait never resets the debounce.
+    readonly property bool _coverBusy: root._coverPending || root._coverMediaImagePending || coverBase.status === Image.Loading
     // Unfocused ramp — always loaded for tinted keys; also the sole source for
     // real art (media-image/, custom-image/) which is focus-independent.
     readonly property url _coverBaseSrc: root._coverPending ? "" : Resources.coverUrl(root.delegateCoverKey, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow)
@@ -179,6 +200,31 @@ Item {
     readonly property int _fallbackMinimumTextSize: root._systemCover ? Sizing.fontSize(2.8) : Sizing.fontSize(2.4)
     readonly property bool _startupTraceResource: root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey === "icons/PlayOutline" || root.delegateCoverKey === "icons/HeartOutline" || root.delegateCoverKey === "icons/History" || root.delegateCoverKey === "icons/Settings"
     property double _startupTraceLoadStartedAt: 0
+    // Loading-cue debounce. A QML Image always passes through Image.Loading for
+    // ~1 frame before Ready, even when the media-image provider returns a cached
+    // cover in ~0.1ms, which would flash the hourglass on every cached tile.
+    // Gated on _coverBusy (not raw Image status) so the cue stays solid across
+    // the pending->loading handoff; only flips true once a wait outlasts the
+    // delay, so instant cached covers never show it. Mirrors BrowseDetailPane.
+    property bool _coverLoadingDelayElapsed: false
+
+    on_CoverBusyChanged: root._updateCoverLoadingDelay()
+
+    Timer {
+        id: coverLoadingDelayTimer
+
+        interval: 150
+        repeat: false
+        onTriggered: root._coverLoadingDelayElapsed = root._coverBusy
+    }
+
+    function _updateCoverLoadingDelay(): void {
+        coverLoadingDelayTimer.stop();
+        root._coverLoadingDelayElapsed = false;
+        if (!root._coverBusy)
+            return;
+        coverLoadingDelayTimer.restart();
+    }
 
     anchors.fill: parent
     // One-shot push-in scale, shared by every button-like action. The
@@ -382,12 +428,22 @@ Item {
 
         width: parent.width - 2 * root._padding
         source: root._coverBaseSrc
-        // Pin to a stable 256 px rasterization. A size-dependent binding would
-        // force a re-render every frame the cell animates; a constant value means
-        // QPixmapCache hits once per logo and reuses it across layout changes.
-        // Combined with `smooth: true`, downscaling to the actual cell width is
-        // bilinear-filtered on draw.
-        sourceSize.width: 256
+        // Cover decode size, split by what the image IS (not whether it is
+        // tinted). Real raster art decodes at the per-view `coverSourceSize` the
+        // owning screen supplies — box art is portrait, so height is the bounding
+        // side. That value is a stable, resolution-derived tier, NOT the live
+        // painted height: Qt reloads an Image whenever sourceSize changes ("Avoid
+        // changing this property dynamically"), so binding it to the fluctuating
+        // box height (per layout pass, recycle, and grid retention revisit) would
+        // re-decode the same cover many times over. A constant requestedSize lets
+        // every reload short-circuit to the pixmap cache. Built-in tinted vector
+        // assets (system logos, category/UI glyphs) instead pin a fixed 256 px
+        // raster: the same logo appears at different sizes across screens, and
+        // the tinted-svg image provider's cache (16 MB cap, keyed id+size) would
+        // churn if each screen requested its own size — the fixed raster
+        // consolidates every tile to one cache entry per logo.
+        sourceSize.width: root._coverIsRealArt ? 0 : 256
+        sourceSize.height: root._coverIsRealArt ? root.coverSourceSize : 0
         fillMode: Image.PreserveAspectFit
         smooth: true
         asynchronous: true
@@ -478,7 +534,7 @@ Item {
         fillMode: Image.PreserveAspectFit
         smooth: true
         asynchronous: false
-        visible: root.showCaption && (root._coverPending || coverBase.status === Image.Loading)
+        visible: root.showCaption && root._coverBusy && root._coverLoadingDelayElapsed
     }
 
     Image {

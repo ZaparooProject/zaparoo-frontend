@@ -329,7 +329,13 @@ Item {
             hub.currentRow = 0;
             hub.currentIndex = chosenCategoryIndex;
         } else if (hub.resumeActionVisible) {
-            hub.focusResumeIfVisible();
+            // Non-persisting seat: this is a programmatic restore, so it must
+            // not commit like focusResumeIfVisible() would. Committing here
+            // clobbers a saved category-row intent whenever the catalog is
+            // momentarily empty (cold-boot restore, in-session catalog
+            // refresh), stranding the user on Resume when they back out.
+            hub.currentRow = 1;
+            hub.currentIndex = hub._actionIndexForId("resume");
         } else if (Browse.CategoriesModel.count === 0) {
             hub.currentRow = 1;
             hub.currentIndex = hub._actionIndexForId(hub._emptyCatalogFallbackAction);

@@ -14,6 +14,10 @@ on:
         description: 'Tag/version to build (e.g. v1.0.4)'
         required: true
         type: string
+      menu_tag:
+        description: 'Menu_MiSTer release tag to bundle (defaults to latest)'
+        required: false
+        type: string
       upload:
         description: 'Upload to GitHub release'
         required: false
@@ -87,6 +91,22 @@ jobs:
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve Menu_MiSTer release tag
+        id: menu-mister
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MENU_TAG_INPUT: ${{ inputs.menu_tag }}
+        run: |
+          tag="$MENU_TAG_INPUT"
+          if [ -z "$tag" ]; then
+            tag=$(gh api repos/ZaparooProject/Menu_MiSTer/releases/latest --jq '.tag_name')
+          fi
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "Could not resolve Menu_MiSTer release" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Install host build dependencies
         run: |
           sudo apt-get update
@@ -155,6 +175,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAIN_MISTER_TAG: ${{ steps.main-mister.outputs.tag }}
+          MENU_MISTER_TAG: ${{ steps.menu-mister.outputs.tag }}
 
       - name: Record archive name
         id: archive

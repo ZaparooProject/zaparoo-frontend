@@ -493,6 +493,24 @@ TestCase {
         compare(main.rapidNavigationActive, false);
     }
 
+    // Duplicate-input guard. The Keys.onPressed handler collapses a
+    // second delivery of the same key while the guard window is open
+    // (controller / input-stack double send). The decision is a pure
+    // helper so we can assert it without driving real key events or a
+    // clock — same key inside the window is a duplicate, a different
+    // key or the same key after the window are not.
+    function test_duplicate_input_drops_same_key_in_window(): void {
+        compare(main._isDuplicateInput(Qt.Key_Down, Qt.Key_Down, true), true, "same key inside the window is a duplicate");
+    }
+
+    function test_duplicate_input_passes_same_key_after_window(): void {
+        compare(main._isDuplicateInput(Qt.Key_Down, Qt.Key_Down, false), false, "same key after the window closes is a fresh press");
+    }
+
+    function test_duplicate_input_passes_different_key_in_window(): void {
+        compare(main._isDuplicateInput(Qt.Key_Up, Qt.Key_Down, true), false, "a different key inside the window is never a duplicate");
+    }
+
     // Context-menu builder. Drives the pure helper directly per the QML
     // test isolation rule — no real menu opening, no handleAction.
     // Compares only the entry id sequence; labels are qsTr() and asserted

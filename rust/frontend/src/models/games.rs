@@ -193,14 +193,14 @@ pub struct GamesModelRust {
     error_message: QString,
     has_next_page: bool,
     // Files-only count from Core (`BrowseFileCount`). Combined with
-    // `dir_count` to compute total entries for the page denominator —
-    // dirs are returned only on page 1 and always before files, so
-    // `dir_count + total_files` is exact, not an estimate.
+    // `total_dirs` to compute total entries for the page denominator.
+    // Directories always precede files, so `total_dirs + total_files`
+    // is exact, not an estimate.
     total_files: i32,
-    // Count of leading directory entries seen on page 1. Set once when
-    // page 1 lands and never touched on cursor follow-ups (Core never
-    // returns directories on follow-up pages).
-    dir_count: i32,
+    // Total directory count for the current scope (`BrowseDirCount`),
+    // carried forward by Core on every page. Directories always precede
+    // files, so `total_dirs + total_files` is the exact entry total.
+    total_dirs: i32,
     // API page size, bound to the QML grid's `pageSize` so the API page
     // matches the visual page exactly — no mid-page "Loading more…"
     // pause on the user's first scroll past row 0.
@@ -307,6 +307,11 @@ pub struct GamesModelRust {
     // window for whatever row the user is currently looking at.
     visible_first_row: i32,
     cover_max_size: i32,
+    // Bounding-box size requested for detail-pane images, baked into the
+    // detail keys so the pane fetches its own larger resolution instead of
+    // sharing the grid's cover entry. `0` keeps the legacy shared-key
+    // behavior (no separate detail fetch).
+    detail_cover_max_size: i32,
     nav_timing: Option<NavTiming>,
     // When the user's cover preference is "auto" and Core's `type_tag` for
     // the index-0 key is not yet known (cover still in-flight), we stash the
@@ -338,7 +343,7 @@ impl Default for GamesModelRust {
             error_message: QString::default(),
             has_next_page: false,
             total_files: 0,
-            dir_count: 0,
+            total_dirs: 0,
             page_size: DEFAULT_PAGE_SIZE,
             current_system_id: QString::default(),
             current_path: QString::default(),
@@ -374,6 +379,7 @@ impl Default for GamesModelRust {
             pending_initial_lookahead: false,
             visible_first_row: 0,
             cover_max_size: 0,
+            detail_cover_max_size: 0,
             nav_timing: None,
             pending_carousel_keys: None,
             letter_index_json: QString::default(),
@@ -410,7 +416,7 @@ pub mod ffi {
         #[qproperty(QString, error_message)]
         #[qproperty(bool, has_next_page)]
         #[qproperty(i32, total_files)]
-        #[qproperty(i32, dir_count)]
+        #[qproperty(i32, total_dirs)]
         #[qproperty(i32, page_size)]
         #[qproperty(QString, current_system_id)]
         #[qproperty(QString, current_path)]
@@ -431,12 +437,16 @@ pub mod ffi {
         #[qproperty(bool, show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
         #[qproperty(i32, visible_first_row)]
         #[qproperty(i32, cover_max_size, READ, WRITE = set_cover_max_size, NOTIFY)]
+        #[qproperty(i32, detail_cover_max_size, READ, WRITE = set_detail_cover_max_size, NOTIFY)]
         #[qproperty(QString, letter_index_json)]
         #[qproperty(QString, letter_index_scheme)]
         type GamesModel = super::GamesModelRust;
 
         #[qinvokable]
         fn set_cover_max_size(self: Pin<&mut GamesModel>, size: i32);
+
+        #[qinvokable]
+        fn set_detail_cover_max_size(self: Pin<&mut GamesModel>, size: i32);
 
         #[qinvokable]
         fn set_system(self: Pin<&mut GamesModel>, system_id: QString);
@@ -650,6 +660,21 @@ impl ffi::GamesModel {
         let clamped = size.max(0);
         self.as_mut().rust_mut().cover_max_size = clamped;
         global_media_image_cache().set_max_cover_size(u32::try_from(clamped).unwrap_or(0));
+    }
+
+    // The detail size is baked into the detail keys (see `set_detail_image_keys`)
+    // rather than pushed to the cache's global default, so it stays independent
+    // of the grid's `set_cover_max_size`.
+    fn set_detail_cover_max_size(mut self: Pin<&mut Self>, size: i32) {
+        let clamped = size.max(0);
+        if self.detail_cover_max_size == clamped {
+            return;
+        }
+        self.as_mut().rust_mut().detail_cover_max_size = clamped;
+        let keys = self.detail_image_keys.clone();
+        if !keys.is_empty() {
+            set_detail_image_keys(self.as_mut(), keys);
+        }
     }
 
     fn set_system(mut self: Pin<&mut Self>, system_id: QString) {
@@ -1444,10 +1469,9 @@ impl ffi::GamesModel {
         // Total-files counter resets too — the previous path's
         // denominator would be misleading until the new fetch lands.
         self.as_mut().set_total_files(0);
-        // Same reasoning for dir_count: a stale value from the previous
-        // browse target would misclassify which leading entries are
-        // folders if the new fetch fails or stalls.
-        self.as_mut().set_dir_count(0);
+        // Total-dirs counter is the other denominator term; reset it for
+        // the same reason.
+        self.as_mut().set_total_dirs(0);
 
         if let Some(handle) = self.as_mut().rust_mut().watcher.take() {
             handle.abort();
@@ -2017,6 +2041,14 @@ fn refresh_adjacent_cover_prefetch(mut model: Pin<&mut ffi::GamesModel>) {
 }
 
 fn set_detail_image_keys(mut model: Pin<&mut ffi::GamesModel>, keys: Vec<MediaKey>) {
+    // Bake the detail-pane size into every detail image so it fetches its own
+    // (larger) resolution rather than sharing the grid's cover entry. `0`
+    // clears sizing, preserving the shared-key instant-paint behavior.
+    let detail_size = u32::try_from(model.detail_cover_max_size.max(0)).unwrap_or(0);
+    let keys = keys
+        .into_iter()
+        .map(|k| k.with_max_size(detail_size))
+        .collect();
     model.as_mut().rust_mut().detail_image_keys = keys;
     model.as_mut().set_current_detail_image_index(0);
     let count = i32::try_from(model.detail_image_keys.len()).unwrap_or(i32::MAX);
@@ -2746,11 +2778,6 @@ fn display_name<'a>(raw: &'a str, platform: Option<&Platform>) -> std::borrow::C
     std::borrow::Cow::Borrowed(raw)
 }
 
-fn leading_dir_count(entries: &[BrowseEntry]) -> i32 {
-    let n = entries.iter().take_while(|e| e.is_folder()).count();
-    i32::try_from(n).unwrap_or(i32::MAX)
-}
-
 /// Drop any root-type entry whose path is a strict ancestor of another
 /// root entry's path. Defends against Core occasionally surfacing the
 /// shared parent dir (e.g. `/media/fat/games`) as a system root alongside
@@ -2914,47 +2941,97 @@ fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<Med
     }
 }
 
+// Already seeded: this Ready is a cache invalidation refetch on the same
+// browse target (e.g. `MediaTagsUpdateMutation`'s `MediaBrowseEndpoint`
+// invalidation after a favorite toggle, or a Loading→Ready cycle from a
+// connection blip / post-error retry). A full model reset would clobber any
+// pages the user paginated to and reset the grid to row 0; the local mutation
+// paths (`apply_favorite_tags`) keep the visible model in sync. Loading was set
+// true by the preceding Pending — clear it so a transient blip doesn't leave
+// the spinner stuck on after the refetch lands.
+fn result_total_dirs(result: &MediaBrowseResult) -> i32 {
+    let total_dirs = result.total_dirs.map_or_else(
+        || {
+            result
+                .entries
+                .iter()
+                .filter(|entry| entry.is_folder())
+                .count()
+        },
+        |total_dirs| usize::try_from(total_dirs).unwrap_or(usize::MAX),
+    );
+    i32::try_from(total_dirs).unwrap_or(i32::MAX)
+}
+
+fn seeded_refetch_has_seed_page_only(model_count: i32, seed_entry_count: usize) -> bool {
+    usize::try_from(model_count).is_ok_and(|count| count == seed_entry_count)
+}
+
+fn seeded_refetch_pagination_state(
+    model_count: i32,
+    seed_entry_count: usize,
+    current_next_cursor: Option<String>,
+    current_has_next_page: bool,
+    result_next_cursor: Option<String>,
+    result_has_next_page: bool,
+) -> (Option<String>, bool) {
+    if seeded_refetch_has_seed_page_only(model_count, seed_entry_count) {
+        (result_next_cursor, result_has_next_page)
+    } else {
+        (current_next_cursor, current_has_next_page)
+    }
+}
+
+fn apply_seeded_refetch(mut model: Pin<&mut ffi::GamesModel>, result: &MediaBrowseResult) {
+    let (next_cursor, has_next_page) = seeded_refetch_pagination_state(
+        model.count,
+        result.entries.len(),
+        model.next_cursor.clone(),
+        model.has_next_page,
+        result.next_cursor(),
+        result.has_next_page(),
+    );
+    let total = i32::try_from(result.total_files).unwrap_or(i32::MAX);
+    let total_dirs = result_total_dirs(result);
+    if model.next_cursor != next_cursor {
+        model.as_mut().rust_mut().next_cursor = next_cursor;
+    }
+    if model.has_next_page != has_next_page {
+        model.as_mut().set_has_next_page(has_next_page);
+    }
+    if model.total_files != total {
+        model.as_mut().set_total_files(total);
+    }
+    if model.total_dirs != total_dirs {
+        model.as_mut().set_total_dirs(total_dirs);
+    }
+    if model.loading {
+        model.as_mut().set_loading(false);
+    }
+    if !model.error_message.is_empty() {
+        model.as_mut().set_error_message(QString::default());
+    }
+    finish_nav_timing(model.as_mut(), "already-seeded", 0);
+}
+
 fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseResult) {
     let apply_started = Instant::now();
-    // Already seeded: this Ready is a cache invalidation refetch on
-    // the same browse target (e.g. `MediaTagsUpdateMutation`'s
-    // `MediaBrowseEndpoint` invalidation after a favorite toggle, or
-    // a Loading→Ready cycle from a connection blip / post-error
-    // retry). The full reset below would clobber any pages the user
-    // paginated to and reset the grid to row 0; the local mutation
-    // paths (`apply_favorite_tags`) keep the visible model in sync.
-    // Loading was set true by the preceding Pending — clear it so a
-    // transient blip doesn't leave the spinner stuck on after the
-    // refetch lands.
     if model.is_seeded {
-        let has_next_page = result.has_next_page();
-        let next_cursor = result.next_cursor();
-        let total = i32::try_from(result.total_files).unwrap_or(i32::MAX);
-        model.as_mut().rust_mut().next_cursor = next_cursor;
-        if model.has_next_page != has_next_page {
-            model.as_mut().set_has_next_page(has_next_page);
-        }
-        if model.total_files != total {
-            model.as_mut().set_total_files(total);
-        }
-        if model.loading {
-            model.as_mut().set_loading(false);
-        }
-        finish_nav_timing(model.as_mut(), "already-seeded", 0);
+        apply_seeded_refetch(model, &result);
         return;
     }
     let has_next_page = result.has_next_page();
     let next_cursor = result.next_cursor();
     let total = i32::try_from(result.total_files).unwrap_or(i32::MAX);
+    let total_dirs = result_total_dirs(&result);
     let platform = platform::current();
     let transform_started = Instant::now();
     let entries = transform_entries(result.entries, platform.as_ref());
     let transform_ms = transform_started.elapsed().as_millis();
-    let dir_count = leading_dir_count(&entries);
     let count = i32::try_from(entries.len()).unwrap_or(i32::MAX);
     info!(
         count,
-        dir_count, total, has_next_page, "games: apply_initial_page"
+        total, total_dirs, has_next_page, "games: apply_initial_page"
     );
     let reset_started = Instant::now();
     let displays = compute_disambig_displays(&entries, model.show_original_filenames);
@@ -2976,8 +3053,8 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     // when the flag flips false on the terminal chunk. A fresh
     // model reset has no pending-target watchdog to mislead, so
     // setting the flag early here is safe.
-    model.as_mut().set_dir_count(dir_count);
     model.as_mut().set_total_files(total);
+    model.as_mut().set_total_dirs(total_dirs);
     model.as_mut().set_has_next_page(has_next_page);
     model.as_mut().end_reset_model();
     model.as_mut().count_changed();
@@ -3265,8 +3342,9 @@ fn apply_append_page(
             // Remaining batches: post one frame apart on the Qt
             // thread, with the LAST one carrying the finaliser
             // (has_next_page, total_files, look-ahead gate release).
-            // dir_count intentionally not touched: Core only returns
-            // directory entries on page 1 (cursor == nil).
+            // total_dirs is not touched here: Core computes it once on
+            // page 1 and carries the same value forward, so it never
+            // changes across appended pages.
             //
             // No auto-prefetch here. apply_initial_page pre-warms
             // chunk 2 once; subsequent chunks are driven by the
@@ -3347,10 +3425,11 @@ mod tests {
         cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
         detail_image_keys_from_meta, detail_tags_from_tags, display_name, display_title_for_entry,
         entry_system_id, is_media_capable_entry, is_strict_ancestor_path, jump_fetch_limit,
-        leading_dir_count, media_capable_directory_browse_params, media_key_for,
-        meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
-        prefetch_around_plan, prefetch_cursor_window_plan, project_status, run_text_for_entry,
-        singleton_directory_needs_launch_resolution, transform_entries, InitialAction, Projection,
+        media_capable_directory_browse_params, media_key_for, meta_params_for_entry,
+        ordered_detail_image_keys, position_of_game_path, prefetch_around_plan,
+        prefetch_cursor_window_plan, project_status, result_total_dirs, run_text_for_entry,
+        seeded_refetch_pagination_state, singleton_directory_needs_launch_resolution,
+        transform_entries, InitialAction, Projection,
     };
     use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -3449,6 +3528,7 @@ mod tests {
             path: "/games/NES".into(),
             entries: vec![media("smb", "/games/NES/smb.nes", "NES")],
             total_files: 1,
+            total_dirs: Some(0),
             pagination: None,
         };
         match project_status(ResourceStatus::Ready(result)) {
@@ -3469,6 +3549,58 @@ mod tests {
             Projection::Errored { message } => assert_eq!(message, "rpc kaboom"),
             other => panic!("expected Errored, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn total_dirs_uses_present_zero_without_fallback() {
+        let result = MediaBrowseResult {
+            entries: vec![folder("Dir", "/games/Dir")],
+            total_dirs: Some(0),
+            ..MediaBrowseResult::default()
+        };
+        assert_eq!(result_total_dirs(&result), 0);
+    }
+
+    #[test]
+    fn total_dirs_falls_back_to_folder_count_when_missing() {
+        let result = MediaBrowseResult {
+            entries: vec![
+                folder("Dir", "/games/Dir"),
+                media("Game", "/games/game.rom", "NES"),
+                root("NES", "/games/NES", "NES"),
+            ],
+            total_dirs: None,
+            ..MediaBrowseResult::default()
+        };
+        assert_eq!(result_total_dirs(&result), 2);
+    }
+
+    #[test]
+    fn seeded_refetch_after_append_keeps_pagination_cursor() {
+        let (next_cursor, has_next_page) = seeded_refetch_pagination_state(
+            24,
+            12,
+            Some("page-3".into()),
+            true,
+            Some("page-2".into()),
+            true,
+        );
+        assert_eq!(next_cursor.as_deref(), Some("page-3"));
+        assert!(has_next_page);
+    }
+
+    #[test]
+    fn seeded_refetch_on_seed_page_refreshes_pagination_cursor() {
+        let (next_cursor, has_next_page) = seeded_refetch_pagination_state(
+            12,
+            12,
+            Some("stale".into()),
+            true,
+            Some("page-2".into()),
+            false,
+        );
+        assert_eq!(next_cursor.as_deref(), Some("page-2"));
+        assert!(!has_next_page);
     }
 
     #[test]
@@ -3667,30 +3799,6 @@ mod tests {
         let off_mister = transform_entries(entries, Some(&Platform::Linux));
         assert_eq!(off_mister[0].name, "_Arcade");
         assert_eq!(off_mister[1].name, "_smb");
-    }
-
-    #[test]
-    fn leading_dir_count_counts_only_leading_folders() {
-        let entries = vec![
-            folder("a", "/a"),
-            folder("b", "/b"),
-            media("smb", "/smb", "NES"),
-            // A folder appearing after files would be a Core bug —
-            // the API contract is dirs-then-files. We don't count it.
-            folder("c", "/c"),
-        ];
-        assert_eq!(leading_dir_count(&entries), 2);
-    }
-
-    #[test]
-    fn leading_dir_count_zero_when_first_is_media() {
-        let entries = vec![media("smb", "/smb", "NES"), media("zelda", "/z", "NES")];
-        assert_eq!(leading_dir_count(&entries), 0);
-    }
-
-    #[test]
-    fn leading_dir_count_zero_on_empty() {
-        assert_eq!(leading_dir_count(&[]), 0);
     }
 
     #[test]
@@ -3973,6 +4081,7 @@ mod tests {
                 },
             ],
             total_files: 2,
+            total_dirs: Some(0),
             pagination: None,
         };
         assert_eq!(
@@ -4002,6 +4111,7 @@ mod tests {
                 ..BrowseEntry::default()
             }],
             total_files: 1,
+            total_dirs: Some(0),
             pagination: None,
         };
         assert!(singleton_directory_needs_launch_resolution(&parent));

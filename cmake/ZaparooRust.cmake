@@ -104,6 +104,7 @@ if(_rs_qt6_core_type STREQUAL "STATIC_LIBRARY")
         include("${_rs_config}" OPTIONAL)
     endforeach()
     include("${_rs_qt_prefix}/lib/cmake/Qt6Gui/Qt6QLinuxFbIntegrationPluginConfig.cmake" OPTIONAL)
+    include("${_rs_qt_prefix}/lib/cmake/Qt6Gui/Qt6QWebpPluginConfig.cmake" OPTIONAL)
     foreach(_rs_qml_plugin IN ITEMS qtquickcontrols2plugin qtquickcontrols2basicstyleplugin
                                     qtquickcontrols2implplugin qtquicktemplates2plugin quickwindow
     )
@@ -145,9 +146,9 @@ qt_import_qml_plugins(frontend)
 
 # For static Qt (ARM32): the Controls chain _init OBJECT targets carry the Q_IMPORT_QML_PLUGIN
 # static-init factories. Not propagated automatically from a cross-compiled Qt toolchain, so link
-# them explicitly. The QSvgPlugin entry registers the SVG image format with QImageReader so `Image {
-# source: "...svg" }` works in the static build (the shared desktop build picks the plugin up
-# automatically from the Qt install).
+# them explicitly. The image-format plugin entries register SVG/WebP with QImageReader so `Image`
+# sources and Core-returned WebP covers work in the static build (the shared desktop build picks
+# plugins up automatically from the Qt install).
 if(_rs_qt6_core_type STREQUAL "STATIC_LIBRARY")
     if(TARGET Qt6::QLinuxFbIntegrationPlugin)
         target_link_libraries(
@@ -156,6 +157,9 @@ if(_rs_qt6_core_type STREQUAL "STATIC_LIBRARY")
     endif()
     if(TARGET Qt6::QSvgPlugin)
         target_link_libraries(frontend PRIVATE Qt6::QSvgPlugin Qt6::QSvgPlugin_init)
+    endif()
+    if(TARGET Qt6::QWebpPlugin)
+        target_link_libraries(frontend PRIVATE Qt6::QWebpPlugin Qt6::QWebpPlugin_init)
     endif()
     foreach(_rs_qml_plugin IN ITEMS qtquickcontrols2plugin qtquickcontrols2basicstyleplugin
                                     qtquickcontrols2implplugin qtquicktemplates2plugin quickwindow
