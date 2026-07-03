@@ -57,6 +57,14 @@ if(_rs_qt6_core_type STREQUAL "STATIC_LIBRARY")
     else()
         set(_rs_qmake "/opt/qt6-arm32/bin/qmake6")
     endif()
+    if(NOT EXISTS "${_rs_qmake}")
+        message(
+            FATAL_ERROR
+                "Target qmake not found at ${_rs_qmake}. "
+                "Expected /opt/qt6-arm64/bin/qmake6 or /opt/qt6-arm32/bin/qmake6 "
+                "in static Qt cross-build images."
+        )
+    endif()
 else()
     find_program(_rs_qmake NAMES qmake6 qmake REQUIRED)
 endif()

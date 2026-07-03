@@ -53,16 +53,14 @@ RUN mkdir -p build && cd build && \
     if [ -n "${ZAPAROO_BUILD_DATE}" ]; then \
         export ZAPAROO_BUILD_DATE="${ZAPAROO_BUILD_DATE}"; \
     fi && \
-    if [ ! -f build.ninja ]; then \
-        /opt/qt6-arm64/bin/qt-cmake .. \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DZAPAROO_BUILD_TESTS=OFF \
-            -DZAPAROO_EMBEDDED=ON \
-            -DZAPAROO_WITH_UPDATE=OFF \
-            -DQt6LinguistTools_DIR=/opt/qt6-host/lib/cmake/Qt6LinguistTools; \
-    fi \
+    /opt/qt6-arm64/bin/qt-cmake .. \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DZAPAROO_BUILD_TESTS=OFF \
+        -DZAPAROO_EMBEDDED=ON \
+        -DZAPAROO_WITH_UPDATE=OFF \
+        -DQt6LinguistTools_DIR=/opt/qt6-host/lib/cmake/Qt6LinguistTools \
     && ninja \
     && cp bin/frontend /src/frontend-arm64-built
 

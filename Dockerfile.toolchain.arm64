@@ -242,8 +242,7 @@ RUN mkdir qtimageformats-arm64-build && cd qtimageformats-arm64-build && \
 
 # Rust toolchain for cross-compiling frontend-rs to arm64.
 RUN wget -qO- https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain stable --profile minimal \
-    && /root/.cargo/bin/rustup target add aarch64-unknown-linux-gnu
+        | sh -s -- -y --default-toolchain none --profile minimal
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
@@ -257,6 +256,7 @@ AR_aarch64_unknown_linux_gnu = "aarch64-linux-gnu-ar"\n\
 ' > /root/.cargo/config.toml
 
 RUN rustup toolchain install 1.96.0 --profile minimal \
+    && rustup default 1.96.0 \
     && rustup target add --toolchain 1.96.0 aarch64-unknown-linux-gnu
 
 RUN cargo install cargo-chef@0.1.77 --locked
@@ -280,6 +280,7 @@ RUN dpkg --add-architecture arm64 && apt-get update && apt-get install -y --no-i
         gcc-aarch64-linux-gnu \
         git \
         libglib2.0-0 \
+        libicu72 \
         ninja-build \
         pkg-config \
         python3 \
