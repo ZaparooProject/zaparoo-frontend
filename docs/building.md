@@ -52,13 +52,13 @@ just install-tools
 If `just` isn't packaged for your distro, install it the same way:
 `cargo install --locked just`.
 
-### MiSTer ARM32 cross-build
+### MiSTer ARM32 / ARM64 cross-builds
 
 - Docker with Buildx (Docker Desktop includes it)
 - x86_64 Linux Docker platform (`linux/amd64`)
-- ~5 GB disk space for the toolchain image
+- ~5 GB disk space for each toolchain image
 
-The toolchain Docker image provides the ARM build environment. Cargo still gets
+The toolchain Docker images provide the ARM build environments. Cargo still gets
 its target and linker settings from `rust/.cargo/config.toml`; the desktop
 `mold` linker setting lives there too. You should not need to edit Cargo config
 by hand.
@@ -144,6 +144,47 @@ Check the ARM binary:
 ```bash
 file output/frontend
 # Should report: ELF 32-bit LSB executable, ARM, EABI5 ...
+```
+
+## ARM64 cross-build
+
+The ARM64 target mirrors the MiSTer Docker flow but uses a separate Qt +
+aarch64 toolchain image with static Qt, EGLFS/GBM, and linuxfb enabled:
+
+```bash
+./scripts/build-arm64.sh
+# or
+just arm64
+```
+
+This pulls
+`ghcr.io/zaparooproject/qt6-arm64-toolchain:<scripts/toolchain-arm64/VERSION>` if it is
+not cached locally, builds the application in Docker, and writes the arm64 binary to
+`output/frontend-arm64`. It does not require host Qt, CMake, Rust, or an aarch64 toolchain.
+
+If the official image is unavailable, build and use the local toolchain image:
+
+```bash
+USE_LOCAL_TOOLCHAIN=1 ./scripts/build-arm64.sh
+```
+
+The arm64 build sets `ZAPAROO_WITH_UPDATE=OFF`. Platform-specific update mechanisms
+own updates, so the optional zaparoo-update integration is intentionally not bundled into
+this artifact.
+
+At runtime, set the Qt platform from the service/wrapper, for example:
+
+```bash
+QT_QPA_PLATFORM=eglfs
+QT_QPA_EGLFS_INTEGRATION=eglfs_kms
+QT_QUICK_BACKEND=software  # fallback only; omit when using Qt Quick via GLES
+```
+
+Check the ARM64 binary:
+
+```bash
+file output/frontend-arm64
+# Should report: ELF 64-bit LSB executable, ARM aarch64 ...
 ```
 
 ## Tests

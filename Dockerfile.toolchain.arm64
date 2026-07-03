@@ -1,0 +1,311 @@
+# syntax=docker/dockerfile:1.6
+# Zaparoo Frontend
+# Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+#
+# Builds the reusable Qt + Linux arm64 toolchain base image.
+# This mirrors the MiSTer ARM32 toolchain flow, but targets aarch64 Linux
+# with EGLFS/GBM + linuxfb so the same binary can be smoke-tested on KMS/GBM
+# or software framebuffer paths.
+#
+# Qt version pinned here — bump this line when updating Qt:
+ARG QT_VERSION=6.10.3
+
+FROM debian:bookworm-slim AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN dpkg --add-architecture arm64 && apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    cmake \
+    g++-aarch64-linux-gnu \
+    gcc-aarch64-linux-gnu \
+    git \
+    ninja-build \
+    perl \
+    pkg-config \
+    python3 \
+    wget \
+    xz-utils \
+    libfontconfig1-dev \
+    libfreetype-dev \
+    libx11-dev \
+    libx11-xcb-dev \
+    libxext-dev \
+    libxfixes-dev \
+    libxi-dev \
+    libxrender-dev \
+    libxcb1-dev \
+    libxcb-cursor-dev \
+    libxcb-glx0-dev \
+    libxcb-keysyms1-dev \
+    libxcb-image0-dev \
+    libxcb-shm0-dev \
+    libxcb-icccm4-dev \
+    libxcb-sync-dev \
+    libxcb-xfixes0-dev \
+    libxcb-shape0-dev \
+    libxcb-randr0-dev \
+    libxcb-render-util0-dev \
+    libxcb-util-dev \
+    libxcb-xinerama0-dev \
+    libxcb-xkb-dev \
+    libxkbcommon-dev \
+    libxkbcommon-x11-dev \
+    libgl1-mesa-dev \
+    libgles2-mesa-dev \
+    libegl1-mesa-dev \
+    libssl-dev \
+    libdbus-1-dev \
+    libglib2.0-dev \
+    libicu-dev \
+    libpcre2-dev \
+    zlib1g-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libdrm-dev:arm64 \
+    libegl-dev:arm64 \
+    libfontconfig1-dev:arm64 \
+    libfreetype-dev:arm64 \
+    libgbm-dev:arm64 \
+    libgl-dev:arm64 \
+    libgles-dev:arm64 \
+    libjpeg-dev:arm64 \
+    libpng-dev:arm64 \
+    libwebp-dev:arm64 \
+    libxkbcommon-dev:arm64 \
+    zlib1g-dev:arm64 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+ARG QT_VERSION
+RUN git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtbase.git && \
+    git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtshadertools.git && \
+    git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtdeclarative.git && \
+    git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qttools.git && \
+    git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtwebsockets.git && \
+    git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtsvg.git && \
+    git clone --depth 1 --branch v${QT_VERSION} https://github.com/qt/qtimageformats.git
+
+# Host Qt build. Provides moc/rcc/qmlcachegen/lupdate/lrelease for the cross build.
+RUN mkdir qtbase-host-build && cd qtbase-host-build && \
+    ../qtbase/configure \
+        -release \
+        -prefix /opt/qt6-host \
+        -nomake examples \
+        -nomake tests \
+        -no-opengl \
+        -no-openssl \
+        -no-dbus \
+        -no-feature-accessibility \
+        -no-feature-sql \
+        -qt-zlib \
+        -qt-libpng \
+        -qt-libjpeg \
+        -qt-freetype \
+        -qt-pcre \
+        -qt-harfbuzz \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qtshadertools-host-build && cd qtshadertools-host-build && \
+    /opt/qt6-host/bin/qt-configure-module ../qtshadertools \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qtdeclarative-host-build && cd qtdeclarative-host-build && \
+    /opt/qt6-host/bin/qt-configure-module ../qtdeclarative \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qttools-host-build && cd qttools-host-build && \
+    /opt/qt6-host/bin/qt-configure-module ../qttools \
+        -- \
+        -DFEATURE_linguist=ON \
+        -DFEATURE_assistant=OFF \
+        -DFEATURE_designer=OFF \
+        -DFEATURE_qtattributionsscanner=OFF \
+        -DFEATURE_qdbus=OFF \
+        -DFEATURE_qtdiag=OFF \
+        -DFEATURE_qtplugininfo=OFF \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qtwebsockets-host-build && cd qtwebsockets-host-build && \
+    /opt/qt6-host/bin/qt-configure-module ../qtwebsockets \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qtsvg-host-build && cd qtsvg-host-build && \
+    /opt/qt6-host/bin/qt-configure-module ../qtsvg \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qtimageformats-host-build && cd qtimageformats-host-build && \
+    /opt/qt6-host/bin/qt-configure-module ../qtimageformats \
+        -feature-webp \
+        -no-feature-jasper \
+        -no-feature-mng \
+        -no-feature-tiff \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+# Debian multiarch aarch64 toolchain. Use compiler default sysroot and target pkg-config dirs.
+COPY <<'EOF' /build/arm64-toolchain.cmake
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR aarch64)
+
+set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
+set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+set(CMAKE_AR aarch64-linux-gnu-ar)
+set(CMAKE_RANLIB aarch64-linux-gnu-ranlib)
+set(CMAKE_STRIP aarch64-linux-gnu-strip)
+
+set(CMAKE_FIND_ROOT_PATH /usr/aarch64-linux-gnu /usr)
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+
+set(CMAKE_C_FLAGS_INIT "-mcpu=cortex-a53")
+set(CMAKE_CXX_FLAGS_INIT "-mcpu=cortex-a53")
+EOF
+
+ENV PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+ENV PKG_CONFIG_SYSROOT_DIR=/
+
+# Target Qt for ARM64 Linux: static Qt, dynamic system EGL/GLES/GBM/libdrm.
+RUN mkdir qtbase-arm64-build && cd qtbase-arm64-build && \
+    ../qtbase/configure \
+        -release \
+        -static \
+        -prefix /opt/qt6-arm64 \
+        -qt-host-path /opt/qt6-host \
+        -nomake examples \
+        -nomake tests \
+        -opengl es2 \
+        -eglfs \
+        -linuxfb \
+        -no-openssl \
+        -no-dbus \
+        -no-icu \
+        -no-feature-accessibility \
+        -no-feature-printsupport \
+        -no-feature-sql \
+        -no-feature-concurrent \
+        -no-feature-brotli \
+        -no-feature-libinput \
+        -no-feature-libudev \
+        -qt-zlib \
+        -qt-libpng \
+        -qt-libjpeg \
+        -qt-freetype \
+        -qt-pcre \
+        -qt-harfbuzz \
+        -- -DCMAKE_TOOLCHAIN_FILE=/build/arm64-toolchain.cmake \
+           -DFEATURE_eglfs=ON \
+           -DFEATURE_eglfs_gbm=ON \
+           -DFEATURE_eglfs_kms=ON \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qtshadertools-arm64-build && cd qtshadertools-arm64-build && \
+    /opt/qt6-arm64/bin/qt-configure-module ../qtshadertools \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qtdeclarative-arm64-build && cd qtdeclarative-arm64-build && \
+    /opt/qt6-arm64/bin/qt-configure-module ../qtdeclarative \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qtwebsockets-arm64-build && cd qtwebsockets-arm64-build && \
+    /opt/qt6-arm64/bin/qt-configure-module ../qtwebsockets \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qtsvg-arm64-build && cd qtsvg-arm64-build && \
+    /opt/qt6-arm64/bin/qt-configure-module ../qtsvg \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+RUN mkdir qtimageformats-arm64-build && cd qtimageformats-arm64-build && \
+    /opt/qt6-arm64/bin/qt-configure-module ../qtimageformats \
+        -feature-webp \
+        -no-feature-jasper \
+        -no-feature-mng \
+        -no-feature-tiff \
+    && cmake --build . --parallel $(nproc) \
+    && cmake --install .
+
+# Rust toolchain for cross-compiling frontend-rs to arm64.
+RUN wget -qO- https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain stable --profile minimal \
+    && /root/.cargo/bin/rustup target add aarch64-unknown-linux-gnu
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN printf '[target.aarch64-unknown-linux-gnu]\n\
+linker = "aarch64-linux-gnu-gcc"\n\
+\n\
+[env]\n\
+CC_aarch64_unknown_linux_gnu = "aarch64-linux-gnu-gcc"\n\
+CXX_aarch64_unknown_linux_gnu = "aarch64-linux-gnu-g++"\n\
+AR_aarch64_unknown_linux_gnu = "aarch64-linux-gnu-ar"\n\
+' > /root/.cargo/config.toml
+
+RUN rustup toolchain install 1.96.0 --profile minimal \
+    && rustup target add --toolchain 1.96.0 aarch64-unknown-linux-gnu
+
+RUN cargo install cargo-chef@0.1.77 --locked
+
+RUN find /opt/qt6-arm64 -name '*.a' \
+        -exec aarch64-linux-gnu-strip --strip-debug {} + 2>/dev/null || true
+RUN find /opt/qt6-host \( -name '*.a' -o -name '*.so*' \) \
+        -exec strip --strip-debug {} + 2>/dev/null || true \
+    && find /opt/qt6-host/bin -type f -executable \
+        -exec strip --strip-unneeded {} + 2>/dev/null || true
+
+FROM debian:bookworm-slim AS toolchain-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN dpkg --add-architecture arm64 && apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        g++-aarch64-linux-gnu \
+        gcc-aarch64-linux-gnu \
+        git \
+        libglib2.0-0 \
+        ninja-build \
+        pkg-config \
+        python3 \
+        xz-utils \
+        libdrm-dev:arm64 \
+        libegl-dev:arm64 \
+        libfontconfig1-dev:arm64 \
+        libfreetype-dev:arm64 \
+        libgbm-dev:arm64 \
+        libgl-dev:arm64 \
+        libgles-dev:arm64 \
+        libjpeg-dev:arm64 \
+        libpng-dev:arm64 \
+        libwebp-dev:arm64 \
+        libxkbcommon-dev:arm64 \
+        zlib1g-dev:arm64 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/qt6-host  /opt/qt6-host
+COPY --from=builder /opt/qt6-arm64 /opt/qt6-arm64
+COPY --from=builder /root/.cargo   /root/.cargo
+COPY --from=builder /root/.rustup  /root/.rustup
+COPY --from=builder /build/arm64-toolchain.cmake /build/arm64-toolchain.cmake
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+ENV PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+ENV PKG_CONFIG_SYSROOT_DIR=/
+
+WORKDIR /build

@@ -54,6 +54,9 @@ build-san:
 arm32:
     ./scripts/build-arm32.sh
 
+arm64:
+    ./scripts/build-arm64.sh
+
 # --- run ---
 run *args: build
     ./build/bin/frontend {{args}}

@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1.6
+# Zaparoo Frontend
+# Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+#
+# Cross-compiles the zaparoo-frontend application for Linux arm64.
+# The toolchain image is built by Dockerfile.toolchain.arm64 and contains Qt,
+# the aarch64 cross compiler, Rust, and cargo-chef.
+
+ARG TOOLCHAIN_IMAGE=zaparoo/qt6-arm64-toolchain:unset
+
+FROM ${TOOLCHAIN_IMAGE} AS chef
+WORKDIR /src
+
+FROM chef AS planner
+COPY rust-toolchain.toml ./
+COPY rust/ rust/
+RUN cd rust && cargo chef prepare --recipe-path /recipe.json
+
+FROM chef AS app-build
+
+ARG ZAPAROO_OFFICIAL_BUILD=
+ARG ZAPAROO_BUILD_COMMIT=
+ARG ZAPAROO_BUILD_DATE=
+
+COPY rust-toolchain.toml ./
+COPY --from=planner /recipe.json /recipe.json
+RUN mkdir -p rust && cd rust && \
+    target_hash="$(printf '%s' "/src/rust/Cargo.toml" | sha1sum | cut -c1-5)" && \
+    env QMAKE=/opt/qt6-arm64/bin/qmake6 \
+        CORROSION_BUILD_DIR=/src/build \
+        "CXX_aarch64_unknown_linux_gnu=/usr/bin/aarch64-linux-gnu-g++" \
+        "CARGO_TARGET_DIR=/src/build/cargo/rust_${target_hash}" \
+        cargo chef cook --release \
+            --target aarch64-unknown-linux-gnu \
+            --package zaparoo-frontend-rs \
+            --no-default-features \
+            --recipe-path /recipe.json
+
+COPY CMakeLists.txt ./
+COPY cmake/ cmake/
+COPY src/ src/
+COPY resources/ resources/
+COPY rust/ rust/
+
+RUN mkdir -p build && cd build && \
+    if [ -n "${ZAPAROO_OFFICIAL_BUILD}" ]; then \
+        export ZAPAROO_OFFICIAL_BUILD="${ZAPAROO_OFFICIAL_BUILD}"; \
+    fi && \
+    if [ -n "${ZAPAROO_BUILD_COMMIT}" ]; then \
+        export ZAPAROO_BUILD_COMMIT="${ZAPAROO_BUILD_COMMIT}"; \
+    fi && \
+    if [ -n "${ZAPAROO_BUILD_DATE}" ]; then \
+        export ZAPAROO_BUILD_DATE="${ZAPAROO_BUILD_DATE}"; \
+    fi && \
+    if [ ! -f build.ninja ]; then \
+        /opt/qt6-arm64/bin/qt-cmake .. \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DZAPAROO_BUILD_TESTS=OFF \
+            -DZAPAROO_EMBEDDED=ON \
+            -DZAPAROO_WITH_UPDATE=OFF \
+            -DQt6LinguistTools_DIR=/opt/qt6-host/lib/cmake/Qt6LinguistTools; \
+    fi \
+    && ninja \
+    && cp bin/frontend /src/frontend-arm64-built
+
+FROM scratch AS export
+COPY --from=app-build /src/frontend-arm64-built /frontend-arm64

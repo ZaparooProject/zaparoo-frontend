@@ -89,6 +89,12 @@ Q_IMPORT_QML_PLUGIN(QtQuickControls2ImplPlugin)
 Q_IMPORT_QML_PLUGIN(QtQuickTemplates2Plugin)
 Q_IMPORT_QML_PLUGIN(QtQuick_WindowPlugin)
 Q_IMPORT_PLUGIN(QLinuxFbIntegrationPlugin)
+#ifdef ZAPAROO_STATIC_EGLFS_PLUGIN
+Q_IMPORT_PLUGIN(QEglFSIntegrationPlugin)
+#endif
+#ifdef ZAPAROO_STATIC_EGLFS_KMS_GBM_PLUGIN
+Q_IMPORT_PLUGIN(QEglFSKmsGbmIntegrationPlugin)
+#endif
 Q_IMPORT_PLUGIN(QSvgPlugin)
 #endif
 

@@ -25,6 +25,7 @@ raw cargo as the default path; the justfile carries the expected environment.
 | Rust lint only | `just lint-rust` |
 | Format | `just fmt` |
 | MiSTer ARM32 build | `just arm32` |
+| ARM64 build | `just arm64` |
 | Deploy to MiSTer | `just deploy-mister` |
 
 `just --list` is the source of truth. `CMakePresets.json` and
