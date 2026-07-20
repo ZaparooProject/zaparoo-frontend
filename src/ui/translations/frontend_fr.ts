@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
-<TS version="2.1" language="fr">
+<TS version="2.1" language="fr" sourcelanguage="en">
 <context>
     <name>AboutScreen</name>
     <message>
@@ -470,27 +470,27 @@ Français - Wilfried</translation>
         <translation type="vanished">Reprendre la partie</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="76"/>
+        <location filename="../theme/CategoryIds.qml" line="45"/>
         <source>Arcade</source>
         <translation>Arcade</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="81"/>
+        <location filename="../theme/CategoryIds.qml" line="47"/>
         <source>Computers</source>
         <translation>Ordinateurs</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="86"/>
+        <location filename="../theme/CategoryIds.qml" line="49"/>
         <source>Consoles</source>
         <translation>Consoles</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="91"/>
+        <location filename="../theme/CategoryIds.qml" line="51"/>
         <source>Handhelds</source>
         <translation>Portables</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="96"/>
+        <location filename="../theme/CategoryIds.qml" line="53"/>
         <source>Other</source>
         <translation>Autres</translation>
     </message>

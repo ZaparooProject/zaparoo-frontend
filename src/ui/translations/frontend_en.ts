@@ -467,27 +467,27 @@ Français - Wilfried</source>
         <translation type="vanished">Resume Game</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="76"/>
+        <location filename="../theme/CategoryIds.qml" line="45"/>
         <source>Arcade</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="81"/>
+        <location filename="../theme/CategoryIds.qml" line="47"/>
         <source>Computers</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="86"/>
+        <location filename="../theme/CategoryIds.qml" line="49"/>
         <source>Consoles</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="91"/>
+        <location filename="../theme/CategoryIds.qml" line="51"/>
         <source>Handhelds</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="96"/>
+        <location filename="../theme/CategoryIds.qml" line="53"/>
         <source>Other</source>
         <translation type="unfinished"></translation>
     </message>

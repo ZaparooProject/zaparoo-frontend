@@ -73,27 +73,27 @@ Item {
     readonly property var _placeholderCategories: [
         {
             id: CategoryIds.arcadeId,
-            name: qsTr("Arcade"),
+            name: CategoryIds.displayName(CategoryIds.arcadeId),
             coverKey: hub._hubCoverKey(CategoryIds.arcadeId, CategoryIds.coverKey(CategoryIds.arcadeId))
         },
         {
             id: CategoryIds.computerId,
-            name: qsTr("Computers"),
+            name: CategoryIds.displayName(CategoryIds.computerId),
             coverKey: hub._hubCoverKey(CategoryIds.computerId, CategoryIds.coverKey(CategoryIds.computerId))
         },
         {
             id: CategoryIds.consoleId,
-            name: qsTr("Consoles"),
+            name: CategoryIds.displayName(CategoryIds.consoleId),
             coverKey: hub._hubCoverKey(CategoryIds.consoleId, CategoryIds.coverKey(CategoryIds.consoleId))
         },
         {
             id: CategoryIds.handheldId,
-            name: qsTr("Handhelds"),
+            name: CategoryIds.displayName(CategoryIds.handheldId),
             coverKey: hub._hubCoverKey(CategoryIds.handheldId, CategoryIds.coverKey(CategoryIds.handheldId))
         },
         {
             id: CategoryIds.otherId,
-            name: qsTr("Other"),
+            name: CategoryIds.displayName(CategoryIds.otherId),
             coverKey: hub._hubCoverKey(CategoryIds.otherId, CategoryIds.coverKey(CategoryIds.otherId))
         }
     ]
@@ -119,7 +119,7 @@ Item {
             const name = Browse.CategoriesModel.category_at(i);
             entries.push({
                 id: name,
-                name: name,
+                name: CategoryIds.displayName(name),
                 coverKey: hub._hubCoverKey(name, CategoryIds.coverKey(name)),
                 hidden: Browse.CategoriesModel.is_hidden_at(i)
             });
