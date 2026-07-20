@@ -264,7 +264,7 @@ Item {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     horizontalAlignment: Text.AlignHCenter
-                    text: qsTr("Italiano - Andrea Bogazzi\nEspañol - Carlos R.\nEuskara - devilschile2")
+                    text: qsTr("Italiano - Andrea Bogazzi\nEspañol - Carlos R.\nEuskara - devilschile2\nFrançais - Wilfried")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
                     font.pixelSize: Sizing.fontSize(2.6)

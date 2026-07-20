@@ -103,8 +103,8 @@ const MISTER_RESOLUTIONS: &[&str] = &[
 // accepted below as aliases so old configs keep working without creating
 // duplicate labels like English/English/English in the settings modal.
 const LANGUAGES: &[&str] = &[
-    "auto", "en", "it_IT", "es", "eu", "de", "el", "ja", "ko", "nl", "ro", "sk", "uk", "zh_CN",
-    "zh_TW", "he", "ar", "hi",
+    "auto", "en", "fr", "it_IT", "es", "eu", "de", "el", "ja", "ko", "nl", "ro", "sk", "uk",
+    "zh_CN", "zh_TW", "he", "ar", "hi",
 ];
 const LANGUAGE_ALIASES: &[(&str, &str)] = &[
     ("en_US", "en"),
@@ -129,6 +129,7 @@ const LANGUAGE_ALIASES: &[(&str, &str)] = &[
     ("he_IL", "he"),
     ("ar_SA", "ar"),
     ("hi_IN", "hi"),
+    ("fr_FR", "fr"),
 ];
 const DEFAULT_LANGUAGE: &str = "auto";
 const CLOCK_FORMATS: &[&str] = &["auto", "12h", "24h"];
@@ -1067,7 +1068,7 @@ mod tests {
         assert_eq!(normalize_language(""), DEFAULT_LANGUAGE);
         assert_eq!(normalize_language("auto"), DEFAULT_LANGUAGE);
         assert_eq!(normalize_language("AUTO"), DEFAULT_LANGUAGE);
-        assert_eq!(normalize_language("fr"), DEFAULT_LANGUAGE);
+        assert_eq!(normalize_language("fr"), "fr");
         assert_eq!(normalize_language("it_IT"), "it_IT");
         assert_eq!(normalize_language("es"), "es");
         assert_eq!(normalize_language("eu"), "eu");
@@ -1094,6 +1095,7 @@ mod tests {
         assert_eq!(normalize_language("he_IL"), "he");
         assert_eq!(normalize_language("ar_SA"), "ar");
         assert_eq!(normalize_language("hi_IN"), "hi");
+        assert_eq!(normalize_language("fr_FR"), "fr");
     }
 
     #[test]

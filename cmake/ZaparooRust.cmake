@@ -234,6 +234,7 @@ qt_add_translations(
     "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_he.ts"
     "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_ar.ts"
     "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_hi.ts"
+    "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_fr.ts"
     RESOURCE_PREFIX
     "/i18n"
     IMMEDIATE_CALL
