@@ -932,12 +932,12 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Loading…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="452"/>
+        <location filename="../screens/MediaListScreen.qml" line="459"/>
         <source>%1 entries</source>
         <translation type="unfinished">%1 entries</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="453"/>
+        <location filename="../screens/MediaListScreen.qml" line="460"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
