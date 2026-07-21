@@ -53,6 +53,9 @@ Item {
     property var linearMoveAction: null
     property var pageAction: null
     property var onListLayoutEntered: null
+    // Optional overrides for Left/Right in list layout. When null, the shell
+    // pages a whole list page with the same ready-state guard as page_prev /
+    // page_next. Grid layout never routes through these.
     property var listLeftAction: null
     property var listRightAction: null
     property var contextMenuEnabledAt: null
@@ -334,6 +337,8 @@ Item {
         if (action === "left") {
             if (root._listLayout && typeof root.listLeftAction === "function")
                 root.listLeftAction();
+            else if (root._listLayout && root._state() === "ready")
+                root._performPage(-1);
             else if (!root._listLayout && typeof root.gridMoveAction === "function")
                 root.gridMoveAction(-1, 0);
             else if (!root._listLayout)
@@ -341,6 +346,8 @@ Item {
         } else if (action === "right") {
             if (root._listLayout && typeof root.listRightAction === "function")
                 root.listRightAction();
+            else if (root._listLayout && root._state() === "ready")
+                root._performPage(1);
             else if (!root._listLayout && typeof root.gridMoveAction === "function")
                 root.gridMoveAction(1, 0);
             else if (!root._listLayout)
