@@ -229,6 +229,9 @@ pub mod ffi {
         fn launch_text_at(self: &FavoritesModel, index: i32) -> QString;
 
         #[qinvokable]
+        fn launch_random(self: &FavoritesModel);
+
+        #[qinvokable]
         fn write_card_at(self: Pin<&mut FavoritesModel>, index: i32);
 
         #[qinvokable]
@@ -583,6 +586,22 @@ impl ffi::FavoritesModel {
             return QString::default();
         }
         QString::from(portable_text_for_entry(&self.entries[index as usize]).as_str())
+    }
+
+    fn launch_random(&self) {
+        // The page menu is gated on a ready (non-empty) list, but the model
+        // guards anyway so a stray call cannot send Core a query with an
+        // empty pool.
+        if self.count <= 0 {
+            return;
+        }
+        let text = random_favorite_run_text();
+        let store = global_store();
+        global_handle().spawn(async move {
+            if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
+                warn!("random favorite run failed: {}", e.message);
+            }
+        });
     }
 
     fn write_card_at(mut self: Pin<&mut Self>, index: i32) {
@@ -1576,6 +1595,14 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::FavoritesModel>) {
     finish_nav_timing(model.as_mut(), "timeout", pending);
 }
 
+/// `ZapScript` for a random pick across every system, restricted to the
+/// `user:favorite` tag — the same tag `MediaFavoritesEndpoint` queries,
+/// so Core draws from exactly the pool this model displays (including
+/// pages the model has not loaded yet).
+fn random_favorite_run_text() -> String {
+    "**launch.random:all?tags=user:favorite".to_string()
+}
+
 /// Build the `text` payload sent to Core's `run` for a search entry.
 /// Runtime launches prefer exact paths to avoid title/ZapScript
 /// ambiguity; portable write/QR paths prefer Core's `ZapScript`.
@@ -1672,6 +1699,18 @@ mod tests {
             },
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn random_favorite_run_text_matches_endpoint_tag() {
+        // Core parses `tags` advanced arguments as comma-separated
+        // `type:value` filters (ParseTagFilters). The tag here must stay
+        // in lockstep with MediaFavoritesEndpoint's `user:favorite` query
+        // or the random pool diverges from what the Favorites screen shows.
+        assert_eq!(
+            random_favorite_run_text(),
+            "**launch.random:all?tags=user:favorite"
+        );
     }
 
     #[test]

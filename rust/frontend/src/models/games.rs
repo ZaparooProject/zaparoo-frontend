@@ -485,6 +485,9 @@ pub mod ffi {
         fn launch_text_at(self: &GamesModel, index: i32) -> QString;
 
         #[qinvokable]
+        fn launch_random(self: &GamesModel);
+
+        #[qinvokable]
         fn write_card_at(self: Pin<&mut GamesModel>, index: i32);
 
         #[qinvokable]
@@ -952,6 +955,18 @@ impl ffi::GamesModel {
             return QString::default();
         }
         QString::from(portable_text_for_entry(&self.entries[index as usize]).as_str())
+    }
+
+    fn launch_random(&self) {
+        let Some(text) = random_system_run_text(&self.current_system_id.to_string()) else {
+            return;
+        };
+        let store = global_store();
+        global_handle().spawn(async move {
+            if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
+                warn!("random game run failed: {}", e.message);
+            }
+        });
     }
 
     fn write_card_at(mut self: Pin<&mut Self>, index: i32) {
@@ -1545,6 +1560,17 @@ fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
     entry.entry_type == "media"
         || (entry.entry_type == "directory"
             && (entry.media_id.is_some() || !entry.zap_script.is_empty()))
+}
+
+/// `ZapScript` for a Core-side random pick within one system. None when
+/// no system is set — the page menu is only reachable inside a system's
+/// list, so this is a backstop, not a reachable UI state.
+fn random_system_run_text(system_id: &str) -> Option<String> {
+    let id = system_id.trim();
+    if id.is_empty() {
+        return None;
+    }
+    Some(format!("**launch.random:{id}"))
 }
 
 fn run_text_for_entry(entry: &BrowseEntry) -> Option<String> {
@@ -3427,9 +3453,9 @@ mod tests {
         entry_system_id, is_media_capable_entry, is_strict_ancestor_path, jump_fetch_limit,
         media_capable_directory_browse_params, media_key_for, meta_params_for_entry,
         ordered_detail_image_keys, position_of_game_path, prefetch_around_plan,
-        prefetch_cursor_window_plan, project_status, result_total_dirs, run_text_for_entry,
-        seeded_refetch_pagination_state, singleton_directory_needs_launch_resolution,
-        transform_entries, InitialAction, Projection,
+        prefetch_cursor_window_plan, project_status, random_system_run_text, result_total_dirs,
+        run_text_for_entry, seeded_refetch_pagination_state,
+        singleton_directory_needs_launch_resolution, transform_entries, InitialAction, Projection,
     };
     use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -3467,6 +3493,23 @@ mod tests {
             zap_script: format!("@{system_id}/{name}"),
             ..BrowseEntry::default()
         }
+    }
+
+    #[test]
+    fn random_system_run_text_builds_launch_random_directive() {
+        // The directive form `**launch.random:<system>` is Core's documented
+        // single-system random launch; the frontend must not invent its own
+        // selection logic on a paged slice.
+        assert_eq!(
+            random_system_run_text("snes").as_deref(),
+            Some("**launch.random:snes")
+        );
+    }
+
+    #[test]
+    fn random_system_run_text_requires_a_system() {
+        assert!(random_system_run_text("").is_none());
+        assert!(random_system_run_text("   ").is_none());
     }
 
     #[test]

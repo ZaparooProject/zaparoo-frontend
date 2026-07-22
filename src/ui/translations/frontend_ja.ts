@@ -599,148 +599,159 @@ Euskara - devilschile2</source>
 <context>
     <name>Main</name>
     <message>
-        <location filename="../app/Main.qml" line="1518"/>
+        <location filename="../app/Main.qml" line="1521"/>
         <source>Launch core</source>
         <translation>コアを起動</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1527"/>
-        <location filename="../app/Main.qml" line="1772"/>
+        <location filename="../app/Main.qml" line="1530"/>
+        <location filename="../app/Main.qml" line="1775"/>
         <source>Change launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1591"/>
+        <location filename="../app/Main.qml" line="1594"/>
         <source>Remove from favorites</source>
         <translation>お気に入りから削除</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1591"/>
+        <location filename="../app/Main.qml" line="1594"/>
         <source>Add to favorites</source>
         <translation>お気に入りに追加</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1596"/>
+        <location filename="../app/Main.qml" line="1599"/>
         <source>Write to NFC token</source>
         <translation>NFC トークンに書き込む</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1600"/>
+        <location filename="../app/Main.qml" line="1603"/>
         <source>QR code</source>
         <translation>QR コード</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1575"/>
-        <location filename="../app/Main.qml" line="1610"/>
+        <location filename="../app/Main.qml" line="1578"/>
+        <location filename="../app/Main.qml" line="1613"/>
         <source>Launch game</source>
         <translation>ゲームを起動</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2113"/>
+        <location filename="../app/Main.qml" line="2116"/>
         <source>Go to...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2116"/>
+        <location filename="../app/Main.qml" line="2123"/>
+        <location filename="../app/Main.qml" line="2136"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3025"/>
+        <location filename="../app/Main.qml" line="3053"/>
         <source>Loading systems…</source>
         <translation>システムを読み込み中…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3031"/>
+        <location filename="../app/Main.qml" line="3059"/>
         <source>Loading favorites…</source>
         <translation>お気に入りを読み込み中…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3027"/>
+        <location filename="../app/Main.qml" line="3055"/>
         <source>Loading games…</source>
         <translation>ゲームを読み込み中…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1534"/>
-        <location filename="../app/Main.qml" line="1563"/>
+        <location filename="../app/Main.qml" line="1537"/>
+        <location filename="../app/Main.qml" line="1566"/>
         <source>Update media database</source>
         <translation type="unfinished">メディアデータベースを更新</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1537"/>
-        <location filename="../app/Main.qml" line="1566"/>
+        <location filename="../app/Main.qml" line="1540"/>
+        <location filename="../app/Main.qml" line="1569"/>
         <source>Scrape metadata</source>
         <translation type="unfinished">メタデータをスクレイピング</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1542"/>
-        <location filename="../app/Main.qml" line="1551"/>
+        <location filename="../app/Main.qml" line="1545"/>
+        <location filename="../app/Main.qml" line="1554"/>
         <source>Unhide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1542"/>
-        <location filename="../app/Main.qml" line="1551"/>
+        <location filename="../app/Main.qml" line="1545"/>
+        <location filename="../app/Main.qml" line="1554"/>
         <source>Hide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1768"/>
+        <location filename="../app/Main.qml" line="1771"/>
         <source>Default</source>
         <translation type="unfinished">デフォルト</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1768"/>
+        <location filename="../app/Main.qml" line="1771"/>
         <source>Current: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2256"/>
+        <location filename="../app/Main.qml" line="2120"/>
+        <source>Random game</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2133"/>
+        <source>Random favorite</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2276"/>
         <source>Saving launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2260"/>
+        <location filename="../app/Main.qml" line="2280"/>
         <source>Saving…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2274"/>
+        <location filename="../app/Main.qml" line="2294"/>
         <source>Launcher update failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2278"/>
+        <location filename="../app/Main.qml" line="2298"/>
         <source>Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2282"/>
+        <location filename="../app/Main.qml" line="2302"/>
         <source>Retry</source>
         <translation type="unfinished">再試行</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2286"/>
+        <location filename="../app/Main.qml" line="2306"/>
         <source>Cancel</source>
         <translation type="unfinished">キャンセル</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3029"/>
+        <location filename="../app/Main.qml" line="3057"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3033"/>
+        <location filename="../app/Main.qml" line="3061"/>
         <source>Loading recently played…</source>
         <translation>最近プレイしたゲームを読み込み中…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3035"/>
+        <location filename="../app/Main.qml" line="3063"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3037"/>
+        <location filename="../app/Main.qml" line="3065"/>
         <source>Loading…</source>
         <translation>読み込み中…</translation>
     </message>

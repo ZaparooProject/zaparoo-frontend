@@ -638,4 +638,30 @@ TestCase {
         // containing them must still survive a round-trip.
         compare(main._buildQrPayload("a b&c?d"), "https://zaparoo.app/write?v=a%20b%26c%3Fd");
     }
+
+    // The games page menu must offer both list ops; selecting the random
+    // entry must close the modal (the launch itself is Core's job — with
+    // no Core connected the run RPC is a logged no-op).
+    function test_games_page_menu_offers_random_launch(): void {
+        main.openPageMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        compare(main.listPickerFieldId, "page_menu");
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("jump_letter") !== -1, "Go to... entry present");
+        verify(ids.indexOf("launch_random") !== -1, "Random game entry present");
+        main.listPickerAccepted("page_menu", "launch_random");
+        tryCompare(main, "listPickerModalVisible", false);
+    }
+
+    // Favorites' West-button menu routes through its own field id so a
+    // favorites selection can never trigger a games-model action.
+    function test_favorites_page_menu_offers_random_favorite(): void {
+        main.openFavoritesPageMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        compare(main.listPickerFieldId, "page_menu_favorites");
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("launch_random_favorite") !== -1, "Random favorite entry present");
+        main.listPickerAccepted("page_menu_favorites", "launch_random_favorite");
+        tryCompare(main, "listPickerModalVisible", false);
+    }
 }

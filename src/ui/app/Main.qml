@@ -1341,6 +1341,9 @@ MainLayout {
         function onRequestContextMenu(index: int, anchorRect): void {
             root.openContextMenu("favorites", index, anchorRect);
         }
+        function onRequestPageMenu(): void {
+            root.openFavoritesPageMenu();
+        }
     }
     Connections {
         target: root.recentsScreen
@@ -2100,20 +2103,37 @@ MainLayout {
     }
 
     // Open the page/list-scoped operations menu (West button), the "View"
-    // counterpart to North's item-scoped "Options". For now it holds a single
-    // entry, Go to..., kept pre-focused so the common path is a fixed
-    // West-then-Accept chord; future list ops (sort/filter/layout) append here.
-    // The facet fetch is kicked off here so the buckets are likely ready by the
-    // time the user advances into the grid.
+    // counterpart to North's item-scoped "Options". Go to... stays
+    // pre-focused so the common path is a fixed West-then-Accept chord;
+    // future list ops (sort/filter/layout) append here. The facet fetch is
+    // kicked off here so the buckets are likely ready by the time the user
+    // advances into the grid.
     function openPageMenu(): void {
         Browse.GamesModel.load_letter_index();
         const entries = [
             {
                 "id": "jump_letter",
                 "label": qsTr("Go to...")
+            },
+            {
+                "id": "launch_random",
+                "label": qsTr("Random game")
             }
         ];
         root.openListPickerModal(qsTr("View"), entries, "jump_letter", "page_menu");
+    }
+
+    // Favorites' West-button menu. Random favorite launches Core-side
+    // (`launch.random` restricted to the user:favorite tag) so the pool is
+    // the whole favorites set, not just the pages the model has loaded.
+    function openFavoritesPageMenu(): void {
+        const entries = [
+            {
+                "id": "launch_random_favorite",
+                "label": qsTr("Random favorite")
+            }
+        ];
+        root.openListPickerModal(qsTr("View"), entries, "launch_random_favorite", "page_menu_favorites");
     }
 
     // Re-parse the model's facet JSON into the live grid entries. Bound through
@@ -2303,6 +2323,14 @@ MainLayout {
             root.closeListPickerModal();
             if (selectedId === "jump_letter")
                 root.openLetterJumpModal();
+            else if (selectedId === "launch_random")
+                Browse.GamesModel.launch_random();
+            return;
+        }
+        if (fieldId === "page_menu_favorites") {
+            root.closeListPickerModal();
+            if (selectedId === "launch_random_favorite")
+                Browse.FavoritesModel.launch_random();
             return;
         }
         if (fieldId === "system_launcher_pending")
