@@ -65,8 +65,10 @@ const HIDDEN_ROLE: i32 = 256 + 8;
 // rationale as the GamesModel role; the shared delegate splits on newlines.
 const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 9;
 
-// Page size for the initial load and every cursor follow-up. Core caps
-// `maxResults` at 100; search rows are tiny (one tile + one caption per
+// Page size for the initial load and every cursor follow-up. Core defaults
+// `maxResults` to 100 when the field is absent and validates it at 1000
+// (`max=1000` on SearchParams.MaxResults); note it REJECTS an over-cap value
+// rather than clamping. Search rows are tiny (one tile + one caption per
 // row) so 25 fills several screens of the favorites grid without
 // stressing the over-the-wire payload.
 const PAGE_SIZE: u32 = 25;
