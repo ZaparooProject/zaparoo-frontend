@@ -19,14 +19,26 @@ import Zaparoo.Theme
 // can't exercise with keyClick because offscreen ApplicationWindows
 // don't receive routed key events reliably.
 TestCase {
+    id: testCase
+
     name: "UiNavigation"
     when: windowShown
+
+    // Favorites sort/filter persist to disk; snapshot whatever this machine
+    // had so `cleanup` can put it back.
+    property string _originalFavoritesSort: ""
+    property string _originalFavoritesFilter: ""
 
     Main {
         id: main
         fullScreen: false
         width: 1280
         height: 720
+    }
+
+    Component.onCompleted: {
+        testCase._originalFavoritesSort = Browse.FavoritesState.sort ?? "";
+        testCase._originalFavoritesFilter = Browse.FavoritesState.filter ?? "";
     }
 
     function init(): void {
@@ -60,6 +72,13 @@ TestCase {
 
     function cleanup(): void {
         Motion.enabled = true;
+        // Favorites sort/filter are persisted, so a test that changes them
+        // would otherwise overwrite the real preference on the dev machine —
+        // including when an assertion aborts before any inline restore.
+        Browse.FavoritesModel.set_sort_mode(testCase._originalFavoritesSort);
+        Browse.FavoritesModel.set_filter(testCase._originalFavoritesFilter);
+        Browse.FavoritesState.sort = testCase._originalFavoritesSort;
+        Browse.FavoritesState.filter = testCase._originalFavoritesFilter;
     }
 
     function test_initial_state_is_hub(): void {
@@ -710,7 +729,7 @@ TestCase {
         tryCompare(main, "listPickerModalVisible", true);
         compare(main.listPickerFieldId, "favorites_filter_pick");
         const ids = main.listPickerEntries.map(e => e.id);
-        verify(ids.indexOf("") !== -1, "All option present");
+        compare(ids[0], "", "All must be the first row so widening is always one press away");
         main.closeListPickerModal();
     }
 }

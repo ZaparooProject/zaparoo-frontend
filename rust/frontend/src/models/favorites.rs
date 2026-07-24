@@ -448,15 +448,17 @@ fn apply_state(
             let mut rust = model.as_mut().rust_mut();
             rust.entries = entries;
             rust.next_cursor = next_cursor;
-            rust.full_loaded = false;
-            rust.full_loading = false;
         }
+        // Through the setters, not `rust_mut`: both are qproperties, so a
+        // silent write leaves any QML binding on them stale.
+        model.as_mut().set_full_loaded(false);
+        model.as_mut().set_full_loading(false);
         model.as_mut().rebuild_view();
-        // Sorting and filtering both need the whole set, so a restored
-        // non-default view has to pull the rest before it means anything.
-        if !model.sort_mode.to_string().is_empty() || !model.filter.to_string().is_empty() {
-            model.as_mut().ensure_full_load();
-        }
+        // Sorting and filtering both need the whole set. Deferred to the end
+        // of this branch because `ensure_full_load` holds `loading_more` to
+        // block a competing cursor fetch, and the reset below would clear it.
+        let needs_full_load =
+            !model.sort_mode.to_string().is_empty() || !model.filter.to_string().is_empty();
         if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
             timing.mark_apply_done();
         }
@@ -488,9 +490,13 @@ fn apply_state(
         }
         // Look-ahead prefetch: warm page 2 so the first scroll past the
         // initial page doesn't surface a "Loading more…" cue. `fetch_more`
-        // is itself guarded by `has_next_page` and `loading_more`.
-        if has_next_page && !model.cover_requests_paused {
+        // is itself guarded by `has_next_page` and `loading_more`. Skipped
+        // when a full load is about to run, which fetches everything anyway.
+        if has_next_page && !model.cover_requests_paused && !needs_full_load {
             model.as_mut().fetch_more();
+        }
+        if needs_full_load {
+            model.as_mut().ensure_full_load();
         }
     } else if err.is_empty() {
         if model.nav_timing.is_none() {
@@ -510,6 +516,16 @@ fn apply_state(
         clear_current_detail_state(model.as_mut());
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().rust_mut().next_cursor = None;
+        // The seq bump strands any in-flight full load: its callback bails
+        // on the stale ticket without clearing these. Release them here or
+        // `ensure_full_load` stays wedged (sort and filter would silently
+        // keep operating on page 1) for the rest of the session.
+        if model.full_loading {
+            model.as_mut().set_full_loading(false);
+        }
+        if model.loading_more {
+            model.as_mut().set_loading_more(false);
+        }
         if !model.loading {
             model.as_mut().set_loading(true);
         }
@@ -525,6 +541,16 @@ fn apply_state(
         clear_current_detail_state(model.as_mut());
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().rust_mut().next_cursor = None;
+        // The seq bump strands any in-flight full load: its callback bails
+        // on the stale ticket without clearing these. Release them here or
+        // `ensure_full_load` stays wedged (sort and filter would silently
+        // keep operating on page 1) for the rest of the session.
+        if model.full_loading {
+            model.as_mut().set_full_loading(false);
+        }
+        if model.loading_more {
+            model.as_mut().set_loading_more(false);
+        }
         if model.loading {
             model.as_mut().set_loading(false);
         }
@@ -815,16 +841,19 @@ impl ffi::FavoritesModel {
     /// displays, so selecting locally is both correct and exactly the visible
     /// pool. Requires the full load, otherwise the pool would be whichever
     /// pages happen to be fetched.
-    fn launch_random(self: Pin<&mut Self>) {
+    fn launch_random(mut self: Pin<&mut Self>) {
         if self.count <= 0 {
             return;
         }
         if !self.full_loaded {
-            // Pull the rest first; the user can press again once it lands.
-            // Picking from a partial list would silently bias the result
-            // toward the first page.
-            self.ensure_full_load();
-            return;
+            // Picking from a partial list would bias the result toward the
+            // first page, so pull the rest first. When everything already
+            // arrived in page 1 that completes synchronously, so re-check
+            // rather than making the user press twice.
+            self.as_mut().ensure_full_load();
+            if !self.full_loaded {
+                return;
+            }
         }
         let Ok(count) = usize::try_from(self.count) else {
             return;
@@ -1068,7 +1097,7 @@ impl ffi::FavoritesModel {
             }
         }
 
-        enqueue_meta_prefetch(&self.entries, self.count, index);
+        enqueue_meta_prefetch(&self.entries, &self.view, self.count, index);
     }
 
     fn load_detail_at(mut self: Pin<&mut Self>, index: i32) {
@@ -1328,14 +1357,23 @@ fn detail_tags_from_meta(meta: &MediaMeta) -> String {
 // Warm the metadata cache for the rows immediately around `row` so a move to
 // a neighbor is a synchronous cache hit. Best-effort and fire-and-forget;
 // already-cached or in-flight keys are skipped inside the cache.
-fn enqueue_meta_prefetch(entries: &[MediaItem], count: i32, row: i32) {
+/// Warm metadata for the rows either side of the cursor. Neighbors are
+/// resolved through `view`, so a sorted or filtered list warms what the user
+/// will actually scroll onto rather than whatever sits next in fetch order.
+fn enqueue_meta_prefetch(entries: &[MediaItem], view: &[usize], count: i32, row: i32) {
     let mut requests = Vec::new();
     for delta in [-2_i32, -1, 1, 2] {
         let i = row + delta;
         if i < 0 || i >= count {
             continue;
         }
-        let entry = &entries[i as usize];
+        let Some(entry) = usize::try_from(i)
+            .ok()
+            .and_then(|r| view.get(r))
+            .and_then(|&e| entries.get(e))
+        else {
+            continue;
+        };
         let system = entry.system.id.clone();
         let path = entry.path.clone();
         if system.trim().is_empty() || path.trim().is_empty() {

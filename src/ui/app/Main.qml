@@ -2195,6 +2195,17 @@ MainLayout {
     // One flat list: everything, then the categories present, then the
     // individual systems. Built from the loaded favorites, so every row here
     // is guaranteed to match at least one entry.
+    // Rebuild the open scope picker when the facet grows. The full load can
+    // still be in flight when the user opens "Show", and without this the
+    // picker would silently omit systems that arrive on later pages.
+    Connections {
+        target: Browse.FavoritesModel
+        function onSystem_facet_jsonChanged(): void {
+            if (root.listPickerModalVisible && root.listPickerFieldId === "favorites_filter_pick")
+                root.openFavoritesFilterMenu();
+        }
+    }
+
     function openFavoritesFilterMenu(): void {
         const systems = root._favoritesSystemFacet();
         const entries = [

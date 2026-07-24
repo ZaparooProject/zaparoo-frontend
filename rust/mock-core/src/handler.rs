@@ -212,6 +212,9 @@ mod tests {
         let cursor = first["result"]["pagination"]["nextCursor"]
             .as_str()
             .expect("cursor");
+        // Offset cursor: page two must resume exactly where page one ended,
+        // not skip rows or restart inside page one.
+        assert_eq!(cursor, "5");
 
         let second = parse(&dispatch(&format!(
             r#"{{"jsonrpc":"2.0","id":"2","method":"media.search","params":{{"systems":[],"maxResults":5,"cursor":"{cursor}"}}}}"#

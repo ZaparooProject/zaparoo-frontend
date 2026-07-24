@@ -157,7 +157,10 @@ pub fn media_search_response(params: &Value) -> Value {
     let total = matching.len();
     let results: Vec<Value> = matching.into_iter().skip(offset).take(max).collect();
     let next_offset = offset.saturating_add(results.len());
-    let has_next_page = next_offset < total;
+    // A zero-length page would hand back the same cursor with hasNextPage
+    // still true, so a client draining pages would spin forever. Real Core
+    // rejects maxResults=0 outright; the mock just terminates the chain.
+    let has_next_page = !results.is_empty() && next_offset < total;
 
     // `total` is deprecated upstream and always returns -1; pagination
     // info travels under the `pagination` envelope.
