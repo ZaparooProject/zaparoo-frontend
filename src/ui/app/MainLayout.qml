@@ -1288,27 +1288,43 @@ ApplicationWindow {
                                 button: "ButtonA",
                                 label: qsTr("Open")
                             });
-                            if (isFavorites)
+                            if (isFavorites) {
                                 row.push({
                                     button: "ButtonX",
                                     label: qsTr("Options")
                                 });
+                                // Sort/scope/random live behind West; without
+                                // a cue the whole menu is invisible on a pad.
+                                row.push({
+                                    button: "ButtonY",
+                                    label: qsTr("View")
+                                });
+                            }
                             row.push({
                                 button: "ButtonB",
                                 label: qsTr("Back")
                             });
                             return row;
                         }
-                        return [
+                        // Empty/error. On Favorites an empty list can be the
+                        // result of the View menu's own scope, so advertise the
+                        // way back out of it here too.
+                        const fallback = [
                             {
                                 button: "ButtonA",
                                 label: qsTr("Retry")
-                            },
-                            {
-                                button: "ButtonB",
-                                label: qsTr("Back")
                             }
                         ];
+                        if (isFavorites && state === "empty")
+                            fallback.push({
+                                button: "ButtonY",
+                                label: qsTr("View")
+                            });
+                        fallback.push({
+                            button: "ButtonB",
+                            label: qsTr("Back")
+                        });
+                        return fallback;
                     }
                     if (root.activeScreen === root.screenSettings) {
                         if (root.settingsScreen === null)

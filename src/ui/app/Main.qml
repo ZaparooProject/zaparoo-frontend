@@ -2123,17 +2123,115 @@ MainLayout {
         root.openListPickerModal(qsTr("View"), entries, "jump_letter", "page_menu");
     }
 
-    // Favorites' West-button menu. Random favorite launches Core-side
-    // (`launch.random` restricted to the user:favorite tag) so the pool is
-    // the whole favorites set, not just the pages the model has loaded.
+    // Favorites' West-button menu: how the list is ordered and scoped, plus
+    // the random pick. Sort and filter both need every favorite loaded (Core
+    // returns them in database order, 25 at a time, with no sort parameter),
+    // so opening the menu warms that load rather than making the user wait
+    // after choosing.
     function openFavoritesPageMenu(): void {
+        Browse.FavoritesModel.ensure_full_load();
         const entries = [
+            {
+                "id": "favorites_sort",
+                "label": qsTr("Sort: %1").arg(root._favoritesSortLabel())
+            },
+            {
+                "id": "favorites_filter",
+                "label": qsTr("Show: %1").arg(root._favoritesFilterLabel())
+            },
             {
                 "id": "launch_random_favorite",
                 "label": qsTr("Random favorite")
             }
         ];
-        root.openListPickerModal(qsTr("View"), entries, "launch_random_favorite", "page_menu_favorites");
+        root.openListPickerModal(qsTr("View"), entries, "favorites_sort", "page_menu_favorites");
+    }
+
+    function _favoritesSortLabel(): string {
+        return Browse.FavoritesModel.sort_mode === "name" ? qsTr("A-Z") : qsTr("Default");
+    }
+
+    // Human-readable form of the active scope, resolved against the facet so
+    // the label matches the picker row that set it.
+    function _favoritesFilterLabel(): string {
+        const active = Browse.FavoritesModel.filter ?? "";
+        if (active === "")
+            return qsTr("All");
+        if (active.startsWith("cat:"))
+            return active.slice(4);
+        const id = active.startsWith("sys:") ? active.slice(4) : active;
+        const systems = root._favoritesSystemFacet();
+        for (let i = 0; i < systems.length; i++) {
+            if (systems[i].id === id)
+                return systems[i].name;
+        }
+        return id;
+    }
+
+    function _favoritesSystemFacet(): var {
+        let parsed = [];
+        try {
+            parsed = JSON.parse(Browse.FavoritesModel.system_facet_json || "[]");
+        } catch (e) {
+            parsed = [];
+        }
+        return Array.isArray(parsed) ? parsed : [];
+    }
+
+    function openFavoritesSortMenu(): void {
+        const entries = [
+            {
+                "id": "",
+                "label": qsTr("Default")
+            },
+            {
+                "id": "name",
+                "label": qsTr("A-Z")
+            }
+        ];
+        root.openListPickerModal(qsTr("Sort"), entries, Browse.FavoritesModel.sort_mode, "favorites_sort_pick");
+    }
+
+    // One flat list: everything, then the categories present, then the
+    // individual systems. Built from the loaded favorites, so every row here
+    // is guaranteed to match at least one entry.
+    function openFavoritesFilterMenu(): void {
+        const systems = root._favoritesSystemFacet();
+        const entries = [
+            {
+                "id": "",
+                "label": qsTr("All (%1)").arg(Browse.FavoritesModel.total_count)
+            }
+        ];
+        const categories = [];
+        for (let i = 0; i < systems.length; i++) {
+            const category = systems[i].category ?? "";
+            if (category === "")
+                continue;
+            const existing = categories.find(c => c.name === category);
+            if (existing)
+                existing.count += systems[i].count;
+            else
+                categories.push({
+                    "name": category,
+                    "count": systems[i].count
+                });
+        }
+        for (let c = 0; c < categories.length; c++) {
+            entries.push({
+                "id": "cat:" + categories[c].name,
+                // Category names come from Core untranslated; only the
+                // surrounding count frame is localized.
+                "label": qsTr("%1 (%2)").arg(categories[c].name).arg(categories[c].count)
+            });
+        }
+        for (let s = 0; s < systems.length; s++) {
+            entries.push({
+                "id": "sys:" + systems[s].id,
+                "label": qsTr("%1 (%2)").arg(systems[s].name).arg(systems[s].count)
+            });
+        }
+        root.openListPickerModal(qsTr("Show"), entries, Browse.FavoritesModel.filter, "favorites_filter_pick");
     }
 
     // Re-parse the model's facet JSON into the live grid entries. Bound through
@@ -2331,6 +2429,22 @@ MainLayout {
             root.closeListPickerModal();
             if (selectedId === "launch_random_favorite")
                 Browse.FavoritesModel.launch_random();
+            else if (selectedId === "favorites_sort")
+                root.openFavoritesSortMenu();
+            else if (selectedId === "favorites_filter")
+                root.openFavoritesFilterMenu();
+            return;
+        }
+        if (fieldId === "favorites_sort_pick") {
+            root.closeListPickerModal();
+            Browse.FavoritesModel.set_sort_mode(selectedId);
+            Browse.FavoritesState.sort = selectedId;
+            return;
+        }
+        if (fieldId === "favorites_filter_pick") {
+            root.closeListPickerModal();
+            Browse.FavoritesModel.set_filter(selectedId);
+            Browse.FavoritesState.filter = selectedId;
             return;
         }
         if (fieldId === "system_launcher_pending")

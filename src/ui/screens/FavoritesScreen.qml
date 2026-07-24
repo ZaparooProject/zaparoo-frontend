@@ -13,7 +13,8 @@ import Zaparoo.Browse as Browse
 //
 // Favorites is a flat list — no folder navigation, no card-write flow —
 // so it reuses the shared `MediaListScreen` shell with the
-// favorites-specific model, persisted selection state, and copy.
+// favorites-specific model, persisted selection state, and copy. The View
+// menu adds ordering and a system/category scope on top of that shell.
 MediaListScreen {
     id: favorites
 
@@ -22,7 +23,33 @@ MediaListScreen {
     mediaModel: Browse.FavoritesModel
     mediaState: Browse.FavoritesState
     screenTitle: qsTr("Favorites")
-    emptyText: qsTr("No favorites yet")
+    // An active scope can empty the list even when favorites exist, so say
+    // which state the user is actually looking at.
+    emptyText: Browse.FavoritesModel.filter !== "" ? qsTr("No favorites in this scope") : qsTr("No favorites yet")
     loadingText: qsTr("Loading favorites…")
     detailShowTitle: false
+    // The View menu owns the filter, so it has to stay reachable when that
+    // filter matches nothing — otherwise the scope can never be cleared.
+    pageMenuEnabledWhenEmpty: true
+    // Narrowed lists read as "N of M" so the hidden remainder is visible.
+    topStripTotalTextProvider: () => {
+        const shown = Browse.FavoritesModel.count;
+        const total = Browse.FavoritesModel.total_count;
+        if (favorites._listLayout)
+            return "";
+        if (Browse.FavoritesModel.filter !== "" && total > shown)
+            return qsTr("%1 of %2").arg(shown).arg(total);
+        return shown > 0 ? qsTr("%1 entries").arg(shown) : "";
+    }
+
+    // Restore the persisted order/scope once, on first load. Applying them
+    // triggers the full fetch the sort and filter both need.
+    Component.onCompleted: {
+        const sort = Browse.FavoritesState.sort ?? "";
+        const filter = Browse.FavoritesState.filter ?? "";
+        if (sort !== "")
+            Browse.FavoritesModel.set_sort_mode(sort);
+        if (filter !== "")
+            Browse.FavoritesModel.set_filter(filter);
+    }
 }
