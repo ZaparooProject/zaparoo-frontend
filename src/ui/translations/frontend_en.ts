@@ -339,32 +339,32 @@ Euskara - devilschile2</source>
 <context>
     <name>FavoritesScreen</name>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="25"/>
+        <location filename="../screens/FavoritesScreen.qml" line="29"/>
         <source>Favorites</source>
         <translation>Favorites</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="28"/>
+        <location filename="../screens/FavoritesScreen.qml" line="32"/>
         <source>No favorites yet</source>
         <translation>No favorites yet</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="28"/>
+        <location filename="../screens/FavoritesScreen.qml" line="32"/>
         <source>No favorites in this scope</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="29"/>
+        <location filename="../screens/FavoritesScreen.qml" line="33"/>
         <source>Loading favorites…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="41"/>
+        <location filename="../screens/FavoritesScreen.qml" line="45"/>
         <source>%1 of %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="42"/>
+        <location filename="../screens/FavoritesScreen.qml" line="46"/>
         <source>%1 entries</source>
         <translation type="unfinished">%1 entries</translation>
     </message>
