@@ -32,6 +32,13 @@ TestCase {
         id: mediaModel
     }
 
+    SignalSpy {
+        id: pageMenuSpy
+
+        target: screen
+        signalName: "requestPageMenu"
+    }
+
     MediaListScreen {
         id: screen
 
@@ -94,6 +101,28 @@ TestCase {
         screen.handleAction("left");
         compare(screen.mediaGrid.currentIndex, 0);
     }
+
+
+    // A screen whose own page menu can empty the list (favorites, via its
+    // scope filter) must keep that menu reachable while empty, or the filter
+    // can never be cleared. Off by default so other screens keep the stricter
+    // ready-only gate.
+    function test_page_menu_reachable_when_empty_only_if_opted_in(): void {
+        const spy = pageMenuSpy;
+        mediaModel.clear();
+        tryCompare(screen.mediaGrid, "itemCount", 0);
+
+        screen.pageMenuEnabledWhenEmpty = false;
+        spy.clear();
+        screen.handleAction("page_menu");
+        compare(spy.count, 0, "empty list stays gated by default");
+
+        screen.pageMenuEnabledWhenEmpty = true;
+        screen.handleAction("page_menu");
+        compare(spy.count, 1, "opted-in screen can still open its View menu");
+        screen.pageMenuEnabledWhenEmpty = false;
+    }
+
 
     // Grid layout must keep Left/Right as one-column selection moves;
     // the list paging fallback is gated on _listLayout.

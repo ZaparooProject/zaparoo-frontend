@@ -664,4 +664,53 @@ TestCase {
         main.listPickerAccepted("page_menu_favorites", "launch_random_favorite");
         tryCompare(main, "listPickerModalVisible", false);
     }
+
+    // The View menu is the only route to ordering and scoping, so all three
+    // list operations must be present.
+    function test_favorites_page_menu_offers_sort_and_filter(): void {
+        main.openFavoritesPageMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("favorites_sort") !== -1, "Sort entry present");
+        verify(ids.indexOf("favorites_filter") !== -1, "Show entry present");
+        main.closeListPickerModal();
+    }
+
+    // Choosing Sort must open a second picker on its own field id, and the
+    // accepted value must reach the model. A wrong field id would silently
+    // route the choice nowhere.
+    function test_favorites_sort_selection_applies_to_model(): void {
+        main.openFavoritesPageMenu();
+        main.listPickerAccepted("page_menu_favorites", "favorites_sort");
+        tryCompare(main, "listPickerModalVisible", true);
+        compare(main.listPickerFieldId, "favorites_sort_pick");
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("name") !== -1, "A-Z option present");
+        verify(ids.indexOf("") !== -1, "Default option present");
+
+        main.listPickerAccepted("favorites_sort_pick", "name");
+        tryCompare(main, "listPickerModalVisible", false);
+        compare(Browse.FavoritesModel.sort_mode, "name");
+        compare(Browse.FavoritesState.sort, "name");
+
+        // Restore the default so the persisted value doesn't leak into other
+        // tests or the dev machine's state file.
+        main.openFavoritesPageMenu();
+        main.listPickerAccepted("page_menu_favorites", "favorites_sort");
+        main.listPickerAccepted("favorites_sort_pick", "");
+        compare(Browse.FavoritesModel.sort_mode, "");
+        compare(Browse.FavoritesState.sort, "");
+    }
+
+    // The scope picker always offers "everything" first, so a narrowed list
+    // can always be widened again.
+    function test_favorites_filter_picker_always_offers_all(): void {
+        main.openFavoritesPageMenu();
+        main.listPickerAccepted("page_menu_favorites", "favorites_filter");
+        tryCompare(main, "listPickerModalVisible", true);
+        compare(main.listPickerFieldId, "favorites_filter_pick");
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("") !== -1, "All option present");
+        main.closeListPickerModal();
+    }
 }
