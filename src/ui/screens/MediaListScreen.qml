@@ -658,7 +658,7 @@ Item {
         source: {
             if (!root._listLayout || root.mediaModel === null)
                 return "";
-            const k = root.mediaModel.detailPrefetchKeyNext ?? "";
+            const k = root.mediaModel.detail_prefetch_key_next ?? "";
             return k.startsWith("media-image/") ? Resources.coverUrl(k, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : "";
         }
     }
@@ -674,7 +674,7 @@ Item {
         source: {
             if (!root._listLayout || root.mediaModel === null)
                 return "";
-            const k = root.mediaModel.detailPrefetchKeyPrev ?? "";
+            const k = root.mediaModel.detail_prefetch_key_prev ?? "";
             return k.startsWith("media-image/") ? Resources.coverUrl(k, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : "";
         }
     }
