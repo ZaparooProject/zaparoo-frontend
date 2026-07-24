@@ -293,7 +293,7 @@ pub mod ffi {
         fn launch_text_at(self: &FavoritesModel, index: i32) -> QString;
 
         #[qinvokable]
-        fn launch_random(self: &FavoritesModel);
+        fn launch_random(self: Pin<&mut FavoritesModel>);
 
         #[qinvokable]
         fn write_card_at(self: Pin<&mut FavoritesModel>, index: i32);
@@ -572,7 +572,8 @@ impl ffi::FavoritesModel {
         let show_original = self.show_original_filenames;
         let view = build_view(&self.entries, &sort_mode, &filter, show_original);
         let rev = build_rev(&view, self.entries.len());
-        let disambig = compute_favorites_disambig_displays_view(&self.entries, &view, show_original);
+        let disambig =
+            compute_favorites_disambig_displays_view(&self.entries, &view, show_original);
         let count = i32::try_from(view.len()).unwrap_or(i32::MAX);
         let total = i32::try_from(self.entries.len()).unwrap_or(i32::MAX);
         let facet = build_system_facet_json(&self.entries);
@@ -754,10 +755,9 @@ impl ffi::FavoritesModel {
                     Ok(result) => {
                         let has_next_page = result.has_next_page();
                         let next_cursor = result.next_cursor();
-                        let entries = filter_entries_by_path(std::iter::empty(), result.results);
                         {
                             let mut rust = model.as_mut().rust_mut();
-                            rust.entries = entries;
+                            rust.entries = result.results;
                             rust.next_cursor = next_cursor;
                         }
                         model.as_mut().set_has_next_page(has_next_page);
@@ -829,7 +829,10 @@ impl ffi::FavoritesModel {
         let Ok(count) = usize::try_from(self.count) else {
             return;
         };
-        let Some(entry) = self.entry_at(random_index(count)) else {
+        let Ok(row) = i32::try_from(random_index(count)) else {
+            return;
+        };
+        let Some(entry) = self.entry_at(row) else {
             return;
         };
         let text = launch_text_for(entry);
@@ -978,8 +981,7 @@ impl ffi::FavoritesModel {
             return;
         }
         // Displayed name drives sibling grouping, so recompute the trimmed tags.
-        let displays =
-            compute_favorites_disambig_displays_view(&self.entries, &self.view, value);
+        let displays = compute_favorites_disambig_displays_view(&self.entries, &self.view, value);
         self.as_mut().rust_mut().disambig_displays = displays;
         let last_row = self.count - 1;
         if last_row >= 0 {
@@ -1388,26 +1390,12 @@ fn display_name(name: &str, path: &str, show_original_filenames: bool) -> String
     }
 }
 
-/// Sibling-diffed disambiguation displays for the full `entries` slice (see the
-/// shared `sibling_disambiguation_displays`). Grouping keys off the displayed
-/// name so the original-filename toggle disables grouping naturally.
-fn compute_favorites_disambig_displays(entries: &[MediaItem], show_original: bool) -> Vec<String> {
-    let rows: Vec<(String, Vec<String>)> = entries
-        .iter()
-        .map(|e| {
-            (
-                display_name(&e.name, &e.path, show_original),
-                disambiguating_tag_labels(&e.disambiguating_tags),
-            )
-        })
-        .collect();
-    sibling_disambiguation_displays(&rows)
-}
-
-/// Same as `compute_favorites_disambig_displays` but over the visible rows in
-/// display order. Sibling grouping is adjacency-based, so it has to follow the
-/// view: sorting brings same-named variants next to each other that Core's
-/// order kept apart, and the badges must group with them.
+/// Sibling-diffed disambiguation displays for the visible rows, in display
+/// order (see the shared `sibling_disambiguation_displays`). Grouping keys off
+/// the displayed name so the original-filename toggle disables grouping
+/// naturally. Adjacency-based, so it must follow the view: sorting brings
+/// same-named variants next to each other that Core's order kept apart, and
+/// the badges have to group with them.
 fn compute_favorites_disambig_displays_view(
     entries: &[MediaItem],
     view: &[usize],
@@ -1496,7 +1484,7 @@ fn build_system_facet_json(entries: &[MediaItem]) -> String {
             ));
         }
     }
-    systems.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+    systems.sort_by_key(|s| s.1.to_lowercase());
     let mut json = String::from("[");
     for (i, (id, name, category, count)) in systems.iter().enumerate() {
         if i > 0 {
@@ -1521,6 +1509,8 @@ fn build_system_facet_json(entries: &[MediaItem]) -> String {
 /// needs one; system names come from Core, so quotes and backslashes are
 /// possible and control characters must not break the payload QML parses.
 fn push_json_escaped(out: &mut String, value: &str) {
+    use std::fmt::Write as _;
+
     for ch in value.chars() {
         match ch {
             '"' => out.push_str("\\\""),
@@ -1528,7 +1518,12 @@ fn push_json_escaped(out: &mut String, value: &str) {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c if (c as u32) < 0x20 => {
+                // Control characters must be escaped or the payload QML
+                // parses is malformed. Writing straight into `out` avoids a
+                // temporary String per character.
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
             c => out.push(c),
         }
     }
@@ -1800,7 +1795,7 @@ fn prefetch_around_cursor(
     let fwd_end = (row + 1 + COVER_PREFETCH_CURSOR_NEXT).min(count);
     let back_start = (row - COVER_PREFETCH_CURSOR_PREV).max(0);
     let mut plan: Vec<(MediaKey, Option<i64>)> = Vec::new();
-    let mut push_row = |i: i32, plan: &mut Vec<(MediaKey, Option<i64>)>| {
+    let push_row = |i: i32, plan: &mut Vec<(MediaKey, Option<i64>)>| {
         let Some(e) = usize::try_from(i)
             .ok()
             .and_then(|r| view.get(r))
@@ -2118,8 +2113,7 @@ fn apply_append_page(
                         // entries are simply the next rows.
                         rust.view.extend(appended_from..appended_to);
                         rust.rev.extend(
-                            (appended_from..appended_to)
-                                .map(|i| i32::try_from(i).unwrap_or(-1)),
+                            (appended_from..appended_to).map(|i| i32::try_from(i).unwrap_or(-1)),
                         );
                         rust.count = first.saturating_add(new_count);
                     }
@@ -2253,7 +2247,10 @@ mod tests {
     #[test]
     fn unknown_filter_shows_everything_rather_than_emptying_the_screen() {
         let entries = sample_library();
-        assert_eq!(build_view(&entries, "", "nonsense", false).len(), entries.len());
+        assert_eq!(
+            build_view(&entries, "", "nonsense", false).len(),
+            entries.len()
+        );
     }
 
     #[test]
@@ -2337,7 +2334,10 @@ mod tests {
         let mut entry = favorite_entry();
         entry.system.name = "He said \"hi\"\\".to_string();
         let json = build_system_facet_json(&[entry]);
-        assert!(json.contains(r#"He said \"hi\"\\"#), "quotes and backslash escaped: {json}");
+        assert!(
+            json.contains(r#"He said \"hi\"\\"#),
+            "quotes and backslash escaped: {json}"
+        );
     }
 
     #[test]
@@ -2360,8 +2360,7 @@ mod tests {
     fn random_index_eventually_varies() {
         // A fixed return would silently make "random favorite" always launch
         // the same game, which is exactly the Core bug this replaced.
-        let picks: std::collections::HashSet<usize> =
-            (0..256).map(|_| random_index(8)).collect();
+        let picks: HashSet<usize> = (0..256).map(|_| random_index(8)).collect();
         assert!(picks.len() > 1, "picks must not be constant");
     }
 

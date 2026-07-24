@@ -349,6 +349,8 @@ mod tests {
             },
             favorites: FavoritesState {
                 selected_path: "/roms/nes/zelda.nes".into(),
+                sort: "name".into(),
+                filter: "sys:NES".into(),
             },
             settings: SettingsState {
                 resolution: "1920x1080".into(),

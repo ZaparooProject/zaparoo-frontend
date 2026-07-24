@@ -1,6 +1,10 @@
 // Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// cxx-qt 0.8 singleton members aren't marked final, so every Browse.* read
+// trips "can be shadowed". Structural; suppress compiler file-wide as the
+// other screens do.
+// qmllint disable compiler
 
 import QtQuick
 import Zaparoo.Browse as Browse

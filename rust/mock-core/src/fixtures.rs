@@ -356,7 +356,7 @@ fn tags_for(file: &str, index: usize) -> Value {
         .as_array()
         .cloned()
         .unwrap_or_default();
-    if index % 3 == 0 {
+    if index.is_multiple_of(3) {
         tags.push(json!({ "tag": "favorite", "type": "user" }));
     }
     Value::Array(tags)

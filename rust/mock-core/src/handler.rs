@@ -243,8 +243,8 @@ mod tests {
         for game in results {
             let tags = game["tags"].as_array().expect("tags array");
             assert!(
-                tags.iter().any(|tag| tag["type"] == Value::from("user")
-                    && tag["tag"] == Value::from("favorite")),
+                tags.iter()
+                    .any(|tag| tag["type"] == "user" && tag["tag"] == "favorite"),
                 "every returned row carries the favorite tag"
             );
         }
@@ -259,10 +259,7 @@ mod tests {
         let results = resp["result"]["results"].as_array().expect("array");
         let system = &results[0]["system"];
         assert_eq!(system["id"], Value::from("NES"));
-        assert_eq!(
-            system["name"],
-            Value::from("Nintendo Entertainment System")
-        );
+        assert_eq!(system["name"], Value::from("Nintendo Entertainment System"));
         assert_eq!(system["category"], Value::from("Consoles"));
     }
 
