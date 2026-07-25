@@ -453,6 +453,8 @@ fn apply_state(
             let mut rust = model.as_mut().rust_mut();
             rust.entries = entries;
             rust.next_cursor = next_cursor;
+            // A fresh chain invalidates any press queued against the old one.
+            rust.random_pending = false;
         }
         // Through the setters, not `rust_mut`: both are qproperties, so a
         // silent write leaves any QML binding on them stale.
@@ -528,6 +530,7 @@ fn apply_state(
         if model.full_loading {
             model.as_mut().set_full_loading(false);
         }
+        model.as_mut().rust_mut().random_pending = false;
         if model.loading_more {
             model.as_mut().set_loading_more(false);
         }
@@ -553,6 +556,7 @@ fn apply_state(
         if model.full_loading {
             model.as_mut().set_full_loading(false);
         }
+        model.as_mut().rust_mut().random_pending = false;
         if model.loading_more {
             model.as_mut().set_loading_more(false);
         }
@@ -753,8 +757,11 @@ impl ffi::FavoritesModel {
             return;
         }
         if !self.has_next_page {
-            // Everything already arrived in the first page.
+            // Everything already arrived in the first page. Fire a queued
+            // press here: no callback is coming, so waiting for one would
+            // make the first press do nothing.
             self.as_mut().set_full_loaded(true);
+            self.launch_pending_random();
             return;
         }
         self.as_mut().set_full_loading(true);
@@ -791,6 +798,12 @@ impl ffi::FavoritesModel {
                     Ok(result) => {
                         let has_next_page = result.has_next_page();
                         let next_cursor = result.next_cursor();
+                        // A page with no rows, or a cursor that did not move,
+                        // means the chain cannot advance. Without this the
+                        // drain would re-request forever, resetting the model
+                        // on every pass.
+                        let stalled = result.results.is_empty()
+                            || (next_cursor.is_some() && next_cursor == model.next_cursor);
                         {
                             let mut rust = model.as_mut().rust_mut();
                             rust.entries.extend(result.results);
@@ -798,7 +811,7 @@ impl ffi::FavoritesModel {
                         }
                         model.as_mut().set_has_next_page(has_next_page);
                         model.as_mut().rebuild_view();
-                        if has_next_page {
+                        if has_next_page && !stalled {
                             // More than one chunk's worth; keep draining.
                             model.as_mut().ensure_full_load();
                         } else {
@@ -874,9 +887,8 @@ impl ffi::FavoritesModel {
         }
         if !self.full_loaded {
             // Picking from a partial list would bias the result toward the
-            // first page, so pull the rest first and launch when it lands.
-            // `ensure_full_load` completes synchronously when page 1 already
-            // held everything, in which case this returns having launched.
+            // first page, so pull the rest first. `ensure_full_load` fires
+            // the queued press when it finishes, synchronously or not.
             self.as_mut().rust_mut().random_pending = true;
             self.as_mut().ensure_full_load();
             return;

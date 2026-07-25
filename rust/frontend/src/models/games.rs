@@ -1039,65 +1039,18 @@ impl ffi::GamesModel {
         let browse_seq = self.rust().seq.clone();
         let browse_ticket = browse_seq.load(Ordering::SeqCst);
         let qt_thread = self.qt_thread();
-        let store = global_store();
         self.as_mut().set_random_seeking(true);
 
-        global_handle().spawn(async move {
-            let mut cursor: Option<String> = None;
-            let mut remaining = target;
-            let mut first_page = true;
-            // Bounded so a pathological listing cannot loop forever; 64 pages
-            // of up to 1000 rows covers any realistic folder.
-            for _ in 0..64 {
-                if random_seq.load(Ordering::SeqCst) != ticket
-                    || browse_seq.load(Ordering::SeqCst) != browse_ticket
-                {
-                    return; // superseded: a newer press or scope owns the flags
-                }
-                let max_results =
-                    walk_page_size(remaining, if first_page { leading_dirs } else { 0 });
-                let result = store
-                    .client()
-                    .media_browse(MediaBrowseParams {
-                        path: path.clone(),
-                        systems: systems.clone(),
-                        max_results: Some(max_results),
-                        cursor: cursor.clone(),
-                        letter: None,
-                        sort: None,
-                    })
-                    .await;
-                first_page = false;
-                let result = match result {
-                    Ok(result) => result,
-                    Err(e) => {
-                        warn!("random game walk failed: {}", e.message);
-                        finish_random(&qt_thread, &random_seq, ticket, Err("browse-failed"));
-                        return;
-                    }
-                };
-                let page_launchable = launchable_count(&result.entries);
-                if remaining < page_launchable {
-                    let text = launchable_entries(&result.entries)
-                        .nth(remaining)
-                        .and_then(run_text_for_entry);
-                    let outcome = text.ok_or("no-launch-payload");
-                    finish_random(&qt_thread, &random_seq, ticket, outcome);
-                    return;
-                }
-                remaining -= page_launchable;
-                match result.next_cursor() {
-                    Some(next) if result.has_next_page() => cursor = Some(next),
-                    _ => {
-                        // Ran out of listing before reaching the drawn
-                        // position: the scope's reported total was larger
-                        // than what it actually serves.
-                        finish_random(&qt_thread, &random_seq, ticket, Err("walk-exhausted"));
-                        return;
-                    }
-                }
-            }
-            finish_random(&qt_thread, &random_seq, ticket, Err("walk-too-long"));
+        spawn_random_walk(RandomWalk {
+            qt_thread,
+            random_seq,
+            ticket,
+            browse_seq,
+            browse_ticket,
+            path,
+            systems,
+            leading_dirs,
+            target,
         });
     }
 
@@ -1708,6 +1661,121 @@ fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
             && (entry.media_id.is_some() || !entry.zap_script.is_empty()))
 }
 
+/// Everything one random walk needs. Grouped so the walk can live outside
+/// `launch_random`, which the line limit (rightly) keeps short.
+struct RandomWalk {
+    qt_thread: cxx_qt::CxxQtThread<ffi::GamesModel>,
+    random_seq: Arc<AtomicU64>,
+    ticket: u64,
+    browse_seq: Arc<AtomicU64>,
+    browse_ticket: u64,
+    path: String,
+    systems: Vec<String>,
+    leading_dirs: i32,
+    target: usize,
+}
+
+/// Walk the listing counting only launchable rows until the drawn position,
+/// then launch that entry. Aborts without writing anything when superseded.
+fn spawn_random_walk(walk: RandomWalk) {
+    let RandomWalk {
+        qt_thread,
+        random_seq,
+        ticket,
+        browse_seq,
+        browse_ticket,
+        path,
+        systems,
+        leading_dirs,
+        target,
+    } = walk;
+    let store = global_store();
+    global_handle().spawn(async move {
+        let mut cursor: Option<String> = None;
+        let mut remaining = target;
+        let mut first_page = true;
+        // Bounded so a pathological listing cannot loop forever; 64 pages of
+        // up to 1000 rows covers any realistic folder.
+        for _ in 0..64 {
+            if random_seq.load(Ordering::SeqCst) != ticket
+                || browse_seq.load(Ordering::SeqCst) != browse_ticket
+            {
+                return; // superseded: a newer press or scope owns the flags
+            }
+            let max_results = walk_page_size(remaining, if first_page { leading_dirs } else { 0 });
+            let result = store
+                .client()
+                .media_browse(MediaBrowseParams {
+                    path: path.clone(),
+                    systems: systems.clone(),
+                    max_results: Some(max_results),
+                    cursor: cursor.clone(),
+                    letter: None,
+                    sort: None,
+                })
+                .await;
+            first_page = false;
+            let result = match result {
+                Ok(result) => result,
+                Err(e) => {
+                    warn!("random game walk failed: {}", e.message);
+                    finish_random(
+                        &qt_thread,
+                        &random_seq,
+                        ticket,
+                        &browse_seq,
+                        browse_ticket,
+                        Err("browse-failed"),
+                    );
+                    return;
+                }
+            };
+            let page_launchable = launchable_count(&result.entries);
+            if remaining < page_launchable {
+                let text = launchable_entries(&result.entries)
+                    .nth(remaining)
+                    .and_then(run_text_for_entry);
+                let outcome = text.ok_or("no-launch-payload");
+                finish_random(
+                    &qt_thread,
+                    &random_seq,
+                    ticket,
+                    &browse_seq,
+                    browse_ticket,
+                    outcome,
+                );
+                return;
+            }
+            remaining -= page_launchable;
+            match result.next_cursor() {
+                // A cursor that does not advance would loop forever.
+                Some(next) if result.has_next_page() && Some(&next) != cursor.as_ref() => {
+                    cursor = Some(next);
+                }
+                _ => {
+                    finish_random(
+                        &qt_thread,
+                        &random_seq,
+                        ticket,
+                        &browse_seq,
+                        browse_ticket,
+                        Err("walk-exhausted"),
+                    );
+                    return;
+                }
+            }
+        }
+        finish_random(
+            &qt_thread,
+            &random_seq,
+            ticket,
+            &browse_seq,
+            browse_ticket,
+            Err("walk-too-long"),
+        );
+    });
+}
+
 /// Fire the run mutation for a resolved random pick.
 fn spawn_random_run(text: String) {
     let store = global_store();
@@ -1725,12 +1793,20 @@ fn finish_random(
     qt_thread: &cxx_qt::CxxQtThread<ffi::GamesModel>,
     random_seq: &Arc<AtomicU64>,
     ticket: u64,
+    browse_seq: &Arc<AtomicU64>,
+    browse_ticket: u64,
     outcome: Result<String, &'static str>,
 ) {
     let random_seq = random_seq.clone();
+    let browse_seq = browse_seq.clone();
     let outcome = outcome.map_err(str::to_string);
     let _ = qt_thread.queue(move |mut model| {
-        if random_seq.load(Ordering::SeqCst) != ticket {
+        // Both tickets, not just the random one: navigating to another folder
+        // bumps only the browse seq, and launching a game the user has
+        // already browsed away from would be worse than not launching.
+        if random_seq.load(Ordering::SeqCst) != ticket
+            || browse_seq.load(Ordering::SeqCst) != browse_ticket
+        {
             return;
         }
         model.as_mut().set_random_seeking(false);

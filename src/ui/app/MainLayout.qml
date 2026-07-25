@@ -1147,7 +1147,7 @@ ApplicationWindow {
                                 label: qsTr("I understand")
                             }
                         ];
-                    if (root.coreVersionModalVisible)
+                    if (root.coreVersionModalVisible || root.randomFailedModalVisible)
                         return [
                             {
                                 button: "ButtonA",

@@ -676,7 +676,10 @@ TestCase {
         const ids = main.listPickerEntries.map(e => e.id);
         verify(ids.indexOf("jump_letter") !== -1, "Go to... entry present");
         verify(ids.indexOf("launch_random") !== -1, "Random game entry present");
-        main.closeListPickerModal();
+        // Go through the real accept path: a broken route would leave the
+        // picker open, which closing it directly would hide.
+        main.listPickerAccepted("page_menu", "launch_random");
+        tryCompare(main, "listPickerModalVisible", false);
         Browse.GamesModel.total_files = 0;
     }
 
