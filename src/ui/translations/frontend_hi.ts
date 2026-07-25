@@ -614,203 +614,203 @@ Euskara - devilschile2</source>
 <context>
     <name>Main</name>
     <message>
-        <location filename="../app/Main.qml" line="1521"/>
+        <location filename="../app/Main.qml" line="1524"/>
         <source>Launch core</source>
         <translation>कोर चलाएँ</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1530"/>
-        <location filename="../app/Main.qml" line="1775"/>
+        <location filename="../app/Main.qml" line="1533"/>
+        <location filename="../app/Main.qml" line="1778"/>
         <source>Change launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1537"/>
-        <location filename="../app/Main.qml" line="1566"/>
+        <location filename="../app/Main.qml" line="1540"/>
+        <location filename="../app/Main.qml" line="1569"/>
         <source>Update media database</source>
         <translation type="unfinished">मीडिया डेटाबेस अपडेट करें</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1540"/>
-        <location filename="../app/Main.qml" line="1569"/>
+        <location filename="../app/Main.qml" line="1543"/>
+        <location filename="../app/Main.qml" line="1572"/>
         <source>Scrape metadata</source>
         <translation type="unfinished">मेटाडेटा स्क्रैप करें</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1545"/>
-        <location filename="../app/Main.qml" line="1554"/>
+        <location filename="../app/Main.qml" line="1548"/>
+        <location filename="../app/Main.qml" line="1557"/>
         <source>Unhide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1545"/>
-        <location filename="../app/Main.qml" line="1554"/>
+        <location filename="../app/Main.qml" line="1548"/>
+        <location filename="../app/Main.qml" line="1557"/>
         <source>Hide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1578"/>
-        <location filename="../app/Main.qml" line="1613"/>
+        <location filename="../app/Main.qml" line="1581"/>
+        <location filename="../app/Main.qml" line="1616"/>
         <source>Launch game</source>
         <translation>गेम चलाएँ</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1594"/>
+        <location filename="../app/Main.qml" line="1597"/>
         <source>Remove from favorites</source>
         <translation>पसंदीदा से हटाएँ</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1594"/>
+        <location filename="../app/Main.qml" line="1597"/>
         <source>Add to favorites</source>
         <translation>पसंदीदा में जोड़ें</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1599"/>
+        <location filename="../app/Main.qml" line="1602"/>
         <source>Write to NFC token</source>
         <translation>NFC टोकन पर लिखें</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1603"/>
+        <location filename="../app/Main.qml" line="1606"/>
         <source>QR code</source>
         <translation>QR कोड</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1771"/>
-        <location filename="../app/Main.qml" line="2151"/>
-        <location filename="../app/Main.qml" line="2185"/>
+        <location filename="../app/Main.qml" line="1774"/>
+        <location filename="../app/Main.qml" line="2184"/>
+        <location filename="../app/Main.qml" line="2218"/>
         <source>Default</source>
         <translation type="unfinished">डिफ़ॉल्ट</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1771"/>
+        <location filename="../app/Main.qml" line="1774"/>
         <source>Current: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2116"/>
+        <location filename="../app/Main.qml" line="2144"/>
         <source>Go to...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2120"/>
-        <source>Random game</source>
+        <location filename="../app/Main.qml" line="2154"/>
+        <source>Random game in this folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2123"/>
-        <location filename="../app/Main.qml" line="2147"/>
+        <location filename="../app/Main.qml" line="2156"/>
+        <location filename="../app/Main.qml" line="2180"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2136"/>
+        <location filename="../app/Main.qml" line="2169"/>
         <source>Sort: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2140"/>
+        <location filename="../app/Main.qml" line="2173"/>
         <source>Show: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2144"/>
+        <location filename="../app/Main.qml" line="2177"/>
         <source>Random favorite</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2151"/>
-        <location filename="../app/Main.qml" line="2189"/>
+        <location filename="../app/Main.qml" line="2184"/>
+        <location filename="../app/Main.qml" line="2222"/>
         <source>A-Z</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2159"/>
+        <location filename="../app/Main.qml" line="2192"/>
         <source>All</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2192"/>
+        <location filename="../app/Main.qml" line="2225"/>
         <source>Sort</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2214"/>
+        <location filename="../app/Main.qml" line="2247"/>
         <source>All (%1)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2236"/>
-        <location filename="../app/Main.qml" line="2242"/>
+        <location filename="../app/Main.qml" line="2269"/>
+        <location filename="../app/Main.qml" line="2275"/>
         <source>%1 (%2)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2245"/>
+        <location filename="../app/Main.qml" line="2278"/>
         <source>Show</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2385"/>
+        <location filename="../app/Main.qml" line="2418"/>
         <source>Saving launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2389"/>
+        <location filename="../app/Main.qml" line="2422"/>
         <source>Saving…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2403"/>
+        <location filename="../app/Main.qml" line="2436"/>
         <source>Launcher update failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2407"/>
+        <location filename="../app/Main.qml" line="2440"/>
         <source>Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2411"/>
+        <location filename="../app/Main.qml" line="2444"/>
         <source>Retry</source>
         <translation type="unfinished">फिर से प्रयास करें</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2415"/>
+        <location filename="../app/Main.qml" line="2448"/>
         <source>Cancel</source>
         <translation type="unfinished">रद्द करें</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3178"/>
+        <location filename="../app/Main.qml" line="3216"/>
         <source>Loading systems…</source>
         <translation>सिस्टम लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3180"/>
+        <location filename="../app/Main.qml" line="3218"/>
         <source>Loading games…</source>
         <translation>गेम लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3182"/>
+        <location filename="../app/Main.qml" line="3220"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3184"/>
+        <location filename="../app/Main.qml" line="3222"/>
         <source>Loading favorites…</source>
         <translation>पसंदीदा लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3186"/>
+        <location filename="../app/Main.qml" line="3224"/>
         <source>Loading recently played…</source>
         <translation>हाल ही में खेले गए लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3188"/>
+        <location filename="../app/Main.qml" line="3226"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3190"/>
+        <location filename="../app/Main.qml" line="3228"/>
         <source>Loading…</source>
         <translation>लोड हो रहा है…</translation>
     </message>
@@ -818,169 +818,180 @@ Euskara - devilschile2</source>
 <context>
     <name>MainLayout</name>
     <message>
-        <location filename="../app/MainLayout.qml" line="768"/>
+        <location filename="../app/MainLayout.qml" line="771"/>
         <source>Writing failed</source>
         <translation>लिखना विफल हुआ</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="768"/>
+        <location filename="../app/MainLayout.qml" line="771"/>
         <source>Put a writable card near the reader</source>
         <translation>रीडर के पास लिखने योग्य कार्ड रखें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="178"/>
+        <location filename="../app/MainLayout.qml" line="179"/>
         <source>Zaparoo Frontend</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="399"/>
+        <location filename="../app/MainLayout.qml" line="401"/>
         <source>Favorites</source>
         <translation type="unfinished">पसंदीदा</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="401"/>
+        <location filename="../app/MainLayout.qml" line="403"/>
         <source>Recently Played</source>
         <translation type="unfinished">हाल ही में खेले गए</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="784"/>
+        <location filename="../app/MainLayout.qml" line="787"/>
         <source>Quit and restart Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="785"/>
+        <location filename="../app/MainLayout.qml" line="788"/>
         <source>In order to apply this setting we need to restart the frontend.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="803"/>
+        <location filename="../app/MainLayout.qml" line="806"/>
         <source>Update Zaparoo Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="804"/>
+        <location filename="../app/MainLayout.qml" line="807"/>
         <source>This frontend needs Zaparoo Core %1 or newer. You&apos;re running %2. Some features may not work until you update.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="805"/>
-        <location filename="../app/MainLayout.qml" line="1135"/>
+        <location filename="../app/MainLayout.qml" line="808"/>
+        <location filename="../app/MainLayout.qml" line="824"/>
+        <location filename="../app/MainLayout.qml" line="1154"/>
         <source>OK</source>
         <translation type="unfinished">ठीक है</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="914"/>
+        <location filename="../app/MainLayout.qml" line="822"/>
+        <source>Random game</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/MainLayout.qml" line="823"/>
+        <source>Couldn&apos;t pick a game from this folder.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/MainLayout.qml" line="933"/>
         <source>Quit Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="915"/>
+        <location filename="../app/MainLayout.qml" line="934"/>
         <source>Are you sure you want to exit?</source>
         <translation>क्या आप वाकई बाहर निकलना चाहते हैं?</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1061"/>
-        <location filename="../app/MainLayout.qml" line="1142"/>
-        <location filename="../app/MainLayout.qml" line="1199"/>
-        <location filename="../app/MainLayout.qml" line="1236"/>
-        <location filename="../app/MainLayout.qml" line="1284"/>
-        <location filename="../app/MainLayout.qml" line="1344"/>
+        <location filename="../app/MainLayout.qml" line="1080"/>
+        <location filename="../app/MainLayout.qml" line="1161"/>
+        <location filename="../app/MainLayout.qml" line="1218"/>
+        <location filename="../app/MainLayout.qml" line="1255"/>
+        <location filename="../app/MainLayout.qml" line="1303"/>
         <location filename="../app/MainLayout.qml" line="1363"/>
-        <location filename="../app/MainLayout.qml" line="1436"/>
+        <location filename="../app/MainLayout.qml" line="1382"/>
+        <location filename="../app/MainLayout.qml" line="1455"/>
         <source>Move</source>
         <translation>स्थानांतरित करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1065"/>
-        <location filename="../app/MainLayout.qml" line="1146"/>
+        <location filename="../app/MainLayout.qml" line="1084"/>
+        <location filename="../app/MainLayout.qml" line="1165"/>
         <source>Select</source>
         <translation>चुनें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1069"/>
-        <location filename="../app/MainLayout.qml" line="1073"/>
-        <location filename="../app/MainLayout.qml" line="1087"/>
-        <location filename="../app/MainLayout.qml" line="1102"/>
-        <location filename="../app/MainLayout.qml" line="1113"/>
+        <location filename="../app/MainLayout.qml" line="1088"/>
+        <location filename="../app/MainLayout.qml" line="1092"/>
+        <location filename="../app/MainLayout.qml" line="1106"/>
+        <location filename="../app/MainLayout.qml" line="1121"/>
+        <location filename="../app/MainLayout.qml" line="1132"/>
         <source>Close</source>
         <translation>बंद करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1080"/>
-        <location filename="../app/MainLayout.qml" line="1120"/>
-        <location filename="../app/MainLayout.qml" line="1150"/>
-        <location filename="../app/MainLayout.qml" line="1172"/>
+        <location filename="../app/MainLayout.qml" line="1099"/>
+        <location filename="../app/MainLayout.qml" line="1139"/>
+        <location filename="../app/MainLayout.qml" line="1169"/>
+        <location filename="../app/MainLayout.qml" line="1191"/>
         <source>Cancel</source>
         <translation>रद्द करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1098"/>
+        <location filename="../app/MainLayout.qml" line="1117"/>
         <source>Done</source>
         <translation>पूरा</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1109"/>
-        <location filename="../app/MainLayout.qml" line="1254"/>
-        <location filename="../app/MainLayout.qml" line="1315"/>
-        <location filename="../app/MainLayout.qml" line="1464"/>
+        <location filename="../app/MainLayout.qml" line="1128"/>
+        <location filename="../app/MainLayout.qml" line="1273"/>
+        <location filename="../app/MainLayout.qml" line="1334"/>
+        <location filename="../app/MainLayout.qml" line="1483"/>
         <source>Retry</source>
         <translation>फिर से प्रयास करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1128"/>
+        <location filename="../app/MainLayout.qml" line="1147"/>
         <source>I understand</source>
         <translation>मैं समझ गया</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1157"/>
+        <location filename="../app/MainLayout.qml" line="1176"/>
         <source>Adjust</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1161"/>
+        <location filename="../app/MainLayout.qml" line="1180"/>
         <source>Save</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1180"/>
+        <location filename="../app/MainLayout.qml" line="1199"/>
         <source>Start</source>
         <translation>शुरू करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1203"/>
-        <location filename="../app/MainLayout.qml" line="1241"/>
-        <location filename="../app/MainLayout.qml" line="1289"/>
-        <location filename="../app/MainLayout.qml" line="1349"/>
-        <location filename="../app/MainLayout.qml" line="1441"/>
+        <location filename="../app/MainLayout.qml" line="1222"/>
+        <location filename="../app/MainLayout.qml" line="1260"/>
+        <location filename="../app/MainLayout.qml" line="1308"/>
+        <location filename="../app/MainLayout.qml" line="1368"/>
+        <location filename="../app/MainLayout.qml" line="1460"/>
         <source>Open</source>
         <translation>खोलें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1213"/>
+        <location filename="../app/MainLayout.qml" line="1232"/>
         <source>Quit</source>
         <translation>बंद करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1222"/>
-        <location filename="../app/MainLayout.qml" line="1247"/>
-        <location filename="../app/MainLayout.qml" line="1258"/>
-        <location filename="../app/MainLayout.qml" line="1273"/>
-        <location filename="../app/MainLayout.qml" line="1305"/>
-        <location filename="../app/MainLayout.qml" line="1325"/>
-        <location filename="../app/MainLayout.qml" line="1337"/>
-        <location filename="../app/MainLayout.qml" line="1353"/>
-        <location filename="../app/MainLayout.qml" line="1387"/>
-        <location filename="../app/MainLayout.qml" line="1408"/>
-        <location filename="../app/MainLayout.qml" line="1417"/>
-        <location filename="../app/MainLayout.qml" line="1457"/>
-        <location filename="../app/MainLayout.qml" line="1468"/>
+        <location filename="../app/MainLayout.qml" line="1241"/>
+        <location filename="../app/MainLayout.qml" line="1266"/>
+        <location filename="../app/MainLayout.qml" line="1277"/>
+        <location filename="../app/MainLayout.qml" line="1292"/>
+        <location filename="../app/MainLayout.qml" line="1324"/>
+        <location filename="../app/MainLayout.qml" line="1344"/>
+        <location filename="../app/MainLayout.qml" line="1356"/>
+        <location filename="../app/MainLayout.qml" line="1372"/>
+        <location filename="../app/MainLayout.qml" line="1406"/>
+        <location filename="../app/MainLayout.qml" line="1427"/>
+        <location filename="../app/MainLayout.qml" line="1436"/>
+        <location filename="../app/MainLayout.qml" line="1476"/>
+        <location filename="../app/MainLayout.qml" line="1487"/>
         <source>Back</source>
         <translation>वापस</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1300"/>
-        <location filename="../app/MainLayout.qml" line="1321"/>
-        <location filename="../app/MainLayout.qml" line="1453"/>
+        <location filename="../app/MainLayout.qml" line="1319"/>
+        <location filename="../app/MainLayout.qml" line="1340"/>
+        <location filename="../app/MainLayout.qml" line="1472"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
@@ -989,25 +1000,25 @@ Euskara - devilschile2</source>
         <translation type="vanished">पृष्ठ</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1209"/>
-        <location filename="../app/MainLayout.qml" line="1244"/>
-        <location filename="../app/MainLayout.qml" line="1294"/>
-        <location filename="../app/MainLayout.qml" line="1446"/>
+        <location filename="../app/MainLayout.qml" line="1228"/>
+        <location filename="../app/MainLayout.qml" line="1263"/>
+        <location filename="../app/MainLayout.qml" line="1313"/>
+        <location filename="../app/MainLayout.qml" line="1465"/>
         <source>Options</source>
         <translation>विकल्प</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1372"/>
+        <location filename="../app/MainLayout.qml" line="1391"/>
         <source>Change</source>
         <translation>बदलें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1378"/>
+        <location filename="../app/MainLayout.qml" line="1397"/>
         <source>Toggle</source>
         <translation>टॉगल</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1404"/>
+        <location filename="../app/MainLayout.qml" line="1423"/>
         <source>Scroll</source>
         <translation>स्क्रॉल</translation>
     </message>

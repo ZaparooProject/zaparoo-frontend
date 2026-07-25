@@ -38,6 +38,7 @@ MainLayout {
     readonly property string modalQrCode: "qr_code"
     readonly property string modalCommercialNotice: "commercial_notice"
     readonly property string modalCoreVersion: "core_version_warning"
+    readonly property string modalRandomFailed: "random_failed"
     readonly property string modalFirstRunIndex: "first_run_index"
     readonly property string modalLogUpload: "log_upload"
     readonly property string modalQuitConfirm: "quit_confirm"
@@ -241,6 +242,8 @@ MainLayout {
             root.commercialNoticeModalRequested = true;
         else if (modal === root.modalCoreVersion)
             root.coreVersionModalRequested = true;
+        else if (modal === root.modalRandomFailed)
+            root.randomFailedModalRequested = true;
         else if (modal === root.modalFirstRunIndex)
             root.firstRunIndexModalRequested = true;
         else if (modal === root.modalLogUpload)
@@ -2024,6 +2027,31 @@ MainLayout {
             ScreenManager.pushModal(root.modalCoreVersion);
     }
 
+    // A random pick that resolves nothing must say so: it is a one-shot
+    // action with no other visible result, and staying silent is
+    // indistinguishable from the button being broken.
+    function openRandomFailedModal(): void {
+        root._requestModal(root.modalRandomFailed);
+        root.randomFailedModalVisible = true;
+        if (ScreenManager.topModal !== root.modalRandomFailed)
+            ScreenManager.pushModal(root.modalRandomFailed);
+    }
+
+    function closeRandomFailedModal(): void {
+        root.randomFailedModalVisible = false;
+        Browse.GamesModel.clear_random_error();
+        if (ScreenManager.topModal === root.modalRandomFailed)
+            ScreenManager.popModal();
+    }
+
+    Connections {
+        target: Browse.GamesModel
+        function onRandom_errorChanged(): void {
+            if ((Browse.GamesModel.random_error ?? "") !== "")
+                root.openRandomFailedModal();
+        }
+    }
+
     function closeCoreVersionModal(): void {
         root.coreVersionModalVisible = false;
         if (ScreenManager.topModal === root.modalCoreVersion)
@@ -2114,12 +2142,17 @@ MainLayout {
             {
                 "id": "jump_letter",
                 "label": qsTr("Go to...")
-            },
-            {
-                "id": "launch_random",
-                "label": qsTr("Random game")
             }
         ];
+        // The pick is uniform over the games listed in THIS folder, so the
+        // label says so rather than implying the whole system. Omitted when
+        // the folder holds no games (only subfolders), because there would be
+        // nothing to pick.
+        if (Browse.GamesModel.total_files > 0)
+            entries.push({
+                "id": "launch_random",
+                "label": qsTr("Random game in this folder")
+            });
         root.openListPickerModal(qsTr("View"), entries, "jump_letter", "page_menu");
     }
 
@@ -2603,6 +2636,7 @@ MainLayout {
     onCloseFirstRunIndexRequested: root.closeFirstRunIndexModal()
     onCloseCommercialNoticeRequested: root.closeCommercialNoticeModal()
     onCloseCoreVersionRequested: root.closeCoreVersionModal()
+    onCloseRandomFailedRequested: root.closeRandomFailedModal()
 
     function beginCardWrite(owner: string): void {
         if (owner === "systems")
@@ -2709,6 +2743,10 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalCoreVersion) {
                 if (root.coreVersionModal !== null)
                     root.coreVersionModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalRandomFailed) {
+                // Accept or Back both dismiss a one-button notice.
+                if (action === "accept" || action === "cancel")
+                    root.closeRandomFailedModal();
             } else if (ScreenManager.topModal === root.modalLogUpload) {
                 if (root.logUploadModal !== null)
                     root.logUploadModal.handleAction(action);

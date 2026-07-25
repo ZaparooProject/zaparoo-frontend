@@ -94,6 +94,7 @@ ApplicationWindow {
     property bool firstRunIndexModalRequested: false
     property bool commercialNoticeModalRequested: false
     property bool coreVersionModalRequested: false
+    property bool randomFailedModalRequested: false
     property bool logUploadModalRequested: false
     property bool quitConfirmModalRequested: false
     property bool listPickerModalRequested: false
@@ -292,6 +293,7 @@ ApplicationWindow {
     property bool qrCodeModalVisible: false
     property bool commercialNoticeModalVisible: false
     property bool coreVersionModalVisible: false
+    property bool randomFailedModalVisible: false
     property bool firstRunIndexModalVisible: false
     property bool gameInfoModalVisible: false
     property bool logUploadModalVisible: false
@@ -409,6 +411,7 @@ ApplicationWindow {
     signal closeQrCodeRequested
     signal closeCommercialNoticeRequested
     signal closeCoreVersionRequested
+    signal closeRandomFailedRequested
     signal closeFirstRunIndexRequested
     signal closeLogUploadRequested
     signal closeQuitConfirmRequested
@@ -804,6 +807,22 @@ ApplicationWindow {
                         body: qsTr("This frontend needs Zaparoo Core %1 or newer. You're running %2. Some features may not work until you update.").arg(Browse.AppStatus.min_core_version).arg(Browse.AppStatus.core_version)
                         buttonLabel: qsTr("OK")
                         onAccepted: root.closeCoreVersionRequested()
+                    }
+                }
+            }
+
+            Loader {
+                id: randomFailedModalLoader
+                anchors.fill: parent
+                active: root.randomFailedModalRequested
+                sourceComponent: Component {
+                    Modal {
+                        open: root.randomFailedModalVisible
+                        kind: "action_error"
+                        title: qsTr("Random game")
+                        body: qsTr("Couldn't pick a game from this folder.")
+                        buttonLabel: qsTr("OK")
+                        onAccepted: root.closeRandomFailedRequested()
                     }
                 }
             }

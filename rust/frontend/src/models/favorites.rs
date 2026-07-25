@@ -25,6 +25,7 @@
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
 use crate::media_meta_cache::{global_media_meta_cache, MetaLookup};
 use crate::models::nav_timing::NavTiming;
+use crate::models::random_pick::random_index;
 use crate::models::tag_utils::{
     disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
 };
@@ -2092,21 +2093,6 @@ fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::FavoritesModel>) {
     finish_nav_timing(model.as_mut(), "timeout", pending);
 }
 
-/// Index in `0..len` for the random-favorite pick. Uses the standard
-/// library's randomly seeded hasher so the crate needs no RNG dependency;
-/// this picks a game, so unpredictability matters more than statistical
-/// rigor, and it is not used for anything security-sensitive.
-fn random_index(len: usize) -> usize {
-    use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hasher};
-
-    if len == 0 {
-        return 0;
-    }
-    let seed = RandomState::new().build_hasher().finish();
-    usize::try_from(seed % len as u64).unwrap_or(0)
-}
-
 /// Build the `text` payload sent to Core's `run` for a search entry.
 /// Runtime launches prefer exact paths to avoid title/ZapScript
 /// ambiguity; portable write/QR paths prefer Core's `ZapScript`.
@@ -2401,30 +2387,6 @@ mod tests {
             json.contains(r#"He said \"hi\"\\"#),
             "quotes and backslash escaped: {json}"
         );
-    }
-
-    #[test]
-    fn random_index_stays_in_range() {
-        for len in 1..12usize {
-            for _ in 0..64 {
-                assert!(random_index(len) < len, "index must address a real row");
-            }
-        }
-    }
-
-    #[test]
-    fn random_index_of_empty_pool_is_zero() {
-        // Callers guard on count > 0; this keeps the helper total rather
-        // than dividing by zero if that guard ever moves.
-        assert_eq!(random_index(0), 0);
-    }
-
-    #[test]
-    fn random_index_eventually_varies() {
-        // A fixed return would silently make "random favorite" always launch
-        // the same game, which is exactly the Core bug this replaced.
-        let picks: HashSet<usize> = (0..256).map(|_| random_index(8)).collect();
-        assert!(picks.len() > 1, "picks must not be constant");
     }
 
     #[test]
