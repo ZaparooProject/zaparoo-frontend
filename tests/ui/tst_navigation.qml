@@ -72,6 +72,11 @@ TestCase {
 
     function cleanup(): void {
         Motion.enabled = true;
+        // A modal left open swallows every routed action, so the next test
+        // would fail for a reason that has nothing to do with what it tests.
+        if (main.randomFailedModalVisible)
+            main.closeRandomFailedModal();
+        Browse.GamesModel.total_files = 0;
         // Favorites sort/filter are persisted, so a test that changes them
         // would otherwise overwrite the real preference on the dev machine —
         // including when an assertion aborts before any inline restore.
@@ -662,14 +667,42 @@ TestCase {
     // entry must close the modal (the launch itself is Core's job — with
     // no Core connected the run RPC is a logged no-op).
     function test_games_page_menu_offers_random_launch(): void {
+        // The pick is uniform over the games in the listed folder, so the
+        // entry only appears when the folder actually holds games.
+        Browse.GamesModel.total_files = 5;
         main.openPageMenu();
         tryCompare(main, "listPickerModalVisible", true);
         compare(main.listPickerFieldId, "page_menu");
         const ids = main.listPickerEntries.map(e => e.id);
         verify(ids.indexOf("jump_letter") !== -1, "Go to... entry present");
         verify(ids.indexOf("launch_random") !== -1, "Random game entry present");
-        main.listPickerAccepted("page_menu", "launch_random");
-        tryCompare(main, "listPickerModalVisible", false);
+        main.closeListPickerModal();
+        Browse.GamesModel.total_files = 0;
+    }
+
+    // A folder of only subfolders has nothing to pick, so the entry is not
+    // offered at all rather than being offered and then failing.
+    function test_games_page_menu_omits_random_without_games(): void {
+        Browse.GamesModel.total_files = 0;
+        main.openPageMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("jump_letter") !== -1, "Go to... stays");
+        compare(ids.indexOf("launch_random"), -1, "no games, no random entry");
+        main.closeListPickerModal();
+    }
+
+    // A pick that resolves nothing must SAY so. A one-shot action that
+    // silently does nothing is indistinguishable from a broken button, and
+    // that exact bug shipped once already in the favorites pick.
+    function test_random_launch_failure_is_reported(): void {
+        // No entries are loaded in the harness, so the pick cannot resolve.
+        Browse.GamesModel.launch_random();
+        tryCompare(main, "randomFailedModalVisible", true);
+        verify((Browse.GamesModel.random_error ?? "") !== "", "a reason is recorded");
+        main.closeRandomFailedModal();
+        tryCompare(main, "randomFailedModalVisible", false);
+        compare(Browse.GamesModel.random_error, "", "dismissing clears the reason");
     }
 
     // Favorites' West-button menu routes through its own field id so a
