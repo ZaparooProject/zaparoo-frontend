@@ -1039,12 +1039,12 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Kargatzen…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="473"/>
+        <location filename="../screens/MediaListScreen.qml" line="466"/>
         <source>%1 entries</source>
         <translation type="unfinished">%1 sarrera</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="474"/>
+        <location filename="../screens/MediaListScreen.qml" line="467"/>
         <source>%1 / %2</source>
         <translation type="unfinished">%1 / %2</translation>
     </message>
