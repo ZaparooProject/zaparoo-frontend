@@ -614,203 +614,203 @@ Euskara - devilschile2</source>
 <context>
     <name>Main</name>
     <message>
-        <location filename="../app/Main.qml" line="1524"/>
+        <location filename="../app/Main.qml" line="1527"/>
         <source>Launch core</source>
         <translation>启动核心</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1533"/>
-        <location filename="../app/Main.qml" line="1778"/>
+        <location filename="../app/Main.qml" line="1536"/>
+        <location filename="../app/Main.qml" line="1781"/>
         <source>Change launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1540"/>
-        <location filename="../app/Main.qml" line="1569"/>
+        <location filename="../app/Main.qml" line="1543"/>
+        <location filename="../app/Main.qml" line="1572"/>
         <source>Update media database</source>
         <translation type="unfinished">更新媒体数据库</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1543"/>
-        <location filename="../app/Main.qml" line="1572"/>
+        <location filename="../app/Main.qml" line="1546"/>
+        <location filename="../app/Main.qml" line="1575"/>
         <source>Scrape metadata</source>
         <translation type="unfinished">抓取元数据</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1548"/>
-        <location filename="../app/Main.qml" line="1557"/>
+        <location filename="../app/Main.qml" line="1551"/>
+        <location filename="../app/Main.qml" line="1560"/>
         <source>Unhide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1548"/>
-        <location filename="../app/Main.qml" line="1557"/>
+        <location filename="../app/Main.qml" line="1551"/>
+        <location filename="../app/Main.qml" line="1560"/>
         <source>Hide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1581"/>
-        <location filename="../app/Main.qml" line="1616"/>
+        <location filename="../app/Main.qml" line="1584"/>
+        <location filename="../app/Main.qml" line="1619"/>
         <source>Launch game</source>
         <translation>启动游戏</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1597"/>
+        <location filename="../app/Main.qml" line="1600"/>
         <source>Remove from favorites</source>
         <translation>从收藏中移除</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1597"/>
+        <location filename="../app/Main.qml" line="1600"/>
         <source>Add to favorites</source>
         <translation>添加到收藏</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1602"/>
+        <location filename="../app/Main.qml" line="1605"/>
         <source>Write to NFC token</source>
         <translation>写入 NFC 令牌</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1606"/>
+        <location filename="../app/Main.qml" line="1609"/>
         <source>QR code</source>
         <translation>二维码</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1774"/>
-        <location filename="../app/Main.qml" line="2195"/>
-        <location filename="../app/Main.qml" line="2229"/>
+        <location filename="../app/Main.qml" line="1777"/>
+        <location filename="../app/Main.qml" line="2198"/>
+        <location filename="../app/Main.qml" line="2232"/>
         <source>Default</source>
         <translation type="unfinished">默认</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1774"/>
+        <location filename="../app/Main.qml" line="1777"/>
         <source>Current: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2155"/>
+        <location filename="../app/Main.qml" line="2158"/>
         <source>Go to...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2165"/>
+        <location filename="../app/Main.qml" line="2168"/>
         <source>Random game in this folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2167"/>
-        <location filename="../app/Main.qml" line="2191"/>
+        <location filename="../app/Main.qml" line="2170"/>
+        <location filename="../app/Main.qml" line="2194"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2180"/>
+        <location filename="../app/Main.qml" line="2183"/>
         <source>Sort: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2184"/>
+        <location filename="../app/Main.qml" line="2187"/>
         <source>Show: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2188"/>
+        <location filename="../app/Main.qml" line="2191"/>
         <source>Random favorite</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2195"/>
-        <location filename="../app/Main.qml" line="2233"/>
+        <location filename="../app/Main.qml" line="2198"/>
+        <location filename="../app/Main.qml" line="2236"/>
         <source>A-Z</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2203"/>
+        <location filename="../app/Main.qml" line="2206"/>
         <source>All</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2236"/>
+        <location filename="../app/Main.qml" line="2239"/>
         <source>Sort</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2258"/>
+        <location filename="../app/Main.qml" line="2264"/>
         <source>All (%1)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2280"/>
-        <location filename="../app/Main.qml" line="2286"/>
+        <location filename="../app/Main.qml" line="2294"/>
+        <location filename="../app/Main.qml" line="2300"/>
         <source>%1 (%2)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2289"/>
+        <location filename="../app/Main.qml" line="2304"/>
         <source>Show</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2429"/>
+        <location filename="../app/Main.qml" line="2444"/>
         <source>Saving launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2433"/>
+        <location filename="../app/Main.qml" line="2448"/>
         <source>Saving…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2447"/>
+        <location filename="../app/Main.qml" line="2462"/>
         <source>Launcher update failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2451"/>
+        <location filename="../app/Main.qml" line="2466"/>
         <source>Error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2455"/>
+        <location filename="../app/Main.qml" line="2470"/>
         <source>Retry</source>
         <translation type="unfinished">重试</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2459"/>
+        <location filename="../app/Main.qml" line="2474"/>
         <source>Cancel</source>
         <translation type="unfinished">取消</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3227"/>
+        <location filename="../app/Main.qml" line="3243"/>
         <source>Loading systems…</source>
         <translation>正在加载系统…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3229"/>
+        <location filename="../app/Main.qml" line="3245"/>
         <source>Loading games…</source>
         <translation>正在加载游戏…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3231"/>
+        <location filename="../app/Main.qml" line="3247"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3233"/>
+        <location filename="../app/Main.qml" line="3249"/>
         <source>Loading favorites…</source>
         <translation>正在加载收藏…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3235"/>
+        <location filename="../app/Main.qml" line="3251"/>
         <source>Loading recently played…</source>
         <translation>正在加载最近游玩…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3237"/>
+        <location filename="../app/Main.qml" line="3253"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3239"/>
+        <location filename="../app/Main.qml" line="3255"/>
         <source>Loading…</source>
         <translation>正在加载…</translation>
     </message>

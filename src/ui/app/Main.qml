@@ -39,6 +39,9 @@ MainLayout {
     readonly property string modalCommercialNotice: "commercial_notice"
     readonly property string modalCoreVersion: "core_version_warning"
     readonly property string modalRandomFailed: "random_failed"
+    // Sentinel id for the favorites "show everything" row; maps to an empty
+    // filter. Must never be "" — see openFavoritesFilterMenu.
+    readonly property string _favoritesFilterAll: "all"
     readonly property string modalFirstRunIndex: "first_run_index"
     readonly property string modalLogUpload: "log_upload"
     readonly property string modalQuitConfirm: "quit_confirm"
@@ -2252,9 +2255,12 @@ MainLayout {
 
     function openFavoritesFilterMenu(): void {
         const systems = root._favoritesSystemFacet();
+        // NOT the empty string: ListPickerModal uses "" as its own
+        // "nothing pending" sentinel and refuses to emit an accept for it,
+        // so an empty id would make this row silently do nothing.
         const entries = [
             {
-                "id": "",
+                "id": root._favoritesFilterAll,
                 "label": qsTr("All (%1)").arg(Browse.FavoritesModel.total_count)
             }
         ];
@@ -2264,15 +2270,23 @@ MainLayout {
             if (category === "")
                 continue;
             const existing = categories.find(c => c.name === category);
-            if (existing)
+            if (existing) {
                 existing.count += systems[i].count;
-            else
+                existing.systems += 1;
+            } else
                 categories.push({
                     "name": category,
-                    "count": systems[i].count
+                    "count": systems[i].count,
+                    "systems": 1
                 });
         }
         for (let c = 0; c < categories.length; c++) {
+            // A category holding a single system says exactly what that
+            // system's own row says — and when the system is named after its
+            // category (Core's Arcade system is literally "Arcade") the two
+            // rows are indistinguishable. Offer the narrower row only.
+            if (categories[c].systems < 2)
+                continue;
             entries.push({
                 "id": "cat:" + categories[c].name,
                 // Category names come from Core untranslated; only the
@@ -2286,7 +2300,8 @@ MainLayout {
                 "label": qsTr("%1 (%2)").arg(systems[s].name).arg(systems[s].count)
             });
         }
-        root.openListPickerModal(qsTr("Show"), entries, Browse.FavoritesModel.filter, "favorites_filter_pick");
+        const active = Browse.FavoritesModel.filter === "" ? root._favoritesFilterAll : Browse.FavoritesModel.filter;
+        root.openListPickerModal(qsTr("Show"), entries, active, "favorites_filter_pick");
     }
 
     // Re-parse the model's facet JSON into the live grid entries. Bound through
@@ -2498,8 +2513,9 @@ MainLayout {
         }
         if (fieldId === "favorites_filter_pick") {
             root.closeListPickerModal();
-            Browse.FavoritesModel.set_filter(selectedId);
-            Browse.FavoritesState.filter = selectedId;
+            const value = selectedId === root._favoritesFilterAll ? "" : selectedId;
+            Browse.FavoritesModel.set_filter(value);
+            Browse.FavoritesState.filter = value;
             return;
         }
         if (fieldId === "system_launcher_pending")

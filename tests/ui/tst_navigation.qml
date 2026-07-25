@@ -768,7 +768,26 @@ TestCase {
         tryCompare(main, "listPickerModalVisible", true);
         compare(main.listPickerFieldId, "favorites_filter_pick");
         const ids = main.listPickerEntries.map(e => e.id);
-        compare(ids[0], "", "All must be the first row so widening is always one press away");
+        verify(ids[0] !== "", "All must not use the empty id: ListPickerModal treats it as 'nothing pending' and never emits an accept for it");
         main.closeListPickerModal();
+    }
+
+    // Regression: "All" reached the user as a row with an empty id, which
+    // ListPickerModal silently refuses to accept, so choosing it did nothing
+    // and the list stayed filtered with no error anywhere.
+    function test_favorites_all_filter_clears_the_scope(): void {
+        Browse.FavoritesModel.set_filter("cat:Console");
+        compare(Browse.FavoritesModel.filter, "cat:Console");
+
+        main.openFavoritesPageMenu();
+        main.listPickerAccepted("page_menu_favorites", "favorites_filter");
+        tryCompare(main, "listPickerModalVisible", true);
+        const allId = main.listPickerEntries[0].id;
+        // Drive the real accept path, which is where the empty id was dropped.
+        main.listPickerModal.handleAction("accept");
+        tryCompare(Browse.FavoritesModel, "filter", "cat:Console", 100);
+        main.listPickerAccepted("favorites_filter_pick", allId);
+        compare(Browse.FavoritesModel.filter, "", "All clears the scope");
+        compare(Browse.FavoritesState.filter, "", "and the cleared scope persists");
     }
 }
