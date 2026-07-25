@@ -782,11 +782,11 @@ TestCase {
         main.openFavoritesPageMenu();
         main.listPickerAccepted("page_menu_favorites", "favorites_filter");
         tryCompare(main, "listPickerModalVisible", true);
-        const allId = main.listPickerEntries[0].id;
-        // Drive the real accept path, which is where the empty id was dropped.
+        verify(main.listPickerEntries[0].id !== "", "All needs a non-empty id to survive the accept guard");
+        // Drive the REAL accept path (handleAction -> _commitAccept ->
+        // accepted signal), which is exactly where an empty id was dropped.
+        // Motion is disabled in these tests, so the commit is synchronous.
         main.listPickerModal.handleAction("accept");
-        tryCompare(Browse.FavoritesModel, "filter", "cat:Console", 100);
-        main.listPickerAccepted("favorites_filter_pick", allId);
         compare(Browse.FavoritesModel.filter, "", "All clears the scope");
         compare(Browse.FavoritesState.filter, "", "and the cleared scope persists");
     }
