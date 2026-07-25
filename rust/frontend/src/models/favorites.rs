@@ -777,13 +777,18 @@ impl ffi::FavoritesModel {
         // re-entry, favorite toggled elsewhere) invalidates this in flight.
         let seq = self.rust().seq.clone();
         let ticket = seq.load(Ordering::SeqCst);
-        // Hold `loading_more` for the duration so a scroll-driven
-        // `fetch_more` cannot splice a duplicate page against the same cursor.
         self.as_mut().set_loading_more(true);
         // Resume from the cursor and APPEND: page 1 is already in `entries`,
         // and above Core's per-request cap this runs again for the next
         // chunk, so a favorites list of any size drains completely.
+        //
+        // A scroll-driven `fetch_more` may ALREADY be in flight against this
+        // same cursor (setting `loading_more` here does not unsend it), so
+        // the callback re-checks the cursor before appending the way
+        // `apply_append_page` does. Without that, both replies append the
+        // same page and every row in it shows up twice.
         let cursor = self.next_cursor.clone();
+        let expected_prev_cursor = cursor.clone();
         let qt_thread = self.qt_thread();
         let store = global_store();
         global_handle().spawn(async move {
@@ -804,6 +809,14 @@ impl ffi::FavoritesModel {
                 model.as_mut().set_loading_more(false);
                 match result {
                     Ok(result) => {
+                        if model.next_cursor != expected_prev_cursor {
+                            // A `fetch_more` landed first and already spliced
+                            // this page. Appending it again would duplicate
+                            // every row; continue from wherever the chain is
+                            // now instead.
+                            model.as_mut().ensure_full_load();
+                            return;
+                        }
                         let has_next_page = result.has_next_page();
                         let next_cursor = result.next_cursor();
                         // A page with no rows, or a cursor that did not move,

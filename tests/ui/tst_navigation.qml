@@ -744,7 +744,9 @@ TestCase {
         compare(main.listPickerFieldId, "favorites_sort_pick");
         const ids = main.listPickerEntries.map(e => e.id);
         verify(ids.indexOf("name") !== -1, "A-Z option present");
-        verify(ids.indexOf("") !== -1, "Default option present");
+        // Default carries a real id, not "" — ListPickerModal never emits an
+        // accept for an empty id.
+        verify(ids.indexOf(main._favoritesSortDefault) !== -1, "Default option present");
 
         main.listPickerAccepted("favorites_sort_pick", "name");
         tryCompare(main, "listPickerModalVisible", false);
@@ -755,9 +757,57 @@ TestCase {
         // tests or the dev machine's state file.
         main.openFavoritesPageMenu();
         main.listPickerAccepted("page_menu_favorites", "favorites_sort");
-        main.listPickerAccepted("favorites_sort_pick", "");
+        main.listPickerAccepted("favorites_sort_pick", main._favoritesSortDefault);
         compare(Browse.FavoritesModel.sort_mode, "");
         compare(Browse.FavoritesState.sort, "");
+    }
+
+    // Blanket guard for the whole class of bug that shipped twice: any menu
+    // row carrying an empty id is silently swallowed by ListPickerModal, so
+    // no picker this app builds may contain one.
+    function test_no_picker_row_uses_the_swallowed_empty_id(): void {
+        const pickers = [
+            {
+                open: () => main.openPageMenu(),
+                name: "games View"
+            },
+            {
+                open: () => main.openFavoritesPageMenu(),
+                name: "favorites View"
+            },
+            {
+                open: () => main.openFavoritesSortMenu(),
+                name: "favorites Sort"
+            },
+            {
+                open: () => main.openFavoritesFilterMenu(),
+                name: "favorites Show"
+            }
+        ];
+        for (let i = 0; i < pickers.length; i++) {
+            main.closeListPickerModal();
+            pickers[i].open();
+            tryCompare(main, "listPickerModalVisible", true);
+            const ids = main.listPickerEntries.map(e => e.id);
+            for (let j = 0; j < ids.length; j++)
+                verify(ids[j] !== "", pickers[i].name + " row " + j + " has an empty id, which ListPickerModal never emits");
+            main.closeListPickerModal();
+        }
+    }
+
+    // Regression: the Default row had an empty id, so once A-Z was chosen
+    // there was no way back to Core's order from this menu.
+    function test_favorites_default_sort_restores_core_order(): void {
+        Browse.FavoritesModel.set_sort_mode("name");
+        compare(Browse.FavoritesModel.sort_mode, "name");
+
+        main.openFavoritesSortMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        // Default is the first row; drive the real accept path.
+        main.listPickerModal.currentIndex = 0;
+        main.listPickerModal.handleAction("accept");
+        compare(Browse.FavoritesModel.sort_mode, "", "Default restores Core order");
+        compare(Browse.FavoritesState.sort, "", "and that choice persists");
     }
 
     // The scope picker always offers "everything" first, so a narrowed list

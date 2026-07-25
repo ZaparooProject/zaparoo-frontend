@@ -1532,6 +1532,15 @@ impl ffi::GamesModel {
         self.as_mut().set_current_path(QString::from(path.as_str()));
         self.as_mut().set_loading(true);
         self.as_mut().set_error_message(QString::default());
+        // A scope change supersedes any random walk in flight via the browse
+        // ticket, and that abort deliberately writes nothing, so its flags
+        // have to be released here or they stay set for the session.
+        if self.random_seeking {
+            self.as_mut().set_random_seeking(false);
+        }
+        if !self.random_error.is_empty() {
+            self.as_mut().set_random_error(QString::default());
+        }
         self.as_mut().set_current_detail_loading(false);
         self.as_mut().set_current_description(QString::default());
         self.as_mut().set_current_detail_tags(QString::default());

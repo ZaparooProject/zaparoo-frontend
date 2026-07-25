@@ -44,8 +44,8 @@ TestCase {
 
         anchors.fill: parent
         mediaModel: mediaModel
-        emptyText: "No entries"
-        loadingText: "Loading entries"
+        emptyText: qsTr("No entries")
+        loadingText: qsTr("Loading entries")
         showTopStrip: false
         detailShowTitle: false
         suppressSelectionPersist: true
@@ -102,7 +102,6 @@ TestCase {
         compare(screen.mediaGrid.currentIndex, 0);
     }
 
-
     // A screen whose own page menu can empty the list (favorites, via its
     // scope filter) must keep that menu reachable while empty, or the filter
     // can never be cleared. Off by default so other screens keep the stricter
@@ -122,7 +121,6 @@ TestCase {
         compare(spy.count, 1, "opted-in screen can still open its View menu");
         screen.pageMenuEnabledWhenEmpty = false;
     }
-
 
     // Grid layout must keep Left/Right as one-column selection moves;
     // the list paging fallback is gated on _listLayout.

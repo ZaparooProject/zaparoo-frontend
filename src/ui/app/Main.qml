@@ -42,6 +42,9 @@ MainLayout {
     // Sentinel id for the favorites "show everything" row; maps to an empty
     // filter. Must never be "" — see openFavoritesFilterMenu.
     readonly property string _favoritesFilterAll: "all"
+    // Sentinel id for the favorites "default order" row; maps to an empty
+    // sort mode. Must never be "" — see openFavoritesSortMenu.
+    readonly property string _favoritesSortDefault: "default"
     readonly property string modalFirstRunIndex: "first_run_index"
     readonly property string modalLogUpload: "log_upload"
     readonly property string modalQuitConfirm: "quit_confirm"
@@ -2226,9 +2229,13 @@ MainLayout {
     }
 
     function openFavoritesSortMenu(): void {
+        // Same trap as the filter picker: ListPickerModal treats an empty id
+        // as "nothing pending" and never emits an accept for it, so the
+        // default row needs a real id mapped back on accept. Without this,
+        // choosing A-Z once left no way back to Core's order.
         const entries = [
             {
-                "id": "",
+                "id": root._favoritesSortDefault,
                 "label": qsTr("Default")
             },
             {
@@ -2236,7 +2243,8 @@ MainLayout {
                 "label": qsTr("A-Z")
             }
         ];
-        root.openListPickerModal(qsTr("Sort"), entries, Browse.FavoritesModel.sort_mode, "favorites_sort_pick");
+        const active = Browse.FavoritesModel.sort_mode === "" ? root._favoritesSortDefault : Browse.FavoritesModel.sort_mode;
+        root.openListPickerModal(qsTr("Sort"), entries, active, "favorites_sort_pick");
     }
 
     // One flat list: everything, then the categories present, then the
@@ -2507,8 +2515,9 @@ MainLayout {
         }
         if (fieldId === "favorites_sort_pick") {
             root.closeListPickerModal();
-            Browse.FavoritesModel.set_sort_mode(selectedId);
-            Browse.FavoritesState.sort = selectedId;
+            const mode = selectedId === root._favoritesSortDefault ? "" : selectedId;
+            Browse.FavoritesModel.set_sort_mode(mode);
+            Browse.FavoritesState.sort = mode;
             return;
         }
         if (fieldId === "favorites_filter_pick") {
