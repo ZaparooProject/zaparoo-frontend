@@ -123,6 +123,9 @@ pub struct FavoritesModelRust {
     // favorites in DBID order, 25 at a time).
     full_loaded: bool,
     full_loading: bool,
+    // A random launch was pressed before the full set had arrived; fired by
+    // `launch_pending_random` once the load completes.
+    random_pending: bool,
     // Distinct systems present in the loaded favorites, as JSON, so the
     // picker only ever offers filters that match something.
     system_facet_json: QString,
@@ -197,6 +200,7 @@ impl Default for FavoritesModelRust {
             filter: QString::default(),
             full_loaded: false,
             full_loading: false,
+            random_pending: false,
             system_facet_json: QString::default(),
             total_count: 0,
             count: 0,
@@ -760,6 +764,10 @@ impl ffi::FavoritesModel {
         // Hold `loading_more` for the duration so a scroll-driven
         // `fetch_more` cannot splice a duplicate page against the same cursor.
         self.as_mut().set_loading_more(true);
+        // Resume from the cursor and APPEND: page 1 is already in `entries`,
+        // and above Core's per-request cap this runs again for the next
+        // chunk, so a favorites list of any size drains completely.
+        let cursor = self.next_cursor.clone();
         let qt_thread = self.qt_thread();
         let store = global_store();
         global_handle().spawn(async move {
@@ -767,6 +775,7 @@ impl ffi::FavoritesModel {
                 .client()
                 .media_search(MediaSearchParams {
                     max_results: Some(FULL_LOAD_SIZE),
+                    cursor,
                     tags: vec!["user:favorite".into()],
                     ..MediaSearchParams::default()
                 })
@@ -783,21 +792,38 @@ impl ffi::FavoritesModel {
                         let next_cursor = result.next_cursor();
                         {
                             let mut rust = model.as_mut().rust_mut();
-                            rust.entries = result.results;
+                            rust.entries.extend(result.results);
                             rust.next_cursor = next_cursor;
                         }
                         model.as_mut().set_has_next_page(has_next_page);
-                        // Anything past Core's 1000-row cap stays reachable
-                        // through the existing cursor chain.
-                        model.as_mut().set_full_loaded(!has_next_page);
                         model.as_mut().rebuild_view();
+                        if has_next_page {
+                            // More than one chunk's worth; keep draining.
+                            model.as_mut().ensure_full_load();
+                        } else {
+                            model.as_mut().set_full_loaded(true);
+                            model.as_mut().launch_pending_random();
+                        }
                     }
                     Err(e) => {
                         warn!("favorites full load failed: {}", e.message);
+                        // Don't strand a queued random press waiting forever.
+                        model.as_mut().rust_mut().random_pending = false;
                     }
                 }
             });
         });
+    }
+
+    /// Fire a random launch that was requested before the full set had
+    /// arrived. Without this the first press is a silent no-op whenever the
+    /// favorites list spans more than one page.
+    fn launch_pending_random(mut self: Pin<&mut Self>) {
+        if !self.random_pending {
+            return;
+        }
+        self.as_mut().rust_mut().random_pending = false;
+        self.launch_random();
     }
 
     fn refresh_cover_keys(mut self: Pin<&mut Self>, first_row: i32, count: i32) {
@@ -847,13 +873,12 @@ impl ffi::FavoritesModel {
         }
         if !self.full_loaded {
             // Picking from a partial list would bias the result toward the
-            // first page, so pull the rest first. When everything already
-            // arrived in page 1 that completes synchronously, so re-check
-            // rather than making the user press twice.
+            // first page, so pull the rest first and launch when it lands.
+            // `ensure_full_load` completes synchronously when page 1 already
+            // held everything, in which case this returns having launched.
+            self.as_mut().rust_mut().random_pending = true;
             self.as_mut().ensure_full_load();
-            if !self.full_loaded {
-                return;
-            }
+            return;
         }
         let Ok(count) = usize::try_from(self.count) else {
             return;
