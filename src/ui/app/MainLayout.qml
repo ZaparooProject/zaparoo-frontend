@@ -820,7 +820,7 @@ ApplicationWindow {
                         open: root.randomFailedModalVisible
                         kind: "action_error"
                         title: qsTr("Random game")
-                        body: qsTr("Couldn't pick a game from this folder.")
+                        body: qsTr("Couldn't pick anything to launch.")
                         buttonLabel: qsTr("OK")
                         onAccepted: root.closeRandomFailedRequested()
                     }

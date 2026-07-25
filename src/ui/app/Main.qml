@@ -2039,7 +2039,10 @@ MainLayout {
 
     function closeRandomFailedModal(): void {
         root.randomFailedModalVisible = false;
+        // Either list can raise it; clearing both is harmless and keeps the
+        // notice from re-opening on the next property read.
         Browse.GamesModel.clear_random_error();
+        Browse.FavoritesModel.clear_random_error();
         if (ScreenManager.topModal === root.modalRandomFailed)
             ScreenManager.popModal();
     }
@@ -2048,6 +2051,14 @@ MainLayout {
         target: Browse.GamesModel
         function onRandom_errorChanged(): void {
             if ((Browse.GamesModel.random_error ?? "") !== "")
+                root.openRandomFailedModal();
+        }
+    }
+
+    Connections {
+        target: Browse.FavoritesModel
+        function onRandom_errorChanged(): void {
+            if ((Browse.FavoritesModel.random_error ?? "") !== "")
                 root.openRandomFailedModal();
         }
     }

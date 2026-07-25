@@ -74,6 +74,9 @@ TestCase {
         Motion.enabled = true;
         // A modal left open swallows every routed action, so the next test
         // would fail for a reason that has nothing to do with what it tests.
+        // This already happened once, via the random-failure notice.
+        if (main.listPickerModalVisible)
+            main.closeListPickerModal();
         if (main.randomFailedModalVisible)
             main.closeRandomFailedModal();
         Browse.GamesModel.total_files = 0;

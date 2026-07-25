@@ -127,6 +127,9 @@ pub struct FavoritesModelRust {
     // A random launch was pressed before the full set had arrived; fired by
     // `launch_pending_random` once the load completes.
     random_pending: bool,
+    // Stable reason code for a random pick that resolved nothing, so the
+    // press reports itself instead of appearing to do nothing.
+    random_error: QString,
     // Distinct systems present in the loaded favorites, as JSON, so the
     // picker only ever offers filters that match something.
     system_facet_json: QString,
@@ -202,6 +205,7 @@ impl Default for FavoritesModelRust {
             full_loaded: false,
             full_loading: false,
             random_pending: false,
+            random_error: QString::default(),
             system_facet_json: QString::default(),
             total_count: 0,
             count: 0,
@@ -274,6 +278,7 @@ pub mod ffi {
         #[qproperty(bool, full_loaded)]
         #[qproperty(bool, full_loading)]
         #[qproperty(QString, system_facet_json)]
+        #[qproperty(QString, random_error)]
         #[qproperty(i32, total_count)]
         type FavoritesModel = super::FavoritesModelRust;
 
@@ -290,6 +295,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_filter(self: Pin<&mut FavoritesModel>, value: &QString);
+
+        #[qinvokable]
+        fn clear_random_error(self: Pin<&mut FavoritesModel>);
 
         #[qinvokable]
         fn launch_at(self: Pin<&mut FavoritesModel>, index: i32);
@@ -822,11 +830,27 @@ impl ffi::FavoritesModel {
                     Err(e) => {
                         warn!("favorites full load failed: {}", e.message);
                         // Don't strand a queued random press waiting forever.
-                        model.as_mut().rust_mut().random_pending = false;
+                        if model.random_pending {
+                            model.as_mut().fail_random("load-failed");
+                        }
                     }
                 }
             });
         });
+    }
+
+    fn clear_random_error(mut self: Pin<&mut Self>) {
+        if !self.random_error.is_empty() {
+            self.as_mut().set_random_error(QString::default());
+        }
+    }
+
+    /// Report a random pick that resolved nothing. A one-shot action that
+    /// stays silent is indistinguishable from a broken button.
+    fn fail_random(mut self: Pin<&mut Self>, reason: &str) {
+        warn!("random favorite pick failed: {reason}");
+        self.as_mut().rust_mut().random_pending = false;
+        self.as_mut().set_random_error(QString::from(reason));
     }
 
     /// Fire a random launch that was requested before the full set had
@@ -882,7 +906,11 @@ impl ffi::FavoritesModel {
     /// pool. Requires the full load, otherwise the pool would be whichever
     /// pages happen to be fetched.
     fn launch_random(mut self: Pin<&mut Self>) {
+        if !self.random_error.is_empty() {
+            self.as_mut().set_random_error(QString::default());
+        }
         if self.count <= 0 {
+            self.as_mut().fail_random("empty-scope");
             return;
         }
         if !self.full_loaded {
@@ -894,16 +922,20 @@ impl ffi::FavoritesModel {
             return;
         }
         let Ok(count) = usize::try_from(self.count) else {
+            self.as_mut().fail_random("empty-scope");
             return;
         };
         let Ok(row) = i32::try_from(random_index(count)) else {
+            self.as_mut().fail_random("no-launch-payload");
             return;
         };
         let Some(entry) = self.entry_at(row) else {
+            self.as_mut().fail_random("no-launch-payload");
             return;
         };
         let text = launch_text_for(entry);
         if text.is_empty() {
+            self.as_mut().fail_random("no-launch-payload");
             return;
         }
         let name = entry.name.clone();
