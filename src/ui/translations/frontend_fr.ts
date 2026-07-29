@@ -215,7 +215,7 @@ Français - Wilfried</translation>
     <message>
         <location filename="../components/CommercialNoticeModal.qml" line="118"/>
         <source>This free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.</source>
-        <translation>Cette version en source libre est réservée à un usage personnel et non commercial exclusivement. Un usage commercial requiert une licence distincte.</translation>
+        <translation>Cette version gratuite, dont le code source est disponible, est réservée à un usage personnel et non commercial exclusivement. Un usage commercial requiert une licence distincte.</translation>
     </message>
     <message>
         <location filename="../components/CommercialNoticeModal.qml" line="129"/>
