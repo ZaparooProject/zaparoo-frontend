@@ -149,8 +149,30 @@ QtObject {
     // tier. The detail view paints one large cover, so it lands a tier above the
     // grid (e.g. 768 vs 512 at 1080p), keeping the two views distinct. A future
     // metadata modal adds its own ...CoverSourceSize here.
+    //
+    // Capped at the largest tier the viewport can actually express: on a
+    // CRT-native scene (~316 px wide after safe-area insets) the doubled
+    // tier used to request 512-wide decodes that the framebuffer can never
+    // display. Each such decode costs a resample step and a ~1.1 MB
+    // decoded-cache entry, so the 64 MB cache held only ~57 covers and
+    // list scrolling re-decoded on every pass. The cap keys off the live
+    // viewport, so HDMI and desktop scenes (>=768 px wide) are unchanged.
     function detailCoverSourceSize(viewportWidth: int, viewportHeight: int): int {
-        return snapCoverTier(_gamesGridCoverBox(viewportWidth, viewportHeight) * 2);
+        const doubled = snapCoverTier(_gamesGridCoverBox(viewportWidth, viewportHeight) * 2);
+        return Math.min(doubled, maxExpressibleCoverTier(viewportWidth));
+    }
+
+    // Largest cover tier that is not wider than the viewport itself: a
+    // decode wider than the scene can only ever be shown downscaled, so
+    // requesting it wastes resample time and decoded-cache bytes.
+    function maxExpressibleCoverTier(viewportWidth: int): int {
+        if (viewportWidth >= 768)
+            return 768;
+        if (viewportWidth >= 512)
+            return 512;
+        if (viewportWidth >= 256)
+            return 256;
+        return 128;
     }
 
     function systemsGridShape(viewportWidth: int, viewportHeight: int): var {
