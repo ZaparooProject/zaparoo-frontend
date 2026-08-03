@@ -51,6 +51,9 @@ skip = [
     { crate = "thiserror@2.0.18" },
     { crate = "thiserror-impl@1.0.69" },
     { crate = "thiserror-impl@2.0.18" },
+    # rusqlite's hashlink tracks hashbrown one major behind indexmap
+    # (pulled by cxx-qt's build tooling); no rusqlite release aligns them.
+    { crate = "hashbrown@0.14.5" },
 ]
 
 [sources]

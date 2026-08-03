@@ -5,6 +5,7 @@
 #[macro_use]
 mod bind;
 pub mod image_overrides;
+mod media_art_db;
 mod media_image_cache;
 mod media_meta_cache;
 mod mister_runtime;
