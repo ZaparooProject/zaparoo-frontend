@@ -647,7 +647,7 @@ Item {
     // Adjacent-cover preload pool. While the user dwells on a list row
     // these hidden Images decode the next and previous rows' covers into
     // Qt's pixmap cache at the same sourceSize as the visible detail cover
-    // (512px wide), so the detail cover switch on a d-pad move is a
+    // (the shared Sizing.detailCoverSourceWidth tier), so the detail cover switch on a d-pad move is a
     // synchronous cache hit rather than an async decode. Mirrors the
     // system-cover prefetch pattern in Main.qml:2629. Active only in list
     // layout; in grid layout there is no per-row detail pane.
@@ -661,7 +661,7 @@ Item {
         height: 0
         asynchronous: true
         cache: true
-        sourceSize.width: 512
+        sourceSize.width: Sizing.detailCoverSourceWidth
         source: {
             if (!root._listLayout || root.mediaModel === null)
                 return "";
@@ -677,7 +677,7 @@ Item {
         height: 0
         asynchronous: true
         cache: true
-        sourceSize.width: 512
+        sourceSize.width: Sizing.detailCoverSourceWidth
         source: {
             if (!root._listLayout || root.mediaModel === null)
                 return "";

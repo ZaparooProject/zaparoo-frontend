@@ -162,6 +162,13 @@ QtObject {
         return Math.min(doubled, maxExpressibleCoverTier(viewportWidth));
     }
 
+    // Live detail-cover decode width for Image.sourceSize consumers
+    // (detail panes and their neighbour-prefetch pools). One binding so
+    // every consumer decodes at the same width — a prefetch at a
+    // different sourceSize would populate a different pixmap-cache
+    // entry and never be hit by the visible cover.
+    readonly property int detailCoverSourceWidth: detailCoverSourceSize(screenWidth, screenHeight)
+
     // Largest cover tier that is not wider than the viewport itself: a
     // decode wider than the scene can only ever be shown downscaled, so
     // requesting it wastes resample time and decoded-cache bytes.
