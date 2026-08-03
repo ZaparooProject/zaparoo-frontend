@@ -115,26 +115,34 @@ TestCase {
     }
 
     function test_detail_cover_tier_capped_by_viewport_width(): void {
-        // CRT-native scene (~316 px wide after safe-area insets): the
+        // Pin the resolution through the Main harness first: the cover-box
+        // math reads the singleton's live screen size for its paddings, so
+        // asserting against detached argument pairs would depend on test
+        // order.
+        //
+        // CRT-native scene: 352x240 minus the 5% safe-area insets. The
         // doubled detail tier must not exceed what the framebuffer can
-        // express — a 512-wide decode can never be displayed at 512 on
-        // a 352-wide mode and only wastes resample time and decoded
-        // cache bytes.
-        verify(Sizing.detailCoverSourceSize(316, 216) <= 256,
+        // express -- a 512-wide decode can never be displayed at 512 on a
+        // 352-wide mode and only wastes resample time and decoded-cache
+        // bytes.
+        main.crtNativePath = true;
+        setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
+        verify(Sizing.detailCoverSourceSize(Sizing.screenWidth, Sizing.screenHeight) <= 256,
                "CRT detail tier must not exceed the viewport-expressible tier");
-        // Wider scenes keep the historical behaviour: at 1280+ the cap
-        // resolves to the top tier and the doubled value is unchanged.
-        compare(Sizing.detailCoverSourceSize(1280, 720),
-                Sizing.snapCoverTier(Sizing.detailCoverSourceSize(1280, 720)),
-                "HDMI detail tier must remain a plain snapped tier");
-        verify(Sizing.detailCoverSourceSize(1920, 1080) >= 512,
-               "1080p detail tier must stay large");
-        // Decode width must track the same viewport the fetch size uses.
-        Sizing.detailCoverViewportWidth = 316;
-        Sizing.detailCoverViewportHeight = 216;
         compare(Sizing.detailCoverSourceWidth,
-                Sizing.detailCoverSourceSize(316, 216),
-                "detailCoverSourceWidth must equal the tier for its bound viewport");
+                Sizing.detailCoverSourceSize(Sizing.detailCoverViewportWidth,
+                                             Sizing.detailCoverViewportHeight),
+                "decode width must equal the tier for its bound viewport");
+
+        // Wider scenes keep the historical behavior: at 1080p the doubled
+        // grid tier lands on the top tier, uncapped.
+        main.crtNativePath = false;
+        setResolution(1920, 1080);
+        compare(Sizing.detailCoverSourceSize(1920, 1080), 768,
+                "1080p detail tier must stay the top tier");
+
+        // Restore the harness default so later tests stay order-independent.
+        setResolution(1280, 720);
     }
 
     function test_crt_systems_grid_is_three_by_three(): void {
