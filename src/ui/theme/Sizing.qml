@@ -162,12 +162,21 @@ QtObject {
         return Math.min(doubled, maxExpressibleCoverTier(viewportWidth));
     }
 
+    // Viewport the detail-cover tier is computed from. Defaults to the
+    // full scene; Main.qml binds these to the games-grid viewport (the
+    // scene minus header strips and margins) so the Core fetch request
+    // and the QML decode tier consume identical dimensions — if they
+    // ever diverged, a fetched tier could mismatch the decode tier and
+    // miss the pixmap cache.
+    property real detailCoverViewportWidth: screenWidth
+    property real detailCoverViewportHeight: screenHeight
+
     // Live detail-cover decode width for Image.sourceSize consumers
     // (detail panes and their neighbour-prefetch pools). One binding so
     // every consumer decodes at the same width — a prefetch at a
     // different sourceSize would populate a different pixmap-cache
     // entry and never be hit by the visible cover.
-    readonly property int detailCoverSourceWidth: detailCoverSourceSize(screenWidth, screenHeight)
+    readonly property int detailCoverSourceWidth: detailCoverSourceSize(detailCoverViewportWidth, detailCoverViewportHeight)
 
     // Largest cover tier that is not wider than the viewport itself: a
     // decode wider than the scene can only ever be shown downscaled, so

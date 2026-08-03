@@ -129,6 +129,12 @@ TestCase {
                 "HDMI detail tier must remain a plain snapped tier");
         verify(Sizing.detailCoverSourceSize(1920, 1080) >= 512,
                "1080p detail tier must stay large");
+        // Decode width must track the same viewport the fetch size uses.
+        Sizing.detailCoverViewportWidth = 316;
+        Sizing.detailCoverViewportHeight = 216;
+        compare(Sizing.detailCoverSourceWidth,
+                Sizing.detailCoverSourceSize(316, 216),
+                "detailCoverSourceWidth must equal the tier for its bound viewport");
     }
 
     function test_crt_systems_grid_is_three_by_three(): void {

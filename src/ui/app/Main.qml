@@ -172,6 +172,19 @@ MainLayout {
         property: "screenHeight"
         value: root.scene.height
     }
+    // Keep the detail-cover tier's inputs identical to the fetch-size
+    // inputs (`_gamesDetailCoverMaxSize` below), so request tier and
+    // decode tier can never diverge.
+    Binding {
+        target: Sizing
+        property: "detailCoverViewportWidth"
+        value: root._gamesGridViewportWidth
+    }
+    Binding {
+        target: Sizing
+        property: "detailCoverViewportHeight"
+        value: root._gamesGridViewportHeight
+    }
 
     function _requestScreen(screen: string): void {
         if (screen === root.screenSystems)
