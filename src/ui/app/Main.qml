@@ -2617,7 +2617,14 @@ MainLayout {
     // active, just like fresh presses.
     readonly property int _repeatInitialMs: 350
     readonly property int _repeatTickMs: 90
-    readonly property int _rapidNavigationQuietMs: 260
+    // Taps only engage rapid mode from a sustained burst: with covers now
+    // loading locally in milliseconds, gating on the second press hid
+    // speed the frontend has — a quick double-tap skip paid an artificial
+    // wait. Held-key repeat still forces rapid mode through its own path,
+    // and the quiet window stays above the 90 ms repeat tick so a held
+    // key cannot flicker the detail pane between ticks.
+    readonly property int _rapidNavigationQuietMs: 120
+    readonly property int _rapidNavigationTapThreshold: 5
     // Window for collapsing a second delivery of the same key into one
     // press — hardware contact bounce or input-stack double send. Far
     // below _repeatInitialMs and the repeat tick so it never touches
@@ -2717,9 +2724,9 @@ MainLayout {
         const sameBurst = rapidNavigationQuiet.running && root.rapidNavigationAction === action;
         root._rapidNavigationTapCount = sameBurst ? root._rapidNavigationTapCount + 1 : 1;
         root.rapidNavigationAction = action;
-        if (forceActive || rapidNavigationQuiet.running)
+        if (forceActive || root._rapidNavigationTapCount >= root._rapidNavigationTapThreshold)
             root.rapidNavigationActive = true;
-        if (forceActive || root._rapidNavigationTapCount >= 3)
+        if (forceActive || root._rapidNavigationTapCount >= root._rapidNavigationTapThreshold)
             root.rapidNavigationIndicatorActive = true;
         rapidNavigationQuiet.restart();
     }

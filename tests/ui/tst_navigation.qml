@@ -460,12 +460,19 @@ TestCase {
         compare(main._repeatPending, true, "Re-arm restarts the initial-delay timer");
     }
 
-    function test_rapid_navigation_taps_activate_on_second_press(): void {
+    function test_rapid_navigation_taps_activate_at_threshold(): void {
+        // A quick skip (two-to-four taps) must never gate the detail
+        // cover; only a sustained burst reaching the threshold engages
+        // rapid mode.
         main._noteRapidNavigationAction("down", false);
         compare(main.rapidNavigationAction, "down", "rapid action tracks latest rapid input even before active mode");
-        compare(main.rapidNavigationActive, false, "single isolated press should not enter rapid mode");
+        for (var i = 2; i < main._rapidNavigationTapThreshold; i++) {
+            main._noteRapidNavigationAction("down", false);
+            compare(main.rapidNavigationActive, false,
+                    "press " + i + " of a burst below the threshold must not enter rapid mode");
+        }
         main._noteRapidNavigationAction("down", false);
-        compare(main.rapidNavigationActive, true, "second press inside quiet window enters rapid mode");
+        compare(main.rapidNavigationActive, true, "threshold press enters rapid mode");
         wait(main._rapidNavigationQuietMs + 40);
         compare(main.rapidNavigationActive, false, "rapid mode clears after quiet window");
         compare(main.rapidNavigationAction, "", "quiet reset clears rapid action");
