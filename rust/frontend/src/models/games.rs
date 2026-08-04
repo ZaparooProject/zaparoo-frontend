@@ -1493,49 +1493,108 @@ impl ffi::GamesModel {
         let seq = self.rust().seq.clone();
         let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
 
-        let max_results = u32::try_from(self.page_size.max(1)).unwrap_or(u32::from(u16::MAX));
-        let resource = global_store().subscribe::<MediaBrowseEndpoint>(BrowseArgs::new(
-            path,
-            systems,
-            max_results,
-        ));
-        let mut status_rx = resource.subscribe();
-
-        // Spawn the watcher BEFORE applying the sync seed. If
-        // `apply_status` recurses into `start_initial_browse` (auto-nav
-        // cascade on a single-folder result), the inner call's
-        // `watcher.take().abort()` cleans up this handle correctly —
-        // doing this in the other order leaks the inner watcher when
-        // the outer call later overwrites `self.watcher`.
-        let qt_thread = self.qt_thread();
-        let snapshot = status_rx.borrow_and_update().clone();
-        if let Some(timing) = self.as_mut().rust_mut().nav_timing.as_mut() {
-            if matches!(snapshot, ResourceStatus::Ready(_)) {
-                timing.set_source("cache");
-                timing.mark_request_done();
-            }
-        }
-        let seq_for_loop = seq.clone();
-        let handle = global_handle().spawn(async move {
-            while status_rx.changed().await.is_ok() {
-                let snapshot = status_rx.borrow_and_update().clone();
-                let seq_for_closure = seq_for_loop.clone();
-                let _ = qt_thread.queue(move |model| {
-                    if seq_for_closure.load(Ordering::SeqCst) != ticket {
+        // MiSTer fast path: list the folder straight from Core's media
+        // database (`media_browse_db`) and hand the result to the same
+        // Ready pipeline the RPC feeds. A full local listing arrives in
+        // one piece with no further pages, so the paged fetch machinery
+        // (background fill, tail prefetch, edge stalls) stays idle for
+        // folders served this way. Root browses (empty path) always use
+        // the RPC — their entries come from Core's launcher routes,
+        // which do not live in the database. Any `None` (cache not
+        // serveable, unknown path, query error) falls through to the
+        // exact RPC subscribe this method always performed.
+        if !path.is_empty() && crate::media_browse_db::enabled() {
+            let qt_thread = self.qt_thread();
+            let seq_direct = seq.clone();
+            let path_direct = path.clone();
+            let systems_direct = systems.clone();
+            global_handle().spawn(async move {
+                let query_path = path_direct.clone();
+                let query_systems = systems_direct.clone();
+                let direct = tokio::task::spawn_blocking(move || {
+                    crate::media_browse_db::browse_folder(&query_path, &query_systems)
+                })
+                .await
+                .ok()
+                .flatten();
+                let _ = qt_thread.queue(move |mut model| {
+                    if seq_direct.load(Ordering::SeqCst) != ticket {
                         return;
                     }
-                    apply_status(model, snapshot);
+                    match direct {
+                        Some(result) => {
+                            mark_nav_source(model.as_mut(), "direct");
+                            apply_status(model, ResourceStatus::Ready(result));
+                        }
+                        None => subscribe_browse_endpoint(
+                            model,
+                            path_direct,
+                            systems_direct,
+                            ticket,
+                            seq_direct,
+                        ),
+                    }
                 });
-            }
-        });
-        self.as_mut().rust_mut().watcher = Some(handle);
-
-        // Sync seed runs inline on the Qt thread, so it cannot race a
-        // queued callback (Qt won't pump events until set_system /
-        // set_path returns). No ticket check needed; the value we read
-        // is whichever the resource has right now.
-        apply_status(self.as_mut(), snapshot);
+            });
+            return;
+        }
+        subscribe_browse_endpoint(self, path, systems, ticket, seq);
     }
+}
+
+/// Subscribe to the store-backed `media.browse` endpoint and wire its
+/// status stream into `apply_status`. Split out of
+/// `start_initial_browse` so the direct-database fast path can fall
+/// back to the identical RPC flow from an async context.
+fn subscribe_browse_endpoint(
+    mut model: Pin<&mut ffi::GamesModel>,
+    path: String,
+    systems: Vec<String>,
+    ticket: u64,
+    seq: Arc<AtomicU64>,
+) {
+    let max_results = u32::try_from(model.page_size.max(1)).unwrap_or(u32::from(u16::MAX));
+    let resource = global_store().subscribe::<MediaBrowseEndpoint>(BrowseArgs::new(
+        path,
+        systems,
+        max_results,
+    ));
+    let mut status_rx = resource.subscribe();
+
+    // Spawn the watcher BEFORE applying the sync seed. If
+    // `apply_status` recurses into `start_initial_browse` (auto-nav
+    // cascade on a single-folder result), the inner call's
+    // `watcher.take().abort()` cleans up this handle correctly —
+    // doing this in the other order leaks the inner watcher when
+    // the outer call later overwrites `self.watcher`.
+    let qt_thread = model.qt_thread();
+    let snapshot = status_rx.borrow_and_update().clone();
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        if matches!(snapshot, ResourceStatus::Ready(_)) {
+            timing.set_source("cache");
+            timing.mark_request_done();
+        }
+    }
+    let seq_for_loop = seq;
+    let handle = global_handle().spawn(async move {
+        while status_rx.changed().await.is_ok() {
+            let snapshot = status_rx.borrow_and_update().clone();
+            let seq_for_closure = seq_for_loop.clone();
+            let _ = qt_thread.queue(move |model| {
+                if seq_for_closure.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                apply_status(model, snapshot);
+            });
+        }
+    });
+    model.as_mut().rust_mut().watcher = Some(handle);
+
+    // Sync seed runs inline on the Qt thread, so it cannot race a
+    // queued callback (Qt won't pump events until set_system /
+    // set_path returns). No ticket check needed; the value we read
+    // is whichever the resource has right now.
+    apply_status(model, snapshot);
 }
 
 /// Resolve the system id role exposed to QML. Single-system entries

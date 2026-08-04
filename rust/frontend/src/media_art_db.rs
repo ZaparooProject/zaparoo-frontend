@@ -43,7 +43,7 @@ use tracing::{debug, info, warn};
 
 use crate::media_image_cache::MediaKey;
 
-const MEDIA_DB_PATH: &str = "/media/fat/zaparoo/media.db";
+pub(crate) const MEDIA_DB_PATH: &str = "/media/fat/zaparoo/media.db";
 
 /// Cap on candidates returned per lookup: bounds the file-read retries
 /// the caller performs when leading candidates point at dead files.
@@ -128,7 +128,9 @@ fn open_checked(db_path: &Path) -> Result<Connection, String> {
         if let rusqlite::Error::SqliteFailure(ffi_err, _) = &e {
             if ffi_err.extended_code == rusqlite::ffi::SQLITE_READONLY_CANTINIT {
                 return format!(
-                    "WAL sidecar files are not accessible read-only                      (SQLITE_READONLY_CANTINIT) — check permissions on                      the media database directory: {e}"
+                    "WAL sidecar files are not accessible read-only \
+                     (SQLITE_READONLY_CANTINIT) — check permissions on \
+                     the media database directory: {e}"
                 );
             }
         }
