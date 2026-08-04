@@ -119,7 +119,21 @@ fn open_checked(db_path: &Path) -> Result<Connection, String> {
         db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| {
+        // A WAL-mode database opened read-only needs the -shm/-wal
+        // sidecars to be accessible; SQLITE_READONLY_CANTINIT is the
+        // specific "cannot initialize WAL under these permissions"
+        // failure, worth naming so a permissions problem on the card
+        // is diagnosable from the log rather than a generic open error.
+        if let rusqlite::Error::SqliteFailure(ffi_err, _) = &e {
+            if ffi_err.extended_code == rusqlite::ffi::SQLITE_READONLY_CANTINIT {
+                return format!(
+                    "WAL sidecar files are not accessible read-only                      (SQLITE_READONLY_CANTINIT) — check permissions on                      the media database directory: {e}"
+                );
+            }
+        }
+        e.to_string()
+    })?;
     conn.busy_timeout(std::time::Duration::from_millis(200))
         .map_err(|e| e.to_string())?;
     let n: i64 = conn

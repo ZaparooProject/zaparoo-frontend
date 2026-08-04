@@ -1450,18 +1450,21 @@ async fn fetch_one(
         max_size,
         "media_image_cache: media.image request"
     );
-    let fetch_started = Instant::now();
     // Only the RPC passes through the gate: local lookups above run at
     // full worker width, while Core never sees more than
-    // `RPC_CONCURRENCY` outstanding image requests.
-    let result = {
-        #[allow(
-            clippy::unwrap_used,
-            reason = "gate semaphore is never closed, acquire cannot fail"
-        )]
-        let _permit = rpc_gate().acquire().await.unwrap();
-        store.client().media_image(params).await
-    };
+    // `RPC_CONCURRENCY` outstanding image requests. The gate wait is
+    // timed separately so `fetch_ms` keeps meaning "Core round trip"
+    // and stays comparable with pre-gate logs.
+    let gate_started = Instant::now();
+    #[allow(
+        clippy::unwrap_used,
+        reason = "gate semaphore is never closed, acquire cannot fail"
+    )]
+    let permit = rpc_gate().acquire().await.unwrap();
+    let gate_duration = gate_started.elapsed();
+    let fetch_started = Instant::now();
+    let result = store.client().media_image(params).await;
+    drop(permit);
     let fetch_duration = fetch_started.elapsed();
     let (outcome, decode_duration) = match result {
         Ok(image) => classify_media_image_result(&key, &image),
@@ -1479,6 +1482,7 @@ async fn fetch_one(
         path = %key.path,
         outcome = fetch_outcome_label(&outcome),
         queue_wait_ms = queue_wait.as_millis(),
+        gate_ms = gate_duration.as_millis(),
         fetch_ms = fetch_duration.as_millis(),
         decode_ms = decode_duration.as_millis(),
         "media_image_cache: cover timing",
