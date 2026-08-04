@@ -1504,6 +1504,11 @@ impl ffi::GamesModel {
         // serveable, unknown path, query error) falls through to the
         // exact RPC subscribe this method always performed.
         if !path.is_empty() && crate::media_browse_db::enabled() {
+            // Mirror the RPC path's Pending status so the query window
+            // shows the loading cue instead of an empty view: the RPC
+            // flow gets this from the store's status stream, the direct
+            // flow must say it itself.
+            apply_status(self.as_mut(), ResourceStatus::Loading);
             let qt_thread = self.qt_thread();
             let seq_direct = seq.clone();
             let path_direct = path.clone();
