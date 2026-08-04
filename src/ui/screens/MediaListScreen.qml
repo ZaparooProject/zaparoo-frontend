@@ -497,6 +497,11 @@ Item {
     }
 
     PagedGrid {
+        // Rapid paging crosses the default 2-page buffer faster than a
+        // media.browse refill can land; a deeper look-ahead starts the
+        // fetch while the user is still many pages from the loaded edge,
+        // so "Loading more" stops interrupting sustained paging.
+        loadAheadPages: root.detailRapidScrollActive ? 8 : 2
         id: mediaGrid
 
         visible: !root._gateHide && !root._listLayout && root.renderGridLayout

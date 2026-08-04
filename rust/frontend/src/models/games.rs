@@ -120,7 +120,11 @@ const DEFAULT_PAGE_SIZE: i32 = 15;
 // the visible and next pages, so a large `FETCH_MORE_CHUNK_SIZE` no
 // longer floods the cover queue.
 const FETCH_MORE_CHUNK_SIZE: i32 = 100;
-const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 300;
+// Core's max_results ceiling. media.browse costs the same round trip
+// whether it returns 300 rows or 1000 on a large folder (the server-side
+// listing dominates), so rapid scrolling buys the biggest runway one
+// call can provide: ~100 list-layout pages per fetch instead of ~30.
+const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 1000;
 // Ceiling for a jump-to-letter fetch (Core's `max_results` cap). A position
 // jump must load every row up to the target before
 // `PagedGrid._commitPendingTarget` can land on it; doing that as the 12-row
