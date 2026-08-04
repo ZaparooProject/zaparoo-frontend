@@ -31,6 +31,11 @@ MediaListScreen {
     // which state the user is actually looking at.
     emptyText: Browse.FavoritesModel.filter !== "" ? qsTr("No favorites in this scope") : qsTr("No favorites yet")
     loadingText: qsTr("Loading favorites…")
+    // The sort/filter full load runs under its own flag, not the model's
+    // `loading`, so a cold entry with a persisted scope could flash the
+    // empty text while the full set was still in flight. An empty list
+    // with the full load running is a loading state, not an empty one.
+    optimisticLoading: Browse.FavoritesModel.full_loading && Browse.FavoritesModel.count === 0
     detailShowTitle: false
     // The View menu owns the filter, so it has to stay reachable when that
     // filter matches nothing — otherwise the scope can never be cleared.
