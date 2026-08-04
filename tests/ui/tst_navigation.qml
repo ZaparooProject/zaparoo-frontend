@@ -10,6 +10,7 @@ import QtQuick
 import QtTest
 import Zaparoo.App
 import Zaparoo.Browse as Browse
+import Zaparoo.Screens
 import Zaparoo.Theme
 
 // Exercises the hub ↔ systems ↔ games navigation state machine defined
@@ -57,6 +58,11 @@ TestCase {
         main._stopRepeat();
         main._resetRapidNavigation();
         main._stopPageTurbo();
+        // Singleton state survives across TestCases in this binary; a
+        // modal left open by an earlier suite would trip the turbo's
+        // input gate and fail the paging tests for reasons unrelated
+        // to navigation.
+        ScreenManager.modalStack = [];
     }
 
     function cleanup(): void {
