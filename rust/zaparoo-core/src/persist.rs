@@ -111,7 +111,7 @@ pub struct SettingsState {
     pub browse_layout: String,
     #[serde(default = "default_system_logo_style")]
     pub system_logo_style: String,
-    /// UI colour theme: `default`, or `crt-light` for the brighter
+    /// UI color theme: `default`, or `crt-light` for the brighter
     /// palette tuned for analog CRT output.
     #[serde(default = "default_theme")]
     pub theme: String,
