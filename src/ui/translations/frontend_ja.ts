@@ -650,17 +650,17 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3161"/>
+        <location filename="../app/Main.qml" line="3171"/>
         <source>Loading systems…</source>
         <translation>システムを読み込み中…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3167"/>
+        <location filename="../app/Main.qml" line="3177"/>
         <source>Loading favorites…</source>
         <translation>お気に入りを読み込み中…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3163"/>
+        <location filename="../app/Main.qml" line="3173"/>
         <source>Loading games…</source>
         <translation>ゲームを読み込み中…</translation>
     </message>
@@ -729,22 +729,22 @@ Euskara - devilschile2</source>
         <translation type="unfinished">キャンセル</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3165"/>
+        <location filename="../app/Main.qml" line="3175"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3169"/>
+        <location filename="../app/Main.qml" line="3179"/>
         <source>Loading recently played…</source>
         <translation>最近プレイしたゲームを読み込み中…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3171"/>
+        <location filename="../app/Main.qml" line="3181"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3173"/>
+        <location filename="../app/Main.qml" line="3183"/>
         <source>Loading…</source>
         <translation>読み込み中…</translation>
     </message>

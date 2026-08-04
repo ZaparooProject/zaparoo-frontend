@@ -142,8 +142,21 @@ fn open_checked(db_path: &Path) -> Result<Connection, String> {
 /// answer cannot be produced with full confidence — layer disabled, cache
 /// not serveable, path unknown — and the caller falls through to the RPC
 /// exactly as before this module existed.
-pub fn browse_folder(path: &str, systems: &[String]) -> Option<MediaBrowseResult> {
+///
+/// `cancelled` is polled at each query stage and periodically inside the
+/// row loop so a superseded browse (the user already navigated away)
+/// stops consuming its blocking worker and the database instead of
+/// running the full folder read to completion; a cancelled call returns
+/// `None`, which the caller's ticket check discards anyway.
+pub fn browse_folder(
+    path: &str,
+    systems: &[String],
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Option<MediaBrowseResult> {
     let db = browse_db()?;
+    if cancelled() {
+        return None;
+    }
     let started = Instant::now();
     #[allow(clippy::unwrap_used, reason = "Mutex poisoning is unrecoverable")]
     let mut guard = db.conn.lock().unwrap();
@@ -160,8 +173,11 @@ pub fn browse_folder(path: &str, systems: &[String]) -> Option<MediaBrowseResult
         }
     }
     let conn = guard.as_ref()?;
-    match list_folder(conn, path, systems) {
+    match list_folder(conn, path, systems, cancelled) {
         Ok(result) => {
+            if cancelled() {
+                return None;
+            }
             if let Some(r) = &result {
                 debug!(
                     ?path,
@@ -222,6 +238,7 @@ fn list_folder(
     conn: &Connection,
     path: &str,
     systems: &[String],
+    cancelled: &(dyn Fn() -> bool + Sync),
 ) -> rusqlite::Result<Option<MediaBrowseResult>> {
     let cleaned = path.trim_end_matches('/');
     if cleaned.is_empty() {
@@ -257,8 +274,14 @@ fn list_folder(
     if let Some(pid) = parent_id {
         dir_entries(conn, pid, cleaned, systems, &mut entries)?;
     }
+    if cancelled() {
+        return Ok(None);
+    }
     let total_dirs = u32::try_from(entries.len()).unwrap_or(u32::MAX);
-    let total_files = file_entries(conn, &prefix, systems, &mut entries)?;
+    let total_files = file_entries(conn, &prefix, systems, &mut entries, cancelled)?;
+    if cancelled() {
+        return Ok(None);
+    }
 
     // A path the browse cache does not know, with no files either, is
     // one this module cannot vouch for (fresh folder mid-index, virtual
@@ -344,6 +367,7 @@ fn file_entries(
     prefix: &str,
     systems: &[String],
     entries: &mut Vec<BrowseEntry>,
+    cancelled: &(dyn Fn() -> bool + Sync),
 ) -> rusqlite::Result<u32> {
     let fav_ids = tag_ids(conn, "user", "favorite", false)?;
     let img_ids = tag_ids(conn, "property", "image-%", true)?;
@@ -408,6 +432,12 @@ fn file_entries(
     })?;
     let mut total_files = 0u32;
     for row in rows {
+        // Poll every 256 rows: often enough that a superseded read on a
+        // huge folder stops within milliseconds, rare enough to cost
+        // nothing on the happy path.
+        if total_files.is_multiple_of(256) && cancelled() {
+            return Ok(0);
+        }
         let (system_id, sort_name, file_path, dbid, favorite, has_cover) = row?;
         total_files = total_files.saturating_add(1);
         let name = if sort_name.is_empty() {
@@ -512,7 +542,7 @@ mod tests {
     #[test]
     fn dirs_precede_files_and_both_are_name_ordered() {
         let conn = test_db();
-        let result = list_folder(&conn, "/games/C64", &[])
+        let result = list_folder(&conn, "/games/C64", &[], &|| false)
             .expect("query ok")
             .expect("folder listed");
         let names: Vec<&str> = result.entries.iter().map(|e| e.name.as_str()).collect();
@@ -532,7 +562,7 @@ mod tests {
     #[test]
     fn favorite_tag_maps_to_user_favorite() {
         let conn = test_db();
-        let result = list_folder(&conn, "/games/C64", &[])
+        let result = list_folder(&conn, "/games/C64", &[], &|| false)
             .expect("query ok")
             .expect("folder listed");
         let beta = result
@@ -554,7 +584,7 @@ mod tests {
     #[test]
     fn has_cover_from_media_and_title_level_properties() {
         let conn = test_db();
-        let result = list_folder(&conn, "/games/C64", &[])
+        let result = list_folder(&conn, "/games/C64", &[], &|| false)
             .expect("query ok")
             .expect("folder listed");
         let by_name = |n: &str| {
@@ -574,7 +604,7 @@ mod tests {
     #[test]
     fn empty_sortname_falls_back_to_file_stem() {
         let conn = test_db();
-        let result = list_folder(&conn, "/games/C64", &[])
+        let result = list_folder(&conn, "/games/C64", &[], &|| false)
             .expect("query ok")
             .expect("folder listed");
         assert!(result.entries.iter().any(|e| e.name == "Old Game"));
@@ -583,7 +613,7 @@ mod tests {
     #[test]
     fn system_filter_excludes_other_systems() {
         let conn = test_db();
-        let result = list_folder(&conn, "/games/C64", &["C64".to_string()])
+        let result = list_folder(&conn, "/games/C64", &["C64".to_string()], &|| false)
             .expect("query ok")
             .expect("folder listed");
         assert!(result.entries.iter().all(|e| e.name != "NesFile"));
@@ -593,7 +623,7 @@ mod tests {
     #[test]
     fn missing_rows_are_excluded() {
         let conn = test_db();
-        let result = list_folder(&conn, "/games/C64", &[])
+        let result = list_folder(&conn, "/games/C64", &[], &|| false)
             .expect("query ok")
             .expect("folder listed");
         assert!(result.entries.iter().all(|e| e.name != "Missing"));
@@ -607,7 +637,7 @@ mod tests {
             [],
         )
         .expect("update version");
-        assert!(list_folder(&conn, "/games/C64", &[])
+        assert!(list_folder(&conn, "/games/C64", &[], &|| false)
             .expect("query ok")
             .is_none());
     }
@@ -615,7 +645,7 @@ mod tests {
     #[test]
     fn unknown_empty_path_defers_to_rpc() {
         let conn = test_db();
-        assert!(list_folder(&conn, "/games/Amiga", &[])
+        assert!(list_folder(&conn, "/games/Amiga", &[], &|| false)
             .expect("query ok")
             .is_none());
     }
@@ -623,10 +653,10 @@ mod tests {
     #[test]
     fn trailing_slash_input_lists_the_same_folder() {
         let conn = test_db();
-        let a = list_folder(&conn, "/games/C64", &[])
+        let a = list_folder(&conn, "/games/C64", &[], &|| false)
             .expect("query ok")
             .expect("listed");
-        let b = list_folder(&conn, "/games/C64/", &[])
+        let b = list_folder(&conn, "/games/C64/", &[], &|| false)
             .expect("query ok")
             .expect("listed");
         assert_eq!(a.entries.len(), b.entries.len());
@@ -641,7 +671,7 @@ mod tests {
             [],
         )
         .expect("update version");
-        assert!(list_folder(&conn, "/games/C64", &[])
+        assert!(list_folder(&conn, "/games/C64", &[], &|| false)
             .expect("query ok")
             .is_some());
     }
@@ -651,5 +681,17 @@ mod tests {
         assert_eq!(basename_no_ext("/a/b/Game Name.crt"), "Game Name");
         assert_eq!(basename_no_ext("/a/b/noext"), "noext");
         assert_eq!(basename_no_ext("/a/b/.hidden"), ".hidden");
+    }
+
+    #[test]
+    fn cancelled_read_returns_none() {
+        let conn = test_db();
+        // A read whose browse got superseded must bail with None no
+        // matter how far it progressed; the caller's ticket check
+        // discards the slot either way, so None is the only honest
+        // answer a cancelled read can give.
+        assert!(list_folder(&conn, "/games/C64", &[], &|| true)
+            .expect("query ok")
+            .is_none());
     }
 }

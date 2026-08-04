@@ -529,35 +529,56 @@ TestCase {
     // press/release pairs, so the third chained press hands paging to a
     // self-driven tick (see Main.qml's _notePageTurboPress). handleKey
     // is called directly, which bypasses the Keys-level duplicate
-    // guard, so back-to-back presses chain without waits.
+    // guard, so back-to-back presses chain without waits. Each
+    // simulated press is followed by its release, matching the bridge's
+    // real pair shape, so the hold-repeat machinery disarms exactly as
+    // it does on device.
+    function _bridgePagePress(key: int): void {
+        main.handleKey(key);
+        main.handleKeyRelease(key);
+    }
+
     function test_page_turbo_engages_on_third_chained_press(): void {
-        main.handleKey(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
         compare(main._pageTurboChainCount, 1);
         verify(!main.pageTurboRunning, "one press must not start turbo");
-        main.handleKey(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
         verify(!main.pageTurboRunning, "two presses must not start turbo");
-        main.handleKey(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
         verify(main.pageTurboRunning, "third chained press should start turbo");
         compare(main.rapidNavigationActive, true, "turbo forces rapid mode so cover work pauses");
+        compare(main._heldAction, "", "hold-repeat must be disarmed while turbo drives");
     }
 
     function test_page_turbo_stops_on_other_action(): void {
-        main.handleKey(Qt.Key_PageDown);
-        main.handleKey(Qt.Key_PageDown);
-        main.handleKey(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
         verify(main.pageTurboRunning);
         main.handleKey(Qt.Key_Down);
         verify(!main.pageTurboRunning, "a non-page action must stop turbo immediately");
     }
 
     function test_page_turbo_direction_flip_stops_and_pages_normally(): void {
-        main.handleKey(Qt.Key_PageDown);
-        main.handleKey(Qt.Key_PageDown);
-        main.handleKey(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
         verify(main.pageTurboRunning);
-        main.handleKey(Qt.Key_PageUp);
+        _bridgePagePress(Qt.Key_PageUp);
         verify(!main.pageTurboRunning, "flipping direction must stop the old turbo");
         compare(main._pageTurboChainCount, 1, "the flip press starts a fresh chain");
+    }
+
+    // Gated input must not feed turbo: presses swallowed by an
+    // in-flight transition would otherwise start a tick that pages the
+    // destination screen once it becomes ready.
+    function test_page_turbo_does_not_engage_while_transition_pending(): void {
+        main.pendingTransition = "games";
+        _bridgePagePress(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
+        _bridgePagePress(Qt.Key_PageDown);
+        verify(!main.pageTurboRunning, "gated presses must not start turbo");
+        main.pendingTransition = "";
     }
 
     // Duplicate-input guard. The Keys.onPressed handler collapses a

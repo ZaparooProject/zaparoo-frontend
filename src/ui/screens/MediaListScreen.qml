@@ -505,7 +505,7 @@ Item {
         loadAheadPages: root.detailRapidScrollActive ? 8 : 2
         // The grid is invisible in list layout but stays the row/cursor
         // authority; suspending its delegates removes the per-row
-        // materialisation cost from every model reset and insert.
+        // materialization cost from every model reset and insert.
         suspendDelegates: root._listLayout
         id: mediaGrid
 

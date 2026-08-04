@@ -102,7 +102,7 @@ TestCase {
     }
 
     // Suspended delegates: the grid must keep reporting itemCount from
-    // the model's own count with zero delegates materialised, so list
+    // the model's own count with zero delegates materialized, so list
     // layout can use the grid as cursor authority without paying the
     // per-row instantiation cost on every insert.
     function test_suspended_delegates_track_model_count(): void {

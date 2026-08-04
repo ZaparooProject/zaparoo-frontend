@@ -2867,6 +2867,10 @@ MainLayout {
         interval: root._pageTurboTickMs
         repeat: true
         onTriggered: {
+            if (root.pendingTransition !== "" || root.transitionCueVisible || ScreenManager.hasModal || !root.active) {
+                root._stopPageTurbo();
+                return;
+            }
             const now = Date.now();
             const deadline = root._pageTurboLastPressMs + Math.max(420, root._pageTurboGapMs * 1.3);
             if (now > deadline) {
@@ -2902,7 +2906,13 @@ MainLayout {
         root._startupTrace("input/qml key mapped", "key=" + key, "action=" + action);
         if (action === "")
             return;
-        if (root._notePageTurboPress(action))
+        // The turbo must observe the same gates handleAction applies:
+        // presses swallowed by a transition or owned by a modal must not
+        // feed or sustain it, or a tick could page the newly ready
+        // screen with input the user never aimed at it.
+        if (root.pendingTransition !== "" || root.transitionCueVisible || ScreenManager.hasModal)
+            root._stopPageTurbo();
+        else if (root._notePageTurboPress(action))
             return;
         root.handleAction(action);
         root._armRepeat(action, key);

@@ -339,7 +339,10 @@ MediaListScreen {
         id: backgroundFolderFill
         interval: 200
         repeat: true
-        running: games.active && !Browse.GamesModel.loading && Browse.GamesModel.has_next_page
+        // List layout only: grid delegates are not suspended, so a
+        // background append there would materialize delegate cells the
+        // user never asked for; grid paging keeps its own look-ahead.
+        running: games.active && games._listLayout && !Browse.GamesModel.loading && Browse.GamesModel.has_next_page
         onTriggered: {
             if (!Browse.GamesModel.loading_more && Browse.GamesModel.has_next_page)
                 Browse.GamesModel.fetch_more();

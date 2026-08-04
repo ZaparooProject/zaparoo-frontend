@@ -1516,8 +1516,11 @@ impl ffi::GamesModel {
             global_handle().spawn(async move {
                 let query_path = path_direct.clone();
                 let query_systems = systems_direct.clone();
+                let cancel_seq = seq_direct.clone();
                 let direct = tokio::task::spawn_blocking(move || {
-                    crate::media_browse_db::browse_folder(&query_path, &query_systems)
+                    crate::media_browse_db::browse_folder(&query_path, &query_systems, &|| {
+                        cancel_seq.load(Ordering::SeqCst) != ticket
+                    })
                 })
                 .await
                 .ok()
