@@ -45,7 +45,16 @@ Item {
     required property Component delegate
 
     property int currentIndex: 0
-    readonly property int itemCount: itemRepeater.count
+    // List layout never renders the grid, but the Repeater still
+    // materialises one cell per model row (five role reads each) —
+    // measured at roughly three milliseconds per row on the DE10, which
+    // turned every large-folder reset or insert into seconds of
+    // UI-thread stall. Suspending swaps the Repeater's model out and
+    // serves `itemCount` straight from the model's own count property,
+    // so the list cursor, page math, and jump logic keep working with
+    // zero delegates alive.
+    property bool suspendDelegates: false
+    readonly property int itemCount: root.suspendDelegates ? (root.model && root.model.count !== undefined ? root.model.count : 0) : itemRepeater.count
 
     // Whether this section currently owns user focus. Tile uses this to
     // gate the selection card so only one section shows the focus cue
@@ -618,7 +627,7 @@ Item {
         Repeater {
             id: itemRepeater
 
-            model: root.model
+            model: root.suspendDelegates ? null : root.model
 
             Item {
                 id: cellItem

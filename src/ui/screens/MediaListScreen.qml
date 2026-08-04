@@ -456,6 +456,7 @@ Item {
     BrowseListDetailView {
         id: listCard
 
+        rapidRenderMode: root.detailRapidScrollActive
         visible: !root._gateHide && root._listLayout
         anchors.left: parent.left
         anchors.leftMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(5)
@@ -502,6 +503,10 @@ Item {
         // fetch while the user is still many pages from the loaded edge,
         // so "Loading more" stops interrupting sustained paging.
         loadAheadPages: root.detailRapidScrollActive ? 8 : 2
+        // The grid is invisible in list layout but stays the row/cursor
+        // authority; suspending its delegates removes the per-row
+        // materialisation cost from every model reset and insert.
+        suspendDelegates: root._listLayout
         id: mediaGrid
 
         visible: !root._gateHide && !root._listLayout && root.renderGridLayout
