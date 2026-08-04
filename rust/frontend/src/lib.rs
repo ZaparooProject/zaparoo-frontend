@@ -8,6 +8,7 @@ pub mod image_overrides;
 mod media_art_db;
 mod media_browse_db;
 mod media_favorites_db;
+mod media_history_db;
 mod media_image_cache;
 mod media_meta_cache;
 mod mister_runtime;
