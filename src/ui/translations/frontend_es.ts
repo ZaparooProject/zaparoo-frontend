@@ -952,12 +952,12 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Cargando…</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="452"/>
+        <location filename="../screens/MediaListScreen.qml" line="456"/>
         <source>%1 entries</source>
         <translation type="unfinished">%1 entradas</translation>
     </message>
     <message>
-        <location filename="../screens/MediaListScreen.qml" line="453"/>
+        <location filename="../screens/MediaListScreen.qml" line="457"/>
         <source>%1 / %2</source>
         <translation type="unfinished"></translation>
     </message>

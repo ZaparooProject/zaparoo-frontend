@@ -426,6 +426,10 @@ Item {
     FocusedMediaDetailController {
         id: focusedDetail
 
+        // With direct-database metadata the fetch costs a millisecond,
+        // so the settle wait shrinks to a couple of frames — enough to
+        // coalesce a fast tap burst, no longer a visible pause.
+        debounceMs: Browse.AppStatus.direct_meta ? 40 : 220
         enabled: !root._gateHide && root._listLayout
         itemCount: mediaGrid.itemCount
         currentIndex: mediaGrid.currentIndex

@@ -1239,7 +1239,10 @@ impl ffi::GamesModel {
         let qt_thread = self.qt_thread();
         let store = global_store();
         global_handle().spawn(async move {
-            let result = store.client().media_meta(params).await;
+            let result = match crate::media_meta_db::media_meta_async(params.clone()).await {
+                Some(media) => Ok(zaparoo_core::media_types::MediaMetaResult { media }),
+                None => store.client().media_meta(params).await,
+            };
             let _ = qt_thread.queue(move |mut model| {
                 if seq.load(Ordering::SeqCst) != ticket {
                     return;
@@ -1729,7 +1732,11 @@ async fn resolve_media_capable_directory_run_text(
     fallback_text: Option<String>,
 ) -> Option<String> {
     if let Some(params) = meta_params {
-        match client.media_meta(params).await {
+        let resolved = match crate::media_meta_db::media_meta_async(params.clone()).await {
+            Some(media) => Ok(zaparoo_core::media_types::MediaMetaResult { media }),
+            None => client.media_meta(params).await,
+        };
+        match resolved {
             Ok(result) if !result.media.path.trim().is_empty() => return Some(result.media.path),
             Ok(_) => warn!(
                 "singleton launch path resolve returned empty path for {}; trying folder browse",
