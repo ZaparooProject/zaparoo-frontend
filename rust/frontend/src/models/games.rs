@@ -55,7 +55,7 @@ use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::media_types::{
     BrowseEntry, MediaBrowseIndexParams, MediaBrowseParams, MediaBrowseResult, MediaMeta,
-    MediaMetaParams, MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
+    MediaMetaParams, MediaTagsUpdateParams, Pagination, ReadersWriteParams, RunParams, TagInfo,
 };
 use zaparoo_core::platform::{self, Platform};
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -1517,6 +1517,7 @@ impl ffi::GamesModel {
                 .await
                 .ok()
                 .flatten();
+                let qt_thread_tail = qt_thread.clone();
                 let _ = qt_thread.queue(move |mut model| {
                     if seq_direct.load(Ordering::SeqCst) != ticket {
                         return;
@@ -1524,7 +1525,13 @@ impl ffi::GamesModel {
                     match direct {
                         Some(result) => {
                             mark_nav_source(model.as_mut(), "direct");
-                            apply_status(model, ResourceStatus::Ready(result));
+                            apply_direct_listing(
+                                model,
+                                result,
+                                ticket,
+                                seq_direct,
+                                &qt_thread_tail,
+                            );
                         }
                         None => subscribe_browse_endpoint(
                             model,
@@ -1540,6 +1547,83 @@ impl ffi::GamesModel {
         }
         subscribe_browse_endpoint(self, path, systems, ticket, seq);
     }
+}
+
+/// Hand a complete direct listing to the model: paint first, bulk the
+/// rest. A model reset costs the UI thread roughly linear time in row
+/// count (measured on device at a few milliseconds per row, so a
+/// two-thousand-row folder froze entry for several seconds), while
+/// inserts beyond the viewport stay cheap because tile delegates are
+/// retention-gated. The reset therefore carries only the first page,
+/// and the remainder lands as bulk inserts queued behind the paint.
+/// During the gap the model reports `has_next_page = true` (synthetic
+/// pagination, no cursor) with `loading_more` held true, so the
+/// saved-selection chase keeps waiting and every fetch path no-ops
+/// instead of firing an RPC; the last chunk flips both off, and the
+/// resulting `onCountChanged` re-runs the restore against the full
+/// listing.
+fn apply_direct_listing(
+    mut model: Pin<&mut ffi::GamesModel>,
+    mut result: MediaBrowseResult,
+    ticket: u64,
+    seq: Arc<AtomicU64>,
+    qt_thread: &cxx_qt::CxxQtThread<ffi::GamesModel>,
+) {
+    let head_len = usize::try_from(model.page_size.max(1)).unwrap_or(30);
+    if result.entries.len() <= head_len.saturating_mul(2) {
+        apply_status(model, ResourceStatus::Ready(result));
+        return;
+    }
+    let tail = result.entries.split_off(head_len);
+    result.pagination = Some(Pagination {
+        has_next_page: true,
+        page_size: 0,
+        next_cursor: None,
+    });
+    apply_status(model.as_mut(), ResourceStatus::Ready(result));
+    // Same Qt-thread call as the head apply: QML cannot observe the gap
+    // between the reset and this flag, so no fetch can slip in between.
+    model.as_mut().set_loading_more(true);
+    queue_direct_tail(qt_thread, tail, ticket, seq);
+}
+
+/// One bulk insert per event-loop turn keeps the paint responsive
+/// between chunks; the jump path uses the same size for the same
+/// reason. Stale chunks self-disarm on the browse ticket: a newer
+/// `start_initial_browse` owns the model and resets its own flags.
+const DIRECT_TAIL_CHUNK: usize = 1000;
+
+fn queue_direct_tail(
+    qt_thread: &cxx_qt::CxxQtThread<ffi::GamesModel>,
+    mut tail: Vec<BrowseEntry>,
+    ticket: u64,
+    seq: Arc<AtomicU64>,
+) {
+    let rest = if tail.len() > DIRECT_TAIL_CHUNK {
+        tail.split_off(DIRECT_TAIL_CHUNK)
+    } else {
+        Vec::new()
+    };
+    let qt_thread_next = qt_thread.clone();
+    let _ = qt_thread.queue(move |mut model| {
+        if seq.load(Ordering::SeqCst) != ticket {
+            return;
+        }
+        let started = Instant::now();
+        let entries = transform_entries(tail, platform::current().as_ref());
+        insert_sub_batch(model.as_mut(), entries);
+        debug!(
+            insert_ms = started.elapsed().as_millis(),
+            remaining = rest.len(),
+            "games: direct tail chunk",
+        );
+        if rest.is_empty() {
+            model.as_mut().set_loading_more(false);
+            model.as_mut().set_has_next_page(false);
+            return;
+        }
+        queue_direct_tail(&qt_thread_next, rest, ticket, seq);
+    });
 }
 
 /// Subscribe to the store-backed `media.browse` endpoint and wire its
