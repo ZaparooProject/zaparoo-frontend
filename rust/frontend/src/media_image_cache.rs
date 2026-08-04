@@ -128,7 +128,14 @@ const SUPPORTED_PLAIN_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp"];
 /// would carry: when non-empty, a hit of a different type is rejected
 /// rather than guessed at, so a typed carousel request never silently
 /// receives the wrong art kind. Returns `None` on any miss or error and
-/// the caller falls through to the disk cache / RPC exactly as before.
+/// the caller falls through to the RPC exactly as before.
+///
+/// Unlike the RPC path there is no `max_size` downscale here: the
+/// original file is returned as-is. Producing a resized variant
+/// locally would mean re-encoding or storing thumbnails, both ruled
+/// out for this path, and decode cost stays bounded regardless
+/// because views decode at their snapped `sourceSize` tier; only the
+/// encoded bytes held in RAM are larger than what Core would send.
 async fn db_art_lookup(
     key: &MediaKey,
     wanted: &[String],
