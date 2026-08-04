@@ -120,11 +120,15 @@ const DEFAULT_PAGE_SIZE: i32 = 15;
 // the visible and next pages, so a large `FETCH_MORE_CHUNK_SIZE` no
 // longer floods the cover queue.
 const FETCH_MORE_CHUNK_SIZE: i32 = 100;
-// Core's max_results ceiling. media.browse costs the same round trip
-// whether it returns 300 rows or 1000 on a large folder (the server-side
-// listing dominates), so rapid scrolling buys the biggest runway one
-// call can provide: ~100 list-layout pages per fetch instead of ~30.
-const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 1000;
+// Rapid-scroll chunk. Bigger chunks are not free: measured on device,
+// media.browse response time grows superlinearly with chunk size on a
+// large folder (a max-size 1000-row request costs several seconds while
+// a 100-row request returns in well under one), and a blocked pager
+// waits that whole time. 300 buys ~30 list pages of runway per fetch
+// while keeping the worst-case wait at the loaded edge short. The
+// background folder fill (GamesScreen.qml) is what makes edge waits
+// rare; this chunk only sets how painful one is when it happens.
+const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 300;
 // Ceiling for a jump-to-letter fetch (Core's `max_results` cap). A position
 // jump must load every row up to the target before
 // `PagedGrid._commitPendingTarget` can land on it; doing that as the 12-row

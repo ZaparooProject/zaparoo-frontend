@@ -1047,6 +1047,13 @@ MainLayout {
     // gamesScreen.onRequestSystemsScreen below) so this path needs
     // no per-transition flag.
     function _navigateFromSystems(systemId: string): void {
+        // A repeat Accept for the same system while its entry is still
+        // in flight would restart the whole load from scratch (model
+        // reset, re-browse, re-restore) and double the visible loading
+        // time; users press again exactly when a load feels slow, so
+        // absorb the duplicate instead.
+        if (root.pendingTransition === "games" && Browse.GamesState.system_id === systemId)
+            return;
         root._requestScreen(root.screenGames);
         Browse.SystemsState.system_id = systemId;
         // Setting system_id on GamesState resets path_stack/selected_at_level
