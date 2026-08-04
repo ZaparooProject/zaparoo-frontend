@@ -373,6 +373,10 @@ Euskara - devilschile2</source>
         <source>Loading favorites…</source>
         <translation>즐겨찾기 불러오는 중…</translation>
     </message>
+    <message>
+        <source>%1 entries</source>
+        <translation type="obsolete">항목 %1개</translation>
+    </message>
 </context>
 <context>
     <name>FirstRunIndexModal</name>
@@ -710,37 +714,37 @@ Euskara - devilschile2</source>
         <translation type="unfinished">취소</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3063"/>
+        <location filename="../app/Main.qml" line="3152"/>
         <source>Loading systems…</source>
         <translation>시스템 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3065"/>
+        <location filename="../app/Main.qml" line="3154"/>
         <source>Loading games…</source>
         <translation>게임 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3067"/>
+        <location filename="../app/Main.qml" line="3156"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3069"/>
+        <location filename="../app/Main.qml" line="3158"/>
         <source>Loading favorites…</source>
         <translation>즐겨찾기 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3071"/>
+        <location filename="../app/Main.qml" line="3160"/>
         <source>Loading recently played…</source>
         <translation>최근 플레이 불러오는 중…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3073"/>
+        <location filename="../app/Main.qml" line="3162"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3075"/>
+        <location filename="../app/Main.qml" line="3164"/>
         <source>Loading…</source>
         <translation>불러오는 중…</translation>
     </message>

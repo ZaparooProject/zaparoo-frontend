@@ -56,6 +56,7 @@ TestCase {
         // next test if we didn't reset it here.
         main._stopRepeat();
         main._resetRapidNavigation();
+        main._stopPageTurbo();
     }
 
     function cleanup(): void {
@@ -522,6 +523,41 @@ TestCase {
         // therefore exits on the chain window.
         wait(main._rapidNavigationChainQuietMs + 40);
         compare(main.rapidNavigationActive, false);
+    }
+
+    // Page turbo. The pad bridge delivers held page buttons as discrete
+    // press/release pairs, so the third chained press hands paging to a
+    // self-driven tick (see Main.qml's _notePageTurboPress). handleKey
+    // is called directly, which bypasses the Keys-level duplicate
+    // guard, so back-to-back presses chain without waits.
+    function test_page_turbo_engages_on_third_chained_press(): void {
+        main.handleKey(Qt.Key_PageDown);
+        compare(main._pageTurboChainCount, 1);
+        verify(!main.pageTurboRunning, "one press must not start turbo");
+        main.handleKey(Qt.Key_PageDown);
+        verify(!main.pageTurboRunning, "two presses must not start turbo");
+        main.handleKey(Qt.Key_PageDown);
+        verify(main.pageTurboRunning, "third chained press should start turbo");
+        compare(main.rapidNavigationActive, true, "turbo forces rapid mode so cover work pauses");
+    }
+
+    function test_page_turbo_stops_on_other_action(): void {
+        main.handleKey(Qt.Key_PageDown);
+        main.handleKey(Qt.Key_PageDown);
+        main.handleKey(Qt.Key_PageDown);
+        verify(main.pageTurboRunning);
+        main.handleKey(Qt.Key_Down);
+        verify(!main.pageTurboRunning, "a non-page action must stop turbo immediately");
+    }
+
+    function test_page_turbo_direction_flip_stops_and_pages_normally(): void {
+        main.handleKey(Qt.Key_PageDown);
+        main.handleKey(Qt.Key_PageDown);
+        main.handleKey(Qt.Key_PageDown);
+        verify(main.pageTurboRunning);
+        main.handleKey(Qt.Key_PageUp);
+        verify(!main.pageTurboRunning, "flipping direction must stop the old turbo");
+        compare(main._pageTurboChainCount, 1, "the flip press starts a fresh chain");
     }
 
     // Duplicate-input guard. The Keys.onPressed handler collapses a

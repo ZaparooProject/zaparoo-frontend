@@ -373,6 +373,10 @@ Euskara - devilschile2</source>
         <source>Loading favorites…</source>
         <translation>Favorieten laden…</translation>
     </message>
+    <message>
+        <source>%1 entries</source>
+        <translation type="obsolete">%1 items</translation>
+    </message>
 </context>
 <context>
     <name>FirstRunIndexModal</name>
@@ -646,17 +650,17 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3063"/>
+        <location filename="../app/Main.qml" line="3152"/>
         <source>Loading systems…</source>
         <translation>Systemen laden…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3069"/>
+        <location filename="../app/Main.qml" line="3158"/>
         <source>Loading favorites…</source>
         <translation>Favorieten laden…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3065"/>
+        <location filename="../app/Main.qml" line="3154"/>
         <source>Loading games…</source>
         <translation>Games laden…</translation>
     </message>
@@ -725,22 +729,22 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Annuleren</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3067"/>
+        <location filename="../app/Main.qml" line="3156"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3071"/>
+        <location filename="../app/Main.qml" line="3160"/>
         <source>Loading recently played…</source>
         <translation>Recent gespeeld laden…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3073"/>
+        <location filename="../app/Main.qml" line="3162"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3075"/>
+        <location filename="../app/Main.qml" line="3164"/>
         <source>Loading…</source>
         <translation>Laden…</translation>
     </message>

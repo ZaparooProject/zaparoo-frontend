@@ -2782,6 +2782,93 @@ MainLayout {
     // arms the initial-delay timer. Pulled out of handleKey so unit
     // tests can drive the repeat state machine without also routing
     // through handleAction → real screens. No-op for non-dpad actions.
+    // ── Page turbo ─────────────────────────────────────────────────
+    // Held L/R page buttons arrive from the platform's pad bridge as
+    // discrete press/release pairs at the bridge's own autofire cadence
+    // (about two per second measured), not as a held key: Qt-level
+    // autorepeats are dropped at the Keys handler, our hold-repeat
+    // needs a genuinely held key, and the rapid chain window is
+    // narrower than the bridge cadence, so held paging crawled at
+    // bridge speed with cover work running the whole time. The turbo
+    // treats the press *stream* as the hold signal: the third chained
+    // press starts a self-driven tick that pages at `_pageTurboTickMs`,
+    // forces rapid mode (pausing cover work), and swallows further
+    // bridge presses while it runs. The bridge releases immediately
+    // after every press, so release events carry no lift information;
+    // the stop condition is press silence — once no press has arrived
+    // for ~1.3x the observed cadence the button is deemed lifted. That
+    // leaves a short coast after lift (bounded by that deadline), the
+    // unavoidable price of pair-shaped input. A threshold of three
+    // keeps deliberate double-taps out of turbo entirely.
+    // Exposed for tst_navigation: the tick's running state is the
+    // observable "turbo is driving" contract.
+    readonly property bool pageTurboRunning: pageTurboTick.running
+    readonly property int _pageTurboTickMs: 170
+    readonly property int _pageTurboChainMs: 700
+    readonly property int _pageTurboThreshold: 3
+    property string _pageTurboAction: ""
+    property int _pageTurboChainCount: 0
+    property double _pageTurboLastPressMs: 0
+    property double _pageTurboGapMs: 500
+
+    // Returns true when the press was absorbed because turbo is (or
+    // has just started) driving that action. Any non-page action, or a
+    // direction flip, stops turbo and handles the press normally.
+    function _notePageTurboPress(action: string): bool {
+        if (action !== "page_next" && action !== "page_prev") {
+            root._stopPageTurbo();
+            return false;
+        }
+        // A direction flip stops the old turbo but falls through, so
+        // the flip press itself seeds a fresh chain and pages once.
+        if (pageTurboTick.running && action !== root._pageTurboAction)
+            root._stopPageTurbo();
+        const now = Date.now();
+        const gap = now - root._pageTurboLastPressMs;
+        if (root._pageTurboAction === action && gap < root._pageTurboChainMs) {
+            root._pageTurboChainCount += 1;
+            // Sub-120ms doubles are bounce or test drivers, not the
+            // bridge cadence; keep them out of the estimate.
+            if (gap > 120)
+                root._pageTurboGapMs = 0.5 * root._pageTurboGapMs + 0.5 * gap;
+        } else {
+            root._pageTurboAction = action;
+            root._pageTurboChainCount = 1;
+            root._pageTurboGapMs = 500;
+        }
+        root._pageTurboLastPressMs = now;
+        if (pageTurboTick.running)
+            return true;
+        if (root._pageTurboChainCount >= root._pageTurboThreshold) {
+            root._noteRapidNavigationAction(action, true);
+            pageTurboTick.restart();
+            return true;
+        }
+        return false;
+    }
+
+    function _stopPageTurbo(): void {
+        pageTurboTick.stop();
+        root._pageTurboChainCount = 0;
+        root._pageTurboAction = "";
+    }
+
+    Timer {
+        id: pageTurboTick
+        interval: root._pageTurboTickMs
+        repeat: true
+        onTriggered: {
+            const now = Date.now();
+            const deadline = root._pageTurboLastPressMs + Math.max(420, root._pageTurboGapMs * 1.3);
+            if (now > deadline) {
+                root._stopPageTurbo();
+                return;
+            }
+            root._noteRapidNavigationAction(root._pageTurboAction, true);
+            root.handleAction(root._pageTurboAction);
+        }
+    }
+
     function _armRepeat(action: string, key: int): void {
         if (!root._isRepeatableAction(action))
             return;
@@ -2805,6 +2892,8 @@ MainLayout {
         const action = Browse.Input.action_for_key(key);
         root._startupTrace("input/qml key mapped", "key=" + key, "action=" + action);
         if (action === "")
+            return;
+        if (root._notePageTurboPress(action))
             return;
         root.handleAction(action);
         root._armRepeat(action, key);
