@@ -345,68 +345,13 @@ fn page_snapshot(result: &MediaHistoryResult) -> PageSnapshot {
     )
 }
 
-/// Post-Ready pagination: warm page 2 over the RPC, or upgrade to the
-/// complete local history when the direct layer is available — the
-/// paged chain then never starts. `fetch_more` is itself guarded by
-/// `has_next_page` and `loading_more`.
+/// Post-Ready pagination: warm page 2 over the RPC. Reached only when
+/// the direct read could not answer (or the layer is disabled), so the
+/// paged chain must continue exactly as it always did. `fetch_more` is
+/// itself guarded by `has_next_page` and `loading_more`.
 fn finish_ready_pagination(mut model: Pin<&mut ffi::RecentsModel>, has_next_page: bool) {
-    let direct_full = crate::media_history_db::enabled();
-    if has_next_page && !model.cover_requests_paused && !direct_full {
+    if has_next_page && !model.cover_requests_paused {
         model.as_mut().fetch_more();
-    }
-    if direct_full && has_next_page {
-        spawn_direct_history_upgrade(&model);
-    }
-}
-
-/// Upgrade the freshly applied RPC page to the complete local history:
-/// spawn the read off the Qt thread and land it under the same seq
-/// ticket the cursor chain uses, so a newer refetch discards it.
-fn spawn_direct_history_upgrade(model: &Pin<&mut ffi::RecentsModel>) {
-    let seq = model.rust().seq.clone();
-    let ticket = seq.load(Ordering::SeqCst);
-    let qt_thread = model.qt_thread();
-    global_handle().spawn(async move {
-        let cancel_seq = seq.clone();
-        let direct = tokio::task::spawn_blocking(move || {
-            crate::media_history_db::history(&|| cancel_seq.load(Ordering::SeqCst) != ticket)
-        })
-        .await
-        .ok()
-        .flatten();
-        let Some(entries) = direct else {
-            return;
-        };
-        let _ = qt_thread.queue(move |mut model| {
-            if model.rust().seq.load(Ordering::SeqCst) != ticket {
-                return;
-            }
-            apply_direct_history(model.as_mut(), entries);
-        });
-    });
-}
-
-/// Land the complete local history: the direct counterpart of a
-/// terminal cursor page. The set arrives already deduplicated
-/// latest-per-path; the reset mirrors the Ready apply and the cursor
-/// chain ends here.
-fn apply_direct_history(mut model: Pin<&mut ffi::RecentsModel>, entries: Vec<MediaHistoryEntry>) {
-    if !model.cover_requests_paused {
-        enqueue_recents_covers(&entries);
-    }
-    let count = i32::try_from(entries.len()).unwrap_or(i32::MAX);
-    model.as_mut().begin_reset_model();
-    {
-        let mut rust = model.as_mut().rust_mut();
-        rust.entries = entries;
-        rust.count = count;
-        rust.next_cursor = None;
-    }
-    model.as_mut().end_reset_model();
-    model.as_mut().count_changed();
-    sync_resume_state(model.as_mut());
-    if model.has_next_page {
-        model.as_mut().set_has_next_page(false);
     }
 }
 

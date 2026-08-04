@@ -188,15 +188,15 @@ fn list_history(
 ) -> rusqlite::Result<Option<Vec<MediaHistoryEntry>>> {
     // Latest event per media path, mirroring the client-side
     // `dedupe_latest_by_path` the RPC pages go through; the DBID
-    // tiebreak keeps same-second replays deterministic.
-    let media_join = if resolve_media {
-        "LEFT JOIN mediadb.Media m ON m.Path = h.MediaPath \
-         LEFT JOIN mediadb.Systems s ON s.DBID = m.SystemDBID AND s.SystemID = h.SystemID "
-    } else {
-        ""
-    };
+    // tiebreak keeps same-second replays deterministic. The media id
+    // resolves through a correlated scalar subquery rather than joins:
+    // a path indexed under two systems (arcade classification twins)
+    // would otherwise duplicate the history row and break the
+    // deduplicated contract this function promises.
     let media_id_col = if resolve_media {
-        "CASE WHEN s.SystemID IS NULL THEN NULL ELSE m.DBID END"
+        "(SELECT m.DBID FROM mediadb.Media m \
+          INNER JOIN mediadb.Systems s ON s.DBID = m.SystemDBID \
+          WHERE m.Path = h.MediaPath AND s.SystemID = h.SystemID LIMIT 1)"
     } else {
         "NULL"
     };
@@ -206,7 +206,6 @@ fn list_history(
          FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY MediaPath \
                ORDER BY StartTime DESC, DBID DESC) AS rn \
                FROM MediaHistory WHERE IsDeleted = 0) h \
-         {media_join} \
          WHERE h.rn = 1 \
          ORDER BY h.StartTime DESC, h.DBID DESC"
     );
@@ -343,6 +342,40 @@ mod tests {
             .expect("some");
         assert_eq!(items[0].media_id, Some(500));
         assert_eq!(items[1].media_id, Some(501));
+    }
+
+    #[test]
+    fn twin_path_media_rows_do_not_duplicate_history() {
+        let conn = test_db();
+        #[allow(clippy::expect_used, reason = "test setup")]
+        conn.execute_batch(
+            "ATTACH DATABASE ':memory:' AS mediadb;
+             CREATE TABLE mediadb.Systems (DBID INTEGER PRIMARY KEY, SystemID TEXT NOT NULL);
+             CREATE TABLE mediadb.Media (DBID INTEGER PRIMARY KEY, SystemDBID INTEGER NOT NULL, Path TEXT NOT NULL);
+             INSERT INTO mediadb.Systems VALUES (1,'C64'),(2,'C64Alt');
+             -- The same file indexed under two systems: one media row per
+             -- system, identical path. History references the C64 one.
+             INSERT INTO mediadb.Media VALUES (500,1,'/g/C64/A.crt'),(600,2,'/g/C64/A.crt');",
+        )
+        .expect("attach media");
+        #[allow(clippy::expect_used, reason = "test assertion")]
+        let items = list_history(&conn, true, &|| false)
+            .expect("query ok")
+            .expect("some");
+        let a_rows: Vec<_> = items
+            .iter()
+            .filter(|i| i.media_path == "/g/C64/A.crt")
+            .collect();
+        assert_eq!(
+            a_rows.len(),
+            1,
+            "twin media rows must not duplicate history entries"
+        );
+        assert_eq!(
+            a_rows[0].media_id,
+            Some(500),
+            "the id must match the history row's own system"
+        );
     }
 
     #[test]
