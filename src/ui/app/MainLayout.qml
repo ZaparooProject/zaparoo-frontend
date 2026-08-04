@@ -233,6 +233,12 @@ ApplicationWindow {
 
     Binding {
         target: Theme
+        property: "theme"
+        value: Browse.Settings.current_theme
+    }
+
+    Binding {
+        target: Theme
         property: "crtNativePath"
         value: root.crtNativePath
     }
