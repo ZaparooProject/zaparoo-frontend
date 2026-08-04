@@ -650,17 +650,17 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3152"/>
+        <location filename="../app/Main.qml" line="3161"/>
         <source>Loading systems…</source>
         <translation>Systeme werden geladen…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3158"/>
+        <location filename="../app/Main.qml" line="3167"/>
         <source>Loading favorites…</source>
         <translation>Favoriten werden geladen…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3154"/>
+        <location filename="../app/Main.qml" line="3163"/>
         <source>Loading games…</source>
         <translation>Spiele werden geladen…</translation>
     </message>
@@ -729,22 +729,22 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Abbrechen</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3156"/>
+        <location filename="../app/Main.qml" line="3165"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3160"/>
+        <location filename="../app/Main.qml" line="3169"/>
         <source>Loading recently played…</source>
         <translation>Zuletzt gespielte werden geladen…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3162"/>
+        <location filename="../app/Main.qml" line="3171"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3164"/>
+        <location filename="../app/Main.qml" line="3173"/>
         <source>Loading…</source>
         <translation>Wird geladen…</translation>
     </message>

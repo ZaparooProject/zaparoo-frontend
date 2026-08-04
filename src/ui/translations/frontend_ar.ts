@@ -714,37 +714,37 @@ Euskara - devilschile2</source>
         <translation type="unfinished">إلغاء</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3152"/>
+        <location filename="../app/Main.qml" line="3161"/>
         <source>Loading systems…</source>
         <translation>جارٍ تحميل الأنظمة…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3154"/>
+        <location filename="../app/Main.qml" line="3163"/>
         <source>Loading games…</source>
         <translation>جارٍ تحميل الألعاب…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3156"/>
+        <location filename="../app/Main.qml" line="3165"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3158"/>
+        <location filename="../app/Main.qml" line="3167"/>
         <source>Loading favorites…</source>
         <translation>جارٍ تحميل المفضلة…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3160"/>
+        <location filename="../app/Main.qml" line="3169"/>
         <source>Loading recently played…</source>
         <translation>جارٍ تحميل آخر ما تم لعبه…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3162"/>
+        <location filename="../app/Main.qml" line="3171"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3164"/>
+        <location filename="../app/Main.qml" line="3173"/>
         <source>Loading…</source>
         <translation>جارٍ التحميل…</translation>
     </message>
