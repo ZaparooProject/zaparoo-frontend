@@ -2811,11 +2811,20 @@ MainLayout {
     property double _pageTurboLastPressMs: 0
     property double _pageTurboGapMs: 500
 
+    // The games screen routes Left/Right through _performPage in list
+    // layout (see GamesScreen), so a held Left/Right there is a held
+    // page button and must feed the turbo like the dedicated page keys.
+    function _pageTurboEligible(action: string): bool {
+        if (action === "page_next" || action === "page_prev")
+            return true;
+        return (action === "left" || action === "right") && root.activeScreen === root.screenGames && Browse.Settings.current_browse_layout === "list";
+    }
+
     // Returns true when the press was absorbed because turbo is (or
-    // has just started) driving that action. Any non-page action, or a
-    // direction flip, stops turbo and handles the press normally.
+    // has just started) driving that action. Any non-eligible action,
+    // or a direction flip, stops turbo and handles the press normally.
     function _notePageTurboPress(action: string): bool {
-        if (action !== "page_next" && action !== "page_prev") {
+        if (!root._pageTurboEligible(action)) {
             root._stopPageTurbo();
             return false;
         }
