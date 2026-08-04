@@ -473,9 +473,28 @@ TestCase {
         }
         main._noteRapidNavigationAction("down", false);
         compare(main.rapidNavigationActive, true, "threshold press enters rapid mode");
-        wait(main._rapidNavigationQuietMs + 40);
+        // Without an established QML hold-repeat the quiet timer runs at
+        // the chain interval, so the exit wait keys off that value.
+        wait(main._rapidNavigationChainQuietMs + 40);
         compare(main.rapidNavigationActive, false, "rapid mode clears after quiet window");
         compare(main.rapidNavigationAction, "", "quiet reset clears rapid action");
+    }
+
+    function test_rapid_navigation_chains_discrete_repeats(): void {
+        // Gamepad input stacks deliver a held dpad as separate
+        // press/release pairs at their own cadence. Slower than the
+        // held-key quiet window, those repeats must still chain into one
+        // burst through the wider chain window, or rapid mode never
+        // engages during a pad hold and cover work churns through it.
+        for (var i = 1; i < main._rapidNavigationTapThreshold; i++) {
+            main._noteRapidNavigationAction("page_next", false);
+            compare(main.rapidNavigationActive, false,
+                    "press " + i + " below the threshold must not enter rapid mode");
+            wait(150);
+        }
+        main._noteRapidNavigationAction("page_next", false);
+        compare(main.rapidNavigationActive, true,
+                "spaced discrete repeats chain to the threshold and enter rapid mode");
     }
 
     function test_rapid_navigation_ignores_non_rapid_action(): void {
@@ -496,7 +515,12 @@ TestCase {
         compare(main.rapidNavigationActive, true, "held page action should enter rapid mode on first repeat tick");
         compare(main.rapidNavigationIndicatorActive, true, "held page action should show rapid indicator on first repeat tick");
         main._stopRepeat();
-        wait(main._rapidNavigationQuietMs + 40);
+        // The forced tick note is followed by the action router's own
+        // non-forced note for the same action, which re-arms the wider
+        // chain window; only from the second tick onward (repeat tick
+        // established) does the tight window stick. A single-tick hold
+        // therefore exits on the chain window.
+        wait(main._rapidNavigationChainQuietMs + 40);
         compare(main.rapidNavigationActive, false);
     }
 

@@ -2631,6 +2631,18 @@ MainLayout {
     // and the quiet window stays above the 90 ms repeat tick so a held
     // key cannot flicker the detail pane between ticks.
     readonly property int _rapidNavigationQuietMs: 120
+    // Chain window for discrete repeats. Gamepad input stacks (MiSTer's
+    // pad-to-key translation among them) deliver a held dpad as separate
+    // press/release pairs at their own cadence rather than one held key,
+    // so the QML hold-repeat never establishes and every repeat counts
+    // through the tap path. At repeat cadences slower than the 120 ms
+    // quiet window the burst count reset on every press and rapid mode
+    // never engaged — cover work then churned through the whole hold.
+    // While no QML repeat is established, the quiet timer runs at this
+    // wider interval instead: it chains any realistic pad repeat rate
+    // into one burst, while a genuine held key keeps the tight window
+    // (the 90 ms tick re-arms it, so exit stays fast after release).
+    readonly property int _rapidNavigationChainQuietMs: 300
     readonly property int _rapidNavigationTapThreshold: 5
     // Window for collapsing a second delivery of the same key into one
     // press — hardware contact bounce or input-stack double send. Far
@@ -2735,6 +2747,14 @@ MainLayout {
             root.rapidNavigationActive = true;
         if (forceActive || root._rapidNavigationTapCount >= root._rapidNavigationTapThreshold)
             root.rapidNavigationIndicatorActive = true;
+        // An established QML hold-repeat (forced tick notes, and the
+        // action router's follow-up notes while the tick runs) re-arms
+        // the tight window so rapid exits fast after release. Discrete
+        // taps — including gamepad stacks that deliver a held dpad as
+        // press/release pairs at their own cadence — get the wider
+        // chain window so the burst survives between repeats instead
+        // of resetting on every press.
+        rapidNavigationQuiet.interval = forceActive || repeatTick.running ? root._rapidNavigationQuietMs : root._rapidNavigationChainQuietMs;
         rapidNavigationQuiet.restart();
     }
 
@@ -2924,6 +2944,10 @@ MainLayout {
 
     Timer {
         id: rapidNavigationQuiet
+        // Interval is assigned imperatively on every note (see
+        // _noteRapidNavigationAction) — held-key notes use the tight
+        // window, discrete taps the chain window. Assigning per restart
+        // keeps the running countdown immune to binding re-evaluation.
         interval: root._rapidNavigationQuietMs
         repeat: false
         onTriggered: {

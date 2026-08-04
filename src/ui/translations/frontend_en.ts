@@ -634,17 +634,17 @@ Euskara - devilschile2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3039"/>
+        <location filename="../app/Main.qml" line="3063"/>
         <source>Loading systems…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3045"/>
+        <location filename="../app/Main.qml" line="3069"/>
         <source>Loading favorites…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3041"/>
+        <location filename="../app/Main.qml" line="3065"/>
         <source>Loading games…</source>
         <translation type="unfinished"></translation>
     </message>
@@ -713,22 +713,22 @@ Euskara - devilschile2</source>
         <translation type="unfinished">Cancel</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3043"/>
+        <location filename="../app/Main.qml" line="3067"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3047"/>
+        <location filename="../app/Main.qml" line="3071"/>
         <source>Loading recently played…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3049"/>
+        <location filename="../app/Main.qml" line="3073"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3051"/>
+        <location filename="../app/Main.qml" line="3075"/>
         <source>Loading…</source>
         <translation type="unfinished">Loading…</translation>
     </message>
