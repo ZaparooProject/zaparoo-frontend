@@ -42,6 +42,9 @@ skip = [
     # codespan-reporting 0.11 → unicode-width 0.1; codespan-reporting 0.13 → 0.2.
     { crate = "unicode-width@0.1.14" },
     { crate = "unicode-width@0.2.2" },
+    # cxx 1.0.198 uses syn 3; cxx-qt and other proc macros still use syn 2.
+    { crate = "syn@2.0.118" },
+    { crate = "syn@3.0.3" },
     # tempfile+uuid hold getrandom 0.4; rand 0.9 (via tungstenite) brings 0.3.
     # (0.3 is build-script-only in the linux/armv7 filtered graph so cargo-deny
     # doesn't surface it; listing it here would warn as unmatched.)
