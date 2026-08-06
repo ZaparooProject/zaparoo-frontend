@@ -58,6 +58,9 @@ pub struct GamesState {
     pub system_id: String,
     pub path_stack: Vec<String>,
     pub selected_at_level: Vec<String>,
+    /// Favorites-only projection of folder listings. Serde-defaulted so
+    /// state files written before the field existed keep loading.
+    pub favorites_filter: bool,
 }
 
 impl Default for GamesState {
@@ -66,6 +69,7 @@ impl Default for GamesState {
             system_id: String::new(),
             path_stack: vec![String::new()],
             selected_at_level: vec![String::new()],
+            favorites_filter: false,
         }
     }
 }
@@ -343,6 +347,7 @@ mod tests {
                 system_id: "NES".into(),
                 path_stack: vec![String::new(), "/roms/nes/mario".into()],
                 selected_at_level: vec!["/roms/nes/mario".into(), "/roms/nes/mario/smb.nes".into()],
+                favorites_filter: false,
             },
             recents: RecentsState {
                 selected_path: "/roms/nes/mario/smb.nes".into(),
@@ -441,6 +446,7 @@ resolution = "1920x1080"
                                 system_id: format!("sys-{i}-{j}"),
                                 path_stack: vec![String::new()],
                                 selected_at_level: vec![format!("/roms/{i}/{j}.rom")],
+                                favorites_filter: false,
                             },
                             favorites: FavoritesState::default(),
                             recents: RecentsState::default(),
