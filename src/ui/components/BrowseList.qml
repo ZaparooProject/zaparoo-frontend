@@ -75,6 +75,13 @@ Item {
     // not persist when the screen is shown again. Set by the host to
     // !active while the screen is off-screen.
     property bool screenSettling: false
+    // During rapid scrolling every landing rebinds all visible rows at
+    // once, and on the software renderer the decoration (heart icon,
+    // disambiguating tag layout) is a measurable share of that cost.
+    // Rapid render mode strips rows to their plain title so fast paging
+    // spends its frame budget on travel, mirroring the grid's
+    // rapidRenderMode; decoration pops back in when the scroll settles.
+    property bool rapidRenderMode: false
 
     signal itemHovered(int index)
     signal itemClicked(int index)
@@ -182,6 +189,9 @@ Item {
             readonly property bool _highlightVisible: row.selected && root.focusReady
             readonly property string _baseTitle: row.name !== "" ? row.name : row.fileStem
             // Horizontal space reserved on the right for the favorite heart.
+            // The heart stays through rapid mode: one cached pixmap per
+            // row is within the rapid frame budget, and hiding it made
+            // rows appear to change state during fast travel.
             readonly property int _favoriteSlot: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) : 0
             property real _activateScale: 1.0
 
@@ -287,7 +297,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 height: parent.height
                 name: row._baseTitle
-                tags: row.disambiguatingTags
+                tags: root.rapidRenderMode ? "" : row.disambiguatingTags
                 focused: row._highlightVisible
                 centerContent: false
                 fontPixelSize: Sizing.fontSize(2.9)

@@ -355,12 +355,27 @@ fn project(status: &ResourceStatus<MediaSearchResult>) -> (Option<PageSnapshot>,
     }
 }
 
-fn apply_state(
-    mut model: Pin<&mut ffi::FavoritesModel>,
-    (data, err): (Option<PageSnapshot>, String),
-) {
+fn apply_state(model: Pin<&mut ffi::FavoritesModel>, (data, err): (Option<PageSnapshot>, String)) {
+    if let Some(snapshot) = data {
+        // Direct-first: the store's Ready is the trigger and the local
+        // read is the content; the RPC page it delivered is only
+        // applied when the local read cannot answer. Freshness paths
+        // (favorite toggles, reconnects) stay intact while the painted
+        // list always comes from the complete local set.
+        if crate::media_favorites_db::enabled() {
+            spawn_direct_ready(model, snapshot);
+        } else {
+            apply_ready_page(model, snapshot);
+        }
+    } else {
+        apply_pending_or_error(model, &err);
+    }
+}
+
+fn apply_ready_page(mut model: Pin<&mut ffi::FavoritesModel>, snapshot: PageSnapshot) {
     let apply_started = Instant::now();
-    if let Some((entries, has_next_page, next_cursor)) = data {
+    {
+        let (entries, has_next_page, next_cursor) = snapshot;
         if model.nav_timing.is_none() {
             model.as_mut().rust_mut().nav_timing = Some(NavTiming::new("cache"));
         }
@@ -419,7 +434,125 @@ fn apply_state(
         if has_next_page && !model.cover_requests_paused {
             model.as_mut().fetch_more();
         }
-    } else if err.is_empty() {
+    }
+}
+
+/// Direct-first Ready handling: bump the chain, read the complete
+/// local favorite set, and paint it; the RPC page in `snapshot`
+/// applies only when the local read cannot answer.
+fn spawn_direct_ready(mut model: Pin<&mut ffi::FavoritesModel>, snapshot: PageSnapshot) {
+    model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
+    let seq = model.rust().seq.clone();
+    let ticket = seq.load(Ordering::SeqCst);
+    let qt_thread = model.qt_thread();
+    global_handle().spawn(async move {
+        let cancel_seq = seq.clone();
+        let direct = tokio::task::spawn_blocking(move || {
+            crate::media_favorites_db::favorites(&|| cancel_seq.load(Ordering::SeqCst) != ticket)
+        })
+        .await
+        .ok()
+        .flatten();
+        let _ = qt_thread.queue(move |model| {
+            if seq.load(Ordering::SeqCst) != ticket {
+                return;
+            }
+            match direct {
+                Some(entries) => apply_direct_full_paint(model, entries),
+                None => apply_ready_page(model, snapshot),
+            }
+        });
+    });
+}
+
+/// Early paint: fired from the Pending branch so a cold entry shows the
+/// complete local set in tens of milliseconds instead of waiting for
+/// the store's first network Ready, which then re-confirms it.
+fn spawn_direct_early_paint(model: &Pin<&mut ffi::FavoritesModel>) {
+    if !crate::media_favorites_db::enabled() || model.count > 0 {
+        return;
+    }
+    let seq = model.rust().seq.clone();
+    let ticket = seq.load(Ordering::SeqCst);
+    let qt_thread = model.qt_thread();
+    global_handle().spawn(async move {
+        let cancel_seq = seq.clone();
+        let direct = tokio::task::spawn_blocking(move || {
+            crate::media_favorites_db::favorites(&|| cancel_seq.load(Ordering::SeqCst) != ticket)
+        })
+        .await
+        .ok()
+        .flatten();
+        let Some(entries) = direct else {
+            return;
+        };
+        let _ = qt_thread.queue(move |model| {
+            if model.rust().seq.load(Ordering::SeqCst) != ticket {
+                return;
+            }
+            apply_direct_full_paint(model, entries);
+        });
+    });
+}
+
+/// Land the complete local favorite set as a first-class paint: the
+/// direct counterpart of `apply_ready_page` with terminal pagination,
+/// serving both the cold entry and every store-triggered refresh.
+fn apply_direct_full_paint(mut model: Pin<&mut ffi::FavoritesModel>, entries: Vec<MediaItem>) {
+    let apply_started = Instant::now();
+    if model.nav_timing.is_none() {
+        model.as_mut().rust_mut().nav_timing = Some(NavTiming::new("direct"));
+    }
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.set_source("direct");
+        timing.mark_request_done();
+    }
+    model.as_mut().ensure_cover_subscription();
+    if !model.cover_requests_paused {
+        enqueue_favorites_covers(&entries);
+    }
+    let count = i32::try_from(entries.len()).unwrap_or(i32::MAX);
+    clear_current_detail_state(model.as_mut());
+    let displays = compute_favorites_disambig_displays(&entries, model.show_original_filenames);
+    model.as_mut().begin_reset_model();
+    {
+        let mut rust = model.as_mut().rust_mut();
+        rust.entries = entries;
+        rust.disambig_displays = displays;
+        rust.count = count;
+        rust.next_cursor = None;
+    }
+    model.as_mut().end_reset_model();
+    model.as_mut().count_changed();
+    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
+        timing.mark_apply_done();
+    }
+    info!(
+        apply_ms = apply_started.elapsed().as_millis(),
+        "favorites: apply_direct_full_paint timing",
+    );
+    if model.has_next_page {
+        model.as_mut().set_has_next_page(false);
+    }
+    if model.cover_requests_paused {
+        disarm_cover_gate(model.as_mut());
+        if model.loading {
+            model.as_mut().set_loading(false);
+        }
+        finish_nav_timing(model.as_mut(), "covers-paused", 0);
+    } else {
+        arm_cover_gate(model.as_mut());
+    }
+    if model.loading_more {
+        model.as_mut().set_loading_more(false);
+    }
+    if !model.error_message.is_empty() {
+        model.as_mut().set_error_message(QString::default());
+    }
+}
+
+fn apply_pending_or_error(mut model: Pin<&mut ffi::FavoritesModel>, err: &str) {
+    if err.is_empty() {
         if model.nav_timing.is_none() {
             model.as_mut().rust_mut().nav_timing = Some(NavTiming::new("network"));
         } else if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
@@ -443,6 +576,7 @@ fn apply_state(
         if model.has_next_page {
             model.as_mut().set_has_next_page(false);
         }
+        spawn_direct_early_paint(&model);
     } else {
         // Same disarm as the Pending branch — an Errored transition
         // doesn't reset entries, so a callback queued during the prior
@@ -460,7 +594,7 @@ fn apply_state(
             model.as_mut().set_has_next_page(false);
         }
     }
-    let qerr = QString::from(err.as_str());
+    let qerr = QString::from(err);
     if model.error_message != qerr {
         model.as_mut().set_error_message(qerr);
     }
