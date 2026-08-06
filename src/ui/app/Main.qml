@@ -2183,7 +2183,32 @@ MainLayout {
                 "id": "launch_random",
                 "label": qsTr("Random game in this folder")
             });
+        // Level-local favorites projection: files of this folder filter
+        // to the favorite ones; directories stay for navigation.
+        entries.push({
+            "id": "games_filter",
+            "label": qsTr("Show: %1").arg(Browse.GamesModel.favorites_only ? qsTr("Favorites") : qsTr("All"))
+        });
         root.openListPickerModal(qsTr("View"), entries, "jump_letter", "page_menu");
+    }
+
+    // Games filter picker: the page-menu row announces the active state
+    // ("Show: All" / "Show: Favorites"); this picker presents the actual
+    // choice, preselected on what is active, mirroring the favorites
+    // screen's filter menu.
+    function openGamesFilterMenu(): void {
+        const entries = [
+            {
+                "id": "all",
+                "label": qsTr("All")
+            },
+            {
+                "id": "favorites",
+                "label": qsTr("Favorites only")
+            }
+        ];
+        const active = Browse.GamesModel.favorites_only ? "favorites" : "all";
+        root.openListPickerModal(qsTr("Show"), entries, active, "games_filter_pick");
     }
 
     // Favorites' West-button menu: how the list is ordered and scoped, plus
@@ -2514,6 +2539,13 @@ MainLayout {
                 root.openLetterJumpModal();
             else if (selectedId === "launch_random")
                 Browse.GamesModel.launch_random();
+            else if (selectedId === "games_filter")
+                root.openGamesFilterMenu();
+            return;
+        }
+        if (fieldId === "games_filter_pick") {
+            root.closeListPickerModal();
+            Browse.GamesModel.apply_favorites_filter(selectedId === "favorites");
             return;
         }
         if (fieldId === "page_menu_favorites") {
