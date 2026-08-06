@@ -3086,9 +3086,21 @@ MainLayout {
         }
     }
 
+    // Pure: the repeat cadence for a genuinely held key. Left/Right on
+    // the games list page whole pages, and the page repaint is the
+    // expensive unit, so a held page key repeats at the page-turbo
+    // cadence rather than the 90 ms row cadence — the same rhythm the
+    // pair-shaped input path produces through the turbo ticker, so both
+    // hold shapes travel identically. Everything else keeps the row
+    // cadence.
+    function _heldRepeatIntervalFor(action: string, screen: var, layout: string): int {
+        const heldPaging = (action === "left" || action === "right") && screen === root.screenGames && layout === "list";
+        return heldPaging ? root._pageTurboTickMs : root._repeatTickMs;
+    }
+
     Timer {
         id: repeatTick
-        interval: root._repeatTickMs
+        interval: root._heldRepeatIntervalFor(root._heldAction, root.activeScreen, Browse.Settings.current_browse_layout)
         repeat: true
         onTriggered: {
             if (root._heldAction === "") {

@@ -587,6 +587,18 @@ TestCase {
         main.pendingTransition = "";
     }
 
+    // Held-repeat cadence. Pure-helper test: a genuinely held
+    // Left/Right on the games list repeats whole pages, so it must
+    // tick at the page-turbo cadence; row actions and other contexts
+    // keep the row cadence.
+    function test_held_repeat_cadence_pages_at_turbo_rate(): void {
+        compare(main._heldRepeatIntervalFor("right", main.screenGames, "list"), main._pageTurboTickMs, "held right on the games list repeats at the page cadence");
+        compare(main._heldRepeatIntervalFor("left", main.screenGames, "list"), main._pageTurboTickMs, "held left on the games list repeats at the page cadence");
+        compare(main._heldRepeatIntervalFor("down", main.screenGames, "list"), main._repeatTickMs, "the row walk keeps the row cadence");
+        compare(main._heldRepeatIntervalFor("right", main.screenGames, "grid"), main._repeatTickMs, "grid cell moves keep the row cadence");
+        compare(main._heldRepeatIntervalFor("right", main.screenSystems, "list"), main._repeatTickMs, "other screens keep the row cadence");
+    }
+
     // Duplicate-input guard. The Keys.onPressed handler collapses a
     // second delivery of the same key while the guard window is open
     // (controller / input-stack double send). The decision is a pure
