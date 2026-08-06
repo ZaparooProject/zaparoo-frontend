@@ -189,7 +189,10 @@ Item {
             readonly property bool _highlightVisible: row.selected && root.focusReady
             readonly property string _baseTitle: row.name !== "" ? row.name : row.fileStem
             // Horizontal space reserved on the right for the favorite heart.
-            readonly property int _favoriteSlot: row.favorite !== 0 && !root.rapidRenderMode ? root._favoriteRightPadding + Sizing.pctH(3.2) : 0
+            // The heart stays through rapid mode: one cached pixmap per
+            // row is within the rapid frame budget, and hiding it made
+            // rows appear to change state during fast travel.
+            readonly property int _favoriteSlot: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) : 0
             property real _activateScale: 1.0
 
             // Push in and hold — mirrors Tile.qml. The activate leg has no
@@ -313,7 +316,7 @@ Item {
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 asynchronous: false
-                visible: row.favorite !== 0 && !root.rapidRenderMode
+                visible: row.favorite !== 0
             }
 
             MouseArea {
