@@ -659,8 +659,6 @@ Item {
     function _languageDisplay(value: string): string {
         if (value === "en" || value === "en_US" || value === "en_GB")
             return qsTr("English");
-        if (value === "fr" || value === "fr_FR")
-            return qsTr("French");
         if (value === "it" || value === "it_IT")
             return qsTr("Italian");
         if (value === "es" || value === "es_ES")
@@ -693,6 +691,8 @@ Item {
             return qsTr("Arabic");
         if (value === "hi" || value === "hi_IN")
             return qsTr("Hindi");
+        if (value === "fr" || value === "fr_FR")
+            return qsTr("French");
         return qsTr("Auto");
     }
 
