@@ -11,7 +11,7 @@
     <message>
         <location filename="../screens/AboutScreen.qml" line="155"/>
         <source>Zaparoo Frontend</source>
-        <translation type="unfinished">Zaparoo Frontend</translation>
+        <translation>Zaparoo Frontend</translation>
     </message>
     <message>
         <location filename="../screens/AboutScreen.qml" line="166"/>

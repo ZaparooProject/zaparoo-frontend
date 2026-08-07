@@ -109,6 +109,7 @@ const LANGUAGES: &[&str] = &[
 const LANGUAGE_ALIASES: &[(&str, &str)] = &[
     ("en_US", "en"),
     ("en_GB", "en"),
+    ("fr_FR", "fr"),
     ("it", "it_IT"),
     ("es_ES", "es"),
     ("eu_ES", "eu"),
@@ -129,7 +130,6 @@ const LANGUAGE_ALIASES: &[(&str, &str)] = &[
     ("he_IL", "he"),
     ("ar_SA", "ar"),
     ("hi_IN", "hi"),
-    ("fr_FR", "fr"),
 ];
 const DEFAULT_LANGUAGE: &str = "auto";
 const CLOCK_FORMATS: &[&str] = &["auto", "12h", "24h"];
