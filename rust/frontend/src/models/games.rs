@@ -182,16 +182,8 @@ const SUB_BATCH_FRAME_GAP_MS: u64 = 33;
 )]
 pub struct GamesModelRust {
     entries: Vec<BrowseEntry>,
-    // The unfiltered listing. `entries` above is the VISIBLE set: equal
-    // to this when the favorites filter is off, the favorite files plus
-    // all directories when it is on. Keeping the full listing here lets
-    // the filter toggle re-project without refetching, and keeps every
-    // row consumer (letter facet, prefetch, disambiguation)
-    // operating on `entries` unchanged.
-    all_entries: Vec<BrowseEntry>,
-    // Favorites filter: when set, `entries` holds directories plus the
-    // favorite files only. Toggled through `apply_favorites_filter`,
-    // which re-projects from `all_entries`.
+    // When true every browse and browse-index request carries
+    // `tags: ["user:favorite"]`; Core keeps directories navigable.
     favorites_only: bool,
     // Parallel to `entries`: the sibling-diffed disambiguation display string
     // per row (what tiles/list rows show as the inline token suffix). Recomputed
@@ -347,7 +339,6 @@ impl Default for GamesModelRust {
     fn default() -> Self {
         Self {
             entries: Vec::new(),
-            all_entries: Vec::new(),
             favorites_only: false,
             disambig_displays: Vec::new(),
             count: 0,
@@ -747,6 +738,7 @@ impl ffi::GamesModel {
             path.to_string(),
             systems,
             max_results,
+            favorites_tags(self.favorites_only),
         ))
     }
 
@@ -795,6 +787,7 @@ impl ffi::GamesModel {
         } else {
             vec![sid]
         };
+        let tags = favorites_tags(self.favorites_only);
         // Read the active ticket WITHOUT bumping it. `fetch_more`
         // continues the same path's load — only `set_system` /
         // `set_path` invalidate the prior cursor sequence.
@@ -831,6 +824,7 @@ impl ffi::GamesModel {
                     systems,
                     max_results: Some(max_results),
                     cursor,
+                    tags,
                     letter: None,
                     sort: None,
                 })
@@ -857,22 +851,13 @@ impl ffi::GamesModel {
             self.as_mut().set_letter_index_scheme(QString::from("none"));
             return;
         }
-        // Under the favorites filter the facet has no answer: it indexes
-        // the unfiltered listing, so its offsets do not address the
-        // filtered rows. No rail rather than a wrong one; the seq bump
-        // retires any facet already in flight.
-        if self.favorites_only {
-            self.letter_index_seq.fetch_add(1, Ordering::SeqCst);
-            self.as_mut().set_letter_index_json(QString::from("[]"));
-            self.as_mut().set_letter_index_scheme(QString::from("none"));
-            return;
-        }
         let sid = self.current_system_id.to_string();
         let systems = if sid.is_empty() {
             Vec::new()
         } else {
             vec![sid]
         };
+        let tags = favorites_tags(self.favorites_only);
         // Clear any facet from a prior scope to the loading state (empty groups,
         // empty scheme) so the rail shows "loading" rather than the previous
         // folder's buckets until the fresh fetch lands.
@@ -890,6 +875,7 @@ impl ffi::GamesModel {
                 .media_browse_index(MediaBrowseIndexParams {
                     path,
                     systems,
+                    tags,
                     sort: None,
                 })
                 .await;
@@ -994,26 +980,27 @@ impl ffi::GamesModel {
         QString::from(portable_text_for_entry(&self.entries[index as usize]).as_str())
     }
 
-    /// Toggle the favorites-only projection. Re-projects `entries` from
-    /// `all_entries` in place: no refetch, one model reset, and every
-    /// downstream consumer keeps reading `entries` unchanged.
+    /// Toggle Core-backed favorites scope and reload current browse target.
     fn apply_favorites_filter(mut self: Pin<&mut Self>, enabled: bool) {
         if self.favorites_only == enabled {
             return;
         }
         self.as_mut().set_favorites_only(enabled);
-        let visible = visible_entries(&self.all_entries, enabled);
-        let displays = compute_disambig_displays(&visible, self.show_original_filenames);
-        let count = i32::try_from(visible.len()).unwrap_or(i32::MAX);
-        self.as_mut().begin_reset_model();
-        self.as_mut().rust_mut().entries = visible;
-        self.as_mut().rust_mut().disambig_displays = displays;
-        self.as_mut().rust_mut().count = count;
-        self.as_mut().end_reset_model();
-        self.as_mut().count_changed();
-        // The row space changed; retire any in-flight letter facet so a
-        // stale one cannot land over the re-projected rows.
         self.letter_index_seq.fetch_add(1, Ordering::SeqCst);
+        let path = self.current_path.to_string();
+        let system_id = self.current_system_id.to_string();
+        // Before first system selection, only seed preference. First browse
+        // will include correct tag scope without issuing an unscoped root RPC.
+        if path.is_empty() && system_id.is_empty() {
+            return;
+        }
+        let systems = if system_id.is_empty() {
+            Vec::new()
+        } else {
+            vec![system_id]
+        };
+        let eligible_for_auto_nav = path.is_empty();
+        self.start_initial_browse(path, systems, eligible_for_auto_nav);
     }
 
     fn write_card_at(mut self: Pin<&mut Self>, index: i32) {
@@ -1520,14 +1507,9 @@ impl ffi::GamesModel {
             .rust_mut()
             .append_seq
             .fetch_add(1, Ordering::SeqCst);
-        // Either projection may hold rows: under the favorites filter
-        // the visible set can be empty while the full listing is not,
-        // and skipping the reset then would leave stale rows for a
-        // later re-projection.
-        if !self.entries.is_empty() || !self.all_entries.is_empty() {
+        if !self.entries.is_empty() {
             self.as_mut().begin_reset_model();
             self.as_mut().rust_mut().entries.clear();
-            self.as_mut().rust_mut().all_entries.clear();
             self.as_mut().rust_mut().disambig_displays.clear();
             self.as_mut().rust_mut().count = 0;
             self.as_mut().end_reset_model();
@@ -1557,6 +1539,7 @@ impl ffi::GamesModel {
             path,
             systems,
             max_results,
+            favorites_tags(self.favorites_only),
         ));
         let mut status_rx = resource.subscribe();
 
@@ -1614,18 +1597,12 @@ fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
             && (entry.media_id.is_some() || !entry.zap_script.is_empty()))
 }
 
-/// The rows the model shows for a listing: everything, or, in
-/// favorites-only mode, every directory (navigation stays intact) plus
-/// the files carrying the favorite tag. The filter is level-local by
-/// design: it projects the rows of the folder being viewed.
-fn visible_entries(all: &[BrowseEntry], favorites_only: bool) -> Vec<BrowseEntry> {
-    if !favorites_only {
-        return all.to_vec();
+fn favorites_tags(enabled: bool) -> Vec<String> {
+    if enabled {
+        vec!["user:favorite".to_string()]
+    } else {
+        Vec::new()
     }
-    all.iter()
-        .filter(|e| e.is_folder() || has_favorite_tag(&e.tags))
-        .cloned()
-        .collect()
 }
 
 fn run_text_for_entry(entry: &BrowseEntry) -> Option<String> {
@@ -2445,24 +2422,11 @@ fn apply_favorite_tags(
     if !same_entry {
         return;
     }
-    // Both projections carry the truth: the visible row and its twin in
-    // the unfiltered listing.
     model.as_mut().rust_mut().entries[index as usize]
         .tags
         .clone_from(&tags);
-    let all_pos = model.all_entries.iter().position(|e| {
-        if media_id.is_some() {
-            e.media_id == media_id
-        } else {
-            entry_system_id(e) == system_id && e.path == path
-        }
-    });
-    if let Some(pos) = all_pos {
-        model.as_mut().rust_mut().all_entries[pos].tags = tags;
-    }
-    // Unfavoriting under the favorites filter removes the row live: the
-    // projection no longer contains it. The full listing keeps it, so
-    // switching the filter off brings it straight back.
+    // Unfavoriting under Core-backed Favorites scope removes row immediately;
+    // endpoint invalidation then reconciles authoritative paged result.
     let entry = &model.entries[index as usize];
     if model.favorites_only && !entry.is_folder() && !has_favorite_tag(&entry.tags) {
         let parent = QModelIndex::default();
@@ -3145,8 +3109,7 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     let total_dirs = result_total_dirs(&result);
     let platform = platform::current();
     let transform_started = Instant::now();
-    let all_entries = transform_entries(result.entries, platform.as_ref());
-    let entries = visible_entries(&all_entries, model.favorites_only);
+    let entries = transform_entries(result.entries, platform.as_ref());
     let transform_ms = transform_started.elapsed().as_millis();
     let count = i32::try_from(entries.len()).unwrap_or(i32::MAX);
     info!(
@@ -3156,7 +3119,6 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
     let reset_started = Instant::now();
     let displays = compute_disambig_displays(&entries, model.show_original_filenames);
     model.as_mut().begin_reset_model();
-    model.as_mut().rust_mut().all_entries = all_entries;
     model.as_mut().rust_mut().entries = entries;
     model.as_mut().rust_mut().disambig_displays = displays;
     model.as_mut().rust_mut().count = count;
@@ -3294,13 +3256,6 @@ fn chunk_for_subbatching(entries: Vec<BrowseEntry>, size: usize) -> Vec<Vec<Brow
 /// the deferred-tail path so the row-count math + signal ordering live
 /// in exactly one place. No-ops on an empty batch.
 fn insert_sub_batch(mut model: Pin<&mut ffi::GamesModel>, batch: Vec<BrowseEntry>) {
-    // The full listing always receives the raw batch; the visible rows
-    // receive the projection. With the filter off the two are the same
-    // set, and an all-hidden batch still has to land in `all_entries`
-    // before the early return below.
-    let visible = visible_entries(&batch, model.favorites_only);
-    model.as_mut().rust_mut().all_entries.extend(batch);
-    let batch = visible;
     let new_count = i32::try_from(batch.len()).unwrap_or(i32::MAX - model.count);
     if new_count <= 0 {
         return;
@@ -3552,12 +3507,12 @@ mod tests {
         child_launch_text_from_browse_result, chunk_for_subbatching, compute_unresolved_keys,
         cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
         detail_image_keys_from_meta, detail_tags_from_tags, display_name, display_title_for_entry,
-        entry_system_id, is_media_capable_entry, is_strict_ancestor_path, jump_fetch_limit,
-        media_capable_directory_browse_params, media_key_for, meta_params_for_entry,
-        ordered_detail_image_keys, position_of_game_path, prefetch_around_plan,
-        prefetch_cursor_window_plan, project_status, result_total_dirs, run_text_for_entry,
-        seeded_refetch_pagination_state, singleton_directory_needs_launch_resolution,
-        transform_entries, visible_entries, InitialAction, Projection,
+        entry_system_id, favorites_tags, is_media_capable_entry, is_strict_ancestor_path,
+        jump_fetch_limit, media_capable_directory_browse_params, media_key_for,
+        meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
+        prefetch_around_plan, prefetch_cursor_window_plan, project_status, result_total_dirs,
+        run_text_for_entry, seeded_refetch_pagination_state,
+        singleton_directory_needs_launch_resolution, transform_entries, InitialAction, Projection,
     };
     use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -3597,42 +3552,10 @@ mod tests {
         }
     }
 
-    // --- favorites-only projection ----------------------------------------
-    // The filter is a projection of the unfiltered listing: directories
-    // always survive (navigation stays intact), files survive only with
-    // the favorite tag, and the filter off is the identity.
-
-    fn favorite(name: &str, path: &str, system_id: &str) -> BrowseEntry {
-        let mut entry = media(name, path, system_id);
-        entry.tags = vec![TagInfo {
-            tag: "favorite".into(),
-            tag_type: "user".into(),
-            label: String::new(),
-        }];
-        entry
-    }
-
     #[test]
-    fn favorites_projection_keeps_dirs_and_favorite_files() {
-        let all = vec![
-            folder("Capcom", "/games/Arcade/Capcom"),
-            favorite("1942", "/games/a", "Arcade"),
-            media("Alien Syndrome", "/games/b", "Arcade"),
-        ];
-        let visible = visible_entries(&all, true);
-        let names: Vec<&str> = visible.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, ["Capcom", "1942"]);
-    }
-
-    #[test]
-    fn favorites_projection_off_is_identity() {
-        let all = vec![
-            folder("Capcom", "/games/Arcade/Capcom"),
-            media("Alien Syndrome", "/games/b", "Arcade"),
-        ];
-        let visible = visible_entries(&all, false);
-        assert_eq!(visible.len(), all.len());
-        assert_eq!(visible[1].name, "Alien Syndrome");
+    fn favorites_scope_maps_to_core_tag_filter() {
+        assert!(favorites_tags(false).is_empty());
+        assert_eq!(favorites_tags(true), vec!["user:favorite"]);
     }
 
     #[test]

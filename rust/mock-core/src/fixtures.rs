@@ -151,9 +151,26 @@ pub fn media_search_response(params: &Value) -> Value {
         .and_then(|c| c.parse::<usize>().ok())
         .unwrap_or(0);
 
-    let matching: Vec<Value> = games_for_systems(&systems)
+    let mut matching: Vec<Value> = games_for_systems(&systems)
         .filter(|game| tags.iter().all(|tag| game_has_tag(game, tag)))
         .collect();
+    match params.get("sort").and_then(Value::as_str) {
+        Some("name-asc") => matching.sort_by_key(|game| {
+            game.get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_lowercase()
+        }),
+        Some("name-desc") => matching.sort_by_key(|game| {
+            std::cmp::Reverse(
+                game.get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_lowercase(),
+            )
+        }),
+        _ => {}
+    }
     let total = matching.len();
     let results: Vec<Value> = matching.into_iter().skip(offset).take(max).collect();
     let next_offset = offset.saturating_add(results.len());
@@ -197,34 +214,109 @@ fn game_has_tag(game: &Value, filter: &str) -> bool {
 
 pub fn media_browse_response(params: &Value) -> Value {
     let path = params.get("path").and_then(Value::as_str).unwrap_or("");
-    let entries: Vec<Value> = ALL_GAMES
+    let systems = params
+        .get("systems")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let filters = params
+        .get("tags")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let max = params
+        .get("maxResults")
+        .and_then(Value::as_u64)
+        .unwrap_or(100) as usize;
+    let offset = params
+        .get("cursor")
+        .and_then(Value::as_str)
+        .and_then(|cursor| cursor.parse::<usize>().ok())
+        .unwrap_or(0);
+    let mut matching: Vec<Value> = ALL_GAMES
         .iter()
-        .take(20)
-        .map(|(name, file, system)| {
-            json!({
+        .enumerate()
+        .filter(|(_, (_, _, system))| systems.is_empty() || systems.contains(system))
+        .filter_map(|(index, (name, file, system))| {
+            let row = json!({
                 "name": name,
                 "path": format!("{path}/{file}"),
                 "type": "media",
                 "systemId": system,
                 "zapScript": format!("@{system}/{file}"),
                 "relativePath": file,
-                "tags": disambiguating_tags_for(file),
+                "tags": tags_for(file, index),
                 "disambiguatingTags": disambiguating_tags_for(file),
-            })
+            });
+            filters
+                .iter()
+                .all(|filter| game_has_tag(&row, filter))
+                .then_some(row)
         })
         .collect();
-    let total_files = entries.len() as u64;
+    matching.sort_by_key(|entry| {
+        entry
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_lowercase()
+    });
+    let total_files = matching.len();
+    let entries: Vec<Value> = matching.into_iter().skip(offset).take(max).collect();
+    let next_offset = offset.saturating_add(entries.len());
+    let has_next_page = !entries.is_empty() && next_offset < total_files;
+    let mut pagination = json!({
+        "hasNextPage": has_next_page,
+        "pageSize": max,
+    });
+    if has_next_page {
+        pagination["nextCursor"] = json!(next_offset.to_string());
+    }
     json!({
         "path": path,
         "entries": entries,
         "totalFiles": total_files,
         // Mock browse returns only media entries (no subdirectories).
         "totalDirs": 0,
-        "pagination": {
-            "hasNextPage": false,
-            "pageSize": 100,
-        },
+        "pagination": pagination,
     })
+}
+
+pub fn media_browse_index_response(params: &Value) -> Value {
+    let mut browse_params = params.clone();
+    browse_params["maxResults"] = json!(1000);
+    browse_params
+        .as_object_mut()
+        .map(|object| object.remove("cursor"));
+    let browse = media_browse_response(&browse_params);
+    let entries = browse["entries"].as_array().cloned().unwrap_or_default();
+    let mut groups: Vec<Value> = Vec::new();
+    for (offset, entry) in entries.iter().enumerate() {
+        let first = entry["name"]
+            .as_str()
+            .and_then(|name| name.chars().next())
+            .unwrap_or('#');
+        let key = if first.is_ascii_alphabetic() {
+            first.to_ascii_uppercase().to_string()
+        } else if first.is_ascii_digit() {
+            "0-9".to_string()
+        } else {
+            "#".to_string()
+        };
+        if let Some(group) = groups.last_mut().filter(|group| group["key"] == key) {
+            let count = group["count"].as_u64().unwrap_or(0) + 1;
+            group["count"] = json!(count);
+        } else {
+            groups.push(json!({
+                "key": key.clone(),
+                "label": key,
+                "count": 1,
+                "cursor": if offset == 0 { String::new() } else { offset.to_string() },
+                "offset": offset,
+            }));
+        }
+    }
+    json!({ "scheme": "latin", "groups": groups })
 }
 
 pub fn media_history_latest_response() -> Value {

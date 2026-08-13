@@ -63,6 +63,7 @@ pub fn dispatch(text: &str) -> String {
         "settings.update" => Some(fixtures::settings_update_response(&req.params)),
         "media.search" => Some(fixtures::media_search_response(&req.params)),
         "media.browse" => Some(fixtures::media_browse_response(&req.params)),
+        "media.browse.index" => Some(fixtures::media_browse_index_response(&req.params)),
         "media.history" => Some(fixtures::media_history_response(&req.params)),
         "media.history.latest" => Some(fixtures::media_history_latest_response()),
         "run" => {
@@ -253,8 +254,22 @@ mod tests {
         }
     }
 
-    // The favorites system filter groups by system id and category, so search
-    // rows must carry real system metadata rather than the bare id.
+    #[test]
+    fn media_search_applies_name_sort_before_paging() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"maxResults":1000,"sort":"name-asc"}}"#;
+        let resp = parse(&dispatch(req));
+        let results = resp["result"]["results"].as_array().expect("array");
+        let names: Vec<String> = results
+            .iter()
+            .filter_map(|game| game["name"].as_str())
+            .map(str::to_lowercase)
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted);
+    }
+
+    // Search rows carry real system metadata rather than bare ids.
     #[test]
     fn media_search_rows_carry_system_name_and_category() {
         let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"systems":["NES"],"maxResults":5}}"#;
@@ -282,6 +297,48 @@ mod tests {
         }
         assert!(resp["result"]["totalFiles"].is_number());
         assert!(resp["result"]["pagination"].is_object());
+    }
+
+    #[test]
+    fn media_browse_filters_and_pages_favorites() {
+        let first = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"path":"/games","maxResults":2,"tags":["user:favorite"]}}"#,
+        ));
+        let page1 = first["result"]["entries"].as_array().expect("array");
+        assert_eq!(page1.len(), 2);
+        assert!(page1
+            .iter()
+            .all(|entry| entry["tags"].as_array().is_some_and(|tags| tags
+                .iter()
+                .any(|tag| tag["type"] == "user" && tag["tag"] == "favorite"))));
+        assert_eq!(first["result"]["pagination"]["hasNextPage"], true);
+        let cursor = first["result"]["pagination"]["nextCursor"]
+            .as_str()
+            .expect("cursor");
+        let second = parse(&dispatch(&format!(
+            r#"{{"jsonrpc":"2.0","id":"2","method":"media.browse","params":{{"path":"/games","maxResults":2,"cursor":"{cursor}","tags":["user:favorite"]}}}}"#
+        )));
+        let page2 = second["result"]["entries"].as_array().expect("array");
+        assert!(!page2.is_empty());
+        assert_ne!(page1[0]["path"], page2[0]["path"]);
+    }
+
+    #[test]
+    fn media_browse_index_matches_favorite_scope() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.browse.index","params":{"path":"/games","tags":["user:favorite"]}}"#;
+        let resp = parse(&dispatch(req));
+        let groups = resp["result"]["groups"].as_array().expect("array");
+        let indexed: u64 = groups
+            .iter()
+            .filter_map(|group| group["count"].as_u64())
+            .sum();
+        let browse = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.browse","params":{"path":"/games","maxResults":1000,"tags":["user:favorite"]}}"#,
+        ));
+        assert_eq!(
+            indexed,
+            browse["result"]["totalFiles"].as_u64().unwrap_or(0)
+        );
     }
 
     #[test]

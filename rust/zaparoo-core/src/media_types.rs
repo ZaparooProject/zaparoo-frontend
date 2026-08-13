@@ -213,6 +213,9 @@ pub struct MediaBrowseParams {
     pub max_results: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
+    /// Filter direct media files by tags while keeping directories navigable.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     /// Filter to entries whose name starts with the given letter.
     /// Validated by Core against a single-letter pattern.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -339,6 +342,8 @@ pub struct MediaBrowseIndexParams {
     pub path: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort: Option<String>,
 }
@@ -1552,6 +1557,7 @@ mod tests {
             systems: vec!["SNES".into()],
             max_results: Some(100),
             cursor: Some("opaque".into()),
+            tags: vec!["user:favorite".into()],
             letter: Some("M".into()),
             sort: Some("name-asc".into()),
         };
@@ -1566,6 +1572,10 @@ mod tests {
             Some("opaque")
         );
         assert_eq!(object.get("letter").and_then(|v| v.as_str()), Some("M"));
+        assert_eq!(
+            object.get("tags").and_then(|v| v.as_array()).map(Vec::len),
+            Some(1)
+        );
         assert_eq!(
             object.get("sort").and_then(|v| v.as_str()),
             Some("name-asc")

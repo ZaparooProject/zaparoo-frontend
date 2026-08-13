@@ -24,22 +24,9 @@ MediaListScreen {
 
     property alias gamesGrid: games.mediaGrid
 
-    // Restore the persisted favorites projection before the first
-    // browse: the property alone suffices pre-listing, since the
-    // projection applies when the listing lands.
+    // Seed persisted server-side scope before first system browse.
     Component.onCompleted: {
-        Browse.GamesModel.favorites_only = Browse.GamesState.favorites_filter === true;
-    }
-
-    // While the favorites filter is on, drain the rest of the listing:
-    // the filtered view and the random pick are only truthful over the
-    // complete folder. Self-stopping once every page has arrived, and
-    // list/grid agnostic because it never materializes rows itself.
-    Timer {
-        interval: 150
-        repeat: true
-        running: games.active && Browse.GamesModel.favorites_only && Browse.GamesModel.has_next_page && !Browse.GamesModel.loading
-        onTriggered: Browse.GamesModel.fetch_more()
+        Browse.GamesModel.apply_favorites_filter(Browse.GamesState.favorites_filter === true);
     }
 
     readonly property bool _portraitNonCrtList: !Theme.crtNativePath && Browse.Settings.current_orientation !== "horizontal"
