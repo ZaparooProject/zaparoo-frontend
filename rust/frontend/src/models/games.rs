@@ -2422,9 +2422,7 @@ fn apply_favorite_tags(
     if !same_entry {
         return;
     }
-    model.as_mut().rust_mut().entries[index as usize]
-        .tags
-        .clone_from(&tags);
+    model.as_mut().rust_mut().entries[index as usize].tags = tags;
     // Unfavoriting under Core-backed Favorites scope removes row immediately;
     // endpoint invalidation then reconciles authoritative paged result.
     let entry = &model.entries[index as usize];

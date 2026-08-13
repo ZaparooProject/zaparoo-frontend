@@ -516,7 +516,7 @@ impl ffi::FavoritesModel {
         let scope_seq_for_loop = scope_seq.clone();
         let handle = global_handle().spawn(async move {
             while status_rx.changed().await.is_ok() {
-                let projected = project(&*status_rx.borrow_and_update());
+                let projected = project(&status_rx.borrow_and_update());
                 let scope_seq = scope_seq_for_loop.clone();
                 let _ = qt_thread.queue(move |model| {
                     if scope_seq.load(Ordering::SeqCst) == ticket {
