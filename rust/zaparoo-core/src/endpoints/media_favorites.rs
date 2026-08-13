@@ -13,12 +13,13 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct FavoritesArgs {
     pub max_results: u32,
+    pub sort: Option<String>,
 }
 
 impl FavoritesArgs {
     #[must_use]
-    pub const fn new(max_results: u32) -> Self {
-        Self { max_results }
+    pub fn new(max_results: u32, sort: Option<String>) -> Self {
+        Self { max_results, sort }
     }
 }
 
@@ -39,6 +40,7 @@ impl Endpoint for MediaFavoritesEndpoint {
                 .media_search(MediaSearchParams {
                     max_results: Some(args.max_results),
                     tags: vec!["user:favorite".into()],
+                    sort: args.sort,
                     ..MediaSearchParams::default()
                 })
                 .await
@@ -47,5 +49,18 @@ impl Endpoint for MediaFavoritesEndpoint {
 
     fn provides(_args: &Self::Args, _output: &Self::Output) -> Vec<Tag> {
         vec![Tag::any(Self::NAME)]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FavoritesArgs;
+
+    #[test]
+    fn cache_identity_includes_sort_scope() {
+        let default = FavoritesArgs::new(25, None);
+        let sorted = FavoritesArgs::new(25, Some("name-asc".into()));
+        assert_ne!(default, sorted);
+        assert_eq!(sorted, FavoritesArgs::new(25, Some("name-asc".into())));
     }
 }

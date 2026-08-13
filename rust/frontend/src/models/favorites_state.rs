@@ -18,7 +18,6 @@ use zaparoo_core::persist::{self, FavoritesState};
 pub struct FavoritesStateRust {
     selected_path: QString,
     sort: QString,
-    filter: QString,
 }
 
 #[cxx_qt::bridge]
@@ -35,7 +34,6 @@ pub mod ffi {
         #[qml_singleton]
         #[qproperty(QString, selected_path, READ, WRITE = set_selected_path, NOTIFY)]
         #[qproperty(QString, sort, READ, WRITE = set_sort, NOTIFY)]
-        #[qproperty(QString, filter, READ, WRITE = set_filter, NOTIFY)]
         type FavoritesState = super::FavoritesStateRust;
 
         #[qinvokable]
@@ -43,9 +41,6 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_sort(self: Pin<&mut FavoritesState>, value: QString);
-
-        #[qinvokable]
-        fn set_filter(self: Pin<&mut FavoritesState>, value: QString);
     }
 
     impl cxx_qt::Initialize for FavoritesState {}
@@ -56,7 +51,6 @@ impl Initialize for ffi::FavoritesState {
         let snapshot: FavoritesState = with_persist_read(|s| s.favorites.clone());
         self.as_mut().rust_mut().selected_path = QString::from(snapshot.selected_path.as_str());
         self.as_mut().rust_mut().sort = QString::from(snapshot.sort.as_str());
-        self.as_mut().rust_mut().filter = QString::from(snapshot.filter.as_str());
     }
 }
 
@@ -79,16 +73,6 @@ impl ffi::FavoritesState {
         self.as_mut().rust_mut().sort = value;
         self.as_mut().sort_changed();
         persist_favorites(|r| r.sort = value_str);
-    }
-
-    fn set_filter(mut self: Pin<&mut Self>, value: QString) {
-        if self.filter == value {
-            return;
-        }
-        let value_str = value.to_string();
-        self.as_mut().rust_mut().filter = value;
-        self.as_mut().filter_changed();
-        persist_favorites(|r| r.filter = value_str);
     }
 }
 

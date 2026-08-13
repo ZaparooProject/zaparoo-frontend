@@ -73,6 +73,10 @@ pub struct MediaSearchParams {
     /// Filter to entries whose name starts with the given letter.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub letter: Option<String>,
+    /// Explicit server-side result order. Supported values mirror Core:
+    /// `name-asc`, `name-desc`, `filename-asc`, and `filename-desc`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1342,6 +1346,7 @@ mod tests {
             cursor: Some("opaque".into()),
             tags: vec!["region:usa".into()],
             letter: Some("M".into()),
+            sort: Some("name-asc".into()),
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
@@ -1355,6 +1360,10 @@ mod tests {
             Some("opaque")
         );
         assert_eq!(object.get("letter").and_then(|v| v.as_str()), Some("M"));
+        assert_eq!(
+            object.get("sort").and_then(|v| v.as_str()),
+            Some("name-asc")
+        );
         assert_eq!(
             object.get("tags").and_then(|v| v.as_array()).map(Vec::len),
             Some(1)
