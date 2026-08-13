@@ -1351,6 +1351,9 @@ MainLayout {
         function onRequestContextMenu(index: int, anchorRect): void {
             root.openContextMenu("categories", index, anchorRect);
         }
+        function onRequestActionContextMenu(actionId: string, anchorRect): void {
+            root.openHubActionContextMenu(actionId, anchorRect);
+        }
     }
     Connections {
         target: root.favoritesScreen
@@ -1543,6 +1546,11 @@ MainLayout {
             // Launch-only (virtual) systems have no media and no launcher
             // choice, so omit launcher/index/scrape actions for them.
             const launchable = Browse.SystemsModel.is_launchable_system(systemId);
+            if (!launchable)
+                entries.push({
+                    id: "launch_random_system",
+                    label: qsTr("Random game")
+                });
             if (!launchable && !Browse.SystemLaunchers.loading && Browse.SystemLaunchers.error_message === "" && Browse.SystemLaunchers.launcher_count_for_system(systemId) > 0) {
                 entries.push({
                     id: "change_launcher",
@@ -1579,6 +1587,11 @@ MainLayout {
             // members are all launch-only yields none and the actions would
             // no-op, so omit them rather than show dead entries.
             const hasIndexable = category !== "" && Browse.SystemsModel.system_ids_for_category(category).length > 0;
+            if (hasIndexable)
+                entries.unshift({
+                    id: "launch_random_category",
+                    label: qsTr("Random game")
+                });
             if (!mediaBusy && hasIndexable) {
                 entries.push({
                     id: "index_category",
@@ -1589,6 +1602,14 @@ MainLayout {
                 });
             }
             return entries;
+        }
+        if (owner === "hub_favorites") {
+            return [
+                {
+                    id: "launch_random_favorite",
+                    label: qsTr("Random game")
+                }
+            ];
         }
         if (owner === "recents") {
             const entries = [
@@ -1673,6 +1694,21 @@ MainLayout {
             }
         }
         return entries;
+    }
+
+    function openHubActionContextMenu(actionId: string, anchorRect): void {
+        if (actionId !== "favorites")
+            return;
+        const entries = root.buildContextMenuEntries("hub_favorites", "", false, false, false, "", false, "");
+        root.contextMenuEntries = entries;
+        root.contextMenuOwner = "hub_favorites";
+        root.contextMenuIndex = 0;
+        root.contextMenuMode = "main";
+        root.contextMenuAnchor = anchorRect;
+        root._requestModal(root.modalContextMenu);
+        root.contextMenuVisible = true;
+        if (ScreenManager.topModal !== root.modalContextMenu)
+            ScreenManager.pushModal(root.modalContextMenu);
     }
 
     function openContextMenu(owner: string, index: int, anchorRect): void {
@@ -1798,6 +1834,16 @@ MainLayout {
                 Browse.AlternateVersions.launch_at(altIndex);
         } else if (id === "launch_system") {
             Browse.SystemsModel.launch_at(targetIndex);
+        } else if (id === "launch_random_system") {
+            Browse.SystemsModel.launch_random_at(targetIndex);
+        } else if (id === "launch_random_category") {
+            const categoryName = Browse.CategoriesModel.category_at(targetIndex);
+            if (categoryName !== "") {
+                const systemIds = Browse.SystemsModel.system_ids_for_category(categoryName);
+                Browse.SystemsModel.launch_random_systems(systemIds);
+            }
+        } else if (id === "launch_random_favorite") {
+            Browse.FavoritesModel.launch_random();
         } else if (id === "index_system") {
             const systemId = Browse.SystemsModel.system_id_at(targetIndex);
             if (systemId !== "")
@@ -2062,6 +2108,7 @@ MainLayout {
         root.randomFailedModalVisible = false;
         Browse.GamesModel.clear_random_error();
         Browse.FavoritesModel.clear_random_error();
+        Browse.SystemsModel.clear_random_error();
         if (ScreenManager.topModal === root.modalRandomFailed)
             ScreenManager.popModal();
     }
@@ -2078,6 +2125,14 @@ MainLayout {
         target: Browse.FavoritesModel
         function onRandom_errorChanged(): void {
             if ((Browse.FavoritesModel.random_error ?? "") !== "")
+                root.openRandomFailedModal();
+        }
+    }
+
+    Connections {
+        target: Browse.SystemsModel
+        function onRandom_errorChanged(): void {
+            if ((Browse.SystemsModel.random_error ?? "") !== "")
                 root.openRandomFailedModal();
         }
     }

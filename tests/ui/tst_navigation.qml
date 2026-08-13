@@ -546,16 +546,17 @@ TestCase {
 
     function test_context_menu_systems_owner_includes_media_actions(): void {
         const entries = main.buildContextMenuEntries("systems", "", false, false, false, "", false);
-        compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system", "toggle_hide_system"], "Systems context menu includes system-scoped maintenance actions");
+        compare(_idsOf(entries), ["launch_system", "launch_random_system", "index_system", "scrape_system", "toggle_hide_system"], "Systems context menu includes random and maintenance actions");
         verify(entries[0].label.length > 0, "Launch core label is set (not asserted in English for translation)");
-        verify(entries[1].label.length > 0, "Update media database label is set");
-        verify(entries[2].label.length > 0, "Scrape metadata label is set");
-        verify(entries[3].label.length > 0, "Hide label is set");
+        verify(entries[1].label.length > 0, "Random game label is set");
+        verify(entries[2].label.length > 0, "Update media database label is set");
+        verify(entries[3].label.length > 0, "Scrape metadata label is set");
+        verify(entries[4].label.length > 0, "Hide label is set");
     }
 
     function test_context_menu_systems_has_nfc_does_not_add_entries(): void {
         const entries = main.buildContextMenuEntries("systems", "", false, true, false, "", false);
-        compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system", "toggle_hide_system"], "has_nfc must not affect the systems menu");
+        compare(_idsOf(entries), ["launch_system", "launch_random_system", "index_system", "scrape_system", "toggle_hide_system"], "has_nfc must not affect the systems menu");
     }
 
     // Category index/scrape are gated on the category having at least one
@@ -611,6 +612,12 @@ TestCase {
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "");
         compare(_idsOf(entries), ["toggle_favorite", "qr_code", "launch_game"]);
+    }
+
+    function test_context_menu_hub_favorites_offers_random_only(): void {
+        const entries = main.buildContextMenuEntries("hub_favorites", "", false, false, false, "");
+        compare(_idsOf(entries), ["launch_random_favorite"]);
+        verify(entries[0].label.length > 0);
     }
 
     function test_context_menu_recents_omits_more_info(): void {

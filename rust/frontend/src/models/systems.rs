@@ -76,6 +76,15 @@ fn launch_text_for(system: &SystemInfo) -> String {
     }
 }
 
+fn random_systems_text(system_ids: &[String]) -> Option<String> {
+    let ids = system_ids
+        .iter()
+        .filter(|id| !id.is_empty())
+        .map(|id| id.replace('^', "^^").replace(',', "^,"))
+        .collect::<Vec<_>>();
+    (!ids.is_empty()).then(|| format!("**launch.random:{}", ids.join(",")))
+}
+
 #[derive(Default)]
 pub struct SystemsModelRust {
     systems: Vec<SystemInfo>,
@@ -86,6 +95,8 @@ pub struct SystemsModelRust {
     card_write_pending: bool,
     card_write_error: QString,
     card_write_seq: Arc<AtomicU64>,
+    random_error: QString,
+    random_seq: Arc<AtomicU64>,
     // Last-known-good catalog. Updated by `apply_state` on every
     // `Ready`; never cleared on `Loading`/`Errored`. Lets
     // `set_category` keep populating rows during a transient refetch
@@ -136,6 +147,7 @@ pub mod ffi {
         #[qproperty(QString, error_message)]
         #[qproperty(bool, card_write_pending)]
         #[qproperty(QString, card_write_error)]
+        #[qproperty(QString, random_error)]
         type SystemsModel = super::SystemsModelRust;
 
         #[qinvokable]
@@ -162,6 +174,15 @@ pub mod ffi {
 
         #[qinvokable]
         fn launch_at(self: Pin<&mut SystemsModel>, index: i32);
+
+        #[qinvokable]
+        fn launch_random_at(self: Pin<&mut SystemsModel>, index: i32);
+
+        #[qinvokable]
+        fn launch_random_systems(self: Pin<&mut SystemsModel>, system_ids: &QStringList);
+
+        #[qinvokable]
+        fn clear_random_error(self: Pin<&mut SystemsModel>);
 
         #[qinvokable]
         fn launch_text_at(self: &SystemsModel, index: i32) -> QString;
@@ -618,6 +639,52 @@ impl ffi::SystemsModel {
         });
     }
 
+    fn launch_random_ids(mut self: Pin<&mut Self>, system_ids: Vec<String>) {
+        let Some(text) = random_systems_text(&system_ids) else {
+            return;
+        };
+        if !self.random_error.is_empty() {
+            self.as_mut().set_random_error(QString::default());
+        }
+        let seq = self.rust().random_seq.clone();
+        let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
+        let qt_thread = self.qt_thread();
+        let store = global_store();
+        global_handle().spawn(async move {
+            let result = store.run_mutation::<RunMutation>(RunParams { text }).await;
+            let _ = qt_thread.queue(move |mut model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                if let Err(error) = result {
+                    warn!("Core random system launch failed: {}", error.message);
+                    model
+                        .as_mut()
+                        .set_random_error(QString::from(error.message.as_str()));
+                }
+            });
+        });
+    }
+
+    fn launch_random_at(self: Pin<&mut Self>, index: i32) {
+        if index < 0 || index >= self.count {
+            return;
+        }
+        let id = self.systems[index as usize].id.clone();
+        self.launch_random_ids(vec![id]);
+    }
+
+    fn launch_random_systems(self: Pin<&mut Self>, system_ids: &QStringList) {
+        let ids = system_ids.iter().map(String::from).collect();
+        self.launch_random_ids(ids);
+    }
+
+    fn clear_random_error(mut self: Pin<&mut Self>) {
+        if !self.random_error.is_empty() {
+            self.as_mut().set_random_error(QString::default());
+        }
+    }
+
     /// True when the system with `system_id` is a launch-only (virtual)
     /// system carrying a `zaparoo://...` script. The router uses this to
     /// launch the system directly instead of routing into a games browse.
@@ -769,7 +836,7 @@ mod tests {
 
     use super::{
         detail_tags_for_system, indexable_system_ids, is_launchable, launch_text_for,
-        position_of_system_id, project, rows_for_category, SystemInfo,
+        position_of_system_id, project, random_systems_text, rows_for_category, SystemInfo,
     };
     use crate::system_region::Region;
     use zaparoo_core::media_types::SystemInfo as MediaSystemInfo;
@@ -790,6 +857,19 @@ mod tests {
             systems,
             categories: Vec::new(),
         }
+    }
+
+    #[test]
+    fn random_systems_text_builds_multi_system_scope() {
+        assert_eq!(
+            random_systems_text(&["NES".into(), "SNES".into()]).as_deref(),
+            Some("**launch.random:NES,SNES")
+        );
+        assert_eq!(
+            random_systems_text(&["Odd,System".into()]).as_deref(),
+            Some("**launch.random:Odd^,System")
+        );
+        assert!(random_systems_text(&[]).is_none());
     }
 
     #[test]

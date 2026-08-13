@@ -1209,9 +1209,10 @@ ApplicationWindow {
                         // help bar must reflect that the actions row is
                         // navigable, otherwise the user reads "Quit only"
                         // and misses the Settings tile entirely. Category
-                        // tiles also expose an options menu for hide/scrape
-                        // actions; placeholders do not.
+                        // Real category tiles and Favorites action tile expose
+                        // Options; placeholders and other actions do not.
                         const categoryOptionsAvailable = root.hubScreen !== null && root.hubScreen.currentRow === 0 && Browse.CategoriesModel.count > 0;
+                        const favoritesOptionsAvailable = root.hubScreen !== null && root.hubScreen.currentRow === 1 && root.hubScreen.actionEntries[root.hubScreen.currentIndex]?.id === "favorites";
                         let row = [
                             {
                                 button: "Dpad",
@@ -1222,7 +1223,7 @@ ApplicationWindow {
                                 label: qsTr("Open")
                             }
                         ];
-                        if (categoryOptionsAvailable)
+                        if (categoryOptionsAvailable || favoritesOptionsAvailable)
                             row.push({
                                 button: "ButtonX",
                                 label: qsTr("Options")
