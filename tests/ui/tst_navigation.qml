@@ -75,6 +75,8 @@ TestCase {
         // would fail for a reason that has nothing to do with what it tests.
         if (main.listPickerModalVisible)
             main.closeListPickerModal();
+        if (main.randomFailedModalVisible)
+            main.closeRandomFailedModal();
         // Restore persistent preferences changed by menu-routing tests.
         Browse.FavoritesModel.set_sort_mode(testCase._originalFavoritesSort);
         Browse.FavoritesState.sort = testCase._originalFavoritesSort;
@@ -659,14 +661,27 @@ TestCase {
         compare(main._buildQrPayload("a b&c?d"), "https://zaparoo.app/write?v=a%20b%26c%3Fd");
     }
 
-    function test_games_page_menu_offers_core_backed_filter(): void {
+    function test_games_page_menu_offers_core_backed_actions(): void {
+        // Nonzero scope exposes recursive Core random action.
+        Browse.GamesModel.total_files = 5;
         main.openPageMenu();
         tryCompare(main, "listPickerModalVisible", true);
         const ids = main.listPickerEntries.map(e => e.id);
         verify(ids.indexOf("jump_letter") !== -1, "Go to entry present");
+        verify(ids.indexOf("launch_random") !== -1, "Random entry present");
         verify(ids.indexOf("games_filter") !== -1, "Show entry present");
-        compare(ids.indexOf("random"), -1, "random launch remains absent");
         main.closeListPickerModal();
+        Browse.GamesModel.total_files = 0;
+    }
+
+    function test_random_launch_failure_is_reported(): void {
+        // Harness has no browse scope, so model rejects before issuing RPC.
+        Browse.GamesModel.launch_random();
+        tryCompare(main, "randomFailedModalVisible", true);
+        verify((Browse.GamesModel.random_error ?? "") !== "", "failure reason recorded");
+        main.handleAction("cancel");
+        tryCompare(main, "randomFailedModalVisible", false);
+        compare(Browse.GamesModel.random_error, "", "dismissal clears reason");
     }
 
     function test_games_filter_selection_applies_and_persists(): void {
@@ -688,13 +703,14 @@ TestCase {
         compare(main.gamesScreen.pageMenuEnabledWhenEmpty, true, "View remains reachable when filtered folder is empty");
     }
 
-    // Favorites View exposes Core-backed ordering only. Grouping is intentionally
-    // absent from this menu.
-    function test_favorites_page_menu_offers_sort(): void {
+    // Favorites View exposes Core-backed sorting and tagged random. Grouping is
+    // intentionally absent from this menu.
+    function test_favorites_page_menu_offers_sort_and_random(): void {
         main.openFavoritesPageMenu();
         tryCompare(main, "listPickerModalVisible", true);
         const ids = main.listPickerEntries.map(e => e.id);
         verify(ids.indexOf("favorites_sort") !== -1, "Sort entry present");
+        verify(ids.indexOf("launch_random_favorite") !== -1, "Random favorite entry present");
         compare(ids.indexOf("favorites_filter"), -1, "grouping is not part of this PR");
         main.closeListPickerModal();
     }

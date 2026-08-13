@@ -333,6 +333,10 @@ pub struct GamesModelRust {
     letter_index_json: QString,
     letter_index_scheme: QString,
     letter_index_seq: Arc<AtomicU64>,
+    // Latest Core `launch.random` failure. Sequence rejects stale failures when
+    // user requests another pick before prior RPC settles.
+    random_error: QString,
+    random_seq: Arc<AtomicU64>,
 }
 
 impl Default for GamesModelRust {
@@ -389,6 +393,8 @@ impl Default for GamesModelRust {
             letter_index_json: QString::default(),
             letter_index_scheme: QString::default(),
             letter_index_seq: Arc::new(AtomicU64::new(0)),
+            random_error: QString::default(),
+            random_seq: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -445,6 +451,7 @@ pub mod ffi {
         #[qproperty(i32, detail_cover_max_size, READ, WRITE = set_detail_cover_max_size, NOTIFY)]
         #[qproperty(QString, letter_index_json)]
         #[qproperty(QString, letter_index_scheme)]
+        #[qproperty(QString, random_error)]
         type GamesModel = super::GamesModelRust;
 
         #[qinvokable]
@@ -491,6 +498,12 @@ pub mod ffi {
 
         #[qinvokable]
         fn apply_favorites_filter(self: Pin<&mut GamesModel>, enabled: bool);
+
+        #[qinvokable]
+        fn launch_random(self: Pin<&mut GamesModel>);
+
+        #[qinvokable]
+        fn clear_random_error(self: Pin<&mut GamesModel>);
 
         #[qinvokable]
         fn write_card_at(self: Pin<&mut GamesModel>, index: i32);
@@ -1001,6 +1014,47 @@ impl ffi::GamesModel {
         };
         let eligible_for_auto_nav = path.is_empty();
         self.start_initial_browse(path, systems, eligible_for_auto_nav);
+    }
+
+    /// Ask Core to choose uniformly from current recursive path/system scope.
+    /// Active Favorites mode is repeated as a `ZapScript` tag filter.
+    fn launch_random(mut self: Pin<&mut Self>) {
+        let Some(text) = games_random_launch_text(
+            &self.current_path.to_string(),
+            &self.current_system_id.to_string(),
+            self.favorites_only,
+        ) else {
+            self.as_mut()
+                .set_random_error(QString::from("missing random launch scope"));
+            return;
+        };
+        if !self.random_error.is_empty() {
+            self.as_mut().set_random_error(QString::default());
+        }
+        let seq = self.rust().random_seq.clone();
+        let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
+        let qt_thread = self.qt_thread();
+        let store = global_store();
+        global_handle().spawn(async move {
+            let result = store.run_mutation::<RunMutation>(RunParams { text }).await;
+            let _ = qt_thread.queue(move |mut model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                if let Err(error) = result {
+                    warn!("Core random launch failed: {}", error.message);
+                    model
+                        .as_mut()
+                        .set_random_error(QString::from(error.message.as_str()));
+                }
+            });
+        });
+    }
+
+    fn clear_random_error(mut self: Pin<&mut Self>) {
+        if !self.random_error.is_empty() {
+            self.as_mut().set_random_error(QString::default());
+        }
     }
 
     fn write_card_at(mut self: Pin<&mut Self>, index: i32) {
@@ -1603,6 +1657,40 @@ fn favorites_tags(enabled: bool) -> Vec<String> {
     } else {
         Vec::new()
     }
+}
+
+/// Build Core-backed random command. Path form is recursive and includes
+/// virtual descendants; system form covers whole selected system.
+fn games_random_launch_text(
+    current_path: &str,
+    current_system_id: &str,
+    favorites_only: bool,
+) -> Option<String> {
+    let scope = if !current_path.is_empty() {
+        escape_zapscript_arg(current_path)
+    } else if !current_system_id.is_empty() {
+        escape_zapscript_arg(current_system_id)
+    } else {
+        return None;
+    };
+    let tags = if favorites_only {
+        "?tags=user:favorite"
+    } else {
+        ""
+    };
+    Some(format!("**launch.random:{scope}{tags}"))
+}
+
+/// Escape `ZapScript` separators while leaving path/system text readable.
+fn escape_zapscript_arg(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if matches!(ch, '^' | '?' | ',' | '&' | '|') {
+            escaped.push('^');
+        }
+        escaped.push(ch);
+    }
+    escaped
 }
 
 fn run_text_for_entry(entry: &BrowseEntry) -> Option<String> {
@@ -3505,9 +3593,9 @@ mod tests {
         child_launch_text_from_browse_result, chunk_for_subbatching, compute_unresolved_keys,
         cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
         detail_image_keys_from_meta, detail_tags_from_tags, display_name, display_title_for_entry,
-        entry_system_id, favorites_tags, is_media_capable_entry, is_strict_ancestor_path,
-        jump_fetch_limit, media_capable_directory_browse_params, media_key_for,
-        meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
+        entry_system_id, favorites_tags, games_random_launch_text, is_media_capable_entry,
+        is_strict_ancestor_path, jump_fetch_limit, media_capable_directory_browse_params,
+        media_key_for, meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
         prefetch_around_plan, prefetch_cursor_window_plan, project_status, result_total_dirs,
         run_text_for_entry, seeded_refetch_pagination_state,
         singleton_directory_needs_launch_resolution, transform_entries, InitialAction, Projection,
@@ -3554,6 +3642,31 @@ mod tests {
     fn favorites_scope_maps_to_core_tag_filter() {
         assert!(favorites_tags(false).is_empty());
         assert_eq!(favorites_tags(true), vec!["user:favorite"]);
+    }
+
+    #[test]
+    fn random_launch_uses_recursive_path_and_active_tags() {
+        assert_eq!(
+            games_random_launch_text("/media/fat/games/NES/RPG", "NES", false).as_deref(),
+            Some("**launch.random:/media/fat/games/NES/RPG")
+        );
+        assert_eq!(
+            games_random_launch_text("/media/fat/games/NES/RPG", "NES", true).as_deref(),
+            Some("**launch.random:/media/fat/games/NES/RPG?tags=user:favorite")
+        );
+    }
+
+    #[test]
+    fn random_launch_uses_system_at_root_and_escapes_separators() {
+        assert_eq!(
+            games_random_launch_text("", "SNES", false).as_deref(),
+            Some("**launch.random:SNES")
+        );
+        assert_eq!(
+            games_random_launch_text("/games/A?B,C&D|E^F", "SNES", false).as_deref(),
+            Some("**launch.random:/games/A^?B^,C^&D^|E^^F")
+        );
+        assert!(games_random_launch_text("", "", false).is_none());
     }
 
     #[test]

@@ -68,6 +68,7 @@ const PAGE_SIZE: u32 = 25;
 /// keeps shorter token used by menu contract.
 const SORT_NAME: &str = "name";
 const CORE_SORT_NAME_ASC: &str = "name-asc";
+const RANDOM_FAVORITE_SCRIPT: &str = "**launch.random:all?tags=user:favorite";
 // How many rows ahead/behind the settled cursor to warm in list-detail
 // layout. Kept small so the 2-worker byte queue stays shallow and the next
 // cover is fetched first within ~250 ms.
@@ -97,6 +98,8 @@ pub struct FavoritesModelRust {
     next_cursor: Option<String>,
     card_write_pending: bool,
     card_write_error: QString,
+    random_error: QString,
+    random_seq: Arc<AtomicU64>,
     current_detail_loading: bool,
     current_detail_tags: QString,
     current_detail_image_key: QString,
@@ -164,6 +167,8 @@ impl Default for FavoritesModelRust {
             next_cursor: None,
             card_write_pending: false,
             card_write_error: QString::default(),
+            random_error: QString::default(),
+            random_seq: Arc::new(AtomicU64::new(0)),
             current_detail_loading: false,
             current_detail_tags: QString::default(),
             current_detail_image_key: QString::default(),
@@ -216,6 +221,7 @@ pub mod ffi {
         #[qproperty(bool, has_next_page)]
         #[qproperty(bool, card_write_pending)]
         #[qproperty(QString, card_write_error)]
+        #[qproperty(QString, random_error)]
         #[qproperty(bool, current_detail_loading)]
         #[qproperty(QString, current_detail_tags)]
         #[qproperty(QString, current_detail_image_key)]
@@ -237,6 +243,12 @@ pub mod ffi {
 
         #[qinvokable]
         fn launch_text_at(self: &FavoritesModel, index: i32) -> QString;
+
+        #[qinvokable]
+        fn launch_random(self: Pin<&mut FavoritesModel>);
+
+        #[qinvokable]
+        fn clear_random_error(self: Pin<&mut FavoritesModel>);
 
         #[qinvokable]
         fn write_card_at(self: Pin<&mut FavoritesModel>, index: i32);
@@ -656,6 +668,41 @@ impl ffi::FavoritesModel {
             return QString::default();
         };
         QString::from(portable_text_for_entry(entry).as_str())
+    }
+
+    /// Ask Core to choose uniformly from all media carrying favorite tag.
+    fn launch_random(mut self: Pin<&mut Self>) {
+        if !self.random_error.is_empty() {
+            self.as_mut().set_random_error(QString::default());
+        }
+        let seq = self.rust().random_seq.clone();
+        let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
+        let qt_thread = self.qt_thread();
+        let store = global_store();
+        global_handle().spawn(async move {
+            let result = store
+                .run_mutation::<RunMutation>(RunParams {
+                    text: RANDOM_FAVORITE_SCRIPT.to_string(),
+                })
+                .await;
+            let _ = qt_thread.queue(move |mut model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                if let Err(error) = result {
+                    warn!("Core random favorite launch failed: {}", error.message);
+                    model
+                        .as_mut()
+                        .set_random_error(QString::from(error.message.as_str()));
+                }
+            });
+        });
+    }
+
+    fn clear_random_error(mut self: Pin<&mut Self>) {
+        if !self.random_error.is_empty() {
+            self.as_mut().set_random_error(QString::default());
+        }
     }
 
     fn write_card_at(mut self: Pin<&mut Self>, index: i32) {
@@ -1768,6 +1815,14 @@ mod tests {
             },
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn random_favorite_uses_core_tag_scope() {
+        assert_eq!(
+            RANDOM_FAVORITE_SCRIPT,
+            "**launch.random:all?tags=user:favorite"
+        );
     }
 
     #[test]
