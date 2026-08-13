@@ -1517,12 +1517,39 @@ mod tests {
         let object = json.as_object().expect("object");
         assert!(!object.contains_key("path"));
         assert!(!object.contains_key("sort"));
+        assert!(!object.contains_key("tags"));
         assert_eq!(
             object
                 .get("systems")
                 .and_then(|v| v.as_array())
                 .map(Vec::len),
             Some(1)
+        );
+    }
+
+    #[test]
+    fn media_browse_index_params_serialises_tag_scope() {
+        let params = MediaBrowseIndexParams {
+            path: "/roms/SNES".into(),
+            systems: vec!["SNES".into()],
+            tags: vec!["user:favorite".into()],
+            sort: None,
+        };
+        let json = serde_json::to_value(&params).expect("serialise");
+        let object = json.as_object().expect("object");
+        assert_eq!(
+            object
+                .get("tags")
+                .and_then(|value| value.as_array())
+                .map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(
+            object
+                .get("tags")
+                .and_then(|value| value.get(0))
+                .and_then(|value| value.as_str()),
+            Some("user:favorite")
         );
     }
 

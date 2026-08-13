@@ -196,9 +196,8 @@ mod tests {
         assert_eq!(resp["result"]["total"], Value::from(-1));
     }
 
-    // The frontend drains favorites over several cursor round-trips, so the
-    // mock has to model a real cursor chain: a short page must advertise a
-    // next page and hand back a cursor that resumes where it stopped.
+    // Favorites uses cursor pagination. Short pages must advertise a next
+    // page and return a cursor that resumes where prior page stopped.
     #[test]
     fn media_search_paginates_with_a_resumable_cursor() {
         let first = parse(&dispatch(

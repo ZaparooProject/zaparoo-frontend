@@ -127,19 +127,14 @@ TestCase {
         // bytes.
         main.crtNativePath = true;
         setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
-        verify(Sizing.detailCoverSourceSize(Sizing.screenWidth, Sizing.screenHeight) <= 256,
-               "CRT detail tier must not exceed the viewport-expressible tier");
-        compare(Sizing.detailCoverSourceWidth,
-                Sizing.detailCoverSourceSize(Sizing.detailCoverViewportWidth,
-                                             Sizing.detailCoverViewportHeight),
-                "decode width must equal the tier for its bound viewport");
+        verify(Sizing.detailCoverSourceSize(Sizing.screenWidth, Sizing.screenHeight) <= 256, "CRT detail tier must not exceed the viewport-expressible tier");
+        compare(Sizing.detailCoverSourceWidth, Sizing.detailCoverSourceSize(Sizing.detailCoverViewportWidth, Sizing.detailCoverViewportHeight), "decode width must equal the tier for its bound viewport");
 
         // Wider scenes keep the historical behavior: at 1080p the doubled
         // grid tier lands on the top tier, uncapped.
         main.crtNativePath = false;
         setResolution(1920, 1080);
-        compare(Sizing.detailCoverSourceSize(1920, 1080), 768,
-                "1080p detail tier must stay the top tier");
+        compare(Sizing.detailCoverSourceSize(1920, 1080), 768, "1080p detail tier must stay the top tier");
 
         // Restore the harness default so later tests stay order-independent.
         setResolution(1280, 720);

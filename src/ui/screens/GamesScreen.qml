@@ -50,6 +50,9 @@ MediaListScreen {
     readonly property var _footerProfile: games._gridProfile && games._gridProfile.footer ? games._gridProfile.footer : null
 
     mediaModel: Browse.GamesModel
+    // Favorites scope can produce empty folder. Keep View reachable so user
+    // can return to unfiltered results.
+    pageMenuEnabledWhenEmpty: true
     emptyText: qsTr("No games in this system")
     loadingText: qsTr("Loading games…")
     totalItemsOverride: Browse.GamesModel.total_dirs + Browse.GamesModel.total_files

@@ -102,10 +102,9 @@ TestCase {
         compare(screen.mediaGrid.currentIndex, 0);
     }
 
-    // A screen whose own page menu can empty the list (favorites, via its
-    // scope filter) must keep that menu reachable while empty, or the filter
-    // can never be cleared. Off by default so other screens keep the stricter
-    // ready-only gate.
+    // Scope-changing View menu must remain reachable when active scope is
+    // empty, or user cannot clear it. Off by default for screens without such
+    // controls.
     function test_page_menu_reachable_when_empty_only_if_opted_in(): void {
         const spy = pageMenuSpy;
         mediaModel.clear();

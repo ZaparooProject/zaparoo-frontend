@@ -24,9 +24,9 @@ TestCase {
     name: "UiNavigation"
     when: windowShown
 
-    // Favorites sort persists to disk; snapshot whatever this machine had so
-    // `cleanup` can put it back.
+    // View preferences persist to disk; restore machine's original values.
     property string _originalFavoritesSort: ""
+    property bool _originalGamesFavoritesFilter: false
 
     Main {
         id: main
@@ -37,6 +37,7 @@ TestCase {
 
     Component.onCompleted: {
         testCase._originalFavoritesSort = Browse.FavoritesState.sort ?? "";
+        testCase._originalGamesFavoritesFilter = Browse.GamesState.favorites_filter === true;
     }
 
     function init(): void {
@@ -74,10 +75,11 @@ TestCase {
         // would fail for a reason that has nothing to do with what it tests.
         if (main.listPickerModalVisible)
             main.closeListPickerModal();
-        // Favorites sort persists, so a test that changes it would otherwise
-        // overwrite the real preference on the dev machine.
+        // Restore persistent preferences changed by menu-routing tests.
         Browse.FavoritesModel.set_sort_mode(testCase._originalFavoritesSort);
         Browse.FavoritesState.sort = testCase._originalFavoritesSort;
+        Browse.GamesModel.apply_favorites_filter(testCase._originalGamesFavoritesFilter);
+        Browse.GamesState.favorites_filter = testCase._originalGamesFavoritesFilter;
     }
 
     function test_initial_state_is_hub(): void {
@@ -657,8 +659,37 @@ TestCase {
         compare(main._buildQrPayload("a b&c?d"), "https://zaparoo.app/write?v=a%20b%26c%3Fd");
     }
 
-    // Favorites' View menu exposes Core-backed ordering only; grouping lands
-    // separately through PR #364.
+    function test_games_page_menu_offers_core_backed_filter(): void {
+        main.openPageMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("jump_letter") !== -1, "Go to entry present");
+        verify(ids.indexOf("games_filter") !== -1, "Show entry present");
+        compare(ids.indexOf("random"), -1, "random launch remains absent");
+        main.closeListPickerModal();
+    }
+
+    function test_games_filter_selection_applies_and_persists(): void {
+        Browse.GamesModel.apply_favorites_filter(false);
+        Browse.GamesState.favorites_filter = false;
+
+        main.openPageMenu();
+        main.listPickerAccepted("page_menu", "games_filter");
+        tryCompare(main, "listPickerModalVisible", true);
+        compare(main.listPickerFieldId, "games_filter_pick");
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("all") !== -1, "All option present");
+        verify(ids.indexOf("favorites") !== -1, "Favorites option present");
+
+        main.listPickerAccepted("games_filter_pick", "favorites");
+        tryCompare(main, "listPickerModalVisible", false);
+        compare(Browse.GamesModel.favorites_only, true);
+        compare(Browse.GamesState.favorites_filter, true);
+        compare(main.gamesScreen.pageMenuEnabledWhenEmpty, true, "View remains reachable when filtered folder is empty");
+    }
+
+    // Favorites View exposes Core-backed ordering only. Grouping is intentionally
+    // absent from this menu.
     function test_favorites_page_menu_offers_sort(): void {
         main.openFavoritesPageMenu();
         tryCompare(main, "listPickerModalVisible", true);

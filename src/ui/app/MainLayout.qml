@@ -1451,16 +1451,24 @@ ApplicationWindow {
                         });
                         return row;
                     }
-                    return [
+                    const fallback = [
                         {
                             button: "ButtonA",
                             label: qsTr("Retry")
-                        },
-                        {
-                            button: "ButtonB",
-                            label: qsTr("Back")
                         }
                     ];
+                    // Empty favorites-only scope must keep View reachable so
+                    // user can clear filter. Errors retain Retry/Back only.
+                    if (root.gamesScreenState === "empty")
+                        fallback.push({
+                            button: "ButtonY",
+                            label: qsTr("View")
+                        });
+                    fallback.push({
+                        button: "ButtonB",
+                        label: qsTr("Back")
+                    });
+                    return fallback;
                 }
 
                 Row {

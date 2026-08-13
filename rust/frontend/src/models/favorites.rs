@@ -5,22 +5,13 @@
 // `Browse.FavoritesModel` — flat list of favorite media, surfaced
 // from Core's `media.search` endpoint.
 //
-// Two paths into the model:
+// Page 1 uses a sort-scoped `MediaFavoritesEndpoint` subscription so a
+// cached result can seed first paint synchronously. Cursor follow-ups call
+// `Client::media_search` directly with the same sort. Separate scope and
+// cursor tickets reject callbacks from superseded subscriptions or page chains.
 //
-//   * `bind_to_endpoint!` seeds page 1 from `MediaFavoritesEndpoint` so
-//     a screen flip into Favorites has data on the first paint when the
-//     resource is already `Ready`. The fixed args (`maxResults = 25`)
-//     match what the UI requests.
-//
-//   * `fetch_more()` — cursor-driven follow-ups bypass the cache and
-//     call `Client::media_search` directly, just like games. The
-//     model owns the cursor, the in-flight `loading_more` debounce,
-//     and the seq ticket that disarms stale callbacks.
-//
-// Search is flat (no folder navigation, no auto-nav) so this model
-// stays a fraction of the size of `GamesModel`. Card-write isn't wired
-// here yet — runtime launches prefer the exact indexed path, while
-// QR/card-write payloads prefer Core's portable ZapScript.
+// Search stays flat and paginated; frontend never materializes full Favorites
+// set for sorting.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
 use crate::media_meta_cache::{global_media_meta_cache, MetaLookup};
@@ -73,8 +64,8 @@ const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 9;
 // stressing the over-the-wire payload.
 const PAGE_SIZE: u32 = 25;
 
-/// Persisted/QML sort mode for A-Z. Core receives `name-asc`; keeping this
-/// shorter token preserves PR #348's state schema and menu contract.
+/// Persisted/QML sort mode for A-Z. Core receives `name-asc`; persisted state
+/// keeps shorter token used by menu contract.
 const SORT_NAME: &str = "name";
 const CORE_SORT_NAME_ASC: &str = "name-asc";
 // How many rows ahead/behind the settled cursor to warm in list-detail

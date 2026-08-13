@@ -2120,10 +2120,8 @@ MainLayout {
 
     // Open the page/list-scoped operations menu (West button), the "View"
     // counterpart to North's item-scoped "Options". Go to... stays
-    // pre-focused so the common path is a fixed West-then-Accept chord;
-    // future list ops (sort/filter/layout) append here. The facet fetch is
-    // kicked off here so the buckets are likely ready by the time the user
-    // advances into the grid.
+    // pre-focused so common path is fixed West-then-Accept chord. Letter
+    // index fetch starts here so buckets are likely ready when user opens rail.
     function openPageMenu(): void {
         Browse.GamesModel.load_letter_index();
         const entries = [
