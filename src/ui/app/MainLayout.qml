@@ -394,7 +394,7 @@ ApplicationWindow {
         if (Browse.Settings.current_browse_layout === "list")
             return "";
         if (root.activeScreen === root.screenSystems)
-            return Browse.SystemsModel.current_category;
+            return CategoryIds.displayName(Browse.SystemsModel.current_category);
         if (root.activeScreen === root.screenGames)
             return root._crtGamesHeaderTitle;
         if (root.activeScreen === root.screenFavorites)

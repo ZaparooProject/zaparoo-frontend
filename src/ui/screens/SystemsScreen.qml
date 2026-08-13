@@ -239,7 +239,7 @@ Item {
         anchors.topMargin: Sizing.headerBottom + (systems._statusProfile ? systems._statusProfile.topMargin : Sizing.pctH(1))
         height: systems._statusProfile ? systems._statusProfile.stripHeight : Sizing.pctH(7)
         slotMargin: systems._statusProfile ? systems._statusProfile.slotMargin : Sizing.pctW(5)
-        title: Browse.SystemsModel.current_category
+        title: CategoryIds.displayName(Browse.SystemsModel.current_category)
         currentPage: systemsGrid.currentPage
         totalPages: systems._footerProfile && systems._footerProfile.bottomStatusVisible ? 1 : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
         totalText: Theme.crtNativePath ? "" : (Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "")

@@ -57,7 +57,7 @@ jobs:
       archive-name: ${{ steps.archive.outputs.name }}
       should-upload: ${{ steps.upload-policy.outputs.should-upload }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
@@ -153,7 +153,7 @@ jobs:
 
       - name: Install Rust and just
         run: |
-          rustup toolchain install 1.96.0 \
+          rustup toolchain install 1.97.0 \
             --profile minimal \
             --component rustfmt \
             --component clippy \
@@ -164,7 +164,7 @@ jobs:
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -240,6 +240,6 @@ jobs:
           path: _release
 
       - name: Attest build provenance
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
         with:
           subject-path: _release/${{ needs.build-release-zip.outputs.archive-name }}

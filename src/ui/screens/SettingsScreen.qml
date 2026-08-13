@@ -691,6 +691,8 @@ Item {
             return qsTr("Arabic");
         if (value === "hi" || value === "hi_IN")
             return qsTr("Hindi");
+        if (value === "fr" || value === "fr_FR")
+            return qsTr("French");
         return qsTr("Auto");
     }
 

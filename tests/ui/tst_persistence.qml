@@ -168,6 +168,16 @@ TestCase {
         compare(CategoryIds.canonicalize("Handhelds"), CategoryIds.handheldId);
     }
 
+    function test_category_display_names_map_core_ids(): void {
+        compare(CategoryIds.displayName(CategoryIds.arcadeId), "Arcade");
+        compare(CategoryIds.displayName(CategoryIds.computerId), "Computers");
+        compare(CategoryIds.displayName(CategoryIds.consoleId), "Consoles");
+        compare(CategoryIds.displayName(CategoryIds.handheldId), "Handhelds");
+        compare(CategoryIds.displayName(CategoryIds.otherId), "Other");
+        compare(CategoryIds.displayName("Computers"), "Computers");
+        compare(CategoryIds.displayName("Custom"), "Custom");
+    }
+
     function test_enter_on_optimistic_recents_writes_hub_state(): void {
         Browse.HubState.selected_row = 0;
         Browse.HubState.selected_action = "settings";

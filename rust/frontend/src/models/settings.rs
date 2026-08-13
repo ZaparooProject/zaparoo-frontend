@@ -99,12 +99,13 @@ const MISTER_RESOLUTIONS: &[&str] = &[
     "640x480",
     "2048x1536",
 ];
-// One picker row per user-visible language. Region-specific tags are
-// accepted below as aliases so old configs keep working without creating
-// duplicate labels like English/English/English in the settings modal.
+// One picker row per user-visible language. Keep Auto first, then sort by
+// the English display labels returned by SettingsScreen._languageDisplay.
+// Region-specific tags are accepted below as aliases so old configs keep
+// working without creating duplicate labels in the settings modal.
 const LANGUAGES: &[&str] = &[
-    "auto", "en", "it_IT", "es", "eu", "de", "el", "ja", "ko", "nl", "ro", "sk", "uk", "zh_CN",
-    "zh_TW", "he", "ar", "hi",
+    "auto", "ar", "eu", "zh_CN", "zh_TW", "nl", "en", "fr", "de", "el", "he", "hi", "it_IT", "ja",
+    "ko", "ro", "sk", "es", "uk",
 ];
 const LANGUAGE_ALIASES: &[(&str, &str)] = &[
     ("en_US", "en"),
@@ -129,6 +130,7 @@ const LANGUAGE_ALIASES: &[(&str, &str)] = &[
     ("he_IL", "he"),
     ("ar_SA", "ar"),
     ("hi_IN", "hi"),
+    ("fr_FR", "fr"),
 ];
 const DEFAULT_LANGUAGE: &str = "auto";
 const CLOCK_FORMATS: &[&str] = &["auto", "12h", "24h"];
@@ -949,8 +951,8 @@ mod tests {
         normalize_language, normalize_orientation, normalize_region, normalize_system_logo_style,
         orientations, regions, system_logo_styles, BROWSE_LAYOUTS, BUTTON_LAYOUTS, CLOCK_FORMATS,
         DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT, DEFAULT_LANGUAGE,
-        DEFAULT_ORIENTATION, DEFAULT_REGION, DEFAULT_SYSTEM_LOGO_STYLE, LANGUAGES,
-        MISTER_RESOLUTIONS, ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
+        DEFAULT_ORIENTATION, DEFAULT_REGION, DEFAULT_SYSTEM_LOGO_STYLE, MISTER_RESOLUTIONS,
+        ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
     };
 
     #[test]
@@ -983,10 +985,13 @@ mod tests {
     }
 
     #[test]
-    fn languages_preserve_order() {
+    fn languages_preserve_picker_order() {
         let list = languages();
         let collected: Vec<String> = list.iter().map(String::from).collect();
-        let expected: Vec<String> = LANGUAGES.iter().map(|s| (*s).to_string()).collect();
+        let expected = vec![
+            "auto", "ar", "eu", "zh_CN", "zh_TW", "nl", "en", "fr", "de", "el", "he", "hi",
+            "it_IT", "ja", "ko", "ro", "sk", "es", "uk",
+        ];
         assert_eq!(collected, expected);
     }
 
@@ -1067,7 +1072,7 @@ mod tests {
         assert_eq!(normalize_language(""), DEFAULT_LANGUAGE);
         assert_eq!(normalize_language("auto"), DEFAULT_LANGUAGE);
         assert_eq!(normalize_language("AUTO"), DEFAULT_LANGUAGE);
-        assert_eq!(normalize_language("fr"), DEFAULT_LANGUAGE);
+        assert_eq!(normalize_language("fr"), "fr");
         assert_eq!(normalize_language("it_IT"), "it_IT");
         assert_eq!(normalize_language("es"), "es");
         assert_eq!(normalize_language("eu"), "eu");
@@ -1094,6 +1099,7 @@ mod tests {
         assert_eq!(normalize_language("he_IL"), "he");
         assert_eq!(normalize_language("ar_SA"), "ar");
         assert_eq!(normalize_language("hi_IN"), "hi");
+        assert_eq!(normalize_language("fr_FR"), "fr");
     }
 
     #[test]

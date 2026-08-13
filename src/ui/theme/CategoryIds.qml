@@ -34,4 +34,23 @@ QtObject {
             return "categories/Handheld";
         return "categories/" + category;
     }
+
+    // Core sends canonical singular category IDs (Arcade, Computer, Console,
+    // Handheld, Other); callers need the translated plural display label.
+    // Routed through HubScreen's translation context so every caller shares
+    // the same catalog entries. Unknown IDs pass through untouched.
+    function displayName(id: string): string {
+        const category = canonicalize(id);
+        if (category === arcadeId)
+            return qsTranslate("HubScreen", "Arcade");
+        if (category === computerId)
+            return qsTranslate("HubScreen", "Computers");
+        if (category === consoleId)
+            return qsTranslate("HubScreen", "Consoles");
+        if (category === handheldId)
+            return qsTranslate("HubScreen", "Handhelds");
+        if (category === otherId)
+            return qsTranslate("HubScreen", "Other");
+        return id;
+    }
 }
