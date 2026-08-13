@@ -24,10 +24,9 @@ TestCase {
     name: "UiNavigation"
     when: windowShown
 
-    // Favorites sort/filter persist to disk; snapshot whatever this machine
-    // had so `cleanup` can put it back.
+    // Favorites sort persists to disk; snapshot whatever this machine had so
+    // `cleanup` can put it back.
     property string _originalFavoritesSort: ""
-    property string _originalFavoritesFilter: ""
 
     Main {
         id: main
@@ -38,7 +37,6 @@ TestCase {
 
     Component.onCompleted: {
         testCase._originalFavoritesSort = Browse.FavoritesState.sort ?? "";
-        testCase._originalFavoritesFilter = Browse.FavoritesState.filter ?? "";
     }
 
     function init(): void {
@@ -74,19 +72,12 @@ TestCase {
         Motion.enabled = true;
         // A modal left open swallows every routed action, so the next test
         // would fail for a reason that has nothing to do with what it tests.
-        // This already happened once, via the random-failure notice.
         if (main.listPickerModalVisible)
             main.closeListPickerModal();
-        if (main.randomFailedModalVisible)
-            main.closeRandomFailedModal();
-        Browse.GamesModel.total_files = 0;
-        // Favorites sort/filter are persisted, so a test that changes them
-        // would otherwise overwrite the real preference on the dev machine —
-        // including when an assertion aborts before any inline restore.
+        // Favorites sort persists, so a test that changes it would otherwise
+        // overwrite the real preference on the dev machine.
         Browse.FavoritesModel.set_sort_mode(testCase._originalFavoritesSort);
-        Browse.FavoritesModel.set_filter(testCase._originalFavoritesFilter);
         Browse.FavoritesState.sort = testCase._originalFavoritesSort;
-        Browse.FavoritesState.filter = testCase._originalFavoritesFilter;
     }
 
     function test_initial_state_is_hub(): void {
@@ -666,71 +657,14 @@ TestCase {
         compare(main._buildQrPayload("a b&c?d"), "https://zaparoo.app/write?v=a%20b%26c%3Fd");
     }
 
-    // The games page menu must offer both list ops; selecting the random
-    // entry must close the modal (the launch itself is Core's job — with
-    // no Core connected the run RPC is a logged no-op).
-    function test_games_page_menu_offers_random_launch(): void {
-        // The pick is uniform over the games in the listed folder, so the
-        // entry only appears when the folder actually holds games.
-        Browse.GamesModel.total_files = 5;
-        main.openPageMenu();
-        tryCompare(main, "listPickerModalVisible", true);
-        compare(main.listPickerFieldId, "page_menu");
-        const ids = main.listPickerEntries.map(e => e.id);
-        verify(ids.indexOf("jump_letter") !== -1, "Go to... entry present");
-        verify(ids.indexOf("launch_random") !== -1, "Random game entry present");
-        // Go through the real accept path: a broken route would leave the
-        // picker open, which closing it directly would hide.
-        main.listPickerAccepted("page_menu", "launch_random");
-        tryCompare(main, "listPickerModalVisible", false);
-        Browse.GamesModel.total_files = 0;
-    }
-
-    // A folder of only subfolders has nothing to pick, so the entry is not
-    // offered at all rather than being offered and then failing.
-    function test_games_page_menu_omits_random_without_games(): void {
-        Browse.GamesModel.total_files = 0;
-        main.openPageMenu();
-        tryCompare(main, "listPickerModalVisible", true);
-        const ids = main.listPickerEntries.map(e => e.id);
-        verify(ids.indexOf("jump_letter") !== -1, "Go to... stays");
-        compare(ids.indexOf("launch_random"), -1, "no games, no random entry");
-        main.closeListPickerModal();
-    }
-
-    // A pick that resolves nothing must SAY so. A one-shot action that
-    // silently does nothing is indistinguishable from a broken button, and
-    // that exact bug shipped once already in the favorites pick.
-    function test_random_launch_failure_is_reported(): void {
-        // No entries are loaded in the harness, so the pick cannot resolve.
-        Browse.GamesModel.launch_random();
-        tryCompare(main, "randomFailedModalVisible", true);
-        verify((Browse.GamesModel.random_error ?? "") !== "", "a reason is recorded");
-        main.closeRandomFailedModal();
-        tryCompare(main, "randomFailedModalVisible", false);
-        compare(Browse.GamesModel.random_error, "", "dismissing clears the reason");
-    }
-
-    // Favorites' West-button menu routes through its own field id so a
-    // favorites selection can never trigger a games-model action.
-    function test_favorites_page_menu_offers_random_favorite(): void {
-        main.openFavoritesPageMenu();
-        tryCompare(main, "listPickerModalVisible", true);
-        compare(main.listPickerFieldId, "page_menu_favorites");
-        const ids = main.listPickerEntries.map(e => e.id);
-        verify(ids.indexOf("launch_random_favorite") !== -1, "Random favorite entry present");
-        main.listPickerAccepted("page_menu_favorites", "launch_random_favorite");
-        tryCompare(main, "listPickerModalVisible", false);
-    }
-
-    // The View menu is the only route to ordering and scoping, so all three
-    // list operations must be present.
-    function test_favorites_page_menu_offers_sort_and_filter(): void {
+    // Favorites' View menu exposes Core-backed ordering only; grouping lands
+    // separately through PR #364.
+    function test_favorites_page_menu_offers_sort(): void {
         main.openFavoritesPageMenu();
         tryCompare(main, "listPickerModalVisible", true);
         const ids = main.listPickerEntries.map(e => e.id);
         verify(ids.indexOf("favorites_sort") !== -1, "Sort entry present");
-        verify(ids.indexOf("favorites_filter") !== -1, "Show entry present");
+        compare(ids.indexOf("favorites_filter"), -1, "grouping is not part of this PR");
         main.closeListPickerModal();
     }
 
@@ -778,10 +712,6 @@ TestCase {
             {
                 open: () => main.openFavoritesSortMenu(),
                 name: "favorites Sort"
-            },
-            {
-                open: () => main.openFavoritesFilterMenu(),
-                name: "favorites Show"
             }
         ];
         for (let i = 0; i < pickers.length; i++) {
@@ -808,36 +738,5 @@ TestCase {
         main.listPickerModal.handleAction("accept");
         compare(Browse.FavoritesModel.sort_mode, "", "Default restores Core order");
         compare(Browse.FavoritesState.sort, "", "and that choice persists");
-    }
-
-    // The scope picker always offers "everything" first, so a narrowed list
-    // can always be widened again.
-    function test_favorites_filter_picker_always_offers_all(): void {
-        main.openFavoritesPageMenu();
-        main.listPickerAccepted("page_menu_favorites", "favorites_filter");
-        tryCompare(main, "listPickerModalVisible", true);
-        compare(main.listPickerFieldId, "favorites_filter_pick");
-        const ids = main.listPickerEntries.map(e => e.id);
-        verify(ids[0] !== "", "All must not use the empty id: ListPickerModal treats it as 'nothing pending' and never emits an accept for it");
-        main.closeListPickerModal();
-    }
-
-    // Regression: "All" reached the user as a row with an empty id, which
-    // ListPickerModal silently refuses to accept, so choosing it did nothing
-    // and the list stayed filtered with no error anywhere.
-    function test_favorites_all_filter_clears_the_scope(): void {
-        Browse.FavoritesModel.set_filter("cat:Console");
-        compare(Browse.FavoritesModel.filter, "cat:Console");
-
-        main.openFavoritesPageMenu();
-        main.listPickerAccepted("page_menu_favorites", "favorites_filter");
-        tryCompare(main, "listPickerModalVisible", true);
-        verify(main.listPickerEntries[0].id !== "", "All needs a non-empty id to survive the accept guard");
-        // Drive the REAL accept path (handleAction -> _commitAccept ->
-        // accepted signal), which is exactly where an empty id was dropped.
-        // Motion is disabled in these tests, so the commit is synchronous.
-        main.listPickerModal.handleAction("accept");
-        compare(Browse.FavoritesModel.filter, "", "All clears the scope");
-        compare(Browse.FavoritesState.filter, "", "and the cleared scope persists");
     }
 }

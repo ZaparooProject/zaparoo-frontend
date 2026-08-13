@@ -25,7 +25,6 @@
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
 use crate::media_meta_cache::{global_media_meta_cache, MetaLookup};
 use crate::models::nav_timing::NavTiming;
-use crate::models::random_pick::random_index;
 use crate::models::tag_utils::{
     disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
 };
@@ -124,12 +123,6 @@ pub struct FavoritesModelRust {
     // favorites in DBID order, 25 at a time).
     full_loaded: bool,
     full_loading: bool,
-    // A random launch was pressed before the full set had arrived; fired by
-    // `launch_pending_random` once the load completes.
-    random_pending: bool,
-    // Stable reason code for a random pick that resolved nothing, so the
-    // press reports itself instead of appearing to do nothing.
-    random_error: QString,
     // Distinct systems present in the loaded favorites, as JSON, so the
     // picker only ever offers filters that match something.
     system_facet_json: QString,
@@ -204,8 +197,6 @@ impl Default for FavoritesModelRust {
             filter: QString::default(),
             full_loaded: false,
             full_loading: false,
-            random_pending: false,
-            random_error: QString::default(),
             system_facet_json: QString::default(),
             total_count: 0,
             count: 0,
@@ -278,7 +269,6 @@ pub mod ffi {
         #[qproperty(bool, full_loaded)]
         #[qproperty(bool, full_loading)]
         #[qproperty(QString, system_facet_json)]
-        #[qproperty(QString, random_error)]
         #[qproperty(i32, total_count)]
         type FavoritesModel = super::FavoritesModelRust;
 
@@ -297,16 +287,10 @@ pub mod ffi {
         fn set_filter(self: Pin<&mut FavoritesModel>, value: &QString);
 
         #[qinvokable]
-        fn clear_random_error(self: Pin<&mut FavoritesModel>);
-
-        #[qinvokable]
         fn launch_at(self: Pin<&mut FavoritesModel>, index: i32);
 
         #[qinvokable]
         fn launch_text_at(self: &FavoritesModel, index: i32) -> QString;
-
-        #[qinvokable]
-        fn launch_random(self: Pin<&mut FavoritesModel>);
 
         #[qinvokable]
         fn write_card_at(self: Pin<&mut FavoritesModel>, index: i32);
@@ -461,8 +445,6 @@ fn apply_state(
             let mut rust = model.as_mut().rust_mut();
             rust.entries = entries;
             rust.next_cursor = next_cursor;
-            // A fresh chain invalidates any press queued against the old one.
-            rust.random_pending = false;
         }
         // Through the setters, not `rust_mut`: both are qproperties, so a
         // silent write leaves any QML binding on them stale.
@@ -538,7 +520,6 @@ fn apply_state(
         if model.full_loading {
             model.as_mut().set_full_loading(false);
         }
-        model.as_mut().rust_mut().random_pending = false;
         if model.loading_more {
             model.as_mut().set_loading_more(false);
         }
@@ -564,7 +545,6 @@ fn apply_state(
         if model.full_loading {
             model.as_mut().set_full_loading(false);
         }
-        model.as_mut().rust_mut().random_pending = false;
         if model.loading_more {
             model.as_mut().set_loading_more(false);
         }
@@ -765,11 +745,7 @@ impl ffi::FavoritesModel {
             return;
         }
         if !self.has_next_page {
-            // Everything already arrived in the first page. Fire a queued
-            // press here: no callback is coming, so waiting for one would
-            // make the first press do nothing.
             self.as_mut().set_full_loaded(true);
-            self.launch_pending_random();
             return;
         }
         self.as_mut().set_full_loading(true);
@@ -837,44 +813,12 @@ impl ffi::FavoritesModel {
                             model.as_mut().ensure_full_load();
                         } else {
                             model.as_mut().set_full_loaded(true);
-                            model.as_mut().launch_pending_random();
                         }
                     }
-                    Err(e) => {
-                        warn!("favorites full load failed: {}", e.message);
-                        // Don't strand a queued random press waiting forever.
-                        if model.random_pending {
-                            model.as_mut().fail_random("load-failed");
-                        }
-                    }
+                    Err(e) => warn!("favorites full load failed: {}", e.message),
                 }
             });
         });
-    }
-
-    fn clear_random_error(mut self: Pin<&mut Self>) {
-        if !self.random_error.is_empty() {
-            self.as_mut().set_random_error(QString::default());
-        }
-    }
-
-    /// Report a random pick that resolved nothing. A one-shot action that
-    /// stays silent is indistinguishable from a broken button.
-    fn fail_random(mut self: Pin<&mut Self>, reason: &str) {
-        warn!("random favorite pick failed: {reason}");
-        self.as_mut().rust_mut().random_pending = false;
-        self.as_mut().set_random_error(QString::from(reason));
-    }
-
-    /// Fire a random launch that was requested before the full set had
-    /// arrived. Without this the first press is a silent no-op whenever the
-    /// favorites list spans more than one page.
-    fn launch_pending_random(mut self: Pin<&mut Self>) {
-        if !self.random_pending {
-            return;
-        }
-        self.as_mut().rust_mut().random_pending = false;
-        self.launch_random();
     }
 
     fn refresh_cover_keys(mut self: Pin<&mut Self>, first_row: i32, count: i32) {
@@ -907,57 +851,6 @@ impl ffi::FavoritesModel {
             return QString::default();
         };
         QString::from(portable_text_for_entry(entry).as_str())
-    }
-
-    /// Launch a random favorite from the rows currently on screen, so an
-    /// active filter is respected.
-    ///
-    /// Picked here rather than by Core: `**launch.random:all?tags=user:favorite`
-    /// returns no rows, because Core's all-systems branch does not compose
-    /// with a tag filter. The frontend already holds the favorites it
-    /// displays, so selecting locally is both correct and exactly the visible
-    /// pool. Requires the full load, otherwise the pool would be whichever
-    /// pages happen to be fetched.
-    fn launch_random(mut self: Pin<&mut Self>) {
-        if !self.random_error.is_empty() {
-            self.as_mut().set_random_error(QString::default());
-        }
-        if self.count <= 0 {
-            self.as_mut().fail_random("empty-scope");
-            return;
-        }
-        if !self.full_loaded {
-            // Picking from a partial list would bias the result toward the
-            // first page, so pull the rest first. `ensure_full_load` fires
-            // the queued press when it finishes, synchronously or not.
-            self.as_mut().rust_mut().random_pending = true;
-            self.as_mut().ensure_full_load();
-            return;
-        }
-        let Ok(count) = usize::try_from(self.count) else {
-            self.as_mut().fail_random("empty-scope");
-            return;
-        };
-        let Ok(row) = i32::try_from(random_index(count)) else {
-            self.as_mut().fail_random("no-launch-payload");
-            return;
-        };
-        let Some(entry) = self.entry_at(row) else {
-            self.as_mut().fail_random("no-launch-payload");
-            return;
-        };
-        let text = launch_text_for(entry);
-        if text.is_empty() {
-            self.as_mut().fail_random("no-launch-payload");
-            return;
-        }
-        let name = entry.name.clone();
-        let store = global_store();
-        global_handle().spawn(async move {
-            if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
-                warn!("random favorite run failed for {name}: {}", e.message);
-            }
-        });
     }
 
     fn write_card_at(mut self: Pin<&mut Self>, index: i32) {

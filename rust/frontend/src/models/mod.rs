@@ -44,7 +44,6 @@ pub mod nav_timing;
 pub mod notice;
 pub mod platform;
 pub mod qr_code;
-pub mod random_pick;
 pub mod recents;
 pub mod recents_state;
 pub mod runtime;
