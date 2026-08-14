@@ -89,9 +89,6 @@ pub struct RecentsState {
 #[serde(default)]
 pub struct FavoritesState {
     pub selected_path: String,
-    /// Row order for Favorites: empty is Core's established order; `"name"`
-    /// requests Core's ascending display-name order.
-    pub sort: String,
 }
 
 /// Per-frontend Settings selections. `resolution` is `"WxH"` (e.g.
@@ -351,7 +348,6 @@ mod tests {
             },
             favorites: FavoritesState {
                 selected_path: "/roms/nes/zelda.nes".into(),
-                sort: "name".into(),
             },
             settings: SettingsState {
                 resolution: "1920x1080".into(),

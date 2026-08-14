@@ -2504,7 +2504,6 @@ MainLayout {
             root.closeListPickerModal();
             const mode = selectedId === root._favoritesSortDefault ? "" : selectedId;
             Browse.FavoritesModel.set_sort_mode(mode);
-            Browse.FavoritesState.sort = mode;
             if (!Browse.FavoritesModel.loading && root.favoritesScreen !== null)
                 root.favoritesScreen.restoreSelection();
             return;

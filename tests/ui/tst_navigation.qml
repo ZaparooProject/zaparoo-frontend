@@ -36,7 +36,7 @@ TestCase {
     }
 
     Component.onCompleted: {
-        testCase._originalFavoritesSort = Browse.FavoritesState.sort ?? "";
+        testCase._originalFavoritesSort = Browse.FavoritesModel.sort_mode ?? "";
         testCase._originalGamesFavoritesFilter = Browse.GamesState.favorites_filter === true;
     }
 
@@ -79,7 +79,6 @@ TestCase {
             main.closeRandomFailedModal();
         // Restore persistent preferences changed by menu-routing tests.
         Browse.FavoritesModel.set_sort_mode(testCase._originalFavoritesSort);
-        Browse.FavoritesState.sort = testCase._originalFavoritesSort;
         Browse.GamesModel.apply_favorites_filter(testCase._originalGamesFavoritesFilter);
         Browse.GamesState.favorites_filter = testCase._originalGamesFavoritesFilter;
     }
@@ -739,15 +738,13 @@ TestCase {
         main.listPickerAccepted("favorites_sort_pick", "name");
         tryCompare(main, "listPickerModalVisible", false);
         compare(Browse.FavoritesModel.sort_mode, "name");
-        compare(Browse.FavoritesState.sort, "name");
 
         // Restore the default so the persisted value doesn't leak into other
-        // tests or the dev machine's state file.
+        // tests or the dev machine's config file.
         main.openFavoritesPageMenu();
         main.listPickerAccepted("page_menu_favorites", "favorites_sort");
         main.listPickerAccepted("favorites_sort_pick", main._favoritesSortDefault);
         compare(Browse.FavoritesModel.sort_mode, "");
-        compare(Browse.FavoritesState.sort, "");
     }
 
     // Blanket guard for the whole class of bug that shipped twice: any menu
@@ -791,6 +788,5 @@ TestCase {
         main.listPickerModal.currentIndex = 0;
         main.listPickerModal.handleAction("accept");
         compare(Browse.FavoritesModel.sort_mode, "", "Default restores Core order");
-        compare(Browse.FavoritesState.sort, "", "and that choice persists");
     }
 }

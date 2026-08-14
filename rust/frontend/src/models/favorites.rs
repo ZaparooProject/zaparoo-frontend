@@ -33,6 +33,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 use zaparoo_core::client::ClientError;
+use zaparoo_core::config::{load_config, save_favorites_sort};
 use zaparoo_core::endpoints::media_favorites::{FavoritesArgs, MediaFavoritesEndpoint};
 use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
 use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
@@ -41,6 +42,7 @@ use zaparoo_core::media_types::{
     MediaItem, MediaMeta, MediaMetaParams, MediaSearchParams, MediaSearchResult,
     MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
 };
+use zaparoo_core::platform_paths::config_file_path;
 use zaparoo_core::remote_resource::ResourceStatus;
 
 const NAME_ROLE: i32 = 256 + 1;
@@ -64,8 +66,8 @@ const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 9;
 // stressing the over-the-wire payload.
 const PAGE_SIZE: u32 = 25;
 
-/// Persisted/QML sort mode for A-Z. Core receives `name-asc`; persisted state
-/// keeps shorter token used by menu contract.
+/// Config/QML sort mode for A-Z. Core receives `name-asc`; `frontend.toml`
+/// keeps the shorter token used by the menu contract.
 const SORT_NAME: &str = "name";
 const CORE_SORT_NAME_ASC: &str = "name-asc";
 const RANDOM_FAVORITE_SCRIPT: &str = "**launch.random:all?tags=user:favorite";
@@ -348,8 +350,14 @@ pub mod ffi {
 
 impl cxx_qt::Initialize for ffi::FavoritesModel {
     fn initialize(mut self: Pin<&mut Self>) {
-        let persisted = crate::models::with_persist_read(|state| state.favorites.sort.clone());
-        let normalized = normalize_sort_mode(&persisted).unwrap_or_default();
+        let configured = load_config(&config_file_path())
+            .settings
+            .favorites_sort
+            .unwrap_or_default();
+        let normalized = normalize_sort_mode(&configured).unwrap_or_else(|| {
+            warn!("ignoring unknown configured favorites sort mode: {configured}");
+            ""
+        });
         self.as_mut().rust_mut().sort_mode = QString::from(normalized);
         self.start_subscription();
     }
@@ -551,6 +559,9 @@ impl ffi::FavoritesModel {
         };
         if self.sort_mode.to_string() == normalized {
             return;
+        }
+        if let Err(error) = save_favorites_sort(&config_file_path(), normalized) {
+            warn!("could not persist favorites sort: {error}");
         }
         self.as_mut().rust_mut().sort_mode = QString::from(normalized);
         self.as_mut().sort_mode_changed();

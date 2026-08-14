@@ -769,37 +769,37 @@ Français - Wilfried</source>
         <translation type="unfinished">रद्द करें</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3234"/>
+        <location filename="../app/Main.qml" line="3233"/>
         <source>Loading systems…</source>
         <translation>सिस्टम लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3236"/>
+        <location filename="../app/Main.qml" line="3235"/>
         <source>Loading games…</source>
         <translation>गेम लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3238"/>
+        <location filename="../app/Main.qml" line="3237"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3240"/>
+        <location filename="../app/Main.qml" line="3239"/>
         <source>Loading favorites…</source>
         <translation>पसंदीदा लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3242"/>
+        <location filename="../app/Main.qml" line="3241"/>
         <source>Loading recently played…</source>
         <translation>हाल ही में खेले गए लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3244"/>
+        <location filename="../app/Main.qml" line="3243"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3246"/>
+        <location filename="../app/Main.qml" line="3245"/>
         <source>Loading…</source>
         <translation>लोड हो रहा है…</translation>
     </message>

@@ -58,6 +58,7 @@ pub struct SettingsConfig {
     pub orientation: Option<String>,
     pub clock_format: Option<String>,
     pub browse_layout: Option<String>,
+    pub favorites_sort: Option<String>,
     pub system_logo_style: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
@@ -177,6 +178,7 @@ struct RawSettings {
     orientation: Option<String>,
     clock_format: Option<String>,
     browse_layout: Option<String>,
+    favorites_sort: Option<String>,
     system_logo_style: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
@@ -316,6 +318,7 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         orientation: trim_opt(raw.orientation),
         clock_format: trim_opt(raw.clock_format),
         browse_layout: trim_opt(raw.browse_layout),
+        favorites_sort: trim_opt(raw.favorites_sort),
         system_logo_style: trim_opt(raw.system_logo_style),
         button_layout: trim_opt(raw.button_layout),
         mouse_enabled: raw.mouse_enabled,
@@ -442,6 +445,36 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
 
     let logging = section_mut(&mut table, "logging", path)?;
     logging.insert("debug".into(), toml::Value::Boolean(mirror.debug_logging));
+
+    let serialized =
+        toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
+    write_atomic(path, serialized.as_bytes())
+        .map_err(|e| format!("could not write {}: {e}", path.display()))
+}
+
+/// Persist Favorites row order into `frontend.toml`.
+///
+/// Empty restores Core's default order and removes the optional key.
+pub fn save_favorites_sort(path: &Path, sort: &str) -> Result<(), String> {
+    let mut table = if path.exists() {
+        let src = std::fs::read_to_string(path)
+            .map_err(|e| format!("could not read {}: {e}", path.display()))?;
+        toml::from_str::<toml::Table>(&src)
+            .map_err(|e| format!("config parse error in {}: {e}", path.display()))?
+    } else {
+        toml::Table::new()
+    };
+
+    let settings = section_mut(&mut table, "settings", path)?;
+    let normalized = sort.trim();
+    if normalized.is_empty() {
+        settings.remove("favorites_sort");
+    } else {
+        settings.insert(
+            "favorites_sort".into(),
+            toml::Value::String(normalized.to_string()),
+        );
+    }
 
     let serialized =
         toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
@@ -642,8 +675,8 @@ mod tests {
     )]
 
     use super::{
-        load_config, save_hidden_browse_prefs, save_notice_ack, save_settings_mirror, Config,
-        SettingsMirror,
+        load_config, save_favorites_sort, save_hidden_browse_prefs, save_notice_ack,
+        save_settings_mirror, Config, SettingsMirror,
     };
     use std::io::Write;
 
@@ -676,6 +709,7 @@ mod tests {
         assert_eq!(cfg.settings.orientation, None);
         assert_eq!(cfg.settings.clock_format, None);
         assert_eq!(cfg.settings.browse_layout, None);
+        assert_eq!(cfg.settings.favorites_sort, None);
         assert_eq!(cfg.settings.button_layout, None);
         assert_eq!(cfg.settings.mouse_enabled, None);
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, None);
@@ -760,6 +794,30 @@ mod tests {
         let f = write_tmp("[settings]\nregion = \"jp\"\n");
         let cfg = load_config(f.path());
         assert_eq!(cfg.settings.region.as_deref(), Some("jp"));
+    }
+
+    #[test]
+    fn favorites_sort_round_trips_from_settings() {
+        let f = write_tmp("[settings]\nfavorites_sort = \"  name  \"\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.settings.favorites_sort.as_deref(), Some("name"));
+    }
+
+    #[test]
+    fn save_favorites_sort_preserves_other_config_and_removes_default() {
+        let _env = env_guard();
+        let f = write_tmp(
+            "[core]\nendpoint = \"ws://example.com/api\"\n[settings]\nbutton_layout = \"b\"\n",
+        );
+        save_favorites_sort(f.path(), "name").expect("save name sort");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.core_endpoint, "ws://example.com/api");
+        assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
+        assert_eq!(cfg.settings.favorites_sort.as_deref(), Some("name"));
+
+        save_favorites_sort(f.path(), "").expect("save default sort");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.settings.favorites_sort, None);
     }
 
     #[test]
