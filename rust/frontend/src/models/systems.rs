@@ -639,8 +639,8 @@ impl ffi::SystemsModel {
         });
     }
 
-    fn launch_random_ids(mut self: Pin<&mut Self>, system_ids: Vec<String>) {
-        let Some(text) = random_systems_text(&system_ids) else {
+    fn launch_random_ids(mut self: Pin<&mut Self>, system_ids: &[String]) {
+        let Some(text) = random_systems_text(system_ids) else {
             return;
         };
         if !self.random_error.is_empty() {
@@ -671,12 +671,12 @@ impl ffi::SystemsModel {
             return;
         }
         let id = self.systems[index as usize].id.clone();
-        self.launch_random_ids(vec![id]);
+        self.launch_random_ids(&[id]);
     }
 
     fn launch_random_systems(self: Pin<&mut Self>, system_ids: &QStringList) {
-        let ids = system_ids.iter().map(String::from).collect();
-        self.launch_random_ids(ids);
+        let ids: Vec<String> = system_ids.iter().map(String::from).collect();
+        self.launch_random_ids(&ids);
     }
 
     fn clear_random_error(mut self: Pin<&mut Self>) {
