@@ -31,6 +31,7 @@
 // when the user spams direction-arrow + Accept across a model swap.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
+use crate::media_meta_cache::{global_media_meta_cache, MetaLookup};
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::{
     disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
@@ -1219,9 +1220,9 @@ impl ffi::GamesModel {
     // Immediate, non-debounced sibling of `load_description_at`. Called the
     // moment the focused row changes so the detail pane reflects THIS row's
     // local metadata (description + entry tags) at once, instead of holding the
-    // previous row's values through the load debounce. The debounced
-    // `load_description_at` then enriches it from media.meta. Games entries
-    // carry their own tags, so this needs no metadata cache.
+    // previous row's values through the load debounce. A warm neighbor paints
+    // richer cached metadata immediately; a cold row keeps BrowseEntry values
+    // visible until debounced `load_description_at` performs its single fetch.
     fn peek_description_at(mut self: Pin<&mut Self>, index: i32) {
         self.as_mut()
             .rust_mut()
@@ -1236,6 +1237,7 @@ impl ffi::GamesModel {
         }
         self.as_mut().rust_mut().detail_prefetch_row = Some(index);
         prefetch_cursor_window(&self, index);
+        enqueue_meta_prefetch(&self.entries, self.count, index);
 
         let entry = &self.entries[index as usize];
         if !is_media_capable_entry(entry) {
@@ -1248,14 +1250,41 @@ impl ffi::GamesModel {
 
         let description = entry.description.clone();
         let detail_tags = detail_tags_from_entry(entry);
-        // Local tags paint immediately, so mark loading without blanking: the
-        // detail pane shows this row's values while the richer media.meta fetch
-        // is still pending.
-        self.as_mut().set_current_detail_loading(true);
-        self.as_mut()
-            .set_current_description(QString::from(description.as_str()));
-        self.as_mut()
-            .set_current_detail_tags(QString::from(detail_tags.as_str()));
+        let meta_key = meta_cache_key_for_entry(entry);
+        let lookup = meta_key.as_ref().map_or(MetaLookup::Miss, |key| {
+            global_media_meta_cache().lookup(key)
+        });
+        match lookup {
+            MetaLookup::Hit(meta) => {
+                let rich_description = description_from_meta(&meta);
+                let visible_description = if rich_description.is_empty() {
+                    description
+                } else {
+                    rich_description
+                };
+                self.as_mut()
+                    .set_current_description(QString::from(visible_description.as_str()));
+                self.as_mut()
+                    .set_current_detail_tags(QString::from(detail_tags_from_meta(&meta).as_str()));
+                self.as_mut().set_current_detail_loading(false);
+            }
+            MetaLookup::Negative => {
+                self.as_mut()
+                    .set_current_description(QString::from(description.as_str()));
+                self.as_mut()
+                    .set_current_detail_tags(QString::from(detail_tags.as_str()));
+                self.as_mut().set_current_detail_loading(false);
+            }
+            MetaLookup::Miss => {
+                // Preserve BrowseEntry metadata while the debounced focused
+                // request remains cold.
+                self.as_mut()
+                    .set_current_description(QString::from(description.as_str()));
+                self.as_mut()
+                    .set_current_detail_tags(QString::from(detail_tags.as_str()));
+                self.as_mut().set_current_detail_loading(true);
+            }
+        }
         // Deliberately do NOT switch the visible cover here. The cover has its
         // own grace-window hold (BrowseDetailPane coverHold) and is settled by
         // the debounced `load_description_at`. Re-pointing the 512px cover Image
@@ -1311,6 +1340,7 @@ impl ffi::GamesModel {
         // pane requests the same cache entry that `prefetch_around` already
         // warmed for the focused row — instant paint with no hourglass.
         let detail_image_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
+        let meta_key = meta_cache_key_for_entry(entry);
         let Some(params) = meta_params_for_entry(entry) else {
             self.as_mut().set_current_detail_loading(false);
             self.as_mut()
@@ -1330,76 +1360,40 @@ impl ffi::GamesModel {
         set_single_detail_image_key(self.as_mut(), detail_image_key);
         refresh_adjacent_cover_prefetch(self.as_mut());
 
+        if let Some(key) = meta_key.as_ref() {
+            match global_media_meta_cache().lookup(key) {
+                MetaLookup::Hit(meta) => {
+                    apply_games_detail_meta(self.as_mut(), index, &meta);
+                    self.as_mut().set_current_detail_loading(false);
+                    return;
+                }
+                MetaLookup::Negative => {
+                    self.as_mut().set_current_detail_loading(false);
+                    return;
+                }
+                MetaLookup::Miss => {}
+            }
+        }
+
         let seq = self.rust().description_seq.clone();
         let qt_thread = self.qt_thread();
         let store = global_store();
         global_handle().spawn(async move {
             let result = store.client().media_meta(params).await;
+            if let Some(key) = meta_key {
+                match &result {
+                    Ok(result) => {
+                        global_media_meta_cache().store(key, Some(result.media.clone()));
+                    }
+                    Err(_) => global_media_meta_cache().store(key, None),
+                }
+            }
             let _ = qt_thread.queue(move |mut model| {
                 if seq.load(Ordering::SeqCst) != ticket {
                     return;
                 }
                 match result {
-                    Ok(result) => {
-                        let meta = result.media;
-                        let description = description_from_meta(&meta);
-                        if !description.is_empty() {
-                            model
-                                .as_mut()
-                                .set_current_description(QString::from(description.as_str()));
-                        }
-                        model.as_mut().set_current_detail_tags(QString::from(
-                            detail_tags_from_meta(&meta).as_str(),
-                        ));
-                        let cover_key = media_key_for(&model.entries[index as usize])
-                            .map(MediaKey::with_current_cover_preference);
-                        let type_keys = detail_image_keys_from_meta(
-                            &meta,
-                            meta.title.system.id.as_str(),
-                            meta.path.as_str(),
-                        );
-                        if type_keys.is_empty() {
-                            // No alternate images — just the cover; clear any
-                            // stale pending carousel from a previous selection.
-                            model.as_mut().rust_mut().pending_carousel_keys = None;
-                            let detail_keys = cover_key.into_iter().collect();
-                            set_detail_image_keys(model.as_mut(), detail_keys);
-                        } else if MediaImageCache::current_cover_preference_type().is_none() {
-                            // Auto preference: we need Core's resolved type_tag
-                            // for index-0 to drop its twin from the carousel tail.
-                            // Check the cache; if the cover is already warm the
-                            // type is known and we can dedup now. If not, stash
-                            // the candidate keys and let notify_cover_update finish
-                            // once the cover lands.
-                            let cache = global_media_image_cache();
-                            let resolved = cover_key
-                                .as_ref()
-                                .and_then(|k| cache.resolved_image_type(k));
-                            if resolved.is_some() || cover_key.is_none() {
-                                // Cover already fetched — dedup immediately.
-                                model.as_mut().rust_mut().pending_carousel_keys = None;
-                                let detail_keys = ordered_detail_image_keys(
-                                    cover_key,
-                                    type_keys,
-                                    resolved.as_deref(),
-                                );
-                                set_detail_image_keys(model.as_mut(), detail_keys);
-                            } else {
-                                // Cover still in-flight. Publish a single-image
-                                // carousel now (no arrows) and stash the candidates
-                                // so notify_cover_update can finalize once the type
-                                // is known.
-                                model.as_mut().rust_mut().pending_carousel_keys = Some(type_keys);
-                                let detail_keys = cover_key.into_iter().collect();
-                                set_detail_image_keys(model.as_mut(), detail_keys);
-                            }
-                        } else {
-                            // Explicit preference — existing dedup path.
-                            model.as_mut().rust_mut().pending_carousel_keys = None;
-                            let detail_keys = ordered_detail_image_keys(cover_key, type_keys, None);
-                            set_detail_image_keys(model.as_mut(), detail_keys);
-                        }
-                    }
+                    Ok(result) => apply_games_detail_meta(model.as_mut(), index, &result.media),
                     Err(e) => warn!("games detail fetch failed: {}", e.message),
                 }
                 model.as_mut().set_current_detail_loading(false);
@@ -1834,6 +1828,42 @@ fn meta_params_for_entry(entry: &BrowseEntry) -> Option<MediaMetaParams> {
     Some(MediaMetaParams::for_media(system_id, entry.path.clone()))
 }
 
+fn meta_cache_key_for_entry(entry: &BrowseEntry) -> Option<MediaKey> {
+    if !is_media_capable_entry(entry) {
+        return None;
+    }
+    let system_id = entry_system_id(entry);
+    if system_id.trim().is_empty() || entry.path.trim().is_empty() {
+        return None;
+    }
+    Some(MediaKey::new(system_id, entry.path.clone()))
+}
+
+/// Warm only two rows either side of cursor. Cache identity remains canonical
+/// `(systemId, path)` while request refs prefer Core's ephemeral media ID.
+fn enqueue_meta_prefetch(entries: &[BrowseEntry], count: i32, row: i32) {
+    let mut requests = Vec::new();
+    for delta in [-2_i32, -1, 1, 2] {
+        let index = row + delta;
+        if index < 0 || index >= count {
+            continue;
+        }
+        let Some(entry) = usize::try_from(index).ok().and_then(|i| entries.get(i)) else {
+            continue;
+        };
+        let (Some(key), Some(params)) = (
+            meta_cache_key_for_entry(entry),
+            meta_params_for_entry(entry),
+        ) else {
+            continue;
+        };
+        requests.push((key, params));
+    }
+    if !requests.is_empty() {
+        global_media_meta_cache().prefetch(requests);
+    }
+}
+
 fn singleton_directory_needs_launch_resolution(entry: &BrowseEntry) -> bool {
     entry.entry_type == "directory" && entry.media_id.is_some()
 }
@@ -1917,6 +1947,49 @@ fn detail_image_keys_from_meta(meta: &MediaMeta, system: &str, path: &str) -> Ve
 /// `resolved_type` is Core's reported `type_tag` for the index-0 cover (the
 /// concrete type Core actually served). Pass `None` when it isn't known yet;
 /// the caller will call again once the cover fetch completes.
+fn apply_games_detail_meta(mut model: Pin<&mut ffi::GamesModel>, index: i32, meta: &MediaMeta) {
+    let description = description_from_meta(meta);
+    if !description.is_empty() {
+        model
+            .as_mut()
+            .set_current_description(QString::from(description.as_str()));
+    }
+    model
+        .as_mut()
+        .set_current_detail_tags(QString::from(detail_tags_from_meta(meta).as_str()));
+
+    let cover_key = usize::try_from(index)
+        .ok()
+        .and_then(|index| model.entries.get(index))
+        .and_then(media_key_for)
+        .map(MediaKey::with_current_cover_preference);
+    let type_keys =
+        detail_image_keys_from_meta(meta, meta.title.system.id.as_str(), meta.path.as_str());
+    if type_keys.is_empty() {
+        model.as_mut().rust_mut().pending_carousel_keys = None;
+        set_detail_image_keys(model, cover_key.into_iter().collect());
+        return;
+    }
+    if MediaImageCache::current_cover_preference_type().is_some() {
+        model.as_mut().rust_mut().pending_carousel_keys = None;
+        let detail_keys = ordered_detail_image_keys(cover_key, type_keys, None);
+        set_detail_image_keys(model, detail_keys);
+        return;
+    }
+
+    let resolved = cover_key
+        .as_ref()
+        .and_then(|key| global_media_image_cache().resolved_image_type(key));
+    if resolved.is_some() || cover_key.is_none() {
+        model.as_mut().rust_mut().pending_carousel_keys = None;
+        let detail_keys = ordered_detail_image_keys(cover_key, type_keys, resolved.as_deref());
+        set_detail_image_keys(model, detail_keys);
+    } else {
+        model.as_mut().rust_mut().pending_carousel_keys = Some(type_keys);
+        set_detail_image_keys(model, cover_key.into_iter().collect());
+    }
+}
+
 fn ordered_detail_image_keys(
     cover_key: Option<MediaKey>,
     type_keys: Vec<MediaKey>,
@@ -3595,9 +3668,9 @@ mod tests {
         detail_image_keys_from_meta, detail_tags_from_tags, display_name, display_title_for_entry,
         entry_system_id, favorites_tags, games_random_launch_text, is_media_capable_entry,
         is_strict_ancestor_path, jump_fetch_limit, media_capable_directory_browse_params,
-        media_key_for, meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
-        prefetch_around_plan, prefetch_cursor_window_plan, project_status, result_total_dirs,
-        run_text_for_entry, seeded_refetch_pagination_state,
+        media_key_for, meta_cache_key_for_entry, meta_params_for_entry, ordered_detail_image_keys,
+        position_of_game_path, prefetch_around_plan, prefetch_cursor_window_plan, project_status,
+        result_total_dirs, run_text_for_entry, seeded_refetch_pagination_state,
         singleton_directory_needs_launch_resolution, transform_entries, InitialAction, Projection,
     };
     use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
@@ -4236,6 +4309,10 @@ mod tests {
         assert_eq!(params.media_id, Some(42));
         assert!(params.system.is_empty());
         assert!(params.path.is_empty());
+        let cache_key = meta_cache_key_for_entry(&entry).expect("cache key");
+        assert_eq!(cache_key.system_id.as_ref(), "PSX");
+        assert_eq!(cache_key.path.as_ref(), "/roms/PSX/Game");
+        assert!(cache_key.media_id.is_none());
         let browse_params = media_capable_directory_browse_params(&entry).expect("browse params");
         assert_eq!(browse_params.path, "/roms/PSX/Game");
         assert_eq!(browse_params.systems, vec!["PSX".to_string()]);

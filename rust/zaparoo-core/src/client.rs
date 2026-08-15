@@ -18,11 +18,11 @@ use crate::media_types::{
     MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult,
     MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
     MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
-    MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams,
-    MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
-    MediaTagsUpdateResult, ReadersResult, ReadersWriteParams, RunParams, ScrapersResult,
-    ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult,
-    TokensResult, UpdateSettingsParams, VersionResult,
+    MediaMetaBatchParams, MediaMetaBatchResult, MediaMetaParams, MediaMetaResult, MediaResult,
+    MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult,
+    MediaTagsUpdateParams, MediaTagsUpdateResult, ReadersResult, ReadersWriteParams, RunParams,
+    ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult,
+    TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -667,6 +667,20 @@ impl Client {
     ) -> Result<MediaMetaResult, ClientError> {
         let val = self.call("media.meta", &params).await?;
         deserialize_timed("media.meta", val)
+    }
+
+    /// Fetches an ordered batch of metadata graphs with one `media` or `error`
+    /// result per input ref. The established single-item method remains
+    /// separate so focused cold misses keep their minimal wire shape.
+    pub async fn media_meta_batch(
+        &self,
+        items: Vec<MediaMetaParams>,
+    ) -> Result<MediaMetaBatchResult, ClientError> {
+        let params = MediaMetaBatchParams::try_new(items).map_err(|message| ClientError {
+            message: message.to_string(),
+        })?;
+        let val = self.call("media.meta", &params).await?;
+        deserialize_timed("media.meta batch", val)
     }
 
     pub async fn media_history(

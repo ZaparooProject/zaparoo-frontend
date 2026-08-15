@@ -314,6 +314,64 @@ pub fn media_browse_response(params: &Value) -> Value {
     })
 }
 
+pub fn media_meta_response(params: &Value) -> Value {
+    fn media_for(reference: &Value) -> Value {
+        let media_id = reference.get("mediaId").and_then(Value::as_i64);
+        let system = reference
+            .get("system")
+            .and_then(Value::as_str)
+            .unwrap_or("Mock");
+        let path = reference.get("path").and_then(Value::as_str).map_or_else(
+            || format!("/mock/media/{}", media_id.unwrap_or_default()),
+            str::to_string,
+        );
+        let name = path
+            .rsplit('/')
+            .next()
+            .unwrap_or("Mock Game")
+            .split('.')
+            .next()
+            .unwrap_or("Mock Game")
+            .to_string();
+        json!({
+            "path": path,
+            "parentDir": "/mock",
+            "isMissing": false,
+            "tags": [{"type": "region", "tag": "world"}],
+            "properties": {},
+            "availableImageTypes": [],
+            "title": {
+                "slug": name.to_lowercase(),
+                "name": name,
+                "slugLength": name.len(),
+                "slugWordCount": name.split_whitespace().count(),
+                "system": {"id": system, "name": system_display_for(system)},
+                "tags": [
+                    {"type": "year", "tag": "1994"},
+                    {"type": "developer", "tag": "Mock Studio"}
+                ],
+                "properties": {
+                    "property:description": {
+                        "text": format!("Mock metadata for {name}."),
+                        "contentType": ""
+                    }
+                },
+                "availableImageTypes": []
+            }
+        })
+    }
+
+    if let Some(items) = params.get("items").and_then(Value::as_array) {
+        return json!({
+            "items": items
+                .iter()
+                .map(|item| json!({"media": media_for(item)}))
+                .collect::<Vec<_>>()
+        });
+    }
+    json!({"media": media_for(params)})
+}
+
 pub fn media_browse_index_response(params: &Value) -> Value {
     let mut browse_params = params.clone();
     browse_params["maxResults"] = json!(1000);

@@ -655,10 +655,46 @@ impl MediaMetaParams {
     }
 }
 
+pub const MEDIA_META_BATCH_MAX_ITEMS: usize = 100;
+
+/// Ordered batch request for `media.meta`. Core accepts one to 100 refs and
+/// returns one response item in the same position for each ref.
+#[derive(Debug, Clone, Serialize)]
+pub struct MediaMetaBatchParams {
+    pub items: Vec<MediaMetaParams>,
+}
+
+impl MediaMetaBatchParams {
+    pub fn try_new(items: Vec<MediaMetaParams>) -> Result<Self, &'static str> {
+        if items.is_empty() {
+            return Err("media.meta batch must contain at least one item");
+        }
+        if items.len() > MEDIA_META_BATCH_MAX_ITEMS {
+            return Err("media.meta batch cannot contain more than 100 items");
+        }
+        Ok(Self { items })
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaMetaResult {
     pub media: MediaMeta,
+}
+
+/// One ordered batch result. Exactly one of `media` or `error` should be set.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaMetaBatchItemResult {
+    #[serde(default)]
+    pub media: Option<MediaMeta>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaMetaBatchResult {
+    #[serde(default)]
+    pub items: Vec<MediaMetaBatchItemResult>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1253,11 +1289,11 @@ mod tests {
         MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult, MediaHistoryParams,
         MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams,
         MediaImageResult, MediaIndexParams, MediaItem, MediaLookupParams, MediaLookupResult,
-        MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams,
-        MediaSearchResult, MediaTagsParams, MediaTagsResult, ReaderInfo, ReadersResult,
-        ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams,
-        SystemsResult, TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams,
-        VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+        MediaMetaBatchParams, MediaMetaBatchResult, MediaMetaParams, MediaMetaResult, MediaResult,
+        MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult,
+        ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+        SystemDefault, SystemsParams, SystemsResult, TagInfo, TokensHistoryResult, TokensResult,
+        UpdateSettingsParams, VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
 
     #[test]
@@ -1969,6 +2005,52 @@ mod tests {
         );
         assert!(!object.contains_key("system"));
         assert!(!object.contains_key("path"));
+    }
+
+    #[test]
+    fn media_meta_batch_preserves_order_and_ref_shapes() {
+        let params = MediaMetaBatchParams::try_new(vec![
+            MediaMetaParams::for_media_id(42),
+            MediaMetaParams::for_media("SNES", "/roms/snes/x.sfc"),
+        ])
+        .expect("valid batch");
+        let json = serde_json::to_value(params).expect("serialise");
+        let items = json["items"].as_array().expect("items");
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0], serde_json::json!({"mediaId": 42}));
+        assert_eq!(
+            items[1],
+            serde_json::json!({"system": "SNES", "path": "/roms/snes/x.sfc"})
+        );
+    }
+
+    #[test]
+    fn media_meta_batch_enforces_item_cap() {
+        let hundred = vec![MediaMetaParams::for_media_id(1); 100];
+        assert!(MediaMetaBatchParams::try_new(hundred).is_ok());
+        let hundred_one = vec![MediaMetaParams::for_media_id(1); 101];
+        assert!(MediaMetaBatchParams::try_new(hundred_one).is_err());
+        assert!(MediaMetaBatchParams::try_new(Vec::new()).is_err());
+    }
+
+    #[test]
+    fn media_meta_batch_result_parses_mixed_items() {
+        let json = r#"{"items":[
+            {"media":{"path":"/a","title":{}}},
+            {"error":"media not found"}
+        ]}"#;
+        let result: MediaMetaBatchResult = serde_json::from_str(json).expect("parse");
+        assert_eq!(result.items.len(), 2);
+        assert_eq!(
+            result.items[0]
+                .media
+                .as_ref()
+                .map(|media| media.path.as_str()),
+            Some("/a")
+        );
+        assert!(result.items[0].error.is_none());
+        assert!(result.items[1].media.is_none());
+        assert_eq!(result.items[1].error.as_deref(), Some("media not found"));
     }
 
     #[test]

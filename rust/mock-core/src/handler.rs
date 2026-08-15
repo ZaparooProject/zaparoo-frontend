@@ -64,6 +64,7 @@ pub fn dispatch(text: &str) -> String {
         "media.search" => Some(fixtures::media_search_response(&req.params)),
         "media.browse" => Some(fixtures::media_browse_response(&req.params)),
         "media.browse.index" => Some(fixtures::media_browse_index_response(&req.params)),
+        "media.meta" => Some(fixtures::media_meta_response(&req.params)),
         "media.history" => Some(fixtures::media_history_response(&req.params)),
         "media.history.latest" => Some(fixtures::media_history_latest_response()),
         "run" => {
@@ -357,6 +358,17 @@ mod tests {
             indexed,
             browse["result"]["totalFiles"].as_u64().unwrap_or(0)
         );
+    }
+
+    #[test]
+    fn media_meta_preserves_batch_order() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.meta","params":{"items":[{"system":"NES","path":"/games/first.nes"},{"mediaId":42}]}}"#;
+        let resp = parse(&dispatch(req));
+        let items = resp["result"]["items"].as_array().expect("items");
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["media"]["path"], "/games/first.nes");
+        assert_eq!(items[0]["media"]["title"]["system"]["id"], "NES");
+        assert_eq!(items[1]["media"]["path"], "/mock/media/42");
     }
 
     #[test]

@@ -933,11 +933,12 @@ impl ffi::RecentsModel {
         let qt_thread = self.qt_thread();
         let store = global_store();
         let store_key = meta_key.clone();
+        let meta_params = media_id.map_or_else(
+            || MediaMetaParams::for_media(system, path.clone()),
+            MediaMetaParams::for_media_id,
+        );
         global_handle().spawn(async move {
-            let result = store
-                .client()
-                .media_meta(MediaMetaParams::for_media(system, path.clone()))
-                .await;
+            let result = store.client().media_meta(meta_params).await;
             // Cache the outcome (positive or negative) regardless of whether
             // this callback is still current, so a later revisit is instant.
             match &result {
@@ -1221,10 +1222,11 @@ fn enqueue_meta_prefetch(entries: &[MediaHistoryEntry], count: i32, row: i32) {
         if system.trim().is_empty() || path.trim().is_empty() {
             continue;
         }
-        requests.push((
-            MediaKey::new(system.clone(), path.clone()),
-            MediaMetaParams::for_media(system, path),
-        ));
+        let params = entry.media_id.map_or_else(
+            || MediaMetaParams::for_media(system.clone(), path.clone()),
+            MediaMetaParams::for_media_id,
+        );
+        requests.push((MediaKey::new(system, path), params));
     }
     if !requests.is_empty() {
         global_media_meta_cache().prefetch(requests);
