@@ -278,6 +278,7 @@ pub fn media_browse_response(params: &Value) -> Value {
                 "relativePath": file,
                 "tags": tags_for(file, index),
                 "disambiguatingTags": disambiguating_tags_for(file),
+                "hasCover": true,
             });
             filters
                 .iter()
@@ -394,6 +395,7 @@ pub fn media_history_response(params: &Value) -> Value {
                 "mediaName": name,
                 "mediaPath": format!("/mock/{system}/{file}"),
                 "launcherId": system,
+                "hasCover": true,
                 "startedAt": started,
                 "endedAt": ended,
                 "playTime": 1800,
@@ -449,6 +451,7 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
                 "system": { "id": system, "name": system_name, "category": category },
                 "tags": tags_for(file, index),
                 "disambiguatingTags": disambiguating_tags_for(file),
+                "hasCover": true,
             }))
         })
 }

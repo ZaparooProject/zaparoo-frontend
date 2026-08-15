@@ -189,6 +189,7 @@ mod tests {
         assert!(results
             .iter()
             .all(|g| g["system"]["id"].as_str() == Some("NES")));
+        assert!(results.iter().all(|g| g["hasCover"].is_boolean()));
     }
 
     #[test]
@@ -382,7 +383,7 @@ mod tests {
 
     #[test]
     fn media_history_returns_entries_with_pagination() {
-        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.history","params":{"limit":5}}"#;
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.history","params":{"limit":5,"distinctMedia":true}}"#;
         let resp = parse(&dispatch(req));
         let entries = resp["result"]["entries"].as_array().expect("array");
         assert!(!entries.is_empty());
@@ -392,6 +393,7 @@ mod tests {
             assert!(entry["systemId"].is_string());
             assert!(entry["systemName"].is_string());
             assert!(entry["launcherId"].is_string());
+            assert!(entry["hasCover"].is_boolean());
         }
         let pagination = resp["result"]["pagination"]
             .as_object()

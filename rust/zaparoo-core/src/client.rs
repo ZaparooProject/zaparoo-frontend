@@ -641,9 +641,9 @@ impl Client {
     /// Identified by `mediaId` when available, otherwise `(system,
     /// path)` where `path` is the canonical indexed media path returned
     /// by `media.search` or `media.browse`. Returns the `media.image`
-    /// payload: content type, file extension (when
-    /// derivable), base64 image bytes, and the resolved property type
-    /// tag.
+    /// payload: actual delivery mode, content type, file extension (when
+    /// derivable), inline base64 bytes or an opaque local thumbnail path,
+    /// and the resolved property type tag.
     pub async fn media_image(
         &self,
         params: MediaImageParams,

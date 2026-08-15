@@ -956,17 +956,20 @@ impl ffi::FavoritesModel {
         let system = entry.system.id.clone();
         let path = entry.path.clone();
         let media_id = entry.media_id;
+        let has_cover = entry.has_cover;
         if system.trim().is_empty() || path.trim().is_empty() {
             clear_current_detail_state(self.as_mut());
             return;
         }
-        let detail_key = match media_id {
-            Some(id) => MediaKey::with_media_id(system.clone(), path.clone(), id),
-            None => MediaKey::new(system.clone(), path.clone()),
-        }
-        .with_current_cover_preference();
-        self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
-        self.as_mut().rust_mut().current_detail_media_id = media_id;
+        let detail_key = has_cover.then(|| {
+            match media_id {
+                Some(id) => MediaKey::with_media_id(system.clone(), path.clone(), id),
+                None => MediaKey::new(system.clone(), path.clone()),
+            }
+            .with_current_cover_preference()
+        });
+        self.as_mut().rust_mut().current_detail_media_key = detail_key;
+        self.as_mut().rust_mut().current_detail_media_id = has_cover.then_some(media_id).flatten();
         sync_current_detail_image_key(self.as_mut());
         refresh_adjacent_cover_prefetch(self.as_mut());
 
@@ -1120,7 +1123,7 @@ fn emit_cover_key_range(mut model: Pin<&mut ffi::FavoritesModel>, first_row: i32
 /// Build the canonical `(systemId, mediaPath)` identifier for a search
 /// row. Returns `None` for rows without enough info to key on.
 fn media_key_for(entry: &MediaItem) -> Option<MediaKey> {
-    if entry.system.id.is_empty() || entry.path.is_empty() {
+    if !entry.has_cover || entry.system.id.is_empty() || entry.path.is_empty() {
         return None;
     }
     match entry.media_id {
@@ -1930,6 +1933,14 @@ mod tests {
             cover_key_for_with(&entry, Some(&key), false, false, false),
             "icons/Loading"
         );
+    }
+
+    #[test]
+    fn confirmed_no_cover_skips_key_and_first_paint_gate() {
+        let mut entry = favorite_entry();
+        entry.has_cover = false;
+        assert!(media_key_for(&entry).is_none());
+        assert!(compute_unresolved_keys(&[entry], |_| false, |_| false).is_empty());
     }
 
     #[test]
