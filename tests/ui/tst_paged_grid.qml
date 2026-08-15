@@ -58,6 +58,70 @@ TestCase {
         signalName: "loadMoreRequested"
     }
 
+    property int suspendLiveDelegates: 0
+
+    ListModel {
+        id: suspendModel
+        ListElement {
+            name: "a"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+        ListElement {
+            name: "b"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+        ListElement {
+            name: "c"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+    }
+
+    ListModel {
+        id: suspendReplacementModel
+        ListElement {
+            name: "replacement"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+    }
+
+    Component {
+        id: suspendDelegate
+        Item {
+            property string name: ""
+            property string coverKey: ""
+            property bool isSelected: false
+            property bool isFocused: false
+            property int favorite: 0
+            property bool hidden: false
+            property string disambiguatingTags: ""
+            Component.onCompleted: testCase.suspendLiveDelegates++
+            Component.onDestruction: testCase.suspendLiveDelegates--
+        }
+    }
+
+    PagedGrid {
+        id: suspendProbe
+        suspendDelegates: true
+        model: suspendModel
+        delegate: suspendDelegate
+        columnsOverride: 3
+        rowsOverride: 3
+        width: 300
+        height: 300
+    }
+
     function fillModel(count: int): void {
         model.clear();
         for (let i = 0; i < count; i++)
@@ -81,6 +145,40 @@ TestCase {
         fillModel(0);
         grid.setCurrentIndexImmediate(0);
         loadMoreSpy.clear();
+    }
+
+    function test_suspended_delegates_track_model_without_materializing(): void {
+        compare(suspendProbe.itemCount, 3);
+        compare(testCase.suspendLiveDelegates, 0);
+
+        suspendModel.append({
+            "name": "d",
+            "coverKey": "",
+            "favorite": 0,
+            "hidden": false,
+            "disambiguatingTags": ""
+        });
+        tryCompare(suspendProbe, "itemCount", 4);
+        compare(testCase.suspendLiveDelegates, 0);
+
+        suspendProbe.setCurrentIndexImmediate(2);
+        suspendProbe.suspendDelegates = false;
+        tryCompare(testCase, "suspendLiveDelegates", 4);
+        compare(suspendProbe.currentIndex, 2);
+
+        suspendProbe.suspendDelegates = true;
+        tryCompare(testCase, "suspendLiveDelegates", 0);
+        compare(suspendProbe.itemCount, 4);
+        compare(suspendProbe.currentIndex, 2);
+
+        suspendProbe.model = suspendReplacementModel;
+        tryCompare(suspendProbe, "itemCount", 1);
+        compare(testCase.suspendLiveDelegates, 0);
+
+        suspendProbe.model = suspendModel;
+        suspendModel.remove(3);
+        tryCompare(suspendProbe, "itemCount", 3);
+        suspendProbe.setCurrentIndexImmediate(0);
     }
 
     function test_geometry_matches_pinned_resolution(): void {

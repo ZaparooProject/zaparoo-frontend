@@ -513,6 +513,7 @@ Item {
     PagedGrid {
         id: mediaGrid
 
+        suspendDelegates: root._listLayout
         visible: !root._gateHide && !root._listLayout && root.renderGridLayout
         anchors.left: parent.left
         anchors.right: parent.right

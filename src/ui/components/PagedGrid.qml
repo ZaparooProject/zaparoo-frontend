@@ -45,7 +45,12 @@ Item {
     required property Component delegate
 
     property int currentIndex: 0
-    readonly property int itemCount: itemRepeater.count
+    // List layout keeps this grid as cursor/page authority while rendering a
+    // separate row view. Removing the hidden Repeater model avoids one cell
+    // object and role-binding set per loaded row; count still follows source
+    // model so navigation math remains unchanged.
+    property bool suspendDelegates: false
+    readonly property int itemCount: root.suspendDelegates ? (root.model && root.model.count !== undefined ? root.model.count : 0) : itemRepeater.count
 
     // Whether this section currently owns user focus. Tile uses this to
     // gate the selection card so only one section shows the focus cue
@@ -580,7 +585,11 @@ Item {
     }
 
     onItemCountChanged: {
-        if (root.itemCount < root._previousItemCount) {
+        // Destroying the Repeater during suspension briefly reports zero before
+        // itemCount rebinds to source count. That is not model shrinkage and
+        // must not reset restored list selection.
+        const sourceCountRetained = root.model && root.model.count >= root._previousItemCount;
+        if (root.itemCount < root._previousItemCount && !sourceCountRetained) {
             // Model shed rows (reset, system change, path change). The
             // pending-target context no longer applies — drop it before
             // the row-count check below moves currentIndex.
@@ -618,7 +627,7 @@ Item {
         Repeater {
             id: itemRepeater
 
-            model: root.model
+            model: root.suspendDelegates ? null : root.model
 
             Item {
                 id: cellItem
