@@ -32,19 +32,29 @@
 #include <QSize>
 #include <QString>
 #include <QThreadPool>
+#include <array>
 #include <memory>
 
 class MediaImageResponse : public QQuickImageResponse, public QRunnable
 {
   public:
     MediaImageResponse(QString id, QSize requestedSize, QMutex* cacheMutex,
-                       QCache<QString, QImage>* decodedCache);
+                       QCache<QString, QImage>* decodedCache,
+                       std::array<QMutex, 16>* decodeMutexes);
     ~MediaImageResponse() override = default;
 
     [[nodiscard]] QQuickTextureFactory* textureFactory() const override;
     void run() override;
 
   private:
+    struct RawImageResult
+    {
+        QImage image;
+        qint64 fetchUs = 0;
+        qint64 decodeUs = 0;
+        bool cacheHit = false;
+    };
+    [[nodiscard]] RawImageResult loadRawImage(qint64 queueWaitUs, int inflight);
     QString m_id;
     QSize m_requestedSize;
     QImage m_image;
@@ -57,6 +67,10 @@ class MediaImageResponse : public QQuickImageResponse, public QRunnable
     mutable std::unique_ptr<QQuickTextureFactory> m_factory;
     QMutex* m_cacheMutex;
     QCache<QString, QImage>* m_decodedCache;
+    // Striped per-ID decode locks. Requests for one cover at width-only,
+    // height-only, and natural size share one raw decode while unrelated
+    // covers still use separate workers.
+    std::array<QMutex, 16>* m_decodeMutexes;
     // Started when the response is constructed (i.e. enqueued onto the
     // pool). Read at run() start it yields queue_wait (time spent waiting
     // for a free worker); read before each finished() it yields the total
@@ -85,13 +99,12 @@ class MediaImageProvider : public QQuickAsyncImageProvider
     // beyond that, context-switch cost outweighs parallel decode on
     // the software-rendered build.
     QThreadPool m_pool;
-    // Process-memory cache for decoded covers. The WebP→QImage decode
-    // is the dominant cost (measured ~424 ms mean, p90 775 ms on MiSTer),
-    // and PagedGrid tears tiles down on rapid scroll so the same cover
-    // re-decodes on revisit (~3.76× per cover in a browse session). The
-    // decoded image is deterministic per (id, requestedSize), so caching
-    // it lets a re-invocation skip the FFI fetch and decode entirely.
-    // Cost is tracked in bytes; maxCost caps the footprint on MiSTer.
+    // Process-memory cache for raw decoded images plus scaled variants. Raw
+    // entries are keyed only by media ID, allowing width-only, height-only,
+    // and natural-size QML consumers to share expensive WebP decoding. Scaled
+    // variants keep their requested-size key. One shared byte cap accounts for
+    // both forms.
     QMutex m_cacheMutex;
     QCache<QString, QImage> m_decodedCache;
+    std::array<QMutex, 16> m_decodeMutexes;
 };

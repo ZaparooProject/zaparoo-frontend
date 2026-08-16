@@ -60,6 +60,13 @@ TestCase {
         main.settingsScreenRequested = true;
         main.activeScreen = main.screenHub;
         main.pendingTransition = "";
+        main.systemsCoverRevealReady = true;
+        main.gamesCoverRevealReady = true;
+        main.gamesNavigationInputAt = 0;
+        main.gamesNavigationModelReadyAt = 0;
+        main.gamesNavigationAction = "";
+        main.gamesScreen.lastNavigationInputAt = 0;
+        main._firstRunIndexStarted = false;
         tryCompare(main, "transitionCueVisible", false);
         // Hub focus is two rows now (categories + actions); reset both
         // axes so a prior test's row-jump doesn't leak into the next.
@@ -89,6 +96,29 @@ TestCase {
         Browse.GamesModel.apply_favorites_filter(testCase._originalGamesFavoritesFilter);
         Browse.GamesState.favorites_filter = testCase._originalGamesFavoritesFilter;
         Browse.GamesModel.total_files = 0;
+    }
+
+    function test_first_run_index_starts_only_from_authoritative_empty_state(): void {
+        compare(main._shouldStartFirstRunIndex(2, true, true, 0), true);
+        compare(main._shouldStartFirstRunIndex(1, true, true, 0), false);
+        compare(main._shouldStartFirstRunIndex(2, false, true, 0), false);
+        compare(main._shouldStartFirstRunIndex(2, true, false, 0), false);
+        compare(main._shouldStartFirstRunIndex(2, true, true, 1), false);
+        main._firstRunIndexStarted = true;
+        compare(main._shouldStartFirstRunIndex(2, true, true, 0), false);
+    }
+
+    function test_catalog_polling_is_limited_to_system_membership_screens(): void {
+        main.activeScreen = main.screenHub;
+        compare(main._catalogRefreshScreenActive(), true);
+        main.activeScreen = main.screenSystems;
+        compare(main._catalogRefreshScreenActive(), true);
+        main.activeScreen = main.screenFavoriteSystems;
+        compare(main._catalogRefreshScreenActive(), true);
+        main.activeScreen = main.screenGames;
+        compare(main._catalogRefreshScreenActive(), false);
+        main.activeScreen = main.screenFavorites;
+        compare(main._catalogRefreshScreenActive(), false);
     }
 
     function test_initial_state_is_hub(): void {
@@ -124,6 +154,103 @@ TestCase {
         compare(main.systemsScreen.visible, false);
     }
 
+    function test_help_bar_stays_stable_during_forward_transition(): void {
+        main.activeScreen = main.screenHub;
+        const before = JSON.stringify(main.helpEntries);
+        verify(before !== "[]");
+
+        main.pendingTransition = "systems";
+        compare(JSON.stringify(main.helpEntries), before);
+    }
+
+    function test_games_rapid_scroll_snapshot_crops_to_cell_area(): void {
+        const snapshot = findChild(main.gamesScreen, "rapidScrollSnapshot");
+        const snapshotImage = findChild(main.gamesScreen, "rapidScrollSnapshotImage");
+        verify(snapshot !== null);
+        verify(snapshotImage !== null);
+        compare(snapshot.x, main.gamesScreen.gamesGrid.x + main.gamesScreen.gamesGrid.leftInset);
+        compare(snapshot.y, main.gamesScreen.gamesGrid.y + main.gamesScreen.gamesGrid.topInset);
+        compare(snapshot.width, main.gamesScreen.gamesGrid._contentWidth);
+        compare(snapshot.height, main.gamesScreen.gamesGrid.rows * main.gamesScreen.gamesGrid.cellHeight + Math.max(0, main.gamesScreen.gamesGrid.rows - 1) * main.gamesScreen.gamesGrid.cellSpacingY);
+        compare(snapshotImage.sourceClipRect.x, main.gamesScreen.gamesGrid.leftInset);
+        compare(snapshotImage.sourceClipRect.y, main.gamesScreen.gamesGrid.topInset);
+        compare(snapshotImage.opacity, 0.28);
+    }
+
+    function test_games_deep_page_restore_hides_page_one_until_selection_found(): void {
+        main.activeScreen = main.screenGames;
+        main._pendingGameRestorePath = "/saved/parent/page-three-game.zip";
+        compare(main.gamesSelectionRestorePending, true);
+        compare(main.gamesScreen.optimisticLoading, true);
+        compare(main.gamesScreen._gateHide, true, "first loaded page must not paint during deep-page restore");
+        main._pendingGameRestorePath = "";
+    }
+
+    function test_game_covers_wait_for_model_frame(): void {
+        main.activeScreen = main.screenGames;
+        main.gamesCoverRevealReady = false;
+        compare(main.gamesScreen.gamesGrid.coverRequestsEnabled, false);
+
+        main.gamesCoverRevealReady = true;
+        compare(main.gamesScreen.gamesGrid.coverRequestsEnabled, true);
+    }
+
+    function test_games_header_extracts_current_folder_name(): void {
+        compare(main.gamesScreen._folderNameForPath("/media/fat/games/SNES/RPGs"), "RPGs");
+        compare(main.gamesScreen._folderNameForPath("/media/fat/games/SNES/RPGs/"), "RPGs");
+        compare(main.gamesScreen._folderNameForPath("C:\\Games\\SNES\\RPGs"), "RPGs");
+        compare(main.gamesScreen._folderNameForPath(""), "");
+    }
+
+    function test_folder_navigation_timing_uses_input_timestamp(): void {
+        const inputAt = Date.now() - 25;
+        main.gamesScreen.lastNavigationInputAt = inputAt;
+
+        main._beginFolderNavigationTiming("back");
+
+        compare(main.gamesNavigationInputAt, inputAt);
+        compare(main.gamesNavigationModelReadyAt, 0);
+        compare(main.gamesNavigationAction, "back");
+        compare(main.gamesScreen.lastNavigationInputAt, 0);
+    }
+
+    function test_system_covers_wait_for_destination_frame(): void {
+        main.activeScreen = main.screenSystems;
+        main.systemsCoverRevealReady = false;
+        compare(main.systemsScreen.coverRevealReady, false);
+        compare(main.systemsScreen.systemsGrid.coverRequestsEnabled, false);
+
+        main.systemsCoverRevealReady = true;
+        compare(main.systemsScreen.coverRevealReady, true);
+    }
+
+    function test_system_grid_withholds_covers_during_transition(): void {
+        main.activeScreen = main.screenHub;
+        main.pendingTransition = "systems";
+        compare(main.systemsScreen.systemsGrid.suspendDelegates, false);
+        compare(main.systemsScreen.systemsGrid.coverRequestsEnabled, false);
+        compare(main.systemsScreen.systemsGrid.coverLookaheadPages, 0);
+        compare(main.systemsScreen.systemsGrid.eagerFocusedCovers, false);
+
+        main.pendingTransition = "";
+        main.activeScreen = main.screenSystems;
+        compare(main.systemsScreen.preparingTransition, false);
+    }
+
+    function test_transition_timing_closes_on_presented_frame(): void {
+        main._beginTransitionTiming("accept");
+        main._markTransitionRouted(main.screenSystems);
+        compare(main._transitionAction, "accept");
+        compare(main._transitionFromScreen, main.screenHub);
+        compare(main._transitionToScreen, main.screenSystems);
+        verify(main._transitionRouteAt > 0);
+
+        main._finishTransitionTiming();
+        compare(main._transitionInputStartedAt, 0);
+        compare(main._transitionRouteAt, 0);
+        compare(main._transitionToScreen, "");
+    }
+
     // Enter on an optimistic placeholder category starts the normal
     // systems loading transition and preserves the visible category
     // name instead of treating the row as empty.
@@ -155,6 +282,24 @@ TestCase {
         // qmllint enable compiler
         main.handleKey(Qt.Key_Return);
         compare(main.activeScreen, main.updateEnabled ? main.screenUpdate : main.screenSettings);
+    }
+
+    function test_favorite_systems_grid_matches_system_tile_layout(): void {
+        compare(main.favoriteSystemsScreen.gridShowCaption, false);
+        compare(main.favoriteSystemsScreen.gridColumnsOverride, main.systemsScreen.systemsGrid.columns);
+        compare(main.favoriteSystemsScreen.gridRowsOverride, main.systemsScreen.systemsGrid.rows);
+    }
+
+    function test_flat_favorites_uses_unbounded_page_chrome(): void {
+        compare(main.favoritesScreen.paginationTotalKnown, false);
+        compare(main.favoritesScreen.favoritesGrid.paginationTotalKnown, false);
+        verify(main.favoritesScreen.topStrip.pageText.indexOf("/") < 0);
+    }
+
+    function test_recents_uses_unbounded_page_chrome(): void {
+        compare(main.recentsScreen.paginationTotalKnown, false);
+        compare(main.recentsScreen.recentsGrid.paginationTotalKnown, false);
+        verify(main.recentsScreen.topStrip.pageText.indexOf("/") < 0);
     }
 
     function test_hub_favorites_action_uses_favorite_systems_mode(): void {
@@ -527,15 +672,26 @@ TestCase {
         compare(main._repeatPending, true, "Re-arm restarts the initial-delay timer");
     }
 
-    function test_rapid_navigation_taps_activate_on_second_press(): void {
+    function test_rapid_navigation_taps_require_sustained_same_direction(): void {
+        for (let i = 1; i < main._rapidNavigationTapThreshold; ++i) {
+            main._noteRapidNavigationAction("down", false);
+            compare(main.rapidNavigationActive, false, "ordinary repeated taps stay out of rapid mode");
+        }
         main._noteRapidNavigationAction("down", false);
-        compare(main.rapidNavigationAction, "down", "rapid action tracks latest rapid input even before active mode");
-        compare(main.rapidNavigationActive, false, "single isolated press should not enter rapid mode");
-        main._noteRapidNavigationAction("down", false);
-        compare(main.rapidNavigationActive, true, "second press inside quiet window enters rapid mode");
+        compare(main.rapidNavigationActive, true, "fourth same-direction tap inside quiet window enters rapid mode");
+        compare(main.rapidNavigationIndicatorActive, true);
         wait(main._rapidNavigationQuietMs + 40);
         compare(main.rapidNavigationActive, false, "rapid mode clears after quiet window");
         compare(main.rapidNavigationAction, "", "quiet reset clears rapid action");
+    }
+
+    function test_rapid_navigation_alternating_taps_never_activate(): void {
+        const actions = ["up", "down", "up", "down", "up"];
+        for (let i = 0; i < actions.length; ++i) {
+            main._noteRapidNavigationAction(actions[i], false);
+            compare(main.rapidNavigationActive, false, "direction changes must reset rapid-mode tap evidence");
+            compare(main.rapidNavigationIndicatorActive, false);
+        }
     }
 
     function test_rapid_navigation_ignores_non_rapid_action(): void {

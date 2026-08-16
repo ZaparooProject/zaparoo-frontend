@@ -141,6 +141,7 @@ TestCase {
         // (which skips its cleanup) doesn't poison the next case's
         // pageCount/totalPageCount math.
         grid.hasMorePages = false;
+        grid.paginationTotalKnown = true;
         grid.totalItemsOverride = -1;
         fillModel(0);
         grid.setCurrentIndexImmediate(0);
@@ -185,12 +186,27 @@ TestCase {
         compare(grid.columns, 4, "expected 4 columns at 480px height");
         compare(grid.rows, 3, "expected 3 rows at 480px height");
         compare(grid.pageSize, 12);
+        compare(grid._coverRetentionPages, 2, "tile retention must convert cover count to pages");
     }
 
     function test_empty_model_refuses_movement(): void {
         compare(grid.itemCount, 0);
         compare(grid.moveSelection(1, 0), false);
         compare(grid.moveSelection(0, 1), false);
+        compare(grid.currentIndex, 0);
+    }
+
+    function test_prepare_for_model_replacement_clears_pending_target(): void {
+        fillModel(20);
+        grid.totalItemsOverride = 100;
+        grid.hasMorePages = true;
+        grid.setCurrentIndexImmediate(13);
+        compare(grid.jumpToIndex(50), false);
+        compare(grid.hasPendingTarget, true);
+
+        grid.prepareForModelReplacement();
+
+        compare(grid.hasPendingTarget, false);
         compare(grid.currentIndex, 0);
     }
 
@@ -444,6 +460,49 @@ TestCase {
         compare(grid.pageCount, 1);
         compare(grid.hasPagesAbove, false);
         compare(grid.hasPagesBelow, false);
+    }
+
+    function test_single_page_returns_unused_scroll_gutter_to_cells(): void {
+        fillModel(6);
+        compare(grid._scrollIndicatorVisible, false);
+        const singlePageCellWidth = grid.cellWidth;
+        grid.totalItemsOverride = 60;
+        compare(grid._scrollIndicatorVisible, true);
+        verify(grid.cellWidth < singlePageCellWidth);
+        grid.totalItemsOverride = -1;
+    }
+
+    function test_unbounded_pages_keep_down_arrow_at_loaded_edge(): void {
+        fillModel(24);
+        grid.paginationTotalKnown = false;
+        grid.hasMorePages = true;
+        grid.setCurrentIndexImmediate(12);
+        compare(grid.currentPage, grid.pageCount - 1);
+        compare(grid.hasPagesAbove, true);
+        compare(grid.hasPagesBelow, true);
+    }
+
+    function test_unbounded_page_next_fetches_instead_of_wrapping(): void {
+        fillModel(24);
+        grid.paginationTotalKnown = false;
+        grid.hasMorePages = true;
+        grid.setCurrentIndexImmediate(12);
+        loadMoreSpy.clear();
+
+        compare(grid.pageBy(1), false);
+        compare(grid.currentIndex, 12);
+        compare(grid._pendingTargetPage, 2);
+        verify(loadMoreSpy.count >= 1);
+    }
+
+    function test_unbounded_page_zero_does_not_wrap_backward(): void {
+        fillModel(24);
+        grid.paginationTotalKnown = false;
+        grid.hasMorePages = true;
+        compare(grid.pageBy(-1), false);
+        compare(grid.moveSelection(0, -1), false);
+        compare(grid.currentIndex, 0);
+        compare(grid.hasPendingTarget, false);
     }
 
     // ── Scroll thumb sizing (totalItemsOverride) ─────────────────────────

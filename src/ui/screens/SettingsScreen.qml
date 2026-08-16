@@ -9,15 +9,14 @@ import Zaparoo.Ui
 import Zaparoo.Browse as Browse
 
 // cxx-qt 0.8 patches `isFinal: true` on singleton properties but the
-// qmltypes schema has no `isFinal` slot for Method, so every qinvokable
-// call on a Zaparoo.Browse singleton (set_resolution) still trips
-// qmllint's "Member can be shadowed" check. Until the schema grows
-// method-level finality, suppress the compiler category file-wide.
+// qmltypes schema has no `isFinal` slot for Method, so qinvokable calls on
+// Zaparoo.Browse singletons still trip qmllint's "Member can be shadowed"
+// check. Until the schema grows method-level finality, suppress the compiler
+// category file-wide.
 // qmllint disable compiler
 
-// Settings screen — gamepad-driven vertical form. Resolution is MiSTer-only
-// because it changes frontend startup video config and applies on restart.
-// Button style is cross-platform and selects the resource directory for
+// Settings screen — gamepad-driven vertical form. Button style is
+// cross-platform and selects the resource directory for
 // help-bar button glyphs (Style A/B/C/D → resources/images/buttons/{a,b,c,d}/).
 // Mouse support is cross-platform and controls cursor visibility plus mouse
 // hit targets.
@@ -114,17 +113,9 @@ Item {
             coverKey: "icons/Support"
         }
     ]
-    // Display = video output only. Resolution is MiSTer-only (changes startup
-    // video config, applies on restart).
+    // Display = video output and presentation controls.
     readonly property var displayInterfaceFields: {
         const out = [];
-        if (Browse.Settings.is_mister) {
-            out.push({
-                kind: "field",
-                id: "resolution",
-                label: qsTr("Resolution")
-            });
-        }
         out.push({
             kind: "field",
             id: "orientation",
@@ -398,8 +389,6 @@ Item {
     }
 
     function _fieldValue(id: string): string {
-        if (id === "resolution")
-            return settings._resolutionDisplay(Browse.Settings.current_resolution);
         if (id === "language")
             return settings._languageDisplay(Browse.Settings.current_language);
         if (id === "orientation")
@@ -548,7 +537,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "browseLayout" || id === "systemLogoStyle" || id === "buttonLayout" || id === "resolution" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
+        return id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "browseLayout" || id === "systemLogoStyle" || id === "buttonLayout" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
     }
     // True when focused row accepts A without left/right cycling:
     // pickers, jobs, modal/navigation rows, and root category rows.
@@ -611,19 +600,6 @@ Item {
     property int currentIndex: {
         const idx = settings._firstNavigableIndex();
         return idx >= 0 ? idx : 0;
-    }
-
-    function _resolutionList(): list<string> {
-        const raw = Browse.Settings.available_resolutions;
-        return raw === undefined || raw === null ? [] : raw;
-    }
-
-    function _resolutionDisplay(value: string): string {
-        // Empty resolution means "fall back to frontend.toml defaults",
-        // which the Settings model treats as the platform default. Render
-        // it as a translated label rather than an empty cell so the user
-        // sees something selectable.
-        return value === "" ? qsTr("Default") : value;
     }
 
     function _buttonLayoutList(): list<string> {
@@ -831,16 +807,7 @@ Item {
         let title = "";
         let entries = [];
         let initialId = "";
-        if (id === "resolution") {
-            title = qsTr("Resolution");
-            const list = settings._resolutionList();
-            for (let i = 0; i < list.length; i++)
-                entries.push({
-                    id: list[i],
-                    label: settings._resolutionDisplay(list[i])
-                });
-            initialId = Browse.Settings.current_resolution;
-        } else if (id === "language") {
+        if (id === "language") {
             title = qsTr("Language");
             const list = settings._languageList();
             for (let i = 0; i < list.length; i++)

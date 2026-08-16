@@ -156,6 +156,13 @@ TestCase {
         compare(closeSpy.count, 1);
     }
 
+    function test_handle_action_page_menu_toggles_picker_closed(): void {
+        picker.entries = _entries(3);
+        picker.open = true;
+        picker.handleAction("page_menu");
+        compare(closeSpy.count, 1);
+    }
+
     function test_reopen_recomputes_initial_index(): void {
         // First open lands on a match.
         picker.entries = _entries(4);

@@ -52,8 +52,13 @@ Item {
     readonly property int _gapW: root._hasTags ? Sizing.pctW(1.2) : 0
 
     readonly property int _avail: Math.max(0, root.width)
-    readonly property int _nameFullW: Math.ceil(nameMetrics.advanceWidth)
-    readonly property int _tagsFullW: root._hasTags ? Math.ceil(tagsMetrics.advanceWidth) : 0
+    // advanceWidth measures cursor movement, not every painted pixel. Native,
+    // fully hinted glyphs can extend beyond either side bearing, so using only
+    // advanceWidth can classify a visibly clipped caption as fitting. Measure
+    // the union of logical advance and painted bounds for overflow/marquee
+    // decisions; this also absorbs fractional metrics before integer layout.
+    readonly property int _nameFullW: Math.ceil(Math.max(nameMetrics.advanceWidth, nameMetrics.boundingRect.x + nameMetrics.boundingRect.width) - Math.min(0, nameMetrics.boundingRect.x))
+    readonly property int _tagsFullW: root._hasTags ? Math.ceil(Math.max(tagsMetrics.advanceWidth, tagsMetrics.boundingRect.x + tagsMetrics.boundingRect.width) - Math.min(0, tagsMetrics.boundingRect.x)) : 0
 
     readonly property int _blockW: root._nameFullW + root._gapW + root._tagsFullW
     readonly property int _scrollDist: Math.max(0, root._blockW - root._avail)
@@ -93,6 +98,7 @@ Item {
 
     TextMetrics {
         id: nameMetrics
+        objectName: "scrollingCaptionNameMetrics"
 
         text: root.name
         font.family: root.fontFamily
@@ -101,6 +107,7 @@ Item {
 
     TextMetrics {
         id: tagsMetrics
+        objectName: "scrollingCaptionTagsMetrics"
 
         text: root.tags
         font.family: root.fontFamily

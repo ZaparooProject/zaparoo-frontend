@@ -25,11 +25,10 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant,
 };
-use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
@@ -96,6 +95,8 @@ pub struct FavoritesModelRust {
     // action to this canonical Core system ID.
     current_system_id: QString,
     count: i32,
+    // Core's total across every cursor page. -1 means unknown.
+    total_items: i32,
     loading: bool,
     loading_more: bool,
     error_message: QString,
@@ -139,22 +140,6 @@ pub struct FavoritesModelRust {
     // lazily on the first page apply so the model singleton owns
     // exactly one subscriber for the whole process lifetime.
     cover_subscription: Option<JoinHandle<()>>,
-    // Keys whose first-paint we're still waiting on. While non-empty
-    // we hold `loading = true` so the screen-flip overlay covers the
-    // gap between "page rendered with system logos" and "covers
-    // cached". Drained by `notify_cover_update` as each cover lands;
-    // force-cleared by the gate timer or a Pending/Errored transition.
-    pending_first_paint_keys: HashSet<MediaKey>,
-    // Safety timer that force-releases the cover gate after a bounded
-    // delay, so a stalled bulk RPC can't park the user on `Loading…`
-    // forever.
-    cover_gate_timer: Option<JoinHandle<()>>,
-    // Bumped on every cover-gate arm and on every Pending/Errored
-    // disarm. The timer's queued closure compares against the current
-    // value and bails on a mismatch — necessary because aborting the
-    // JoinHandle doesn't cancel a callback already queued onto the Qt
-    // thread between sleep-completion and abort.
-    cover_gate_seq: Arc<AtomicU64>,
     nav_timing: Option<NavTiming>,
 }
 
@@ -166,6 +151,7 @@ impl Default for FavoritesModelRust {
             sort_mode: QString::default(),
             current_system_id: QString::default(),
             count: 0,
+            total_items: -1,
             loading: false,
             loading_more: false,
             error_message: QString::default(),
@@ -191,9 +177,6 @@ impl Default for FavoritesModelRust {
             scope_seq: Arc::new(AtomicU64::new(0)),
             seq: Arc::new(AtomicU64::new(0)),
             cover_subscription: None,
-            pending_first_paint_keys: HashSet::new(),
-            cover_gate_timer: None,
-            cover_gate_seq: Arc::new(AtomicU64::new(0)),
             nav_timing: None,
         }
     }
@@ -221,6 +204,7 @@ pub mod ffi {
         #[qml_element]
         #[qml_singleton]
         #[qproperty(i32, count)]
+        #[qproperty(i32, total_items)]
         #[qproperty(bool, loading)]
         #[qproperty(bool, loading_more)]
         #[qproperty(QString, error_message)]
@@ -289,6 +273,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn system_id_at(self: &FavoritesModel, index: i32) -> QString;
+
+        #[qinvokable]
+        fn system_name_at(self: &FavoritesModel, index: i32) -> QString;
 
         #[qinvokable]
         fn peek_detail_at(self: Pin<&mut FavoritesModel>, index: i32);
@@ -377,7 +364,15 @@ impl cxx_qt::Initialize for ffi::FavoritesModel {
 /// Snapshot of a single page that `apply_state` can write onto the
 /// model. Carried by value so the closure is `Send + 'static` for the
 /// `qt_thread` queue.
-type PageSnapshot = (Vec<MediaItem>, bool, Option<String>);
+type PageSnapshot = (Vec<MediaItem>, bool, Option<String>, i32);
+
+fn total_items_hint(total: i64) -> i32 {
+    if total < 0 {
+        -1
+    } else {
+        i32::try_from(total).unwrap_or(i32::MAX)
+    }
+}
 
 /// Project the resource status onto an `(Option<PageSnapshot>, error)`
 /// tuple. `Idle`/`Loading` map to the same `(None, "")` shape so the
@@ -389,6 +384,7 @@ fn project(status: &ResourceStatus<MediaSearchResult>) -> (Option<PageSnapshot>,
                 data.results.clone(),
                 data.has_next_page(),
                 data.next_cursor(),
+                total_items_hint(data.total),
             )),
             String::new(),
         ),
@@ -402,7 +398,7 @@ fn apply_state(
     (data, err): (Option<PageSnapshot>, String),
 ) {
     let apply_started = Instant::now();
-    if let Some((entries, has_next_page, next_cursor)) = data {
+    if let Some((entries, has_next_page, next_cursor, total_items)) = data {
         if model.nav_timing.is_none() {
             model.as_mut().rust_mut().nav_timing = Some(NavTiming::new("cache"));
         }
@@ -419,6 +415,9 @@ fn apply_state(
         clear_current_detail_state(model.as_mut());
         let count = i32::try_from(entries.len()).unwrap_or(i32::MAX);
         let displays = compute_favorites_disambig_displays(&entries, model.show_original_filenames);
+        if model.total_items != total_items {
+            model.as_mut().set_total_items(total_items);
+        }
         model.as_mut().begin_reset_model();
         {
             let mut rust = model.as_mut().rust_mut();
@@ -439,29 +438,15 @@ fn apply_state(
         if model.has_next_page != has_next_page {
             model.as_mut().set_has_next_page(has_next_page);
         }
-        // Hidden startup binding can pause cover requests so Hub paints without
-        // Favorites' off-screen cover gate. Screen entry resumes requests and
-        // refreshes visible cover roles.
-        if model.cover_requests_paused {
-            disarm_cover_gate(model.as_mut());
-            if model.loading {
-                model.as_mut().set_loading(false);
-            }
-            finish_nav_timing(model.as_mut(), "covers-paused", 0);
-        } else {
-            // Decide whether to release `loading` immediately or hold it until
-            // covers are cached. `arm_cover_gate` flips loading off itself when
-            // the page has nothing to wait on; otherwise it leaves loading=true
-            // and arms the safety timer.
-            arm_cover_gate(model.as_mut());
+        // Rows define destination readiness. Covers continue through the
+        // bounded image queue and reveal progressively; holding navigation on
+        // the slowest visible image made Favorites entry exceed two seconds.
+        if model.loading {
+            model.as_mut().set_loading(false);
         }
+        finish_nav_timing(model.as_mut(), "model-ready", 0);
         if model.loading_more {
             model.as_mut().set_loading_more(false);
-        }
-        // Look-ahead prefetch: warm page 2 so the first scroll past the
-        // initial page doesn't surface a "Loading more…" cue.
-        if has_next_page && !model.cover_requests_paused {
-            model.as_mut().fetch_more();
         }
     } else if err.is_empty() {
         if model.nav_timing.is_none() {
@@ -475,9 +460,6 @@ fn apply_state(
         // is re-set when Ready lands. Bump `seq` and null `next_cursor`
         // so an in-flight `fetch_more` queued during the prior Ready
         // can't slip a stale append in before the next Ready arrives.
-        // Disarm the cover gate too: a stale timer firing during the
-        // next Ready would clear loading prematurely.
-        disarm_cover_gate(model.as_mut());
         clear_current_detail_state(model.as_mut());
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().rust_mut().next_cursor = None;
@@ -491,11 +473,6 @@ fn apply_state(
             model.as_mut().set_has_next_page(false);
         }
     } else {
-        // Same disarm as the Pending branch — an Errored transition
-        // doesn't reset entries, so a callback queued during the prior
-        // Ready could otherwise append rows that don't belong to the
-        // current chain.
-        disarm_cover_gate(model.as_mut());
         clear_current_detail_state(model.as_mut());
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().rust_mut().next_cursor = None;
@@ -875,6 +852,18 @@ impl ffi::FavoritesModel {
             return QString::default();
         };
         QString::from(entry.system.id.as_str())
+    }
+
+    fn system_name_at(&self, index: i32) -> QString {
+        let Some(entry) = self.entry_at(index) else {
+            return QString::default();
+        };
+        let name = entry.system.name.trim();
+        QString::from(if name.is_empty() {
+            entry.system.id.as_str()
+        } else {
+            name
+        })
     }
 
     // Immediate, non-debounced sibling of `load_detail_at`. Called the moment
@@ -1552,13 +1541,8 @@ fn finish_nav_timing(
 
 /// Emit `dataChanged(coverKey)` for every row whose entry's
 /// `(systemId, mediaPath)` matches `key`. Cheap walk of the current
-/// `entries` vec — favorites pages top out at a few hundred rows after
-/// look-ahead, and the bridge runs only when the cover-cache fetch
-/// driver delivers a result.
-///
-/// Also drains `pending_first_paint_keys`: each cover landing during
-/// the gate's hold ticks the set down, and emptying the set releases
-/// the gate so the screen-flip overlay clears.
+/// `entries` vec — loaded favorites remain cursor-paged, and the bridge runs
+/// only when the cover-cache fetch driver delivers a result.
 fn notify_cover_update(mut model: Pin<&mut ffi::FavoritesModel>, key: &MediaKey) {
     let rows: Vec<i32> = model
         .entries
@@ -1589,157 +1573,10 @@ fn notify_cover_update(mut model: Pin<&mut ffi::FavoritesModel>, key: &MediaKey)
     {
         sync_current_detail_image_key(model.as_mut());
     }
-    // Tick the gate's pending set down. `remove` returns false if the
-    // key wasn't gated (broadcast events fire for every cache update,
-    // including miss-recovery enqueues from `cover_key_for`); we only
-    // try to release when a gated key was actually drained.
-    let was_pending = model
-        .as_mut()
-        .rust_mut()
-        .pending_first_paint_keys
-        .remove(key);
-    if was_pending && model.pending_first_paint_keys.is_empty() && model.loading {
-        if let Some(handle) = model.as_mut().rust_mut().cover_gate_timer.take() {
-            handle.abort();
-        }
-        // Bytes are cached, but QML's `MediaImageProvider` still has to
-        // decode them. The hidden cover pre-warmer in
-        // `FavoritesScreen.qml` dispatches all N requests at once and the
-        // provider's 4-worker pool decodes them in ~75–150 ms; without
-        // this settle window the gate flips `loading=false` before the
-        // last few decodes complete and the grid materialises with
-        // those tiles still showing the procedural fallback. Mirrors
-        // the same hand-off in `games.rs::notify_cover_update`. Same
-        // seq-ticket guard as the safety timer so a model reset
-        // cancels the pending release.
-        info!("favorites: cover gate bytes settled — entering decode-settle window");
-        let seq = model.rust().cover_gate_seq.clone();
-        let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let qt_thread = model.qt_thread();
-        let handle = global_handle().spawn(async move {
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            let _ = qt_thread.queue(move |mut model: Pin<&mut ffi::FavoritesModel>| {
-                if seq.load(Ordering::SeqCst) != ticket {
-                    return;
-                }
-                model.as_mut().rust_mut().cover_gate_timer = None;
-                if model.loading {
-                    info!("favorites: cover gate released after decode-settle window");
-                    model.as_mut().set_loading(false);
-                }
-                finish_nav_timing(model.as_mut(), "covers-ready", 0);
-            });
-        });
-        model.as_mut().rust_mut().cover_gate_timer = Some(handle);
-    }
     // Re-check the adjacent preload keys: a neighbor's bytes may have
     // just landed, upgrading its key from `icons/Loading` to
     // `media-image/...` so the hidden Image can start decoding.
     refresh_adjacent_cover_prefetch(model);
-}
-
-/// Compute the set of media keys on the current page whose covers we
-/// must wait on before releasing the cover gate. Rows without enough
-/// info to key on, already-cached keys, and negatively-memoised keys
-/// are all excluded. Pure helper so the gate's binning logic is unit-
-/// testable without spinning up the global cache + tokio runtime.
-fn compute_unresolved_keys<F, G>(
-    entries: &[MediaItem],
-    is_cached: F,
-    is_negative: G,
-) -> HashSet<MediaKey>
-where
-    F: Fn(&MediaKey) -> bool,
-    G: Fn(&MediaKey) -> bool,
-{
-    entries
-        .iter()
-        .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
-        .filter(|k| !is_cached(k) && !is_negative(k))
-        .collect()
-}
-
-/// Decide whether to hold `loading=true` until the page's covers are
-/// cached, or release immediately. Called once per Ready `apply_state`.
-///
-/// - If every search row's cover is already cached or negatively-
-///   memoised, set loading=false right now — the screen-flip overlay
-///   clears.
-/// - Otherwise, store the unresolved set on the model, arm a 3 s
-///   safety timer, and leave loading=true. `notify_cover_update` will
-///   drain the set as covers land; whichever happens first (set
-///   empties or timer fires) releases the gate.
-fn arm_cover_gate(mut model: Pin<&mut ffi::FavoritesModel>) {
-    if let Some(handle) = model.as_mut().rust_mut().cover_gate_timer.take() {
-        handle.abort();
-    }
-    let cache = global_media_image_cache();
-    let visible = &model.entries;
-    let cover_keys = visible
-        .iter()
-        .filter_map(|entry| media_key_for(entry).map(MediaKey::with_current_cover_preference))
-        .collect::<Vec<_>>();
-    let cover_total = cover_keys.len();
-    let cover_cache_hits = cover_keys.iter().filter(|k| cache.is_cached(k)).count();
-    let unresolved = compute_unresolved_keys(
-        visible,
-        |k| cache.is_cached(k),
-        |k| cache.is_negative(k) || cache.is_soft_no_image(k),
-    );
-    if let Some(timing) = model.as_mut().rust_mut().nav_timing.as_mut() {
-        timing.start_gate(cover_total, cover_cache_hits, unresolved.len());
-    }
-    if unresolved.is_empty() {
-        model.as_mut().rust_mut().pending_first_paint_keys.clear();
-        if model.loading {
-            model.as_mut().set_loading(false);
-        }
-        finish_nav_timing(model.as_mut(), "covers-ready", 0);
-        return;
-    }
-    info!(
-        pending = unresolved.len(),
-        "favorites: arm cover gate (holding loading until covers cached)"
-    );
-    model.as_mut().rust_mut().pending_first_paint_keys = unresolved;
-    let seq = model.rust().cover_gate_seq.clone();
-    let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
-    let qt_thread = model.qt_thread();
-    let handle = global_handle().spawn(async move {
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        let _ = qt_thread.queue(move |model| {
-            if seq.load(Ordering::SeqCst) != ticket {
-                return;
-            }
-            release_cover_gate_after_timeout(model);
-        });
-    });
-    model.as_mut().rust_mut().cover_gate_timer = Some(handle);
-}
-
-/// Tear down any active cover gate. Used by Pending/Errored apply paths
-/// to invalidate an in-flight timer's queued callback (via the seq
-/// bump) before the next Ready installs a fresh one.
-fn disarm_cover_gate(mut model: Pin<&mut ffi::FavoritesModel>) {
-    if let Some(handle) = model.as_mut().rust_mut().cover_gate_timer.take() {
-        handle.abort();
-    }
-    model.as_mut().rust_mut().pending_first_paint_keys.clear();
-    model.rust().cover_gate_seq.fetch_add(1, Ordering::SeqCst);
-}
-
-/// Force-release the cover gate from the safety timer. Called only via
-/// the timer's queued callback after a seq-match check; the
-/// notify-driven release path lives inline in `notify_cover_update`.
-fn release_cover_gate_after_timeout(mut model: Pin<&mut ffi::FavoritesModel>) {
-    let pending = model.pending_first_paint_keys.len();
-    info!(pending, "favorites: cover gate timed out, releasing");
-    model.as_mut().rust_mut().pending_first_paint_keys.clear();
-    model.as_mut().rust_mut().cover_gate_timer = None;
-    if model.loading {
-        model.as_mut().set_loading(false);
-    }
-    finish_nav_timing(model.as_mut(), "timeout", pending);
 }
 
 /// Build the `text` payload sent to Core's `run` for a search entry.
@@ -1890,6 +1727,14 @@ mod tests {
     }
 
     #[test]
+    fn total_items_hint_preserves_unknown_and_clamps_large_totals() {
+        assert_eq!(total_items_hint(-1), -1);
+        assert_eq!(total_items_hint(0), 0);
+        assert_eq!(total_items_hint(42), 42);
+        assert_eq!(total_items_hint(i64::MAX), i32::MAX);
+    }
+
+    #[test]
     fn random_favorite_uses_current_core_scope() {
         assert_eq!(
             random_favorite_script(""),
@@ -1938,30 +1783,9 @@ mod tests {
     }
 
     #[test]
-    fn confirmed_no_cover_skips_key_and_first_paint_gate() {
+    fn confirmed_no_cover_skips_image_request() {
         let mut entry = favorite_entry();
         entry.has_cover = false;
         assert!(media_key_for(&entry).is_none());
-        assert!(compute_unresolved_keys(&[entry], |_| false, |_| false).is_empty());
-    }
-
-    #[test]
-    fn compute_unresolved_keys_excludes_soft_no_image() {
-        let soft_key = MediaKey::new("SNES", "/games/favorite.rom");
-        let mut pending_entry = favorite_entry();
-        pending_entry.path = "/games/pending.rom".to_string();
-        let entries = vec![favorite_entry(), pending_entry];
-        let unresolved = compute_unresolved_keys(
-            &entries,
-            |_| false,
-            |k| {
-                k.system_id.as_ref() == soft_key.system_id.as_ref()
-                    && k.path.as_ref() == soft_key.path.as_ref()
-            },
-        );
-        let expected: HashSet<MediaKey> = [MediaKey::new("SNES", "/games/pending.rom")]
-            .into_iter()
-            .collect();
-        assert_eq!(unresolved, expected);
     }
 }

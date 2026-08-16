@@ -81,8 +81,16 @@ ApplicationWindow {
     property bool _headerMediaActivityEnabled: false
     property bool _firstFrameSeen: false
     readonly property bool _debugCrtSafeAreaGuideVisible: root.debugCrtSafeAreaOverlay && root.crtNativePath && Sizing.screenHeight <= 300
+
+    // Emitted for every presented frame. Main.qml uses this to close
+    // responsiveness timings on the first frame containing a destination
+    // screen; startup still uses `_firstFrameSeen` below.
+    signal framePresented
     property bool systemsScreenRequested: false
     property bool gamesScreenRequested: false
+    // Router-owned deep-page restoration gate. Keeps Games content hidden while
+    // cursor pages are appended until the persisted parent selection exists.
+    property bool gamesSelectionRestorePending: false
     property bool favoritesScreenRequested: false
     property bool favoriteSystemsScreenRequested: false
     property string favoritesSystemId: ""
@@ -94,7 +102,6 @@ ApplicationWindow {
     property bool contextMenuRequested: false
     property bool qrCodeModalRequested: false
     property bool gameInfoModalRequested: false
-    property bool firstRunIndexModalRequested: false
     property bool commercialNoticeModalRequested: false
     property bool coreVersionModalRequested: false
     property bool randomFailedModalRequested: false
@@ -190,12 +197,13 @@ ApplicationWindow {
             root.applyCrtPreviewScale(root._crtPreviewEffectiveScale);
     }
     onFrameSwapped: {
-        if (root._firstFrameSeen)
-            return;
-        root._firstFrameSeen = true;
-        root._statusIconsEnabled = true;
-        root._headerMediaActivityEnabled = true;
-        root._startupTrace("startup/qml firstFrameSwapped", "statusIconsEnabled=" + root._statusIconsEnabled, "mediaActivityEnabled=" + root._headerMediaActivityEnabled);
+        root.framePresented();
+        if (!root._firstFrameSeen) {
+            root._firstFrameSeen = true;
+            root._statusIconsEnabled = true;
+            root._headerMediaActivityEnabled = true;
+            root._startupTrace("startup/qml firstFrameSwapped", "statusIconsEnabled=" + root._statusIconsEnabled, "mediaActivityEnabled=" + root._headerMediaActivityEnabled);
+        }
     }
 
     // When the window crosses to a different screen (e.g. dev drags
@@ -277,7 +285,6 @@ ApplicationWindow {
     property var qrCodeModal: qrCodeModalLoader.item
     property var commercialNoticeModal: commercialNoticeModalLoader.item
     property var coreVersionModal: coreVersionModalLoader.item
-    property var firstRunIndexModal: firstRunIndexModalLoader.item
     property var gameInfoModal: gameInfoModalLoader.item
     property var logUploadModal: logUploadModalLoader.item
     property var quitConfirmModal: quitConfirmModalLoader.item
@@ -298,7 +305,6 @@ ApplicationWindow {
     property bool commercialNoticeModalVisible: false
     property bool coreVersionModalVisible: false
     property bool randomFailedModalVisible: false
-    property bool firstRunIndexModalVisible: false
     property bool gameInfoModalVisible: false
     property bool logUploadModalVisible: false
     property bool quitConfirmModalVisible: false
@@ -344,6 +350,19 @@ ApplicationWindow {
     readonly property int loadingIndicatorDelayMs: 300
     readonly property int minimumLoadingVisibleMs: 200
     property bool transitionCueVisible: false
+    // Systems destination paints one stable frame without SVG requests. Main
+    // flips this true from the following frame-presented callback so cover
+    // decoding cannot delay the navigation cut itself.
+    property bool systemsCoverRevealReady: true
+    // Games uses same progressive reveal for screen entry and in-screen folder
+    // replacement: model/card frame first, raster covers from following frame.
+    property bool gamesCoverRevealReady: true
+    // Folder navigation timing spans user input through model readiness and
+    // first presentation. Main.qml owns lifecycle; GamesScreen supplies input
+    // timestamp before synchronous state persistence.
+    property double gamesNavigationInputAt: 0
+    property double gamesNavigationModelReadyAt: 0
+    property string gamesNavigationAction: ""
 
     // Cold-launch boot gate. Non-Hub restores stay behind BootOverlay /
     // startupRestoreCurtain until the target can paint; Hub restores take the
@@ -420,7 +439,6 @@ ApplicationWindow {
     signal closeCommercialNoticeRequested
     signal closeCoreVersionRequested
     signal closeRandomFailedRequested
-    signal closeFirstRunIndexRequested
     signal closeLogUploadRequested
     signal closeQuitConfirmRequested
     signal quitConfirmAccepted
@@ -624,8 +642,9 @@ ApplicationWindow {
             //
             // Transition feedback is a delayed static LoadingIndicator, not
             // an animated screen effect. Quick swaps cut directly; slower
-            // model fills hide source content only after the loading cue is
-            // visible, avoiding both spinner flashes and pre-feedback freezes.
+            // model fills hide source rows/grids only after the loading cue is
+            // visible. Bottom selection context and help stay frozen until the
+            // destination cut so the source screen does not dismantle itself.
             //
             // The wrapper `Item` stays for grouping clarity; with no fade
             // machinery it carries no buffered state. Model bindings stay
@@ -658,11 +677,14 @@ ApplicationWindow {
                     anchors.fill: parent
                     active: root.systemsScreenRequested
                     visible: status === Loader.Ready && root.activeScreen === root.screenSystems
+                    onLoaded: console.debug("responsiveness systems screen mounted")
                     sourceComponent: Component {
                         SystemsScreen {
                             anchors.fill: parent
                             transitioning: root.transitionCueVisible
+                            preparingTransition: root.pendingTransition === "systems"
                             active: root.activeScreen === root.screenSystems
+                            coverRevealReady: root.systemsCoverRevealReady
                             optimisticLoading: root.activeScreen === root.screenSystems && root.catalogStillBooting
                         }
                     }
@@ -678,7 +700,8 @@ ApplicationWindow {
                             anchors.fill: parent
                             transitioning: root.transitionCueVisible
                             active: root.activeScreen === root.screenGames
-                            optimisticLoading: root.activeScreen === root.screenGames && root.catalogStillBooting
+                            coverRevealReady: root.gamesCoverRevealReady
+                            optimisticLoading: root.activeScreen === root.screenGames && (root.catalogStillBooting || root.gamesSelectionRestorePending)
                         }
                     }
                 }
@@ -891,23 +914,6 @@ ApplicationWindow {
                 }
             }
 
-            // First-run mediadb index modal. Pushed by Main.qml the first time
-            // we connect to a Core whose mediadb is empty. Blocks the screens
-            // beneath until the initial scan completes (or the user cancels and
-            // tries again).
-            Loader {
-                id: firstRunIndexModalLoader
-                anchors.fill: parent
-                active: root.firstRunIndexModalRequested
-                sourceComponent: Component {
-                    FirstRunIndexModal {
-                        anchors.fill: parent
-                        open: root.firstRunIndexModalVisible
-                        onCloseRequested: root.closeFirstRunIndexRequested()
-                    }
-                }
-            }
-
             // Commercial-use notice. Sits above every other modal (z: 310) so
             // it always paints first on a fresh install. Once the user acks,
             // `Browse.Notice.commercial_ack` flips to true on disk and the
@@ -962,7 +968,7 @@ ApplicationWindow {
             }
 
             // List-picker modal. Settings opens this for picker rows
-            // (Language, Browsing layout, Button style, Resolution). The
+            // (Language, Browsing layout, Button style, and others). The
             // fieldId round-trip lets the router dispatch the chosen id
             // back to the matching Browse.Settings.set_X without parsing
             // the title.
@@ -1080,11 +1086,11 @@ ApplicationWindow {
                 // Retry entry rather than promising behavior the screen
                 // doesn't implement.
                 //
-                // During a forward transition (`pendingTransition !== ""`)
-                // the router's input gate swallows every press — including
-                // cancel — so the bar blanks rather than advertising
-                // buttons that won't respond. Modals still win outright;
-                // they run on top of the input gate.
+                // During a forward transition the router's input gate still
+                // swallows presses, but the source help row stays frozen until
+                // the destination cut. Removing it early made the otherwise
+                // static source screen look as though it was dismantling while
+                // work continued. Modals still win outright.
                 //
                 // Each entry resolves to a button glyph (Dpad / ButtonA /
                 // ButtonB / ButtonX) plus a label. The button names are routed
@@ -1107,11 +1113,7 @@ ApplicationWindow {
                                 label: qsTr("Select")
                             },
                             {
-                                button: "ButtonB",
-                                label: qsTr("Close")
-                            },
-                            {
-                                button: "ButtonX",
+                                buttons: ["ButtonB", "ButtonX"],
                                 label: qsTr("Close")
                             }
                         ];
@@ -1204,26 +1206,6 @@ ApplicationWindow {
                             }
                         ];
                     if ((!root.bootComplete && !root.coreIndependentStartupVisible) || root.startupRestoreCurtainVisible)
-                        return [];
-                    if (root.firstRunIndexModalVisible) {
-                        const phase = root.firstRunIndexModal ? root.firstRunIndexModal.phase : "";
-                        if (phase === "running")
-                            return [
-                                {
-                                    button: "ButtonB",
-                                    label: qsTr("Cancel")
-                                }
-                            ];
-                        if (phase === "completed")
-                            return [];
-                        return [
-                            {
-                                button: "ButtonA",
-                                label: qsTr("Start")
-                            }
-                        ];
-                    }
-                    if (root.pendingTransition !== "" || root.transitionCueVisible)
                         return [];
                     if (root.activeScreen === root.screenHub) {
                         // Hub always has the actions row (Recently Played /

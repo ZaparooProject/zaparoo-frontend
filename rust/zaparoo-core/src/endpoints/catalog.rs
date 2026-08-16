@@ -53,6 +53,15 @@ impl Endpoint for CatalogEndpoint {
 /// systems list. Pulled out of `fetch` so tests can drive a deterministic
 /// fixture without standing up a `Client`.
 fn shape_catalog(mut systems: Vec<SystemInfo>) -> CatalogData {
+    // Core's systems response includes supported launcher systems even when
+    // their indexed media count is zero. They are useful to API clients, but
+    // are not browse destinations. Keep only systems with indexed media.
+    // Launch-only virtual systems are the exception: Core only returns
+    // available launchables for the default `all = false` request, and their
+    // ZapScript is the content they launch instead of indexed media.
+    systems.retain(|system| {
+        !system.zap_script.trim().is_empty() || system.media_count.is_some_and(|count| count > 0)
+    });
     systems.sort_by_key(|a| a.name.to_lowercase());
     let categories = derive_categories(&systems);
     info!(
@@ -93,6 +102,7 @@ mod tests {
             id: id.into(),
             name: name.into(),
             category: category.into(),
+            media_count: Some(1),
             ..SystemInfo::default()
         }
     }
@@ -126,6 +136,50 @@ mod tests {
     fn derive_categories_synthesizes_other_for_empty() {
         let systems = vec![sys("a", "A", ""), sys("b", "B", "Consoles")];
         assert_eq!(derive_categories(&systems), vec!["Consoles", "Other"]);
+    }
+
+    #[test]
+    fn shape_catalog_excludes_empty_and_unknown_counts_but_keeps_launchables() {
+        let systems = vec![
+            SystemInfo {
+                id: "indexed".into(),
+                name: "Indexed".into(),
+                category: "Consoles".into(),
+                media_count: Some(3),
+                ..SystemInfo::default()
+            },
+            SystemInfo {
+                id: "empty".into(),
+                name: "Empty".into(),
+                category: "Computers".into(),
+                media_count: Some(0),
+                ..SystemInfo::default()
+            },
+            SystemInfo {
+                id: "old-core".into(),
+                name: "Unknown".into(),
+                category: "Handhelds".into(),
+                media_count: None,
+                ..SystemInfo::default()
+            },
+            SystemInfo {
+                id: "virtual".into(),
+                name: "Virtual".into(),
+                category: "Utilities".into(),
+                media_count: Some(0),
+                zap_script: "zaparoo://launch/virtual".into(),
+                ..SystemInfo::default()
+            },
+        ];
+
+        let catalog = shape_catalog(systems);
+        let ids = catalog
+            .systems
+            .iter()
+            .map(|system| system.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["indexed", "virtual"]);
+        assert_eq!(catalog.categories, vec!["Consoles", "Utilities"]);
     }
 
     #[test]

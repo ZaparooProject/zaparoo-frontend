@@ -325,9 +325,9 @@ Item {
 
                 // Wordmark fallback for system entries with no curated logo SVG.
                 // Mirrors the grid Tile's fitted-text treatment: DemiBold, logo-focus
-                // tint, shrinks to fill. Hidden while a logo is loading so the busy
-                // window is brief. The File chip above is suppressed for system keys
-                // (via !_isSystemCover) so exactly one of the two placeholders shows.
+                // tint, shrinks to fill. It appears only after terminal Image.Error,
+                // never during Null/Loading. The File chip above is suppressed for
+                // system keys so exactly one fallback can show.
                 Text {
                     objectName: "detailLogoWordmark"
 
@@ -344,7 +344,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     renderType: Text.NativeRendering
-                    visible: root._isSystemCover && !root._coverBusy && cover.status !== Image.Ready && root.title !== "" && !root.detailSuppressed
+                    visible: root._isSystemCover && cover.status === Image.Error && root.title !== "" && !root.detailSuppressed
                     clip: true
                 }
             }

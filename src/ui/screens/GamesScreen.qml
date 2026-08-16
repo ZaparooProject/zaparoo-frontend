@@ -23,6 +23,9 @@ MediaListScreen {
     id: games
 
     property alias gamesGrid: games.mediaGrid
+    // Main.qml reads this when folder request signal arrives. Captured before
+    // synchronous persistence so telemetry includes full perceived button time.
+    property double lastNavigationInputAt: 0
 
     // Seed persisted server-side scope before first system browse.
     Component.onCompleted: {
@@ -103,6 +106,7 @@ MediaListScreen {
             return;
         const entryType = Browse.GamesModel.entry_type_at(index);
         if ((entryType === "directory" || entryType === "root") && !Browse.GamesModel.is_media_capable_at(index)) {
+            games.lastNavigationInputAt = Date.now();
             // Persist synchronously (MiSTer may be killed at any time), then
             // play the cue and defer the navigation signal so the push-in
             // completes on a static scene before the model reload starts.
@@ -126,6 +130,8 @@ MediaListScreen {
         // Disarm any pending accept so a press-then-back inside the deferred
         // window cannot launch/navigate after the user has backed out.
         pressCommit.stop();
+        if (games._atFolderLevel())
+            games.lastNavigationInputAt = Date.now();
         games.flushSelectedPersist();
         if (games._atFolderLevel())
             games.requestNavigateOutOfFolder();
@@ -134,6 +140,9 @@ MediaListScreen {
     }
     showTopStrip: games._statusProfile ? games._statusProfile.topStripVisible : true
     topStripTitleProvider: () => {
+        const folderName = games._folderNameForPath(Browse.GamesModel.current_path);
+        if (folderName !== "")
+            return folderName;
         const sid = Browse.GamesModel.current_system_id;
         if (sid === "")
             return "";
@@ -154,17 +163,25 @@ MediaListScreen {
         return qsTr("%1 / %2").arg(games.gamesGrid.currentIndex + 1).arg(total);
     }
     gridBottomMargin: games._footerProfile ? games._footerProfile.gridBottomMargin : (Sizing.pctH(8) + Sizing.pctH(7))
+
+    function _folderNameForPath(path: string): string {
+        const trimmed = path.replace(/[\\/]+$/, "");
+        if (trimmed === "")
+            return "";
+        const separator = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+        return trimmed.substring(separator + 1);
+    }
     gridColumnsOverride: games._gridColumns
     gridRowsOverride: games._gridRows
     gridTotalItemsOverride: Browse.GamesModel.total_dirs + Browse.GamesModel.total_files
     gridHasMorePages: Browse.GamesModel.has_next_page
-    gridLoadMoreAction: urgent => {
-        // A letter jump bulk-loads to the target in one shot (overlay is up);
-        // page-wrap targets and fast-scroll stay on the rapid trickle, ordinary
-        // prefetch on the gentle one.
+    gridLoadMoreAction: _urgent => {
+        // Letter jumps bulk-load to their target and held rapid scrolling uses
+        // larger chunks. A pending ordinary page turn is urgent only because
+        // the user is waiting; one visual page is sufficient to satisfy it.
         if (games.gamesGrid.hasPendingJump)
             Browse.GamesModel.fetch_more_jump(games.gamesGrid.pendingJumpIndex);
-        else if (urgent || games.detailRapidScrollActive)
+        else if (games.detailRapidScrollActive)
             Browse.GamesModel.fetch_more_rapid();
         else
             Browse.GamesModel.fetch_more();

@@ -59,8 +59,24 @@ Item {
     // untouched.
     property bool focused: true
     property bool coverLoadingPaused: false
+    // False keeps delegate/cursor structure alive while withholding Image
+    // sources. Useful during a model replacement: unlike suspending Repeater,
+    // it avoids a synchronous teardown/rebuild while still preventing cold
+    // cover decodes behind a transition cue.
+    property bool coverRequestsEnabled: true
     property bool rapidRenderMode: false
-    readonly property int _coverRetentionPages: Math.max(1, Math.ceil(Sizing.visibleCovers))
+    // Number of pages after current whose covers are decoded speculatively.
+    // Media grids keep one page warm; SVG-heavy systems grids can set zero and
+    // rely on their router-owned visible-page prefetch gate.
+    property int coverLookaheadPages: 1
+    // When false, focused tint variants are requested only for selected tile.
+    // Normal grids preserve eager variants; systems opt out because every
+    // variant requires a separate SVG raster on MiSTer's small ARM CPU.
+    property bool eagerFocusedCovers: true
+    // Sizing.visibleCovers is a tile count, not a page count. Convert it through
+    // current column count; treating five covers as five whole pages retained up
+    // to 110 live Tile trees and made deep-page Back block Qt's main thread.
+    readonly property int _coverRetentionPages: Math.max(1, Math.ceil(Sizing.visibleCovers / Math.max(1, root.columns)))
     // Pulse counter for the one-shot tile push-in. Callers increment via
     // pulseActivate(); TileLoader forwards the value to Tile where only the
     // focused+selected delegate fires its cue. The same cue serves both
@@ -88,6 +104,13 @@ Item {
     // so the default tile 0 never paints a ring before restore lands; default
     // true keeps focus rendering on for hosts that do not wire it.
     property bool focusReady: true
+    // Hide only cell delegates while retaining scrollbar chrome. Rapid-scroll
+    // snapshot mode uses this so the frozen grid replaces cells without making
+    // the live gutter disappear.
+    property bool cellsVisible: true
+    // Optional index -> string callback for a compact label above tile art.
+    // Empty/null keeps existing tile geometry unchanged.
+    property var tileTopLabelProvider: null
     property var layoutProfile: null
     readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
 
@@ -149,7 +172,7 @@ Item {
     // the user can actually navigate to right now, not a paginated
     // model's reported total.
     readonly property bool hasPagesAbove: currentPage > 0
-    readonly property bool hasPagesBelow: currentPage < pageCount - 1
+    readonly property bool hasPagesBelow: currentPage < pageCount - 1 || (!root.paginationTotalKnown && root.hasMorePages)
 
     // Caller-supplied total item count, used by the scroll thumb so its
     // size and position reflect the full dataset rather than the loaded
@@ -161,6 +184,11 @@ Item {
     property int totalItemsOverride: -1
     readonly property int totalItems: totalItemsOverride >= 0 ? totalItemsOverride : itemCount
     readonly property int totalPageCount: Math.max(1, Math.ceil(totalItems / pageSize))
+    // False when a cursor chain has no authoritative final count. Navigation
+    // continues forward by requesting another page instead of wrapping at the
+    // current loaded edge; chrome keeps arrows but suppresses the misleading
+    // growing scrollbar thumb.
+    property bool paginationTotalKnown: true
 
     // Caller-supplied "more pages exist" flag for paginated models.
     // Drives the pending-target watchdog: if the model says no more pages
@@ -227,8 +255,7 @@ Item {
     // rightmost cell and the gutter. `gutterGap` is intentionally
     // tighter than `cellSpacingX` — the scrollbar reads as chrome,
     // not as another cell, so a full inter-cell gap looks like wasted
-    // space next to it. The gutter stays reserved on a single page
-    // (just hidden) so cells don't reflow when paging activates.
+    // space next to it. Single-page grids reserve no invisible gutter.
     readonly property int leftInset: root._gridProfile ? root._gridProfile.leftInset : Sizing.pctW(5)
     readonly property int rightInset: root._gridProfile ? root._gridProfile.rightInset : Sizing.pctW(5)
     readonly property int gutterWidth: root._gridProfile ? root._gridProfile.gutterWidth : Sizing.pctW(3)
@@ -241,20 +268,31 @@ Item {
     readonly property int bottomInset: root._gridProfile ? root._gridProfile.bottomInset : Sizing.pctH(2)
     readonly property int cellSpacingX: root._gridProfile ? root._gridProfile.columnGap : Sizing.pctW(3)
     readonly property int cellSpacingY: root._gridProfile ? root._gridProfile.rowGap : Sizing.pctH(4)
+    readonly property bool _scrollIndicatorVisible: root.paginationTotalKnown ? root.totalPageCount > 1 : (root.pageCount > 1 || root.hasMorePages)
+    readonly property int _activeGutterWidth: root._scrollIndicatorVisible ? root.gutterWidth : 0
+    readonly property int _activeGutterGap: root._scrollIndicatorVisible ? root.gutterGap : 0
     readonly property int _contentWidth: root.columns * root.cellWidth + (root.columns - 1) * root.cellSpacingX
-    readonly property int _scrollGutterX: root._gridProfile && root._gridProfile.gutterFollowsContentWidth ? root.leftInset + root._contentWidth + root.gutterGap : width - root.rightInset - root.gutterWidth
+    readonly property int _scrollGutterX: root._gridProfile && root._gridProfile.gutterFollowsContentWidth ? root.leftInset + root._contentWidth + root._activeGutterGap : width - root.rightInset - root.gutterWidth
 
     // Computed cell dimensions — fill the available area, divided by
-    // columns × rows. The cell area
-    // also reserves `gutterGap + gutterWidth` on the right for the
-    // tight-gap-then-scrollbar layout described above.
-    readonly property int _availableWidth: Math.max(0, width - leftInset - rightInset - gutterGap - gutterWidth)
+    // columns × rows. Multi-page layouts reserve `gutterGap + gutterWidth` on
+    // the right; single-page layouts return that otherwise-empty space to cells.
+    readonly property int _availableWidth: Math.max(0, width - leftInset - rightInset - root._activeGutterGap - root._activeGutterWidth)
     readonly property int _availableHeight: Math.max(0, height - topInset - bottomInset)
     readonly property int cellWidth: Math.max(0, Math.floor((root._availableWidth - (root.columns - 1) * root.cellSpacingX) / root.columns))
     readonly property int cellHeight: Math.max(0, Math.floor((root._availableHeight - (root.rows - 1) * root.cellSpacingY) / root.rows))
 
     function setCurrentIndexImmediate(idx: int): void {
         root.currentIndex = idx;
+    }
+
+    // Disarm model-relative navigation before a folder/scope replacement can
+    // shrink row count. Resetting from a deep loaded page while Qt still owns a
+    // pending delegate index can make DelegateModel cancel an index against the
+    // new smaller count. Selection restoration runs after replacement.
+    function prepareForModelReplacement(): void {
+        root._clearPendingTarget();
+        root.currentIndex = 0;
     }
 
     function _handleWheel(wheel: WheelEvent): void {
@@ -287,11 +325,23 @@ Item {
     // Returns true if the index changed synchronously, false if a
     // pending-jump was stashed or the dataset is single-page.
     function pageBy(delta: int): bool {
-        if (root.itemCount <= 0 || root.totalPageCount <= 1 || delta === 0)
+        if (root.itemCount <= 0 || delta === 0)
             return false;
-        const total = root.totalPageCount;
-        // JS `%` keeps sign on negatives — normalise into [0, total).
-        const targetPage = ((root.currentPage + delta) % total + total) % total;
+        let targetPage;
+        if (!root.paginationTotalKnown && root.hasMorePages) {
+            // No final page exists to wrap to yet. Backward paging stops at
+            // page zero; forward paging past the loaded edge requests the next
+            // cursor page below.
+            targetPage = root.currentPage + delta;
+            if (targetPage < 0)
+                return false;
+        } else {
+            if (root.totalPageCount <= 1)
+                return false;
+            const total = root.totalPageCount;
+            // JS `%` keeps sign on negatives — normalise into [0, total).
+            targetPage = ((root.currentPage + delta) % total + total) % total;
+        }
         if (targetPage === root.currentPage)
             return false;
         if (targetPage > root.pageCount - 1) {
@@ -502,6 +552,8 @@ Item {
             const itemsOnPage = Math.min(root.pageSize, root.itemCount - root.currentPage * root.pageSize);
             const lastFilledRowOnPage = Math.floor((itemsOnPage - 1) / root.columns);
             if (rowCandidate < 0) {
+                if (!root.paginationTotalKnown && root.hasMorePages && root.currentPage === 0)
+                    return false;
                 const targetPage = root.currentPage === 0 ? root.totalPageCount - 1 : root.currentPage - 1;
                 if (targetPage > root.pageCount - 1) {
                     root._pendingTargetIndex = -1;
@@ -515,7 +567,7 @@ Item {
                 newRow = root.rows - 1;
             } else if (rowCandidate >= root.rows || rowCandidate > lastFilledRowOnPage) {
                 const lastPage = root.totalPageCount - 1;
-                const targetPage = root.currentPage === lastPage ? 0 : root.currentPage + 1;
+                const targetPage = !root.paginationTotalKnown && root.hasMorePages && root.currentPage >= root.pageCount - 1 ? root.currentPage + 1 : (root.currentPage === lastPage ? 0 : root.currentPage + 1);
                 if (targetPage > root.pageCount - 1) {
                     root._pendingTargetIndex = -1;
                     root._pendingTargetPage = targetPage;
@@ -651,27 +703,27 @@ Item {
                 readonly property int cellRow: Math.floor(cellLocal / root.columns)
                 readonly property int cellCol: cellLocal % root.columns
                 readonly property bool isSelected: index === root.currentIndex
+                readonly property string topLabel: typeof root.tileTopLabelProvider === "function" ? (root.tileTopLabelProvider(index) ?? "") : ""
 
                 // Cover-decode gate AND delegate-materialisation gate.
                 // PagedGrid's Repeater creates one cellItem per model
                 // row at construction. Two-tier gate, both anchored on
                 // distance from `root.currentPage`:
                 //
-                //   - decode range (current + next page): cells hand
-                //     their real coverKey to Tile, forcing hidden
-                //     next-page Image decode/QPixmapCache warm before
-                //     the page cut. Rust still owns byte-fetch priority
+                //   - decode range (current + configured lookahead pages):
+                //     cells hand their real coverKey to Tile, forcing hidden
+                //     next-page Image decode/QPixmapCache warm before the page
+                //     cut when lookahead is enabled. Rust still owns byte-fetch priority
                 //     via `prefetch_around`; this range only makes QML
                 //     consume already-warmed bytes early enough.
-                //   - retention range (±5 pages): cells inside this
-                //     radius keep their TileLoader.active=true so the
-                //     Tile delegate stays materialised, AND cells that
-                //     have already requested keep their coverKey set
-                //     so Tile's Image keeps the decoded texture
-                //     referenced. The active gate is what prevents
-                //     per-press binding cost from growing with the
-                //     dataset - only ~110 Tile delegates exist at any
-                //     time regardless of N. Retention doesn't trigger
+                //   - retention range (current ± enough pages for one
+                //     Sizing.visibleCovers span): cells inside this radius keep
+                //     their TileLoader.active=true, AND cells that have already
+                //     requested keep their coverKey set so Tile's Image keeps
+                //     the decoded texture referenced. The active gate prevents
+                //     per-press binding cost from growing with dataset size;
+                //     only current and adjacent-page Tile delegates exist at
+                //     normal grid densities. Retention doesn't trigger
                 //     new cover requests; only the decode range does.
                 //
                 // Off-radius cells (outside retention) set
@@ -683,13 +735,13 @@ Item {
                 // collapses to the procedural fallback and the
                 // texture reference drops.
                 //
-                // Memory ceiling tracks visible cover density: ±
-                // _coverRetentionPages around currentPage keeps enough
-                // decoded pages warm for the current UI scale. Re-decode
+                // Memory ceiling tracks visible cover density:
+                // _coverRetentionPages around currentPage keeps adjacent
+                // decoded pages warm for current UI scale. Re-decode
                 // after crossing past the retention edge runs at
                 // nice +10 (see media_image_provider.cpp) and is
                 // invisible to the renderer.
-                readonly property bool _coverInRange: !root.rapidRenderMode && cellPage >= root.currentPage && cellPage <= root.currentPage + 1
+                readonly property bool _coverInRange: root.coverRequestsEnabled && !root.rapidRenderMode && cellPage >= root.currentPage && cellPage <= root.currentPage + Math.max(0, root.coverLookaheadPages)
                 readonly property bool _coverInRetentionRange: !root.rapidRenderMode && Math.abs(cellPage - root.currentPage) <= (root.coverLoadingPaused ? 1 : root._coverRetentionPages)
                 property bool _coverEverRequested: false
                 Binding on _coverEverRequested {
@@ -706,7 +758,7 @@ Item {
                 // Selected tile draws on top so its scale-up tween isn't
                 // clipped by neighbours below/right of it.
                 z: isSelected ? 1 : 0
-                visible: cellPage === root.currentPage
+                visible: root.cellsVisible && cellPage === root.currentPage
 
                 // Card-shaped placeholder painted behind the
                 // TileLoader. When the loader's `active` is false
@@ -794,6 +846,7 @@ Item {
                     isFocused: root.focused
                     name: cellItem.name
                     coverKey: cellItem._gatedCoverKey
+                    topLabel: cellItem.topLabel
                     favorite: cellItem.favorite
                     hidden: cellItem.hidden
                     disambiguatingTags: cellItem.disambiguatingTags
@@ -801,6 +854,7 @@ Item {
                     releasePulse: root.releasePulse
                     settling: root.screenSettling
                     focusReady: root.focusReady
+                    loadFocusedCover: root.eagerFocusedCovers || cellItem.isSelected
                 }
 
                 MouseArea {
@@ -850,7 +904,7 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: root.bottomInset
         width: root.gutterWidth
-        visible: root.totalPageCount > 1
+        visible: root._scrollIndicatorVisible
 
         Image {
             id: upArrow
@@ -918,6 +972,7 @@ Item {
 
             Rectangle {
                 id: scrollThumb
+                visible: root.paginationTotalKnown
                 width: root.scrollThumbWidth
                 height: scrollRegion._thumbHeight
                 anchors.right: root.scrollThumbRightAligned ? parent.right : undefined

@@ -290,6 +290,16 @@ fn position_of_system_id(systems: &[SystemInfo], needle: &str) -> i32 {
 /// `region` drives both the localized display name (via `system_names`) and
 /// the logo artwork stem (via `system_logos`). Resolve it once before calling
 /// this function and pass it in so the caller controls the snapshot.
+pub(crate) fn sort_systems_by_display_name(systems: &mut [SystemInfo]) {
+    systems.sort_by_cached_key(|system| {
+        (
+            system.name.to_lowercase(),
+            system.name.clone(),
+            system.id.clone(),
+        )
+    });
+}
+
 fn rows_for_category(
     catalog: Option<&CatalogData>,
     cat: &str,
@@ -298,7 +308,8 @@ fn rows_for_category(
     region: Region,
 ) -> Vec<SystemInfo> {
     catalog.map_or_else(Vec::new, |c| {
-        c.systems_by_category(cat)
+        let mut rows = c
+            .systems_by_category(cat)
             .into_iter()
             .filter_map(|s| {
                 let is_hidden = hidden_ids.contains(&s.id);
@@ -327,7 +338,9 @@ fn rows_for_category(
                     zap_script: s.zap_script,
                 })
             })
-            .collect()
+            .collect::<Vec<_>>();
+        sort_systems_by_display_name(&mut rows);
+        rows
     })
 }
 
@@ -937,6 +950,20 @@ mod tests {
         assert_eq!(rows[0].category, "Consoles");
         assert_eq!(rows[1].id, "zelda");
         assert!(!rows[0].hidden);
+    }
+
+    #[test]
+    fn rows_for_category_sorts_by_resolved_display_name() {
+        let catalog = catalog_with(vec![
+            sys("InternalFirst", "Zulu", "Consoles"),
+            sys("InternalLast", "alpha", "Consoles"),
+        ]);
+        let rows = rows_for_category(Some(&catalog), "Consoles", &[], false, Region::Us);
+        assert_eq!(
+            rows.iter().map(|row| row.name.as_str()).collect::<Vec<_>>(),
+            ["alpha", "Zulu"]
+        );
+        assert_eq!(rows[0].id, "InternalLast");
     }
 
     #[test]

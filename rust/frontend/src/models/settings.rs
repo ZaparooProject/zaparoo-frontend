@@ -10,12 +10,10 @@
 // Field design:
 //   * `is_mister` — CONSTANT. Drives whether MiSTer-only fields render
 //     in the form.
-//   * `available_resolutions` — CONSTANT. Empty off MiSTer; on MiSTer,
-//     the curated picker list. Order matters: it's the cycle order in
-//     the UI's left/right cycler.
-//   * `current_resolution` — READ + NOTIFY, persisted. Empty means "use
-//     `[mister.video_*]` defaults from frontend.toml". The Settings
-//     screen renders that empty value as `qsTr("Default")`.
+//   * `available_resolutions` / `current_resolution` — retained as a
+//     persisted compatibility surface for future platforms. Resolution is
+//     no longer user-selectable, and digital MiSTer startup ignores it in
+//     favor of automatic framebuffer sizing.
 //   * `available_languages` — CONSTANT. Curated language tags plus the
 //     `auto` sentinel. The runtime translator is still startup-only, so
 //     this setting applies on the next launch.
@@ -66,7 +64,7 @@
 // Frontend-owned durable settings are mirrored into both `state.toml`
 // and `frontend.toml`. `state.toml` keeps the in-process snapshot
 // coherent; `frontend.toml` is the durable copy that survives MiSTer's
-// `/tmp` lifecycle and is what startup `vmode` / translator install
+// `/tmp` lifecycle and is what startup services / translator install
 // read on the next process launch. Button layout only changes the QML
 // resource path used by help-bar icons, browse layout selects the game
 // browsing presentation, mouse support drives the QML cursor/input blocker,
@@ -84,14 +82,9 @@ use zaparoo_core::persist::{self, SettingsState};
 use zaparoo_core::platform_paths::config_file_path;
 use zaparoo_core::runtime;
 
-/// Curated `MiSTer` resolution choices. Order is the left/right cycle
-/// order in the form. Keep the list short — every entry is a literal
-/// the user can crash a CRT scaler with if it doesn't suit their
-/// monitor — and ASCII-only so the QML side never needs to translate
-/// the strings (they're not user-facing labels, they're keys). The
-/// empty leading entry is the "use `frontend.toml` defaults" sentinel;
-/// the form renders it as `qsTr("Default")` so users can cycle back
-/// to no-override after picking a custom value.
+/// Legacy `MiSTer` resolution values retained for config/state compatibility
+/// and possible future platform use. Digital `MiSTer` startup does not consume
+/// this selection while automatic framebuffer sizing is active.
 const MISTER_RESOLUTIONS: &[&str] = &[
     "",
     "1280x720",

@@ -887,8 +887,8 @@ impl MediaImageCache {
     }
 
     /// Drop queued-but-not-in-flight cover requests. Cached bytes,
-    /// negative memos, and the single request currently being fetched
-    /// stay untouched. Drained keys leave `pending` so final-page
+    /// negative memos, and requests currently being fetched stay untouched.
+    /// Drained keys leave `pending` so final-page
     /// prefetch after rapid navigation can re-enqueue them.
     pub fn clear_pending_requests(&self) {
         let drained = self.drain_queue();

@@ -349,22 +349,24 @@ int main(int argc, char* argv[]) // NOLINT
         QGuiApplication::setFont(defaultFont);
     }
     startupTrace("cpp:font registration complete");
-    if (crtNativePathEnabled)
+    bool useUnsmoothedText = crtNativePathEnabled;
+#ifdef ZAPAROO_EMBEDDED_BUILD
+    // MiSTer's progressive framebuffer is now either 1280x720 or 960x540.
+    // On a 1080p output the latter is presented at an exact 2x scale, which
+    // doubles Noto Sans's grayscale antialias fringe and makes otherwise
+    // aligned text look soft. Rasterize monochrome, fully hinted glyphs at
+    // source resolution so integer output scaling preserves hard edges.
+    useUnsmoothedText = true;
+#endif
+    if (useUnsmoothedText)
     {
         QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
-        qInfo("CRT native path: using native text rendering");
-        // Desktop CRT preview: FreeType on X11/Wayland defaults to subpixel
-        // RGB antialiasing ("ClearType"), which paints faint coloured
-        // fringes either side of every glyph. MiSTer's linuxfb FreeType
-        // does not enable subpixel AA, so the same scene reads pixel-
-        // perfect there but blurry in the desktop preview. The bitmap
-        // pixel font (MxPlus HP 100LX 6x8) is also designed to never be
-        // smoothed. Set NoAntialias on the application default font so
-        // every Text item that doesn't override styleStrategy inherits it.
         QFont defaultFont = QGuiApplication::font();
         defaultFont.setStyleStrategy(QFont::NoAntialias);
         defaultFont.setHintingPreference(QFont::PreferFullHinting);
         QGuiApplication::setFont(defaultFont);
+        qInfo(crtNativePathEnabled ? "CRT native path: using unsmoothed native text"
+                                   : "Embedded progressive path: using unsmoothed native text");
     }
     QQuickStyle::setStyle("Basic");
 

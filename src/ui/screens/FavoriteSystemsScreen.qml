@@ -40,6 +40,7 @@ MediaListScreen {
     }
     gridColumnsOverride: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight).columns
     gridRowsOverride: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight).rows
+    gridShowCaption: false
     emptyText: qsTr("No favorites yet")
     loadingText: qsTr("Loading favorite systems…")
     detailShowTitle: false
@@ -49,11 +50,25 @@ MediaListScreen {
     retryAction: () => Browse.FavoriteSystemsModel.retry()
 
     acceptAction: index => {
-        if (favoriteSystems.mediaModel === null)
+        if (favoriteSystems.mediaModel === null || favoriteSystems.mediaGrid.itemCount <= 0 || pressCommit.running)
             return;
-        if (favoriteSystems.mediaGrid.itemCount <= 0)
-            return;
-        const systemId = Browse.FavoriteSystemsModel.system_id_at(index);
-        favoriteSystems.requestAccept(systemId);
+        favoriteSystems.pulseActivate();
+        pressCommit._systemId = Browse.FavoriteSystemsModel.system_id_at(index);
+        pressCommit.arm();
+    }
+    cancelAction: () => {
+        pressCommit.stop();
+        favoriteSystems.requestHubScreen();
+    }
+
+    DeferredAction {
+        id: pressCommit
+
+        property string _systemId: ""
+        onDeferred: {
+            const systemId = _systemId;
+            _systemId = "";
+            favoriteSystems.requestAccept(systemId);
+        }
     }
 }

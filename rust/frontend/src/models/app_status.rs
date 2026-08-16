@@ -214,8 +214,8 @@ fn bind_core_version(mut model: Pin<&mut ffi::AppStatus>) {
             let connected = { matches!(&*rx.borrow_and_update(), ConnectionState::Connected) };
             if connected {
                 // Flip `core_version_checked` whether or not the fetch
-                // succeeds: the first-run modal chain in Main.qml waits on
-                // it, so a failed `version` RPC must still resolve the gate.
+                // succeeds: Main's Core-version warning waits on it, so a
+                // failed `version` RPC must still resolve the gate.
                 // On error we fail open (supported = true, empty version).
                 let (version, supported) = match client.version().await {
                     Ok(result) => {

@@ -96,6 +96,10 @@ Item {
         return date.toLocaleTimeString(header._clockLocale(), header._clockFormatString());
     }
 
+    function _clockDateValid(date: date): bool {
+        return !isNaN(date.getTime()) && date.getFullYear() >= 2020;
+    }
+
     function _clockMetricSample(): string {
         const sample = header._clockUses12Hour() ? new Date(2000, 0, 1, 12, 59) : new Date(2000, 0, 1, 23, 59);
         return header._clockText(sample);
@@ -165,6 +169,7 @@ Item {
             property date currentDate: new Date()
             readonly property string currentTime: header._clockText(clockLabel.currentDate)
 
+            visible: header._clockDateValid(clockLabel.currentDate)
             anchors.verticalCenter: parent.verticalCenter
             height: parent.height
             width: Sizing.px(clockMetrics.advanceWidth)
@@ -224,5 +229,9 @@ Item {
         anchors.right: topHud.right
         anchors.topMargin: header._headerProfile && header._headerProfile.statusPillPinnedTop ? 0 : Sizing.headerStackGap
         mediaActivityEnabled: header.mediaActivityEnabled
+        // Second HUD row has no clock/icons competing for width. Let status
+        // text use all space between logo and right edge instead of truncating
+        // every media state to the old fixed-width pill.
+        maximumWidth: Math.max(0, header.width - Sizing.headerSideMargin - (logo.x + logo.paintedWidth + Sizing.pctW(2)))
     }
 }

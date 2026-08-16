@@ -260,6 +260,9 @@ pub mod ffi {
         fn system_id_at(self: &RecentsModel, index: i32) -> QString;
 
         #[qinvokable]
+        fn system_name_at(self: &RecentsModel, index: i32) -> QString;
+
+        #[qinvokable]
         fn peek_detail_at(self: Pin<&mut RecentsModel>, index: i32);
 
         #[qinvokable]
@@ -816,6 +819,19 @@ impl ffi::RecentsModel {
             return QString::default();
         }
         QString::from(self.entries[index as usize].system_id.as_str())
+    }
+
+    fn system_name_at(&self, index: i32) -> QString {
+        if index < 0 || index >= self.count {
+            return QString::default();
+        }
+        let entry = &self.entries[index as usize];
+        let name = entry.system_name.trim();
+        QString::from(if name.is_empty() {
+            entry.system_id.as_str()
+        } else {
+            name
+        })
     }
 
     // Immediate, non-debounced sibling of `load_detail_at`. Called the moment

@@ -140,6 +140,12 @@ TestCase {
         setResolution(1280, 720);
     }
 
+    function test_half_size_1080p_games_grid_keeps_normal_page_density(): void {
+        const shape = Sizing.gamesGridShape(960, 365);
+        compare(shape.columns, 5);
+        compare(shape.rows, 2);
+    }
+
     function test_crt_systems_grid_is_three_by_three(): void {
         Sizing.crtNativePath = true;
         setResolution(352, 240);

@@ -131,18 +131,22 @@ Item {
         return best;
     }
 
-    // Pure 2D grid move. Clamps within bounds; `down` past the last full row
-    // lands on the final cell so scanning down the alphabet always reaches the
-    // tail bucket. Kept side-effect free so it is unit-testable in isolation.
+    // Pure 2D grid move. Left/right wrap within the visible row rather than
+    // leaking into the adjacent row; a partial final row wraps across only its
+    // live cells. `down` past the last full row lands on the final cell so
+    // scanning down the alphabet always reaches the tail bucket. Kept
+    // side-effect free so it is unit-testable in isolation.
     function nextIndex(action: string, index: int, count: int, columns: int): int {
         if (count <= 0)
             return 0;
         const cols = Math.max(1, columns);
+        const rowStart = Math.floor(index / cols) * cols;
+        const rowEnd = Math.min(count - 1, rowStart + cols - 1);
         let next = index;
         if (action === "left")
-            next = index - 1;
+            next = index <= rowStart ? rowEnd : index - 1;
         else if (action === "right")
-            next = index + 1;
+            next = index >= rowEnd ? rowStart : index + 1;
         else if (action === "up")
             next = index - cols;
         else if (action === "down") {

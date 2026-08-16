@@ -25,6 +25,7 @@
 use std::collections::{HashMap, HashSet};
 use std::mem::size_of;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 use tracing::debug;
 use zaparoo_core::media_types::{
@@ -96,7 +97,7 @@ impl MediaMetaCache {
         let mut guard = self.state.lock().unwrap();
         guard.clock += 1;
         let now = guard.clock;
-        match guard.map.get_mut(key) {
+        let result = match guard.map.get_mut(key) {
             Some(entry) => {
                 entry.clock = now;
                 match &entry.meta {
@@ -105,7 +106,19 @@ impl MediaMetaCache {
                 }
             }
             None => MetaLookup::Miss,
-        }
+        };
+        let outcome = match &result {
+            MetaLookup::Hit(_) => "hit",
+            MetaLookup::Negative => "negative",
+            MetaLookup::Miss => "miss",
+        };
+        debug!(
+            system_id = %key.system_id,
+            path = %key.path,
+            outcome,
+            "media_meta_cache: lookup"
+        );
+        result
     }
 
     /// Insert a resolved fetch outcome. `Some` is a positive hit, `None` a
@@ -127,12 +140,38 @@ impl MediaMetaCache {
         }
         global_handle().spawn(async move {
             let (keys, params): (Vec<_>, Vec<_>) = to_fetch.into_iter().unzip();
+            let batch_size = keys.len();
+            let started = Instant::now();
             let result = global_store().client().media_meta_batch(params).await;
             let cache = global_media_meta_cache();
             match result {
-                Ok(batch) => cache.finish_prefetch(keys, Some(batch)),
+                Ok(batch) => {
+                    let hits = batch
+                        .items
+                        .iter()
+                        .filter(|item| item.media.is_some())
+                        .count();
+                    let errors = batch
+                        .items
+                        .iter()
+                        .filter(|item| item.error.is_some())
+                        .count();
+                    debug!(
+                        batch_size,
+                        hits,
+                        errors,
+                        duration_ms = started.elapsed().as_millis(),
+                        "media_meta_cache: batch prefetch complete"
+                    );
+                    cache.finish_prefetch(keys, Some(batch));
+                }
                 Err(error) => {
-                    debug!(error = %error.message, "media_meta_cache: batch prefetch failed");
+                    debug!(
+                        batch_size,
+                        duration_ms = started.elapsed().as_millis(),
+                        error = %error.message,
+                        "media_meta_cache: batch prefetch failed"
+                    );
                     cache.finish_prefetch(keys, None);
                 }
             }

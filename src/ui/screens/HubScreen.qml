@@ -184,7 +184,8 @@ Item {
 
     readonly property bool resumeKnownUnavailable: hub.resumeModelEnabled && !Browse.RecentsModel.resume_loading && !Browse.RecentsModel.resume_available && Browse.AppStatus.connection_state === 2
     readonly property bool resumeActionVisible: !hub.resumeKnownUnavailable
-    readonly property string _emptyCatalogFallbackAction: Browse.BuildInfo.update_enabled ? "update" : "settings"
+    readonly property bool _internetAvailable: Browse.SystemStatus.has_wifi_internet || Browse.SystemStatus.has_lan_internet
+    readonly property string _emptyCatalogFallbackAction: Browse.BuildInfo.update_enabled && hub._internetAvailable ? "update" : "settings"
 
     // Action-row data. Resume is visible by default while Core history
     // is unknown; hide it only after Recents proves there is nothing
@@ -213,7 +214,7 @@ Item {
             enabled: true,
             text: qsTr("Recently Played")
         });
-        if (Browse.BuildInfo.update_enabled) {
+        if (Browse.BuildInfo.update_enabled && hub._internetAvailable) {
             entries.push({
                 id: "update",
                 coverKey: hub._hubCoverKey("update", "icons/RefreshCw"),
@@ -771,8 +772,9 @@ Item {
     }
 
     // Active label — single big line under the bottom row, swaps text
-    // on every move. Reads from whichever row owns focus. Hidden during
-    // a forward transition, mirroring the rows.
+    // on every move. Reads from whichever row owns focus. Keep it visible
+    // while tiles hide for a forward transition so source context remains
+    // stable until the destination cut.
     ActiveLabel {
         id: activeLabel
 
@@ -795,7 +797,7 @@ Item {
                 return entry.name;
             return "";
         }
-        visible: !hub.transitioning
+        visible: true
     }
 
     // CategoriesModel has no `loading` qproperty — the catalog is

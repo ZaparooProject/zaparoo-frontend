@@ -17,7 +17,7 @@ use zaparoo_core::endpoints::systems_favorites::SystemsFavoritesEndpoint;
 use zaparoo_core::media_types::SystemsResult;
 use zaparoo_core::remote_resource::ResourceStatus;
 
-use crate::models::systems::SystemInfo;
+use crate::models::systems::{sort_systems_by_display_name, SystemInfo};
 
 const COVER_KEY_ROLE: i32 = 256 + 1;
 const NAME_ROLE: i32 = 256 + 2;
@@ -182,7 +182,7 @@ fn rows_for_catalog(
             })
             .collect()
     });
-    rows.sort_by_key(|system| system.name.to_lowercase());
+    sort_systems_by_display_name(&mut rows);
     rows
 }
 

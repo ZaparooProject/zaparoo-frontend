@@ -71,6 +71,9 @@ Item {
     property var gridCurrentPageChangedAction: null
     property var gridCurrentIndexChangedAction: null
     property var gridLoadMoreAction: null
+    // Optional per-row label above cover art. Used only by mixed-system flat
+    // views (Favorites/Recents); Games leaves it null.
+    property var gridTileTopLabelProvider: null
     property string gridViewId: "gamesGrid"
     property string listViewId: "gamesList"
     property string tateListViewId: "gamesListTate"
@@ -82,6 +85,10 @@ Item {
 
     property bool transitioning: false
     property bool active: true
+    // Router can suppress grid Image sources until one model/card frame has
+    // painted. Defaults true for Favorites/Recents; Games drives it around
+    // screen and folder navigation.
+    property bool coverRevealReady: true
     property bool gridFocused: true
     property bool optimisticLoading: false
     // True while a jump-to-letter walk is loading the intervening pages. Folded
@@ -126,13 +133,25 @@ Item {
     readonly property var _gridViewportShape: Sizing.gamesGridShape(root._gridViewportWidth, root._gridViewportHeight)
     property int gridColumnsOverride: root._gridViewportShape.columns
     property int gridRowsOverride: root._gridViewportShape.rows
+    // Media grids label every cover inside its tile. System grids opt out so
+    // curated logos remain image-only and the focused name lives in ActiveLabel,
+    // matching SystemsScreen.
+    property bool gridShowCaption: true
     property bool pageLoadingVisible: false
     property string bottomStatusLeftText: ""
     property string bottomStatusRightText: ""
     property int gridTotalItemsOverride: -1
     property bool gridHasMorePages: false
+    // False for cursor-based queries that cannot know their final page until
+    // the cursor is exhausted. Hides growing denominators/scroll thumbs while
+    // retaining current-page text and directional arrows.
+    property bool paginationTotalKnown: true
     readonly property bool _listRapidLineMove: root._listLayout && (root.detailRapidScrollAction === "up" || root.detailRapidScrollAction === "down")
     readonly property bool _showRapidScrollIndicator: root.detailRapidIndicatorActive && !root._listRapidLineMove
+    readonly property bool _rapidSnapshotVisible: !root._gateHide && root._showRapidScrollIndicator && root._rapidSnapshotReady && mediaGrid.itemCount > 0 && !root._listLayout
+    property var _rapidSnapshotResult: null
+    property bool _rapidSnapshotReady: false
+    property int _rapidSnapshotGeneration: 0
     readonly property bool _listLayout: root.forceListLayout || Browse.Settings.current_browse_layout === "list"
     readonly property bool _tateListLayout: root._listLayout && Browse.Settings.current_orientation !== "horizontal"
     readonly property string _activeListViewId: root._tateListLayout ? root.tateListViewId : root.listViewId
@@ -158,6 +177,15 @@ Item {
     // is in a usable state.
     signal requestPageMenu
 
+    Connections {
+        target: root.mediaModel
+
+        function onLoadingChanged(): void {
+            if (root.mediaModel && root.mediaModel.loading)
+                mediaGrid.prepareForModelReplacement();
+        }
+    }
+
     on_ListLayoutChanged: {
         if (!root._listLayout)
             return;
@@ -170,6 +198,24 @@ Item {
     // PagedGrid tile; in list layout it increments the BrowseListDetailView
     // pulse so the selected row fires its push-in. The same push-in cue
     // serves both forward navigation and game launch.
+    // Capture during the d-pad hold delay, before rapid mode suspends live tile
+    // delegates. Retaining the grab result keeps its itemgrabber URL alive.
+    // Generation check drops a late callback after direction/layout changes.
+    function prepareRapidSnapshot(): void {
+        root._rapidSnapshotGeneration++;
+        const generation = root._rapidSnapshotGeneration;
+        root._rapidSnapshotReady = false;
+        root._rapidSnapshotResult = null;
+        if (root._listLayout || !mediaGrid.visible || mediaGrid.itemCount <= 0)
+            return;
+        mediaGrid.grabToImage(function (result) {
+            if (generation !== root._rapidSnapshotGeneration)
+                return;
+            root._rapidSnapshotResult = result;
+            root._rapidSnapshotReady = true;
+        }, Qt.size(mediaGrid.width, mediaGrid.height));
+    }
+
     function pulseActivate(): void {
         if (root._listLayout)
             listCard.activatePulse++;
@@ -463,8 +509,9 @@ Item {
         title: typeof root.topStripTitleProvider === "function" ? root.topStripTitleProvider() : root.screenTitle
         currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : mediaGrid.currentPage
         totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize))
+        pageTotalKnown: root.paginationTotalKnown
         totalText: typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root._listLayout ? "" : (root._count() > 0 ? qsTr("%1 entries").arg(root._count()) : ""))
-        rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : (!root._listLayout || mediaGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(mediaGrid.currentIndex + 1).arg(Math.max(1, root._count())))
+        rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : (!root.paginationTotalKnown || !root._listLayout || mediaGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(mediaGrid.currentIndex + 1).arg(Math.max(1, root._count())))
     }
 
     BrowseListDetailView {
@@ -486,7 +533,10 @@ Item {
         currentIndex: mediaGrid.currentIndex
         focusReady: root._focusReady
         detailTitle: listCard.currentName
-        detailCoverKey: root.detailRapidScrollActive ? root.detailPlaceholderKey : (root._detailImageKey() !== "" ? root._detailImageKey() : listCard.currentCoverKey)
+        // Detail pane is not painted in grid layout. Withholding its source
+        // avoids a hidden width-constrained decode competing with visible
+        // height-constrained tile covers.
+        detailCoverKey: !root._listLayout ? "" : (root.detailRapidScrollActive ? root.detailPlaceholderKey : (root._detailImageKey() !== "" ? root._detailImageKey() : listCard.currentCoverKey))
         detailShowDescription: root.detailShowDescription
         detailShowTitle: root.detailShowTitle
         detailTags: root._detailTags()
@@ -526,7 +576,7 @@ Item {
         model: root.mediaModel
         delegate: Tile {
             layoutProfile: root._gridLayoutProfile
-            showCaption: true
+            showCaption: root.gridShowCaption
             coverSourceSize: Sizing.gamesGridCoverSourceSize(root._gridViewportWidth, root._gridViewportHeight)
         }
         layoutProfile: root._gridLayoutProfile
@@ -534,8 +584,12 @@ Item {
         rowsOverride: root.gridRowsOverride
         totalItemsOverride: root.gridTotalItemsOverride
         hasMorePages: root.gridHasMorePages
+        paginationTotalKnown: root.paginationTotalKnown
+        tileTopLabelProvider: root.gridTileTopLabelProvider
+        coverRequestsEnabled: root.coverRevealReady
         coverLoadingPaused: root.detailRapidScrollActive
-        rapidRenderMode: root.detailRapidScrollActive
+        cellsVisible: !root._rapidSnapshotVisible
+        rapidRenderMode: root.detailRapidScrollActive && root._rapidSnapshotReady
         onLoadMoreRequested: urgent => {
             if (typeof root.gridLoadMoreAction === "function")
                 root.gridLoadMoreAction(urgent);
@@ -566,7 +620,7 @@ Item {
 
     ActiveLabel {
         id: activeLabel
-        visible: !root._gateHide && !root._listLayout && root.renderGridLayout
+        visible: !root._loading() && !root._overlayLoadingVisible && !root._listLayout && root.renderGridLayout
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: root.activeLabelAtBottom ? undefined : mediaGrid.bottom
@@ -620,6 +674,36 @@ Item {
         anchors.left: activeLabel.left
         anchors.leftMargin: root.pageLoadingLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
+    }
+
+    // Frozen rapid-navigation presentation. The live grid is hidden while this
+    // is visible, so the dim Image blends once against an opaque black backing
+    // rather than compositing over moving delegates on every repeat tick.
+    Item {
+        id: rapidSnapshot
+        objectName: "rapidScrollSnapshot"
+        visible: root._rapidSnapshotVisible
+        x: mediaGrid.x + mediaGrid.leftInset
+        y: mediaGrid.y + mediaGrid.topInset
+        width: mediaGrid._contentWidth
+        height: mediaGrid.rows * mediaGrid.cellHeight + Math.max(0, mediaGrid.rows - 1) * mediaGrid.cellSpacingY
+        clip: true
+        z: 19
+
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.bgBar
+        }
+
+        Image {
+            objectName: "rapidScrollSnapshotImage"
+            anchors.fill: parent
+            source: root._rapidSnapshotResult ? root._rapidSnapshotResult.url : ""
+            sourceClipRect: Qt.rect(mediaGrid.leftInset, mediaGrid.topInset, rapidSnapshot.width, rapidSnapshot.height)
+            fillMode: Image.Stretch
+            smooth: false
+            opacity: 0.28
+        }
     }
 
     RapidScrollIndicator {

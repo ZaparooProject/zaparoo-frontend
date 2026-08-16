@@ -20,7 +20,7 @@ src/app/main.cpp
     │     │     impl for QML singletons (sync seed + qt_thread watcher).
     │     │
     │     ├── src/mister_runtime.rs
-    │     │     Pre-Qt setup on ARM32: vmode resolution switch, zaparoo.sh start.
+    │     │     Pre-Qt ARM32 setup: automatic framebuffer sizing, zaparoo.sh start.
     │     │     Compiled on all platforms; MiSTer-specific calls are gated by cfg.
     │     │
     │     ├── src/models/  [Zaparoo.Browse QML module via cxx-qt 0.8]

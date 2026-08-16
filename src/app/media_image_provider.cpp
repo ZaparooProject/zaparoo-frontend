@@ -72,9 +72,10 @@ QImage scaleForRequestedSize(const QImage& image, const QSize& requestedSize)
 } // namespace
 
 MediaImageResponse::MediaImageResponse(QString id, QSize requestedSize, QMutex* cacheMutex,
-                                       QCache<QString, QImage>* decodedCache)
+                                       QCache<QString, QImage>* decodedCache,
+                                       std::array<QMutex, 16>* decodeMutexes)
     : m_id(std::move(id)), m_requestedSize(requestedSize), m_cacheMutex(cacheMutex),
-      m_decodedCache(decodedCache)
+      m_decodedCache(decodedCache), m_decodeMutexes(decodeMutexes)
 {
     // QThreadPool would `delete` the runnable after `run()` returns,
     // but `QQuickAsyncImageProvider` expects the response to live until
@@ -133,6 +134,97 @@ QQuickTextureFactory* MediaImageResponse::textureFactory() const
     return QQuickTextureFactory::textureFactoryForImage(m_image);
 }
 
+MediaImageResponse::RawImageResult MediaImageResponse::loadRawImage(qint64 queueWaitUs,
+                                                                    int inflight)
+{
+    const QByteArray idUtf8 = m_id.toUtf8();
+    const QString rawCacheKey = m_id + QStringLiteral(":raw");
+    RawImageResult result;
+    QImage& image = result.image;
+
+    // Serialize only requests that hash to the same stripe, then re-check raw
+    // cache under that lock. Width-only, height-only, and natural-size QML
+    // requests for one source therefore share a single WebP decode.
+    const auto stripe = static_cast<std::size_t>(qHash(m_id)) % m_decodeMutexes->size();
+    QMutexLocker decodeLocker(&m_decodeMutexes->at(stripe));
+    {
+        QMutexLocker cacheLocker(m_cacheMutex);
+        if (const QImage* cached = m_decodedCache->object(rawCacheKey))
+        {
+            result.cacheHit = true;
+            result.image = *cached;
+            return result;
+        }
+    }
+
+    QByteArray bytes;
+    QElapsedTimer fetchTimer;
+    fetchTimer.start();
+    zaparoo_media_image_bytes_for(idUtf8.constData(), static_cast<std::size_t>(idUtf8.size()),
+                                  &appendBytesCallback, &bytes);
+    result.fetchUs = fetchTimer.nsecsElapsed() / 1000;
+    qDebug("media-image provider: id=%s bytes=%lld fetch_us=%lld", idUtf8.constData(),
+           static_cast<long long>(bytes.size()), static_cast<long long>(result.fetchUs));
+    if (bytes.isEmpty())
+    {
+        const qint64 totalUs = m_lifetime.nsecsElapsed() / 1000;
+        qDebug("media-image provider: 0 bytes for id=%s (no cover or empty payload) "
+               "queue_wait_us=%lld fetch_us=%lld total_us=%lld inflight=%d",
+               idUtf8.constData(), static_cast<long long>(queueWaitUs),
+               static_cast<long long>(result.fetchUs), static_cast<long long>(totalUs), inflight);
+        return {};
+    }
+
+    QElapsedTimer decodeTimer;
+    decodeTimer.start();
+    const bool decodeOk = image.loadFromData(bytes);
+    result.decodeUs = decodeTimer.nsecsElapsed() / 1000;
+    if (!decodeOk)
+    {
+        // First 8 bytes identify common formats and help separate malformed
+        // payloads from missing handlers in static Qt builds.
+        const qsizetype prefixLen = bytes.size() < 8 ? bytes.size() : 8;
+        QString prefixHex;
+        prefixHex.reserve(prefixLen * 3);
+        for (qsizetype i = 0; i < prefixLen; ++i)
+        {
+            const auto byteVal = static_cast<std::uint8_t>(bytes.at(i));
+            if (i > 0)
+            {
+                prefixHex.append(QLatin1Char(' '));
+            }
+            prefixHex.append(QStringLiteral("%1").arg(byteVal, 2, 16, QLatin1Char('0')));
+        }
+        QStringList formatNames;
+        const QList<QByteArray> supportedFormats = QImageReader::supportedImageFormats();
+        formatNames.reserve(supportedFormats.size());
+        for (const QByteArray& fmt : supportedFormats)
+        {
+            formatNames << QString::fromLatin1(fmt);
+        }
+        const qint64 totalUs = m_lifetime.nsecsElapsed() / 1000;
+        qWarning("media-image provider: QImage::loadFromData failed for id=%s bytes=%lld "
+                 "prefix=[%s] supportedFormats=[%s] queue_wait_us=%lld fetch_us=%lld "
+                 "decode_us=%lld total_us=%lld inflight=%d",
+                 idUtf8.constData(), static_cast<long long>(bytes.size()),
+                 qUtf8Printable(prefixHex), qUtf8Printable(formatNames.join(QStringLiteral(", "))),
+                 static_cast<long long>(queueWaitUs), static_cast<long long>(result.fetchUs),
+                 static_cast<long long>(result.decodeUs), static_cast<long long>(totalUs),
+                 inflight);
+        return {};
+    }
+
+    QMutexLocker cacheLocker(m_cacheMutex);
+    if (!m_decodedCache->contains(rawCacheKey))
+    {
+        const auto cost = static_cast<int>(image.sizeInBytes());
+        // QCache owns inserted pointers.
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        m_decodedCache->insert(rawCacheKey, new QImage(image), cost);
+    }
+    return result;
+}
+
 void MediaImageResponse::run()
 {
     // queue_wait: time this response sat in the pool between enqueue
@@ -184,88 +276,33 @@ void MediaImageResponse::run()
         s_decoderNiced = true;
     }
 
-    // QtQuick strips the `image://media-image/` prefix before calling
-    // the provider, so `m_id` is the raw encoded key (base64url-no-pad).
     const QByteArray idUtf8 = m_id.toUtf8();
-    QByteArray bytes;
-    QElapsedTimer fetchTimer;
-    fetchTimer.start();
-    zaparoo_media_image_bytes_for(idUtf8.constData(), static_cast<std::size_t>(idUtf8.size()),
-                                  &appendBytesCallback, &bytes);
-    const qint64 fetchUs = fetchTimer.nsecsElapsed() / 1000;
-    qDebug("media-image provider: id=%s bytes=%lld fetch_us=%lld", idUtf8.constData(),
-           static_cast<long long>(bytes.size()), static_cast<long long>(fetchUs));
-    if (bytes.isEmpty())
+    const RawImageResult raw = loadRawImage(queueWaitUs, inflight);
+    if (raw.image.isNull())
     {
-        const qint64 totalUs = m_lifetime.nsecsElapsed() / 1000;
-        qDebug("media-image provider: 0 bytes for id=%s (no cover or empty payload) "
-               "queue_wait_us=%lld fetch_us=%lld total_us=%lld inflight=%d",
-               idUtf8.constData(), static_cast<long long>(queueWaitUs),
-               static_cast<long long>(fetchUs), static_cast<long long>(totalUs), inflight);
         emit finished();
         return;
     }
-    QElapsedTimer decodeTimer;
-    decodeTimer.start();
-    QImage image;
-    const bool decodeOk = image.loadFromData(bytes);
-    const qint64 decodeUs = decodeTimer.nsecsElapsed() / 1000;
-    if (!decodeOk)
-    {
-        // First 8 bytes pin down the format: PNG = 89 50 4E 47 0D 0A 1A 0A,
-        // JPEG = FF D8 FF, WebP starts "RIFF....WEBP". Pairing the magic
-        // bytes with the registered format list tells us whether Core sent
-        // the wrong payload type or whether Qt simply has no handler for
-        // this format (the static MiSTer Qt build can ship without PNG).
-        const qsizetype prefixLen = bytes.size() < 8 ? bytes.size() : 8;
-        QString prefixHex;
-        prefixHex.reserve(prefixLen * 3);
-        for (qsizetype i = 0; i < prefixLen; ++i)
-        {
-            const auto byteVal = static_cast<std::uint8_t>(bytes.at(i));
-            if (i > 0)
-            {
-                prefixHex.append(QLatin1Char(' '));
-            }
-            prefixHex.append(QStringLiteral("%1").arg(byteVal, 2, 16, QLatin1Char('0')));
-        }
-        QStringList formatNames;
-        const QList<QByteArray> supportedFormats = QImageReader::supportedImageFormats();
-        formatNames.reserve(supportedFormats.size());
-        for (const QByteArray& fmt : supportedFormats)
-        {
-            formatNames << QString::fromLatin1(fmt);
-        }
-        const qint64 totalUs = m_lifetime.nsecsElapsed() / 1000;
-        qWarning(
-            "media-image provider: QImage::loadFromData failed for id=%s bytes=%lld prefix=[%s] "
-            "supportedFormats=[%s] queue_wait_us=%lld fetch_us=%lld decode_us=%lld total_us=%lld "
-            "inflight=%d",
-            idUtf8.constData(), static_cast<long long>(bytes.size()), qUtf8Printable(prefixHex),
-            qUtf8Printable(formatNames.join(QStringLiteral(", "))),
-            static_cast<long long>(queueWaitUs), static_cast<long long>(fetchUs),
-            static_cast<long long>(decodeUs), static_cast<long long>(totalUs), inflight);
-        emit finished();
-        return;
-    }
+
     QElapsedTimer scaleTimer;
     scaleTimer.start();
-    m_image = scaleForRequestedSize(image, m_requestedSize);
+    m_image = scaleForRequestedSize(raw.image, m_requestedSize);
     // Build the texture factory here so the GUI thread doesn't pay
     // the allocation cost during paint. `textureFactoryForImage` is
     // documented as safe to call on any thread; the resulting factory
     // wraps `m_image` and is consumed once by QtQuick after `finished()`.
     m_factory.reset(QQuickTextureFactory::textureFactoryForImage(m_image));
     const qint64 scaleUs = scaleTimer.nsecsElapsed() / 1000;
-    // Store the decoded+scaled image so a re-invocation at the same tier skips
-    // the decode. Cost is tracked in bytes so maxCost caps total memory use.
+    // Store only genuine scaled variants. When requested output equals raw
+    // size, raw entry already provides same bitmap and charging both keys would
+    // halve effective cache capacity.
+    if (m_image.size() != raw.image.size())
     {
         QMutexLocker locker(m_cacheMutex);
         if (!m_decodedCache->contains(cacheKey))
         {
             const auto cost = static_cast<int>(m_image.sizeInBytes());
-            // QCache::insert takes ownership of the raw pointer; this is the
-            // documented API and the owning-memory diagnostic is expected here.
+            // QCache::insert takes ownership of the raw pointer.
             // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
             m_decodedCache->insert(cacheKey, new QImage(m_image), cost);
         }
@@ -280,11 +317,12 @@ void MediaImageResponse::run()
     // request tier matches what Core sent, i.e. no resample.
     const qint64 totalUs = m_lifetime.nsecsElapsed() / 1000;
     qDebug("media-image decode: id=%s req=%dx%d src=%dx%d out=%dx%d queue_wait_us=%lld "
-           "fetch_us=%lld decode_us=%lld scale_us=%lld total_us=%lld inflight=%d cached=0",
-           idUtf8.constData(), m_requestedSize.width(), m_requestedSize.height(), image.width(),
-           image.height(), m_image.width(), m_image.height(), static_cast<long long>(queueWaitUs),
-           static_cast<long long>(fetchUs), static_cast<long long>(decodeUs),
-           static_cast<long long>(scaleUs), static_cast<long long>(totalUs), inflight);
+           "fetch_us=%lld decode_us=%lld scale_us=%lld total_us=%lld inflight=%d cached=%d",
+           idUtf8.constData(), m_requestedSize.width(), m_requestedSize.height(), raw.image.width(),
+           raw.image.height(), m_image.width(), m_image.height(),
+           static_cast<long long>(queueWaitUs), static_cast<long long>(raw.fetchUs),
+           static_cast<long long>(raw.decodeUs), static_cast<long long>(scaleUs),
+           static_cast<long long>(totalUs), inflight, raw.cacheHit ? 1 : 0);
     emit finished();
 }
 
@@ -314,7 +352,8 @@ MediaImageProvider::~MediaImageProvider()
 QQuickImageResponse* MediaImageProvider::requestImageResponse(const QString& id,
                                                               const QSize& requestedSize)
 {
-    auto* response = new MediaImageResponse(id, requestedSize, &m_cacheMutex, &m_decodedCache);
+    auto* response =
+        new MediaImageResponse(id, requestedSize, &m_cacheMutex, &m_decodedCache, &m_decodeMutexes);
     m_pool.start(response);
     return response;
 }

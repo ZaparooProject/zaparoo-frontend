@@ -482,6 +482,7 @@ impl Client {
             }
             debug!(
                 method,
+                request_id = %id,
                 duration_ms = started.elapsed().as_millis(),
                 error = "not connected",
                 "rpc round trip",
@@ -499,6 +500,7 @@ impl Client {
                 let payload_bytes = serde_json::to_vec(&val).map_or(0, |bytes| bytes.len());
                 debug!(
                     method,
+                    request_id = %id,
                     duration_ms = started.elapsed().as_millis(),
                     payload_bytes,
                     "rpc round trip",
@@ -508,6 +510,7 @@ impl Client {
             Err(e) => {
                 debug!(
                     method,
+                    request_id = %id,
                     duration_ms = started.elapsed().as_millis(),
                     error = %e.message,
                     "rpc round trip",
