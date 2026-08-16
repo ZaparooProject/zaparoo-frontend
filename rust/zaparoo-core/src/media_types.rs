@@ -665,12 +665,14 @@ pub struct MediaMetaBatchParams {
 }
 
 impl MediaMetaBatchParams {
-    pub fn try_new(items: Vec<MediaMetaParams>) -> Result<Self, &'static str> {
+    pub fn try_new(items: Vec<MediaMetaParams>) -> Result<Self, String> {
         if items.is_empty() {
-            return Err("media.meta batch must contain at least one item");
+            return Err("media.meta batch must contain at least one item".to_string());
         }
         if items.len() > MEDIA_META_BATCH_MAX_ITEMS {
-            return Err("media.meta batch cannot contain more than 100 items");
+            return Err(format!(
+                "media.meta batch cannot contain more than {MEDIA_META_BATCH_MAX_ITEMS} items"
+            ));
         }
         Ok(Self { items })
     }
@@ -1294,6 +1296,7 @@ mod tests {
         ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse, SettingsResult,
         SystemDefault, SystemsParams, SystemsResult, TagInfo, TokensHistoryResult, TokensResult,
         UpdateSettingsParams, VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+        MEDIA_META_BATCH_MAX_ITEMS,
     };
 
     #[test]
@@ -2026,10 +2029,13 @@ mod tests {
 
     #[test]
     fn media_meta_batch_enforces_item_cap() {
-        let hundred = vec![MediaMetaParams::for_media_id(1); 100];
-        assert!(MediaMetaBatchParams::try_new(hundred).is_ok());
-        let hundred_one = vec![MediaMetaParams::for_media_id(1); 101];
-        assert!(MediaMetaBatchParams::try_new(hundred_one).is_err());
+        let max_items = vec![MediaMetaParams::for_media_id(1); MEDIA_META_BATCH_MAX_ITEMS];
+        assert!(MediaMetaBatchParams::try_new(max_items).is_ok());
+        let over_limit = vec![MediaMetaParams::for_media_id(1); MEDIA_META_BATCH_MAX_ITEMS + 1];
+        assert_eq!(
+            MediaMetaBatchParams::try_new(over_limit).expect_err("over limit"),
+            format!("media.meta batch cannot contain more than {MEDIA_META_BATCH_MAX_ITEMS} items")
+        );
         assert!(MediaMetaBatchParams::try_new(Vec::new()).is_err());
     }
 

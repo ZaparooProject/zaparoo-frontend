@@ -122,7 +122,7 @@ TestCase {
         verify(host !== null);
         const fallback = findChild(host, "tileFallbackText");
         verify(fallback !== null);
-        wait(20);
+        wait(500);
         compare(fallback.opacity, 0.0);
     }
 

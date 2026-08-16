@@ -39,13 +39,24 @@ Item {
             width: parent.width
             spacing: Sizing.pctH(2)
 
+            TextMetrics {
+                id: instructionsMetrics
+
+                font.family: Theme.fontUi
+                font.pixelSize: Sizing.fontSize(2.4)
+                text: instructions.text
+            }
+
             Text {
-                width: parent.width
+                id: instructions
+
+                x: Sizing.center(parent.width, width)
+                width: Math.min(parent.width, Sizing.px(instructionsMetrics.advanceWidth))
                 text: qsTr("Scan this code with your phone to write this game to a Zaparoo token.")
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontSize(2.4)
                 color: Theme.textPrimary
-                horizontalAlignment: Text.AlignHCenter
+                horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 renderType: Text.NativeRendering
             }

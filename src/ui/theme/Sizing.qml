@@ -42,10 +42,10 @@ QtObject {
     // rotating the scene changes how many tiles fit without stretching
     // the cards into a different shape.
     readonly property var _gamesGridConfig: _gridConfig(_browseGridBaseConfig, {
-        // A 1080p MiSTer output renders through a 960x540 framebuffer. Its
-        // content viewport is about 365px tall, so 170px preserves the normal
+        // A 1080p MiSTer output renders through a 960x540 framebuffer. At that
+        // logical height, 31.5% resolves to 170px and preserves the normal
         // five-column, two-row page instead of falling back to 2x2.
-        "minCellHeight": crtNativePath ? 96 : 170,
+        "minCellHeight": crtNativePath ? 96 : pctH(31.5),
         "targetAspect": crtNativePath ? 0.78 : 0.71
     })
     readonly property var _gamesGridShape: gamesGridShape(screenWidth, screenHeight)

@@ -679,9 +679,8 @@ impl Client {
         &self,
         items: Vec<MediaMetaParams>,
     ) -> Result<MediaMetaBatchResult, ClientError> {
-        let params = MediaMetaBatchParams::try_new(items).map_err(|message| ClientError {
-            message: message.to_string(),
-        })?;
+        let params =
+            MediaMetaBatchParams::try_new(items).map_err(|message| ClientError { message })?;
         let val = self.call("media.meta", &params).await?;
         deserialize_timed("media.meta batch", val)
     }

@@ -391,17 +391,25 @@ Item {
     //
     // `_focusCoverActive` suppresses coverBase when the focused ramp is on top,
     // preventing the two opaque layers from stacking their alpha on hidden tiles.
+    TextMetrics {
+        id: topLabelMetrics
+
+        font.family: Theme.fontUi
+        font.pixelSize: root._topLabelTextSize
+        font.weight: Font.Medium
+        text: root.delegateTopLabel
+    }
+
     Text {
         objectName: "tileTopLabel"
-        x: root._captionSideInset
-        y: root._padding
-        width: root._captionTextMaxWidth
-        height: root._topLabelHeight
+        x: Sizing.center(parent.width, width)
+        y: root._padding + Sizing.center(root._topLabelHeight, height)
+        width: Math.min(root._captionTextMaxWidth, Sizing.px(topLabelMetrics.advanceWidth))
+        height: Sizing.px(implicitHeight)
         visible: root._hasTopLabel
         text: root.delegateTopLabel
         elide: Text.ElideRight
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
+        horizontalAlignment: Text.AlignLeft
         font.family: Theme.fontUi
         font.pixelSize: root._topLabelTextSize
         font.weight: Font.Medium

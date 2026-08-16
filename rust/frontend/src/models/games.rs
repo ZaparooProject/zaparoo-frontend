@@ -3159,15 +3159,10 @@ fn replace_initial_rows(
     let parent = QModelIndex::default();
     let top_left = model.as_mut().index(0, 0, &parent);
     let bottom_right = model.as_mut().index(count - 1, 0, &parent);
-    // Repeater delegates consume only these roles. An empty roles list means
-    // "all roles" and needlessly re-evaluates path, launch, description,
-    // file-count, and entry-type consumers during the first-frame update.
-    let mut roles = QList::<i32>::default();
-    roles.append(NAME_ROLE);
-    roles.append(COVER_KEY_ROLE);
-    roles.append(FAVORITE_ROLE);
-    roles.append(HIDDEN_ROLE);
-    roles.append(DISAMBIGUATING_TAGS_ROLE);
+    // Prefix delegates survive both in-place paths, but rows may belong to a
+    // different folder. Empty roles invalidates every exposed value so path,
+    // launch, identity, and metadata cannot remain bound to the old row.
+    let roles = QList::<i32>::default();
     model
         .as_mut()
         .data_changed(&top_left, &bottom_right, &roles);

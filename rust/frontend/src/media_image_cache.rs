@@ -1360,6 +1360,16 @@ async fn read_local_image(path: String) -> Result<Vec<u8>, String> {
     }
 }
 
+async fn fetch_inline_media_image(
+    store: &Arc<Store>,
+    mut params: MediaImageParams,
+) -> (Result<MediaImageResult, ClientError>, Duration) {
+    params.delivery = Some(MEDIA_IMAGE_DELIVERY_INLINE.to_string());
+    let started = Instant::now();
+    let result = store.client().media_image(params).await;
+    (result, started.elapsed())
+}
+
 async fn fetch_media_image_payload(
     store: &Arc<Store>,
     key: &MediaKey,
@@ -1384,10 +1394,9 @@ async fn fetch_media_image_payload(
                 path = %key.path,
                 "media_image_cache: Core rejected local-path delivery; using inline for this session"
             );
-            params.delivery = Some(MEDIA_IMAGE_DELIVERY_INLINE.to_string());
-            let fallback_started = Instant::now();
-            let fallback = store.client().media_image(params.clone()).await;
-            rpc_duration += fallback_started.elapsed();
+            let (fallback, fallback_duration) =
+                fetch_inline_media_image(store, params.clone()).await;
+            rpc_duration += fallback_duration;
             fallback?
         }
         Err(error) => return Err(error),
@@ -1431,10 +1440,8 @@ async fn fetch_media_image_payload(
         );
     }
 
-    params.delivery = Some(MEDIA_IMAGE_DELIVERY_INLINE.to_string());
-    let fallback_started = Instant::now();
-    let fallback = store.client().media_image(params).await;
-    rpc_duration += fallback_started.elapsed();
+    let (fallback, fallback_duration) = fetch_inline_media_image(store, params).await;
+    rpc_duration += fallback_duration;
     Ok(FetchedMediaImage {
         image: fallback?,
         local_bytes: None,

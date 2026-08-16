@@ -1139,7 +1139,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/QrCodeModal.qml" line="44"/>
+        <location filename="../components/QrCodeModal.qml" line="55"/>
         <source>Scan this code with your phone to write this game to a Zaparoo token.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1753,7 +1753,7 @@ Français - Wilfried</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="555"/>
+        <location filename="../components/Tile.qml" line="563"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>
