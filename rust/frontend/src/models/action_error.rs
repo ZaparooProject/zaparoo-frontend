@@ -44,16 +44,20 @@ fn event_bus() -> &'static ActionErrorBus {
 /// logged at the call site. QML maps the stable kind to localized, user-safe
 /// copy and uses sequence as an event edge even when consecutive kinds match.
 pub fn report_action_error(kind: &str, context: impl Into<String>) {
-    let sequence = NEXT_SEQUENCE.fetch_add(1, Ordering::SeqCst).wrapping_add(1) as i32;
+    let kind = kind.to_owned();
+    let context = context.into();
     let bus = event_bus();
-    bus.queue
+    let mut queue = bus
+        .queue
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .push_back(ActionErrorEvent {
-            sequence,
-            kind: kind.to_owned(),
-            context: context.into(),
-        });
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let sequence = NEXT_SEQUENCE.fetch_add(1, Ordering::SeqCst).wrapping_add(1) as i32;
+    queue.push_back(ActionErrorEvent {
+        sequence,
+        kind,
+        context,
+    });
+    drop(queue);
     bus.notify.notify_one();
 }
 

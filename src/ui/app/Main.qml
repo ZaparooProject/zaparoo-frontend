@@ -2352,8 +2352,10 @@ MainLayout {
             buttonLabel: buttonLabel !== "" ? buttonLabel : qsTr("OK"),
             accepted: accepted
         };
-        if (root.actionErrorModalVisible) {
+        if (root.actionErrorModalVisible || root._actionErrorQueue.length > 0) {
             root._actionErrorQueue = root._actionErrorQueue.concat([entry]);
+            if (!root.actionErrorModalVisible)
+                actionErrorQueueTimer.restart();
             return;
         }
         root._showActionError(entry);

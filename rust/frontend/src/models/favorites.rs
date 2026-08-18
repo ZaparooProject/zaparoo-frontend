@@ -625,6 +625,11 @@ impl ffi::FavoritesModel {
     }
 
     fn retry(mut self: Pin<&mut Self>) {
+        let sort = core_sort_for_mode(&self.sort_mode.to_string());
+        let systems = favorites_system_scope(&self.current_system_id.to_string());
+        global_store()
+            .subscribe::<MediaFavoritesEndpoint>(FavoritesArgs::new(PAGE_SIZE, sort, systems))
+            .refetch();
         self.as_mut().start_subscription();
     }
 

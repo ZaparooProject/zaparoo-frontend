@@ -1035,7 +1035,13 @@ TestCase {
         main.presentActionError("next", "Second", "Second body", "OK", null);
         compare(main._actionErrorQueue.length, 1, "different failure waits behind current modal");
         main.handleAction("accept");
+        main.presentActionError("last", "Third", "Third body", "OK", null);
+        compare(main.actionErrorModalVisible, false, "new failure must wait during queued-modal handoff");
+        compare(main._actionErrorQueue.length, 2, "handoff preserves FIFO order");
         tryCompare(main, "actionErrorTitle", "Second");
+        compare(main._actionErrorQueue.length, 1);
+        main.handleAction("cancel");
+        tryCompare(main, "actionErrorTitle", "Third");
         compare(main._actionErrorQueue.length, 0);
         main.handleAction("cancel");
     }
