@@ -156,11 +156,12 @@ TestCase {
         compare(closeSpy.count, 1);
     }
 
-    function test_handle_action_page_menu_toggles_picker_closed(): void {
+    function test_handle_action_page_menu_is_ignored(): void {
         picker.entries = _entries(3);
         picker.open = true;
         picker.handleAction("page_menu");
-        compare(closeSpy.count, 1);
+        compare(closeSpy.count, 0);
+        compare(picker.open, true);
     }
 
     function test_reopen_recomputes_initial_index(): void {

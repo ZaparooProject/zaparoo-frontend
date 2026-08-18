@@ -902,6 +902,55 @@ TestCase {
         main.closeListPickerModal();
     }
 
+    function test_page_menu_action_toggles_only_view_pickers(): void {
+        const pickers = [
+            {
+                open: () => main.openPageMenu(),
+                fieldId: "page_menu"
+            },
+            {
+                open: () => main.openFavoritesPageMenu(),
+                fieldId: "page_menu_favorites"
+            },
+            {
+                open: () => main.openFavoriteSystemsPageMenu(),
+                fieldId: "page_menu_favorite_systems"
+            }
+        ];
+        for (let i = 0; i < pickers.length; i++) {
+            pickers[i].open();
+            tryCompare(main, "listPickerModalVisible", true);
+            compare(main.listPickerFieldId, pickers[i].fieldId);
+            main.handleAction("page_menu");
+            tryCompare(main, "listPickerModalVisible", false);
+        }
+
+        main.openListPickerModal("Orientation", [{
+            id: "horizontal",
+            label: "Horizontal"
+        }], "horizontal", "orientation");
+        tryCompare(main, "listPickerModalVisible", true);
+        main.handleAction("page_menu");
+        compare(main.listPickerModalVisible, true, "View must not close an unrelated list picker");
+        compare(main.listPickerFieldId, "orientation");
+        main.handleAction("cancel");
+        tryCompare(main, "listPickerModalVisible", false);
+    }
+
+    function test_view_toggle_restores_input_to_underlying_screen(): void {
+        main.activeScreen = main.screenGames;
+        main.openPageMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        main.handleAction("page_menu");
+        tryCompare(main, "listPickerModalVisible", false);
+
+        main.handleKey(Qt.Key_Escape);
+        compare(main.pendingTransition, "");
+        compare(main.activeScreen, main.screenSystems);
+        main.activeScreen = main.screenHub;
+        Browse.AppState.active_screen = "";
+    }
+
     function test_random_launch_failure_is_reported(): void {
         // Harness has no browse scope, so model rejects before issuing RPC.
         Browse.GamesModel.launch_random();

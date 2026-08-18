@@ -131,7 +131,7 @@ Item {
         } else if (action === "accept") {
             if (modal.currentIndex >= 0 && modal.currentIndex < modal.entries.length)
                 modal._commitAccept(modal.entries[modal.currentIndex].id);
-        } else if (action === "cancel" || action === "page_menu") {
+        } else if (action === "cancel") {
             modal.closeRequested();
         }
     }

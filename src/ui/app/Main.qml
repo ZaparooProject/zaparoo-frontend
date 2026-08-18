@@ -2399,6 +2399,10 @@ MainLayout {
             ScreenManager.popModal();
     }
 
+    function _isViewListPicker(fieldId: string): bool {
+        return fieldId === "page_menu" || fieldId === "page_menu_favorites" || fieldId === "page_menu_favorite_systems";
+    }
+
     // Open the page/list-scoped operations menu (West button), the "View"
     // counterpart to North's item-scoped "Options". Go to... stays
     // pre-focused so common path is fixed West-then-Accept chord. Letter
@@ -3014,7 +3018,9 @@ MainLayout {
                 if (root.settingNeedsRestartModal !== null)
                     root.settingNeedsRestartModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalListPicker) {
-                if (root.listPickerModal !== null)
+                if (action === "page_menu" && root._isViewListPicker(root.listPickerFieldId))
+                    root.closeListPickerModal();
+                else if (root.listPickerModal !== null)
                     root.listPickerModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalLetterJump) {
                 if (root.letterJumpModal !== null)
