@@ -17,13 +17,16 @@
 //     ticket that disarms stale callbacks.
 //
 // History is flat (no folder navigation, no auto-nav) so this model
-// stays a fraction of the size of `GamesModel`. Rows are deduplicated
-// by exact `mediaPath`; Core returns newest-first history, so the first
-// row for a path is the one shown. Card-write isn't wired here yet —
+// stays a fraction of the size of `GamesModel`. Every page asks Core for
+// newest-session-per-`(systemId, mediaPath)` rows; a matching defensive
+// filter only protects the model from malformed or older responses.
+// Card-write isn't wired here yet —
 // recents launches by `run`-ing the entry's launcher route.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
-use crate::media_meta_cache::{global_media_meta_cache, MetaLookup};
+use crate::media_meta_cache::{
+    fetch_media_meta_with_path_fallback, global_media_meta_cache, MetaLookup,
+};
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
@@ -259,6 +262,9 @@ pub mod ffi {
         fn system_id_at(self: &RecentsModel, index: i32) -> QString;
 
         #[qinvokable]
+        fn system_name_at(self: &RecentsModel, index: i32) -> QString;
+
+        #[qinvokable]
         fn peek_detail_at(self: Pin<&mut RecentsModel>, index: i32);
 
         #[qinvokable]
@@ -345,6 +351,15 @@ fn page_snapshot(result: &MediaHistoryResult) -> PageSnapshot {
     )
 }
 
+fn history_page_params(cursor: Option<String>) -> MediaHistoryParams {
+    MediaHistoryParams {
+        limit: Some(PAGE_SIZE),
+        cursor,
+        systems: Vec::new(),
+        distinct_media: Some(true),
+    }
+}
+
 fn apply_state(
     mut model: Pin<&mut ffi::RecentsModel>,
     (data, err): (Option<PageSnapshot>, String),
@@ -362,7 +377,7 @@ fn apply_state(
         model.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         model.as_mut().ensure_cover_subscription();
         let raw_len = entries.len();
-        let entries = dedupe_latest_by_path(entries);
+        let entries = dedupe_latest_by_identity(entries);
         info!(
             raw_len,
             deduped_len = entries.len(),
@@ -638,11 +653,7 @@ impl ffi::RecentsModel {
         global_handle().spawn(async move {
             let result = store
                 .client()
-                .media_history(MediaHistoryParams {
-                    limit: Some(PAGE_SIZE),
-                    cursor: None,
-                    systems: Vec::new(),
-                })
+                .media_history(history_page_params(None))
                 .await;
             match &result {
                 Ok(r) => info!(
@@ -719,11 +730,7 @@ impl ffi::RecentsModel {
         global_handle().spawn(async move {
             let result = store
                 .client()
-                .media_history(MediaHistoryParams {
-                    limit: Some(PAGE_SIZE),
-                    cursor,
-                    systems: Vec::new(),
-                })
+                .media_history(history_page_params(cursor))
                 .await;
             let _ = qt_thread.queue(move |model| {
                 if seq.load(Ordering::SeqCst) != ticket {
@@ -815,6 +822,19 @@ impl ffi::RecentsModel {
         QString::from(self.entries[index as usize].system_id.as_str())
     }
 
+    fn system_name_at(&self, index: i32) -> QString {
+        if index < 0 || index >= self.count {
+            return QString::default();
+        }
+        let entry = &self.entries[index as usize];
+        let name = entry.system_name.trim();
+        QString::from(if name.is_empty() {
+            entry.system_id.as_str()
+        } else {
+            name
+        })
+    }
+
     // Immediate, non-debounced sibling of `load_detail_at`. Called the moment
     // the focused row changes so the detail table reflects THIS row at once —
     // cached metadata (instant), a memoized blank, or a clean blank while a
@@ -888,17 +908,20 @@ impl ffi::RecentsModel {
         let system = entry.system_id.clone();
         let path = entry.media_path.clone();
         let media_id = entry.media_id;
+        let has_cover = entry.has_cover;
         if system.trim().is_empty() || path.trim().is_empty() {
             clear_current_detail_state(self.as_mut());
             return;
         }
-        let detail_key = match media_id {
-            Some(id) => MediaKey::with_media_id(system.clone(), path.clone(), id),
-            None => MediaKey::new(system.clone(), path.clone()),
-        }
-        .with_current_cover_preference();
-        self.as_mut().rust_mut().current_detail_media_key = Some(detail_key);
-        self.as_mut().rust_mut().current_detail_media_id = media_id;
+        let detail_key = has_cover.then(|| {
+            match media_id {
+                Some(id) => MediaKey::with_media_id(system.clone(), path.clone(), id),
+                None => MediaKey::new(system.clone(), path.clone()),
+            }
+            .with_current_cover_preference()
+        });
+        self.as_mut().rust_mut().current_detail_media_key = detail_key;
+        self.as_mut().rust_mut().current_detail_media_id = has_cover.then_some(media_id).flatten();
         sync_current_detail_image_key(self.as_mut());
         refresh_adjacent_cover_prefetch(self.as_mut());
 
@@ -925,19 +948,18 @@ impl ffi::RecentsModel {
         self.as_mut().set_current_detail_tags(QString::default());
         let seq = self.rust().detail_seq.clone();
         let qt_thread = self.qt_thread();
-        let store = global_store();
         let store_key = meta_key.clone();
+        let fallback_system = system.clone();
+        let fallback_path = path.clone();
+        let meta_params = media_id.map_or_else(
+            || MediaMetaParams::for_media(system, path.clone()),
+            MediaMetaParams::for_media_id,
+        );
         global_handle().spawn(async move {
-            let result = store
-                .client()
-                .media_meta(MediaMetaParams::for_media(system, path.clone()))
-                .await;
-            // Cache the outcome (positive or negative) regardless of whether
-            // this callback is still current, so a later revisit is instant.
-            match &result {
-                Ok(r) => global_media_meta_cache().store(store_key, Some(r.media.clone())),
-                Err(_) => global_media_meta_cache().store(store_key, None),
-            }
+            let result =
+                fetch_media_meta_with_path_fallback(meta_params, fallback_system, fallback_path)
+                    .await;
+            global_media_meta_cache().store_fetch_result(store_key, &result);
             let _ = qt_thread.queue(move |mut model| {
                 if seq.load(Ordering::SeqCst) != ticket {
                     return;
@@ -1126,7 +1148,7 @@ fn emit_cover_key_range(mut model: Pin<&mut ffi::RecentsModel>, first_row: i32, 
 /// Build the canonical `(systemId, mediaPath)` identifier for a history
 /// row. Returns `None` for rows without enough info to key on.
 fn media_key_for(entry: &MediaHistoryEntry) -> Option<MediaKey> {
-    if entry.system_id.is_empty() || entry.media_path.is_empty() {
+    if !entry.has_cover || entry.system_id.is_empty() || entry.media_path.is_empty() {
         return None;
     }
     match entry.media_id {
@@ -1215,10 +1237,11 @@ fn enqueue_meta_prefetch(entries: &[MediaHistoryEntry], count: i32, row: i32) {
         if system.trim().is_empty() || path.trim().is_empty() {
             continue;
         }
-        requests.push((
-            MediaKey::new(system.clone(), path.clone()),
-            MediaMetaParams::for_media(system, path),
-        ));
+        let params = entry.media_id.map_or_else(
+            || MediaMetaParams::for_media(system.clone(), path.clone()),
+            MediaMetaParams::for_media_id,
+        );
+        requests.push((MediaKey::new(system, path), params));
     }
     if !requests.is_empty() {
         global_media_meta_cache().prefetch(requests);
@@ -1682,16 +1705,15 @@ fn position_of_path(entries: &[MediaHistoryEntry], needle: &str) -> i32 {
         .map_or(-1, |i| i as i32)
 }
 
-/// Keep the newest history row for each exact, non-empty path. Core
-/// returns history newest-first, so preserving the first occurrence
-/// implements latest-wins without parsing timestamps. Empty paths are
-/// malformed/unlaunchable and stay as-is instead of all collapsing into
-/// one bucket.
-fn dedupe_latest_by_path(entries: Vec<MediaHistoryEntry>) -> Vec<MediaHistoryEntry> {
-    filter_entries_by_path(std::iter::empty::<&MediaHistoryEntry>(), entries)
+/// Defensive duplicate filter for Core's `distinctMedia` response. Core owns
+/// newest-session selection and cursor pagination; this only prevents a broken
+/// or older response from duplicating the same `(systemId, mediaPath)` identity
+/// in the model. Empty paths stay as-is instead of collapsing malformed rows.
+fn dedupe_latest_by_identity(entries: Vec<MediaHistoryEntry>) -> Vec<MediaHistoryEntry> {
+    filter_entries_by_identity(std::iter::empty::<&MediaHistoryEntry>(), entries)
 }
 
-fn filter_entries_by_path<'a, I>(
+fn filter_entries_by_identity<'a, I>(
     existing_entries: I,
     incoming_entries: Vec<MediaHistoryEntry>,
 ) -> Vec<MediaHistoryEntry>
@@ -1704,13 +1726,16 @@ where
             if entry.media_path.is_empty() {
                 None
             } else {
-                Some(entry.media_path.clone())
+                Some((entry.system_id.clone(), entry.media_path.clone()))
             }
         })
         .collect::<HashSet<_>>();
     incoming_entries
         .into_iter()
-        .filter(|entry| entry.media_path.is_empty() || seen.insert(entry.media_path.clone()))
+        .filter(|entry| {
+            entry.media_path.is_empty()
+                || seen.insert((entry.system_id.clone(), entry.media_path.clone()))
+        })
         .collect()
 }
 
@@ -1729,7 +1754,7 @@ fn apply_append_page(
         Ok(result) => {
             let has_next_page = result.has_next_page();
             let next_cursor = result.next_cursor();
-            let entries = filter_entries_by_path(model.entries.iter(), result.entries);
+            let entries = filter_entries_by_identity(model.entries.iter(), result.entries);
             let new_count = i32::try_from(entries.len()).unwrap_or(i32::MAX - model.count);
             if !model.cover_requests_paused {
                 enqueue_recents_covers(&entries);
@@ -1769,9 +1794,10 @@ mod tests {
     )]
 
     use super::{
-        compute_unresolved_keys, cover_key_for_with, dedupe_latest_by_path, filter_entries_by_path,
-        launch_text_for, media_key_for, page_snapshot, position_of_path, resume_cover_key_for,
-        resume_entry, resume_entry_is_fresh, RESUME_FALLBACK_COVER_KEY,
+        compute_unresolved_keys, cover_key_for_with, dedupe_latest_by_identity,
+        filter_entries_by_identity, history_page_params, launch_text_for, media_key_for,
+        page_snapshot, position_of_path, resume_cover_key_for, resume_entry, resume_entry_is_fresh,
+        RESUME_FALLBACK_COVER_KEY,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
     use std::collections::HashSet;
@@ -1914,6 +1940,14 @@ mod tests {
     }
 
     #[test]
+    fn confirmed_no_cover_skips_key_and_first_paint_gate() {
+        let mut e = entry("smb", "/p/smb", "NES", "NES");
+        e.has_cover = false;
+        assert!(media_key_for(&e).is_none());
+        assert!(compute_unresolved_keys(&[e], |_| false, |_| false).is_empty());
+    }
+
+    #[test]
     fn media_key_for_skips_rows_without_path_or_system() {
         let pathless = entry("ghost", "", "NES", "NES");
         assert!(media_key_for(&pathless).is_none());
@@ -1960,9 +1994,10 @@ mod tests {
     }
 
     #[test]
-    fn dedupe_latest_by_path_keeps_first_matching_path() {
-        let entries = dedupe_latest_by_path(vec![
+    fn dedupe_latest_by_identity_keeps_first_matching_system_and_path() {
+        let entries = dedupe_latest_by_identity(vec![
             entry("latest smb", "/p/smb", "NES", "NES"),
+            entry("arcade twin", "/p/smb", "Arcade", "Arcade"),
             entry("zelda", "/p/zelda", "NES", "NES"),
             entry("older smb", "/p/smb", "NES", "NES"),
             entry("metroid", "/p/metroid", "NES", "NES"),
@@ -1971,13 +2006,13 @@ mod tests {
             .iter()
             .map(|entry| entry.media_name.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(names, vec!["latest smb", "zelda", "metroid"]);
+        assert_eq!(names, vec!["latest smb", "arcade twin", "zelda", "metroid"]);
     }
 
     #[test]
-    fn filter_entries_by_path_skips_existing_and_later_incoming_duplicates() {
+    fn filter_entries_by_identity_skips_existing_and_later_incoming_duplicates() {
         let existing = [entry("latest smb", "/p/smb", "NES", "NES")];
-        let entries = filter_entries_by_path(
+        let entries = filter_entries_by_identity(
             existing.iter(),
             vec![
                 entry("older smb", "/p/smb", "NES", "NES"),
@@ -1994,8 +2029,8 @@ mod tests {
     }
 
     #[test]
-    fn dedupe_latest_by_path_preserves_empty_paths() {
-        let entries = dedupe_latest_by_path(vec![
+    fn dedupe_latest_by_identity_preserves_empty_paths() {
+        let entries = dedupe_latest_by_identity(vec![
             entry("ghost one", "", "NES", "NES"),
             entry("smb", "/p/smb", "NES", "NES"),
             entry("ghost two", "", "NES", "NES"),
@@ -2027,6 +2062,17 @@ mod tests {
     fn position_of_path_missing_returns_minus_one() {
         let entries = vec![entry("smb", "/p/smb", "NES", "NES")];
         assert_eq!(position_of_path(&entries, "/missing"), -1);
+    }
+
+    #[test]
+    fn history_page_params_preserve_distinct_media_for_every_cursor() {
+        let initial = history_page_params(None);
+        assert_eq!(initial.distinct_media, Some(true));
+        assert!(initial.cursor.is_none());
+
+        let continuation = history_page_params(Some("cursor-2".into()));
+        assert_eq!(continuation.distinct_media, Some(true));
+        assert_eq!(continuation.cursor.as_deref(), Some("cursor-2"));
     }
 
     #[test]

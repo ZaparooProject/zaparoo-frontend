@@ -38,8 +38,8 @@ import Zaparoo.Browse as Browse
 // generalizes for any (topCount, bottomCount); see `_mapCrossRow`.
 //
 // Pure input dispatcher: emits one of `requestAccept(payload)`,
-// `requestFavoritesScreen`, `requestRecentsScreen`,
-// `requestUpdateScreen`, `requestSettingsScreen`, or `requestQuit`.
+// `requestFavoritesScreen`, `requestRecentsScreen`, `requestUpdateScreen`,
+// `requestSettingsScreen`, or `requestQuit`.
 //
 // All cross-screen orchestration (model fills, deferred set_category,
 // cover prefetch, transition overlay, screen flip) lives in Main.qml.
@@ -170,6 +170,7 @@ Item {
     // `anchorRect` is the tile's bounding rect mapped to hub coordinates,
     // used by the context menu to position itself.
     signal requestContextMenu(index: int, anchorRect: rect)
+    signal requestActionContextMenu(actionId: string, anchorRect: rect)
 
     // Vertically center the (categories row + actions row + activeLabel)
     // block in the band between the HeaderBar bottom (Sizing.headerBottom)
@@ -183,7 +184,8 @@ Item {
 
     readonly property bool resumeKnownUnavailable: hub.resumeModelEnabled && !Browse.RecentsModel.resume_loading && !Browse.RecentsModel.resume_available && Browse.AppStatus.connection_state === 2
     readonly property bool resumeActionVisible: !hub.resumeKnownUnavailable
-    readonly property string _emptyCatalogFallbackAction: Browse.BuildInfo.update_enabled ? "update" : "settings"
+    readonly property bool _internetAvailable: Browse.SystemStatus.has_wifi_internet || Browse.SystemStatus.has_lan_internet
+    readonly property string _emptyCatalogFallbackAction: Browse.BuildInfo.update_enabled && hub._internetAvailable ? "update" : "settings"
 
     // Action-row data. Resume is visible by default while Core history
     // is unknown; hide it only after Recents proves there is nothing
@@ -212,7 +214,7 @@ Item {
             enabled: true,
             text: qsTr("Recently Played")
         });
-        if (Browse.BuildInfo.update_enabled) {
+        if (Browse.BuildInfo.update_enabled && hub._internetAvailable) {
             entries.push({
                 id: "update",
                 coverKey: hub._hubCoverKey("update", "icons/RefreshCw"),
@@ -538,6 +540,13 @@ Item {
         return item.mapToItem(hub, 0, 0, item.width, item.height);
     }
 
+    function _currentActionCellRect(): rect {
+        const item = actionRepeater.itemAt(hub.currentIndex);
+        if (!item)
+            return Qt.rect(0, 0, 0, 0);
+        return item.mapToItem(hub, 0, 0, item.width, item.height);
+    }
+
     function handleAction(action: string): void {
         hub._focusArmed = true;
         if (action === "left") {
@@ -554,10 +563,15 @@ Item {
         } else if (action === "cancel") {
             hub.requestQuit();
         } else if (action === "context_menu") {
-            // Only open the context menu for real (non-placeholder) category
-            // tiles — placeholders have no category to hide or scrape.
-            if (hub.currentRow === 0 && hub.currentIndex < Browse.CategoriesModel.count)
+            // Only real categories have category actions. Favorites is the
+            // only Hub action tile with a collection-scoped Options menu.
+            if (hub.currentRow === 0 && hub.currentIndex < Browse.CategoriesModel.count) {
                 hub.requestContextMenu(hub.currentIndex, hub._currentCategoryCellRect());
+            } else if (hub.currentRow === 1) {
+                const entry = hub.actionEntries[hub.currentIndex];
+                if (entry && entry.id === "favorites")
+                    hub.requestActionContextMenu(entry.id, hub._currentActionCellRect());
+            }
         }
     }
 
@@ -708,6 +722,8 @@ Item {
         }
 
         Repeater {
+            id: actionRepeater
+
             model: hub.actionEntries
 
             Item {
@@ -739,13 +755,16 @@ Item {
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
-                    acceptedButtons: actionCellItem.modelData.enabled === false ? Qt.NoButton : Qt.LeftButton
+                    acceptedButtons: actionCellItem.modelData.enabled === false ? Qt.NoButton : (actionCellItem.modelData.id === "favorites" ? Qt.LeftButton | Qt.RightButton : Qt.LeftButton)
                     cursorShape: actionCellItem.modelData.enabled === false ? Qt.ArrowCursor : Qt.PointingHandCursor
 
                     onEntered: hub._focusAction(actionCellItem.index)
-                    onClicked: {
+                    onClicked: mouse => {
                         hub._focusAction(actionCellItem.index);
-                        hub._activateCurrent();
+                        if (mouse.button === Qt.RightButton)
+                            hub.requestActionContextMenu(actionCellItem.modelData.id, actionCellItem.mapToItem(hub, 0, 0, actionCellItem.width, actionCellItem.height));
+                        else
+                            hub._activateCurrent();
                     }
                 }
             }
@@ -753,8 +772,9 @@ Item {
     }
 
     // Active label — single big line under the bottom row, swaps text
-    // on every move. Reads from whichever row owns focus. Hidden during
-    // a forward transition, mirroring the rows.
+    // on every move. Reads from whichever row owns focus. Keep it visible
+    // while tiles hide for a forward transition so source context remains
+    // stable until the destination cut.
     ActiveLabel {
         id: activeLabel
 
@@ -777,7 +797,7 @@ Item {
                 return entry.name;
             return "";
         }
-        visible: !hub.transitioning
+        visible: true
     }
 
     // CategoriesModel has no `loading` qproperty — the catalog is

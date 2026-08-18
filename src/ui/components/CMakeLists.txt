@@ -21,7 +21,6 @@ qt_add_qml_module(
         CoreStatusPill.qml
         CrtCalibrationModal.qml
         DelayedLoadingIndicator.qml
-        FirstRunIndexModal.qml
         FocusedMediaDetailController.qml
         GameInfoModal.qml
         HeaderBar.qml

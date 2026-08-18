@@ -58,6 +58,70 @@ TestCase {
         signalName: "loadMoreRequested"
     }
 
+    property int suspendLiveDelegates: 0
+
+    ListModel {
+        id: suspendModel
+        ListElement {
+            name: "a"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+        ListElement {
+            name: "b"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+        ListElement {
+            name: "c"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+    }
+
+    ListModel {
+        id: suspendReplacementModel
+        ListElement {
+            name: "replacement"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+    }
+
+    Component {
+        id: suspendDelegate
+        Item {
+            property string name: ""
+            property string coverKey: ""
+            property bool isSelected: false
+            property bool isFocused: false
+            property int favorite: 0
+            property bool hidden: false
+            property string disambiguatingTags: ""
+            Component.onCompleted: testCase.suspendLiveDelegates++
+            Component.onDestruction: testCase.suspendLiveDelegates--
+        }
+    }
+
+    PagedGrid {
+        id: suspendProbe
+        suspendDelegates: true
+        model: suspendModel
+        delegate: suspendDelegate
+        columnsOverride: 3
+        rowsOverride: 3
+        width: 300
+        height: 300
+    }
+
     function fillModel(count: int): void {
         model.clear();
         for (let i = 0; i < count; i++)
@@ -77,22 +141,73 @@ TestCase {
         // (which skips its cleanup) doesn't poison the next case's
         // pageCount/totalPageCount math.
         grid.hasMorePages = false;
+        grid.loadingMore = false;
+        grid.paginationTotalKnown = true;
         grid.totalItemsOverride = -1;
         fillModel(0);
         grid.setCurrentIndexImmediate(0);
         loadMoreSpy.clear();
     }
 
+    function test_suspended_delegates_track_model_without_materializing(): void {
+        compare(suspendProbe.itemCount, 3);
+        compare(testCase.suspendLiveDelegates, 0);
+
+        suspendModel.append({
+            "name": "d",
+            "coverKey": "",
+            "favorite": 0,
+            "hidden": false,
+            "disambiguatingTags": ""
+        });
+        tryCompare(suspendProbe, "itemCount", 4);
+        compare(testCase.suspendLiveDelegates, 0);
+
+        suspendProbe.setCurrentIndexImmediate(2);
+        suspendProbe.suspendDelegates = false;
+        tryCompare(testCase, "suspendLiveDelegates", 4);
+        compare(suspendProbe.currentIndex, 2);
+
+        suspendProbe.suspendDelegates = true;
+        tryCompare(testCase, "suspendLiveDelegates", 0);
+        compare(suspendProbe.itemCount, 4);
+        compare(suspendProbe.currentIndex, 2);
+
+        suspendProbe.model = suspendReplacementModel;
+        tryCompare(suspendProbe, "itemCount", 1);
+        compare(testCase.suspendLiveDelegates, 0);
+
+        suspendProbe.model = suspendModel;
+        suspendModel.remove(3);
+        tryCompare(suspendProbe, "itemCount", 3);
+        suspendProbe.setCurrentIndexImmediate(0);
+    }
+
     function test_geometry_matches_pinned_resolution(): void {
         compare(grid.columns, 4, "expected 4 columns at 480px height");
         compare(grid.rows, 3, "expected 3 rows at 480px height");
         compare(grid.pageSize, 12);
+        compare(grid._coverRetentionPages, 2, "tile retention must convert cover count to pages");
     }
 
     function test_empty_model_refuses_movement(): void {
         compare(grid.itemCount, 0);
         compare(grid.moveSelection(1, 0), false);
         compare(grid.moveSelection(0, 1), false);
+        compare(grid.currentIndex, 0);
+    }
+
+    function test_prepare_for_model_replacement_clears_pending_target(): void {
+        fillModel(20);
+        grid.totalItemsOverride = 100;
+        grid.hasMorePages = true;
+        grid.setCurrentIndexImmediate(13);
+        compare(grid.jumpToIndex(50), false);
+        compare(grid.hasPendingTarget, true);
+
+        grid.prepareForModelReplacement();
+
+        compare(grid.hasPendingTarget, false);
         compare(grid.currentIndex, 0);
     }
 
@@ -348,6 +463,49 @@ TestCase {
         compare(grid.hasPagesBelow, false);
     }
 
+    function test_single_page_returns_unused_scroll_gutter_to_cells(): void {
+        fillModel(6);
+        compare(grid._scrollIndicatorVisible, false);
+        const singlePageCellWidth = grid.cellWidth;
+        grid.totalItemsOverride = 60;
+        compare(grid._scrollIndicatorVisible, true);
+        verify(grid.cellWidth < singlePageCellWidth);
+        grid.totalItemsOverride = -1;
+    }
+
+    function test_unbounded_pages_keep_down_arrow_at_loaded_edge(): void {
+        fillModel(24);
+        grid.paginationTotalKnown = false;
+        grid.hasMorePages = true;
+        grid.setCurrentIndexImmediate(12);
+        compare(grid.currentPage, grid.pageCount - 1);
+        compare(grid.hasPagesAbove, true);
+        compare(grid.hasPagesBelow, true);
+    }
+
+    function test_unbounded_page_next_fetches_instead_of_wrapping(): void {
+        fillModel(24);
+        grid.paginationTotalKnown = false;
+        grid.hasMorePages = true;
+        grid.setCurrentIndexImmediate(12);
+        loadMoreSpy.clear();
+
+        compare(grid.pageBy(1), false);
+        compare(grid.currentIndex, 12);
+        compare(grid._pendingTargetPage, 2);
+        verify(loadMoreSpy.count >= 1);
+    }
+
+    function test_unbounded_page_zero_does_not_wrap_backward(): void {
+        fillModel(24);
+        grid.paginationTotalKnown = false;
+        grid.hasMorePages = true;
+        compare(grid.pageBy(-1), false);
+        compare(grid.moveSelection(0, -1), false);
+        compare(grid.currentIndex, 0);
+        compare(grid.hasPendingTarget, false);
+    }
+
     // ── Scroll thumb sizing (totalItemsOverride) ─────────────────────────
 
     function test_totalPageCount_uses_override(): void {
@@ -406,6 +564,28 @@ TestCase {
         compare(grid._pendingTargetRow, grid.rows - 1);
         compare(grid._pendingTargetCol, 0);
         verify(loadMoreSpy.count >= 1, "expected loadMoreRequested to fire at least once");
+        _resetPartialLoadState();
+    }
+
+    function test_pending_target_waits_for_active_append_before_next_fetch(): void {
+        _setupPartialLoad(24, 60);
+        compare(grid.moveSelection(0, -1), false);
+        compare(grid._pendingTargetPage, 4);
+
+        grid.loadingMore = true;
+        loadMoreSpy.clear();
+        for (let i = 24; i < 36; i++)
+            model.append({
+                "name": "item-" + i,
+                "coverKey": "",
+                "favorite": 0
+            });
+        tryCompare(grid, "itemCount", 36);
+        compare(loadMoreSpy.count, 0, "active append tail must suppress next cursor request");
+
+        grid.loadingMore = false;
+        tryCompare(loadMoreSpy, "count", 1);
+        compare(grid._pendingTargetPage, 4);
         _resetPartialLoadState();
     }
 

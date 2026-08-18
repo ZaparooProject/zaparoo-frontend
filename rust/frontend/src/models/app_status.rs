@@ -55,7 +55,7 @@ pub const LINK_UNREACHABLE: i32 = 4;
 /// still connect, but the startup warning in `Main.qml` nudges the user to
 /// update because some features may not work. Bump this in lockstep with
 /// the features the frontend relies on.
-pub const MIN_CORE_VERSION: &str = "2.15.0";
+pub const MIN_CORE_VERSION: &str = "2.17.0";
 
 pub struct AppStatusRust {
     connection_state: i32,
@@ -214,8 +214,8 @@ fn bind_core_version(mut model: Pin<&mut ffi::AppStatus>) {
             let connected = { matches!(&*rx.borrow_and_update(), ConnectionState::Connected) };
             if connected {
                 // Flip `core_version_checked` whether or not the fetch
-                // succeeds: the first-run modal chain in Main.qml waits on
-                // it, so a failed `version` RPC must still resolve the gate.
+                // succeeds: Main's Core-version warning waits on it, so a
+                // failed `version` RPC must still resolve the gate.
                 // On error we fail open (supported = true, empty version).
                 let (version, supported) = match client.version().await {
                     Ok(result) => {
@@ -347,15 +347,15 @@ mod tests {
 
     #[test]
     fn version_at_or_above_min_is_supported() {
-        assert!(version_supported("2.15.0"));
-        assert!(version_supported("2.15.1"));
+        assert!(version_supported("2.17.0"));
+        assert!(version_supported("2.17.1"));
         assert!(version_supported("3.0.0"));
-        assert!(version_supported(" 2.16.0 ")); // surrounding whitespace
+        assert!(version_supported(" 2.18.0 ")); // surrounding whitespace
     }
 
     #[test]
     fn version_below_min_is_unsupported() {
-        assert!(!version_supported("2.14.9"));
+        assert!(!version_supported("2.16.1"));
         assert!(!version_supported("2.0.0"));
         assert!(!version_supported("1.9.9"));
     }

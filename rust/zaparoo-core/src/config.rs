@@ -58,6 +58,7 @@ pub struct SettingsConfig {
     pub orientation: Option<String>,
     pub clock_format: Option<String>,
     pub browse_layout: Option<String>,
+    pub favorites_sort: Option<String>,
     pub system_logo_style: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
@@ -65,6 +66,7 @@ pub struct SettingsConfig {
     pub discover_arcade_alternate_versions: Option<bool>,
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
+    pub favorites_grouping: Option<String>,
     pub show_hidden: Option<bool>,
     pub show_original_filenames: Option<bool>,
     pub hidden_categories: Vec<String>,
@@ -94,6 +96,7 @@ pub struct SettingsMirror<'a> {
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
     pub media_image_type: &'a str,
+    pub favorites_grouping: &'a str,
     pub show_hidden: bool,
     pub show_original_filenames: bool,
     pub region: &'a str,
@@ -177,6 +180,7 @@ struct RawSettings {
     orientation: Option<String>,
     clock_format: Option<String>,
     browse_layout: Option<String>,
+    favorites_sort: Option<String>,
     system_logo_style: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
@@ -184,6 +188,9 @@ struct RawSettings {
     discover_arcade_alternate_versions: Option<bool>,
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
+    favorites_grouping: Option<String>,
+    // Pre-release compatibility: early grouped-Favorites builds wrote a bool.
+    favorites_grouped: Option<bool>,
     show_hidden: Option<bool>,
     show_original_filenames: Option<bool>,
     #[serde(default)]
@@ -316,6 +323,7 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         orientation: trim_opt(raw.orientation),
         clock_format: trim_opt(raw.clock_format),
         browse_layout: trim_opt(raw.browse_layout),
+        favorites_sort: trim_opt(raw.favorites_sort),
         system_logo_style: trim_opt(raw.system_logo_style),
         button_layout: trim_opt(raw.button_layout),
         mouse_enabled: raw.mouse_enabled,
@@ -323,6 +331,10 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         discover_arcade_alternate_versions: raw.discover_arcade_alternate_versions,
         screensaver_timeout: trim_opt(raw.screensaver_timeout),
         media_image_type: trim_opt(raw.media_image_type),
+        favorites_grouping: trim_opt(raw.favorites_grouping).or_else(|| {
+            raw.favorites_grouped
+                .map(|grouped| if grouped { "system" } else { "none" }.to_string())
+        }),
         show_hidden: raw.show_hidden,
         show_original_filenames: raw.show_original_filenames,
         hidden_categories: normalize_string_list(raw.hidden_categories),
@@ -414,6 +426,11 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         "media_image_type".into(),
         toml::Value::String(mirror.media_image_type.trim().to_string()),
     );
+    settings.remove("favorites_grouped");
+    settings.insert(
+        "favorites_grouping".into(),
+        toml::Value::String(mirror.favorites_grouping.trim().to_string()),
+    );
     settings.insert(
         "show_hidden".into(),
         toml::Value::Boolean(mirror.show_hidden),
@@ -442,6 +459,36 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
 
     let logging = section_mut(&mut table, "logging", path)?;
     logging.insert("debug".into(), toml::Value::Boolean(mirror.debug_logging));
+
+    let serialized =
+        toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
+    write_atomic(path, serialized.as_bytes())
+        .map_err(|e| format!("could not write {}: {e}", path.display()))
+}
+
+/// Persist Favorites row order into `frontend.toml`.
+///
+/// Empty restores Core's default order and removes the optional key.
+pub fn save_favorites_sort(path: &Path, sort: &str) -> Result<(), String> {
+    let mut table = if path.exists() {
+        let src = std::fs::read_to_string(path)
+            .map_err(|e| format!("could not read {}: {e}", path.display()))?;
+        toml::from_str::<toml::Table>(&src)
+            .map_err(|e| format!("config parse error in {}: {e}", path.display()))?
+    } else {
+        toml::Table::new()
+    };
+
+    let settings = section_mut(&mut table, "settings", path)?;
+    let normalized = sort.trim();
+    if normalized.is_empty() {
+        settings.remove("favorites_sort");
+    } else {
+        settings.insert(
+            "favorites_sort".into(),
+            toml::Value::String(normalized.to_string()),
+        );
+    }
 
     let serialized =
         toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
@@ -642,8 +689,8 @@ mod tests {
     )]
 
     use super::{
-        load_config, save_hidden_browse_prefs, save_notice_ack, save_settings_mirror, Config,
-        SettingsMirror,
+        load_config, save_favorites_sort, save_hidden_browse_prefs, save_notice_ack,
+        save_settings_mirror, Config, SettingsMirror,
     };
     use std::io::Write;
 
@@ -676,6 +723,8 @@ mod tests {
         assert_eq!(cfg.settings.orientation, None);
         assert_eq!(cfg.settings.clock_format, None);
         assert_eq!(cfg.settings.browse_layout, None);
+        assert_eq!(cfg.settings.favorites_sort, None);
+        assert_eq!(cfg.settings.favorites_grouping, None);
         assert_eq!(cfg.settings.button_layout, None);
         assert_eq!(cfg.settings.mouse_enabled, None);
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, None);
@@ -760,6 +809,69 @@ mod tests {
         let f = write_tmp("[settings]\nregion = \"jp\"\n");
         let cfg = load_config(f.path());
         assert_eq!(cfg.settings.region.as_deref(), Some("jp"));
+    }
+
+    #[test]
+    fn favorites_sort_round_trips_from_settings() {
+        let f = write_tmp("[settings]\nfavorites_sort = \"  name  \"\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.settings.favorites_sort.as_deref(), Some("name"));
+    }
+
+    #[test]
+    fn favorites_grouping_round_trips_from_settings() {
+        let f = write_tmp("[settings]\nfavorites_grouping = \"  system  \"\n");
+        assert_eq!(
+            load_config(f.path()).settings.favorites_grouping.as_deref(),
+            Some("system")
+        );
+    }
+
+    #[test]
+    fn favorites_grouping_migrates_pre_release_boolean() {
+        let grouped = write_tmp("[settings]\nfavorites_grouped = true\n");
+        assert_eq!(
+            load_config(grouped.path())
+                .settings
+                .favorites_grouping
+                .as_deref(),
+            Some("system")
+        );
+
+        let flat = write_tmp("[settings]\nfavorites_grouped = false\n");
+        assert_eq!(
+            load_config(flat.path())
+                .settings
+                .favorites_grouping
+                .as_deref(),
+            Some("none")
+        );
+    }
+
+    #[test]
+    fn explicit_favorites_grouping_wins_over_pre_release_boolean() {
+        let f = write_tmp("[settings]\nfavorites_grouping = \"none\"\nfavorites_grouped = true\n");
+        assert_eq!(
+            load_config(f.path()).settings.favorites_grouping.as_deref(),
+            Some("none")
+        );
+    }
+
+    #[test]
+    fn save_favorites_sort_preserves_other_config_and_removes_default() {
+        let _env = env_guard();
+        let f = write_tmp(
+            "[core]\nendpoint = \"ws://example.com/api\"\n[settings]\nbutton_layout = \"b\"\n",
+        );
+        save_favorites_sort(f.path(), "name").expect("save name sort");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.core_endpoint, "ws://example.com/api");
+        assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
+        assert_eq!(cfg.settings.favorites_sort.as_deref(), Some("name"));
+
+        save_favorites_sort(f.path(), "").expect("save default sort");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.settings.favorites_sort, None);
     }
 
     #[test]
@@ -1027,6 +1139,7 @@ mod tests {
                 debug_logging: true,
                 screensaver_timeout: "300",
                 media_image_type: "auto",
+                favorites_grouping: "system",
                 show_hidden: true,
                 show_original_filenames: true,
                 region: "us",
@@ -1050,6 +1163,7 @@ mod tests {
         assert_eq!(cfg.settings.reduce_motion, Some(true));
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
+        assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
         assert_eq!(cfg.settings.show_hidden, Some(true));
         assert_eq!(cfg.settings.show_original_filenames, Some(true));
         assert_eq!(cfg.settings.region.as_deref(), Some("us"));
@@ -1081,6 +1195,7 @@ mod tests {
                 debug_logging: false,
                 screensaver_timeout: "60",
                 media_image_type: "auto",
+                favorites_grouping: "system",
                 show_hidden: false,
                 show_original_filenames: false,
                 region: "auto",
@@ -1106,6 +1221,7 @@ mod tests {
         assert_eq!(cfg.settings.reduce_motion, Some(false));
         assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(false));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("60"));
+        assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
         assert_eq!(cfg.settings.hidden_categories, vec!["Arcade"]);
         assert_eq!(cfg.settings.hidden_system_ids, vec!["NES"]);
         assert!(!cfg.debug_logging);
@@ -1130,6 +1246,7 @@ mod tests {
                 debug_logging: true,
                 screensaver_timeout: "off",
                 media_image_type: "auto",
+                favorites_grouping: "system",
                 show_hidden: false,
                 show_original_filenames: false,
                 region: "auto",

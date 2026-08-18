@@ -32,6 +32,7 @@ ApplicationWindow {
     readonly property string screenSystems: ScreenManager.screenSystems
     readonly property string screenGames: ScreenManager.screenGames
     readonly property string screenFavorites: ScreenManager.screenFavorites
+    readonly property string screenFavoriteSystems: ScreenManager.screenFavoriteSystems
     readonly property string screenRecents: ScreenManager.screenRecents
     readonly property string screenUpdate: ScreenManager.screenUpdate
     readonly property string screenSettings: ScreenManager.screenSettings
@@ -51,6 +52,7 @@ ApplicationWindow {
     // Desktop preview sets fullScreen=false via initialProperties.
     property bool fullScreen: true
     property bool crtNativePath: false
+    property bool unsmoothedText: false
     property bool debugCrtSafeAreaOverlay: false
     property string activeScreen: ScreenManager.activeScreen
     readonly property bool updateEnabled: Browse.BuildInfo.update_enabled
@@ -80,9 +82,19 @@ ApplicationWindow {
     property bool _headerMediaActivityEnabled: false
     property bool _firstFrameSeen: false
     readonly property bool _debugCrtSafeAreaGuideVisible: root.debugCrtSafeAreaOverlay && root.crtNativePath && Sizing.screenHeight <= 300
+
+    // Emitted for every presented frame. Main.qml uses this to close
+    // responsiveness timings on the first frame containing a destination
+    // screen; startup still uses `_firstFrameSeen` below.
+    signal framePresented
     property bool systemsScreenRequested: false
     property bool gamesScreenRequested: false
+    // Router-owned deep-page restoration gate. Keeps Games content hidden while
+    // cursor pages are appended until the persisted parent selection exists.
+    property bool gamesSelectionRestorePending: false
     property bool favoritesScreenRequested: false
+    property bool favoriteSystemsScreenRequested: false
+    property string favoritesSystemId: ""
     property bool recentsScreenRequested: false
     property bool settingsScreenRequested: false
     property bool aboutScreenRequested: false
@@ -91,9 +103,9 @@ ApplicationWindow {
     property bool contextMenuRequested: false
     property bool qrCodeModalRequested: false
     property bool gameInfoModalRequested: false
-    property bool firstRunIndexModalRequested: false
     property bool commercialNoticeModalRequested: false
     property bool coreVersionModalRequested: false
+    property bool randomFailedModalRequested: false
     property bool logUploadModalRequested: false
     property bool quitConfirmModalRequested: false
     property bool listPickerModalRequested: false
@@ -186,12 +198,13 @@ ApplicationWindow {
             root.applyCrtPreviewScale(root._crtPreviewEffectiveScale);
     }
     onFrameSwapped: {
-        if (root._firstFrameSeen)
-            return;
-        root._firstFrameSeen = true;
-        root._statusIconsEnabled = true;
-        root._headerMediaActivityEnabled = true;
-        root._startupTrace("startup/qml firstFrameSwapped", "statusIconsEnabled=" + root._statusIconsEnabled, "mediaActivityEnabled=" + root._headerMediaActivityEnabled);
+        root.framePresented();
+        if (!root._firstFrameSeen) {
+            root._firstFrameSeen = true;
+            root._statusIconsEnabled = true;
+            root._headerMediaActivityEnabled = true;
+            root._startupTrace("startup/qml firstFrameSwapped", "statusIconsEnabled=" + root._statusIconsEnabled, "mediaActivityEnabled=" + root._headerMediaActivityEnabled);
+        }
     }
 
     // When the window crosses to a different screen (e.g. dev drags
@@ -238,6 +251,12 @@ ApplicationWindow {
     }
 
     Binding {
+        target: Theme
+        property: "unsmoothedText"
+        value: root.unsmoothedText
+    }
+
+    Binding {
         target: Sizing
         property: "crtNativePath"
         value: root.crtNativePath
@@ -263,6 +282,7 @@ ApplicationWindow {
     property var systemsScreen: systemsScreenLoader.item
     property var gamesScreen: gamesScreenLoader.item
     property var favoritesScreen: favoritesScreenLoader.item
+    property var favoriteSystemsScreen: favoriteSystemsScreenLoader.item
     property var recentsScreen: recentsScreenLoader.item
     property var updateScreen: updateScreenLoader.item
     property var settingsScreen: settingsScreenLoader.item
@@ -272,7 +292,6 @@ ApplicationWindow {
     property var qrCodeModal: qrCodeModalLoader.item
     property var commercialNoticeModal: commercialNoticeModalLoader.item
     property var coreVersionModal: coreVersionModalLoader.item
-    property var firstRunIndexModal: firstRunIndexModalLoader.item
     property var gameInfoModal: gameInfoModalLoader.item
     property var logUploadModal: logUploadModalLoader.item
     property var quitConfirmModal: quitConfirmModalLoader.item
@@ -292,7 +311,7 @@ ApplicationWindow {
     property bool qrCodeModalVisible: false
     property bool commercialNoticeModalVisible: false
     property bool coreVersionModalVisible: false
-    property bool firstRunIndexModalVisible: false
+    property bool randomFailedModalVisible: false
     property bool gameInfoModalVisible: false
     property bool logUploadModalVisible: false
     property bool quitConfirmModalVisible: false
@@ -338,6 +357,19 @@ ApplicationWindow {
     readonly property int loadingIndicatorDelayMs: 300
     readonly property int minimumLoadingVisibleMs: 200
     property bool transitionCueVisible: false
+    // Systems destination paints one stable frame without SVG requests. Main
+    // flips this true from the following frame-presented callback so cover
+    // decoding cannot delay the navigation cut itself.
+    property bool systemsCoverRevealReady: true
+    // Games uses same progressive reveal for screen entry and in-screen folder
+    // replacement: model/card frame first, raster covers from following frame.
+    property bool gamesCoverRevealReady: true
+    // Folder navigation timing spans user input through model readiness and
+    // first presentation. Main.qml owns lifecycle; GamesScreen supplies input
+    // timestamp before synchronous state persistence.
+    property double gamesNavigationInputAt: 0
+    property double gamesNavigationModelReadyAt: 0
+    property string gamesNavigationAction: ""
 
     // Cold-launch boot gate. Non-Hub restores stay behind BootOverlay /
     // startupRestoreCurtain until the target can paint; Hub restores take the
@@ -361,6 +393,8 @@ ApplicationWindow {
 
     readonly property string favoritesScreenState: root.activeScreen !== root.screenFavorites ? "" : ((Browse.FavoritesModel.loading || root.catalogStillBooting) ? "loading" : ((Browse.FavoritesModel.error_message ?? "") !== "" ? "error" : (Browse.FavoritesModel.count === 0 ? "empty" : "ready")))
 
+    readonly property string favoriteSystemsScreenState: root.activeScreen !== root.screenFavoriteSystems ? "" : ((Browse.FavoriteSystemsModel.loading || root.catalogStillBooting) ? "loading" : ((Browse.FavoriteSystemsModel.error_message ?? "") !== "" ? "error" : (Browse.FavoriteSystemsModel.count === 0 ? "empty" : "ready")))
+
     readonly property string hubScreenState: (Browse.CategoriesModel.error_message ?? "") !== "" ? "error" : (Browse.CategoriesModel.count === 0 ? "empty" : "ready")
 
     readonly property string recentsScreenState: root.activeScreen !== root.screenRecents ? "" : ((Browse.RecentsModel.loading || root.catalogStillBooting) ? "loading" : ((Browse.RecentsModel.error_message ?? "") !== "" ? "error" : (Browse.RecentsModel.count === 0 ? "empty" : "ready")))
@@ -369,7 +403,7 @@ ApplicationWindow {
     readonly property bool _browseListLayout: Browse.Settings.current_browse_layout === "list"
     readonly property bool _browseTateListLayout: root._browseListLayout && root.displayOrientation !== "horizontal"
     readonly property string _browseViewId: {
-        if (root.activeScreen === root.screenSystems)
+        if (root.activeScreen === root.screenSystems || root.activeScreen === root.screenFavoriteSystems)
             return root._browseListLayout ? (root._browseTateListLayout ? "systemsListTate" : "systemsList") : "systemsGrid";
         if (root.activeScreen === root.screenGames || root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents)
             return root._browseListLayout ? (root._browseTateListLayout ? "gamesListTate" : "gamesList") : "gamesGrid";
@@ -397,6 +431,8 @@ ApplicationWindow {
             return root._crtGamesHeaderTitle;
         if (root.activeScreen === root.screenFavorites)
             return qsTr("Favorites");
+        if (root.activeScreen === root.screenFavoriteSystems)
+            return qsTr("Favorites");
         if (root.activeScreen === root.screenRecents)
             return qsTr("Recently Played");
         return "";
@@ -409,7 +445,7 @@ ApplicationWindow {
     signal closeQrCodeRequested
     signal closeCommercialNoticeRequested
     signal closeCoreVersionRequested
-    signal closeFirstRunIndexRequested
+    signal closeRandomFailedRequested
     signal closeLogUploadRequested
     signal closeQuitConfirmRequested
     signal quitConfirmAccepted
@@ -613,8 +649,9 @@ ApplicationWindow {
             //
             // Transition feedback is a delayed static LoadingIndicator, not
             // an animated screen effect. Quick swaps cut directly; slower
-            // model fills hide source content only after the loading cue is
-            // visible, avoiding both spinner flashes and pre-feedback freezes.
+            // model fills hide source rows/grids only after the loading cue is
+            // visible. Bottom selection context and help stay frozen until the
+            // destination cut so the source screen does not dismantle itself.
             //
             // The wrapper `Item` stays for grouping clarity; with no fade
             // machinery it carries no buffered state. Model bindings stay
@@ -647,11 +684,14 @@ ApplicationWindow {
                     anchors.fill: parent
                     active: root.systemsScreenRequested
                     visible: status === Loader.Ready && root.activeScreen === root.screenSystems
+                    onLoaded: console.debug("responsiveness systems screen mounted")
                     sourceComponent: Component {
                         SystemsScreen {
                             anchors.fill: parent
                             transitioning: root.transitionCueVisible
+                            preparingTransition: root.pendingTransition === "systems"
                             active: root.activeScreen === root.screenSystems
+                            coverRevealReady: root.systemsCoverRevealReady
                             optimisticLoading: root.activeScreen === root.screenSystems && root.catalogStillBooting
                         }
                     }
@@ -667,7 +707,8 @@ ApplicationWindow {
                             anchors.fill: parent
                             transitioning: root.transitionCueVisible
                             active: root.activeScreen === root.screenGames
-                            optimisticLoading: root.activeScreen === root.screenGames && root.catalogStillBooting
+                            coverRevealReady: root.gamesCoverRevealReady
+                            optimisticLoading: root.activeScreen === root.screenGames && (root.catalogStillBooting || root.gamesSelectionRestorePending)
                         }
                     }
                 }
@@ -682,6 +723,21 @@ ApplicationWindow {
                             anchors.fill: parent
                             transitioning: root.transitionCueVisible
                             optimisticLoading: root.activeScreen === root.screenFavorites && root.catalogStillBooting
+                            selectedSystemId: root.favoritesSystemId
+                        }
+                    }
+                }
+
+                Loader {
+                    id: favoriteSystemsScreenLoader
+                    anchors.fill: parent
+                    active: root.favoriteSystemsScreenRequested
+                    visible: status === Loader.Ready && root.activeScreen === root.screenFavoriteSystems
+                    sourceComponent: Component {
+                        FavoriteSystemsScreen {
+                            anchors.fill: parent
+                            transitioning: root.transitionCueVisible
+                            optimisticLoading: root.activeScreen === root.screenFavoriteSystems && root.catalogStillBooting
                         }
                     }
                 }
@@ -809,6 +865,22 @@ ApplicationWindow {
             }
 
             Loader {
+                id: randomFailedModalLoader
+                anchors.fill: parent
+                active: root.randomFailedModalRequested
+                sourceComponent: Component {
+                    Modal {
+                        open: root.randomFailedModalVisible
+                        kind: "action_error"
+                        title: qsTr("Random game")
+                        body: qsTr("No matching games found.")
+                        buttonLabel: qsTr("OK")
+                        onAccepted: root.closeRandomFailedRequested()
+                    }
+                }
+            }
+
+            Loader {
                 id: contextMenuLoader
                 anchors.fill: parent
                 active: root.contextMenuRequested
@@ -845,23 +917,6 @@ ApplicationWindow {
                         anchors.fill: parent
                         open: root.gameInfoModalVisible
                         onCloseRequested: root.closeGameInfoRequested()
-                    }
-                }
-            }
-
-            // First-run mediadb index modal. Pushed by Main.qml the first time
-            // we connect to a Core whose mediadb is empty. Blocks the screens
-            // beneath until the initial scan completes (or the user cancels and
-            // tries again).
-            Loader {
-                id: firstRunIndexModalLoader
-                anchors.fill: parent
-                active: root.firstRunIndexModalRequested
-                sourceComponent: Component {
-                    FirstRunIndexModal {
-                        anchors.fill: parent
-                        open: root.firstRunIndexModalVisible
-                        onCloseRequested: root.closeFirstRunIndexRequested()
                     }
                 }
             }
@@ -920,7 +975,7 @@ ApplicationWindow {
             }
 
             // List-picker modal. Settings opens this for picker rows
-            // (Language, Browsing layout, Button style, Resolution). The
+            // (Language, Browsing layout, Button style, and others). The
             // fieldId round-trip lets the router dispatch the chosen id
             // back to the matching Browse.Settings.set_X without parsing
             // the title.
@@ -1038,11 +1093,11 @@ ApplicationWindow {
                 // Retry entry rather than promising behavior the screen
                 // doesn't implement.
                 //
-                // During a forward transition (`pendingTransition !== ""`)
-                // the router's input gate swallows every press — including
-                // cancel — so the bar blanks rather than advertising
-                // buttons that won't respond. Modals still win outright;
-                // they run on top of the input gate.
+                // During a forward transition the router's input gate still
+                // swallows presses, but the source help row stays frozen until
+                // the destination cut. Removing it early made the otherwise
+                // static source screen look as though it was dismantling while
+                // work continued. Modals still win outright.
                 //
                 // Each entry resolves to a button glyph (Dpad / ButtonA /
                 // ButtonB / ButtonX) plus a label. The button names are routed
@@ -1065,11 +1120,7 @@ ApplicationWindow {
                                 label: qsTr("Select")
                             },
                             {
-                                button: "ButtonB",
-                                label: qsTr("Close")
-                            },
-                            {
-                                button: "ButtonX",
+                                buttons: ["ButtonB", "ButtonX"],
                                 label: qsTr("Close")
                             }
                         ];
@@ -1128,7 +1179,7 @@ ApplicationWindow {
                                 label: qsTr("I understand")
                             }
                         ];
-                    if (root.coreVersionModalVisible)
+                    if (root.coreVersionModalVisible || root.randomFailedModalVisible)
                         return [
                             {
                                 button: "ButtonA",
@@ -1163,26 +1214,6 @@ ApplicationWindow {
                         ];
                     if ((!root.bootComplete && !root.coreIndependentStartupVisible) || root.startupRestoreCurtainVisible)
                         return [];
-                    if (root.firstRunIndexModalVisible) {
-                        const phase = root.firstRunIndexModal ? root.firstRunIndexModal.phase : "";
-                        if (phase === "running")
-                            return [
-                                {
-                                    button: "ButtonB",
-                                    label: qsTr("Cancel")
-                                }
-                            ];
-                        if (phase === "completed")
-                            return [];
-                        return [
-                            {
-                                button: "ButtonA",
-                                label: qsTr("Start")
-                            }
-                        ];
-                    }
-                    if (root.pendingTransition !== "" || root.transitionCueVisible)
-                        return [];
                     if (root.activeScreen === root.screenHub) {
                         // Hub always has the actions row (Recently Played /
                         // Settings), so Move/Open/Quit applies even when the
@@ -1190,9 +1221,10 @@ ApplicationWindow {
                         // help bar must reflect that the actions row is
                         // navigable, otherwise the user reads "Quit only"
                         // and misses the Settings tile entirely. Category
-                        // tiles also expose an options menu for hide/scrape
-                        // actions; placeholders do not.
+                        // Real category tiles and Favorites action tile expose
+                        // Options; placeholders and other actions do not.
                         const categoryOptionsAvailable = root.hubScreen !== null && root.hubScreen.currentRow === 0 && Browse.CategoriesModel.count > 0;
+                        const favoritesOptionsAvailable = root.hubScreen !== null && root.hubScreen.currentRow === 1 && root.hubScreen.actionEntries[root.hubScreen.currentIndex]?.id === "favorites";
                         let row = [
                             {
                                 button: "Dpad",
@@ -1203,7 +1235,7 @@ ApplicationWindow {
                                 label: qsTr("Open")
                             }
                         ];
-                        if (categoryOptionsAvailable)
+                        if (categoryOptionsAvailable || favoritesOptionsAvailable)
                             row.push({
                                 button: "ButtonX",
                                 label: qsTr("Options")
@@ -1259,13 +1291,14 @@ ApplicationWindow {
                             }
                         ];
                     }
-                    if (root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents) {
+                    if (root.activeScreen === root.screenFavorites || root.activeScreen === root.screenFavoriteSystems || root.activeScreen === root.screenRecents) {
                         const isFavorites = root.activeScreen === root.screenFavorites;
-                        const state = isFavorites ? root.favoritesScreenState : root.recentsScreenState;
-                        const screen = isFavorites ? root.favoritesScreen : root.recentsScreen;
+                        const isFavoriteSystems = root.activeScreen === root.screenFavoriteSystems;
+                        const state = isFavorites ? root.favoritesScreenState : (isFavoriteSystems ? root.favoriteSystemsScreenState : root.recentsScreenState);
+                        const screen = isFavorites ? root.favoritesScreen : (isFavoriteSystems ? root.favoriteSystemsScreen : root.recentsScreen);
                         if (screen === null)
                             return [];
-                        const grid = isFavorites ? screen.favoritesGrid : screen.recentsGrid;
+                        const grid = isFavorites ? screen.favoritesGrid : (isFavoriteSystems ? screen.favoriteSystemsGrid : screen.recentsGrid);
                         if (state === "loading")
                             return [
                                 {
@@ -1288,10 +1321,15 @@ ApplicationWindow {
                                 button: "ButtonA",
                                 label: qsTr("Open")
                             });
-                            if (isFavorites)
+                            if (isFavorites || isFavoriteSystems)
                                 row.push({
                                     button: "ButtonX",
                                     label: qsTr("Options")
+                                });
+                            if (isFavorites || isFavoriteSystems)
+                                row.push({
+                                    button: "ButtonY",
+                                    label: qsTr("View")
                                 });
                             row.push({
                                 button: "ButtonB",
@@ -1299,16 +1337,23 @@ ApplicationWindow {
                             });
                             return row;
                         }
-                        return [
+                        // Empty/error.
+                        const fallback = [
                             {
                                 button: "ButtonA",
                                 label: qsTr("Retry")
-                            },
-                            {
-                                button: "ButtonB",
-                                label: qsTr("Back")
                             }
                         ];
+                        if (isFavorites || isFavoriteSystems)
+                            fallback.push({
+                                button: "ButtonY",
+                                label: qsTr("View")
+                            });
+                        fallback.push({
+                            button: "ButtonB",
+                            label: qsTr("Back")
+                        });
+                        return fallback;
                     }
                     if (root.activeScreen === root.screenSettings) {
                         if (root.settingsScreen === null)
@@ -1442,16 +1487,24 @@ ApplicationWindow {
                         });
                         return row;
                     }
-                    return [
+                    const fallback = [
                         {
                             button: "ButtonA",
                             label: qsTr("Retry")
-                        },
-                        {
-                            button: "ButtonB",
-                            label: qsTr("Back")
                         }
                     ];
+                    // Empty favorites-only scope must keep View reachable so
+                    // user can clear filter. Errors retain Retry/Back only.
+                    if (root.gamesScreenState === "empty")
+                        fallback.push({
+                            button: "ButtonY",
+                            label: qsTr("View")
+                        });
+                    fallback.push({
+                        button: "ButtonB",
+                        label: qsTr("Back")
+                    });
+                    return fallback;
                 }
 
                 Row {

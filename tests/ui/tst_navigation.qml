@@ -19,14 +19,27 @@ import Zaparoo.Theme
 // can't exercise with keyClick because offscreen ApplicationWindows
 // don't receive routed key events reliably.
 TestCase {
+    id: testCase
+
     name: "UiNavigation"
     when: windowShown
+
+    // View preferences persist to disk; restore machine's original values.
+    property string _originalFavoritesSort: ""
+    property string _originalFavoritesGrouping: "none"
+    property bool _originalGamesFavoritesFilter: false
 
     Main {
         id: main
         fullScreen: false
         width: 1280
         height: 720
+    }
+
+    Component.onCompleted: {
+        testCase._originalFavoritesSort = Browse.FavoritesModel.sort_mode ?? "";
+        testCase._originalFavoritesGrouping = Browse.Settings.current_favorites_grouping ?? "none";
+        testCase._originalGamesFavoritesFilter = Browse.GamesState.favorites_filter === true;
     }
 
     function init(): void {
@@ -42,10 +55,18 @@ TestCase {
         main.systemsScreenRequested = true;
         main.gamesScreenRequested = true;
         main.favoritesScreenRequested = true;
+        main.favoriteSystemsScreenRequested = true;
         main.recentsScreenRequested = true;
         main.settingsScreenRequested = true;
         main.activeScreen = main.screenHub;
         main.pendingTransition = "";
+        main.systemsCoverRevealReady = true;
+        main.gamesCoverRevealReady = true;
+        main.gamesNavigationInputAt = 0;
+        main.gamesNavigationModelReadyAt = 0;
+        main.gamesNavigationAction = "";
+        main.gamesScreen.lastNavigationInputAt = 0;
+        main._firstRunIndexStarted = false;
         tryCompare(main, "transitionCueVisible", false);
         // Hub focus is two rows now (categories + actions); reset both
         // axes so a prior test's row-jump doesn't leak into the next.
@@ -56,10 +77,64 @@ TestCase {
         // next test if we didn't reset it here.
         main._stopRepeat();
         main._resetRapidNavigation();
+        main._setFavoritesSystem("");
+        Browse.Settings.set_favorites_grouping("none");
     }
 
     function cleanup(): void {
         Motion.enabled = true;
+        // A modal left open swallows every routed action, so the next test
+        // would fail for a reason that has nothing to do with what it tests.
+        if (main.listPickerModalVisible)
+            main.closeListPickerModal();
+        if (main.randomFailedModalVisible)
+            main.closeRandomFailedModal();
+        // Restore persistent preferences changed by menu-routing tests.
+        Browse.FavoritesModel.set_sort_mode(testCase._originalFavoritesSort);
+        Browse.Settings.set_favorites_grouping(testCase._originalFavoritesGrouping);
+        main._setFavoritesSystem("");
+        Browse.GamesModel.apply_favorites_filter(testCase._originalGamesFavoritesFilter);
+        Browse.GamesState.favorites_filter = testCase._originalGamesFavoritesFilter;
+        Browse.GamesModel.total_files = 0;
+    }
+
+    function test_media_screen_requests_sync_cover_size(): void {
+        main.gamesScreenRequested = false;
+        main.favoritesScreenRequested = false;
+        main.recentsScreenRequested = false;
+
+        Browse.GamesModel.set_cover_max_size(0);
+        main._requestScreen(main.screenFavorites);
+        compare(Browse.GamesModel.cover_max_size, main._gamesCoverMaxSize);
+        verify(Browse.GamesModel.cover_max_size > 0);
+
+        Browse.GamesModel.set_cover_max_size(0);
+        main._requestScreen(main.screenRecents);
+        compare(Browse.GamesModel.cover_max_size, main._gamesCoverMaxSize);
+        verify(Browse.GamesModel.cover_max_size > 0);
+    }
+
+    function test_first_run_index_starts_only_from_authoritative_empty_state(): void {
+        compare(main._shouldStartFirstRunIndex(2, true, true, 0), true);
+        compare(main._shouldStartFirstRunIndex(1, true, true, 0), false);
+        compare(main._shouldStartFirstRunIndex(2, false, true, 0), false);
+        compare(main._shouldStartFirstRunIndex(2, true, false, 0), false);
+        compare(main._shouldStartFirstRunIndex(2, true, true, 1), false);
+        main._firstRunIndexStarted = true;
+        compare(main._shouldStartFirstRunIndex(2, true, true, 0), false);
+    }
+
+    function test_catalog_polling_is_limited_to_system_membership_screens(): void {
+        main.activeScreen = main.screenHub;
+        compare(main._catalogRefreshScreenActive(), true);
+        main.activeScreen = main.screenSystems;
+        compare(main._catalogRefreshScreenActive(), true);
+        main.activeScreen = main.screenFavoriteSystems;
+        compare(main._catalogRefreshScreenActive(), true);
+        main.activeScreen = main.screenGames;
+        compare(main._catalogRefreshScreenActive(), false);
+        main.activeScreen = main.screenFavorites;
+        compare(main._catalogRefreshScreenActive(), false);
     }
 
     function test_initial_state_is_hub(): void {
@@ -95,6 +170,103 @@ TestCase {
         compare(main.systemsScreen.visible, false);
     }
 
+    function test_help_bar_stays_stable_during_forward_transition(): void {
+        main.activeScreen = main.screenHub;
+        const before = JSON.stringify(main.helpEntries);
+        verify(before !== "[]");
+
+        main.pendingTransition = "systems";
+        compare(JSON.stringify(main.helpEntries), before);
+    }
+
+    function test_games_rapid_scroll_snapshot_crops_to_cell_area(): void {
+        const snapshot = findChild(main.gamesScreen, "rapidScrollSnapshot");
+        const snapshotImage = findChild(main.gamesScreen, "rapidScrollSnapshotImage");
+        verify(snapshot !== null);
+        verify(snapshotImage !== null);
+        compare(snapshot.x, main.gamesScreen.gamesGrid.x + main.gamesScreen.gamesGrid.leftInset);
+        compare(snapshot.y, main.gamesScreen.gamesGrid.y + main.gamesScreen.gamesGrid.topInset);
+        compare(snapshot.width, main.gamesScreen.gamesGrid._contentWidth);
+        compare(snapshot.height, main.gamesScreen.gamesGrid.rows * main.gamesScreen.gamesGrid.cellHeight + Math.max(0, main.gamesScreen.gamesGrid.rows - 1) * main.gamesScreen.gamesGrid.cellSpacingY);
+        compare(snapshotImage.sourceClipRect.x, main.gamesScreen.gamesGrid.leftInset);
+        compare(snapshotImage.sourceClipRect.y, main.gamesScreen.gamesGrid.topInset);
+        compare(snapshotImage.opacity, 0.28);
+    }
+
+    function test_games_deep_page_restore_hides_page_one_until_selection_found(): void {
+        main.activeScreen = main.screenGames;
+        main._pendingGameRestorePath = "/saved/parent/page-three-game.zip";
+        compare(main.gamesSelectionRestorePending, true);
+        compare(main.gamesScreen.optimisticLoading, true);
+        compare(main.gamesScreen._gateHide, true, "first loaded page must not paint during deep-page restore");
+        main._pendingGameRestorePath = "";
+    }
+
+    function test_game_covers_wait_for_model_frame(): void {
+        main.activeScreen = main.screenGames;
+        main.gamesCoverRevealReady = false;
+        compare(main.gamesScreen.gamesGrid.coverRequestsEnabled, false);
+
+        main.gamesCoverRevealReady = true;
+        compare(main.gamesScreen.gamesGrid.coverRequestsEnabled, true);
+    }
+
+    function test_games_header_extracts_current_folder_name(): void {
+        compare(main.gamesScreen._folderNameForPath("/media/fat/games/SNES/RPGs"), "RPGs");
+        compare(main.gamesScreen._folderNameForPath("/media/fat/games/SNES/RPGs/"), "RPGs");
+        compare(main.gamesScreen._folderNameForPath("C:\\Games\\SNES\\RPGs"), "RPGs");
+        compare(main.gamesScreen._folderNameForPath(""), "");
+    }
+
+    function test_folder_navigation_timing_uses_input_timestamp(): void {
+        const inputAt = Date.now() - 25;
+        main.gamesScreen.lastNavigationInputAt = inputAt;
+
+        main._beginFolderNavigationTiming("back");
+
+        compare(main.gamesNavigationInputAt, inputAt);
+        compare(main.gamesNavigationModelReadyAt, 0);
+        compare(main.gamesNavigationAction, "back");
+        compare(main.gamesScreen.lastNavigationInputAt, 0);
+    }
+
+    function test_system_covers_wait_for_destination_frame(): void {
+        main.activeScreen = main.screenSystems;
+        main.systemsCoverRevealReady = false;
+        compare(main.systemsScreen.coverRevealReady, false);
+        compare(main.systemsScreen.systemsGrid.coverRequestsEnabled, false);
+
+        main.systemsCoverRevealReady = true;
+        compare(main.systemsScreen.coverRevealReady, true);
+    }
+
+    function test_system_grid_withholds_covers_during_transition(): void {
+        main.activeScreen = main.screenHub;
+        main.pendingTransition = "systems";
+        compare(main.systemsScreen.systemsGrid.suspendDelegates, false);
+        compare(main.systemsScreen.systemsGrid.coverRequestsEnabled, false);
+        compare(main.systemsScreen.systemsGrid.coverLookaheadPages, 0);
+        compare(main.systemsScreen.systemsGrid.eagerFocusedCovers, false);
+
+        main.pendingTransition = "";
+        main.activeScreen = main.screenSystems;
+        compare(main.systemsScreen.preparingTransition, false);
+    }
+
+    function test_transition_timing_closes_on_presented_frame(): void {
+        main._beginTransitionTiming("accept");
+        main._markTransitionRouted(main.screenSystems);
+        compare(main._transitionAction, "accept");
+        compare(main._transitionFromScreen, main.screenHub);
+        compare(main._transitionToScreen, main.screenSystems);
+        verify(main._transitionRouteAt > 0);
+
+        main._finishTransitionTiming();
+        compare(main._transitionInputStartedAt, 0);
+        compare(main._transitionRouteAt, 0);
+        compare(main._transitionToScreen, "");
+    }
+
     // Enter on an optimistic placeholder category starts the normal
     // systems loading transition and preserves the visible category
     // name instead of treating the row as empty.
@@ -126,6 +298,62 @@ TestCase {
         // qmllint enable compiler
         main.handleKey(Qt.Key_Return);
         compare(main.activeScreen, main.updateEnabled ? main.screenUpdate : main.screenSettings);
+    }
+
+    function test_favorite_systems_grid_matches_system_tile_layout(): void {
+        compare(main.favoriteSystemsScreen.gridShowCaption, false);
+        compare(main.favoriteSystemsScreen.gridColumnsOverride, main.systemsScreen.systemsGrid.columns);
+        compare(main.favoriteSystemsScreen.gridRowsOverride, main.systemsScreen.systemsGrid.rows);
+    }
+
+    function test_flat_favorites_uses_unbounded_page_chrome(): void {
+        compare(main.favoritesScreen.paginationTotalKnown, false);
+        compare(main.favoritesScreen.favoritesGrid.paginationTotalKnown, false);
+        verify(main.favoritesScreen.topStrip.pageText.indexOf("/") < 0);
+    }
+
+    function test_recents_uses_unbounded_page_chrome(): void {
+        compare(main.recentsScreen.paginationTotalKnown, false);
+        compare(main.recentsScreen.recentsGrid.paginationTotalKnown, false);
+        verify(main.recentsScreen.topStrip.pageText.indexOf("/") < 0);
+    }
+
+    function test_hub_favorites_action_uses_favorite_systems_mode(): void {
+        Browse.Settings.set_favorites_grouping("system");
+        main.hubScreen.currentRow = 1;
+        main.hubScreen.currentIndex = main.hubScreen._actionIndexForId("favorites");
+        main.handleKey(Qt.Key_Return);
+        compare(main.pendingTransition, "favorite_systems");
+    }
+
+    function test_hub_favorites_action_uses_all_favorites_mode(): void {
+        Browse.Settings.set_favorites_grouping("none");
+        main.hubScreen.currentRow = 1;
+        main.hubScreen.currentIndex = main.hubScreen._actionIndexForId("favorites");
+        main.handleKey(Qt.Key_Return);
+        compare(main.pendingTransition, "favorites");
+    }
+
+    function test_scoped_favorites_back_routes_through_favorite_systems(): void {
+        Browse.Settings.set_favorites_grouping("system");
+        main._setFavoritesSystem("SNES");
+        main.activeScreen = main.screenFavorites;
+        main.favoritesScreen.handleAction("cancel");
+        verify(main.activeScreen === main.screenFavoriteSystems || (main.pendingTransition === "back" && main._backTransitionTarget === main.screenFavoriteSystems), "Scoped Back targets Favorite Systems even while its model is loading");
+
+        main.pendingTransition = "";
+        main._backTransitionTarget = "";
+        main.activeScreen = main.screenFavoriteSystems;
+        main.favoriteSystemsScreen.handleAction("cancel");
+        compare(main.activeScreen, main.screenHub);
+    }
+
+    function test_flat_favorites_back_routes_to_hub(): void {
+        Browse.Settings.set_favorites_grouping("none");
+        main._setFavoritesSystem("");
+        main.activeScreen = main.screenFavorites;
+        main.handleKey(Qt.Key_Escape);
+        compare(main.activeScreen, main.screenHub);
     }
 
     // Enter on an empty systems screen retries the current load (the
@@ -460,15 +688,26 @@ TestCase {
         compare(main._repeatPending, true, "Re-arm restarts the initial-delay timer");
     }
 
-    function test_rapid_navigation_taps_activate_on_second_press(): void {
+    function test_rapid_navigation_taps_require_sustained_same_direction(): void {
+        for (let i = 1; i < main._rapidNavigationTapThreshold; ++i) {
+            main._noteRapidNavigationAction("down", false);
+            compare(main.rapidNavigationActive, false, "ordinary repeated taps stay out of rapid mode");
+        }
         main._noteRapidNavigationAction("down", false);
-        compare(main.rapidNavigationAction, "down", "rapid action tracks latest rapid input even before active mode");
-        compare(main.rapidNavigationActive, false, "single isolated press should not enter rapid mode");
-        main._noteRapidNavigationAction("down", false);
-        compare(main.rapidNavigationActive, true, "second press inside quiet window enters rapid mode");
+        compare(main.rapidNavigationActive, true, "fourth same-direction tap inside quiet window enters rapid mode");
+        compare(main.rapidNavigationIndicatorActive, true);
         wait(main._rapidNavigationQuietMs + 40);
         compare(main.rapidNavigationActive, false, "rapid mode clears after quiet window");
         compare(main.rapidNavigationAction, "", "quiet reset clears rapid action");
+    }
+
+    function test_rapid_navigation_alternating_taps_never_activate(): void {
+        const actions = ["up", "down", "up", "down", "up"];
+        for (let i = 0; i < actions.length; ++i) {
+            main._noteRapidNavigationAction(actions[i], false);
+            compare(main.rapidNavigationActive, false, "direction changes must reset rapid-mode tap evidence");
+            compare(main.rapidNavigationIndicatorActive, false);
+        }
     }
 
     function test_rapid_navigation_ignores_non_rapid_action(): void {
@@ -524,16 +763,17 @@ TestCase {
 
     function test_context_menu_systems_owner_includes_media_actions(): void {
         const entries = main.buildContextMenuEntries("systems", "", false, false, false, "", false);
-        compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system", "toggle_hide_system"], "Systems context menu includes system-scoped maintenance actions");
+        compare(_idsOf(entries), ["launch_system", "launch_random_system", "index_system", "scrape_system", "toggle_hide_system"], "Systems context menu includes random and maintenance actions");
         verify(entries[0].label.length > 0, "Launch core label is set (not asserted in English for translation)");
-        verify(entries[1].label.length > 0, "Update media database label is set");
-        verify(entries[2].label.length > 0, "Scrape metadata label is set");
-        verify(entries[3].label.length > 0, "Hide label is set");
+        verify(entries[1].label.length > 0, "Random game label is set");
+        verify(entries[2].label.length > 0, "Update media database label is set");
+        verify(entries[3].label.length > 0, "Scrape metadata label is set");
+        verify(entries[4].label.length > 0, "Hide label is set");
     }
 
     function test_context_menu_systems_has_nfc_does_not_add_entries(): void {
         const entries = main.buildContextMenuEntries("systems", "", false, true, false, "", false);
-        compare(_idsOf(entries), ["launch_system", "index_system", "scrape_system", "toggle_hide_system"], "has_nfc must not affect the systems menu");
+        compare(_idsOf(entries), ["launch_system", "launch_random_system", "index_system", "scrape_system", "toggle_hide_system"], "has_nfc must not affect the systems menu");
     }
 
     // Category index/scrape are gated on the category having at least one
@@ -582,17 +822,28 @@ TestCase {
     }
 
     function test_context_menu_favorites_matches_games_media_entries(): void {
-        const entries = main.buildContextMenuEntries("favorites", "", true, true, true, "");
+        const entries = main.buildContextMenuEntries("favorites", "", true, true, true, "", false, "");
         compare(_idsOf(entries), ["toggle_favorite", "write_card", "qr_code", "launch_game"]);
     }
 
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
-        const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "");
+        const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "", false, "");
         compare(_idsOf(entries), ["toggle_favorite", "qr_code", "launch_game"]);
     }
 
+    function test_context_menu_favorite_systems_offers_scoped_random(): void {
+        const entries = main.buildContextMenuEntries("favorite_systems", "", false, false, false, "SNES", false, "");
+        compare(_idsOf(entries), ["launch_random_favorite_system"]);
+    }
+
+    function test_context_menu_hub_favorites_offers_random_only(): void {
+        const entries = main.buildContextMenuEntries("hub_favorites", "", false, false, false, "");
+        compare(_idsOf(entries), ["launch_random_favorite"]);
+        verify(entries[0].label.length > 0);
+    }
+
     function test_context_menu_recents_omits_more_info(): void {
-        const entries = main.buildContextMenuEntries("recents", "", false, false, false, "");
+        const entries = main.buildContextMenuEntries("recents", "", false, false, false, "", false, "");
         compare(_idsOf(entries), ["launch_game"]);
     }
 
@@ -637,5 +888,151 @@ TestCase {
         // in current zapscripts but a future zapscript with arguments
         // containing them must still survive a round-trip.
         compare(main._buildQrPayload("a b&c?d"), "https://zaparoo.app/write?v=a%20b%26c%3Fd");
+    }
+
+    function test_games_page_menu_offers_core_backed_actions(): void {
+        // Nonzero scope exposes recursive Core random action.
+        Browse.GamesModel.total_files = 5;
+        main.openPageMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("jump_letter") !== -1, "Go to entry present");
+        verify(ids.indexOf("launch_random") !== -1, "Random entry present");
+        verify(ids.indexOf("games_filter") !== -1, "Show entry present");
+        main.closeListPickerModal();
+    }
+
+    function test_random_launch_failure_is_reported(): void {
+        // Harness has no browse scope, so model rejects before issuing RPC.
+        Browse.GamesModel.launch_random();
+        tryCompare(main, "randomFailedModalVisible", true);
+        verify((Browse.GamesModel.random_error ?? "") !== "", "failure reason recorded");
+        main.handleAction("cancel");
+        tryCompare(main, "randomFailedModalVisible", false);
+        compare(Browse.GamesModel.random_error, "", "dismissal clears reason");
+    }
+
+    function test_games_filter_selection_applies_and_persists(): void {
+        Browse.GamesModel.apply_favorites_filter(false);
+        Browse.GamesState.favorites_filter = false;
+
+        main.openPageMenu();
+        main.listPickerAccepted("page_menu", "games_filter");
+        tryCompare(main, "listPickerModalVisible", true);
+        compare(main.listPickerFieldId, "games_filter_pick");
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("all") !== -1, "All option present");
+        verify(ids.indexOf("favorites") !== -1, "Favorites option present");
+
+        main.listPickerAccepted("games_filter_pick", "favorites");
+        tryCompare(main, "listPickerModalVisible", false);
+        compare(Browse.GamesModel.favorites_only, true);
+        compare(Browse.GamesState.favorites_filter, true);
+        compare(main.gamesScreen.pageMenuEnabledWhenEmpty, true, "View remains reachable when filtered folder is empty");
+    }
+
+    // Favorites View preserves PR #348 sorting/random and adds entry mode.
+    function test_favorites_page_menu_offers_sort_random_and_mode(): void {
+        main.openFavoritesPageMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        const ids = main.listPickerEntries.map(e => e.id);
+        compare(ids, ["favorites_sort", "favorites_mode", "launch_random_favorite"], "View order is Sort, Group by, Random");
+        main.closeListPickerModal();
+    }
+
+    function test_favorite_systems_page_menu_offers_mode_only(): void {
+        main.openFavoriteSystemsPageMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        compare(main.listPickerEntries.map(e => e.id), ["favorites_mode"]);
+        main.closeListPickerModal();
+    }
+
+    function test_favorites_mode_picker_switches_both_directions(): void {
+        Browse.Settings.set_favorites_grouping("none");
+        main.openFavoritesPageMenu();
+        main.listPickerAccepted("page_menu_favorites", "favorites_mode");
+        compare(main.listPickerFieldId, "favorites_mode_pick");
+        compare(main.listPickerEntries.map(e => e.id), ["none", "system"]);
+
+        main.listPickerAccepted("favorites_mode_pick", "system");
+        compare(Browse.Settings.current_favorites_grouping, "system");
+        compare(main.pendingTransition, "favorite_systems");
+
+        main.pendingTransition = "";
+        main.openFavoriteSystemsPageMenu();
+        main.listPickerAccepted("page_menu_favorite_systems", "favorites_mode");
+        main.listPickerAccepted("favorites_mode_pick", "none");
+        compare(Browse.Settings.current_favorites_grouping, "none");
+        compare(main.pendingTransition, "favorites");
+        compare(main.favoritesSystemId, "");
+    }
+
+    // Choosing Sort must open a second picker on its own field id, and the
+    // accepted value must reach the model. A wrong field id would silently
+    // route the choice nowhere.
+    function test_favorites_sort_selection_applies_to_model(): void {
+        main.openFavoritesPageMenu();
+        main.listPickerAccepted("page_menu_favorites", "favorites_sort");
+        tryCompare(main, "listPickerModalVisible", true);
+        compare(main.listPickerFieldId, "favorites_sort_pick");
+        const ids = main.listPickerEntries.map(e => e.id);
+        verify(ids.indexOf("name") !== -1, "A-Z option present");
+        // Default carries a real id, not "" — ListPickerModal never emits an
+        // accept for an empty id.
+        verify(ids.indexOf(main._favoritesSortDefault) !== -1, "Default option present");
+
+        main.listPickerAccepted("favorites_sort_pick", "name");
+        tryCompare(main, "listPickerModalVisible", false);
+        compare(Browse.FavoritesModel.sort_mode, "name");
+
+        // Restore the default so the persisted value doesn't leak into other
+        // tests or the dev machine's config file.
+        main.openFavoritesPageMenu();
+        main.listPickerAccepted("page_menu_favorites", "favorites_sort");
+        main.listPickerAccepted("favorites_sort_pick", main._favoritesSortDefault);
+        compare(Browse.FavoritesModel.sort_mode, "");
+    }
+
+    // Blanket guard for the whole class of bug that shipped twice: any menu
+    // row carrying an empty id is silently swallowed by ListPickerModal, so
+    // no picker this app builds may contain one.
+    function test_no_picker_row_uses_the_swallowed_empty_id(): void {
+        const pickers = [
+            {
+                open: () => main.openPageMenu(),
+                name: "games View"
+            },
+            {
+                open: () => main.openFavoritesPageMenu(),
+                name: "favorites View"
+            },
+            {
+                open: () => main.openFavoritesSortMenu(),
+                name: "favorites Sort"
+            }
+        ];
+        for (let i = 0; i < pickers.length; i++) {
+            main.closeListPickerModal();
+            pickers[i].open();
+            tryCompare(main, "listPickerModalVisible", true);
+            const ids = main.listPickerEntries.map(e => e.id);
+            for (let j = 0; j < ids.length; j++)
+                verify(ids[j] !== "", pickers[i].name + " row " + j + " has an empty id, which ListPickerModal never emits");
+            main.closeListPickerModal();
+        }
+    }
+
+    // Regression: the Default row had an empty id, so once A-Z was chosen
+    // there was no way back to Core's order from this menu.
+    function test_favorites_default_sort_restores_core_order(): void {
+        Browse.FavoritesModel.set_sort_mode("name");
+        compare(Browse.FavoritesModel.sort_mode, "name");
+
+        main.openFavoritesSortMenu();
+        tryCompare(main, "listPickerModalVisible", true);
+        // Default is the first row; drive the real accept path.
+        main.listPickerModal.currentIndex = 0;
+        main.listPickerModal.handleAction("accept");
+        compare(Browse.FavoritesModel.sort_mode, "", "Default restores Core order");
     }
 }

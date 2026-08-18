@@ -29,6 +29,7 @@ pub struct PersistedState {
     pub systems: SystemsState,
     pub games: GamesState,
     pub favorites: FavoritesState,
+    pub favorite_systems: FavoriteSystemsState,
     pub recents: RecentsState,
     pub settings: SettingsState,
 }
@@ -58,6 +59,9 @@ pub struct GamesState {
     pub system_id: String,
     pub path_stack: Vec<String>,
     pub selected_at_level: Vec<String>,
+    /// Favorites-only projection of folder listings. Serde-defaulted so
+    /// state files written before the field existed keep loading.
+    pub favorites_filter: bool,
 }
 
 impl Default for GamesState {
@@ -66,6 +70,7 @@ impl Default for GamesState {
             system_id: String::new(),
             path_stack: vec![String::new()],
             selected_at_level: vec![String::new()],
+            favorites_filter: false,
         }
     }
 }
@@ -84,6 +89,14 @@ pub struct RecentsState {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FavoritesState {
+    pub selected_path: String,
+}
+
+/// Favorite-systems selection state. Mirrors `FavoritesState` but stays
+/// separate so the favorite-systems screen can resume independently.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FavoriteSystemsState {
     pub selected_path: String,
 }
 
@@ -109,6 +122,8 @@ pub struct SettingsState {
     pub orientation: String,
     #[serde(default = "default_browse_layout")]
     pub browse_layout: String,
+    #[serde(default = "default_favorites_grouping")]
+    pub favorites_grouping: String,
     #[serde(default = "default_system_logo_style")]
     pub system_logo_style: String,
     #[serde(default = "default_button_layout")]
@@ -161,6 +176,7 @@ impl Default for SettingsState {
             clock_format: default_clock_format(),
             orientation: default_orientation(),
             browse_layout: default_browse_layout(),
+            favorites_grouping: default_favorites_grouping(),
             system_logo_style: default_system_logo_style(),
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
@@ -197,6 +213,10 @@ fn default_orientation() -> String {
 
 fn default_browse_layout() -> String {
     "grid".into()
+}
+
+fn default_favorites_grouping() -> String {
+    "none".into()
 }
 
 fn default_system_logo_style() -> String {
@@ -306,8 +326,8 @@ mod tests {
     )]
 
     use super::{
-        load_from, save_to, FavoritesState, GamesState, HubState, PersistedState, RecentsState,
-        SettingsState, SystemsState,
+        load_from, save_to, FavoriteSystemsState, FavoritesState, GamesState, HubState,
+        PersistedState, RecentsState, SettingsState, SystemsState,
     };
     use std::thread;
 
@@ -337,6 +357,7 @@ mod tests {
                 system_id: "NES".into(),
                 path_stack: vec![String::new(), "/roms/nes/mario".into()],
                 selected_at_level: vec!["/roms/nes/mario".into(), "/roms/nes/mario/smb.nes".into()],
+                favorites_filter: false,
             },
             recents: RecentsState {
                 selected_path: "/roms/nes/mario/smb.nes".into(),
@@ -344,12 +365,16 @@ mod tests {
             favorites: FavoritesState {
                 selected_path: "/roms/nes/zelda.nes".into(),
             },
+            favorite_systems: FavoriteSystemsState {
+                selected_path: "NES".into(),
+            },
             settings: SettingsState {
                 resolution: "1920x1080".into(),
                 language: "it_IT".into(),
                 clock_format: "24h".into(),
                 orientation: "cw".into(),
                 browse_layout: "list".into(),
+                favorites_grouping: "system".into(),
                 system_logo_style: "color".into(),
                 button_layout: "b".into(),
                 mouse_enabled: false,
@@ -389,6 +414,8 @@ resolution = "1920x1080"
         std::fs::write(&path, on_disk).expect("write");
         let state = load_from(&path);
         assert!(!state.settings.show_hidden);
+        assert_eq!(state.settings.favorites_grouping, "none");
+        assert_eq!(state.favorite_systems, FavoriteSystemsState::default());
         // reduce_motion absent from an older state file defaults to false.
         assert!(!state.settings.reduce_motion);
     }
@@ -433,8 +460,10 @@ resolution = "1920x1080"
                                 system_id: format!("sys-{i}-{j}"),
                                 path_stack: vec![String::new()],
                                 selected_at_level: vec![format!("/roms/{i}/{j}.rom")],
+                                favorites_filter: false,
                             },
                             favorites: FavoritesState::default(),
+                            favorite_systems: FavoriteSystemsState::default(),
                             recents: RecentsState::default(),
                             settings: SettingsState::default(),
                         };
@@ -465,6 +494,7 @@ resolution = "1920x1080"
         assert_eq!(state.systems, SystemsState::default());
         assert_eq!(state.games, GamesState::default());
         assert_eq!(state.favorites, FavoritesState::default());
+        assert_eq!(state.favorite_systems, FavoriteSystemsState::default());
         assert_eq!(state.recents, RecentsState::default());
         assert_eq!(state.settings, SettingsState::default());
     }

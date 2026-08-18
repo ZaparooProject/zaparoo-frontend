@@ -10,12 +10,10 @@
 // Field design:
 //   * `is_mister` — CONSTANT. Drives whether MiSTer-only fields render
 //     in the form.
-//   * `available_resolutions` — CONSTANT. Empty off MiSTer; on MiSTer,
-//     the curated picker list. Order matters: it's the cycle order in
-//     the UI's left/right cycler.
-//   * `current_resolution` — READ + NOTIFY, persisted. Empty means "use
-//     `[mister.video_*]` defaults from frontend.toml". The Settings
-//     screen renders that empty value as `qsTr("Default")`.
+//   * `available_resolutions` / `current_resolution` — retained as a
+//     persisted compatibility surface for future platforms. Resolution is
+//     no longer user-selectable, and digital MiSTer startup ignores it in
+//     favor of automatic framebuffer sizing.
 //   * `available_languages` — CONSTANT. Curated language tags plus the
 //     `auto` sentinel. The runtime translator is still startup-only, so
 //     this setting applies on the next launch.
@@ -37,6 +35,9 @@
 //     placeholder until the new browsing screen is built.
 //   * `current_browse_layout` — READ + NOTIFY, persisted. Defaults to
 //     "grid" so existing installs keep current behavior.
+//   * `current_favorites_grouping` — READ + NOTIFY, persisted. "none"
+//     preserves the flat list; "system" groups favorites by system. A string
+//     leaves room for additional grouping dimensions without a schema change.
 //   * `available_system_logo_styles` — CONSTANT. "tinted" keeps the default
 //     theme-colored SVGs; "color" opts into restored full-color logos.
 //   * `current_system_logo_style` — READ + NOTIFY, persisted. Defaults to
@@ -63,7 +64,7 @@
 // Frontend-owned durable settings are mirrored into both `state.toml`
 // and `frontend.toml`. `state.toml` keeps the in-process snapshot
 // coherent; `frontend.toml` is the durable copy that survives MiSTer's
-// `/tmp` lifecycle and is what startup `vmode` / translator install
+// `/tmp` lifecycle and is what startup services / translator install
 // read on the next process launch. Button layout only changes the QML
 // resource path used by help-bar icons, browse layout selects the game
 // browsing presentation, mouse support drives the QML cursor/input blocker,
@@ -81,14 +82,9 @@ use zaparoo_core::persist::{self, SettingsState};
 use zaparoo_core::platform_paths::config_file_path;
 use zaparoo_core::runtime;
 
-/// Curated `MiSTer` resolution choices. Order is the left/right cycle
-/// order in the form. Keep the list short — every entry is a literal
-/// the user can crash a CRT scaler with if it doesn't suit their
-/// monitor — and ASCII-only so the QML side never needs to translate
-/// the strings (they're not user-facing labels, they're keys). The
-/// empty leading entry is the "use `frontend.toml` defaults" sentinel;
-/// the form renders it as `qsTr("Default")` so users can cycle back
-/// to no-override after picking a custom value.
+/// Legacy `MiSTer` resolution values retained for config/state compatibility
+/// and possible future platform use. Digital `MiSTer` startup does not consume
+/// this selection while automatic framebuffer sizing is active.
 const MISTER_RESOLUTIONS: &[&str] = &[
     "",
     "1280x720",
@@ -141,6 +137,8 @@ const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
 const DEFAULT_ORIENTATION: &str = "horizontal";
 const BROWSE_LAYOUTS: &[&str] = &["grid", "list"];
 const DEFAULT_BROWSE_LAYOUT: &str = "grid";
+const FAVORITES_GROUPINGS: &[&str] = &["none", "system"];
+const DEFAULT_FAVORITES_GROUPING: &str = "none";
 const SYSTEM_LOGO_STYLES: &[&str] = &["tinted", "color"];
 const DEFAULT_SYSTEM_LOGO_STYLE: &str = "tinted";
 const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
@@ -193,6 +191,7 @@ pub struct SettingsRust {
     current_orientation: QString,
     available_browse_layouts: QStringList,
     current_browse_layout: QString,
+    current_favorites_grouping: QString,
     available_system_logo_styles: QStringList,
     current_system_logo_style: QString,
     available_button_layouts: QStringList,
@@ -235,6 +234,7 @@ pub mod ffi {
         #[qproperty(QString, current_orientation, READ, WRITE = set_orientation, NOTIFY)]
         #[qproperty(QStringList, available_browse_layouts, READ, CONSTANT)]
         #[qproperty(QString, current_browse_layout, READ, WRITE = set_browse_layout, NOTIFY)]
+        #[qproperty(QString, current_favorites_grouping, READ, WRITE = set_favorites_grouping, NOTIFY)]
         #[qproperty(QStringList, available_system_logo_styles, READ, CONSTANT)]
         #[qproperty(QString, current_system_logo_style, READ, WRITE = set_system_logo_style, NOTIFY)]
         #[qproperty(QStringList, available_button_layouts, READ, CONSTANT)]
@@ -267,6 +267,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_browse_layout(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_favorites_grouping(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_system_logo_style(self: Pin<&mut Settings>, value: QString);
@@ -332,6 +335,8 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().available_browse_layouts = browse_layouts();
         self.as_mut().rust_mut().current_browse_layout =
             QString::from(merged.browse_layout.as_str());
+        self.as_mut().rust_mut().current_favorites_grouping =
+            QString::from(merged.favorites_grouping.as_str());
         self.as_mut().rust_mut().available_system_logo_styles = system_logo_styles();
         self.as_mut().rust_mut().current_system_logo_style =
             QString::from(merged.system_logo_style.as_str());
@@ -433,6 +438,21 @@ impl ffi::Settings {
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
         self.as_mut().rust_mut().current_browse_layout = QString::from(value_str.as_str());
         self.as_mut().current_browse_layout_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_favorites_grouping(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_favorites_grouping(&value.to_string()).to_string();
+        if self.current_favorites_grouping.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.favorites_grouping.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_favorites_grouping = QString::from(value_str.as_str());
+        self.as_mut().current_favorites_grouping_changed();
     }
 
     #[allow(
@@ -613,6 +633,7 @@ pub(super) fn mirror_settings_to_config(config_path: &std::path::Path, settings:
             debug_logging: settings.debug_logging,
             screensaver_timeout: settings.screensaver_timeout.as_str(),
             media_image_type: settings.media_image_type.as_str(),
+            favorites_grouping: settings.favorites_grouping.as_str(),
             show_hidden: settings.show_hidden,
             show_original_filenames: settings.show_original_filenames,
             region: settings.region.as_str(),
@@ -653,6 +674,11 @@ fn merge_crt_settings(snapshot: &SettingsState, config: &Config) -> (String, i32
     (standard, h_offset, v_offset)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    reason = "merging all settings is inherently verbose"
+)]
 fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
     let (crt_video_standard, crt_h_offset, crt_v_offset) = merge_crt_settings(snapshot, config);
     SettingsState {
@@ -684,6 +710,14 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
                 .browse_layout
                 .as_deref()
                 .unwrap_or(snapshot.browse_layout.as_str()),
+        )
+        .to_string(),
+        favorites_grouping: normalize_favorites_grouping(
+            config
+                .settings
+                .favorites_grouping
+                .as_deref()
+                .unwrap_or(snapshot.favorites_grouping.as_str()),
         )
         .to_string(),
         system_logo_style: normalize_system_logo_style(
@@ -881,6 +915,15 @@ fn normalize_browse_layout(value: &str) -> &'static str {
         .unwrap_or(DEFAULT_BROWSE_LAYOUT)
 }
 
+fn normalize_favorites_grouping(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    FAVORITES_GROUPINGS
+        .iter()
+        .copied()
+        .find(|grouping| *grouping == trimmed)
+        .unwrap_or(DEFAULT_FAVORITES_GROUPING)
+}
+
 fn normalize_system_logo_style(value: &str) -> &'static str {
     let trimmed = value.trim();
     SYSTEM_LOGO_STYLES
@@ -948,11 +991,11 @@ mod tests {
     use super::{
         browse_layouts, button_layouts, clock_formats, curated_resolutions, languages,
         normalize_browse_layout, normalize_button_layout, normalize_clock_format,
-        normalize_language, normalize_orientation, normalize_region, normalize_system_logo_style,
-        orientations, regions, system_logo_styles, BROWSE_LAYOUTS, BUTTON_LAYOUTS, CLOCK_FORMATS,
-        DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT, DEFAULT_LANGUAGE,
-        DEFAULT_ORIENTATION, DEFAULT_REGION, DEFAULT_SYSTEM_LOGO_STYLE, MISTER_RESOLUTIONS,
-        ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
+        normalize_favorites_grouping, normalize_language, normalize_orientation, normalize_region,
+        normalize_system_logo_style, orientations, regions, system_logo_styles, BROWSE_LAYOUTS,
+        BUTTON_LAYOUTS, CLOCK_FORMATS, DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT,
+        DEFAULT_CLOCK_FORMAT, DEFAULT_LANGUAGE, DEFAULT_ORIENTATION, DEFAULT_REGION,
+        DEFAULT_SYSTEM_LOGO_STYLE, MISTER_RESOLUTIONS, ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
     };
 
     #[test]
@@ -974,6 +1017,13 @@ mod tests {
         assert!(collected.contains(&"1280x720"));
         assert!(collected.contains(&"1920x1080"));
         assert!(collected.contains(&"2560x1440"));
+    }
+
+    #[test]
+    fn favorites_grouping_normalizes_known_and_unknown_values() {
+        assert_eq!(normalize_favorites_grouping(" none "), "none");
+        assert_eq!(normalize_favorites_grouping("system"), "system");
+        assert_eq!(normalize_favorites_grouping("genre"), "none");
     }
 
     #[test]

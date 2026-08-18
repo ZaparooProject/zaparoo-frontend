@@ -38,7 +38,10 @@ MainLayout {
     readonly property string modalQrCode: "qr_code"
     readonly property string modalCommercialNotice: "commercial_notice"
     readonly property string modalCoreVersion: "core_version_warning"
-    readonly property string modalFirstRunIndex: "first_run_index"
+    readonly property string modalRandomFailed: "random_failed"
+    // Sentinel id for the favorites "default order" row; maps to an empty
+    // sort mode. Must never be "" — see openFavoritesSortMenu.
+    readonly property string _favoritesSortDefault: "default"
     readonly property string modalLogUpload: "log_upload"
     readonly property string modalQuitConfirm: "quit_confirm"
     readonly property string modalListPicker: "list_picker"
@@ -46,16 +49,15 @@ MainLayout {
     readonly property string modalSettingNeedsRestart: "restart_confirm"
     readonly property string modalCrtCalibration: "crt_calibration"
 
-    // One-shot session flag: the first-run modal is shown at most
-    // once per frontend process, even if the WS link drops and the
-    // mediadb-empty condition would otherwise be satisfied again.
-    property bool _firstRunIndexShown: false
-    // One-shot guard for the Core-version warning, same lifetime as
-    // _firstRunIndexShown: show it at most once per process even if the
+    // One-shot session flag: an authoritative empty catalog starts one
+    // background index at most once per frontend process. Browsing remains
+    // available while newly discovered systems arrive through catalog polls.
+    property bool _firstRunIndexStarted: false
+    // One-shot guard for the Core-version warning, same process lifetime:
+    // show it at most once even if the
     // link drops and reconnects to the same old Core.
     property bool _coreVersionWarningShown: false
     property string _pendingLanguageSelection: ""
-    property string _pendingResolutionSelection: ""
     property string _pendingCrtStandardSelection: ""
     // Staged CRT-mode toggle awaiting the restart-confirm modal:
     // "" (none), "on", or "off". Confirming writes the 1-byte enable
@@ -75,6 +77,15 @@ MainLayout {
     property string contextMenuMode: "main"
     property string contextMenuOwner: ""
     property int contextMenuIndex: -1
+
+    // One in-flight screen-transition sample. Input dispatch starts it, the
+    // router records when destination becomes active, and frameSwapped closes
+    // it after Qt presents destination's first frame.
+    property double _transitionInputStartedAt: 0
+    property double _transitionRouteAt: 0
+    property string _transitionAction: ""
+    property string _transitionFromScreen: ""
+    property string _transitionToScreen: ""
     readonly property bool activeCardWritePending: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_pending : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_pending : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_pending : false
     readonly property string activeCardWriteError: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_error : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_error : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_error : ""
 
@@ -145,8 +156,8 @@ MainLayout {
     // _gamesDetailCoverMaxSize derives from _gamesCoverMaxSize, so this one
     // handler re-syncs both sizes whenever the grid shape changes.
     on_GamesCoverMaxSizeChanged: {
-        if (root.gamesScreenRequested || root.activeScreen === root.screenGames)
-            root._syncGamesModelLayout();
+        if (root.gamesScreenRequested || root.favoritesScreenRequested || root.recentsScreenRequested)
+            root._syncCoverSizing();
     }
 
     // Bind Sizing to the scene's logical dimensions, not the
@@ -165,6 +176,19 @@ MainLayout {
         property: "screenHeight"
         value: root.scene.height
     }
+    // Keep the detail-cover tier's inputs identical to the fetch-size
+    // inputs (`_gamesDetailCoverMaxSize` below), so request tier and
+    // decode tier can never diverge.
+    Binding {
+        target: Sizing
+        property: "detailCoverViewportWidth"
+        value: root._gamesGridViewportWidth
+    }
+    Binding {
+        target: Sizing
+        property: "detailCoverViewportHeight"
+        value: root._gamesGridViewportHeight
+    }
 
     function _requestScreen(screen: string): void {
         if (screen === root.screenSystems)
@@ -172,11 +196,15 @@ MainLayout {
         else if (screen === root.screenGames) {
             root.gamesScreenRequested = true;
             root._syncGamesModelLayout();
-        } else if (screen === root.screenFavorites)
+        } else if (screen === root.screenFavorites) {
             root.favoritesScreenRequested = true;
-        else if (screen === root.screenRecents)
+            root._syncCoverSizing();
+        } else if (screen === root.screenFavoriteSystems)
+            root.favoriteSystemsScreenRequested = true;
+        else if (screen === root.screenRecents) {
             root.recentsScreenRequested = true;
-        else if (screen === root.screenSettings)
+            root._syncCoverSizing();
+        } else if (screen === root.screenSettings)
             root.settingsScreenRequested = true;
         else if (screen === root.screenAbout)
             root.aboutScreenRequested = true;
@@ -184,6 +212,10 @@ MainLayout {
 
     function _syncGamesModelLayout(): void {
         Browse.GamesModel.page_size = root._gamesPageSize;
+        root._syncCoverSizing();
+    }
+
+    function _syncCoverSizing(): void {
         Browse.GamesModel.set_cover_max_size(root._gamesCoverMaxSize);
         Browse.GamesModel.set_detail_cover_max_size(root._gamesDetailCoverMaxSize);
     }
@@ -195,6 +227,8 @@ MainLayout {
             return root.gamesScreen;
         if (screen === root.screenFavorites)
             return root.favoritesScreen;
+        if (screen === root.screenFavoriteSystems)
+            return root.favoriteSystemsScreen;
         if (screen === root.screenRecents)
             return root.recentsScreen;
         if (screen === root.screenSettings)
@@ -241,8 +275,8 @@ MainLayout {
             root.commercialNoticeModalRequested = true;
         else if (modal === root.modalCoreVersion)
             root.coreVersionModalRequested = true;
-        else if (modal === root.modalFirstRunIndex)
-            root.firstRunIndexModalRequested = true;
+        else if (modal === root.modalRandomFailed)
+            root.randomFailedModalRequested = true;
         else if (modal === root.modalLogUpload)
             root.logUploadModalRequested = true;
         else if (modal === root.modalQuitConfirm)
@@ -285,17 +319,13 @@ MainLayout {
         // cascade needed by saved-screen restore and later drill-downs.
         root.hubScreen.restoreFromCategoriesReset(false);
         root._maybeArmHubResumeFocus();
-        // Open the commercial-use notice on first paint of an unacked
-        // install. Sits in front of the media-DB first-run modal in the
-        // routing order — `_maybeOpenFirstRunIndex` early-returns until
-        // `Browse.Notice.commercial_ack` flips true, at which point the
-        // notice's close handler retriggers the media-DB check.
+        // Open the commercial-use notice on first paint of an unacked install.
+        // Indexing is independent of modal routing and can start behind it.
         root._maybeOpenCommercialNotice();
-        // Kick the first-run check in case both READY and a seeded
-        // empty-mediadb snapshot landed before our Connections wired up
-        // (e.g. an unusually fast warm-cache reconnect).
+        // Kick the background first-run check in case READY, media status, and
+        // an empty catalog landed before our Connections wired up.
         root._maybeCompleteBoot();
-        root._maybeOpenFirstRunIndex();
+        root._maybeStartFirstRunIndex();
         root._maybeStartStartupRestore();
     }
 
@@ -304,6 +334,12 @@ MainLayout {
             Browse.ImageOverrides.load_hub_overrides();
             if (Browse.CategoriesModel.count > 0)
                 root.hubScreen.restoreFromCategoriesReset(true);
+            // SystemsScreen's QML tree costs about a second to instantiate on
+            // MiSTer. Mount it just after Hub's first frame, while the user is
+            // orienting, instead of charging that one-time cost to first
+            // category Accept. Its cover requests remain disabled while
+            // inactive, so this warms structure without decoding SVG logos.
+            systemsScreenWarmMountTimer.restart();
             root._maybeStartStartupRestore();
         }
     }
@@ -321,7 +357,7 @@ MainLayout {
     }
 
     function _isStableNavigationScreen(screen: string): bool {
-        if (screen === root.screenHub || screen === root.screenSystems || screen === root.screenGames || screen === root.screenFavorites || screen === root.screenRecents || screen === root.screenSettings || screen === root.screenAbout)
+        if (screen === root.screenHub || screen === root.screenSystems || screen === root.screenGames || screen === root.screenFavorites || screen === root.screenFavoriteSystems || screen === root.screenRecents || screen === root.screenSettings || screen === root.screenAbout)
             return true;
         return false;
     }
@@ -387,6 +423,18 @@ MainLayout {
             }
             root._restoreGamesScreenSelection();
         }
+        // Same-sized folder pages update existing delegates rather than
+        // emitting modelReset. Restore persisted selection from this explicit
+        // revision edge so optimized Back navigation keeps identical behavior.
+        function onRows_revisionChanged(): void {
+            if (root.gamesScreen === null) {
+                root._whenScreenReady(root.screenGames, function () {
+                    root._restoreGamesScreenSelection();
+                });
+                return;
+            }
+            root._restoreGamesScreenSelection();
+        }
         // Pages 2+ append rows via begin_insert_rows / end_insert_rows
         // (no model reset), so we can't piggy-back on onModelReset to
         // retry the lookup. `count` bumps on every append, giving us a
@@ -430,14 +478,28 @@ MainLayout {
                 return;
             }
             if (Browse.GamesModel.has_next_page) {
-                // fetch_more is itself debounced by `loading_more` and
-                // `has_next_page`, so a redundant call here is a cheap
-                // no-op rather than a duplicate request.
-                Browse.GamesModel.fetch_more();
+                // Restoration is not user-visible page navigation: bulk-load
+                // up to Core's 300-row limit so a saved page deep in a large
+                // parent does not require dozens of sequential 10-row RPCs.
+                // The loading gate remains up and bulk insertion skips the
+                // frame-gapped visible-page trickle.
+                Browse.GamesModel.fetch_more_restore();
                 return;
             }
             root._pendingGameRestorePath = "";
             root._maybeFinishStartupGamesRestore();
+        }
+        // `apply_append_page` intentionally publishes terminal
+        // has_next_page=false after countChanged so pending grid jumps see the
+        // fresh row count. A restore target that no longer exists therefore
+        // cannot finish from onCountChanged: it still sees the prior true
+        // value and its guarded follow-up fetch is rejected because the final
+        // cursor is already empty. Recheck on the terminal edge to clear the
+        // loading gate instead of leaving "Loading games…" stuck forever.
+        function onHas_next_pageChanged(): void {
+            if (root._pendingGameRestorePath === "" || Browse.GamesModel.has_next_page || Browse.GamesModel.loading_more)
+                return;
+            root._restoreGamesScreenSelection();
         }
     }
 
@@ -446,10 +508,59 @@ MainLayout {
     // launch-resume persistence. Keeps the screens themselves ignorant
     // of AppState so they can be reused in test harnesses that don't
     // wire the full persistence layer.
+    function _beginTransitionTiming(action: string): void {
+        root._transitionInputStartedAt = Date.now();
+        root._transitionRouteAt = 0;
+        root._transitionAction = action;
+        root._transitionFromScreen = root.activeScreen;
+        root._transitionToScreen = "";
+    }
+
+    function _markTransitionRouted(screen: string): void {
+        if (root._transitionInputStartedAt <= 0 || screen === root._transitionFromScreen)
+            return;
+        root._transitionRouteAt = Date.now();
+        root._transitionToScreen = screen;
+        console.info("responsiveness transition routed" + " action=" + root._transitionAction + " from=" + root._transitionFromScreen + " to=" + screen + " route_ms=" + Math.max(0, root._transitionRouteAt - root._transitionInputStartedAt));
+    }
+
+    function _finishTransitionTiming(): void {
+        if (root._transitionToScreen === "" || root._transitionRouteAt <= 0)
+            return;
+        const presentedAt = Date.now();
+        console.info("responsiveness transition presented" + " action=" + root._transitionAction + " from=" + root._transitionFromScreen + " to=" + root._transitionToScreen + " route_ms=" + Math.max(0, root._transitionRouteAt - root._transitionInputStartedAt) + " present_ms=" + Math.max(0, presentedAt - root._transitionRouteAt) + " total_ms=" + Math.max(0, presentedAt - root._transitionInputStartedAt));
+        root._transitionInputStartedAt = 0;
+        root._transitionRouteAt = 0;
+        root._transitionAction = "";
+        root._transitionFromScreen = "";
+        root._transitionToScreen = "";
+    }
+
+    onFramePresented: {
+        root._finishTransitionTiming();
+        if (!root.systemsCoverRevealReady && root.activeScreen === root.screenSystems && root.pendingTransition === "") {
+            root.systemsCoverRevealReady = true;
+            console.debug("responsiveness system covers enabled after destination frame");
+        }
+        if (!root.gamesCoverRevealReady && root.activeScreen === root.screenGames && !Browse.GamesModel.loading && root.pendingTransition === "") {
+            const presentedAt = Date.now();
+            root.gamesCoverRevealReady = true;
+            console.debug("responsiveness game covers enabled after model frame");
+            if (root.gamesNavigationInputAt > 0) {
+                const modelReadyAt = root.gamesNavigationModelReadyAt > 0 ? root.gamesNavigationModelReadyAt : presentedAt;
+                console.info("responsiveness folder navigation presented" + " action=" + root.gamesNavigationAction + " model_ms=" + Math.max(0, modelReadyAt - root.gamesNavigationInputAt) + " present_ms=" + Math.max(0, presentedAt - modelReadyAt) + " total_ms=" + Math.max(0, presentedAt - root.gamesNavigationInputAt));
+                root.gamesNavigationInputAt = 0;
+                root.gamesNavigationModelReadyAt = 0;
+                root.gamesNavigationAction = "";
+            }
+        }
+    }
+
     function _goto(screen: string): void {
         root._requestScreen(screen);
         root._startupTrace("startup/qml goto", "from=" + root.activeScreen, "to=" + screen, "pendingTransition=" + root.pendingTransition);
         ScreenManager.activeScreen = screen;
+        root._markTransitionRouted(screen);
         if (root._isLaunchResumeScreen(screen))
             Browse.AppState.active_screen = screen;
     }
@@ -478,6 +589,8 @@ MainLayout {
             return !Browse.GamesModel.loading;
         if (screen === root.screenFavorites)
             return !Browse.FavoritesModel.loading;
+        if (screen === root.screenFavoriteSystems)
+            return !Browse.FavoriteSystemsModel.loading;
         if (screen === root.screenRecents)
             return !Browse.RecentsModel.loading;
         return true;
@@ -529,6 +642,7 @@ MainLayout {
     property var _categoryReadyCallback: null
     property var _systemReadyCallback: null
     property var _favoritesReadyCallback: null
+    property var _favoriteSystemsReadyCallback: null
     property var _recentsReadyCallback: null
     property string _catalogWaitCategory: ""
     // Set when `_ensureCategory` arms `deferredCategorySetTimer` and
@@ -543,6 +657,7 @@ MainLayout {
     readonly property bool _systemsModelConnectionsEnabled: root.systemsScreenRequested || (root._firstFrameSeen && root._startupRestorePending) || root._categoryReadyCallback !== null || root._deferredCategoryPending || root._catalogWaitCategory !== ""
     readonly property bool _gamesModelConnectionsEnabled: root.gamesScreenRequested || root._systemReadyCallback !== null || root._deferredSystemPending
     readonly property bool _favoritesModelConnectionsEnabled: root.favoritesScreenRequested || root._favoritesReadyCallback !== null
+    readonly property bool _favoriteSystemsModelConnectionsEnabled: root.favoriteSystemsScreenRequested || root._favoriteSystemsReadyCallback !== null
     readonly property bool _recentsModelConnectionsEnabled: root.recentsScreenRequested || root._recentsReadyCallback !== null || root._pendingResumeLaunch
     // Saved games-screen entry path that wasn't on the freshly seeded
     // page 1 of MediaBrowse. The GamesModel.onCountChanged watcher
@@ -551,19 +666,11 @@ MainLayout {
     // any navigation that starts a new browse target so a stale
     // restore can't keep paginating after the user moves on.
     property string _pendingGameRestorePath: ""
+    gamesSelectionRestorePending: root._pendingGameRestorePath !== ""
     property string _backTransitionTarget: ""
     property string _pendingFolderBackTargetPath: ""
     property string _pendingFolderBackSystemId: ""
     property var _folderBackReadyCallback: null
-    // System-cover prefetch gate. `_prefetchSystemCovers` populates
-    // `_systemCoverPrefetchUrls` with the first-page logos and stores the
-    // completion callback in `_systemCoverPrefetchCallback`. When every
-    // Image signals Ready/Error (or `systemCoverPrefetchTimer` expires),
-    // `_completePrefetchSystemCovers` fires the callback and clears state.
-    property var _systemCoverPrefetchUrls: []
-    property var _systemCoverPrefetchCallback: null
-    property int _systemCoverPrefetchPending: 0
-
     function _catalogStillBooting(): bool {
         return !Browse.CategoriesModel.loaded && (Browse.CategoriesModel.error_message ?? "") === "";
     }
@@ -621,6 +728,8 @@ MainLayout {
         }
         if (root.pendingTransition === "favorites")
             favoritesTransitionTimer.restart();
+        else if (root.pendingTransition === "favorite_systems")
+            favoriteSystemsTransitionTimer.restart();
         else if (root.pendingTransition === "recents")
             recentsTransitionTimer.restart();
         else if (root.pendingTransition === "settings")
@@ -672,6 +781,8 @@ MainLayout {
         function onLoadingChanged(): void {
             if (Browse.GamesModel.loading)
                 return;
+            if (root.gamesNavigationInputAt > 0 && root.gamesNavigationModelReadyAt <= 0)
+                root.gamesNavigationModelReadyAt = Date.now();
             if (root._deferredSystemPending) {
                 root._startupTrace("startup/qml system loading edge ignored", "reason=deferred-pending systemId=" + Browse.GamesModel.current_system_id + " count=" + Browse.GamesModel.count);
                 return;
@@ -716,6 +827,25 @@ MainLayout {
                 return;
             }
             root._favoritesReadyCallback = null;
+            cb();
+            root._maybeCompleteBackTransition();
+        }
+    }
+    Connections {
+        target: root._favoriteSystemsModelConnectionsEnabled ? Browse.FavoriteSystemsModel : null
+        function onModelReset(): void {
+            if (root.favoriteSystemsScreen !== null)
+                root.favoriteSystemsScreen.restoreSelection();
+        }
+        function onLoadingChanged(): void {
+            if (Browse.FavoriteSystemsModel.loading)
+                return;
+            const cb = root._favoriteSystemsReadyCallback;
+            if (cb === null) {
+                root._maybeCompleteBackTransition();
+                return;
+            }
+            root._favoriteSystemsReadyCallback = null;
             cb();
             root._maybeCompleteBackTransition();
         }
@@ -779,8 +909,8 @@ MainLayout {
     // resumable history row. Otherwise: tentatively pin the
     // destination to Systems, fill the chosen category, then either
     // bypass to Games (MiSTer Arcade singleton) or fall through to
-    // Systems with a cover-prefetch warmup so the destination paints
-    // with logos already in QPixmapCache.
+    // Systems immediately. Systems paints one stable frame with cover
+    // requests gated, then enables SVG decoding after that frame swaps.
     function _navigateFromHub(category: string): void {
         if (category === "") {
             root._goto(root.screenSystems);
@@ -806,9 +936,8 @@ MainLayout {
                     root._completeTransition(root.screenGames);
                 });
             } else {
-                root._prefetchSystemCovers(function () {
-                    root._completeTransition(root.screenSystems);
-                });
+                root.systemsCoverRevealReady = false;
+                root._completeTransition(root.screenSystems);
             }
         }, true);
     }
@@ -895,9 +1024,44 @@ MainLayout {
         });
     }
 
-    function _navigateToFavorites(): void {
+    function _setFavoritesSystem(systemId): void {
+        const normalized = systemId === undefined || systemId === null ? "" : String(systemId);
+        root.favoritesSystemId = normalized;
+        Browse.FavoritesModel.set_system(normalized);
+    }
+
+    function _navigateToFavorites(systemId): void {
+        root._setFavoritesSystem(systemId);
         root.pendingTransition = "favorites";
         favoritesTransitionTimer.restart();
+    }
+
+    function _completeFavoriteSystemsTransition(): void {
+        if (root.pendingTransition !== "favorite_systems")
+            return;
+        root.favoriteSystemsScreen.restoreSelection();
+        root._completeTransition(root.screenFavoriteSystems);
+    }
+
+    function _startFavoriteSystemsTransitionLoad(): void {
+        if (root.pendingTransition !== "favorite_systems")
+            return;
+        root._whenScreenReady(root.screenFavoriteSystems, function () {
+            if (root.pendingTransition !== "favorite_systems")
+                return;
+            if (root._catalogStillBooting())
+                return;
+            if (!Browse.FavoriteSystemsModel.loading) {
+                root._completeFavoriteSystemsTransition();
+                return;
+            }
+            root._favoriteSystemsReadyCallback = root._completeFavoriteSystemsTransition;
+        });
+    }
+
+    function _navigateToFavoriteSystems(): void {
+        root.pendingTransition = "favorite_systems";
+        favoriteSystemsTransitionTimer.restart();
     }
 
     function _completeRecentsTransition(): void {
@@ -1024,7 +1188,7 @@ MainLayout {
         if (savedPath !== "" && Browse.GamesModel.has_next_page) {
             root._pendingGameRestorePath = savedPath;
             root._setGamesRestoreIndex(0);
-            Browse.GamesModel.fetch_more();
+            Browse.GamesModel.fetch_more_restore();
             return false;
         }
         root._pendingGameRestorePath = "";
@@ -1047,6 +1211,9 @@ MainLayout {
     // gamesScreen.onRequestSystemsScreen below) so this path needs
     // no per-transition flag.
     function _navigateFromSystems(systemId: string): void {
+        root.gamesNavigationInputAt = 0;
+        root.gamesNavigationModelReadyAt = 0;
+        root.gamesNavigationAction = "";
         root._requestScreen(root.screenGames);
         Browse.SystemsState.system_id = systemId;
         // Setting system_id on GamesState resets path_stack/selected_at_level
@@ -1054,10 +1221,20 @@ MainLayout {
         // initial games-screen view, regardless of where the user was in
         // a prior system's folder tree.
         Browse.GamesState.system_id = systemId;
+        root.gamesCoverRevealReady = false;
         root.pendingTransition = "games";
         root._ensureSystem(systemId, function () {
             root._completeTransition(root.screenGames);
         });
+    }
+
+    function _beginFolderNavigationTiming(action: string): void {
+        const screenInputAt = root.gamesScreen !== null ? root.gamesScreen.lastNavigationInputAt : 0;
+        root.gamesNavigationInputAt = screenInputAt > 0 ? screenInputAt : Date.now();
+        root.gamesNavigationModelReadyAt = 0;
+        root.gamesNavigationAction = action;
+        if (root.gamesScreen !== null)
+            root.gamesScreen.lastNavigationInputAt = 0;
     }
 
     // Folder drill-down inside the games screen. Stays on screenGames
@@ -1068,11 +1245,14 @@ MainLayout {
     function _navigateIntoFolder(path: string): void {
         if (path === "")
             return;
+        root._beginFolderNavigationTiming("forward");
         Browse.GamesState.push_level(path, "");
+        root.gamesCoverRevealReady = false;
         Browse.GamesModel.set_path(path);
     }
 
     function _rebrowseGamesFolderTarget(path: string, systemId: string): void {
+        root.gamesCoverRevealReady = false;
         if (path === "") {
             if (systemId !== "")
                 Browse.GamesModel.set_system(systemId);
@@ -1089,6 +1269,7 @@ MainLayout {
         const stack = Browse.GamesState.path_stack;
         if (stack.length <= 1)
             return;
+        root._beginFolderNavigationTiming("back");
         Browse.GamesState.pop_level();
         const newStack = Browse.GamesState.path_stack;
         const target = newStack[newStack.length - 1];
@@ -1184,6 +1365,8 @@ MainLayout {
             return;
         }
         if (targetScreen === root.screenFavorites) {
+            const restoredSystemId = Browse.Settings.current_favorites_grouping === "system" ? Browse.FavoriteSystemsState.selected_path : "";
+            root._setFavoritesSystem(restoredSystemId);
             root._whenScreenReady(root.screenFavorites, function () {
                 root._resumeFavoritesCovers();
                 if (Browse.FavoritesModel.loading) {
@@ -1196,6 +1379,22 @@ MainLayout {
                     root.favoritesScreen.restoreSelection();
                     root._finishStartupRestore();
                     root._goto(root.screenFavorites);
+                }
+            });
+            return;
+        }
+        if (targetScreen === root.screenFavoriteSystems) {
+            root._whenScreenReady(root.screenFavoriteSystems, function () {
+                if (Browse.FavoriteSystemsModel.loading) {
+                    root._favoriteSystemsReadyCallback = function () {
+                        root.favoriteSystemsScreen.restoreSelection();
+                        root._finishStartupRestore();
+                        root._goto(root.screenFavoriteSystems);
+                    };
+                } else {
+                    root.favoriteSystemsScreen.restoreSelection();
+                    root._finishStartupRestore();
+                    root._goto(root.screenFavoriteSystems);
                 }
             });
             return;
@@ -1305,6 +1504,7 @@ MainLayout {
     onSystemsScreenChanged: root._flushScreenReady(root.screenSystems)
     onGamesScreenChanged: root._flushScreenReady(root.screenGames)
     onFavoritesScreenChanged: root._flushScreenReady(root.screenFavorites)
+    onFavoriteSystemsScreenChanged: root._flushScreenReady(root.screenFavoriteSystems)
     onRecentsScreenChanged: root._flushScreenReady(root.screenRecents)
     onSettingsScreenChanged: root._flushScreenReady(root.screenSettings)
     onAboutScreenChanged: root._flushScreenReady(root.screenAbout)
@@ -1318,7 +1518,10 @@ MainLayout {
             root.openQuitConfirmModal();
         }
         function onRequestFavoritesScreen(): void {
-            root._navigateToFavorites();
+            if (Browse.Settings.current_favorites_grouping === "system")
+                root._navigateToFavoriteSystems();
+            else
+                root._navigateToFavorites("");
         }
         function onRequestRecentsScreen(): void {
             root._navigateToRecents();
@@ -1332,14 +1535,39 @@ MainLayout {
         function onRequestContextMenu(index: int, anchorRect): void {
             root.openContextMenu("categories", index, anchorRect);
         }
+        function onRequestActionContextMenu(actionId: string, anchorRect): void {
+            root.openHubActionContextMenu(actionId, anchorRect);
+        }
     }
     Connections {
         target: root.favoritesScreen
         function onRequestHubScreen(): void {
-            root._navigateBackToScreen(root.screenHub);
+            if (root.favoritesSystemId !== "" && Browse.Settings.current_favorites_grouping === "system")
+                root._navigateBackToScreen(root.screenFavoriteSystems);
+            else
+                root._navigateBackToScreen(root.screenHub);
         }
         function onRequestContextMenu(index: int, anchorRect): void {
             root.openContextMenu("favorites", index, anchorRect);
+        }
+        function onRequestPageMenu(): void {
+            root.openFavoritesPageMenu();
+        }
+    }
+    Connections {
+        target: root.favoriteSystemsScreen
+        function onRequestAccept(systemId: string): void {
+            if (systemId !== "")
+                root._navigateToFavorites(systemId);
+        }
+        function onRequestHubScreen(): void {
+            root._navigateBackToScreen(root.screenHub);
+        }
+        function onRequestContextMenu(index: int, anchorRect): void {
+            root.openContextMenu("favorite_systems", index, anchorRect);
+        }
+        function onRequestPageMenu(): void {
+            root.openFavoriteSystemsPageMenu();
         }
     }
     Connections {
@@ -1521,6 +1749,11 @@ MainLayout {
             // Launch-only (virtual) systems have no media and no launcher
             // choice, so omit launcher/index/scrape actions for them.
             const launchable = Browse.SystemsModel.is_launchable_system(systemId);
+            if (!launchable)
+                entries.push({
+                    id: "launch_random_system",
+                    label: qsTr("Random game")
+                });
             if (!launchable && !Browse.SystemLaunchers.loading && Browse.SystemLaunchers.error_message === "" && Browse.SystemLaunchers.launcher_count_for_system(systemId) > 0) {
                 entries.push({
                     id: "change_launcher",
@@ -1557,6 +1790,11 @@ MainLayout {
             // members are all launch-only yields none and the actions would
             // no-op, so omit them rather than show dead entries.
             const hasIndexable = category !== "" && Browse.SystemsModel.system_ids_for_category(category).length > 0;
+            if (hasIndexable)
+                entries.unshift({
+                    id: "launch_random_category",
+                    label: qsTr("Random game")
+                });
             if (!mediaBusy && hasIndexable) {
                 entries.push({
                     id: "index_category",
@@ -1567,6 +1805,22 @@ MainLayout {
                 });
             }
             return entries;
+        }
+        if (owner === "favorite_systems") {
+            return [
+                {
+                    id: "launch_random_favorite_system",
+                    label: qsTr("Random game")
+                }
+            ];
+        }
+        if (owner === "hub_favorites") {
+            return [
+                {
+                    id: "launch_random_favorite",
+                    label: qsTr("Random game")
+                }
+            ];
         }
         if (owner === "recents") {
             const entries = [
@@ -1597,7 +1851,7 @@ MainLayout {
                 });
             entries.push({
                 id: "qr_code",
-                label: qsTr("QR code")
+                label: qsTr("Write with QR code")
             });
             if (Browse.Settings.current_discover_arcade_alternate_versions) {
                 entries.push({
@@ -1653,6 +1907,21 @@ MainLayout {
         return entries;
     }
 
+    function openHubActionContextMenu(actionId: string, anchorRect): void {
+        if (actionId !== "favorites")
+            return;
+        const entries = root.buildContextMenuEntries("hub_favorites", "", false, false, false, "", false, "");
+        root.contextMenuEntries = entries;
+        root.contextMenuOwner = "hub_favorites";
+        root.contextMenuIndex = 0;
+        root.contextMenuMode = "main";
+        root.contextMenuAnchor = anchorRect;
+        root._requestModal(root.modalContextMenu);
+        root.contextMenuVisible = true;
+        if (ScreenManager.topModal !== root.modalContextMenu)
+            ScreenManager.pushModal(root.modalContextMenu);
+    }
+
     function openContextMenu(owner: string, index: int, anchorRect): void {
         if (index < 0)
             return;
@@ -1683,6 +1952,10 @@ MainLayout {
                 return;
             mediaCapable = true;
             isFavorite = Browse.FavoritesModel.is_favorite_at(index);
+        } else if (owner === "favorite_systems") {
+            if (index >= Browse.FavoriteSystemsModel.count)
+                return;
+            systemId = Browse.FavoriteSystemsModel.system_id_at(index);
         } else if (owner === "recents") {
             if (index >= Browse.RecentsModel.count)
                 return;
@@ -1776,6 +2049,20 @@ MainLayout {
                 Browse.AlternateVersions.launch_at(altIndex);
         } else if (id === "launch_system") {
             Browse.SystemsModel.launch_at(targetIndex);
+        } else if (id === "launch_random_system") {
+            Browse.SystemsModel.launch_random_at(targetIndex);
+        } else if (id === "launch_random_category") {
+            const categoryName = Browse.CategoriesModel.category_at(targetIndex);
+            if (categoryName !== "") {
+                const systemIds = Browse.SystemsModel.system_ids_for_category(categoryName);
+                Browse.SystemsModel.launch_random_systems(systemIds);
+            }
+        } else if (id === "launch_random_favorite") {
+            Browse.FavoritesModel.launch_random();
+        } else if (id === "launch_random_favorite_system") {
+            const systemId = Browse.FavoriteSystemsModel.system_id_at(targetIndex);
+            if (systemId !== "")
+                Browse.FavoritesModel.launch_random_for_system(systemId);
         } else if (id === "index_system") {
             const systemId = Browse.SystemsModel.system_id_at(targetIndex);
             if (systemId !== "")
@@ -1898,60 +2185,44 @@ MainLayout {
             ScreenManager.popModal();
     }
 
-    // First-run modal lifecycle. Push exactly once per session, the
-    // moment the catalog resolves Ready and reports zero *indexed*
-    // systems (`CategoriesModel.loaded === true && indexed_count === 0`).
-    // We gate on `indexed_count`, not `count`: since Core's launchables
-    // feature, a device with no mediadb still returns launch-only virtual
-    // systems (non-empty `zapScript`) that land in the `Other` category,
-    // so `count`/`raw_count` are non-zero even when nothing is indexed.
-    // `indexed_count` ignores launchables, so it answers "are there
-    // indexed games to show?" — which is exactly the first-run question.
-    // The `loaded` gate is critical: the singleton's Default state has
-    // `indexed_count: 0` before the catalog fetch lands, so without it
-    // we'd fire the modal on cold launch before Core has answered. Gating
-    // on the catalog instead of MediaStatus.exists/seeded avoids the case
-    // where Core reports `database.exists: true` for an empty file.
-    function _maybeOpenFirstRunIndex(): void {
-        if (root._firstRunIndexShown)
-            return;
-        // Defer to the commercial-use notice. The notice's close handler
-        // calls back into here once acked, so chaining is automatic and
-        // we avoid stacking two modals at the same time.
-        if (!Browse.Notice.commercial_ack)
-            return;
-        // Never open while the Core-version warning is still on screen —
-        // `_coreVersionWarningShown` flips true when the warning *opens*, so
-        // without this guard a model signal arriving before the user
-        // dismisses it would stack the first-run modal on top.
-        if (root.coreVersionModalVisible)
-            return;
-        // Defer to the Core-version warning, which sits between the notice
-        // and this modal in the chain. Until that gate has resolved (shown
-        // or skipped, flipping `_coreVersionWarningShown`), hand off to it
-        // and let it call back here — so the two never stack and the
-        // warning always comes first.
-        if (!root._coreVersionWarningShown) {
-            root._maybeOpenCoreVersionWarning();
-            return;
-        }
-        if (Browse.AppStatus.connection_state !== 2)
-            return;
-        if (!Browse.CategoriesModel.loaded)
-            return;
-        if (Browse.CategoriesModel.indexed_count > 0)
-            return;
-        root._firstRunIndexShown = true;
-        root._requestModal(root.modalFirstRunIndex);
-        root.firstRunIndexModalVisible = true;
-        if (ScreenManager.topModal !== root.modalFirstRunIndex)
-            ScreenManager.pushModal(root.modalFirstRunIndex);
+    // First-run indexing is background work, not a navigation gate. Start once
+    // after both media status and the catalog are authoritative and the catalog
+    // reports no indexed systems. `indexed_count` deliberately ignores
+    // launch-only virtual systems, which can already make Hub non-empty.
+    function _shouldStartFirstRunIndex(connectionState: int, mediaStatusSeeded: bool, catalogLoaded: bool, indexedCount: int): bool {
+        return !root._firstRunIndexStarted && connectionState === 2 && mediaStatusSeeded && catalogLoaded && indexedCount === 0;
     }
 
-    function closeFirstRunIndexModal(): void {
-        root.firstRunIndexModalVisible = false;
-        if (ScreenManager.topModal === root.modalFirstRunIndex)
-            ScreenManager.popModal();
+    function _maybeStartFirstRunIndex(): void {
+        if (!root._shouldStartFirstRunIndex(Browse.AppStatus.connection_state, Browse.MediaStatus.seeded, Browse.CategoriesModel.loaded, Browse.CategoriesModel.indexed_count))
+            return;
+        root._firstRunIndexStarted = true;
+        if (!Browse.MediaStatus.indexing && !Browse.MediaStatus.optimizing)
+            Browse.MediaStatus.start_index();
+    }
+
+    function _catalogRefreshScreenActive(): bool {
+        return root.activeScreen === root.screenHub || root.activeScreen === root.screenSystems || root.activeScreen === root.screenFavoriteSystems;
+    }
+
+    function _refreshCatalogDuringIndex(): void {
+        if (root.activeScreen === root.screenFavoriteSystems)
+            Browse.FavoriteSystemsModel.retry();
+        else
+            Browse.CategoriesModel.refresh();
+    }
+
+    // Poll only while an index is actively discovering content and only on
+    // screens that display category/system membership. Completion still gets
+    // the Store's MEDIA_DB invalidation refetch, so this timer is progressive
+    // presentation rather than correctness machinery.
+    Timer {
+        id: catalogIndexRefreshTimer
+
+        interval: 5000
+        repeat: true
+        running: Browse.MediaStatus.indexing && root._catalogRefreshScreenActive()
+        onTriggered: root._refreshCatalogDuringIndex()
     }
 
     // Commercial-use first-run notice. Persisted ack lives in
@@ -1983,10 +2254,7 @@ MainLayout {
         root.commercialNoticeModalVisible = false;
         if (ScreenManager.topModal === root.modalCommercialNotice)
             ScreenManager.popModal();
-        // Now that the notice is dismissed, advance the first-run chain:
-        // commercial notice → Core-version warning → media-DB first run.
-        // Each gate early-returns until its own condition holds, so this
-        // is safe to call unconditionally.
+        // Now that the notice is dismissed, advance to the Core-version warning.
         root._maybeOpenCoreVersionWarning();
     }
 
@@ -1998,20 +2266,14 @@ MainLayout {
     // has answered; `core_version_supported` defaults true so we never
     // flash the warning pre-check.
     function _maybeOpenCoreVersionWarning(): void {
-        if (root._coreVersionWarningShown) {
-            // Already handled this session — make sure the next gate still
-            // runs so a re-entry from another trigger doesn't stall the chain.
-            root._maybeOpenFirstRunIndex();
+        if (root._coreVersionWarningShown)
             return;
-        }
         if (!Browse.Notice.commercial_ack)
             return;
         if (!Browse.AppStatus.core_version_checked)
             return;
         if (Browse.AppStatus.core_version_supported) {
-            // Version is fine — skip straight to the media-DB gate.
             root._coreVersionWarningShown = true;
-            root._maybeOpenFirstRunIndex();
             return;
         }
         root._coreVersionWarningShown = true;
@@ -2025,8 +2287,46 @@ MainLayout {
         root.coreVersionModalVisible = false;
         if (ScreenManager.topModal === root.modalCoreVersion)
             ScreenManager.popModal();
-        // Advance to the media-DB first-run check.
-        root._maybeOpenFirstRunIndex();
+    }
+
+    function openRandomFailedModal(): void {
+        root._requestModal(root.modalRandomFailed);
+        root.randomFailedModalVisible = true;
+        if (ScreenManager.topModal !== root.modalRandomFailed)
+            ScreenManager.pushModal(root.modalRandomFailed);
+    }
+
+    function closeRandomFailedModal(): void {
+        root.randomFailedModalVisible = false;
+        Browse.GamesModel.clear_random_error();
+        Browse.FavoritesModel.clear_random_error();
+        Browse.SystemsModel.clear_random_error();
+        if (ScreenManager.topModal === root.modalRandomFailed)
+            ScreenManager.popModal();
+    }
+
+    Connections {
+        target: Browse.GamesModel
+        function onRandom_errorChanged(): void {
+            if ((Browse.GamesModel.random_error ?? "") !== "")
+                root.openRandomFailedModal();
+        }
+    }
+
+    Connections {
+        target: Browse.FavoritesModel
+        function onRandom_errorChanged(): void {
+            if ((Browse.FavoritesModel.random_error ?? "") !== "")
+                root.openRandomFailedModal();
+        }
+    }
+
+    Connections {
+        target: Browse.SystemsModel
+        function onRandom_errorChanged(): void {
+            if ((Browse.SystemsModel.random_error ?? "") !== "")
+                root.openRandomFailedModal();
+        }
     }
 
     // Log-upload modal lifecycle. Triggered from the Settings "Upload
@@ -2100,11 +2400,9 @@ MainLayout {
     }
 
     // Open the page/list-scoped operations menu (West button), the "View"
-    // counterpart to North's item-scoped "Options". For now it holds a single
-    // entry, Go to..., kept pre-focused so the common path is a fixed
-    // West-then-Accept chord; future list ops (sort/filter/layout) append here.
-    // The facet fetch is kicked off here so the buckets are likely ready by the
-    // time the user advances into the grid.
+    // counterpart to North's item-scoped "Options". Go to... stays
+    // pre-focused so common path is fixed West-then-Accept chord. Letter
+    // index fetch starts here so buckets are likely ready when user opens rail.
     function openPageMenu(): void {
         Browse.GamesModel.load_letter_index();
         const entries = [
@@ -2113,7 +2411,110 @@ MainLayout {
                 "label": qsTr("Go to...")
             }
         ];
+        // Core path random is recursive, so folders containing only nested
+        // media remain valid scopes. Omit only when current browse is empty.
+        if (Browse.GamesModel.total_files > 0 || Browse.GamesModel.total_dirs > 0)
+            entries.push({
+                "id": "launch_random",
+                "label": qsTr("Random game")
+            });
+        // Level-local favorites projection: files of this folder filter
+        // to the favorite ones; directories stay for navigation.
+        entries.push({
+            "id": "games_filter",
+            "label": qsTr("Show: %1").arg(Browse.GamesModel.favorites_only ? qsTr("Favorites") : qsTr("All"))
+        });
         root.openListPickerModal(qsTr("View"), entries, "jump_letter", "page_menu");
+    }
+
+    // Games filter picker: the page-menu row announces the active state
+    // ("Show: All" / "Show: Favorites"); this picker presents the actual
+    // choice, preselected on what is active, mirroring the favorites
+    // screen's filter menu.
+    function openGamesFilterMenu(): void {
+        const entries = [
+            {
+                "id": "all",
+                "label": qsTr("All")
+            },
+            {
+                "id": "favorites",
+                "label": qsTr("Favorites")
+            }
+        ];
+        const active = Browse.GamesModel.favorites_only ? "favorites" : "all";
+        root.openListPickerModal(qsTr("Show"), entries, active, "games_filter_pick");
+    }
+
+    // Favorites View controls Core-backed ordering, random launch, and the
+    // grouping preference shared with Favorite Systems.
+    function openFavoritesPageMenu(): void {
+        const entries = [
+            {
+                "id": "favorites_sort",
+                "label": qsTr("Sort: %1").arg(root._favoritesSortLabel())
+            },
+            {
+                "id": "favorites_mode",
+                "label": qsTr("Group by: %1").arg(root._favoritesGroupingLabel())
+            },
+            {
+                "id": "launch_random_favorite",
+                "label": qsTr("Random favorite")
+            }
+        ];
+        root.openListPickerModal(qsTr("View"), entries, "favorites_sort", "page_menu_favorites");
+    }
+
+    function openFavoriteSystemsPageMenu(): void {
+        const entries = [
+            {
+                "id": "favorites_mode",
+                "label": qsTr("Group by: %1").arg(root._favoritesGroupingLabel())
+            }
+        ];
+        root.openListPickerModal(qsTr("View"), entries, "favorites_mode", "page_menu_favorite_systems");
+    }
+
+    function _favoritesGroupingLabel(): string {
+        return Browse.Settings.current_favorites_grouping === "system" ? qsTr("System") : qsTr("None");
+    }
+
+    function openFavoritesModeMenu(): void {
+        const entries = [
+            {
+                "id": "none",
+                "label": qsTr("None")
+            },
+            {
+                "id": "system",
+                "label": qsTr("System")
+            }
+        ];
+        root.openListPickerModal(qsTr("Group by"), entries, Browse.Settings.current_favorites_grouping, "favorites_mode_pick");
+    }
+
+    function _favoritesSortLabel(): string {
+        return Browse.FavoritesModel.sort_mode === "name" ? qsTr("A-Z") : qsTr("Default");
+    }
+
+    function openFavoritesSortMenu(): void {
+        // Same trap as the filter picker: ListPickerModal treats an empty id
+        // as "nothing pending" and never emits an accept for it, so the
+        // default row needs a real id mapped back on accept. Without this,
+        // choosing A-Z once left no way back to Core's order.
+        const entries = [
+            {
+                "id": root._favoritesSortDefault,
+                "label": qsTr("Default")
+            },
+            {
+                "id": "name",
+                "label": qsTr("A-Z")
+            }
+        ];
+        const active = Browse.FavoritesModel.sort_mode === "" ? root._favoritesSortDefault : Browse.FavoritesModel.sort_mode;
+        root.openListPickerModal(qsTr("Sort"), entries, active, "favorites_sort_pick");
     }
 
     // Re-parse the model's facet JSON into the live grid entries. Bound through
@@ -2163,8 +2564,6 @@ MainLayout {
     function stageSettingRestart(fieldId: string, selectedId: string): void {
         if (fieldId === "language")
             root._pendingLanguageSelection = selectedId;
-        else if (fieldId === "resolution")
-            root._pendingResolutionSelection = selectedId;
         else if (fieldId === "crtVideoStandard")
             root._pendingCrtStandardSelection = selectedId;
         root.openSettingNeedsRestartModal();
@@ -2177,7 +2576,6 @@ MainLayout {
 
     function cancelPendingRestart(): void {
         root._pendingLanguageSelection = "";
-        root._pendingResolutionSelection = "";
         root._pendingCrtStandardSelection = "";
         root._pendingCrtToggle = "";
         root.closeSettingNeedsRestartModal();
@@ -2199,16 +2597,12 @@ MainLayout {
             return;
         }
         const language = root._pendingLanguageSelection;
-        const resolution = root._pendingResolutionSelection;
         const crtStandard = root._pendingCrtStandardSelection;
         root._pendingLanguageSelection = "";
-        root._pendingResolutionSelection = "";
         root._pendingCrtStandardSelection = "";
         root.closeSettingNeedsRestartModal();
         if (language !== "")
             Browse.Settings.set_language(language);
-        if (resolution !== "")
-            Browse.Settings.set_resolution(resolution);
         if (crtStandard !== "") {
             Browse.CrtVideo.set_video_standard(crtStandard);
             // A standard change must respawn through Main_MiSTer (exit
@@ -2303,6 +2697,52 @@ MainLayout {
             root.closeListPickerModal();
             if (selectedId === "jump_letter")
                 root.openLetterJumpModal();
+            else if (selectedId === "launch_random")
+                Browse.GamesModel.launch_random();
+            else if (selectedId === "games_filter")
+                root.openGamesFilterMenu();
+            return;
+        }
+        if (fieldId === "games_filter_pick") {
+            root.closeListPickerModal();
+            const enabled = selectedId === "favorites";
+            Browse.GamesModel.apply_favorites_filter(enabled);
+            Browse.GamesState.favorites_filter = enabled;
+            return;
+        }
+        if (fieldId === "page_menu_favorites") {
+            root.closeListPickerModal();
+            if (selectedId === "favorites_sort")
+                root.openFavoritesSortMenu();
+            else if (selectedId === "launch_random_favorite")
+                Browse.FavoritesModel.launch_random();
+            else if (selectedId === "favorites_mode")
+                root.openFavoritesModeMenu();
+            return;
+        }
+        if (fieldId === "page_menu_favorite_systems") {
+            root.closeListPickerModal();
+            if (selectedId === "favorites_mode")
+                root.openFavoritesModeMenu();
+            return;
+        }
+        if (fieldId === "favorites_mode_pick") {
+            root.closeListPickerModal();
+            if (Browse.Settings.current_favorites_grouping === selectedId)
+                return;
+            Browse.Settings.set_favorites_grouping(selectedId);
+            if (selectedId === "system")
+                root._navigateToFavoriteSystems();
+            else
+                root._navigateToFavorites("");
+            return;
+        }
+        if (fieldId === "favorites_sort_pick") {
+            root.closeListPickerModal();
+            const mode = selectedId === root._favoritesSortDefault ? "" : selectedId;
+            Browse.FavoritesModel.set_sort_mode(mode);
+            if (!Browse.FavoritesModel.loading && root.favoritesScreen !== null)
+                root.favoritesScreen.restoreSelection();
             return;
         }
         if (fieldId === "system_launcher_pending")
@@ -2341,12 +2781,7 @@ MainLayout {
             Browse.Settings.set_system_logo_style(selectedId);
         else if (fieldId === "buttonLayout")
             Browse.Settings.set_button_layout(selectedId);
-        else if (fieldId === "resolution") {
-            root.closeListPickerModal();
-            if (selectedId !== Browse.Settings.current_resolution)
-                root.stageSettingRestart(fieldId, selectedId);
-            return;
-        } else if (fieldId === "screensaverTimeout")
+        else if (fieldId === "screensaverTimeout")
             Browse.Settings.set_screensaver_timeout(selectedId);
         else if (fieldId === "mediaImageType")
             Browse.Settings.set_media_image_type(selectedId);
@@ -2400,7 +2835,7 @@ MainLayout {
     Connections {
         target: Browse.AppStatus
         function onConnection_stateChanged(): void {
-            root._maybeOpenFirstRunIndex();
+            root._maybeStartFirstRunIndex();
             root._maybeCompleteBoot();
             root._maybeStartStartupRestore();
             root._maybeCompletePendingResumeLaunch();
@@ -2409,6 +2844,13 @@ MainLayout {
         // the edge that lets the chain advance past the version-warning gate.
         function onCore_version_checkedChanged(): void {
             root._maybeOpenCoreVersionWarning();
+        }
+    }
+
+    Connections {
+        target: Browse.MediaStatus
+        function onSeededChanged(): void {
+            root._maybeStartFirstRunIndex();
         }
     }
 
@@ -2436,20 +2878,23 @@ MainLayout {
     Connections {
         target: Browse.CategoriesModel
         function onLoadedChanged(): void {
-            root._maybeOpenFirstRunIndex();
+            root._maybeStartFirstRunIndex();
             root._maybeStartStartupRestore();
             root._maybeContinueOptimisticTransitions();
         }
         function onCountChanged(): void {
-            root._maybeOpenFirstRunIndex();
+            root._maybeStartFirstRunIndex();
             root._maybeStartStartupRestore();
             root._maybeContinueOptimisticTransitions();
         }
+        function onIndexed_countChanged(): void {
+            root._maybeStartFirstRunIndex();
+        }
     }
 
-    onCloseFirstRunIndexRequested: root.closeFirstRunIndexModal()
     onCloseCommercialNoticeRequested: root.closeCommercialNoticeModal()
     onCloseCoreVersionRequested: root.closeCoreVersionModal()
+    onCloseRandomFailedRequested: root.closeRandomFailedModal()
 
     function beginCardWrite(owner: string): void {
         if (owner === "systems")
@@ -2527,6 +2972,8 @@ MainLayout {
             root._startupTrace("input/qml drop", "reason=pending-transition", "action=" + action, "pendingTransition=" + root.pendingTransition, "transitionCueVisible=" + root.transitionCueVisible);
             return;
         }
+        if (!ScreenManager.hasModal)
+            root._beginTransitionTiming(action);
         if (ScreenManager.hasModal) {
             // Single-consumer dispatch. When a second modal lands
             // (action_error variant for game launch / settings reset
@@ -2547,15 +2994,16 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalContextMenu) {
                 if (root.contextMenu !== null)
                     root.contextMenu.handleAction(action);
-            } else if (ScreenManager.topModal === root.modalFirstRunIndex) {
-                if (root.firstRunIndexModal !== null)
-                    root.firstRunIndexModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalCommercialNotice) {
                 if (root.commercialNoticeModal !== null)
                     root.commercialNoticeModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalCoreVersion) {
                 if (root.coreVersionModal !== null)
                     root.coreVersionModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalRandomFailed) {
+                // Accept or Back both dismiss one-button notice.
+                if (action === "accept" || action === "cancel")
+                    root.closeRandomFailedModal();
             } else if (ScreenManager.topModal === root.modalLogUpload) {
                 if (root.logUploadModal !== null)
                     root.logUploadModal.handleAction(action);
@@ -2589,6 +3037,9 @@ MainLayout {
         } else if (root.activeScreen === root.screenFavorites) {
             if (root.favoritesScreen !== null)
                 root.favoritesScreen.handleAction(action);
+        } else if (root.activeScreen === root.screenFavoriteSystems) {
+            if (root.favoriteSystemsScreen !== null)
+                root.favoriteSystemsScreen.handleAction(action);
         } else if (root.activeScreen === root.screenRecents) {
             if (root.recentsScreen !== null)
                 root.recentsScreen.handleAction(action);
@@ -2618,6 +3069,10 @@ MainLayout {
     readonly property int _repeatInitialMs: 350
     readonly property int _repeatTickMs: 90
     readonly property int _rapidNavigationQuietMs: 260
+    // Tap-only entry is deliberately difficult: normal alternating navigation
+    // must not suspend covers or show the letter overlay. A held direction
+    // bypasses this threshold on its first controlled repeat tick.
+    readonly property int _rapidNavigationTapThreshold: 4
     // Window for collapsing a second delivery of the same key into one
     // press — hardware contact bounce or input-stack double send. Far
     // below _repeatInitialMs and the repeat tick so it never touches
@@ -2690,6 +3145,24 @@ MainLayout {
     }
 
     Binding {
+        target: root.favoriteSystemsScreen
+        property: "detailRapidScrollActive"
+        value: root.activeScreen === root.screenFavoriteSystems && root.rapidNavigationActive
+    }
+
+    Binding {
+        target: root.favoriteSystemsScreen
+        property: "detailRapidIndicatorActive"
+        value: root.activeScreen === root.screenFavoriteSystems && root.rapidNavigationIndicatorActive
+    }
+
+    Binding {
+        target: root.favoriteSystemsScreen
+        property: "detailRapidScrollAction"
+        value: root.activeScreen === root.screenFavoriteSystems ? root.rapidNavigationAction : ""
+    }
+
+    Binding {
         target: root.recentsScreen
         property: "detailRapidScrollActive"
         value: root.activeScreen === root.screenRecents && root.rapidNavigationActive
@@ -2717,10 +3190,17 @@ MainLayout {
         const sameBurst = rapidNavigationQuiet.running && root.rapidNavigationAction === action;
         root._rapidNavigationTapCount = sameBurst ? root._rapidNavigationTapCount + 1 : 1;
         root.rapidNavigationAction = action;
-        if (forceActive || rapidNavigationQuiet.running)
+        // Direction changes cancel tap-driven rapid mode immediately. Only a
+        // sustained hold (forceActive from repeat timer) or four consecutive
+        // same-direction taps inside the quiet window can enter it.
+        if (!sameBurst && !forceActive) {
+            root.rapidNavigationActive = false;
+            root.rapidNavigationIndicatorActive = false;
+        }
+        if (forceActive || root._rapidNavigationTapCount >= root._rapidNavigationTapThreshold) {
             root.rapidNavigationActive = true;
-        if (forceActive || root._rapidNavigationTapCount >= 3)
             root.rapidNavigationIndicatorActive = true;
+        }
         rapidNavigationQuiet.restart();
     }
 
@@ -2748,6 +3228,24 @@ MainLayout {
     // arms the initial-delay timer. Pulled out of handleKey so unit
     // tests can drive the repeat state machine without also routing
     // through handleAction → real screens. No-op for non-dpad actions.
+    function _prepareRapidNavigationSnapshot(action: string): void {
+        // Keep the pre-activation capture stable once rapid mode is showing;
+        // recapturing then would grab the intentionally hidden live cell layer.
+        if (root.rapidNavigationActive || !root._isRapidNavigationAction(action))
+            return;
+        let screen = null;
+        if (root.activeScreen === root.screenGames)
+            screen = root.gamesScreen;
+        else if (root.activeScreen === root.screenFavorites)
+            screen = root.favoritesScreen;
+        else if (root.activeScreen === root.screenFavoriteSystems)
+            screen = root.favoriteSystemsScreen;
+        else if (root.activeScreen === root.screenRecents)
+            screen = root.recentsScreen;
+        if (screen !== null)
+            screen.prepareRapidSnapshot();
+    }
+
     function _armRepeat(action: string, key: int): void {
         if (!root._isRepeatableAction(action))
             return;
@@ -2755,6 +3253,7 @@ MainLayout {
         root._heldAction = action;
         root._heldKey = key;
         repeatTick.stop();
+        root._prepareRapidNavigationSnapshot(action);
         repeatInitial.restart();
     }
 
@@ -3028,6 +3527,7 @@ MainLayout {
                 case "resume":
                     return qsTr("Loading game…");
                 case "favorites":
+                case "favorite_systems":
                     return qsTr("Loading favorites…");
                 case "recents":
                     return qsTr("Loading recently played…");
@@ -3038,80 +3538,18 @@ MainLayout {
                 }
             }
         }
-
-        // Hidden Image pool driven by `_prefetchSystemCovers`. Each Image
-        // renders the tinted SVG logo off-screen at the same sourceSize as
-        // the visible Tile so they share one QPixmapCache entry. When every
-        // Image signals Ready or Error, `_systemCoverPrefetchPending` reaches
-        // zero and `_completePrefetchSystemCovers` fires the transition
-        // callback. `_systemCoverPrefetchUrls` is reset to [] when the gate
-        // resolves, which destroys the delegates immediately. No background
-        // fill is added — this Item is already a transparent overlay.
-        Repeater {
-            model: root._systemCoverPrefetchUrls
-            delegate: Image {
-                required property url modelData
-                source: modelData
-                sourceSize.width: 256
-                asynchronous: true
-                visible: false
-                width: 0
-                height: 0
-                onStatusChanged: {
-                    if (status !== Image.Ready && status !== Image.Error)
-                        return;
-                    root._systemCoverPrefetchPending = Math.max(0, root._systemCoverPrefetchPending - 1);
-                    if (root._systemCoverPrefetchPending <= 0)
-                        root._completePrefetchSystemCovers();
-                }
-            }
-        }
     }
 
-    // System-cover prefetch gate. Holds the "Loading systems…" transition
-    // overlay until the first visible page of tinted SVG logos has decoded
-    // (or the cap timer fires), then calls cb(). This ensures the Systems
-    // grid reveals fully painted instead of showing name-text placeholders
-    // that pop into logos one-by-one. Fast/re-entry navigations complete
-    // within the 300ms DelayedLoadingIndicator threshold so no cue appears.
-    // The hidden prefetch Repeater lives in the transition-cue Item above;
-    // it watches `_systemCoverPrefetchUrls` and reports back via
-    // `_systemCoverPrefetchPending`.
-    function _prefetchSystemCovers(cb): void {
-        const pageSize = Sizing.visibleCovers * 4;
-        const count = Math.min(Browse.SystemsModel.count, pageSize);
-        if (count === 0) {
-            cb();
-            return;
-        }
-        const urls = [];
-        for (let i = 0; i < count; ++i) {
-            const key = Browse.SystemsModel.cover_key_at(i);
-            // Warm both the unfocused and focused tint ramps up front so the
-            // first d-pad move never triggers an async SVG re-render.
-            const unfocusedUrl = Resources.coverUrl(key, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow);
-            urls.push(unfocusedUrl);
-            const focusedUrl = Resources.coverUrl(key, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow);
-            // custom-image/ keys ignore tint params (served as-is), so both
-            // URLs are identical — skip the duplicate to avoid redundant fetches.
-            if (focusedUrl !== unfocusedUrl) {
-                urls.push(focusedUrl);
+    Timer {
+        id: systemsScreenWarmMountTimer
+        interval: 250
+        repeat: false
+        onTriggered: {
+            if (!root.systemsScreenRequested) {
+                console.debug("responsiveness systems screen warm mount start");
+                root.systemsScreenRequested = true;
             }
         }
-        root._systemCoverPrefetchCallback = cb;
-        root._systemCoverPrefetchPending = urls.length;
-        root._systemCoverPrefetchUrls = urls;
-        systemCoverPrefetchTimer.restart();
-    }
-
-    function _completePrefetchSystemCovers(): void {
-        systemCoverPrefetchTimer.stop();
-        root._systemCoverPrefetchUrls = [];
-        root._systemCoverPrefetchPending = 0;
-        const cb = root._systemCoverPrefetchCallback;
-        root._systemCoverPrefetchCallback = null;
-        if (cb !== null)
-            cb();
     }
 
     Timer {
@@ -3143,6 +3581,13 @@ MainLayout {
     }
 
     Timer {
+        id: favoriteSystemsTransitionTimer
+        interval: 50
+        repeat: false
+        onTriggered: root._startFavoriteSystemsTransitionLoad()
+    }
+
+    Timer {
         id: recentsTransitionTimer
         interval: 50
         repeat: false
@@ -3161,19 +3606,6 @@ MainLayout {
         interval: root.loadingIndicatorDelayMs + 50
         repeat: false
         onTriggered: root._completeFolderBackTransition()
-    }
-
-    // Safety cap for the system-cover prefetch gate. If some logos haven't
-    // decoded by this deadline they paint in after the screen reveals,
-    // identical to the Games cover-gate timeout behavior. Cap = 300ms
-    // (loadingIndicatorDelayMs) — logos that land faster than the
-    // DelayedLoadingIndicator threshold complete the transition silently;
-    // logos that are slower get a brief "Loading systems…" cue then pop in.
-    Timer {
-        id: systemCoverPrefetchTimer
-        interval: root.loadingIndicatorDelayMs
-        repeat: false
-        onTriggered: root._completePrefetchSystemCovers()
     }
 
     // Deferred set_category trigger. When the existing model has rows,

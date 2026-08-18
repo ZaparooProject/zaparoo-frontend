@@ -10,7 +10,8 @@
 // Slots:
 //   left   — total-count badge (visible when `totalText !== ""`)
 //   center — screen title (category / system name)
-//   right  — "Page N / M" counter (visible when `totalPages > 1`)
+//   right  — "Page N / M" for bounded results, or "Page N" when final
+//            page count is unknown
 
 import QtQuick
 import Zaparoo.Theme
@@ -22,8 +23,13 @@ Item {
     property string title: ""
     property int currentPage: 0 // 0-indexed; displayed as N+1
     property int totalPages: 1
+    // False for cursor chains whose final page is unknown until exhaustion.
+    // Such screens show only "Page N" rather than a denominator that grows as
+    // more rows arrive.
+    property bool pageTotalKnown: true
     property string totalText: "" // formatted; empty hides the slot
-    property string rightTextOverride: "" // formatted; non-empty replaces Page N / M
+    property string rightTextOverride: "" // formatted; non-empty replaces page text
+    readonly property string pageText: status.rightTextOverride !== "" ? status.rightTextOverride : (status.pageTotalKnown ? qsTr("Page %1 / %2").arg(status.currentPage + 1).arg(status.totalPages) : qsTr("Page %1").arg(status.currentPage + 1))
     property int slotMargin: Sizing.pctW(5)
     readonly property int _slotWidth: Sizing.px(status.width / 3)
     readonly property int _textMeasureSlack: Theme.crtNativePath ? 0 : 2
@@ -81,14 +87,14 @@ Item {
     Text {
         id: pageCounter
 
-        visible: status.rightTextOverride !== "" || status.totalPages > 1
+        visible: status.rightTextOverride !== "" || !status.pageTotalKnown || status.totalPages > 1
         anchors.right: parent.right
         anchors.rightMargin: status.slotMargin
         anchors.bottom: titleText.bottom
         width: status._slotWidth - status.slotMargin
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight
-        text: status.rightTextOverride !== "" ? status.rightTextOverride : qsTr("Page %1 / %2").arg(status.currentPage + 1).arg(status.totalPages)
+        text: status.pageText
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontSize(2.9)
         color: Theme.textPrimary

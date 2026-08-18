@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-use crate::models::{with_hidden_browse_prefs_read, with_persist_read};
+use crate::models::{global_store, with_hidden_browse_prefs_read, with_persist_read};
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use std::pin::Pin;
@@ -38,17 +38,14 @@ pub struct CategoriesModelRust {
     /// from `count` (visible categories) and `raw_count` (all categories):
     /// Core's launchables surface as systems under the `Other` category
     /// even with no media-db index, so `count`/`raw_count` are non-zero on
-    /// a fresh device. `indexed_count` ignores launchables, so the first-
-    /// run scan prompt in `Main.qml` can tell "no games indexed yet" apart
-    /// from "only launchables present".
+    /// a fresh device. `indexed_count` ignores launchables, so background
+    /// first-run indexing can tell "no games indexed yet" apart from "only
+    /// launchables present".
     indexed_count: i32,
-    // Sticky-true flag: flips to true the first time the catalog
-    // resolves Ready, never resets. The first-run modal in
-    // `Main.qml` gates on `loaded && count === 0` so it only fires
-    // after we've seen an authoritative empty catalog — without
-    // this we'd misread the initial Default state (count=0,
-    // pre-fetch) as "no systems" and fire the modal on every cold
-    // launch before Core has answered.
+    // Sticky-true flag: flips to true the first time the catalog resolves
+    // Ready, never resets. Main's background first-run index gate waits for
+    // `loaded && indexed_count === 0`; otherwise the default pre-fetch zero
+    // state would start indexing before Core answered.
     loaded: bool,
     error_message: QString,
 }
@@ -96,6 +93,12 @@ pub mod ffi {
         /// reflects new visibility without waiting for a catalog refetch.
         #[qinvokable]
         fn reproject(self: Pin<&mut CategoriesModel>);
+
+        /// Force the shared catalog endpoint to refetch. SystemsModel uses the
+        /// same resource, so one request refreshes both Hub categories and the
+        /// active Systems grid.
+        #[qinvokable]
+        fn refresh(self: Pin<&mut CategoriesModel>);
 
         #[inherit]
         #[cxx_name = "beginResetModel"]
@@ -294,6 +297,10 @@ impl ffi::CategoriesModel {
 
     fn reproject(self: Pin<&mut Self>) {
         reproject_inner(self);
+    }
+
+    fn refresh(self: Pin<&mut Self>) {
+        global_store().subscribe::<CatalogEndpoint>(()).refetch();
     }
 }
 

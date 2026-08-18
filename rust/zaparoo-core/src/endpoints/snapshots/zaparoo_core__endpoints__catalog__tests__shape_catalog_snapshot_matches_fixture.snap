@@ -1,6 +1,6 @@
 ---
 source: zaparoo-core/src/endpoints/catalog.rs
-assertion_line: 140
+assertion_line: 194
 expression: shape_catalog(systems)
 ---
 CatalogData {
@@ -11,6 +11,9 @@ CatalogData {
             category: "Handhelds",
             release_date: None,
             manufacturer: None,
+            media_count: Some(
+                1,
+            ),
             zap_script: "",
         },
         SystemInfo {
@@ -19,6 +22,9 @@ CatalogData {
             category: "arcade",
             release_date: None,
             manufacturer: None,
+            media_count: Some(
+                1,
+            ),
             zap_script: "",
         },
         SystemInfo {
@@ -27,6 +33,9 @@ CatalogData {
             category: "Consoles",
             release_date: None,
             manufacturer: None,
+            media_count: Some(
+                1,
+            ),
             zap_script: "",
         },
         SystemInfo {
@@ -35,6 +44,9 @@ CatalogData {
             category: "",
             release_date: None,
             manufacturer: None,
+            media_count: Some(
+                1,
+            ),
             zap_script: "",
         },
         SystemInfo {
@@ -43,6 +55,9 @@ CatalogData {
             category: "Consoles",
             release_date: None,
             manufacturer: None,
+            media_count: Some(
+                1,
+            ),
             zap_script: "",
         },
     ],

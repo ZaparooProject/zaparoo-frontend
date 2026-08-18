@@ -376,12 +376,10 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
 
     // CRT path always renders to one of the native writer's mode
     // geometries (352x240 NTSC, 352x288 PAL, 720x480 480i), selected by
-    // the persisted video standard. User-configured [video] dimensions
-    // still apply to the normal MiSTer path, but `--crt` overrides them
-    // so startup `vmode`, the desktop preview canvas, and the writer's
-    // fb0 validation all agree. frontend.toml is the durable source for
-    // the standard and offsets (state.toml lives on tmpfs on MiSTer and
-    // mirrors it).
+    // the persisted video standard. Digital MiSTer ignores user-configured
+    // [video] dimensions and resolves an automatic framebuffer size below.
+    // frontend.toml remains the durable source for CRT standard and offsets
+    // (state.toml lives on tmpfs on MiSTer and mirrors it).
     if crt_native_path_forced {
         let standard = zaparoo_core::config::normalize_crt_video_standard(
             config.settings.crt_video_standard.as_deref().unwrap_or(""),
@@ -396,6 +394,7 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
         let _ = CRT_H_OFFSET.set(h_offset);
         let _ = CRT_V_OFFSET.set(v_offset);
     }
+    mister_runtime::resolve_video_size(&mut config, crt_native_path_forced);
 
     // Cache the language override so `zaparoo_rust_language_code` (called
     // from main.cpp before the QML engine loads) can return it without

@@ -19,13 +19,18 @@ import QtQuick
 import Zaparoo.Browse as Browse
 import Zaparoo.Theme
 
-// Software-rendering safe status pill. Connection states keep the compact
-// text-only treatment; active media work switches to a fixed-width progress
-// pill with a tiny local spinner and clipped inverted foreground over the
-// fill. Only this small item repaints while the spinner advances.
+// Software-rendering safe status pill. Every state shares one responsive
+// minimum width so connection and media labels keep a stable, readable HUD
+// footprint. Content can grow beyond that minimum for long translations;
+// active media work adds a tiny local spinner and clipped inverted foreground
+// over the fill. Only this small item repaints while the spinner advances.
 Item {
     id: pill
+    objectName: "coreStatusPill"
     property bool mediaActivityEnabled: false
+    // Width available between the logo and right header edge. Zero means no
+    // external cap (useful while HeaderBar geometry is still settling).
+    property int maximumWidth: 0
 
     Component.onCompleted: console.debug("startup/qml component CoreStatusPill completed")
 
@@ -96,16 +101,29 @@ Item {
     // Border colour leans on the same convention as the old connection
     // strip: warmer accent for error-class link states, muted otherwise.
     readonly property bool _isError: Browse.AppStatus.link_state === pill._linkUnreachable || Browse.AppStatus.connection_state === pill._connError
-    readonly property int _mediaWidth: Theme.crtNativePath ? Sizing.pctH(42) : Math.min(Math.max(Sizing.pctH(28), Sizing.pctW(18)), Sizing.pctH(30))
+    // One width contract for every status. Connection and media states must
+    // keep the same responsive footprint instead of collapsing to the current
+    // glyph run. Long translated labels can still expand up to HeaderBar's
+    // available-width cap.
+    readonly property int _minimumWidth: Theme.crtNativePath ? Sizing.pctH(42) : Math.min(Math.max(Sizing.pctH(28), Sizing.pctW(18)), Sizing.pctH(30))
     readonly property int _textMargin: Sizing.pctW(1.2)
+    readonly property int _textMeasureSlack: Sizing.stroke(2)
     readonly property int _spinnerSize: Math.max(Sizing.pctH(1.8), Sizing.fontSize(2.2))
     readonly property int _spinnerDotSize: Math.max(Sizing.stroke(2), Sizing.px(pill._spinnerSize / 3))
     readonly property int _spinnerGap: Sizing.pctW(0.8)
+    readonly property int _labelNaturalWidth: Math.ceil(Math.max(labelMetrics.advanceWidth, labelMetrics.boundingRect.x + labelMetrics.boundingRect.width) - Math.min(0, labelMetrics.boundingRect.x))
+    readonly property int _spinnerReservedWidth: pill._spinnerActive ? pill._spinnerSize + pill._spinnerGap : 0
+    readonly property int _naturalWidth: pill._labelNaturalWidth + 2 * pill._textMargin + pill._spinnerReservedWidth + pill._textMeasureSlack
+    readonly property int _desiredWidth: Math.max(pill._minimumWidth, pill._naturalWidth)
     property int _spinnerFrame: 0
 
     visible: pill._label !== ""
     height: pill.visible ? Sizing.fontSize(3.4) : 0
-    width: pill.visible ? (pill._isMediaActivity ? pill._mediaWidth : Sizing.px(labelMetrics.implicitWidth + Sizing.pctW(2.4))) : 0
+    width: pill.visible ? pill._boundedWidth(pill._desiredWidth) : 0
+
+    function _boundedWidth(desired: int): int {
+        return pill.maximumWidth > 0 ? Math.min(desired, pill.maximumWidth) : desired;
+    }
 
     function _spinnerDotX(index: int, size: int): int {
         if (index === 1)
@@ -136,9 +154,9 @@ Item {
         onTriggered: pill._spinnerFrame = (pill._spinnerFrame + 1) % 4
     }
 
-    Text {
+    TextMetrics {
         id: labelMetrics
-        visible: false
+
         text: pill._label
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontSize(2.2)

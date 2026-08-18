@@ -234,6 +234,7 @@ void TintedSvgImageResponse::run()
     if (!QFile::exists(fullResourcePath))
     {
         m_error = QStringLiteral("missing tinted-svg resource");
+        qWarning("tinted-svg provider: missing path=%s", qUtf8Printable(resourcePath));
         emit finished();
         return;
     }

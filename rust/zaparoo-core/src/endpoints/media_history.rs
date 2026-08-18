@@ -53,6 +53,7 @@ impl Endpoint for MediaHistoryEndpoint {
                     limit: Some(args.limit),
                     cursor: None,
                     systems: args.systems,
+                    distinct_media: Some(true),
                 })
                 .await
         })

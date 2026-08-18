@@ -34,17 +34,21 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::{c_char, c_void};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
 use tokio::runtime::Handle;
-use tokio::sync::{broadcast, Notify};
+use tokio::sync::{broadcast, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard, Notify};
 use tracing::{debug, info, warn};
 
-use zaparoo_core::media_types::{MediaImageParams, MediaImageResult};
+use zaparoo_core::client::ClientError;
+use zaparoo_core::media_types::{
+    MediaImageParams, MediaImageResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+};
+use zaparoo_core::runtime;
 use zaparoo_core::store::Store;
 
 /// Field separator used inside the encoded key. Unit Separator (US,
@@ -68,6 +72,10 @@ const NEGATIVE_MEMO_CAP: usize = 4096;
 /// tiles rather than the ~110 full-resolution SNES covers that fit at
 /// 64 MiB.
 const CACHE_CAP_BYTES: usize = 128 * 1024 * 1024;
+/// Core's `localPath` response is a resized thumbnail, never an arbitrary
+/// source image. Bound one file well below total cache capacity so a corrupt,
+/// replaced, or remote-host path cannot allocate `MiSTer`'s remaining RAM.
+const MAX_LOCAL_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 
 /// Maximum retries for a single key after a transient fetch failure
 /// (RPC error, base64 decode error). Generous enough to ride through
@@ -85,6 +93,38 @@ const MAX_FETCH_ATTEMPTS: u8 = 3;
 /// logs show stalls, resets, or media.image rate-limit errors, tune
 /// this before trying any broader queue changes.
 const FETCH_DRIVER_WORKERS: usize = 2;
+
+/// Set after a connected older Core explicitly rejects the additive delivery
+/// parameter. The frontend then stays inline for the process lifetime instead
+/// of doubling every cover request with a known-unsupported probe.
+static LOCAL_PATH_REQUESTS_DISABLED: AtomicBool = AtomicBool::new(false);
+/// Set after Core accepts one local-path request. Before confirmation, workers
+/// share a gate so only one can probe the additive delivery parameter.
+static LOCAL_PATH_REQUESTS_CONFIRMED: AtomicBool = AtomicBool::new(false);
+static LOCAL_PATH_CAPABILITY_PROBE: AsyncMutex<()> = AsyncMutex::const_new(());
+
+enum LocalPathRequestPermit {
+    Inline,
+    Request(Option<AsyncMutexGuard<'static, ()>>),
+}
+
+async fn acquire_local_path_request_permit() -> LocalPathRequestPermit {
+    if LOCAL_PATH_REQUESTS_DISABLED.load(Ordering::Acquire) {
+        return LocalPathRequestPermit::Inline;
+    }
+    if LOCAL_PATH_REQUESTS_CONFIRMED.load(Ordering::Acquire) {
+        return LocalPathRequestPermit::Request(None);
+    }
+
+    let probe = LOCAL_PATH_CAPABILITY_PROBE.lock().await;
+    if LOCAL_PATH_REQUESTS_DISABLED.load(Ordering::Acquire) {
+        LocalPathRequestPermit::Inline
+    } else if LOCAL_PATH_REQUESTS_CONFIRMED.load(Ordering::Acquire) {
+        LocalPathRequestPermit::Request(None)
+    } else {
+        LocalPathRequestPermit::Request(Some(probe))
+    }
+}
 
 /// Hard cap on pending enqueues in the fetch queue. Sized for a few
 /// dense visual pages (current, lookahead, previous) plus margin, so
@@ -877,8 +917,8 @@ impl MediaImageCache {
     }
 
     /// Drop queued-but-not-in-flight cover requests. Cached bytes,
-    /// negative memos, and the single request currently being fetched
-    /// stay untouched. Drained keys leave `pending` so final-page
+    /// negative memos, and requests currently being fetched stay untouched.
+    /// Drained keys leave `pending` so final-page
     /// prefetch after rapid navigation can re-enqueue them.
     pub fn clear_pending_requests(&self) {
         let drained = self.drain_queue();
@@ -1320,9 +1360,203 @@ fn fetch_outcome_label(outcome: &FetchOutcome) -> &'static str {
     }
 }
 
-/// Fetch one media image with one `media.image` JSON-RPC call. Core no
-/// longer accepts batched `items`, so queue fan-out happens entirely in
-/// this single-flight driver.
+struct FetchedMediaImage {
+    image: MediaImageResult,
+    local_bytes: Option<Vec<u8>>,
+    rpc_duration: Duration,
+    path_read_duration: Duration,
+}
+
+fn should_request_local_path(max_size: u32) -> bool {
+    local_path_request_allowed(
+        max_size,
+        runtime::current().is_mister(),
+        crate::models::core_is_local(),
+        LOCAL_PATH_REQUESTS_DISABLED.load(Ordering::Acquire),
+    )
+}
+
+fn local_path_request_allowed(
+    max_size: u32,
+    frontend_is_mister: bool,
+    core_is_local: bool,
+    disabled: bool,
+) -> bool {
+    max_size > 0 && frontend_is_mister && core_is_local && !disabled
+}
+
+fn is_unsupported_local_path_error(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    message.contains("delivery")
+        && (message.contains("unknown")
+            || message.contains("unsupported")
+            || message.contains("invalid params"))
+}
+
+async fn read_local_image(path: String) -> Result<Vec<u8>, String> {
+    match tokio::task::spawn_blocking(move || read_local_image_file(&path, MAX_LOCAL_IMAGE_BYTES))
+        .await
+    {
+        Ok(result) => result,
+        Err(error) => Err(format!("blocking thumbnail read failed: {error}")),
+    }
+}
+
+fn read_local_image_file(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+
+    let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("thumbnail path is not a regular file".to_string());
+    }
+    let length = usize::try_from(metadata.len())
+        .map_err(|_| "thumbnail file size does not fit memory limits".to_string())?;
+    if length == 0 {
+        return Err("thumbnail file was empty".to_string());
+    }
+    if length > max_bytes {
+        return Err(format!(
+            "thumbnail file exceeds {max_bytes}-byte read limit"
+        ));
+    }
+
+    let mut bytes = Vec::with_capacity(length);
+    file.take(max_bytes.saturating_add(1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.is_empty() {
+        return Err("thumbnail file was empty".to_string());
+    }
+    if bytes.len() > max_bytes {
+        return Err(format!(
+            "thumbnail file exceeds {max_bytes}-byte read limit"
+        ));
+    }
+    Ok(bytes)
+}
+
+fn inline_fallback_params(mut params: MediaImageParams) -> MediaImageParams {
+    // Omit the additive field entirely. A legacy Core that rejected
+    // `delivery: "localPath"` rejects `delivery: "inline"` too.
+    params.delivery = None;
+    params
+}
+
+async fn fetch_inline_media_image(
+    store: &Arc<Store>,
+    params: MediaImageParams,
+) -> (Result<MediaImageResult, ClientError>, Duration) {
+    let started = Instant::now();
+    let result = store
+        .client()
+        .media_image(inline_fallback_params(params))
+        .await;
+    (result, started.elapsed())
+}
+
+async fn fetch_media_image_payload(
+    store: &Arc<Store>,
+    key: &MediaKey,
+    mut params: MediaImageParams,
+    request_local_path: bool,
+) -> Result<FetchedMediaImage, ClientError> {
+    let (request_local_path, probe_guard) = if request_local_path {
+        match acquire_local_path_request_permit().await {
+            LocalPathRequestPermit::Inline => (false, None),
+            LocalPathRequestPermit::Request(probe) => (true, probe),
+        }
+    } else {
+        (false, None)
+    };
+    if request_local_path {
+        params.delivery = Some(MEDIA_IMAGE_DELIVERY_LOCAL_PATH.to_string());
+    }
+
+    let rpc_started = Instant::now();
+    let first = store.client().media_image(params.clone()).await;
+    let mut rpc_duration = rpc_started.elapsed();
+    let mut path_read_duration = Duration::ZERO;
+
+    let image = match first {
+        Ok(image) => {
+            if probe_guard.is_some() {
+                LOCAL_PATH_REQUESTS_CONFIRMED.store(true, Ordering::Release);
+            }
+            drop(probe_guard);
+            image
+        }
+        Err(error) if request_local_path && is_unsupported_local_path_error(&error.message) => {
+            // Publish rejection before releasing the probe gate so every
+            // waiting worker switches directly to legacy inline delivery.
+            LOCAL_PATH_REQUESTS_DISABLED.store(true, Ordering::Release);
+            drop(probe_guard);
+            warn!(
+                system_id = %key.system_id,
+                path = %key.path,
+                "media_image_cache: Core rejected local-path delivery; using inline for this session"
+            );
+            let (fallback, fallback_duration) =
+                fetch_inline_media_image(store, params.clone()).await;
+            rpc_duration += fallback_duration;
+            fallback?
+        }
+        Err(error) => {
+            drop(probe_guard);
+            return Err(error);
+        }
+    };
+
+    if image.delivery != MEDIA_IMAGE_DELIVERY_LOCAL_PATH {
+        return Ok(FetchedMediaImage {
+            image,
+            local_bytes: None,
+            rpc_duration,
+            path_read_duration,
+        });
+    }
+
+    let path = image.local_path.clone().filter(|path| !path.is_empty());
+    if let Some(path) = path {
+        let read_started = Instant::now();
+        let read_result = read_local_image(path.clone()).await;
+        path_read_duration = read_started.elapsed();
+        match read_result {
+            Ok(bytes) => {
+                return Ok(FetchedMediaImage {
+                    image,
+                    local_bytes: Some(bytes),
+                    rpc_duration,
+                    path_read_duration,
+                });
+            }
+            Err(error) => warn!(
+                system_id = %key.system_id,
+                media_path = %key.path,
+                local_path = %path,
+                "media_image_cache: local thumbnail read failed, retrying inline: {error}"
+            ),
+        }
+    } else {
+        warn!(
+            system_id = %key.system_id,
+            path = %key.path,
+            "media_image_cache: local-path response omitted localPath, retrying inline"
+        );
+    }
+
+    let (fallback, fallback_duration) = fetch_inline_media_image(store, params).await;
+    rpc_duration += fallback_duration;
+    Ok(FetchedMediaImage {
+        image: fallback?,
+        local_bytes: None,
+        rpc_duration,
+        path_read_duration,
+    })
+}
+
+/// Fetch one media image. Queue fan-out happens entirely in this driver;
+/// local-path read failures may issue one documented inline fallback request.
 async fn fetch_one(
     store: &Arc<Store>,
     state: &Arc<RwLock<CacheState>>,
@@ -1357,6 +1591,7 @@ async fn fetch_one(
     if max_size > 0 {
         params.max_size = Some(max_size);
     }
+    let request_local_path = should_request_local_path(max_size);
     debug!(
         system_id = %key.system_id,
         path = %key.path,
@@ -1365,20 +1600,35 @@ async fn fetch_one(
         policy = ?entry.no_image_policy,
         page_size = entry.page_size,
         max_size,
+        request_local_path,
         "media_image_cache: media.image request"
     );
     let fetch_started = Instant::now();
-    let result = store.client().media_image(params).await;
+    let result = fetch_media_image_payload(store, &key, params, request_local_path).await;
     let fetch_duration = fetch_started.elapsed();
-    let (outcome, decode_duration) = match result {
-        Ok(image) => classify_media_image_result(&key, &image),
+    let (outcome, decode_duration, rpc_duration, path_read_duration) = match result {
+        Ok(payload) => {
+            let (outcome, decode_duration) = match payload.local_bytes {
+                Some(bytes) => (
+                    classify_media_image_bytes(&key, &payload.image, bytes),
+                    Duration::ZERO,
+                ),
+                None => classify_media_image_result(&key, &payload.image),
+            };
+            (
+                outcome,
+                decode_duration,
+                payload.rpc_duration,
+                payload.path_read_duration,
+            )
+        }
         Err(e) => {
             let outcome = classify_single_media_image_error(&key, &e.message, had_id_hint);
             if matches!(outcome, FetchOutcome::Transient) && had_id_hint {
                 #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
                 state.write().unwrap().media_ids.remove(&key);
             }
-            (outcome, Duration::ZERO)
+            (outcome, Duration::ZERO, fetch_duration, Duration::ZERO)
         }
     };
     debug!(
@@ -1387,6 +1637,8 @@ async fn fetch_one(
         outcome = fetch_outcome_label(&outcome),
         queue_wait_ms = queue_wait.as_millis(),
         fetch_ms = fetch_duration.as_millis(),
+        rpc_ms = rpc_duration.as_millis(),
+        path_read_ms = path_read_duration.as_millis(),
         decode_ms = decode_duration.as_millis(),
         "media_image_cache: cover timing",
     );
@@ -1459,13 +1711,24 @@ fn classify_media_image_result(
         }
     };
     let decode_duration = decode_started.elapsed();
+    (
+        classify_media_image_bytes(key, image, bytes),
+        decode_duration,
+    )
+}
+
+fn classify_media_image_bytes(
+    key: &MediaKey,
+    image: &MediaImageResult,
+    bytes: Vec<u8>,
+) -> FetchOutcome {
     if bytes.is_empty() {
         warn!(
             system_id = %key.system_id,
             path = %key.path,
-            "media_image_cache: media.image returned 0 bytes after base64 decode, treating as no image",
+            "media_image_cache: media.image returned 0 bytes, treating as no image",
         );
-        return (FetchOutcome::NoImage, decode_duration);
+        return FetchOutcome::NoImage;
     }
     let ext = image
         .extension
@@ -1481,7 +1744,7 @@ fn classify_media_image_result(
             bytes_len = bytes.len(),
             "media_image_cache: unsupported extension/content_type, skipping cache",
         );
-        return (FetchOutcome::NoImage, decode_duration);
+        return FetchOutcome::NoImage;
     };
     // Strip the canonical prefix so the stored value is the bare type
     // name (e.g. "boxart"), matching MediaKey::image_type values used by
@@ -1491,14 +1754,11 @@ fn classify_media_image_result(
         .strip_prefix("property:image-")
         .unwrap_or("")
         .to_string();
-    (
-        FetchOutcome::Success {
-            bytes,
-            ext,
-            type_tag,
-        },
-        decode_duration,
-    )
+    FetchOutcome::Success {
+        bytes,
+        ext,
+        type_tag,
+    }
 }
 
 fn finish_fetch(
@@ -1706,16 +1966,23 @@ mod tests {
     )]
 
     use super::{
-        classify_single_media_image_error, ext_for_content_type, ext_from_extension_field,
-        finish_fetch, is_connection_down_error, pop_one, process_batch_outcomes, CacheState,
-        FetchOutcome, MediaImageCache, MediaImageUpdate, MediaKey, NegativeMemo, NoImagePolicy,
-        QueueEntry, MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
+        classify_media_image_bytes, classify_single_media_image_error, ext_for_content_type,
+        ext_from_extension_field, finish_fetch, inline_fallback_params, is_connection_down_error,
+        is_unsupported_local_path_error, local_path_request_allowed, pop_one,
+        process_batch_outcomes, read_local_image, read_local_image_file, CacheState, FetchOutcome,
+        MediaImageCache, MediaImageUpdate, MediaKey, NegativeMemo, NoImagePolicy, QueueEntry,
+        MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
     };
     use std::collections::VecDeque;
+    use std::io::Write as _;
     use std::sync::atomic::AtomicU32;
     use std::sync::{Arc, Mutex, RwLock};
     use std::time::Instant;
+    use tokio::runtime::Builder;
     use tokio::sync::{broadcast, Notify};
+    use zaparoo_core::media_types::{
+        MediaImageParams, MediaImageResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+    };
 
     /// Build a `MediaImageCache` without spawning the fetch driver.
     /// Lets tests exercise `enqueue` / `is_cached` / `is_negative`
@@ -1734,6 +2001,15 @@ mod tests {
             updates_tx,
             max_cover_size: Arc::new(AtomicU32::new(0)),
         }
+    }
+
+    #[test]
+    fn local_path_delivery_requires_colocated_mister_core() {
+        assert!(local_path_request_allowed(256, true, true, false));
+        assert!(!local_path_request_allowed(0, true, true, false));
+        assert!(!local_path_request_allowed(256, false, true, false));
+        assert!(!local_path_request_allowed(256, true, false, false));
+        assert!(!local_path_request_allowed(256, true, true, true));
     }
 
     #[test]
@@ -1976,6 +2252,84 @@ mod tests {
         let outcome = classify_single_media_image_error(&key, "connection reset by peer", true);
 
         assert!(matches!(outcome, FetchOutcome::ConnectionDown));
+    }
+
+    #[test]
+    fn unsupported_delivery_errors_are_detected_narrowly() {
+        assert!(is_unsupported_local_path_error(
+            "invalid params: json: unknown field delivery"
+        ));
+        assert!(is_unsupported_local_path_error(
+            "media.image: unsupported delivery localPath"
+        ));
+        assert!(!is_unsupported_local_path_error("connection reset by peer"));
+        assert!(!is_unsupported_local_path_error("stale media id"));
+    }
+
+    #[test]
+    fn legacy_inline_fallback_omits_rejected_delivery_field() {
+        let params = inline_fallback_params(MediaImageParams {
+            delivery: Some(MEDIA_IMAGE_DELIVERY_LOCAL_PATH.to_string()),
+            ..MediaImageParams::default()
+        });
+        assert!(params.delivery.is_none());
+    }
+
+    #[test]
+    fn local_path_bytes_use_existing_image_validation() {
+        let key = MediaKey::new("SNES", "/p");
+        let image = MediaImageResult {
+            delivery: MEDIA_IMAGE_DELIVERY_LOCAL_PATH.to_string(),
+            content_type: "image/webp".to_string(),
+            extension: Some("webp".to_string()),
+            type_tag: "property:image-boxart".to_string(),
+            ..MediaImageResult::default()
+        };
+        let outcome = classify_media_image_bytes(&key, &image, vec![1, 2, 3]);
+        assert!(matches!(
+            outcome,
+            FetchOutcome::Success {
+                ext: "webp",
+                type_tag,
+                ..
+            } if type_tag == "boxart"
+        ));
+    }
+
+    #[test]
+    fn local_path_read_accepts_bounded_regular_files() {
+        let mut file = tempfile::NamedTempFile::new().expect("temp file");
+        file.write_all(&[1, 2, 3]).expect("write temp image");
+        let existing = file.path().to_string_lossy().into_owned();
+        let missing = file
+            .path()
+            .with_extension("missing")
+            .to_string_lossy()
+            .into_owned();
+        let runtime = Builder::new_current_thread().build().expect("runtime");
+
+        assert_eq!(
+            runtime.block_on(read_local_image(existing)).expect("read"),
+            vec![1, 2, 3]
+        );
+        assert!(runtime.block_on(read_local_image(missing)).is_err());
+    }
+
+    #[test]
+    fn local_path_read_rejects_oversized_and_non_regular_paths() {
+        let mut file = tempfile::NamedTempFile::new().expect("temp file");
+        file.write_all(&[1, 2, 3]).expect("write temp image");
+        let path = file.path().to_string_lossy();
+        assert!(read_local_image_file(&path, 2)
+            .expect_err("oversized file must fail")
+            .contains("exceeds"));
+
+        let directory = tempfile::tempdir().expect("temp directory");
+        let directory_path = directory.path().to_string_lossy();
+        assert_eq!(
+            read_local_image_file(&directory_path, 16).expect_err("directory must fail"),
+            "thumbnail path is not a regular file"
+        );
     }
 
     fn key(s: &str, p: &str) -> MediaKey {

@@ -156,6 +156,13 @@ TestCase {
         compare(closeSpy.count, 1);
     }
 
+    function test_handle_action_page_menu_toggles_picker_closed(): void {
+        picker.entries = _entries(3);
+        picker.open = true;
+        picker.handleAction("page_menu");
+        compare(closeSpy.count, 1);
+    }
+
     function test_reopen_recomputes_initial_index(): void {
         // First open lands on a match.
         picker.entries = _entries(4);
@@ -189,6 +196,36 @@ TestCase {
         verify(picker._viewportHeight <= cap);
         compare(picker._viewportHeight, fits * picker._rowHeight + Math.max(0, fits - 1) * picker._rowSpacing);
         compare(picker._contentHeight, total * picker._rowHeight + (total - 1) * picker._rowSpacing);
+    }
+
+    // Callers swap `entries` on an open modal (the launcher flow replaces a
+    // one-row "saving" list with a three-row error list). The focus must
+    // re-resolve to `initialId` in the NEW list; leaving a stale index past
+    // the end renders no focused row and makes Accept a dead key.
+    function test_entries_swap_while_open_reapplies_initial_id(): void {
+        picker.entries = _entries(1);
+        picker.initialId = "";
+        picker.open = true;
+        compare(picker.currentIndex, 0);
+
+        picker.initialId = "id-1";
+        picker.entries = _entries(3);
+        compare(picker.currentIndex, 1);
+        compare(picker.entries[picker.currentIndex].id, "id-1");
+    }
+
+    // A swap that shrinks the list must not leave currentIndex out of range.
+    function test_entries_swap_shrinking_list_clamps_focus(): void {
+        picker.entries = _entries(4);
+        picker.open = true;
+        picker.handleAction("down");
+        picker.handleAction("down");
+        compare(picker.currentIndex, 2);
+
+        picker.initialId = "";
+        picker.entries = _entries(1);
+        verify(picker.currentIndex < picker.entries.length, "focus stays inside the new list");
+        compare(picker.currentIndex, 0);
     }
 
     function test_short_list_does_not_pad_viewport(): void {

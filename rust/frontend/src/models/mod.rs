@@ -30,6 +30,8 @@ pub mod browse;
 pub mod build_info;
 pub mod categories;
 pub mod crt_video;
+pub mod favorite_systems;
+pub mod favorite_systems_state;
 pub mod favorites;
 pub mod favorites_state;
 pub mod game_info;

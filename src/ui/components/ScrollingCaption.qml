@@ -41,6 +41,7 @@ Item {
     // Center the static block (grid tiles) vs. left-align it (list rows).
     property bool centerContent: false
     property int fontPixelSize: Sizing.fontSize(2.2)
+    property int fontWeight: Font.Normal
     property string fontFamily: Theme.fontUi
     property color nameColor: Theme.textLabel
     property color variantColor: Theme.textVariant
@@ -52,8 +53,13 @@ Item {
     readonly property int _gapW: root._hasTags ? Sizing.pctW(1.2) : 0
 
     readonly property int _avail: Math.max(0, root.width)
-    readonly property int _nameFullW: Math.ceil(nameMetrics.advanceWidth)
-    readonly property int _tagsFullW: root._hasTags ? Math.ceil(tagsMetrics.advanceWidth) : 0
+    // advanceWidth measures cursor movement, not every painted pixel. Native,
+    // fully hinted glyphs can extend beyond either side bearing, so using only
+    // advanceWidth can classify a visibly clipped caption as fitting. Measure
+    // the union of logical advance and painted bounds for overflow/marquee
+    // decisions; this also absorbs fractional metrics before integer layout.
+    readonly property int _nameFullW: Math.ceil(Math.max(nameMetrics.advanceWidth, nameMetrics.boundingRect.x + nameMetrics.boundingRect.width) - Math.min(0, nameMetrics.boundingRect.x))
+    readonly property int _tagsFullW: root._hasTags ? Math.ceil(Math.max(tagsMetrics.advanceWidth, tagsMetrics.boundingRect.x + tagsMetrics.boundingRect.width) - Math.min(0, tagsMetrics.boundingRect.x)) : 0
 
     readonly property int _blockW: root._nameFullW + root._gapW + root._tagsFullW
     readonly property int _scrollDist: Math.max(0, root._blockW - root._avail)
@@ -93,18 +99,22 @@ Item {
 
     TextMetrics {
         id: nameMetrics
+        objectName: "scrollingCaptionNameMetrics"
 
         text: root.name
         font.family: root.fontFamily
         font.pixelSize: root.fontPixelSize
+        font.weight: root.fontWeight
     }
 
     TextMetrics {
         id: tagsMetrics
+        objectName: "scrollingCaptionTagsMetrics"
 
         text: root.tags
         font.family: root.fontFamily
         font.pixelSize: root.fontPixelSize
+        font.weight: root.fontWeight
     }
 
     // Steps the marquee one pixel per tick with a dwell at each end. Runs only
@@ -156,6 +166,7 @@ Item {
             color: root.nameColor
             font.family: root.fontFamily
             font.pixelSize: root.fontPixelSize
+            font.weight: root.fontWeight
             elide: (!root._marquee && root._nameRenderW < root._nameFullW) ? Text.ElideRight : Text.ElideNone
             horizontalAlignment: Text.AlignLeft
             verticalAlignment: Text.AlignVCenter
@@ -173,6 +184,7 @@ Item {
             color: root.variantColor
             font.family: root.fontFamily
             font.pixelSize: root.fontPixelSize
+            font.weight: root.fontWeight
             // Elide from the LEFT so the specific, most-distinguishing end of a
             // long token suffix (`...lightgun`, `...system-1`) stays visible.
             elide: (!root._marquee && root._tagsRenderW < root._tagsFullW) ? Text.ElideLeft : Text.ElideNone

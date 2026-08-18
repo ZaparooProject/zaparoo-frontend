@@ -24,6 +24,7 @@
 //   - name:       string — model display name (used by the procedural
 //                          fallback while the cover PNG decodes)
 //   - coverKey:   string — relative path under resources/images/ (no extension)
+//   - topLabel:   string — optional compact label above cover art
 //   - favorite:   int    — optional 0/1; shows a small heart badge when 1
 
 import QtQuick
@@ -73,6 +74,7 @@ Item {
     readonly property bool delegateIsFocused: parent.isFocused
     readonly property string delegateName: parent.name
     readonly property string delegateCoverKey: parent.coverKey
+    readonly property string delegateTopLabel: parent.topLabel ?? ""
     readonly property bool delegateFavorite: parent.favorite !== 0
     // qmllint disable missing-property compiler
     readonly property bool delegateHidden: parent.hidden === true
@@ -107,6 +109,7 @@ Item {
     // flashes focused for the frames before restore corrects the index.
     // Defaults true for hosts that do not wire it.
     readonly property bool delegateFocusReady: parent.focusReady ?? true
+    readonly property bool delegateLoadFocusedCover: parent.loadFocusedCover ?? true
     // qmllint enable missing-property
     property var layoutProfile: null
     readonly property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
@@ -130,7 +133,16 @@ Item {
     readonly property int _outlineWidth: Sizing.stroke(Sizing.pctH(0.6))
     readonly property int _captionHeight: Sizing.pctH(5.5)
     readonly property int _captionGap: Sizing.pctH(0.4)
-    readonly property int _captionTextSize: Sizing.fontSize(2.2)
+    // Noto Sans has no optical-size axis or embedded bitmap strikes. Its 12px
+    // Regular raster is too thin when forced to a monochrome mask at 540p, so
+    // use the next proportional size and Medium weight only in that mode.
+    readonly property bool _compactUnsmoothedCaption: Theme.unsmoothedText && !Theme.crtNativePath
+    readonly property int _captionTextSize: Sizing.fontSize(root._compactUnsmoothedCaption ? 2.4 : 2.2)
+    readonly property int _captionTextWeight: root._compactUnsmoothedCaption ? Font.Medium : Font.Normal
+    readonly property bool _hasTopLabel: root.delegateTopLabel !== ""
+    readonly property int _topLabelHeight: Sizing.pctH(4.2)
+    readonly property int _topLabelGap: Sizing.pctH(0.4)
+    readonly property int _topLabelTextSize: Sizing.fontSize(2)
     readonly property int _tileCornerRadius: root._surfaceProfile ? root._surfaceProfile.cornerRadius : Sizing.cornerRadius
     // Width available to the bottom caption. A half-corner-radius inset on each
     // side keeps glyphs clear of the rounded corners while giving the title a
@@ -151,12 +163,9 @@ Item {
     // chooses the subdirectory; Tile is agnostic. Resources.coverUrl is
     // the single source of truth for the qrc layout — see Resources.qml.
     //
-    // The model's `icons/Loading` sentinel is a special case: it means
-    // "cover fetch is in flight". Routing it through the full-bleed
-    // cover slot would rasterise the SVG at the entire icon area; the
-    // existing `loadingGlyph` overlay below already defines the
-    // standard centred hourglass size, so swallow the source here and
-    // let `loadingGlyph` own the painting.
+    // The model's `icons/Loading` sentinel means "cover fetch is in flight".
+    // Swallow it so media tiles remain blank until real art is ready; painting
+    // the sentinel in the cover slot would scale an hourglass across the card.
     readonly property bool _coverPending: root.delegateCoverKey === "icons/Loading"
     readonly property bool _systemCover: root.delegateCoverKey.startsWith("systems/")
     // True for any built-in icon routed through the tinted-svg provider:
@@ -170,61 +179,25 @@ Item {
     // (its key prefix), not on `_isTinted`, so the decode policy stays correct
     // independently of theme-tint behavior.
     readonly property bool _coverIsRealArt: root.delegateCoverKey.startsWith("media-image/") || root.delegateCoverKey.startsWith("custom-image/")
-    // Real raster art still in flight: the key is media/custom art but the
-    // Image has not reached a terminal state. Paired with _coverPending below
-    // so the busy state stays continuously true across the model's
-    // pending-sentinel -> real-key handoff (both derive from delegateCoverKey
-    // and flip together), which is what keeps the loading cue from blinking.
-    readonly property bool _coverMediaImagePending: root._coverIsRealArt && coverBase.status !== Image.Ready && coverBase.status !== Image.Error
-    // Single combined "waiting on a cover" predicate. Mirrors
-    // BrowseDetailPane._coverBusy — the loading cue is gated on this one value
-    // so an internal state change mid-wait never resets the debounce.
-    readonly property bool _coverBusy: root._coverPending || root._coverMediaImagePending || coverBase.status === Image.Loading
     // Unfocused ramp — always loaded for tinted keys; also the sole source for
     // real art (media-image/, custom-image/) which is focus-independent.
     readonly property url _coverBaseSrc: root._coverPending ? "" : Resources.coverUrl(root.delegateCoverKey, Theme.logoPrimary, Theme.logoSecondary, Theme.logoShadow)
     // Focused ramp — only loaded for tinted icons; empty string for real art so
     // the Image item never initiates a second fetch for cover/boxart tiles.
-    readonly property url _coverFocusSrc: (root._isTinted && !root._coverPending) ? Resources.coverUrl(root.delegateCoverKey, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : ""
+    readonly property url _coverFocusSrc: (root.delegateLoadFocusedCover && root._isTinted && !root._coverPending) ? Resources.coverUrl(root.delegateCoverKey, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow) : ""
     // True once the focused ramp is decoded and this tile is the focused
     // selection — used to suppress coverBase so the two renders don't stack
     // (which would double the effective opacity on hidden tiles).
     readonly property bool _focusCoverActive: root._focusedSelection && root._isTinted && coverFocus.status === Image.Ready
-    // Show the procedural name fallback only when the icon genuinely failed
-    // to load (no such logo), never while it is merely decoding. During the
-    // Loading/Null window the slot stays blank so the name does not flash in
-    // before the icon pops in. coverBase always has a real source when not
-    // _coverPending, so it reliably reaches Ready or Error.
-    readonly property bool _fallbackVisible: !root.showCaption && !root._coverPending && coverBase.status === Image.Error
+    // System wordmarks are a terminal-error fallback only. Every logo request
+    // must first pass through Image.Loading and the provider; never show text
+    // for Null/Loading, and never substitute text for failed category, icon, or
+    // media artwork.
+    readonly property bool _fallbackVisible: root._systemCover && !root.showCaption && !root._coverPending && coverBase.status === Image.Error
     readonly property int _fallbackTextSize: root._systemCover ? Sizing.fontSize(5.8) : Sizing.fontSize(2.4)
     readonly property int _fallbackMinimumTextSize: root._systemCover ? Sizing.fontSize(2.8) : Sizing.fontSize(2.4)
     readonly property bool _startupTraceResource: root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey === "icons/PlayOutline" || root.delegateCoverKey === "icons/HeartOutline" || root.delegateCoverKey === "icons/History" || root.delegateCoverKey === "icons/Settings"
     property double _startupTraceLoadStartedAt: 0
-    // Loading-cue debounce. A QML Image always passes through Image.Loading for
-    // ~1 frame before Ready, even when the media-image provider returns a cached
-    // cover in ~0.1ms, which would flash the hourglass on every cached tile.
-    // Gated on _coverBusy (not raw Image status) so the cue stays solid across
-    // the pending->loading handoff; only flips true once a wait outlasts the
-    // delay, so instant cached covers never show it. Mirrors BrowseDetailPane.
-    property bool _coverLoadingDelayElapsed: false
-
-    on_CoverBusyChanged: root._updateCoverLoadingDelay()
-
-    Timer {
-        id: coverLoadingDelayTimer
-
-        interval: 150
-        repeat: false
-        onTriggered: root._coverLoadingDelayElapsed = root._coverBusy
-    }
-
-    function _updateCoverLoadingDelay(): void {
-        coverLoadingDelayTimer.stop();
-        root._coverLoadingDelayElapsed = false;
-        if (!root._coverBusy)
-            return;
-        coverLoadingDelayTimer.restart();
-    }
 
     anchors.fill: parent
     // One-shot push-in scale, shared by every button-like action. The
@@ -423,8 +396,35 @@ Item {
     //
     // `_focusCoverActive` suppresses coverBase when the focused ramp is on top,
     // preventing the two opaque layers from stacking their alpha on hidden tiles.
+    TextMetrics {
+        id: topLabelMetrics
+
+        font.family: Theme.fontUi
+        font.pixelSize: root._topLabelTextSize
+        font.weight: Font.Medium
+        text: root.delegateTopLabel
+    }
+
+    Text {
+        objectName: "tileTopLabel"
+        x: Sizing.center(parent.width, width)
+        y: root._padding + Sizing.center(root._topLabelHeight, height)
+        width: Math.min(root._captionTextMaxWidth, Sizing.px(topLabelMetrics.advanceWidth))
+        height: Sizing.px(implicitHeight)
+        visible: root._hasTopLabel
+        text: root.delegateTopLabel
+        elide: Text.ElideRight
+        horizontalAlignment: Text.AlignLeft
+        font.family: Theme.fontUi
+        font.pixelSize: root._topLabelTextSize
+        font.weight: Font.Medium
+        color: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
+        renderType: Text.NativeRendering
+    }
+
     Image {
         id: coverBase
+        objectName: "tileCoverBase"
 
         width: parent.width - 2 * root._padding
         source: root._coverBaseSrc
@@ -447,14 +447,40 @@ Item {
         fillMode: Image.PreserveAspectFit
         smooth: true
         asynchronous: true
-        // Hide when the focused ramp is fully decoded and showing on top; the
-        // normal hidden-item dim (0.4) is still applied so the two renders are
-        // never stacked at the same opacity simultaneously.
-        opacity: (coverBase.status === Image.Ready && !root._focusCoverActive) ? (root.delegateHidden ? 0.4 : 1.0) : 0
+        // Real media covers get one brief reveal after decode. Tinted system,
+        // category, and action artwork remains instant. Keeping this multiplier
+        // separate prevents focus-ramp swaps and hidden-state dimming from
+        // accidentally becoming opacity animations.
+        property real revealOpacity: root._coverIsRealArt ? 0 : 1
+        opacity: (coverBase.status === Image.Ready && !root._focusCoverActive) ? coverBase.revealOpacity * (root.delegateHidden ? 0.4 : 1.0) : 0
+
+        NumberAnimation {
+            id: coverRevealAnimation
+            objectName: "tileCoverRevealAnimation"
+
+            target: coverBase
+            property: "revealOpacity"
+            from: 0
+            to: 1
+            duration: Motion.dur(Motion.pressMs)
+            easing.type: Easing.OutQuad
+        }
+
+        function updateReveal(): void {
+            coverRevealAnimation.stop();
+            if (coverBase.status === Image.Ready && root._coverIsRealArt) {
+                coverBase.revealOpacity = 0;
+                coverRevealAnimation.restart();
+            } else {
+                coverBase.revealOpacity = coverBase.status === Image.Ready ? 1 : 0;
+            }
+        }
+
+        Component.onCompleted: coverBase.updateReveal()
 
         anchors {
             top: parent.top
-            topMargin: root._padding
+            topMargin: root._padding + (root._hasTopLabel ? root._topLabelHeight + root._topLabelGap : 0)
             bottom: parent.bottom
             // In caption mode the cover sits above the bottom caption strip with
             // only `_captionGap` of breathing room. The caption is flush against
@@ -465,6 +491,7 @@ Item {
         }
 
         onStatusChanged: {
+            coverBase.updateReveal();
             if (!root._startupTraceResource)
                 return;
             if (status === Image.Loading) {
@@ -502,39 +529,11 @@ Item {
 
         anchors {
             top: parent.top
-            topMargin: root._padding
+            topMargin: root._padding + (root._hasTopLabel ? root._topLabelHeight + root._topLabelGap : 0)
             bottom: parent.bottom
             bottomMargin: root.showCaption ? root._captionHeight + root._captionGap : root._padding
             horizontalCenter: parent.horizontalCenter
         }
-    }
-
-    // Caption-mode loading cue. Centred hourglass glyph that paints
-    // only during the Image.Loading window — once the cover lands the
-    // glyph hides and the cover paints in. Error/Null cover state
-    // also hides the glyph (a stuck hourglass on a permanently failed
-    // cover would mislead) and the bottom caption still identifies
-    // the tile. Bundled qrc asset, decode is cheap, no animation.
-    Image {
-        id: loadingGlyph
-
-        x: coverBase.x + Sizing.center(coverBase.width, width)
-        y: coverBase.y + Sizing.center(coverBase.height, height)
-        width: Sizing.pctH(10)
-        height: Sizing.pctH(10)
-        source: Resources.iconUrl("Loading")
-        // Loading.svg has a 24×24 native viewBox; without sourceSize
-        // Qt rasterises at that intrinsic size and bilinear-upscales
-        // to the rendered box, which reads as soft on every screen
-        // taller than ~240 px. Pinning sourceSize to the rendered
-        // dimensions makes the SVG renderer rasterise at target size
-        // — same pattern StatusIcon.qml and LoadingIndicator.qml use.
-        sourceSize.width: Sizing.px(width)
-        sourceSize.height: Sizing.px(height)
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        asynchronous: false
-        visible: root.showCaption && root._coverBusy && root._coverLoadingDelayElapsed
     }
 
     Image {
@@ -580,6 +579,7 @@ Item {
     // hourglass above signals load progress, so a wrapping copy of the name
     // in this slot is redundant.
     Text {
+        objectName: "tileFallbackText"
         anchors.fill: coverBase
         anchors.margins: root._systemCover ? Sizing.pctH(1) : 0
         text: root.delegateName
@@ -615,6 +615,7 @@ Item {
     ScrollingCaption {
         id: caption
 
+        objectName: "tileCaption"
         x: root._captionSideInset
         y: parent.height - root._captionHeight
         width: root._captionTextMaxWidth
@@ -625,6 +626,7 @@ Item {
         name: root.delegateName
         tags: root.delegateDisambiguatingTags
         fontPixelSize: root._captionTextSize
+        fontWeight: root._captionTextWeight
         nameColor: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
     }
 }

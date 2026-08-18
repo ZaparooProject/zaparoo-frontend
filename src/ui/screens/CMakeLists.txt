@@ -20,6 +20,7 @@ qt_add_qml_module(
         GamesScreen.qml
         MediaListScreen.qml
         FavoritesScreen.qml
+        FavoriteSystemsScreen.qml
         RecentsScreen.qml
         SettingsScreen.qml
         AboutScreen.qml

@@ -18,11 +18,11 @@ use crate::media_types::{
     MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult,
     MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
     MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
-    MediaMetaParams, MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams,
-    MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
-    MediaTagsUpdateResult, ReadersResult, ReadersWriteParams, RunParams, ScrapersResult,
-    ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult,
-    TokensResult, UpdateSettingsParams, VersionResult,
+    MediaMetaBatchParams, MediaMetaBatchResult, MediaMetaParams, MediaMetaResult, MediaResult,
+    MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult,
+    MediaTagsUpdateParams, MediaTagsUpdateResult, ReadersResult, ReadersWriteParams, RunParams,
+    ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult,
+    TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -160,6 +160,20 @@ impl std::error::Error for ClientError {}
 
 type PendingMap = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value, ClientError>>>>>;
 
+/// Removes a pending RPC when its `call()` future is canceled or times out.
+/// Normal responses remove the same key first, making this drop a no-op.
+struct PendingRequestGuard {
+    id: String,
+    pending: PendingMap,
+}
+
+impl Drop for PendingRequestGuard {
+    #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
+    fn drop(&mut self) {
+        self.pending.lock().unwrap().remove(&self.id);
+    }
+}
+
 fn deserialize_timed<T: DeserializeOwned>(
     method: &'static str,
     val: Value,
@@ -181,6 +195,25 @@ fn deserialize_timed<T: DeserializeOwned>(
 /// `call()` fails fast with `not connected` instead of queueing into a
 /// channel that might be drained against a later session.
 type OutboundSlot = Arc<Mutex<Option<mpsc::UnboundedSender<String>>>>;
+
+#[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
+fn teardown_session(tx_slot: &OutboundSlot, pending: &PendingMap) {
+    let drained: Vec<_> = {
+        // Keep session invalidation and pending-request draining in one
+        // critical section. `call()` uses the same lock while registering and
+        // sending, so teardown cannot miss a request from the ending session.
+        let mut sender = tx_slot.lock().unwrap();
+        *sender = None;
+        let drained = pending.lock().unwrap().drain().collect();
+        drop(sender);
+        drained
+    };
+    for (_, response) in drained {
+        let _ = response.send(Err(ClientError {
+            message: "disconnected".into(),
+        }));
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Notification {
@@ -413,15 +446,7 @@ impl Client {
                         // queued-but-unsent messages with it) and fail
                         // every pending RPC. The next iteration publishes
                         // `Reconnecting` automatically.
-                        #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
-                        {
-                            *tx_slot_clone.lock().unwrap() = None;
-                        }
-                        #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
-                        let drained: Vec<_> = pending_clone.lock().unwrap().drain().collect();
-                        for (_, tx) in drained {
-                            let _ = tx.send(Err(ClientError { message: "disconnected".into() }));
-                        }
+                        teardown_session(&tx_slot_clone, &pending_clone);
                     }
                     Err(e) => {
                         if let Some(next) = fsm.on_attempt_failed(e.to_string(), boot_window) {
@@ -457,31 +482,35 @@ impl Client {
         })?;
         let started = Instant::now();
 
-        // Snapshot the current session's sender. If `None`, no live link —
-        // fail immediately rather than queueing into a channel that will
-        // be dropped at the next disconnect or, worse, drained by the
-        // wrong session.
-        #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
-        let sender = self.tx.lock().unwrap().clone().ok_or_else(|| ClientError {
-            message: "not connected".into(),
-        })?;
-
         let (resp_tx, resp_rx) = oneshot::channel();
         #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
-        {
+        let send_result = {
+            // Register and send while holding the session lock also used by
+            // teardown. This makes the sender snapshot and pending entry one
+            // session-scoped operation: teardown either runs before all three
+            // steps or drains the newly registered request afterward.
+            let sender = self.tx.lock().unwrap();
+            let sender = sender.as_ref().ok_or_else(|| ClientError {
+                message: "not connected".into(),
+            })?;
             self.pending.lock().unwrap().insert(id.clone(), resp_tx);
-        }
+            sender.send(text)
+        };
+        let _pending_guard = PendingRequestGuard {
+            id: id.clone(),
+            pending: self.pending.clone(),
+        };
 
-        if sender.send(text).is_err() {
-            // Receiver was dropped between the snapshot and the send —
-            // session ended in flight. Clean up the pending entry so it
-            // doesn't leak.
+        if send_result.is_err() {
+            // Receiver dropped unexpectedly while the session still owned its
+            // sender. Clean up the pending entry so it doesn't leak.
             #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
             {
                 self.pending.lock().unwrap().remove(&id);
             }
             debug!(
                 method,
+                request_id = %id,
                 duration_ms = started.elapsed().as_millis(),
                 error = "not connected",
                 "rpc round trip",
@@ -499,6 +528,7 @@ impl Client {
                 let payload_bytes = serde_json::to_vec(&val).map_or(0, |bytes| bytes.len());
                 debug!(
                     method,
+                    request_id = %id,
                     duration_ms = started.elapsed().as_millis(),
                     payload_bytes,
                     "rpc round trip",
@@ -508,6 +538,7 @@ impl Client {
             Err(e) => {
                 debug!(
                     method,
+                    request_id = %id,
                     duration_ms = started.elapsed().as_millis(),
                     error = %e.message,
                     "rpc round trip",
@@ -518,10 +549,7 @@ impl Client {
     }
 
     pub async fn systems(&self, params: SystemsParams) -> Result<SystemsResult, ClientError> {
-        #[derive(Serialize)]
-        struct P {}
-        let _ = params;
-        let val = self.call("systems", &P {}).await?;
+        let val = self.call("systems", &params).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
             message: e.to_string(),
         })
@@ -644,9 +672,9 @@ impl Client {
     /// Identified by `mediaId` when available, otherwise `(system,
     /// path)` where `path` is the canonical indexed media path returned
     /// by `media.search` or `media.browse`. Returns the `media.image`
-    /// payload: content type, file extension (when
-    /// derivable), base64 image bytes, and the resolved property type
-    /// tag.
+    /// payload: actual delivery mode, content type, file extension (when
+    /// derivable), inline base64 bytes or an opaque local thumbnail path,
+    /// and the resolved property type tag.
     pub async fn media_image(
         &self,
         params: MediaImageParams,
@@ -670,6 +698,19 @@ impl Client {
     ) -> Result<MediaMetaResult, ClientError> {
         let val = self.call("media.meta", &params).await?;
         deserialize_timed("media.meta", val)
+    }
+
+    /// Fetches an ordered batch of metadata graphs with one `media` or `error`
+    /// result per input ref. The established single-item method remains
+    /// separate so focused cold misses keep their minimal wire shape.
+    pub async fn media_meta_batch(
+        &self,
+        items: Vec<MediaMetaParams>,
+    ) -> Result<MediaMetaBatchResult, ClientError> {
+        let params =
+            MediaMetaBatchParams::try_new(items).map_err(|message| ClientError { message })?;
+        let val = self.call("media.meta", &params).await?;
+        deserialize_timed("media.meta batch", val)
     }
 
     pub async fn media_history(
@@ -881,6 +922,65 @@ pub(crate) fn backoff_delay(failures: u32, boot_window: bool) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[allow(clippy::unwrap_used, reason = "test mutex must remain healthy")]
+    fn pending_request_guard_cleans_up_canceled_call() {
+        let pending = PendingMap::default();
+        let (sender, _receiver) = oneshot::channel();
+        pending.lock().unwrap().insert("request".into(), sender);
+        {
+            let _guard = PendingRequestGuard {
+                id: "request".into(),
+                pending: pending.clone(),
+            };
+        }
+        assert!(pending.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(
+        clippy::expect_used,
+        reason = "concurrency regression test should fail fast on task or timeout errors"
+    )]
+    async fn concurrent_call_and_teardown_never_strands_response() {
+        let (msg_tx, _msg_rx) = mpsc::unbounded_channel();
+        let tx_slot: OutboundSlot = Arc::new(Mutex::new(Some(msg_tx)));
+        let pending = PendingMap::default();
+        let (notifications, _) = broadcast::channel(1);
+        let (connection, _) = watch::channel(ConnectionState::Connected);
+        let client = Arc::new(Client {
+            tx: tx_slot.clone(),
+            pending: pending.clone(),
+            notifications,
+            connection: Arc::new(connection),
+        });
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+
+        let call_task = tokio::spawn({
+            let client = client.clone();
+            let barrier = barrier.clone();
+            async move {
+                barrier.wait().await;
+                client.call("test.concurrent", &Value::Null).await
+            }
+        });
+        let teardown_task = tokio::spawn(async move {
+            barrier.wait().await;
+            teardown_session(&tx_slot, &pending);
+        });
+
+        teardown_task.await.expect("teardown task should complete");
+        let call_result = tokio::time::timeout(Duration::from_secs(1), call_task)
+            .await
+            .expect("call must not remain pending after teardown")
+            .expect("call task should complete");
+        let error = call_result.expect_err("teardown cannot produce a successful response");
+        assert!(matches!(
+            error.message.as_str(),
+            "disconnected" | "not connected"
+        ));
+    }
 
     #[test]
     fn backoff_follows_exponential_curve_then_caps() {

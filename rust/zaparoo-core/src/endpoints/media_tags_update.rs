@@ -7,7 +7,7 @@
 use crate::client::{Client, ClientError};
 use crate::endpoints::{
     media_browse::MediaBrowseEndpoint, media_favorites::MediaFavoritesEndpoint,
-    media_search::MediaSearchEndpoint,
+    media_search::MediaSearchEndpoint, systems_favorites::SystemsFavoritesEndpoint,
 };
 use crate::media_types::{MediaTagsUpdateParams, MediaTagsUpdateResult};
 use crate::store::{Endpoint, Mutation, Tag};
@@ -33,6 +33,7 @@ impl Mutation for MediaTagsUpdateMutation {
             Tag::any(MediaBrowseEndpoint::NAME),
             Tag::any(MediaFavoritesEndpoint::NAME),
             Tag::any(MediaSearchEndpoint::NAME),
+            Tag::any(SystemsFavoritesEndpoint::NAME),
         ]
     }
 }

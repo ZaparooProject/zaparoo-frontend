@@ -75,12 +75,21 @@ TestCase {
 
     // ── nextIndex: pure 2D grid move ──────────────────────────────────────────
 
-    function test_next_index_left_right_clamps_within_bounds(): void {
-        // 8 cells, 4 columns. right advances; right at the end stays.
+    function test_next_index_left_right_wraps_within_each_row(): void {
+        // 8 cells, 4 columns. Horizontal movement wraps within the current
+        // row instead of leaking into the row above/below.
         compare(grid.nextIndex("right", 0, 8, 4), 1);
-        compare(grid.nextIndex("right", 7, 8, 4), 7);
+        compare(grid.nextIndex("right", 3, 8, 4), 0);
+        compare(grid.nextIndex("right", 7, 8, 4), 4);
         compare(grid.nextIndex("left", 3, 8, 4), 2);
-        compare(grid.nextIndex("left", 0, 8, 4), 0);
+        compare(grid.nextIndex("left", 0, 8, 4), 3);
+        compare(grid.nextIndex("left", 4, 8, 4), 7);
+    }
+
+    function test_next_index_left_right_wraps_partial_final_row(): void {
+        // 6 cells, 4 columns: final row contains only indices 4 and 5.
+        compare(grid.nextIndex("right", 5, 6, 4), 4);
+        compare(grid.nextIndex("left", 4, 6, 4), 5);
     }
 
     function test_next_index_up_down_step_by_columns(): void {

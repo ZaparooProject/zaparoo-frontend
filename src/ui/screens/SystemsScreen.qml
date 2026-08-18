@@ -30,10 +30,17 @@ Item {
     property alias systemsGrid: systemsGrid
     property alias listCard: listCard
     property bool transitioning: false
+    // True while Hub→Systems routing is preparing this destination, before
+    // the delayed loading cue becomes visible. Used only to suspend hidden
+    // delegates; source-screen hiding still follows `transitioning`.
+    property bool preparingTransition: false
     // Set false by MainLayout when this screen is not the active screen.
     // Forwarded to systemsGrid.screenSettling so tile delegates reset
     // their push-in scale off-screen.
     property bool active: true
+    // False for the first destination frame so layout/text can paint before
+    // current-page SVG decoding begins. Router enables it after frame swap.
+    property bool coverRevealReady: true
     // Router-driven flag: `MainLayout` writes this to
     // `!ScreenManager.hasModal` so the focused tile's accent ring
     // hides while a modal (the context menu) is on top of the stack.
@@ -294,6 +301,16 @@ Item {
         focused: systems.gridFocused
         screenSettling: !systems.active
         focusReady: systems._focusReady
+        // Keep the lightweight delegate/cursor structure during category
+        // replacement, but withhold Image sources while hidden. Fully removing
+        // Repeater's model tears down the prior category synchronously and made
+        // the transition itself wait on that cleanup.
+        suspendDelegates: systems._listLayout
+        coverRequestsEnabled: systems.active && systems.coverRevealReady && !systems.preparingTransition && !systems._gateHide
+        // Router already warms visible page. Do not simultaneously rasterize
+        // hidden next-page logos or focused variants for every system.
+        coverLookaheadPages: 0
+        eagerFocusedCovers: false
         model: Browse.SystemsModel
         layoutProfile: systems._viewProfile
         columnsOverride: systems._gridShape.columns
@@ -331,7 +348,7 @@ Item {
         anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
         height: systems._footerProfile ? systems._footerProfile.activeLabelHeight : Sizing.pctH(7)
         text: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_name_at(systemsGrid.currentIndex) : ""
-        visible: !systems._gateHide && !systems._listLayout
+        visible: !systems._loading && !systems._overlayLoadingVisible && !systems._listLayout
     }
 
     Text {

@@ -18,6 +18,9 @@ Loader {
     required property bool isFocused
     required property string name
     required property string coverKey
+    // Optional compact label rendered above tile art. Mixed-system media views
+    // use it for the system name; all other grids leave it empty.
+    property string topLabel: ""
     property int favorite: 0
     property bool hidden: false
     // Newline-joined disambiguating-tag tokens (region, disc, rev, ...).
@@ -46,4 +49,9 @@ Loader {
     // never paints a ring before the real selection lands. Default true so
     // hosts that do not wire it focus normally.
     property bool focusReady: true
+    // Controls whether Tile instantiates its tinted focused-ramp Image source.
+    // Default true preserves existing Hub/media behavior; large system grids
+    // can restrict this to the selected tile to avoid cold-rendering one extra
+    // SVG for every hidden delegate.
+    property bool loadFocusedCover: true
 }
