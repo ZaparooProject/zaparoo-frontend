@@ -2725,8 +2725,8 @@ where
 fn release_model_before_covers(mut model: Pin<&mut ffi::GamesModel>) {
     let cache = global_media_image_cache();
     let page_size = model.page_size.max(1) as usize;
-    let first = model.rust().visible_first_row.max(0) as usize;
-    let window_end = (first + page_size).min(model.entries.len());
+    let first = (model.rust().visible_first_row.max(0) as usize).min(model.entries.len());
+    let window_end = first.saturating_add(page_size).min(model.entries.len());
     let visible_entries = &model.entries[first..window_end];
     let cover_keys = visible_entries
         .iter()

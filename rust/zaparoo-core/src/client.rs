@@ -196,6 +196,25 @@ fn deserialize_timed<T: DeserializeOwned>(
 /// channel that might be drained against a later session.
 type OutboundSlot = Arc<Mutex<Option<mpsc::UnboundedSender<String>>>>;
 
+#[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
+fn teardown_session(tx_slot: &OutboundSlot, pending: &PendingMap) {
+    let drained: Vec<_> = {
+        // Keep session invalidation and pending-request draining in one
+        // critical section. `call()` uses the same lock while registering and
+        // sending, so teardown cannot miss a request from the ending session.
+        let mut sender = tx_slot.lock().unwrap();
+        *sender = None;
+        let drained = pending.lock().unwrap().drain().collect();
+        drop(sender);
+        drained
+    };
+    for (_, response) in drained {
+        let _ = response.send(Err(ClientError {
+            message: "disconnected".into(),
+        }));
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Notification {
     pub method: String,
@@ -427,15 +446,7 @@ impl Client {
                         // queued-but-unsent messages with it) and fail
                         // every pending RPC. The next iteration publishes
                         // `Reconnecting` automatically.
-                        #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
-                        {
-                            *tx_slot_clone.lock().unwrap() = None;
-                        }
-                        #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
-                        let drained: Vec<_> = pending_clone.lock().unwrap().drain().collect();
-                        for (_, tx) in drained {
-                            let _ = tx.send(Err(ClientError { message: "disconnected".into() }));
-                        }
+                        teardown_session(&tx_slot_clone, &pending_clone);
                     }
                     Err(e) => {
                         if let Some(next) = fsm.on_attempt_failed(e.to_string(), boot_window) {
@@ -471,29 +482,28 @@ impl Client {
         })?;
         let started = Instant::now();
 
-        // Snapshot the current session's sender. If `None`, no live link —
-        // fail immediately rather than queueing into a channel that will
-        // be dropped at the next disconnect or, worse, drained by the
-        // wrong session.
-        #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
-        let sender = self.tx.lock().unwrap().clone().ok_or_else(|| ClientError {
-            message: "not connected".into(),
-        })?;
-
         let (resp_tx, resp_rx) = oneshot::channel();
         #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
-        {
+        let send_result = {
+            // Register and send while holding the session lock also used by
+            // teardown. This makes the sender snapshot and pending entry one
+            // session-scoped operation: teardown either runs before all three
+            // steps or drains the newly registered request afterward.
+            let sender = self.tx.lock().unwrap();
+            let sender = sender.as_ref().ok_or_else(|| ClientError {
+                message: "not connected".into(),
+            })?;
             self.pending.lock().unwrap().insert(id.clone(), resp_tx);
-        }
+            sender.send(text)
+        };
         let _pending_guard = PendingRequestGuard {
             id: id.clone(),
             pending: self.pending.clone(),
         };
 
-        if sender.send(text).is_err() {
-            // Receiver was dropped between the snapshot and the send —
-            // session ended in flight. Clean up the pending entry so it
-            // doesn't leak.
+        if send_result.is_err() {
+            // Receiver dropped unexpectedly while the session still owned its
+            // sender. Clean up the pending entry so it doesn't leak.
             #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
             {
                 self.pending.lock().unwrap().remove(&id);
@@ -926,6 +936,50 @@ mod tests {
             };
         }
         assert!(pending.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(
+        clippy::expect_used,
+        reason = "concurrency regression test should fail fast on task or timeout errors"
+    )]
+    async fn concurrent_call_and_teardown_never_strands_response() {
+        let (msg_tx, _msg_rx) = mpsc::unbounded_channel();
+        let tx_slot: OutboundSlot = Arc::new(Mutex::new(Some(msg_tx)));
+        let pending = PendingMap::default();
+        let (notifications, _) = broadcast::channel(1);
+        let (connection, _) = watch::channel(ConnectionState::Connected);
+        let client = Arc::new(Client {
+            tx: tx_slot.clone(),
+            pending: pending.clone(),
+            notifications,
+            connection: Arc::new(connection),
+        });
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+
+        let call_task = tokio::spawn({
+            let client = client.clone();
+            let barrier = barrier.clone();
+            async move {
+                barrier.wait().await;
+                client.call("test.concurrent", &Value::Null).await
+            }
+        });
+        let teardown_task = tokio::spawn(async move {
+            barrier.wait().await;
+            teardown_session(&tx_slot, &pending);
+        });
+
+        teardown_task.await.expect("teardown task should complete");
+        let call_result = tokio::time::timeout(Duration::from_secs(1), call_task)
+            .await
+            .expect("call must not remain pending after teardown")
+            .expect("call task should complete");
+        let error = call_result.expect_err("teardown cannot produce a successful response");
+        assert!(matches!(
+            error.message.as_str(),
+            "disconnected" | "not connected"
+        ));
     }
 
     #[test]

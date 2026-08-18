@@ -41,7 +41,7 @@ use std::time::{Duration, Instant};
 use base64::engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
 use tokio::runtime::Handle;
-use tokio::sync::{broadcast, Notify};
+use tokio::sync::{broadcast, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard, Notify};
 use tracing::{debug, info, warn};
 
 use zaparoo_core::client::ClientError;
@@ -98,6 +98,33 @@ const FETCH_DRIVER_WORKERS: usize = 2;
 /// parameter. The frontend then stays inline for the process lifetime instead
 /// of doubling every cover request with a known-unsupported probe.
 static LOCAL_PATH_REQUESTS_DISABLED: AtomicBool = AtomicBool::new(false);
+/// Set after Core accepts one local-path request. Before confirmation, workers
+/// share a gate so only one can probe the additive delivery parameter.
+static LOCAL_PATH_REQUESTS_CONFIRMED: AtomicBool = AtomicBool::new(false);
+static LOCAL_PATH_CAPABILITY_PROBE: AsyncMutex<()> = AsyncMutex::const_new(());
+
+enum LocalPathRequestPermit {
+    Inline,
+    Request(Option<AsyncMutexGuard<'static, ()>>),
+}
+
+async fn acquire_local_path_request_permit() -> LocalPathRequestPermit {
+    if LOCAL_PATH_REQUESTS_DISABLED.load(Ordering::Acquire) {
+        return LocalPathRequestPermit::Inline;
+    }
+    if LOCAL_PATH_REQUESTS_CONFIRMED.load(Ordering::Acquire) {
+        return LocalPathRequestPermit::Request(None);
+    }
+
+    let probe = LOCAL_PATH_CAPABILITY_PROBE.lock().await;
+    if LOCAL_PATH_REQUESTS_DISABLED.load(Ordering::Acquire) {
+        LocalPathRequestPermit::Inline
+    } else if LOCAL_PATH_REQUESTS_CONFIRMED.load(Ordering::Acquire) {
+        LocalPathRequestPermit::Request(None)
+    } else {
+        LocalPathRequestPermit::Request(Some(probe))
+    }
+}
 
 /// Hard cap on pending enqueues in the fetch queue. Sized for a few
 /// dense visual pages (current, lookahead, previous) plus margin, so
@@ -1345,7 +1372,7 @@ fn should_request_local_path(max_size: u32) -> bool {
         max_size,
         runtime::current().is_mister(),
         crate::models::core_is_local(),
-        LOCAL_PATH_REQUESTS_DISABLED.load(Ordering::Relaxed),
+        LOCAL_PATH_REQUESTS_DISABLED.load(Ordering::Acquire),
     )
 }
 
@@ -1434,6 +1461,14 @@ async fn fetch_media_image_payload(
     mut params: MediaImageParams,
     request_local_path: bool,
 ) -> Result<FetchedMediaImage, ClientError> {
+    let (request_local_path, probe_guard) = if request_local_path {
+        match acquire_local_path_request_permit().await {
+            LocalPathRequestPermit::Inline => (false, None),
+            LocalPathRequestPermit::Request(probe) => (true, probe),
+        }
+    } else {
+        (false, None)
+    };
     if request_local_path {
         params.delivery = Some(MEDIA_IMAGE_DELIVERY_LOCAL_PATH.to_string());
     }
@@ -1444,9 +1479,18 @@ async fn fetch_media_image_payload(
     let mut path_read_duration = Duration::ZERO;
 
     let image = match first {
-        Ok(image) => image,
+        Ok(image) => {
+            if probe_guard.is_some() {
+                LOCAL_PATH_REQUESTS_CONFIRMED.store(true, Ordering::Release);
+            }
+            drop(probe_guard);
+            image
+        }
         Err(error) if request_local_path && is_unsupported_local_path_error(&error.message) => {
-            LOCAL_PATH_REQUESTS_DISABLED.store(true, Ordering::Relaxed);
+            // Publish rejection before releasing the probe gate so every
+            // waiting worker switches directly to legacy inline delivery.
+            LOCAL_PATH_REQUESTS_DISABLED.store(true, Ordering::Release);
+            drop(probe_guard);
             warn!(
                 system_id = %key.system_id,
                 path = %key.path,
@@ -1457,7 +1501,10 @@ async fn fetch_media_image_payload(
             rpc_duration += fallback_duration;
             fallback?
         }
-        Err(error) => return Err(error),
+        Err(error) => {
+            drop(probe_guard);
+            return Err(error);
+        }
     };
 
     if image.delivery != MEDIA_IMAGE_DELIVERY_LOCAL_PATH {

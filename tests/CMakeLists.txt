@@ -13,23 +13,25 @@ target_include_directories(frontend_arguments_test PRIVATE "${CMAKE_SOURCE_DIR}/
 target_link_libraries(frontend_arguments_test PRIVATE Zaparoo::CompileOptions)
 add_test(NAME frontend_arguments COMMAND frontend_arguments_test)
 
-set(_VERSION_CHECK_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/check_frontend_version.cmake")
-add_test(
-    NAME frontend_version
-    COMMAND
-        "${CMAKE_COMMAND}" -DFRONTEND=$<TARGET_FILE:frontend>
-        -DEXPECTED=${CMAKE_PROJECT_VERSION} -DARG1=--version -P "${_VERSION_CHECK_SCRIPT}"
-)
-add_test(
-    NAME frontend_version_short
-    COMMAND
-        "${CMAKE_COMMAND}" -DFRONTEND=$<TARGET_FILE:frontend>
-        -DEXPECTED=${CMAKE_PROJECT_VERSION} -DARG1=-v -P "${_VERSION_CHECK_SCRIPT}"
-)
-add_test(
-    NAME frontend_version_with_crt
-    COMMAND
-        "${CMAKE_COMMAND}" -DFRONTEND=$<TARGET_FILE:frontend>
-        -DEXPECTED=${CMAKE_PROJECT_VERSION} -DARG1=--crt -DARG2=--version -P
-        "${_VERSION_CHECK_SCRIPT}"
-)
+if(NOT CMAKE_CROSSCOMPILING)
+    set(_VERSION_CHECK_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/check_frontend_version.cmake")
+    add_test(
+        NAME frontend_version
+        COMMAND
+            "${CMAKE_COMMAND}" -DFRONTEND=$<TARGET_FILE:frontend>
+            -DEXPECTED=${CMAKE_PROJECT_VERSION} -DARG1=--version -P "${_VERSION_CHECK_SCRIPT}"
+    )
+    add_test(
+        NAME frontend_version_short
+        COMMAND
+            "${CMAKE_COMMAND}" -DFRONTEND=$<TARGET_FILE:frontend>
+            -DEXPECTED=${CMAKE_PROJECT_VERSION} -DARG1=-v -P "${_VERSION_CHECK_SCRIPT}"
+    )
+    add_test(
+        NAME frontend_version_with_crt
+        COMMAND
+            "${CMAKE_COMMAND}" -DFRONTEND=$<TARGET_FILE:frontend>
+            -DEXPECTED=${CMAKE_PROJECT_VERSION} -DARG1=--crt -DARG2=--version -P
+            "${_VERSION_CHECK_SCRIPT}"
+    )
+endif()

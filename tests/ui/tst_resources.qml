@@ -103,16 +103,21 @@ TestCase {
     }
 
     function test_missing_system_logo_attempts_load_then_shows_text_on_error(): void {
-        Resources.systemLogoStyle = "tinted";
-        const url = String(Resources.coverUrl("systems/Apogee", "#ffffff", "#888888", "#000000"));
-        verify(url.startsWith("image://tinted-svg/"), "missing system artwork must still be attempted");
+        const originalStyle = Resources.systemLogoStyle;
+        try {
+            Resources.systemLogoStyle = "tinted";
+            const url = String(Resources.coverUrl("systems/Apogee", "#ffffff", "#888888", "#000000"));
+            verify(url.startsWith("image://tinted-svg/"), "missing system artwork must still be attempted");
 
-        const host = createTemporaryObject(missingSystemTile, testCase);
-        verify(host !== null);
-        const fallback = findChild(host, "tileFallbackText");
-        verify(fallback !== null);
-        compare(fallback.text, "Apogee");
-        tryCompare(fallback, "opacity", 1.0, 500);
+            const host = createTemporaryObject(missingSystemTile, testCase);
+            verify(host !== null);
+            const fallback = findChild(host, "tileFallbackText");
+            verify(fallback !== null);
+            compare(fallback.text, "Apogee");
+            tryCompare(fallback, "opacity", 1.0, 500);
+        } finally {
+            Resources.systemLogoStyle = originalStyle;
+        }
     }
 
     function test_non_system_image_error_never_shows_text_fallback(): void {
