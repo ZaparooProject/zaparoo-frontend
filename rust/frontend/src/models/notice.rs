@@ -16,6 +16,7 @@
 // "I understand" button; that flips the flag and writes it back
 // atomically.
 
+use crate::models::action_error::report_action_error;
 use cxx_qt::{CxxQtType, Initialize};
 use std::pin::Pin;
 use tracing::warn;
@@ -80,6 +81,7 @@ impl ffi::Notice {
                 "could not persist commercial notice ack to {}: {e}",
                 path.display()
             );
+            report_action_error("setting", "");
         }
         self.as_mut().rust_mut().commercial_ack = true;
         self.as_mut().commercial_ack_changed();

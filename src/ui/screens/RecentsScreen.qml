@@ -28,4 +28,5 @@ MediaListScreen {
     gridHasMorePages: Browse.RecentsModel.has_next_page
     paginationTotalKnown: false
     gridTileTopLabelProvider: index => Browse.RecentsModel.system_name_at(index)
+    retryAction: () => Browse.RecentsModel.retry()
 }

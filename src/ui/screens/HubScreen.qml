@@ -161,6 +161,7 @@ Item {
     property int _crossSavedIndex: -1
 
     signal requestAccept(category: string)
+    signal requestRetry
     signal requestQuit
     signal requestFavoritesScreen
     signal requestRecentsScreen
@@ -500,6 +501,10 @@ Item {
     // after the push-in cue has had time to play.
     function _emitActivate(): void {
         if (hub.currentRow === 0) {
+            if ((Browse.CategoriesModel.error_message ?? "") !== "") {
+                hub.requestRetry();
+                return;
+            }
             // During optimistic boot the visible category row is backed
             // by localized placeholder labels. Accept the stable category
             // id, not the display name, so persisted HubState and router
@@ -620,9 +625,9 @@ Item {
         y: hub._blockY
 
         // Hide the tiles while the router holds us here on a forward
-        // transition so the centred "Loading…" cue (painted from
-        // Main.qml) reads alone.
-        visible: !hub.transitioning
+        // transition or while its load error is shown. Error text then paints
+        // against the screen background rather than over stale categories.
+        visible: !hub.transitioning && (Browse.CategoriesModel.error_message ?? "") === ""
 
         Component {
             id: tileDelegate
@@ -797,7 +802,7 @@ Item {
                 return entry.name;
             return "";
         }
-        visible: true
+        visible: hub.currentRow === 1 || (Browse.CategoriesModel.error_message ?? "") === ""
     }
 
     // CategoriesModel has no `loading` qproperty — the catalog is

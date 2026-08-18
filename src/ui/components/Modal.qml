@@ -193,6 +193,7 @@ Item {
                     width: parent.width
                     visible: modal.title !== ""
                     text: modal.title
+                    textFormat: Text.PlainText
                     font.family: Theme.fontUi
                     font.pixelSize: Sizing.fontSize(3.2)
                     color: Theme.textPrimary
@@ -205,6 +206,7 @@ Item {
                     width: parent.width
                     visible: modal.body !== "" && modal.kind !== "shell"
                     text: modal.body
+                    textFormat: Text.PlainText
                     font.family: Theme.fontUi
                     font.pixelSize: Sizing.fontSize(2.6)
                     color: Theme.textPrimary

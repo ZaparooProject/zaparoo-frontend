@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
+use crate::models::action_error::report_action_error;
 use crate::models::{
     global_handle, global_store, with_hidden_browse_prefs_read, with_persist_read,
 };
@@ -152,6 +153,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_category(self: Pin<&mut SystemsModel>, category: QString);
+
+        #[qinvokable]
+        fn retry(self: Pin<&mut SystemsModel>);
 
         #[qinvokable]
         fn system_id_at(self: &SystemsModel, index: i32) -> QString;
@@ -454,11 +458,8 @@ impl ffi::SystemsModel {
         // re-call recover from a stale-but-empty model — e.g. the
         // catalog refetched and the previously-current category now
         // has no systems, and a caller wants to retry the same value.
-        // The `error_message.is_empty()` guard is the [OK] RETRY path:
-        // when the catalog errored after a successful fill, `systems`
-        // is non-empty (apply_state's error branch leaves prior rows
-        // alone), so without this clause the retry would short-circuit
-        // and the surfaced error would never clear.
+        // An errored current category may still be set again by restoration
+        // paths, so do not short-circuit while an error is present.
         if self.rust().current_category == category
             && !self.rust().systems.is_empty()
             && self.rust().error_message.is_empty()
@@ -550,6 +551,23 @@ impl ffi::SystemsModel {
             });
         });
         self.as_mut().rust_mut().pending_task = Some(handle);
+    }
+
+    fn retry(mut self: Pin<&mut Self>) {
+        if self.current_category.is_empty() {
+            return;
+        }
+        if let Some(handle) = self.as_mut().rust_mut().pending_task.take() {
+            handle.abort();
+        }
+        self.rust().seq.fetch_add(1, Ordering::SeqCst);
+        if !self.loading {
+            self.as_mut().set_loading(true);
+        }
+        if !self.error_message.is_empty() {
+            self.as_mut().set_error_message(QString::default());
+        }
+        global_store().subscribe::<CatalogEndpoint>(()).refetch();
     }
 
     fn system_id_at(&self, index: i32) -> QString {
@@ -648,6 +666,7 @@ impl ffi::SystemsModel {
         global_handle().spawn(async move {
             if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
                 warn!("run failed for {name}: {}", e.message);
+                report_action_error("launch", name);
             }
         });
     }
@@ -726,6 +745,7 @@ impl ffi::SystemsModel {
         global_handle().spawn(async move {
             if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
                 warn!("run failed for {name}: {}", e.message);
+                report_action_error("launch", name);
             }
         });
     }

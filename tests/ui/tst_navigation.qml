@@ -10,6 +10,7 @@ import QtQuick
 import QtTest
 import Zaparoo.App
 import Zaparoo.Browse as Browse
+import Zaparoo.Screens
 import Zaparoo.Theme
 
 // Exercises the hub ↔ systems ↔ games navigation state machine defined
@@ -31,12 +32,28 @@ TestCase {
     property string _originalHubCategory: ""
     property int _originalHubSelectedRow: 0
     property string _originalHubSelectedAction: ""
+    property int _actionErrorCallbackCount: 0
+    property int _actionErrorDeliveredCount: 0
 
     Main {
         id: main
         fullScreen: false
         width: 1280
         height: 720
+    }
+
+    SignalSpy {
+        id: actionErrorBatchSpy
+
+        target: Browse.ActionError
+        signalName: "sequenceChanged"
+    }
+
+    Connections {
+        target: Browse.ActionError
+        function onSequenceChanged(): void {
+            testCase._actionErrorDeliveredCount += Browse.ActionError.event_sequences.length;
+        }
     }
 
     Component.onCompleted: {
@@ -98,16 +115,20 @@ TestCase {
         main._resetRapidNavigation();
         main._setFavoritesSystem("");
         Browse.Settings.set_favorites_grouping("none");
+        testCase._actionErrorCallbackCount = 0;
+        testCase._actionErrorDeliveredCount = 0;
     }
 
     function cleanup(): void {
         Motion.enabled = true;
         // A modal left open swallows every routed action, so the next test
         // would fail for a reason that has nothing to do with what it tests.
+        main._actionErrorQueue = [];
+        if (main.actionErrorModalVisible)
+            main.closeActionErrorModal(false);
         if (main.listPickerModalVisible)
             main.closeListPickerModal();
-        if (main.randomFailedModalVisible)
-            main.closeRandomFailedModal();
+        compare(ScreenManager.modalCount, 0, "test leaked modal stack ownership");
         // Restore persistent preferences changed by menu-routing tests.
         Browse.FavoritesModel.set_sort_mode(testCase._originalFavoritesSort);
         Browse.Settings.set_favorites_grouping(testCase._originalFavoritesGrouping);
@@ -311,6 +332,11 @@ TestCase {
     }
 
     function test_enter_on_bottom_landing_routes_to_expected_action(): void {
+        // This test exercises action routing, not optimistic catalog startup.
+        // Make catalog readiness authoritative so Settings does not correctly
+        // wait behind the startup transition cue on slower test runs.
+        const originalCatalogLoaded = Browse.CategoriesModel.loaded;
+        Browse.CategoriesModel.loaded = true;
         // qmllint disable compiler
         // Focus Update only when the build and current network state expose
         // it; otherwise Settings is the production empty-catalog fallback.
@@ -320,6 +346,7 @@ TestCase {
         // qmllint enable compiler
         main.handleKey(Qt.Key_Return);
         compare(main.activeScreen, expectedAction === "update" ? main.screenUpdate : main.screenSettings);
+        Browse.CategoriesModel.loaded = originalCatalogLoaded;
     }
 
     function test_favorite_systems_grid_matches_system_tile_layout(): void {
@@ -947,10 +974,12 @@ TestCase {
             tryCompare(main, "listPickerModalVisible", false);
         }
 
-        main.openListPickerModal("Orientation", [{
-            id: "horizontal",
-            label: "Horizontal"
-        }], "horizontal", "orientation");
+        main.openListPickerModal("Orientation", [
+            {
+                id: "horizontal",
+                label: "Horizontal"
+            }
+        ], "horizontal", "orientation");
         tryCompare(main, "listPickerModalVisible", true);
         main.handleAction("page_menu");
         compare(main.listPickerModalVisible, true, "View must not close an unrelated list picker");
@@ -977,10 +1006,109 @@ TestCase {
         // Harness has no browse scope, so model rejects before issuing RPC.
         Browse.GamesModel.launch_random();
         tryCompare(main, "randomFailedModalVisible", true);
+        compare(main.actionErrorModalVisible, true);
         verify((Browse.GamesModel.random_error ?? "") !== "", "failure reason recorded");
         main.handleAction("cancel");
         tryCompare(main, "randomFailedModalVisible", false);
+        compare(main.actionErrorModalVisible, false);
         compare(Browse.GamesModel.random_error, "", "dismissal clears reason");
+    }
+
+    function test_action_error_owns_input_and_dismisses(): void {
+        main.activeScreen = main.screenHub;
+        const startIndex = main.hubScreen.currentIndex;
+        main.presentActionError("launch:test", "Launch failed", "Safe explanation", "OK", null);
+        compare(main.actionErrorModalVisible, true);
+
+        main.handleAction("right");
+        compare(main.hubScreen.currentIndex, startIndex, "modal must own directional input");
+        main.handleAction("cancel");
+        compare(main.actionErrorModalVisible, false);
+    }
+
+    function test_action_error_deduplicates_and_queues(): void {
+        main.presentActionError("same", "First", "First body", "OK", null);
+        main.presentActionError("same", "Duplicate", "Duplicate body", "OK", null);
+        compare(main.actionErrorTitle, "First");
+        compare(main._actionErrorQueue.length, 0, "same visible failure is deduplicated");
+
+        main.presentActionError("next", "Second", "Second body", "OK", null);
+        compare(main._actionErrorQueue.length, 1, "different failure waits behind current modal");
+        main.handleAction("accept");
+        tryCompare(main, "actionErrorTitle", "Second");
+        compare(main._actionErrorQueue.length, 0);
+        main.handleAction("cancel");
+    }
+
+    function test_action_error_accept_dispatches_retry_once(): void {
+        main.presentActionError("retry", "Retry failed action", "Safe explanation", "Retry", function () {
+            testCase._actionErrorCallbackCount++;
+        });
+        main.handleAction("accept");
+        compare(testCase._actionErrorCallbackCount, 1);
+        compare(main.actionErrorModalVisible, false);
+        main.handleAction("accept");
+        compare(testCase._actionErrorCallbackCount, 1, "dismissed modal cannot repeat callback");
+    }
+
+    function test_action_error_rust_bridge_delivers_all_events(): void {
+        actionErrorBatchSpy.clear();
+        testCase._actionErrorDeliveredCount = 0;
+        const oversizedPayload = "x".repeat(5000);
+        Browse.QrCode.generate(oversizedPayload);
+        compare(Browse.QrCode.size, 0, "first oversized payload must fail generation");
+        Browse.QrCode.generate(oversizedPayload + "y");
+        compare(Browse.QrCode.size, 0, "second oversized payload must fail generation");
+
+        tryCompare(testCase, "_actionErrorDeliveredCount", 2, 1000, "Rust queue must retain both events across batches");
+        verify(actionErrorBatchSpy.count >= 1, "Rust bridge publishes at least one observable batch");
+        tryCompare(main, "actionErrorModalVisible", true);
+        compare(main.actionErrorTitle, "QR code failed");
+        compare(main.actionErrorBody, "Could not create the QR code for this item.");
+        compare(main._actionErrorQueue.length, 0, "same failure kind is deduplicated after bridge delivery");
+        main.handleAction("cancel");
+    }
+
+    function test_systems_error_retry_refetches_catalog(): void {
+        main.activeScreen = main.screenSystems;
+        const originalCategory = Browse.SystemsModel.current_category;
+        const originalError = Browse.SystemsModel.error_message;
+        const originalLoading = Browse.SystemsModel.loading;
+        Browse.SystemsModel.current_category = "Consoles";
+        Browse.SystemsModel.loading = false;
+        main.systemsScreen.optimisticLoading = false;
+        tryCompare(main.systemsScreen, "_overlayLoadingVisible", false);
+        Browse.SystemsModel.error_message = "catalog failed";
+        compare(Browse.SystemsModel.current_category, "Consoles");
+        compare(main.systemsScreen._state(), "error");
+
+        main.systemsScreen.handleAction("accept");
+        compare(Browse.SystemsModel.loading, true, "Retry starts a fresh catalog load");
+        compare(Browse.SystemsModel.error_message, "", "Retry clears terminal error while loading");
+
+        Browse.SystemsModel.current_category = originalCategory;
+        Browse.SystemsModel.error_message = originalError;
+        Browse.SystemsModel.loading = originalLoading;
+    }
+
+    function test_media_error_hides_live_content(): void {
+        main.activeScreen = main.screenGames;
+        const originalError = Browse.GamesModel.error_message;
+        Browse.GamesModel.error_message = "raw rpc detail";
+        compare(main.gamesScreen._gateHide, true);
+        compare(main.gamesScreen.gamesGrid.visible, false);
+        compare(main.gamesScreen.listCard.visible, false);
+        compare(main.gamesScreen.activeLabel.visible, false);
+        Browse.GamesModel.error_message = originalError;
+
+        main.activeScreen = main.screenSystems;
+        const originalSystemsError = Browse.SystemsModel.error_message;
+        Browse.SystemsModel.error_message = "raw catalog detail";
+        compare(main.systemsScreen._gateHide, true);
+        compare(main.systemsScreen.systemsGrid.visible, false);
+        compare(main.systemsScreen.listCard.visible, false);
+        compare(main.systemsScreen.activeLabel.visible, false);
+        Browse.SystemsModel.error_message = originalSystemsError;
     }
 
     function test_games_filter_selection_applies_and_persists(): void {

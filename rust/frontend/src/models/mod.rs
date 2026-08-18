@@ -23,6 +23,7 @@
     reason = "process-local init invariants: any violation is a wiring bug and must be fatal"
 )]
 
+pub mod action_error;
 pub mod alternate_versions;
 pub mod app_state;
 pub mod app_status;
@@ -208,6 +209,7 @@ pub fn with_hidden_browse_prefs_mut<R>(f: impl FnOnce(&mut HiddenBrowsePrefs) ->
         &guard.hidden_system_ids,
     ) {
         warn!("could not save hidden browse prefs: {e}");
+        action_error::report_action_error("setting", "");
     }
     result
 }

@@ -117,7 +117,7 @@ Item {
                 anchors.rightMargin: Sizing.pctW(4)
                 anchors.top: titleText.bottom
                 anchors.topMargin: Sizing.pctH(4)
-                text: Browse.GameInfo.error_message
+                text: qsTr("Could not load details. Check Zaparoo Core and try again.")
                 color: Theme.textPrimary
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontSize(2.6)

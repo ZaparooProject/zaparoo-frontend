@@ -40,6 +40,7 @@ MediaListScreen {
     topStripTotalPagesProvider: () => favorites.mediaGrid.totalPageCount
     topStripTotalTextProvider: () => favorites.favoriteTotal >= 0 ? qsTr("%n favorite(s)", "", favorites.favoriteTotal) : ""
     pageMenuEnabledWhenEmpty: true
+    retryAction: () => Browse.FavoritesModel.retry()
 
     onSelectedSystemIdChanged: Browse.FavoritesModel.set_system(favorites.selectedSystemId)
     Component.onCompleted: Browse.FavoritesModel.set_system(favorites.selectedSystemId)

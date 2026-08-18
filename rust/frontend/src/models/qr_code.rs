@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
+use crate::models::action_error::report_action_error;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use qrcode::{Color, QrCode as RustQrCode};
@@ -43,6 +44,9 @@ impl ffi::QrCode {
     fn generate(mut self: Pin<&mut Self>, content: QString) {
         let content_string = content.to_string();
         let rows = generate_rows(&content_string);
+        if rows.is_empty() && !content_string.is_empty() {
+            report_action_error("qr_code", "");
+        }
         let size = rows.len() as i32;
         self.as_mut().set_content(content);
         self.as_mut().rust_mut().rows = rows;

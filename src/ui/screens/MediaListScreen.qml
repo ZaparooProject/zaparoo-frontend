@@ -169,7 +169,7 @@ Item {
     // content hidden through the cue's minimum-visible tail so newly
     // loaded rows cannot paint underneath lingering loading text.
     readonly property bool _overlayLoadingVisible: stateOverlay.loadingVisible
-    readonly property bool _gateHide: root.transitioning || root._loading() || root._overlayLoadingVisible
+    readonly property bool _gateHide: root.transitioning || root._loading() || root._overlayLoadingVisible || root._errorMessage() !== ""
 
     signal requestHubScreen
     signal requestContextMenu(int index, var anchorRect)
@@ -622,7 +622,7 @@ Item {
 
     ActiveLabel {
         id: activeLabel
-        visible: !root._loading() && !root._overlayLoadingVisible && !root._listLayout && root.renderGridLayout
+        visible: !root._gateHide && !root._listLayout && root.renderGridLayout
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: root.activeLabelAtBottom ? undefined : mediaGrid.bottom

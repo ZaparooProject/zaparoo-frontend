@@ -27,6 +27,7 @@ use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaK
 use crate::media_meta_cache::{
     fetch_media_meta_with_path_fallback, global_media_meta_cache, MetaLookup,
 };
+use crate::models::action_error::report_action_error;
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
@@ -236,6 +237,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn fetch_more(self: Pin<&mut RecentsModel>);
+
+        #[qinvokable]
+        fn retry(self: Pin<&mut RecentsModel>);
 
         #[qinvokable]
         fn launch_at(self: Pin<&mut RecentsModel>, index: i32);
@@ -714,6 +718,11 @@ impl ffi::RecentsModel {
                 apply_resume_latest_result(model, result);
             });
         });
+    }
+
+    fn retry(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().history_requested = false;
+        self.as_mut().ensure_loaded();
     }
 
     fn fetch_more(mut self: Pin<&mut Self>) {
@@ -1655,10 +1664,12 @@ fn launch_entry(entry: &MediaHistoryEntry) {
     if text.is_empty() {
         return;
     }
+    let name = entry.media_name.clone();
     let store = global_store();
     global_handle().spawn(async move {
         if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
-            warn!("run failed: {}", e.message);
+            warn!("run failed for {name}: {}", e.message);
+            report_action_error("launch", name);
         }
     });
 }

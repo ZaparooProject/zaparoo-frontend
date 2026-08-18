@@ -18,6 +18,7 @@ use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaK
 use crate::media_meta_cache::{
     fetch_media_meta_with_path_fallback, global_media_meta_cache, MetaLookup,
 };
+use crate::models::action_error::report_action_error;
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::{
     disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
@@ -227,6 +228,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn fetch_more(self: Pin<&mut FavoritesModel>);
+
+        #[qinvokable]
+        fn retry(self: Pin<&mut FavoritesModel>);
 
         #[qinvokable]
         fn set_sort_mode(self: Pin<&mut FavoritesModel>, value: &QString);
@@ -553,6 +557,7 @@ impl ffi::FavoritesModel {
         }
         if let Err(error) = save_favorites_sort(&config_file_path(), normalized) {
             warn!("could not persist favorites sort: {error}");
+            report_action_error("setting", "");
         }
         self.as_mut().rust_mut().sort_mode = QString::from(normalized);
         self.as_mut().sort_mode_changed();
@@ -619,6 +624,10 @@ impl ffi::FavoritesModel {
         h
     }
 
+    fn retry(mut self: Pin<&mut Self>) {
+        self.as_mut().start_subscription();
+    }
+
     fn fetch_more(mut self: Pin<&mut Self>) {
         if self.loading_more || !self.has_next_page {
             return;
@@ -674,6 +683,7 @@ impl ffi::FavoritesModel {
         global_handle().spawn(async move {
             if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
                 warn!("run failed for {name}: {}", e.message);
+                report_action_error("launch", name);
             }
         });
     }
@@ -756,6 +766,7 @@ impl ffi::FavoritesModel {
                 "favorite update skipped: missing media identity for {}",
                 entry.name
             );
+            report_action_error("favorite", entry.name.clone());
             return;
         };
         let name = entry.name.clone();
@@ -778,7 +789,10 @@ impl ffi::FavoritesModel {
                         );
                     });
                 }
-                Err(e) => warn!("favorite update failed for {name}: {}", e.message),
+                Err(e) => {
+                    warn!("favorite update failed for {name}: {}", e.message);
+                    report_action_error("favorite", name);
+                }
             }
         });
     }

@@ -105,6 +105,7 @@ ApplicationWindow {
     property bool gameInfoModalRequested: false
     property bool commercialNoticeModalRequested: false
     property bool coreVersionModalRequested: false
+    property bool actionErrorModalRequested: false
     property bool randomFailedModalRequested: false
     property bool logUploadModalRequested: false
     property bool quitConfirmModalRequested: false
@@ -292,6 +293,7 @@ ApplicationWindow {
     property var qrCodeModal: qrCodeModalLoader.item
     property var commercialNoticeModal: commercialNoticeModalLoader.item
     property var coreVersionModal: coreVersionModalLoader.item
+    property var actionErrorModal: actionErrorModalLoader.item
     property var gameInfoModal: gameInfoModalLoader.item
     property var logUploadModal: logUploadModalLoader.item
     property var quitConfirmModal: quitConfirmModalLoader.item
@@ -311,6 +313,11 @@ ApplicationWindow {
     property bool qrCodeModalVisible: false
     property bool commercialNoticeModalVisible: false
     property bool coreVersionModalVisible: false
+    property bool actionErrorModalVisible: false
+    property string actionErrorKey: ""
+    property string actionErrorTitle: ""
+    property string actionErrorBody: ""
+    property string actionErrorButtonLabel: qsTr("OK")
     property bool randomFailedModalVisible: false
     property bool gameInfoModalVisible: false
     property bool logUploadModalVisible: false
@@ -445,6 +452,7 @@ ApplicationWindow {
     signal closeQrCodeRequested
     signal closeCommercialNoticeRequested
     signal closeCoreVersionRequested
+    signal actionErrorAccepted
     signal closeRandomFailedRequested
     signal closeLogUploadRequested
     signal closeQuitConfirmRequested
@@ -865,17 +873,17 @@ ApplicationWindow {
             }
 
             Loader {
-                id: randomFailedModalLoader
+                id: actionErrorModalLoader
                 anchors.fill: parent
-                active: root.randomFailedModalRequested
+                active: root.actionErrorModalRequested
                 sourceComponent: Component {
                     Modal {
-                        open: root.randomFailedModalVisible
+                        open: root.actionErrorModalVisible
                         kind: "action_error"
-                        title: qsTr("Random game")
-                        body: qsTr("No matching games found.")
-                        buttonLabel: qsTr("OK")
-                        onAccepted: root.closeRandomFailedRequested()
+                        title: root.actionErrorTitle
+                        body: root.actionErrorBody
+                        buttonLabel: root.actionErrorButtonLabel
+                        onAccepted: root.actionErrorAccepted()
                     }
                 }
             }
@@ -1179,6 +1187,17 @@ ApplicationWindow {
                                 label: qsTr("I understand")
                             }
                         ];
+                    if (root.actionErrorModalVisible)
+                        return [
+                            {
+                                button: "ButtonA",
+                                label: root.actionErrorButtonLabel
+                            },
+                            {
+                                button: "ButtonB",
+                                label: qsTr("Close")
+                            }
+                        ];
                     if (root.coreVersionModalVisible || root.randomFailedModalVisible)
                         return [
                             {
@@ -1223,7 +1242,8 @@ ApplicationWindow {
                         // and misses the Settings tile entirely. Category
                         // Real category tiles and Favorites action tile expose
                         // Options; placeholders and other actions do not.
-                        const categoryOptionsAvailable = root.hubScreen !== null && root.hubScreen.currentRow === 0 && Browse.CategoriesModel.count > 0;
+                        const categoryErrorFocused = root.hubScreen !== null && root.hubScreen.currentRow === 0 && (Browse.CategoriesModel.error_message ?? "") !== "";
+                        const categoryOptionsAvailable = root.hubScreen !== null && root.hubScreen.currentRow === 0 && !categoryErrorFocused && Browse.CategoriesModel.count > 0;
                         const favoritesOptionsAvailable = root.hubScreen !== null && root.hubScreen.currentRow === 1 && root.hubScreen.actionEntries[root.hubScreen.currentIndex]?.id === "favorites";
                         let row = [
                             {
@@ -1232,7 +1252,7 @@ ApplicationWindow {
                             },
                             {
                                 button: "ButtonA",
-                                label: qsTr("Open")
+                                label: categoryErrorFocused ? qsTr("Retry") : qsTr("Open")
                             }
                         ];
                         if (categoryOptionsAvailable || favoritesOptionsAvailable)

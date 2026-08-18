@@ -194,7 +194,7 @@ Item {
             Text {
                 width: parent.width
                 visible: modal.phase === modal._stateError
-                text: Browse.LogUpload.error_message !== "" ? qsTr("Upload failed: %1").arg(Browse.LogUpload.error_message) : qsTr("Upload failed.")
+                text: qsTr("Upload failed. Check the network connection and try again.")
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontSize(2.4)
                 color: Theme.textPrimary

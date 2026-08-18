@@ -72,6 +72,7 @@
 // MiSTer arcade alternates, and language still takes effect on the next launch
 // because Qt installs translators only at startup.
 
+use crate::models::action_error::report_action_error;
 use crate::models::{with_persist_mut, with_persist_read};
 use cxx_qt::{CxxQtType, Initialize};
 use cxx_qt_lib::{QString, QStringList};
@@ -646,6 +647,7 @@ pub(super) fn mirror_settings_to_config(config_path: &std::path::Path, settings:
             "could not save settings mirror to {}: {e}",
             config_path.display()
         );
+        report_action_error("setting", "");
     }
 }
 

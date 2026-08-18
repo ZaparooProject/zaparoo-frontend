@@ -22,10 +22,13 @@ Item {
 
     property bool enabled: true
     property bool loading: false
+    // errorMessage is state only. It may contain backend diagnostics and must
+    // never be rendered; technical detail belongs in logs.
     property string errorMessage: ""
     property int count: 0
     property string emptyText: qsTr("Nothing here")
     property string loadingText: qsTr("Loading…")
+    property string errorText: qsTr("Check Zaparoo Core and try again.")
     property int loadingDelayMs: 300
     property int minimumLoadingVisibleMs: 200
     readonly property bool loadingVisible: overlay.enabled && delayedLoading.showing
@@ -78,8 +81,8 @@ Item {
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            visible: overlay.viewState === "error" && overlay.errorMessage !== ""
-            text: overlay.errorMessage
+            visible: overlay.viewState === "error" && overlay.errorText !== ""
+            text: overlay.errorText
             font.family: Theme.fontUi
             font.pixelSize: Sizing.fontSize(2.4)
             color: Theme.textPrimary

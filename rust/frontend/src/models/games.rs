@@ -34,6 +34,7 @@ use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaK
 use crate::media_meta_cache::{
     fetch_media_meta_with_path_fallback, global_media_meta_cache, MetaLookup,
 };
+use crate::models::action_error::report_action_error;
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::{
     disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
@@ -951,10 +952,12 @@ impl ffi::GamesModel {
             };
             let Some(text) = text else {
                 warn!("media-capable directory launch fallback unavailable for {name}; not launching container path");
+                report_action_error("launch", name);
                 return;
             };
             if let Err(e) = store.run_mutation::<RunMutation>(RunParams { text }).await {
                 warn!("run failed for {name}: {}", e.message);
+                report_action_error("launch", name);
             }
         });
     }
@@ -1086,6 +1089,7 @@ impl ffi::GamesModel {
                 "favorite update skipped: missing media identity for {}",
                 entry.name
             );
+            report_action_error("favorite", entry.name.clone());
             return;
         };
         let name = entry.name.clone();
@@ -1108,7 +1112,10 @@ impl ffi::GamesModel {
                         );
                     });
                 }
-                Err(e) => warn!("favorite update failed for {name}: {}", e.message),
+                Err(e) => {
+                    warn!("favorite update failed for {name}: {}", e.message);
+                    report_action_error("favorite", name);
+                }
             }
         });
     }

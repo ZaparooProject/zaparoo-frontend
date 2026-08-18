@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
-use tracing::debug;
+use tracing::warn;
 use zaparoo_core::media_types::{MediaMeta, MediaMetaParams};
 
 #[derive(Default)]
@@ -132,7 +132,7 @@ impl ffi::GameInfo {
                         );
                     }
                     Err(e) => {
-                        debug!("game info fetch failed for {path}: {}", e.message);
+                        warn!("game info fetch failed for {path}: {}", e.message);
                         model
                             .as_mut()
                             .set_error_message(QString::from(e.message.as_str()));

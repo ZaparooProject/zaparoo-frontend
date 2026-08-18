@@ -38,6 +38,7 @@ MainLayout {
     readonly property string modalQrCode: "qr_code"
     readonly property string modalCommercialNotice: "commercial_notice"
     readonly property string modalCoreVersion: "core_version_warning"
+    readonly property string modalActionError: "action_error"
     readonly property string modalRandomFailed: "random_failed"
     // Sentinel id for the favorites "default order" row; maps to an empty
     // sort mode. Must never be "" — see openFavoritesSortMenu.
@@ -74,6 +75,12 @@ MainLayout {
     property string _pendingLauncherSystemId: ""
     property string _pendingLauncherSelectionId: ""
     property string cardWriteOwner: ""
+    property int _cardWriteIndex: -1
+    property string _gameInfoOwner: ""
+    property int _gameInfoIndex: -1
+    property var _actionErrorAcceptedCallback: null
+    property var _actionErrorQueue: []
+    property int _lastActionErrorSequence: 0
     property string contextMenuMode: "main"
     property string contextMenuOwner: ""
     property int contextMenuIndex: -1
@@ -275,6 +282,8 @@ MainLayout {
             root.commercialNoticeModalRequested = true;
         else if (modal === root.modalCoreVersion)
             root.coreVersionModalRequested = true;
+        else if (modal === root.modalActionError)
+            root.actionErrorModalRequested = true;
         else if (modal === root.modalRandomFailed)
             root.randomFailedModalRequested = true;
         else if (modal === root.modalLogUpload)
@@ -1514,6 +1523,9 @@ MainLayout {
         function onRequestAccept(category: string): void {
             root._navigateFromHub(category);
         }
+        function onRequestRetry(): void {
+            Browse.CategoriesModel.refresh();
+        }
         function onRequestQuit(): void {
             root.openQuitConfirmModal();
         }
@@ -1619,9 +1631,7 @@ MainLayout {
             // screen layer (no signal emitted), so this branch only
             // sees user intent on a non-Ready state.
             if (systemId === "") {
-                const cat = Browse.SystemsModel.current_category;
-                if (cat !== "")
-                    Browse.SystemsModel.set_category(cat);
+                Browse.SystemsModel.retry();
                 return;
             }
             // Launch-only (virtual) systems carry a zapScript and have no
@@ -1699,6 +1709,7 @@ MainLayout {
     onCancelCardWriteRequested: root.cancelCardWrite()
     onCloseGameInfoRequested: root.closeGameInfoModal()
     onCloseQrCodeRequested: root.closeQrCodeModal()
+    onActionErrorAccepted: root.closeActionErrorModal(true)
     onContextMenuCloseRequested: root.handleContextMenuCloseRequested()
     onContextMenuAccepted: id => root.handleContextMenuAccepted(id)
     Connections {
@@ -2119,20 +2130,21 @@ MainLayout {
             root.openGameInfo(owner, targetIndex);
         } else if (id === "write_card") {
             if (owner === "systems") {
-                root.beginCardWrite("systems");
+                root.beginCardWrite("systems", targetIndex);
                 Browse.SystemsModel.write_card_at(targetIndex);
             } else if (owner === "games") {
-                root.beginCardWrite("games");
+                root.beginCardWrite("games", targetIndex);
                 Browse.GamesModel.write_card_at(targetIndex);
             } else if (owner === "favorites") {
-                root.beginCardWrite("favorites");
+                root.beginCardWrite("favorites", targetIndex);
                 Browse.FavoritesModel.write_card_at(targetIndex);
             }
         } else if (id === "qr_code") {
             const text = owner === "systems" ? Browse.SystemsModel.launch_text_at(targetIndex) : owner === "games" ? Browse.GamesModel.launch_text_at(targetIndex) : owner === "favorites" ? Browse.FavoritesModel.launch_text_at(targetIndex) : "";
             if (text !== "") {
                 Browse.QrCode.generate(root._buildQrPayload(text));
-                root.openQrCodeModal();
+                if (Browse.QrCode.size > 0)
+                    root.openQrCodeModal();
             }
         } else if (id === "discover_unavailable" || id === "discover_loading") {
             return;
@@ -2158,6 +2170,8 @@ MainLayout {
         }
         if (systemId === "" || path === "")
             return;
+        root._gameInfoOwner = owner;
+        root._gameInfoIndex = index;
         Browse.GameInfo.load(systemId, path, title);
         root._requestModal(root.modalGameInfo);
         root.gameInfoModalVisible = true;
@@ -2168,8 +2182,28 @@ MainLayout {
     function closeGameInfoModal(): void {
         root.gameInfoModalVisible = false;
         Browse.GameInfo.clear();
+        root._gameInfoOwner = "";
+        root._gameInfoIndex = -1;
         if (ScreenManager.topModal === root.modalGameInfo)
             ScreenManager.popModal();
+    }
+
+    function handleGameInfoError(): void {
+        if (!root.gameInfoModalVisible || (Browse.GameInfo.error_message ?? "") === "")
+            return;
+        const owner = root._gameInfoOwner;
+        const index = root._gameInfoIndex;
+        root.closeGameInfoModal();
+        root.presentActionError("game_info:" + owner, qsTr("Details unavailable"), qsTr("Could not load details for this item. Check Zaparoo Core and try again."), qsTr("Retry"), function () {
+            root.openGameInfo(owner, index);
+        });
+    }
+
+    Connections {
+        target: Browse.GameInfo
+        function onError_messageChanged(): void {
+            root.handleGameInfoError();
+        }
     }
 
     function openQrCodeModal(): void {
@@ -2289,20 +2323,132 @@ MainLayout {
             ScreenManager.popModal();
     }
 
+    function _showActionError(entry): void {
+        root._requestModal(root.modalActionError);
+        root.actionErrorKey = entry.key;
+        root.actionErrorTitle = entry.title;
+        root.actionErrorBody = entry.body;
+        root.actionErrorButtonLabel = entry.buttonLabel;
+        root._actionErrorAcceptedCallback = entry.accepted;
+        root.randomFailedModalVisible = entry.key === "random";
+        root.actionErrorModalVisible = true;
+        if (ScreenManager.topModal !== root.modalActionError)
+            ScreenManager.pushModal(root.modalActionError);
+    }
+
+    function presentActionError(key: string, title: string, body: string, buttonLabel: string, accepted): void {
+        if (key === "")
+            return;
+        if (root.actionErrorModalVisible && root.actionErrorKey === key)
+            return;
+        for (let i = 0; i < root._actionErrorQueue.length; i++) {
+            if (root._actionErrorQueue[i].key === key)
+                return;
+        }
+        const entry = {
+            key: key,
+            title: title,
+            body: body,
+            buttonLabel: buttonLabel !== "" ? buttonLabel : qsTr("OK"),
+            accepted: accepted
+        };
+        if (root.actionErrorModalVisible) {
+            root._actionErrorQueue = root._actionErrorQueue.concat([entry]);
+            return;
+        }
+        root._showActionError(entry);
+    }
+
+    function closeActionErrorModal(runAccepted: bool): void {
+        if (!root.actionErrorModalVisible)
+            return;
+        const accepted = root._actionErrorAcceptedCallback;
+        const wasRandom = root.actionErrorKey === "random";
+        root.actionErrorModalVisible = false;
+        root.randomFailedModalVisible = false;
+        root.actionErrorKey = "";
+        root.actionErrorTitle = "";
+        root.actionErrorBody = "";
+        root.actionErrorButtonLabel = qsTr("OK");
+        root._actionErrorAcceptedCallback = null;
+        if (ScreenManager.topModal === root.modalActionError)
+            ScreenManager.popModal();
+        if (wasRandom) {
+            Browse.GamesModel.clear_random_error();
+            Browse.FavoritesModel.clear_random_error();
+            Browse.SystemsModel.clear_random_error();
+        }
+        if (runAccepted && typeof accepted === "function")
+            accepted();
+        if (root._actionErrorQueue.length > 0)
+            actionErrorQueueTimer.restart();
+    }
+
+    function _showNextActionError(): void {
+        if (root.actionErrorModalVisible || root._actionErrorQueue.length === 0)
+            return;
+        const entry = root._actionErrorQueue[0];
+        root._actionErrorQueue = root._actionErrorQueue.slice(1);
+        root._showActionError(entry);
+    }
+
     function openRandomFailedModal(): void {
-        root._requestModal(root.modalRandomFailed);
-        root.randomFailedModalVisible = true;
-        if (ScreenManager.topModal !== root.modalRandomFailed)
-            ScreenManager.pushModal(root.modalRandomFailed);
+        root.presentActionError("random", qsTr("Random game"), qsTr("No matching games found."), qsTr("OK"), null);
     }
 
     function closeRandomFailedModal(): void {
-        root.randomFailedModalVisible = false;
-        Browse.GamesModel.clear_random_error();
-        Browse.FavoritesModel.clear_random_error();
-        Browse.SystemsModel.clear_random_error();
-        if (ScreenManager.topModal === root.modalRandomFailed)
-            ScreenManager.popModal();
+        if (root.actionErrorModalVisible && root.actionErrorKey === "random")
+            root.closeActionErrorModal(false);
+    }
+
+    function _presentReportedActionError(kind: string, context: string): void {
+        let title = qsTr("Action failed");
+        let body = qsTr("The action could not be completed. Check Zaparoo Core and try again.");
+        if (kind === "launch") {
+            title = qsTr("Launch failed");
+            body = context !== "" ? qsTr("Could not start %1. Check Zaparoo Core and try again.").arg(context) : qsTr("Could not start this item. Check Zaparoo Core and try again.");
+        } else if (kind === "favorite") {
+            title = qsTr("Favorite update failed");
+            body = qsTr("Could not update this favorite. Check Zaparoo Core and try again.");
+        } else if (kind === "media_index") {
+            title = qsTr("Media update failed");
+            body = qsTr("Could not start the media database update. Check Zaparoo Core and try again.");
+        } else if (kind === "media_scrape") {
+            title = qsTr("Metadata scrape failed");
+            body = qsTr("Could not start metadata scraping. Check Zaparoo Core and try again.");
+        } else if (kind === "media_cancel") {
+            title = qsTr("Cancel failed");
+            body = qsTr("Could not cancel the media operation. Check Zaparoo Core and try again.");
+        } else if (kind === "launcher") {
+            title = qsTr("Launcher update failed");
+            body = qsTr("Could not change the launcher. Check Zaparoo Core and try again.");
+        } else if (kind === "alternate_discovery") {
+            title = qsTr("Alternate versions unavailable");
+            body = qsTr("Could not find alternate versions. Check Zaparoo Core and try again.");
+        } else if (kind === "qr_code") {
+            title = qsTr("QR code failed");
+            body = qsTr("Could not create the QR code for this item.");
+        } else if (kind === "setting") {
+            title = qsTr("Setting not saved");
+            body = qsTr("Could not save this setting. Try again.");
+        }
+        root.presentActionError(kind + ":" + context, title, body, qsTr("OK"), null);
+    }
+
+    Connections {
+        target: Browse.ActionError
+        function onSequenceChanged(): void {
+            const sequences = Browse.ActionError.event_sequences;
+            const kinds = Browse.ActionError.event_kinds;
+            const contexts = Browse.ActionError.event_contexts;
+            for (let i = 0; i < sequences.length; i++) {
+                const sequence = Number(sequences[i]);
+                if (sequence <= 0 || sequence === root._lastActionErrorSequence)
+                    continue;
+                root._lastActionErrorSequence = sequence;
+                root._presentReportedActionError(kinds[i] ?? "", contexts[i] ?? "");
+            }
+        }
     }
 
     Connections {
@@ -2348,6 +2494,24 @@ MainLayout {
         root.logUploadModalVisible = false;
         if (ScreenManager.topModal === root.modalLogUpload)
             ScreenManager.popModal();
+    }
+
+    function handleLogUploadError(): void {
+        // LogUpload state 3 is terminal failure; full detail is already logged
+        // by the Rust model. Replace the phase view with standard error chrome.
+        if (!root.logUploadModalVisible || Browse.LogUpload.state !== 3)
+            return;
+        root.closeLogUploadModal();
+        root.presentActionError("log_upload", qsTr("Log upload failed"), qsTr("Could not upload the logs. Check the network connection and try again."), qsTr("Retry"), function () {
+            root.openLogUploadModal();
+        });
+    }
+
+    Connections {
+        target: Browse.LogUpload
+        function onStateChanged(): void {
+            root.handleLogUploadError();
+        }
     }
 
     onCloseLogUploadRequested: root.closeLogUploadModal()
@@ -2668,31 +2832,31 @@ MainLayout {
         root._pendingLauncherSelectionId = "";
     }
 
-    function showSystemLauncherUpdateError(): void {
-        root.listPickerTitle = qsTr("Launcher update failed");
-        root.listPickerEntries = [
+    function retrySystemLauncherUpdate(systemId: string, selectedId: string): void {
+        root.openListPickerModal(qsTr("Saving launcher"), [
             {
-                id: "error",
-                label: qsTr("Error: %1").arg(Browse.SystemLaunchers.update_error)
-            },
-            {
-                id: "retry",
-                label: qsTr("Retry")
-            },
-            {
-                id: "cancel",
-                label: qsTr("Cancel")
+                id: "saving",
+                label: qsTr("Saving…")
             }
-        ];
-        root.listPickerInitialId = "retry";
-        root.listPickerFieldId = "system_launcher_error";
+        ], "saving", "system_launcher_pending");
+        root._pendingLauncherSystemId = systemId;
+        root._pendingLauncherSelectionId = selectedId;
+        Browse.SystemLaunchers.set_system_launcher(systemId, selectedId);
+    }
+
+    function showSystemLauncherUpdateError(): void {
+        const systemId = root._pendingLauncherSystemId;
+        const selectedId = root._pendingLauncherSelectionId;
+        root.closeListPickerModal();
+        root.clearPendingLauncherUpdate();
+        root.presentActionError("launcher:" + systemId, qsTr("Launcher update failed"), qsTr("Could not change the launcher. Check Zaparoo Core and try again."), qsTr("Retry"), function () {
+            root.retrySystemLauncherUpdate(systemId, selectedId);
+        });
     }
 
     function handleListPickerCloseRequested(): void {
         if (root.listPickerFieldId === "system_launcher_pending")
             return;
-        if (root.listPickerFieldId === "system_launcher_error")
-            root.clearPendingLauncherUpdate();
         root.closeListPickerModal();
     }
 
@@ -2751,17 +2915,6 @@ MainLayout {
         }
         if (fieldId === "system_launcher_pending")
             return;
-        if (fieldId === "system_launcher_error") {
-            if (selectedId === "error")
-                return;
-            if (selectedId === "retry" && root._pendingLauncherSystemId !== "")
-                root.beginSystemLauncherUpdate(root._pendingLauncherSystemId, root._pendingLauncherSelectionId);
-            else {
-                root.clearPendingLauncherUpdate();
-                root.closeListPickerModal();
-            }
-            return;
-        }
         if (fieldId.startsWith("system_launcher:")) {
             root.beginSystemLauncherUpdate(fieldId.slice("system_launcher:".length), selectedId);
             return;
@@ -2900,7 +3053,7 @@ MainLayout {
     onCloseCoreVersionRequested: root.closeCoreVersionModal()
     onCloseRandomFailedRequested: root.closeRandomFailedModal()
 
-    function beginCardWrite(owner: string): void {
+    function beginCardWrite(owner: string, index: int): void {
         if (owner === "systems")
             Browse.SystemsModel.cancel_card_write();
         else if (owner === "games")
@@ -2908,12 +3061,24 @@ MainLayout {
         else if (owner === "favorites")
             Browse.FavoritesModel.cancel_card_write();
         root.cardWriteOwner = owner;
+        root._cardWriteIndex = index;
         root.cardWriteFailed = false;
         root._requestModal(root.modalCardWrite);
         root.cardWriteModalVisible = true;
-        cardWriteFailureTimer.stop();
         if (ScreenManager.topModal !== root.modalCardWrite)
             ScreenManager.pushModal(root.modalCardWrite);
+    }
+
+    function retryCardWrite(owner: string, index: int): void {
+        if (index < 0)
+            return;
+        root.beginCardWrite(owner, index);
+        if (owner === "systems")
+            Browse.SystemsModel.write_card_at(index);
+        else if (owner === "games")
+            Browse.GamesModel.write_card_at(index);
+        else if (owner === "favorites")
+            Browse.FavoritesModel.write_card_at(index);
     }
 
     function handleCardWriteStatus(): void {
@@ -2922,8 +3087,12 @@ MainLayout {
         if (root.activeCardWritePending)
             return;
         if (root.activeCardWriteError !== "") {
-            root.cardWriteFailed = true;
-            cardWriteFailureTimer.restart();
+            const owner = root.cardWriteOwner;
+            const index = root._cardWriteIndex;
+            root.hideCardWriteModal();
+            root.presentActionError("card_write:" + owner, qsTr("Card write failed"), qsTr("Could not write to this card. Check that it is writable and try again."), qsTr("Retry"), function () {
+                root.retryCardWrite(owner, index);
+            });
         } else {
             root.hideCardWriteModal();
         }
@@ -2940,10 +3109,10 @@ MainLayout {
     }
 
     function hideCardWriteModal(): void {
-        cardWriteFailureTimer.stop();
         root.cardWriteModalVisible = false;
         root.cardWriteFailed = false;
         root.cardWriteOwner = "";
+        root._cardWriteIndex = -1;
         if (ScreenManager.topModal === root.modalCardWrite)
             ScreenManager.popModal();
     }
@@ -2988,7 +3157,12 @@ MainLayout {
             // pending kill the write the user actually wanted; on
             // success/error the modal auto-dismisses via
             // handleCardWriteStatus, so accept has nothing to do here.
-            if (ScreenManager.topModal === root.modalCardWrite && action === "cancel") {
+            if (ScreenManager.topModal === root.modalActionError) {
+                if (action === "cancel")
+                    root.closeActionErrorModal(false);
+                else if (root.actionErrorModal !== null)
+                    root.actionErrorModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalCardWrite && action === "cancel") {
                 root.cancelCardWrite();
             } else if (ScreenManager.topModal === root.modalQrCode && action === "cancel") {
                 root.closeQrCodeModal();
@@ -3005,7 +3179,8 @@ MainLayout {
                 if (root.coreVersionModal !== null)
                     root.coreVersionModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalRandomFailed) {
-                // Accept or Back both dismiss one-button notice.
+                // Legacy stack id retained for sessions restored across a hot
+                // reload; new failures use the shared action-error modal.
                 if (action === "accept" || action === "cancel")
                     root.closeRandomFailedModal();
             } else if (ScreenManager.topModal === root.modalLogUpload) {
@@ -3407,10 +3582,10 @@ MainLayout {
     }
 
     Timer {
-        id: cardWriteFailureTimer
-        interval: 1500
+        id: actionErrorQueueTimer
+        interval: 0
         repeat: false
-        onTriggered: root.hideCardWriteModal()
+        onTriggered: root._showNextActionError()
     }
 
     Timer {

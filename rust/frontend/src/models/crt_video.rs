@@ -27,6 +27,8 @@
 //     through the frontend.toml mirror. `commit_offsets` persists the
 //     current values; the calibration screen calls it on exit.
 
+#[cfg(zaparoo_runtime = "mister")]
+use crate::models::action_error::report_action_error;
 use crate::models::settings::{mirror_settings_to_config, persist_settings};
 use crate::models::with_persist_read;
 use cxx_qt::{CxxQtType, Initialize};
@@ -208,6 +210,7 @@ impl ffi::CrtVideo {
             Ok(()) => true,
             Err(e) => {
                 tracing::warn!("could not write {CRT_ENABLE_FILE}: {e}");
+                report_action_error("setting", "");
                 false
             }
         }

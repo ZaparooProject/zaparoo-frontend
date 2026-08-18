@@ -29,6 +29,7 @@ Item {
 
     property alias systemsGrid: systemsGrid
     property alias listCard: listCard
+    property alias activeLabel: activeLabel
     property bool transitioning: false
     // True while Hub→Systems routing is preparing this destination, before
     // the delayed loading cue becomes visible. Used only to suspend hidden
@@ -76,7 +77,7 @@ Item {
     readonly property var _gridShape: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight)
     readonly property bool _loading: Browse.SystemsModel.loading || systems.optimisticLoading
     readonly property bool _overlayLoadingVisible: stateOverlay.loadingVisible
-    readonly property bool _gateHide: systems.transitioning || systems._loading || systems._overlayLoadingVisible
+    readonly property bool _gateHide: systems.transitioning || systems._loading || systems._overlayLoadingVisible || (Browse.SystemsModel.error_message ?? "") !== ""
 
     signal requestAccept(systemId: string)
     signal requestHubScreen
@@ -348,7 +349,7 @@ Item {
         anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
         height: systems._footerProfile ? systems._footerProfile.activeLabelHeight : Sizing.pctH(7)
         text: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_name_at(systemsGrid.currentIndex) : ""
-        visible: !systems._loading && !systems._overlayLoadingVisible && !systems._listLayout
+        visible: !systems._gateHide && !systems._listLayout
     }
 
     Text {

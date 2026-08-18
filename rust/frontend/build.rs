@@ -5,6 +5,7 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
 const MODEL_FILES: &[&str] = &[
+    "src/models/action_error.rs",
     "src/models/alternate_versions.rs",
     "src/models/categories.rs",
     "src/models/crt_video.rs",

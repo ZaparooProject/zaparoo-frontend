@@ -24,6 +24,7 @@
 // errors are logged but not surfaced as a Q_PROPERTY because the
 // notification stream is the source of truth for what the UI renders.
 
+use crate::models::action_error::report_action_error;
 use cxx_qt::{Initialize, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use std::pin::Pin;
@@ -242,6 +243,7 @@ impl ffi::MediaStatus {
         crate::models::global_handle().spawn(async move {
             if let Err(e) = resource.start_index(MediaIndexParams::default()).await {
                 warn!("media_status: start_index failed: {}", e.message);
+                report_action_error("media_index", "");
             }
         });
     }
@@ -259,6 +261,7 @@ impl ffi::MediaStatus {
             };
             if let Err(e) = resource.start_index(params).await {
                 warn!("media_status: start_index_for_system failed: {}", e.message);
+                report_action_error("media_index", "");
             }
         });
     }
@@ -268,6 +271,7 @@ impl ffi::MediaStatus {
         crate::models::global_handle().spawn(async move {
             if let Err(e) = resource.cancel_index().await {
                 warn!("media_status: cancel_index failed: {}", e.message);
+                report_action_error("media_cancel", "");
             }
         });
     }
@@ -291,6 +295,7 @@ impl ffi::MediaStatus {
             };
             if let Err(e) = resource.start_scrape(params).await {
                 warn!("media_status: start_scrape failed: {}", e.message);
+                report_action_error("media_scrape", "");
             }
         });
     }
@@ -313,6 +318,7 @@ impl ffi::MediaStatus {
                     "media_status: start_scrape_for_system failed: {}",
                     e.message
                 );
+                report_action_error("media_scrape", "");
             }
         });
     }
@@ -335,6 +341,7 @@ impl ffi::MediaStatus {
                     "media_status: start_index_for_systems failed: {}",
                     e.message
                 );
+                report_action_error("media_index", "");
             }
         });
     }
@@ -361,6 +368,7 @@ impl ffi::MediaStatus {
                     "media_status: start_scrape_for_systems failed: {}",
                     e.message
                 );
+                report_action_error("media_scrape", "");
             }
         });
     }
@@ -370,6 +378,7 @@ impl ffi::MediaStatus {
         crate::models::global_handle().spawn(async move {
             if let Err(e) = resource.cancel_scrape().await {
                 warn!("media_status: cancel_scrape failed: {}", e.message);
+                report_action_error("media_cancel", "");
             }
         });
     }
