@@ -41,6 +41,7 @@ Item {
     // Center the static block (grid tiles) vs. left-align it (list rows).
     property bool centerContent: false
     property int fontPixelSize: Sizing.fontSize(2.2)
+    property int fontWeight: Font.Normal
     property string fontFamily: Theme.fontUi
     property color nameColor: Theme.textLabel
     property color variantColor: Theme.textVariant
@@ -103,6 +104,7 @@ Item {
         text: root.name
         font.family: root.fontFamily
         font.pixelSize: root.fontPixelSize
+        font.weight: root.fontWeight
     }
 
     TextMetrics {
@@ -112,6 +114,7 @@ Item {
         text: root.tags
         font.family: root.fontFamily
         font.pixelSize: root.fontPixelSize
+        font.weight: root.fontWeight
     }
 
     // Steps the marquee one pixel per tick with a dwell at each end. Runs only
@@ -163,6 +166,7 @@ Item {
             color: root.nameColor
             font.family: root.fontFamily
             font.pixelSize: root.fontPixelSize
+            font.weight: root.fontWeight
             elide: (!root._marquee && root._nameRenderW < root._nameFullW) ? Text.ElideRight : Text.ElideNone
             horizontalAlignment: Text.AlignLeft
             verticalAlignment: Text.AlignVCenter
@@ -180,6 +184,7 @@ Item {
             color: root.variantColor
             font.family: root.fontFamily
             font.pixelSize: root.fontPixelSize
+            font.weight: root.fontWeight
             // Elide from the LEFT so the specific, most-distinguishing end of a
             // long token suffix (`...lightgun`, `...system-1`) stays visible.
             elide: (!root._marquee && root._tagsRenderW < root._tagsFullW) ? Text.ElideLeft : Text.ElideNone

@@ -83,6 +83,8 @@ endif()
 qt_add_executable(
     frontend
     "${CMAKE_SOURCE_DIR}/src/app/main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/app/frontend_arguments.h"
+    "${CMAKE_SOURCE_DIR}/src/app/frontend_arguments.cpp"
     "${CMAKE_SOURCE_DIR}/src/app/media_image_provider.h"
     "${CMAKE_SOURCE_DIR}/src/app/media_image_provider.cpp"
     "${CMAKE_SOURCE_DIR}/src/app/tinted_svg_image_provider.h"

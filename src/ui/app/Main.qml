@@ -156,8 +156,8 @@ MainLayout {
     // _gamesDetailCoverMaxSize derives from _gamesCoverMaxSize, so this one
     // handler re-syncs both sizes whenever the grid shape changes.
     on_GamesCoverMaxSizeChanged: {
-        if (root.gamesScreenRequested || root.activeScreen === root.screenGames)
-            root._syncGamesModelLayout();
+        if (root.gamesScreenRequested || root.favoritesScreenRequested || root.recentsScreenRequested)
+            root._syncCoverSizing();
     }
 
     // Bind Sizing to the scene's logical dimensions, not the
@@ -196,13 +196,15 @@ MainLayout {
         else if (screen === root.screenGames) {
             root.gamesScreenRequested = true;
             root._syncGamesModelLayout();
-        } else if (screen === root.screenFavorites)
+        } else if (screen === root.screenFavorites) {
             root.favoritesScreenRequested = true;
-        else if (screen === root.screenFavoriteSystems)
+            root._syncCoverSizing();
+        } else if (screen === root.screenFavoriteSystems)
             root.favoriteSystemsScreenRequested = true;
-        else if (screen === root.screenRecents)
+        else if (screen === root.screenRecents) {
             root.recentsScreenRequested = true;
-        else if (screen === root.screenSettings)
+            root._syncCoverSizing();
+        } else if (screen === root.screenSettings)
             root.settingsScreenRequested = true;
         else if (screen === root.screenAbout)
             root.aboutScreenRequested = true;
@@ -210,6 +212,10 @@ MainLayout {
 
     function _syncGamesModelLayout(): void {
         Browse.GamesModel.page_size = root._gamesPageSize;
+        root._syncCoverSizing();
+    }
+
+    function _syncCoverSizing(): void {
         Browse.GamesModel.set_cover_max_size(root._gamesCoverMaxSize);
         Browse.GamesModel.set_detail_cover_max_size(root._gamesDetailCoverMaxSize);
     }

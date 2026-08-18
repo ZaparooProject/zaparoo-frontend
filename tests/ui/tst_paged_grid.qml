@@ -141,6 +141,7 @@ TestCase {
         // (which skips its cleanup) doesn't poison the next case's
         // pageCount/totalPageCount math.
         grid.hasMorePages = false;
+        grid.loadingMore = false;
         grid.paginationTotalKnown = true;
         grid.totalItemsOverride = -1;
         fillModel(0);
@@ -563,6 +564,28 @@ TestCase {
         compare(grid._pendingTargetRow, grid.rows - 1);
         compare(grid._pendingTargetCol, 0);
         verify(loadMoreSpy.count >= 1, "expected loadMoreRequested to fire at least once");
+        _resetPartialLoadState();
+    }
+
+    function test_pending_target_waits_for_active_append_before_next_fetch(): void {
+        _setupPartialLoad(24, 60);
+        compare(grid.moveSelection(0, -1), false);
+        compare(grid._pendingTargetPage, 4);
+
+        grid.loadingMore = true;
+        loadMoreSpy.clear();
+        for (let i = 24; i < 36; i++)
+            model.append({
+                "name": "item-" + i,
+                "coverKey": "",
+                "favorite": 0
+            });
+        tryCompare(grid, "itemCount", 36);
+        compare(loadMoreSpy.count, 0, "active append tail must suppress next cursor request");
+
+        grid.loadingMore = false;
+        tryCompare(loadMoreSpy, "count", 1);
+        compare(grid._pendingTargetPage, 4);
         _resetPartialLoadState();
     }
 

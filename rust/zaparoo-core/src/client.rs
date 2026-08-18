@@ -160,6 +160,20 @@ impl std::error::Error for ClientError {}
 
 type PendingMap = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value, ClientError>>>>>;
 
+/// Removes a pending RPC when its `call()` future is canceled or times out.
+/// Normal responses remove the same key first, making this drop a no-op.
+struct PendingRequestGuard {
+    id: String,
+    pending: PendingMap,
+}
+
+impl Drop for PendingRequestGuard {
+    #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
+    fn drop(&mut self) {
+        self.pending.lock().unwrap().remove(&self.id);
+    }
+}
+
 fn deserialize_timed<T: DeserializeOwned>(
     method: &'static str,
     val: Value,
@@ -471,6 +485,10 @@ impl Client {
         {
             self.pending.lock().unwrap().insert(id.clone(), resp_tx);
         }
+        let _pending_guard = PendingRequestGuard {
+            id: id.clone(),
+            pending: self.pending.clone(),
+        };
 
         if sender.send(text).is_err() {
             // Receiver was dropped between the snapshot and the send —
@@ -894,6 +912,21 @@ pub(crate) fn backoff_delay(failures: u32, boot_window: bool) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[allow(clippy::unwrap_used, reason = "test mutex must remain healthy")]
+    fn pending_request_guard_cleans_up_canceled_call() {
+        let pending = PendingMap::default();
+        let (sender, _receiver) = oneshot::channel();
+        pending.lock().unwrap().insert("request".into(), sender);
+        {
+            let _guard = PendingRequestGuard {
+                id: "request".into(),
+                pending: pending.clone(),
+            };
+        }
+        assert!(pending.lock().unwrap().is_empty());
+    }
 
     #[test]
     fn backoff_follows_exponential_curve_then_caps() {

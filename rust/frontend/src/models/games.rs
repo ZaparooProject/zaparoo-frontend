@@ -31,7 +31,9 @@
 // when the user spams direction-arrow + Accept across a model swap.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
-use crate::media_meta_cache::{global_media_meta_cache, MetaLookup};
+use crate::media_meta_cache::{
+    fetch_media_meta_with_path_fallback, global_media_meta_cache, MetaLookup,
+};
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::{
     disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
@@ -1306,10 +1308,12 @@ impl ffi::GamesModel {
 
         let description = entry.description.clone();
         let detail_tags = detail_tags_from_entry(entry);
+        let fallback_system = entry_system_id(entry);
+        let fallback_path = entry.path.clone();
         // Use the cover-preference key as the synchronous primary so the detail
         // pane requests the same cache entry that `prefetch_around` already
         // warmed for the focused row — instant paint with no hourglass.
-        let detail_image_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
+        let detail_image_key = detail_cover_key_for_entry(entry);
         let meta_key = meta_cache_key_for_entry(entry);
         let Some(params) = meta_params_for_entry(entry) else {
             self.as_mut().set_current_detail_loading(false);
@@ -1347,16 +1351,11 @@ impl ffi::GamesModel {
 
         let seq = self.rust().description_seq.clone();
         let qt_thread = self.qt_thread();
-        let store = global_store();
         global_handle().spawn(async move {
-            let result = store.client().media_meta(params).await;
+            let result =
+                fetch_media_meta_with_path_fallback(params, fallback_system, fallback_path).await;
             if let Some(key) = meta_key {
-                match &result {
-                    Ok(result) => {
-                        global_media_meta_cache().store(key, Some(result.media.clone()));
-                    }
-                    Err(_) => global_media_meta_cache().store(key, None),
-                }
+                global_media_meta_cache().store_fetch_result(key, &result);
             }
             let _ = qt_thread.queue(move |mut model| {
                 if seq.load(Ordering::SeqCst) != ticket {
@@ -1919,11 +1918,15 @@ fn apply_games_detail_meta(mut model: Pin<&mut ffi::GamesModel>, index: i32, met
         .as_mut()
         .set_current_detail_tags(QString::from(detail_tags_from_meta(meta).as_str()));
 
-    let cover_key = usize::try_from(index)
+    let entry = usize::try_from(index)
         .ok()
-        .and_then(|index| model.entries.get(index))
-        .and_then(media_key_for)
-        .map(MediaKey::with_current_cover_preference);
+        .and_then(|index| model.entries.get(index));
+    if !entry.is_some_and(|entry| entry.has_cover) {
+        model.as_mut().rust_mut().pending_carousel_keys = None;
+        set_detail_image_keys(model, Vec::new());
+        return;
+    }
+    let cover_key = entry.and_then(detail_cover_key_for_entry);
     let type_keys =
         detail_image_keys_from_meta(meta, meta.title.system.id.as_str(), meta.path.as_str());
     if type_keys.is_empty() {
@@ -2388,6 +2391,13 @@ fn media_key_for(entry: &BrowseEntry) -> Option<MediaKey> {
         )),
         None => Some(MediaKey::new(system_id, entry.path.clone())),
     }
+}
+
+fn detail_cover_key_for_entry(entry: &BrowseEntry) -> Option<MediaKey> {
+    entry
+        .has_cover
+        .then(|| media_key_for(entry).map(MediaKey::with_current_cover_preference))
+        .flatten()
 }
 
 /// Pure ordering helper for `prefetch_around`. Returns
@@ -3380,14 +3390,11 @@ fn apply_append_page(
             let total = i32::try_from(result.total_files).unwrap_or(i32::MAX);
             // Order matters for the pending-target chain in PagedGrid:
             //
-            // 1. `next_cursor` and `loading_more=false` MUST happen
-            //    before the FIRST sub-batch's `end_insert_rows`. The
-            //    Repeater reacts synchronously to `rowsInserted`;
-            //    PagedGrid's `onItemCountChanged` runs
-            //    `_commitPendingTarget`, which can re-fire
-            //    `loadMoreRequested` -> `fetch_more`. If `loading_more`
-            //    is still true at that moment the `fetch_more` guard
-            //    early-returns and the chain stalls after one append.
+            // 1. Keep `loading_more=true` until the LAST sub-batch lands. The
+            //    grid suppresses another cursor request while this flag is set,
+            //    preventing a later page from interleaving with this page's
+            //    frame-gapped tail. Its `onLoadingMoreChanged` handler resumes
+            //    any still-pending target once finalization clears the flag.
             //
             // 2. `has_next_page` MUST happen after the LAST sub-batch's
             //    `end_insert_rows`. On the final chunk the value flips
@@ -3408,7 +3415,6 @@ fn apply_append_page(
             // self-disarm via the `append_seq` ticket if a new
             // `start_initial_browse` lands during the trickle window.
             model.as_mut().rust_mut().next_cursor = next_cursor;
-            model.as_mut().set_loading_more(false);
             // Jump path: insert the whole chunk in one shot, no frame-gapped
             // trickle. The appended rows sit far from `currentPage`, so their
             // Tile delegates stay unmaterialised (per-cell Loader is
@@ -3437,6 +3443,7 @@ fn apply_append_page(
                 if model.total_files != total {
                     model.as_mut().set_total_files(total);
                 }
+                model.as_mut().set_loading_more(false);
                 return;
             }
             let mut batches = chunk_for_subbatching(entries, APPEND_SUB_BATCH_SIZE);
@@ -3447,6 +3454,7 @@ fn apply_append_page(
                 if model.total_files != total {
                     model.as_mut().set_total_files(total);
                 }
+                model.as_mut().set_loading_more(false);
                 return;
             }
             // First batch runs synchronously inside the existing
@@ -3468,6 +3476,7 @@ fn apply_append_page(
                 if model.total_files != total {
                     model.as_mut().set_total_files(total);
                 }
+                model.as_mut().set_loading_more(false);
                 return;
             }
             // Remaining batches: post one frame apart on the Qt
@@ -3502,6 +3511,7 @@ fn apply_append_page(
                             if model.total_files != total {
                                 model.as_mut().set_total_files(total);
                             }
+                            model.as_mut().set_loading_more(false);
                         }
                     });
                 }
@@ -3538,13 +3548,13 @@ mod tests {
     use super::{
         child_launch_text_from_browse_result, chunk_for_subbatching, compute_unresolved_keys,
         cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
-        detail_image_keys_from_meta, detail_tags_from_tags, display_name, display_title_for_entry,
-        entry_system_id, favorites_tags, games_random_launch_text, initial_row_replacement,
-        is_media_capable_entry, is_strict_ancestor_path, jump_fetch_limit,
-        media_capable_directory_browse_params, media_key_for, meta_cache_key_for_entry,
-        meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
-        prefetch_around_plan, prefetch_cursor_window_plan, project_status, result_total_dirs,
-        run_text_for_entry, seeded_refetch_pagination_state,
+        detail_cover_key_for_entry, detail_image_keys_from_meta, detail_tags_from_tags,
+        display_name, display_title_for_entry, entry_system_id, favorites_tags,
+        games_random_launch_text, initial_row_replacement, is_media_capable_entry,
+        is_strict_ancestor_path, jump_fetch_limit, media_capable_directory_browse_params,
+        media_key_for, meta_cache_key_for_entry, meta_params_for_entry, ordered_detail_image_keys,
+        position_of_game_path, prefetch_around_plan, prefetch_cursor_window_plan, project_status,
+        result_total_dirs, run_text_for_entry, seeded_refetch_pagination_state,
         singleton_directory_needs_launch_resolution, transform_entries, InitialAction,
         InitialRowReplacement, Projection,
     };
@@ -4439,6 +4449,16 @@ mod tests {
         ];
         let unresolved = compute_unresolved_keys(&entries, |_| false, |_| false);
         assert!(unresolved.is_empty());
+    }
+
+    #[test]
+    fn detail_cover_key_excludes_confirmed_no_cover_entry() {
+        let mut no_cover = media("nocovergame", "/p/nocovergame", "Arcade");
+        no_cover.has_cover = false;
+        assert!(detail_cover_key_for_entry(&no_cover).is_none());
+
+        let covered = media("coveredgame", "/p/coveredgame", "NES");
+        assert!(detail_cover_key_for_entry(&covered).is_some());
     }
 
     #[test]

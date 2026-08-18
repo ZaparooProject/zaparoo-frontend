@@ -46,8 +46,7 @@ use tracing::{debug, info, warn};
 
 use zaparoo_core::client::ClientError;
 use zaparoo_core::media_types::{
-    MediaImageParams, MediaImageResult, MEDIA_IMAGE_DELIVERY_INLINE,
-    MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+    MediaImageParams, MediaImageResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
 };
 use zaparoo_core::runtime;
 use zaparoo_core::store::Store;
@@ -73,6 +72,10 @@ const NEGATIVE_MEMO_CAP: usize = 4096;
 /// tiles rather than the ~110 full-resolution SNES covers that fit at
 /// 64 MiB.
 const CACHE_CAP_BYTES: usize = 128 * 1024 * 1024;
+/// Core's `localPath` response is a resized thumbnail, never an arbitrary
+/// source image. Bound one file well below total cache capacity so a corrupt,
+/// replaced, or remote-host path cannot allocate `MiSTer`'s remaining RAM.
+const MAX_LOCAL_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 
 /// Maximum retries for a single key after a transient fetch failure
 /// (RPC error, base64 decode error). Generous enough to ride through
@@ -1338,9 +1341,21 @@ struct FetchedMediaImage {
 }
 
 fn should_request_local_path(max_size: u32) -> bool {
-    max_size > 0
-        && runtime::current().is_mister()
-        && !LOCAL_PATH_REQUESTS_DISABLED.load(Ordering::Relaxed)
+    local_path_request_allowed(
+        max_size,
+        runtime::current().is_mister(),
+        crate::models::core_is_local(),
+        LOCAL_PATH_REQUESTS_DISABLED.load(Ordering::Relaxed),
+    )
+}
+
+fn local_path_request_allowed(
+    max_size: u32,
+    frontend_is_mister: bool,
+    core_is_local: bool,
+    disabled: bool,
+) -> bool {
+    max_size > 0 && frontend_is_mister && core_is_local && !disabled
 }
 
 fn is_unsupported_local_path_error(message: &str) -> bool {
@@ -1352,21 +1367,64 @@ fn is_unsupported_local_path_error(message: &str) -> bool {
 }
 
 async fn read_local_image(path: String) -> Result<Vec<u8>, String> {
-    match tokio::task::spawn_blocking(move || std::fs::read(path)).await {
-        Ok(Ok(bytes)) if !bytes.is_empty() => Ok(bytes),
-        Ok(Ok(_)) => Err("thumbnail file was empty".to_string()),
-        Ok(Err(error)) => Err(error.to_string()),
+    match tokio::task::spawn_blocking(move || read_local_image_file(&path, MAX_LOCAL_IMAGE_BYTES))
+        .await
+    {
+        Ok(result) => result,
         Err(error) => Err(format!("blocking thumbnail read failed: {error}")),
     }
 }
 
+fn read_local_image_file(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+
+    let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("thumbnail path is not a regular file".to_string());
+    }
+    let length = usize::try_from(metadata.len())
+        .map_err(|_| "thumbnail file size does not fit memory limits".to_string())?;
+    if length == 0 {
+        return Err("thumbnail file was empty".to_string());
+    }
+    if length > max_bytes {
+        return Err(format!(
+            "thumbnail file exceeds {max_bytes}-byte read limit"
+        ));
+    }
+
+    let mut bytes = Vec::with_capacity(length);
+    file.take(max_bytes.saturating_add(1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.is_empty() {
+        return Err("thumbnail file was empty".to_string());
+    }
+    if bytes.len() > max_bytes {
+        return Err(format!(
+            "thumbnail file exceeds {max_bytes}-byte read limit"
+        ));
+    }
+    Ok(bytes)
+}
+
+fn inline_fallback_params(mut params: MediaImageParams) -> MediaImageParams {
+    // Omit the additive field entirely. A legacy Core that rejected
+    // `delivery: "localPath"` rejects `delivery: "inline"` too.
+    params.delivery = None;
+    params
+}
+
 async fn fetch_inline_media_image(
     store: &Arc<Store>,
-    mut params: MediaImageParams,
+    params: MediaImageParams,
 ) -> (Result<MediaImageResult, ClientError>, Duration) {
-    params.delivery = Some(MEDIA_IMAGE_DELIVERY_INLINE.to_string());
     let started = Instant::now();
-    let result = store.client().media_image(params).await;
+    let result = store
+        .client()
+        .media_image(inline_fallback_params(params))
+        .await;
     (result, started.elapsed())
 }
 
@@ -1862,10 +1920,11 @@ mod tests {
 
     use super::{
         classify_media_image_bytes, classify_single_media_image_error, ext_for_content_type,
-        ext_from_extension_field, finish_fetch, is_connection_down_error,
-        is_unsupported_local_path_error, pop_one, process_batch_outcomes, read_local_image,
-        CacheState, FetchOutcome, MediaImageCache, MediaImageUpdate, MediaKey, NegativeMemo,
-        NoImagePolicy, QueueEntry, MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
+        ext_from_extension_field, finish_fetch, inline_fallback_params, is_connection_down_error,
+        is_unsupported_local_path_error, local_path_request_allowed, pop_one,
+        process_batch_outcomes, read_local_image, read_local_image_file, CacheState, FetchOutcome,
+        MediaImageCache, MediaImageUpdate, MediaKey, NegativeMemo, NoImagePolicy, QueueEntry,
+        MAX_QUEUE_LEN, NEGATIVE_MEMO_CAP,
     };
     use std::collections::VecDeque;
     use std::io::Write as _;
@@ -1874,7 +1933,9 @@ mod tests {
     use std::time::Instant;
     use tokio::runtime::Builder;
     use tokio::sync::{broadcast, Notify};
-    use zaparoo_core::media_types::{MediaImageResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH};
+    use zaparoo_core::media_types::{
+        MediaImageParams, MediaImageResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+    };
 
     /// Build a `MediaImageCache` without spawning the fetch driver.
     /// Lets tests exercise `enqueue` / `is_cached` / `is_negative`
@@ -1893,6 +1954,15 @@ mod tests {
             updates_tx,
             max_cover_size: Arc::new(AtomicU32::new(0)),
         }
+    }
+
+    #[test]
+    fn local_path_delivery_requires_colocated_mister_core() {
+        assert!(local_path_request_allowed(256, true, true, false));
+        assert!(!local_path_request_allowed(0, true, true, false));
+        assert!(!local_path_request_allowed(256, false, true, false));
+        assert!(!local_path_request_allowed(256, true, false, false));
+        assert!(!local_path_request_allowed(256, true, true, true));
     }
 
     #[test]
@@ -2150,6 +2220,15 @@ mod tests {
     }
 
     #[test]
+    fn legacy_inline_fallback_omits_rejected_delivery_field() {
+        let params = inline_fallback_params(MediaImageParams {
+            delivery: Some(MEDIA_IMAGE_DELIVERY_LOCAL_PATH.to_string()),
+            ..MediaImageParams::default()
+        });
+        assert!(params.delivery.is_none());
+    }
+
+    #[test]
     fn local_path_bytes_use_existing_image_validation() {
         let key = MediaKey::new("SNES", "/p");
         let image = MediaImageResult {
@@ -2171,7 +2250,7 @@ mod tests {
     }
 
     #[test]
-    fn local_path_read_accepts_bytes_and_rejects_missing_files() {
+    fn local_path_read_accepts_bounded_regular_files() {
         let mut file = tempfile::NamedTempFile::new().expect("temp file");
         file.write_all(&[1, 2, 3]).expect("write temp image");
         let existing = file.path().to_string_lossy().into_owned();
@@ -2187,6 +2266,23 @@ mod tests {
             vec![1, 2, 3]
         );
         assert!(runtime.block_on(read_local_image(missing)).is_err());
+    }
+
+    #[test]
+    fn local_path_read_rejects_oversized_and_non_regular_paths() {
+        let mut file = tempfile::NamedTempFile::new().expect("temp file");
+        file.write_all(&[1, 2, 3]).expect("write temp image");
+        let path = file.path().to_string_lossy();
+        assert!(read_local_image_file(&path, 2)
+            .expect_err("oversized file must fail")
+            .contains("exceeds"));
+
+        let directory = tempfile::tempdir().expect("temp directory");
+        let directory_path = directory.path().to_string_lossy();
+        assert_eq!(
+            read_local_image_file(&directory_path, 16).expect_err("directory must fail"),
+            "thumbnail path is not a regular file"
+        );
     }
 
     fn key(s: &str, p: &str) -> MediaKey {

@@ -197,6 +197,10 @@ Item {
     // callers leave this false; their pending targets always resolve
     // immediately because totalPageCount === pageCount.
     property bool hasMorePages: false
+    // True while model owns an RPC or frame-gapped append tail. Pending-target
+    // navigation waits for it to clear before requesting another cursor page,
+    // preventing later-page rows from interleaving with current append.
+    property bool loadingMore: false
 
     // Pending wrap-target state. Set by Up-at-page-0, Down-past-last-
     // loaded, and pageBy when the destination page hasn't been fetched
@@ -425,9 +429,8 @@ Item {
                 return;
             }
             if (root.hasMorePages) {
-                // Keep loading; `fetch_more_*` is debounced model-side via
-                // `loading_more`, so a redundant emit is cheap.
-                root.loadMoreRequested(true);
+                if (!root.loadingMore)
+                    root.loadMoreRequested(true);
                 return;
             }
             // Dataset genuinely can't reach the target (Core revised the
@@ -454,10 +457,8 @@ Item {
         if (targetIdx >= root.itemCount) {
             // Specific (page, row, col) slot not realised yet.
             if (root.hasMorePages) {
-                // Keep the chain going; `fetch_more` is debounced
-                // model-side via `loading_more`, so a redundant emit
-                // is cheap.
-                root.loadMoreRequested(true);
+                if (!root.loadingMore)
+                    root.loadMoreRequested(true);
                 return;
             }
             // Model says no more pages are coming. Settle on the
@@ -633,6 +634,11 @@ Item {
     // (e.g. a final empty append).
     onHasMorePagesChanged: {
         if (root.hasPendingTarget)
+            root._commitPendingTarget();
+    }
+
+    onLoadingMoreChanged: {
+        if (!root.loadingMore && root.hasPendingTarget)
             root._commitPendingTarget();
     }
 

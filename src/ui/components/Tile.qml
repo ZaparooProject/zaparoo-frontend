@@ -133,7 +133,12 @@ Item {
     readonly property int _outlineWidth: Sizing.stroke(Sizing.pctH(0.6))
     readonly property int _captionHeight: Sizing.pctH(5.5)
     readonly property int _captionGap: Sizing.pctH(0.4)
-    readonly property int _captionTextSize: Sizing.fontSize(2.2)
+    // Noto Sans has no optical-size axis or embedded bitmap strikes. Its 12px
+    // Regular raster is too thin when forced to a monochrome mask at 540p, so
+    // use the next proportional size and Medium weight only in that mode.
+    readonly property bool _compactUnsmoothedCaption: Theme.unsmoothedText && !Theme.crtNativePath
+    readonly property int _captionTextSize: Sizing.fontSize(root._compactUnsmoothedCaption ? 2.4 : 2.2)
+    readonly property int _captionTextWeight: root._compactUnsmoothedCaption ? Font.Medium : Font.Normal
     readonly property bool _hasTopLabel: root.delegateTopLabel !== ""
     readonly property int _topLabelHeight: Sizing.pctH(4.2)
     readonly property int _topLabelGap: Sizing.pctH(0.4)
@@ -610,6 +615,7 @@ Item {
     ScrollingCaption {
         id: caption
 
+        objectName: "tileCaption"
         x: root._captionSideInset
         y: parent.height - root._captionHeight
         width: root._captionTextMaxWidth
@@ -620,6 +626,7 @@ Item {
         name: root.delegateName
         tags: root.delegateDisambiguatingTags
         fontPixelSize: root._captionTextSize
+        fontWeight: root._captionTextWeight
         nameColor: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
     }
 }

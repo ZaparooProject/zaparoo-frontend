@@ -23,13 +23,16 @@
 // byte-accounted under a hard 4 MiB cap.
 
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::mem::size_of;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use tokio::sync::Semaphore;
 use tracing::debug;
+use zaparoo_core::client::ClientError;
 use zaparoo_core::media_types::{
-    MediaMeta, MediaMetaBatchResult, MediaMetaParams, MediaMetaProperty, TagInfo,
+    MediaMeta, MediaMetaBatchResult, MediaMetaParams, MediaMetaProperty, MediaMetaResult, TagInfo,
     MEDIA_META_BATCH_MAX_ITEMS,
 };
 
@@ -37,6 +40,9 @@ use crate::media_image_cache::MediaKey;
 use crate::models::{global_handle, global_store};
 
 const META_CACHE_CAP_BYTES: usize = 4 * 1024 * 1024;
+const META_RPC_MAX_CONCURRENT: usize = 4;
+const META_RPC_QUEUE_TIMEOUT: Duration = Duration::from_secs(2);
+const META_RPC_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
 const HASH_ENTRY_OVERHEAD: usize = 16;
 
 /// Outcome of a synchronous cache probe.
@@ -130,6 +136,22 @@ impl MediaMetaCache {
         store_locked(&mut guard, key, meta);
     }
 
+    /// Cache a focused fetch only when it produced metadata or a stable
+    /// canonical path miss. Transport failures and stale session IDs must stay
+    /// retryable instead of becoming permanent `(system, path)` negatives.
+    pub fn store_fetch_result(&self, key: MediaKey, result: &Result<MediaMetaResult, ClientError>) {
+        match result {
+            Ok(result) => self.store(key, Some(result.media.clone())),
+            Err(error) if is_stable_path_not_found(&error.message) => self.store(key, None),
+            Err(error) => debug!(
+                system_id = %key.system_id,
+                path = %key.path,
+                error = %error.message,
+                "media_meta_cache: transient focused failure left retryable"
+            ),
+        }
+    }
+
     /// Best-effort background warm of uncached neighbors. One ordered batch is
     /// issued after cached/in-flight filtering; results become synchronous hits
     /// for the next focus move.
@@ -139,13 +161,15 @@ impl MediaMetaCache {
             return;
         }
         global_handle().spawn(async move {
-            let (keys, params): (Vec<_>, Vec<_>) = to_fetch.into_iter().unzip();
-            let batch_size = keys.len();
+            let batch_size = to_fetch.len();
             let started = Instant::now();
-            let result = global_store().client().media_meta_batch(params).await;
+            let client = global_store().client();
+            let params = to_fetch.iter().map(|(_, params)| params.clone()).collect();
+            let result = run_bounded_meta_rpc(client.media_meta_batch(params)).await;
             let cache = global_media_meta_cache();
             match result {
-                Ok(batch) => {
+                Ok(mut batch) => {
+                    retry_stale_media_ids(&client, &to_fetch, &mut batch).await;
                     let hits = batch
                         .items
                         .iter()
@@ -163,7 +187,10 @@ impl MediaMetaCache {
                         duration_ms = started.elapsed().as_millis(),
                         "media_meta_cache: batch prefetch complete"
                     );
-                    cache.finish_prefetch(keys, Some(batch));
+                    cache.finish_prefetch(
+                        to_fetch.into_iter().map(|(key, _)| key).collect(),
+                        Some(batch),
+                    );
                 }
                 Err(error) => {
                     debug!(
@@ -172,7 +199,7 @@ impl MediaMetaCache {
                         error = %error.message,
                         "media_meta_cache: batch prefetch failed"
                     );
-                    cache.finish_prefetch(keys, None);
+                    cache.finish_prefetch(to_fetch.into_iter().map(|(key, _)| key).collect(), None);
                 }
             }
         });
@@ -219,7 +246,18 @@ impl MediaMetaCache {
         for (key, item) in keys.into_iter().zip(batch.items) {
             match (item.media, item.error) {
                 (Some(meta), None) => store_locked(&mut guard, key, Some(meta)),
-                (None, Some(_)) => store_locked(&mut guard, key, None),
+                (None, Some(error)) if is_stable_path_not_found(&error) => {
+                    store_locked(&mut guard, key, None);
+                }
+                (None, Some(error)) => {
+                    guard.inflight.remove(&key);
+                    debug!(
+                        system_id = %key.system_id,
+                        path = %key.path,
+                        error,
+                        "media_meta_cache: transient batch item left retryable"
+                    );
+                }
                 _ => {
                     guard.inflight.remove(&key);
                     debug!("media_meta_cache: unmatched batch item");
@@ -227,6 +265,132 @@ impl MediaMetaCache {
             }
         }
     }
+}
+
+/// Retry only errors that prove a session-scoped ID went stale. Other errors
+/// remain untouched so the normal transient-failure path can release them.
+async fn retry_stale_media_ids(
+    client: &zaparoo_core::client::Client,
+    requests: &[(MediaKey, MediaMetaParams)],
+    batch: &mut MediaMetaBatchResult,
+) {
+    if batch.items.len() != requests.len() {
+        return;
+    }
+    let retries: Vec<_> = requests
+        .iter()
+        .zip(&batch.items)
+        .enumerate()
+        .filter_map(|(index, ((key, params), item))| {
+            let error = item.error.as_deref()?;
+            (params.media_id.is_some() && is_stale_media_id_error(error)).then(|| {
+                (
+                    index,
+                    MediaMetaParams::for_media(
+                        key.system_id.as_ref().to_owned(),
+                        key.path.as_ref().to_owned(),
+                    ),
+                )
+            })
+        })
+        .collect();
+    if retries.is_empty() {
+        return;
+    }
+    let retry_params = retries.iter().map(|(_, params)| params.clone()).collect();
+    match run_bounded_meta_rpc(client.media_meta_batch(retry_params)).await {
+        Ok(retry_batch) if retry_batch.items.len() == retries.len() => {
+            for ((index, _), item) in retries.into_iter().zip(retry_batch.items) {
+                batch.items[index] = item;
+            }
+        }
+        Ok(retry_batch) => debug!(
+            expected = retries.len(),
+            actual = retry_batch.items.len(),
+            "media_meta_cache: malformed stale-ID fallback response"
+        ),
+        Err(error) => debug!(
+            error = %error.message,
+            "media_meta_cache: stale-ID path fallback failed"
+        ),
+    }
+}
+
+/// Fetch a focused item by its fast session ID, falling back once to the
+/// canonical path only when Core confirms that ID no longer exists.
+pub async fn fetch_media_meta_with_path_fallback(
+    params: MediaMetaParams,
+    system: String,
+    path: String,
+) -> Result<MediaMetaResult, ClientError> {
+    let client = global_store().client();
+    let used_media_id = params.media_id.is_some();
+    match run_bounded_meta_rpc(client.media_meta(params)).await {
+        Err(error) if used_media_id && is_stale_media_id_error(&error.message) => {
+            debug!(
+                system_id = %system,
+                path = %path,
+                error = %error.message,
+                "media_meta_cache: retrying stale media ID by canonical path"
+            );
+            run_bounded_meta_rpc(client.media_meta(MediaMetaParams::for_media(system, path))).await
+        }
+        result => result,
+    }
+}
+
+static META_RPC_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+async fn run_bounded_meta_rpc<T>(
+    operation: impl Future<Output = Result<T, ClientError>>,
+) -> Result<T, ClientError> {
+    let semaphore = META_RPC_SEMAPHORE
+        .get_or_init(|| Arc::new(Semaphore::new(META_RPC_MAX_CONCURRENT)))
+        .clone();
+    run_bounded_meta_rpc_with(
+        semaphore,
+        META_RPC_QUEUE_TIMEOUT,
+        META_RPC_RESPONSE_TIMEOUT,
+        operation,
+    )
+    .await
+}
+
+async fn run_bounded_meta_rpc_with<T>(
+    semaphore: Arc<Semaphore>,
+    queue_timeout: Duration,
+    response_timeout: Duration,
+    operation: impl Future<Output = Result<T, ClientError>>,
+) -> Result<T, ClientError> {
+    let permit = tokio::time::timeout(queue_timeout, semaphore.acquire_owned())
+        .await
+        .map_err(|_| ClientError {
+            message: "media metadata request queue timed out".into(),
+        })?
+        .map_err(|_| ClientError {
+            message: "media metadata request queue closed".into(),
+        })?;
+    let result = tokio::time::timeout(response_timeout, operation)
+        .await
+        .map_err(|_| ClientError {
+            message: "media metadata response timed out".into(),
+        })?;
+    drop(permit);
+    result
+}
+
+fn is_stale_media_id_error(message: &str) -> bool {
+    message
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("media not found: mediaid ")
+}
+
+fn is_stable_path_not_found(message: &str) -> bool {
+    let normalized = message.trim().to_ascii_lowercase();
+    normalized.starts_with("system not found:")
+        || (normalized.starts_with("media not found:")
+            && !normalized.starts_with("media not found: mediaid "))
 }
 
 fn clear_inflight_locked(guard: &mut State, keys: &[MediaKey]) {
@@ -399,6 +563,42 @@ mod tests {
         prepared.iter().map(|(key, _)| key.clone()).collect()
     }
 
+    #[tokio::test]
+    #[allow(clippy::unwrap_used, reason = "test semaphore must remain open")]
+    async fn bounded_rpc_times_out_while_waiting_for_capacity() {
+        let semaphore = Arc::new(Semaphore::new(1));
+        let _held = semaphore.clone().acquire_owned().await.unwrap();
+        let result = run_bounded_meta_rpc_with(
+            semaphore,
+            Duration::from_millis(10),
+            Duration::from_secs(1),
+            async { Ok::<_, ClientError>(()) },
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(ClientError { message }) if message == "media metadata request queue timed out"
+        ));
+    }
+
+    #[tokio::test]
+    async fn bounded_rpc_times_out_stalled_response() {
+        let result = run_bounded_meta_rpc_with(
+            Arc::new(Semaphore::new(1)),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+            async {
+                std::future::pending::<()>().await;
+                Ok::<_, ClientError>(())
+            },
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(ClientError { message }) if message == "media metadata response timed out"
+        ));
+    }
+
     #[test]
     fn positive_hit_round_trips() {
         let cache = MediaMetaCache::new();
@@ -490,6 +690,64 @@ mod tests {
         );
         assert!(matches!(cache.lookup(&key("a")), MetaLookup::Hit(meta) if meta.path == "a"));
         assert!(matches!(cache.lookup(&key("b")), MetaLookup::Negative));
+    }
+
+    #[test]
+    fn transient_batch_item_error_releases_without_poisoning() {
+        let cache = MediaMetaCache::new();
+        let prepared = cache.prepare_prefetch(vec![(key("a"), params("a"))]);
+        cache.finish_prefetch(
+            prepared_keys(&prepared),
+            Some(MediaMetaBatchResult {
+                items: vec![MediaMetaBatchItemResult {
+                    media: None,
+                    error: Some("database temporarily unavailable".into()),
+                }],
+            }),
+        );
+        assert!(matches!(cache.lookup(&key("a")), MetaLookup::Miss));
+        assert_eq!(
+            cache.prepare_prefetch(vec![(key("a"), params("a"))]).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn focused_fetch_only_memoizes_stable_path_misses() {
+        let cache = MediaMetaCache::new();
+        let transient_key = key("transient");
+        cache.store_fetch_result(
+            transient_key.clone(),
+            &Err(ClientError {
+                message: "not connected".into(),
+            }),
+        );
+        assert!(matches!(cache.lookup(&transient_key), MetaLookup::Miss));
+
+        let stale_id_key = key("stale-id");
+        cache.store_fetch_result(
+            stale_id_key.clone(),
+            &Err(ClientError {
+                message: "media not found: mediaId 42".into(),
+            }),
+        );
+        assert!(matches!(cache.lookup(&stale_id_key), MetaLookup::Miss));
+
+        let missing_key = key("missing");
+        cache.store_fetch_result(
+            missing_key.clone(),
+            &Err(ClientError {
+                message: "media not found: SNES/missing".into(),
+            }),
+        );
+        assert!(matches!(cache.lookup(&missing_key), MetaLookup::Negative));
+    }
+
+    #[test]
+    fn stale_media_id_error_classifier_is_specific() {
+        assert!(is_stale_media_id_error("media not found: mediaId 42"));
+        assert!(!is_stale_media_id_error("media not found: SNES/game"));
+        assert!(!is_stale_media_id_error("not connected"));
     }
 
     #[test]

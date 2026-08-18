@@ -7,6 +7,7 @@
 // Qt's CMake (qt_import_qml_plugins) can emit the correct link flags.
 
 #include "custom_image_provider.h"
+#include "frontend_arguments.h"
 #include "media_image_provider.h"
 #include "native_video_writer.h"
 #include "tinted_svg_image_provider.h"
@@ -28,7 +29,6 @@
 #include <QUrl>
 #include <QVariantMap>
 #include <QtQml/qqmlextensionplugin.h>
-#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -36,7 +36,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
-#include <vector>
 
 // Default QPixmapCache cap is 10 MiB. With ~100 system SVGs rasterized at
 // 256 px sourceSize the working set straddles that limit, so navigating
@@ -47,6 +46,10 @@
 // pixmap decode on the UI thread is the visible "pop in" the user
 // flagged.
 constexpr int kPixmapCacheLimitKiB = 50 * 1024;
+// Native progressive text keeps hard monochrome edges below 720p. At 720p
+// and above, grayscale antialiasing has enough source pixels to improve curves
+// without reading as a doubled blur on integer-scaled output.
+constexpr uint32_t kAntialiasedTextMinHeight = 720;
 
 extern "C" int zaparoo_rust_init(bool crtNativePathForced);
 extern "C" void zaparoo_rust_post_qt_start();
@@ -107,48 +110,6 @@ static void qtMessageHandler(QtMsgType type, const QMessageLogContext& /*ctx*/, 
     zaparoo_log_qt(static_cast<uint8_t>(type), utf8.constData(), static_cast<size_t>(utf8.size()));
 }
 
-struct ParsedArguments
-{
-    bool crtNativePathForced = false;
-    std::vector<char*> argv;
-    // Unfiltered process arguments (nullptr-terminated). The restart
-    // execvp must use these, not `argv`: `argv` has `--crt` stripped
-    // for Qt, and restarting with the filtered vector would silently
-    // drop the native CRT path on any restart-applied setting change.
-    std::vector<char*> originalArgv;
-};
-
-static ParsedArguments extractCrtArgument(int argc, char* argv[])
-{
-    ParsedArguments parsed;
-    parsed.argv.reserve(static_cast<size_t>(argc));
-    std::copy_n(argv, argc, std::back_inserter(parsed.argv));
-    parsed.originalArgv = parsed.argv;
-    parsed.originalArgv.push_back(nullptr);
-
-    std::vector<char*> filtered;
-    filtered.reserve(parsed.argv.size());
-    if (!parsed.argv.empty())
-    {
-        filtered.push_back(parsed.argv.front());
-    }
-
-    for (size_t i = 1; i < parsed.argv.size(); ++i)
-    {
-        char* arg = parsed.argv.at(i);
-        if (std::strcmp(arg, "--crt") == 0)
-        {
-            parsed.crtNativePathForced = true;
-            continue;
-        }
-        filtered.push_back(arg);
-    }
-
-    parsed.argv = std::move(filtered);
-    parsed.argv.push_back(nullptr);
-    return parsed;
-}
-
 static bool envFlagEnabled(const char* name)
 {
     const QByteArray value = qgetenv(name).trimmed().toLower();
@@ -171,7 +132,15 @@ static void startupTrace(const char* stage)
 
 int main(int argc, char* argv[]) // NOLINT
 {
-    ParsedArguments parsedArgs = extractCrtArgument(argc, argv);
+    zaparoo::ParsedArguments parsedArgs = zaparoo::parseArguments(argc, argv);
+    // Keep version discovery usable over SSH and in packaging checks: this
+    // must return before Rust, Qt, Core, or framebuffer initialization.
+    if (parsedArgs.versionRequested)
+    {
+        std::printf("Zaparoo Frontend %s\n", ZAPAROO_VERSION);
+        return EXIT_SUCCESS;
+    }
+
     const bool crtPreviewResolutionForced =
         !qEnvironmentVariableIsEmpty("ZAPAROO_CRT_PREVIEW_RESOLUTION");
     const bool crtNativePathForced = parsedArgs.crtNativePathForced || crtPreviewResolutionForced;
@@ -351,12 +320,11 @@ int main(int argc, char* argv[]) // NOLINT
     startupTrace("cpp:font registration complete");
     bool useUnsmoothedText = crtNativePathEnabled;
 #ifdef ZAPAROO_EMBEDDED_BUILD
-    // MiSTer's progressive framebuffer is now either 1280x720 or 960x540.
-    // On a 1080p output the latter is presented at an exact 2x scale, which
-    // doubles Noto Sans's grayscale antialias fringe and makes otherwise
-    // aligned text look soft. Rasterize monochrome, fully hinted glyphs at
-    // source resolution so integer output scaling preserves hard edges.
-    useUnsmoothedText = true;
+    const uint32_t logicalVideoHeight = zaparoo_rust_video_height();
+    // A 960x540 scene is integer-upscaled on 1080p output, so grayscale fringe
+    // pixels become visibly soft 2x blocks. Native 720p has enough source
+    // resolution for grayscale antialiasing to improve curves instead.
+    useUnsmoothedText = useUnsmoothedText || logicalVideoHeight < kAntialiasedTextMinHeight;
 #endif
     if (useUnsmoothedText)
     {
@@ -365,9 +333,19 @@ int main(int argc, char* argv[]) // NOLINT
         defaultFont.setStyleStrategy(QFont::NoAntialias);
         defaultFont.setHintingPreference(QFont::PreferFullHinting);
         QGuiApplication::setFont(defaultFont);
-        qInfo(crtNativePathEnabled ? "CRT native path: using unsmoothed native text"
-                                   : "Embedded progressive path: using unsmoothed native text");
     }
+    if (crtNativePathEnabled)
+    {
+        qInfo("CRT native path: using unsmoothed native text");
+    }
+#ifdef ZAPAROO_EMBEDDED_BUILD
+    else
+    {
+        qInfo("Embedded progressive path: using %s native text at %up",
+              useUnsmoothedText ? "unsmoothed" : "antialiased",
+              static_cast<unsigned int>(logicalVideoHeight));
+    }
+#endif
     QQuickStyle::setStyle("Basic");
 
     // Install the locale .qm translator before constructing the QML engine
@@ -462,6 +440,7 @@ int main(int argc, char* argv[]) // NOLINT
                              static_cast<int>(zaparoo_rust_video_width()));
     initialProperties.insert(QStringLiteral("videoHeight"),
                              static_cast<int>(zaparoo_rust_video_height()));
+    initialProperties.insert(QStringLiteral("unsmoothedText"), useUnsmoothedText);
     engine.setInitialProperties(initialProperties);
     startupTrace("cpp:QML initial properties set");
 

@@ -175,6 +175,7 @@ MediaListScreen {
     gridRowsOverride: games._gridRows
     gridTotalItemsOverride: Browse.GamesModel.total_dirs + Browse.GamesModel.total_files
     gridHasMorePages: Browse.GamesModel.has_next_page
+    gridLoadingMore: Browse.GamesModel.loading_more
     gridLoadMoreAction: _urgent => {
         // Letter jumps bulk-load to their target and held rapid scrolling uses
         // larger chunks. A pending ordinary page turn is urgent only because

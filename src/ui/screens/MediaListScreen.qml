@@ -142,6 +142,7 @@ Item {
     property string bottomStatusRightText: ""
     property int gridTotalItemsOverride: -1
     property bool gridHasMorePages: false
+    property bool gridLoadingMore: false
     // False for cursor-based queries that cannot know their final page until
     // the cursor is exhausted. Hides growing denominators/scroll thumbs while
     // retaining current-page text and directional arrows.
@@ -584,6 +585,7 @@ Item {
         rowsOverride: root.gridRowsOverride
         totalItemsOverride: root.gridTotalItemsOverride
         hasMorePages: root.gridHasMorePages
+        loadingMore: root.gridLoadingMore
         paginationTotalKnown: root.paginationTotalKnown
         tileTopLabelProvider: root.gridTileTopLabelProvider
         coverRequestsEnabled: root.coverRevealReady

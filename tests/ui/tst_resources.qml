@@ -4,6 +4,7 @@
 
 import QtQuick
 import QtTest
+import Zaparoo.Browse as Browse
 import Zaparoo.Theme
 import Zaparoo.Ui
 
@@ -146,6 +147,104 @@ TestCase {
         compare(pill._boundedWidth(250), 250);
     }
 
+    function test_status_pill_reserves_readable_width_data(): list<var> {
+        return [
+            {
+                "tag": "crt-240p",
+                "width": 352,
+                "height": 240,
+                "crt": true
+            },
+            {
+                "tag": "480p",
+                "width": 640,
+                "height": 480,
+                "crt": false
+            },
+            {
+                "tag": "540p",
+                "width": 960,
+                "height": 540,
+                "crt": false
+            },
+            {
+                "tag": "720p",
+                "width": 1280,
+                "height": 720,
+                "crt": false
+            },
+            {
+                "tag": "1080p",
+                "width": 1920,
+                "height": 1080,
+                "crt": false
+            }
+        ];
+    }
+
+    function test_status_pill_reserves_readable_width(data: var): void {
+        const originalWidth = Sizing.screenWidth;
+        const originalHeight = Sizing.screenHeight;
+        const originalSizingCrt = Sizing.crtNativePath;
+        const originalThemeCrt = Theme.crtNativePath;
+        const originalLinkState = Browse.AppStatus.link_state;
+        const originalConnectionState = Browse.AppStatus.connection_state;
+        try {
+            Sizing.screenWidth = data.width;
+            Sizing.screenHeight = data.height;
+            Sizing.crtNativePath = data.crt;
+            Theme.crtNativePath = data.crt;
+            Browse.AppStatus.link_state = 1;
+            Browse.AppStatus.connection_state = 1;
+
+            const pill = createTemporaryObject(statusPillComponent, testCase, {
+                "maximumWidth": data.width
+            });
+            verify(pill !== null);
+            compare(pill._connectionLabel, "Connecting…");
+            compare(pill._isMediaActivity, false);
+            compare(pill._desiredWidth, Math.max(pill._minimumWidth, pill._naturalWidth));
+            verify(pill._desiredWidth >= pill._minimumWidth, "connection and media states need the same stable status-bar footprint: desired=" + pill._desiredWidth + " minimum=" + pill._minimumWidth);
+            verify(pill._naturalWidth - 2 * pill._textMargin - pill._spinnerReservedWidth >= pill._labelNaturalWidth + pill._textMeasureSlack, "content width must include measured glyphs and native-rendering slack");
+        } finally {
+            Sizing.screenWidth = originalWidth;
+            Sizing.screenHeight = originalHeight;
+            Sizing.crtNativePath = originalSizingCrt;
+            Theme.crtNativePath = originalThemeCrt;
+            Browse.AppStatus.link_state = originalLinkState;
+            Browse.AppStatus.connection_state = originalConnectionState;
+        }
+    }
+
+    function test_header_status_slot_fits_minimum_at_540p(): void {
+        const originalWidth = Sizing.screenWidth;
+        const originalHeight = Sizing.screenHeight;
+        const originalSizingCrt = Sizing.crtNativePath;
+        const originalThemeCrt = Theme.crtNativePath;
+        try {
+            Sizing.screenWidth = 960;
+            Sizing.screenHeight = 540;
+            Sizing.crtNativePath = false;
+            Theme.crtNativePath = false;
+
+            const header = createTemporaryObject(headerBarComponent, testCase, {
+                "width": 960
+            });
+            verify(header !== null);
+            const pill = findChild(header, "coreStatusPill");
+            verify(pill !== null);
+            tryVerify(function () {
+                return pill.maximumWidth > 0;
+            });
+            verify(pill.maximumWidth >= pill._minimumWidth, "header status slot must not cap the responsive minimum");
+        } finally {
+            Sizing.screenWidth = originalWidth;
+            Sizing.screenHeight = originalHeight;
+            Sizing.crtNativePath = originalSizingCrt;
+            Theme.crtNativePath = originalThemeCrt;
+        }
+    }
+
     function test_scrolling_caption_measures_painted_glyph_bounds(): void {
         const caption = createTemporaryObject(scrollingCaptionComponent, testCase);
         verify(caption !== null);
@@ -157,6 +256,35 @@ TestCase {
         const expectedTagsWidth = Math.ceil(Math.max(tagsMetrics.advanceWidth, tagsMetrics.boundingRect.x + tagsMetrics.boundingRect.width) - Math.min(0, tagsMetrics.boundingRect.x));
         compare(caption._nameFullW, expectedNameWidth);
         compare(caption._tagsFullW, expectedTagsWidth);
+    }
+
+    function test_tile_caption_strengthens_only_for_progressive_unsmoothed_text(): void {
+        const originalHeight = Sizing.screenHeight;
+        const originalSizingCrt = Sizing.crtNativePath;
+        const originalThemeCrt = Theme.crtNativePath;
+        const originalUnsmoothed = Theme.unsmoothedText;
+        try {
+            Sizing.screenHeight = 540;
+            Sizing.crtNativePath = false;
+            Theme.crtNativePath = false;
+            Theme.unsmoothedText = true;
+
+            const host = createTemporaryObject(missingSystemTile, testCase);
+            verify(host !== null);
+            const caption = findChild(host, "tileCaption");
+            verify(caption !== null);
+            compare(caption.fontPixelSize, Sizing.fontSize(2.4));
+            compare(caption.fontWeight, Font.Medium);
+
+            Theme.unsmoothedText = false;
+            compare(caption.fontPixelSize, Sizing.fontSize(2.2));
+            compare(caption.fontWeight, Font.Normal);
+        } finally {
+            Sizing.screenHeight = originalHeight;
+            Sizing.crtNativePath = originalSizingCrt;
+            Theme.crtNativePath = originalThemeCrt;
+            Theme.unsmoothedText = originalUnsmoothed;
+        }
     }
 
     function test_media_cover_uses_short_reveal_without_loading_glyph(): void {

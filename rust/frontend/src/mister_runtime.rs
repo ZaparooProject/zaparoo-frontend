@@ -80,27 +80,49 @@ fn automatic_render_size(width: u32, height: u32) -> (u32, u32) {
 
 #[cfg(zaparoo_runtime = "mister")]
 fn probe_automatic_render_size() -> Option<(u32, u32)> {
-    run_vmode_scale("f", "rgb32").ok()?;
+    use tracing::warn;
+
+    let full_result = run_vmode_scale("f", "rgb32");
     let full_size = current_framebuffer_size()?;
-    if full_size.1 <= FULL_SIZE_MAX_HEIGHT {
+    if full_result.is_ok() && full_size.1 <= FULL_SIZE_MAX_HEIGHT {
         return Some(full_size);
     }
-
-    // Let Main derive half scale from active HDMI timing. Unlike dividing an
-    // inherited framebuffer, this remains correct when the previous process
-    // left fb0 at an unrelated size.
-    run_vmode_scale("h", "rgb32").ok()?;
-    if let Some(scaled_size) = current_framebuffer_size() {
-        if scaled_size != full_size {
-            return Some(scaled_size);
+    if let Err(error) = full_result {
+        warn!(%error, "full-scale vmode probe unsupported; using explicit fallback");
+    } else {
+        // Let Main derive half scale from active HDMI timing. Unlike dividing an
+        // inherited framebuffer, this remains correct when the previous process
+        // left fb0 at an unrelated size.
+        match run_vmode_scale("h", "rgb32") {
+            Ok(()) => {
+                if let Some(scaled_size) = current_framebuffer_size() {
+                    if scaled_size != full_size {
+                        return Some(scaled_size);
+                    }
+                }
+            }
+            Err(error) => warn!(%error, "half-scale vmode probe unsupported"),
         }
     }
 
     // Older vmode/Main pairs may accept only explicit geometry. Keep this as a
-    // compatibility fallback, then trust sysfs for what was actually applied.
-    let (width, height) = automatic_render_size(full_size.0, full_size.1);
-    run_vmode_with_format(width, height, "rgb32").ok()?;
-    current_framebuffer_size().or(Some(full_size))
+    // compatibility fallback, then verify sysfs instead of treating process
+    // creation as proof that the command was understood.
+    let target = automatic_render_size(full_size.0, full_size.1);
+    run_vmode_with_format(target.0, target.1, "rgb32").ok()?;
+    let applied = current_framebuffer_size()?;
+    if applied == target {
+        Some(applied)
+    } else {
+        warn!(
+            expected_width = target.0,
+            expected_height = target.1,
+            actual_width = applied.0,
+            actual_height = applied.1,
+            "explicit vmode fallback did not apply requested geometry"
+        );
+        None
+    }
 }
 
 #[cfg(zaparoo_runtime = "mister")]
@@ -179,12 +201,37 @@ fn run_vmode_with_format(width: u32, height: u32, pixel_format: &str) -> std::io
 
 #[cfg(zaparoo_runtime = "mister")]
 fn run_vmode_command(mut command: std::process::Command) -> std::io::Result<()> {
-    use std::process::Stdio;
-
     // MiSTer's vmode script returns 1 both when res_count confirms a change and
-    // when its bounded wait expires. Geometry from sysfs is authoritative.
-    command.stdout(Stdio::null()).stderr(Stdio::null());
-    command.status().map(|_| ())
+    // when its bounded wait expires. Geometry from sysfs remains authoritative,
+    // but usage output or any other exit code means the command was not accepted.
+    let output = command.output()?;
+    if vmode_result_accepted(output.status.code(), &output.stdout, &output.stderr) {
+        Ok(())
+    } else {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "vmode rejected command (exit {:?}): {}{}",
+                output.status.code(),
+                stdout.trim(),
+                stderr.trim()
+            ),
+        ))
+    }
+}
+
+#[cfg(any(zaparoo_runtime = "mister", test))]
+fn vmode_result_accepted(code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> bool {
+    let output = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(stdout),
+        String::from_utf8_lossy(stderr)
+    )
+    .to_ascii_lowercase();
+    let reports_usage = output.contains("usage:") || output.contains("unknown format");
+    !reports_usage && matches!(code, Some(0 | 1))
 }
 
 #[cfg(any(zaparoo_runtime = "mister", test))]
@@ -220,7 +267,7 @@ pub fn ensure_core_service_running() {
 mod tests {
     use super::{
         automatic_render_size, core_service_start_command, parse_fb_mode, parse_virtual_size,
-        vmode_resolution_command, vmode_scale_command,
+        vmode_resolution_command, vmode_result_accepted, vmode_scale_command,
     };
 
     #[test]
@@ -275,6 +322,28 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["-r", "960", "540", "rgb32"]
         );
+    }
+
+    #[test]
+    fn accepts_mister_vmode_success_and_ambiguous_exit_one() {
+        assert!(vmode_result_accepted(Some(0), b"", b""));
+        assert!(vmode_result_accepted(Some(1), b".... failed!", b""));
+    }
+
+    #[test]
+    fn rejects_usage_output_and_other_exit_codes() {
+        assert!(!vmode_result_accepted(
+            Some(0),
+            b"usage:\n  vmode -r width height format",
+            b""
+        ));
+        assert!(!vmode_result_accepted(
+            Some(0),
+            b"error: unknown format",
+            b""
+        ));
+        assert!(!vmode_result_accepted(Some(2), b"", b""));
+        assert!(!vmode_result_accepted(None, b"", b"terminated"));
     }
 
     #[test]

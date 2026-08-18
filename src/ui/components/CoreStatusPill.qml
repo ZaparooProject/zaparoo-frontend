@@ -19,10 +19,11 @@ import QtQuick
 import Zaparoo.Browse as Browse
 import Zaparoo.Theme
 
-// Software-rendering safe status pill. Connection states keep the compact
-// text-only treatment; active media work switches to a fixed-width progress
-// pill with a tiny local spinner and clipped inverted foreground over the
-// fill. Only this small item repaints while the spinner advances.
+// Software-rendering safe status pill. Every state shares one responsive
+// minimum width so connection and media labels keep a stable, readable HUD
+// footprint. Content can grow beyond that minimum for long translations;
+// active media work adds a tiny local spinner and clipped inverted foreground
+// over the fill. Only this small item repaints while the spinner advances.
 Item {
     id: pill
     objectName: "coreStatusPill"
@@ -100,15 +101,20 @@ Item {
     // Border colour leans on the same convention as the old connection
     // strip: warmer accent for error-class link states, muted otherwise.
     readonly property bool _isError: Browse.AppStatus.link_state === pill._linkUnreachable || Browse.AppStatus.connection_state === pill._connError
-    readonly property int _mediaMinimumWidth: Theme.crtNativePath ? Sizing.pctH(42) : Math.min(Math.max(Sizing.pctH(28), Sizing.pctW(18)), Sizing.pctH(30))
+    // One width contract for every status. Connection and media states must
+    // keep the same responsive footprint instead of collapsing to the current
+    // glyph run. Long translated labels can still expand up to HeaderBar's
+    // available-width cap.
+    readonly property int _minimumWidth: Theme.crtNativePath ? Sizing.pctH(42) : Math.min(Math.max(Sizing.pctH(28), Sizing.pctW(18)), Sizing.pctH(30))
     readonly property int _textMargin: Sizing.pctW(1.2)
+    readonly property int _textMeasureSlack: Sizing.stroke(2)
     readonly property int _spinnerSize: Math.max(Sizing.pctH(1.8), Sizing.fontSize(2.2))
     readonly property int _spinnerDotSize: Math.max(Sizing.stroke(2), Sizing.px(pill._spinnerSize / 3))
     readonly property int _spinnerGap: Sizing.pctW(0.8)
     readonly property int _labelNaturalWidth: Math.ceil(Math.max(labelMetrics.advanceWidth, labelMetrics.boundingRect.x + labelMetrics.boundingRect.width) - Math.min(0, labelMetrics.boundingRect.x))
     readonly property int _spinnerReservedWidth: pill._spinnerActive ? pill._spinnerSize + pill._spinnerGap : 0
-    readonly property int _naturalWidth: pill._labelNaturalWidth + 2 * pill._textMargin + pill._spinnerReservedWidth
-    readonly property int _desiredWidth: pill._isMediaActivity ? Math.max(pill._mediaMinimumWidth, pill._naturalWidth) : pill._naturalWidth
+    readonly property int _naturalWidth: pill._labelNaturalWidth + 2 * pill._textMargin + pill._spinnerReservedWidth + pill._textMeasureSlack
+    readonly property int _desiredWidth: Math.max(pill._minimumWidth, pill._naturalWidth)
     property int _spinnerFrame: 0
 
     visible: pill._label !== ""

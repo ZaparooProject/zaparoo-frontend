@@ -434,16 +434,35 @@ pub fn media_history_response(params: &Value) -> Value {
         .and_then(Value::as_u64)
         .unwrap_or(25)
         .min(100) as usize;
+    let offset = params
+        .get("cursor")
+        .and_then(Value::as_str)
+        .and_then(|cursor| cursor.parse::<usize>().ok())
+        .unwrap_or(0);
+    let distinct_media = params
+        .get("distinctMedia")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
-    // Synthesize a history list from the first ten games in `ALL_GAMES`,
-    // newest first. Real Core sorts by `endedAt` descending; the mock
-    // just walks the array and stamps backward-counting timestamps so
-    // the order is stable across runs.
-    let entries: Vec<Value> = ALL_GAMES
+    // Synthesize newest-first play sessions. Non-distinct history repeats the
+    // newest game once so tests can prove `distinctMedia` changes semantics;
+    // distinct history exposes one row per `(systemId, mediaPath)` before the
+    // cursor is applied, matching Core's pagination contract.
+    let mut sessions: Vec<_> = ALL_GAMES
         .iter()
         .filter(|(_, _, system)| systems.is_empty() || systems.contains(system))
-        .take(limit)
+        .collect();
+    if !distinct_media {
+        if let Some(newest) = sessions.first().copied() {
+            sessions.insert(1, newest);
+        }
+    }
+    let total = sessions.len();
+    let entries: Vec<Value> = sessions
+        .into_iter()
         .enumerate()
+        .skip(offset)
+        .take(limit)
         .map(|(i, (name, file, system))| {
             let started = format!("2026-04-29T{:02}:00:00Z", 23 - i.min(23));
             let ended = format!("2026-04-29T{:02}:30:00Z", 23 - i.min(23));
@@ -464,12 +483,17 @@ pub fn media_history_response(params: &Value) -> Value {
     // returned; mirror that so the frontend's MediaHistoryResult
     // deserialiser hits the same edges in mock as on real Core.
     let has_entries = !entries.is_empty();
+    let next_offset = offset.saturating_add(entries.len());
     let mut response = json!({ "entries": entries });
     if has_entries {
+        let has_next_page = next_offset < total;
         response["pagination"] = json!({
-            "hasNextPage": false,
+            "hasNextPage": has_next_page,
             "pageSize": limit,
         });
+        if has_next_page {
+            response["pagination"]["nextCursor"] = json!(next_offset.to_string());
+        }
     }
     response
 }

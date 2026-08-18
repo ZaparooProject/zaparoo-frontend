@@ -24,7 +24,9 @@
 // recents launches by `run`-ing the entry's launcher route.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
-use crate::media_meta_cache::{global_media_meta_cache, MetaLookup};
+use crate::media_meta_cache::{
+    fetch_media_meta_with_path_fallback, global_media_meta_cache, MetaLookup,
+};
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::tag_display_value;
 use crate::models::{global_handle, global_store};
@@ -349,6 +351,15 @@ fn page_snapshot(result: &MediaHistoryResult) -> PageSnapshot {
     )
 }
 
+fn history_page_params(cursor: Option<String>) -> MediaHistoryParams {
+    MediaHistoryParams {
+        limit: Some(PAGE_SIZE),
+        cursor,
+        systems: Vec::new(),
+        distinct_media: Some(true),
+    }
+}
+
 fn apply_state(
     mut model: Pin<&mut ffi::RecentsModel>,
     (data, err): (Option<PageSnapshot>, String),
@@ -642,12 +653,7 @@ impl ffi::RecentsModel {
         global_handle().spawn(async move {
             let result = store
                 .client()
-                .media_history(MediaHistoryParams {
-                    limit: Some(PAGE_SIZE),
-                    cursor: None,
-                    systems: Vec::new(),
-                    distinct_media: Some(true),
-                })
+                .media_history(history_page_params(None))
                 .await;
             match &result {
                 Ok(r) => info!(
@@ -724,12 +730,7 @@ impl ffi::RecentsModel {
         global_handle().spawn(async move {
             let result = store
                 .client()
-                .media_history(MediaHistoryParams {
-                    limit: Some(PAGE_SIZE),
-                    cursor,
-                    systems: Vec::new(),
-                    distinct_media: Some(true),
-                })
+                .media_history(history_page_params(cursor))
                 .await;
             let _ = qt_thread.queue(move |model| {
                 if seq.load(Ordering::SeqCst) != ticket {
@@ -947,20 +948,18 @@ impl ffi::RecentsModel {
         self.as_mut().set_current_detail_tags(QString::default());
         let seq = self.rust().detail_seq.clone();
         let qt_thread = self.qt_thread();
-        let store = global_store();
         let store_key = meta_key.clone();
+        let fallback_system = system.clone();
+        let fallback_path = path.clone();
         let meta_params = media_id.map_or_else(
             || MediaMetaParams::for_media(system, path.clone()),
             MediaMetaParams::for_media_id,
         );
         global_handle().spawn(async move {
-            let result = store.client().media_meta(meta_params).await;
-            // Cache the outcome (positive or negative) regardless of whether
-            // this callback is still current, so a later revisit is instant.
-            match &result {
-                Ok(r) => global_media_meta_cache().store(store_key, Some(r.media.clone())),
-                Err(_) => global_media_meta_cache().store(store_key, None),
-            }
+            let result =
+                fetch_media_meta_with_path_fallback(meta_params, fallback_system, fallback_path)
+                    .await;
+            global_media_meta_cache().store_fetch_result(store_key, &result);
             let _ = qt_thread.queue(move |mut model| {
                 if seq.load(Ordering::SeqCst) != ticket {
                     return;
@@ -1796,8 +1795,8 @@ mod tests {
 
     use super::{
         compute_unresolved_keys, cover_key_for_with, dedupe_latest_by_identity,
-        filter_entries_by_identity, launch_text_for, media_key_for, page_snapshot,
-        position_of_path, resume_cover_key_for, resume_entry, resume_entry_is_fresh,
+        filter_entries_by_identity, history_page_params, launch_text_for, media_key_for,
+        page_snapshot, position_of_path, resume_cover_key_for, resume_entry, resume_entry_is_fresh,
         RESUME_FALLBACK_COVER_KEY,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -2063,6 +2062,17 @@ mod tests {
     fn position_of_path_missing_returns_minus_one() {
         let entries = vec![entry("smb", "/p/smb", "NES", "NES")];
         assert_eq!(position_of_path(&entries, "/missing"), -1);
+    }
+
+    #[test]
+    fn history_page_params_preserve_distinct_media_for_every_cursor() {
+        let initial = history_page_params(None);
+        assert_eq!(initial.distinct_media, Some(true));
+        assert!(initial.cursor.is_none());
+
+        let continuation = history_page_params(Some("cursor-2".into()));
+        assert_eq!(continuation.distinct_media, Some(true));
+        assert_eq!(continuation.cursor.as_deref(), Some("cursor-2"));
     }
 
     #[test]

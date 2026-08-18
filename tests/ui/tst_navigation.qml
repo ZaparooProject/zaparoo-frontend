@@ -98,6 +98,22 @@ TestCase {
         Browse.GamesModel.total_files = 0;
     }
 
+    function test_media_screen_requests_sync_cover_size(): void {
+        main.gamesScreenRequested = false;
+        main.favoritesScreenRequested = false;
+        main.recentsScreenRequested = false;
+
+        Browse.GamesModel.set_cover_max_size(0);
+        main._requestScreen(main.screenFavorites);
+        compare(Browse.GamesModel.cover_max_size, main._gamesCoverMaxSize);
+        verify(Browse.GamesModel.cover_max_size > 0);
+
+        Browse.GamesModel.set_cover_max_size(0);
+        main._requestScreen(main.screenRecents);
+        compare(Browse.GamesModel.cover_max_size, main._gamesCoverMaxSize);
+        verify(Browse.GamesModel.cover_max_size > 0);
+    }
+
     function test_first_run_index_starts_only_from_authoritative_empty_state(): void {
         compare(main._shouldStartFirstRunIndex(2, true, true, 0), true);
         compare(main._shouldStartFirstRunIndex(1, true, true, 0), false);
