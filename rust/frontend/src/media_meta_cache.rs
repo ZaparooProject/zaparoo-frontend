@@ -683,7 +683,7 @@ mod tests {
                     },
                     MediaMetaBatchItemResult {
                         media: None,
-                        error: Some("not found".into()),
+                        error: Some("media not found: NES /mock/b".into()),
                     },
                 ],
             }),
