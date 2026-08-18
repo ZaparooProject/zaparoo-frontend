@@ -359,15 +359,62 @@ fn section_mut<'a>(
         .ok_or_else(|| format!("config key [{key}] in {} is not a table", path.display()))
 }
 
-pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(), String> {
-    let mut table = if path.exists() {
+fn read_config_table(path: &Path) -> Result<toml::Table, String> {
+    if path.exists() {
         let src = std::fs::read_to_string(path)
             .map_err(|e| format!("could not read {}: {e}", path.display()))?;
         toml::from_str::<toml::Table>(&src)
-            .map_err(|e| format!("config parse error in {}: {e}", path.display()))?
+            .map_err(|e| format!("config parse error in {}: {e}", path.display()))
     } else {
-        toml::Table::new()
-    };
+        Ok(toml::Table::new())
+    }
+}
+
+fn toml_tables_semantically_equal(left: &toml::Table, right: &toml::Table) -> bool {
+    left.len() == right.len()
+        && left.iter().all(|(key, left_value)| {
+            right
+                .get(key)
+                .is_some_and(|right_value| toml_values_semantically_equal(left_value, right_value))
+        })
+}
+
+fn toml_values_semantically_equal(left: &toml::Value, right: &toml::Value) -> bool {
+    match (left, right) {
+        (toml::Value::Float(left), toml::Value::Float(right)) => {
+            matches!(left.partial_cmp(right), Some(std::cmp::Ordering::Equal))
+                || (left.is_nan() && right.is_nan())
+        }
+        (toml::Value::Array(left), toml::Value::Array(right)) => {
+            left.len() == right.len()
+                && left.iter().zip(right).all(|(left_value, right_value)| {
+                    toml_values_semantically_equal(left_value, right_value)
+                })
+        }
+        (toml::Value::Table(left), toml::Value::Table(right)) => {
+            toml_tables_semantically_equal(left, right)
+        }
+        _ => left == right,
+    }
+}
+
+fn write_config_if_changed(
+    path: &Path,
+    original: &toml::Table,
+    updated: &toml::Table,
+) -> Result<(), String> {
+    if toml_tables_semantically_equal(updated, original) {
+        return Ok(());
+    }
+    let serialized =
+        toml::to_string(updated).map_err(|e| format!("config serialisation failed: {e}"))?;
+    write_atomic(path, serialized.as_bytes())
+        .map_err(|e| format!("could not write {}: {e}", path.display()))
+}
+
+pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(), String> {
+    let mut table = read_config_table(path)?;
+    let original = table.clone();
 
     let general = section_mut(&mut table, "general", path)?;
     general.insert(
@@ -460,24 +507,15 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     let logging = section_mut(&mut table, "logging", path)?;
     logging.insert("debug".into(), toml::Value::Boolean(mirror.debug_logging));
 
-    let serialized =
-        toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
-    write_atomic(path, serialized.as_bytes())
-        .map_err(|e| format!("could not write {}: {e}", path.display()))
+    write_config_if_changed(path, &original, &table)
 }
 
 /// Persist Favorites row order into `frontend.toml`.
 ///
 /// Empty restores Core's default order and removes the optional key.
 pub fn save_favorites_sort(path: &Path, sort: &str) -> Result<(), String> {
-    let mut table = if path.exists() {
-        let src = std::fs::read_to_string(path)
-            .map_err(|e| format!("could not read {}: {e}", path.display()))?;
-        toml::from_str::<toml::Table>(&src)
-            .map_err(|e| format!("config parse error in {}: {e}", path.display()))?
-    } else {
-        toml::Table::new()
-    };
+    let mut table = read_config_table(path)?;
+    let original = table.clone();
 
     let settings = section_mut(&mut table, "settings", path)?;
     let normalized = sort.trim();
@@ -490,10 +528,7 @@ pub fn save_favorites_sort(path: &Path, sort: &str) -> Result<(), String> {
         );
     }
 
-    let serialized =
-        toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
-    write_atomic(path, serialized.as_bytes())
-        .map_err(|e| format!("could not write {}: {e}", path.display()))
+    write_config_if_changed(path, &original, &table)
 }
 
 /// Persist hidden browse filters into `frontend.toml`.
@@ -505,14 +540,8 @@ pub fn save_hidden_browse_prefs(
     hidden_categories: &[String],
     hidden_system_ids: &[String],
 ) -> Result<(), String> {
-    let mut table = if path.exists() {
-        let src = std::fs::read_to_string(path)
-            .map_err(|e| format!("could not read {}: {e}", path.display()))?;
-        toml::from_str::<toml::Table>(&src)
-            .map_err(|e| format!("config parse error in {}: {e}", path.display()))?
-    } else {
-        toml::Table::new()
-    };
+    let mut table = read_config_table(path)?;
+    let original = table.clone();
 
     let settings = section_mut(&mut table, "settings", path)?;
     settings.insert(
@@ -524,10 +553,7 @@ pub fn save_hidden_browse_prefs(
         toml_array_from_strings(hidden_system_ids),
     );
 
-    let serialized =
-        toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
-    write_atomic(path, serialized.as_bytes())
-        .map_err(|e| format!("could not write {}: {e}", path.display()))
+    write_config_if_changed(path, &original, &table)
 }
 
 /// Persist a first-run notice acknowledgement into `frontend.toml`.
@@ -535,33 +561,16 @@ pub fn save_hidden_browse_prefs(
 /// pattern so unrelated keys in the file (core endpoint, video, input
 /// bindings) survive untouched.
 pub fn save_notice_ack(path: &Path, commercial_ack: bool) -> Result<(), String> {
-    let mut table = if path.exists() {
-        let src = std::fs::read_to_string(path)
-            .map_err(|e| format!("could not read {}: {e}", path.display()))?;
-        toml::from_str::<toml::Table>(&src)
-            .map_err(|e| format!("config parse error in {}: {e}", path.display()))?
-    } else {
-        toml::Table::new()
-    };
+    let mut table = read_config_table(path)?;
+    let original = table.clone();
 
-    let notice_value = table
-        .entry("notice")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let Some(notice) = notice_value.as_table_mut() else {
-        return Err(format!(
-            "config key [notice] in {} is not a table",
-            path.display()
-        ));
-    };
+    let notice = section_mut(&mut table, "notice", path)?;
     notice.insert(
         "commercial_ack".into(),
         toml::Value::Boolean(commercial_ack),
     );
 
-    let serialized =
-        toml::to_string(&table).map_err(|e| format!("config serialisation failed: {e}"))?;
-    write_atomic(path, serialized.as_bytes())
-        .map_err(|e| format!("could not write {}: {e}", path.display()))
+    write_config_if_changed(path, &original, &table)
 }
 
 /// Offset ranges the Menu fork core honors before clamping in RTL
@@ -649,9 +658,12 @@ fn parse_resolution_override(value: &str) -> Option<(u32, u32)> {
 }
 
 fn write_atomic(path: &Path, contents: &[u8]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    let parent = path
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)?;
+
     let tmp = tmp_sibling(path);
     let write_result = std::fs::File::create(&tmp).and_then(|mut file| {
         file.write_all(contents)?;
@@ -666,6 +678,16 @@ fn write_atomic(path: &Path, contents: &[u8]) -> std::io::Result<()> {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }
+    sync_parent_directory(parent)
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(parent: &Path) -> std::io::Result<()> {
+    std::fs::File::open(parent)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_parent: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
@@ -698,6 +720,75 @@ mod tests {
         let mut f = tempfile::NamedTempFile::new().expect("tempfile");
         f.write_all(contents.as_bytes()).expect("write");
         f
+    }
+
+    fn canonical_settings_mirror() -> SettingsMirror<'static> {
+        SettingsMirror {
+            resolution: "1280x720",
+            language: "en",
+            orientation: "horizontal",
+            clock_format: "auto",
+            browse_layout: "grid",
+            system_logo_style: "tinted",
+            button_layout: "a",
+            mouse_enabled: true,
+            reduce_motion: false,
+            discover_arcade_alternate_versions: false,
+            debug_logging: false,
+            screensaver_timeout: "60",
+            media_image_type: "auto",
+            favorites_grouping: "system",
+            show_hidden: false,
+            show_original_filenames: false,
+            region: "auto",
+            crt_video_standard: "ntsc",
+            crt_h_offset: 0,
+            crt_v_offset: 0,
+        }
+    }
+
+    fn assert_noop_preserves_file(
+        path: &std::path::Path,
+        save: impl FnOnce() -> Result<(), String>,
+    ) {
+        // Comments are absent from `toml::Table`, while valid TOML NaN floats
+        // are non-reflexive under derived `PartialEq`. Preserving both proves
+        // the no-op decision compares parsed values with the required semantics.
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .expect("open for marker");
+        file.write_all(b"\nunrelated_nan = nan\n# preserve this comment\n")
+            .expect("append marker");
+        file.sync_all().expect("sync marker");
+        drop(file);
+
+        let before_contents = std::fs::read(path).expect("read before no-op");
+        let before_metadata = std::fs::metadata(path).expect("metadata before no-op");
+        let tmp = super::tmp_sibling(path);
+        std::fs::create_dir(&tmp).expect("create temp-path blocker");
+
+        save().expect("unchanged save should not touch temp path");
+
+        assert_eq!(
+            std::fs::read(path).expect("read after no-op"),
+            before_contents
+        );
+        let after_metadata = std::fs::metadata(path).expect("metadata after no-op");
+        assert_eq!(
+            after_metadata.modified().expect("modified after no-op"),
+            before_metadata.modified().expect("modified before no-op")
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            assert_eq!(after_metadata.ino(), before_metadata.ino());
+        }
+        assert!(
+            std::fs::metadata(&tmp).expect("temp-path blocker").is_dir(),
+            "no-op save must not replace or remove the temp-path blocker"
+        );
+        std::fs::remove_dir(tmp).expect("remove temp-path blocker");
     }
 
     // `load_config` consults the process-global ZAPAROO_CORE_ENDPOINT env var,
@@ -855,6 +946,37 @@ mod tests {
             load_config(f.path()).settings.favorites_grouping.as_deref(),
             Some("none")
         );
+    }
+
+    #[test]
+    fn identical_config_saves_preserve_file_and_skip_temp_creation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let settings_path = dir.path().join("settings.toml");
+        save_settings_mirror(&settings_path, canonical_settings_mirror())
+            .expect("initial settings save");
+        assert_noop_preserves_file(&settings_path, || {
+            save_settings_mirror(&settings_path, canonical_settings_mirror())
+        });
+
+        let favorites_path = dir.path().join("favorites.toml");
+        save_favorites_sort(&favorites_path, "name").expect("initial favorites save");
+        assert_noop_preserves_file(&favorites_path, || {
+            save_favorites_sort(&favorites_path, " name ")
+        });
+
+        let hidden_path = dir.path().join("hidden.toml");
+        let hidden_categories = vec!["Arcade".to_string(), "Consoles".to_string()];
+        let hidden_system_ids = vec!["NES".to_string()];
+        save_hidden_browse_prefs(&hidden_path, &hidden_categories, &hidden_system_ids)
+            .expect("initial hidden prefs save");
+        assert_noop_preserves_file(&hidden_path, || {
+            save_hidden_browse_prefs(&hidden_path, &hidden_categories, &hidden_system_ids)
+        });
+
+        let notice_path = dir.path().join("notice.toml");
+        save_notice_ack(&notice_path, true).expect("initial notice save");
+        assert_noop_preserves_file(&notice_path, || save_notice_ack(&notice_path, true));
     }
 
     #[test]
@@ -1230,34 +1352,31 @@ mod tests {
     #[test]
     fn save_settings_mirror_normalizes_auto() {
         let f = write_tmp("");
-        save_settings_mirror(
-            f.path(),
-            SettingsMirror {
-                resolution: "",
-                language: "",
-                orientation: "ccw",
-                clock_format: "12h",
-                browse_layout: "list",
-                system_logo_style: "color",
-                button_layout: "c",
-                mouse_enabled: false,
-                reduce_motion: false,
-                discover_arcade_alternate_versions: true,
-                debug_logging: true,
-                screensaver_timeout: "off",
-                media_image_type: "auto",
-                favorites_grouping: "system",
-                show_hidden: false,
-                show_original_filenames: false,
-                region: "auto",
-                // Out-of-range offsets and an unknown standard must be
-                // normalised on the way to disk, not written verbatim.
-                crt_video_standard: "secam",
-                crt_h_offset: 99,
-                crt_v_offset: -99,
-            },
-        )
-        .expect("save");
+        let mirror = SettingsMirror {
+            resolution: "",
+            language: "",
+            orientation: "ccw",
+            clock_format: "12h",
+            browse_layout: "list",
+            system_logo_style: "color",
+            button_layout: "c",
+            mouse_enabled: false,
+            reduce_motion: false,
+            discover_arcade_alternate_versions: true,
+            debug_logging: true,
+            screensaver_timeout: "off",
+            media_image_type: "auto",
+            favorites_grouping: "system",
+            show_hidden: false,
+            show_original_filenames: false,
+            region: "auto",
+            // Out-of-range offsets and an unknown standard must be
+            // normalised on the way to disk, not written verbatim.
+            crt_video_standard: "secam",
+            crt_h_offset: 99,
+            crt_v_offset: -99,
+        };
+        save_settings_mirror(f.path(), mirror).expect("save");
         let written = std::fs::read_to_string(f.path()).expect("read");
         assert!(written.contains("language = \"auto\""));
         assert!(written.contains("orientation = \"ccw\""));
@@ -1285,6 +1404,10 @@ mod tests {
         assert_eq!(cfg.settings.crt_h_offset, Some(8));
         assert_eq!(cfg.settings.crt_v_offset, Some(-8));
         assert!(cfg.debug_logging);
+
+        // The first call migrated noncanonical inputs. Repeating those same
+        // inputs must compare equal after normalization and avoid another write.
+        assert_noop_preserves_file(f.path(), || save_settings_mirror(f.path(), mirror));
     }
 
     #[test]

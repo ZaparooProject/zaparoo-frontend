@@ -28,6 +28,9 @@ TestCase {
     property string _originalFavoritesSort: ""
     property string _originalFavoritesGrouping: "none"
     property bool _originalGamesFavoritesFilter: false
+    property string _originalHubCategory: ""
+    property int _originalHubSelectedRow: 0
+    property string _originalHubSelectedAction: ""
 
     Main {
         id: main
@@ -40,6 +43,9 @@ TestCase {
         testCase._originalFavoritesSort = Browse.FavoritesModel.sort_mode ?? "";
         testCase._originalFavoritesGrouping = Browse.Settings.current_favorites_grouping ?? "none";
         testCase._originalGamesFavoritesFilter = Browse.GamesState.favorites_filter === true;
+        testCase._originalHubCategory = Browse.HubState.category ?? "";
+        testCase._originalHubSelectedRow = Browse.HubState.selected_row ?? 0;
+        testCase._originalHubSelectedAction = Browse.HubState.selected_action ?? "";
     }
 
     function init(): void {
@@ -52,6 +58,18 @@ TestCase {
         // we mark the boot complete up-front; otherwise every visibility
         // assertion below would fail against the boot curtain.
         main.bootComplete = true;
+        // Warm-resume restore is asynchronous. Clear its complete callback
+        // graph so a stale readiness edge cannot route after test setup.
+        main._startupRestorePending = false;
+        main._startupRestoreStarted = false;
+        main._startupRestoreScreen = "";
+        main._screenReadyCallbacks = ({});
+        main._categoryReadyCallback = null;
+        main._systemReadyCallback = null;
+        main._favoritesReadyCallback = null;
+        main._favoriteSystemsReadyCallback = null;
+        main._recentsReadyCallback = null;
+        main.startupRestoreCurtainVisible = false;
         main.systemsScreenRequested = true;
         main.gamesScreenRequested = true;
         main.favoritesScreenRequested = true;
@@ -70,6 +88,7 @@ TestCase {
         tryCompare(main, "transitionCueVisible", false);
         // Hub focus is two rows now (categories + actions); reset both
         // axes so a prior test's row-jump doesn't leak into the next.
+        main.hubScreen._focusArmed = false;
         main.hubScreen.resetFocus();
         // Cancel any in-flight dpad-repeat timer left over from a prior
         // test — handleKey(dpad) arms a 350 ms initial timer and tests
@@ -96,6 +115,9 @@ TestCase {
         Browse.GamesModel.apply_favorites_filter(testCase._originalGamesFavoritesFilter);
         Browse.GamesState.favorites_filter = testCase._originalGamesFavoritesFilter;
         Browse.GamesModel.total_files = 0;
+        Browse.HubState.category = testCase._originalHubCategory;
+        Browse.HubState.selected_row = testCase._originalHubSelectedRow;
+        Browse.HubState.selected_action = testCase._originalHubSelectedAction;
     }
 
     function test_media_screen_requests_sync_cover_size(): void {
@@ -290,14 +312,14 @@ TestCase {
 
     function test_enter_on_bottom_landing_routes_to_expected_action(): void {
         // qmllint disable compiler
-        // Focus the Update action (or Settings when the update feature is
-        // compiled out) and confirm Accept routes to the matching screen.
-        main.hubScreen.currentRow = 1;
-        main.hubScreen.currentIndex = main.hubScreen._actionIndexForId(main.updateEnabled ? "update" : "settings");
-        compare(main.hubScreen.actionEntries[main.hubScreen.currentIndex].id, main.updateEnabled ? "update" : "settings");
+        // Focus Update only when the build and current network state expose
+        // it; otherwise Settings is the production empty-catalog fallback.
+        const expectedAction = main.hubScreen._emptyCatalogFallbackAction;
+        main.hubScreen._focusAction(main.hubScreen._actionIndexForId(expectedAction));
+        compare(main.hubScreen.actionEntries[main.hubScreen.currentIndex].id, expectedAction);
         // qmllint enable compiler
         main.handleKey(Qt.Key_Return);
-        compare(main.activeScreen, main.updateEnabled ? main.screenUpdate : main.screenSettings);
+        compare(main.activeScreen, expectedAction === "update" ? main.screenUpdate : main.screenSettings);
     }
 
     function test_favorite_systems_grid_matches_system_tile_layout(): void {
