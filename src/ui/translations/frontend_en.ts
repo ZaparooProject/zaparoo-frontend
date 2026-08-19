@@ -384,24 +384,23 @@ Français - Wilfried</source>
 <context>
     <name>FavoritesScreen</name>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="31"/>
+        <location filename="../screens/FavoritesScreen.qml" line="30"/>
         <source>Favorites</source>
         <translation>Favorites</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="32"/>
+        <location filename="../screens/FavoritesScreen.qml" line="31"/>
         <source>No favorites yet</source>
         <translation>No favorites yet</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="33"/>
+        <location filename="../screens/FavoritesScreen.qml" line="32"/>
         <source>Loading favorites…</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="../screens/FavoritesScreen.qml" line="41"/>
         <source>%n favorite(s)</source>
-        <translation>
+        <translation type="vanished">
             <numerusform>%n favorite</numerusform>
             <numerusform>%n favorites</numerusform>
         </translation>

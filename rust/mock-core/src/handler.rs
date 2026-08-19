@@ -206,14 +206,16 @@ mod tests {
         // A page that covers every row reports no next page and no cursor.
         let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"systems":[],"maxResults":1000}}"#;
         let resp = parse(&dispatch(req));
+        let results = resp["result"]["results"].as_array().expect("array");
         let pagination = resp["result"]["pagination"]
             .as_object()
             .expect("pagination object");
         assert_eq!(pagination["hasNextPage"], Value::Bool(false));
         assert_eq!(pagination["pageSize"], Value::from(1000));
         assert!(!pagination.contains_key("nextCursor"));
-        // Deprecated but still present for backward compatibility.
-        assert_eq!(resp["result"]["total"], Value::from(-1));
+        // Deprecated current-page count, matching real Core. It is not the
+        // dataset total and must not be used to stop cursor pagination.
+        assert_eq!(resp["result"]["total"], Value::from(results.len()));
     }
 
     // Favorites uses cursor pagination. Short pages must advertise a next
@@ -225,6 +227,7 @@ mod tests {
         ));
         let page1 = first["result"]["results"].as_array().expect("array");
         assert_eq!(page1.len(), 5);
+        assert_eq!(first["result"]["total"], Value::from(5));
         assert_eq!(
             first["result"]["pagination"]["hasNextPage"],
             Value::Bool(true)

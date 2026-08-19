@@ -210,8 +210,9 @@ pub fn media_search_response(params: &Value) -> Value {
     // rejects maxResults=0 outright; the mock just terminates the chain.
     let has_next_page = !results.is_empty() && next_offset < total;
 
-    // `total` is deprecated upstream and always returns -1; pagination
-    // info travels under the `pagination` envelope.
+    // Real Core keeps this deprecated field for compatibility, but it is only
+    // the current page length. Clients must use the pagination envelope.
+    let page_total = results.len();
     let mut pagination = json!({
         "hasNextPage": has_next_page,
         "pageSize": max,
@@ -221,7 +222,7 @@ pub fn media_search_response(params: &Value) -> Value {
     }
     json!({
         "results": results,
-        "total": -1,
+        "total": page_total,
         "pagination": pagination,
     })
 }

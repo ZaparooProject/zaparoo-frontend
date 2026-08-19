@@ -406,28 +406,19 @@ Français - Wilfried</source>
 <context>
     <name>FavoritesScreen</name>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="31"/>
+        <location filename="../screens/FavoritesScreen.qml" line="30"/>
         <source>Favorites</source>
         <translation>Obľúbené</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="32"/>
+        <location filename="../screens/FavoritesScreen.qml" line="31"/>
         <source>No favorites yet</source>
         <translation>Zatiaľ žiadne obľúbené</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="33"/>
+        <location filename="../screens/FavoritesScreen.qml" line="32"/>
         <source>Loading favorites…</source>
         <translation>Načítanie obľúbených…</translation>
-    </message>
-    <message numerus="yes">
-        <location filename="../screens/FavoritesScreen.qml" line="41"/>
-        <source>%n favorite(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
-            <numerusform></numerusform>
-        </translation>
     </message>
     <message>
         <source>%1 entries</source>

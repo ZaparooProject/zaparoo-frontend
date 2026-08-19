@@ -182,7 +182,10 @@ Item {
     // this to their model's authoritative total so the thumb stays
     // stable while `fetch_more` grows the slice in the background.
     property int totalItemsOverride: -1
-    readonly property int totalItems: totalItemsOverride >= 0 ? totalItemsOverride : itemCount
+    // Unknown-length cursor lists must derive navigation only from loaded rows
+    // and `hasMorePages`. Ignore any stale/legacy total hint until a caller
+    // explicitly declares its total authoritative.
+    readonly property int totalItems: paginationTotalKnown && totalItemsOverride >= 0 ? totalItemsOverride : itemCount
     readonly property int totalPageCount: Math.max(1, Math.ceil(totalItems / pageSize))
     // False when a cursor chain has no authoritative final count. Navigation
     // continues forward by requesting another page instead of wrapping at the
@@ -444,11 +447,11 @@ Item {
         }
         if (root._pendingTargetPage < 0)
             return;
-        // Total may have shrunk under us (e.g. Core revised total_files
-        // downward); clamp the target to whatever the dataset reports
-        // now so we never overshoot.
+        // Known totals may shrink under us, so clamp to their reported final
+        // page. Unknown-length cursor lists cannot clamp while another page
+        // exists: their loaded total necessarily trails the pending target.
         const totalLast = root.totalPageCount - 1;
-        const targetPage = Math.min(root._pendingTargetPage, totalLast);
+        const targetPage = root.paginationTotalKnown || !root.hasMorePages ? Math.min(root._pendingTargetPage, totalLast) : root._pendingTargetPage;
         if (targetPage < 0) {
             root._pendingTargetPage = -1;
             return;

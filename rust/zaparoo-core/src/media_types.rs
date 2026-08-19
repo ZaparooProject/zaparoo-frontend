@@ -204,9 +204,8 @@ pub struct MediaSearchResult {
     /// through, matching `MediaBrowseResult`/`MediaHistoryResult`.
     #[serde(default)]
     pub pagination: Option<Pagination>,
-    /// Total result count across all pages. Core can return `-1` to
-    /// signal "unknown / unbounded" so this is intentionally not used as
-    /// an iteration bound; treat it as a UI hint only.
+    /// Deprecated current-page result count. This is not a dataset total and
+    /// must never bound cursor pagination.
     #[serde(default)]
     pub total: i64,
 }

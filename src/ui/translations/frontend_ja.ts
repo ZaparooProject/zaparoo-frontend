@@ -402,26 +402,19 @@ Français - Wilfried</source>
 <context>
     <name>FavoritesScreen</name>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="31"/>
+        <location filename="../screens/FavoritesScreen.qml" line="30"/>
         <source>Favorites</source>
         <translation>お気に入り</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="32"/>
+        <location filename="../screens/FavoritesScreen.qml" line="31"/>
         <source>No favorites yet</source>
         <translation>お気に入りはまだありません</translation>
     </message>
     <message>
-        <location filename="../screens/FavoritesScreen.qml" line="33"/>
+        <location filename="../screens/FavoritesScreen.qml" line="32"/>
         <source>Loading favorites…</source>
         <translation>お気に入りを読み込み中…</translation>
-    </message>
-    <message numerus="yes">
-        <location filename="../screens/FavoritesScreen.qml" line="41"/>
-        <source>%n favorite(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-        </translation>
     </message>
     <message>
         <source>%1 entries</source>

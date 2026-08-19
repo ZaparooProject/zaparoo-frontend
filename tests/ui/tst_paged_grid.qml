@@ -506,6 +506,55 @@ TestCase {
         compare(grid.hasPendingTarget, false);
     }
 
+    function test_unbounded_list_ignores_stale_total_hint(): void {
+        fillModel(24);
+        grid.totalItemsOverride = 5;
+        grid.paginationTotalKnown = false;
+        compare(grid.totalItems, 24);
+        compare(grid.totalPageCount, 2);
+    }
+
+    function test_unbounded_pending_page_commits_after_append(): void {
+        fillModel(24);
+        // Real Core's deprecated media.search total equals current page size.
+        // It must not clamp an unknown-length cursor chain.
+        grid.totalItemsOverride = 5;
+        grid.paginationTotalKnown = false;
+        grid.hasMorePages = true;
+        grid.setCurrentIndexImmediate(12);
+        compare(grid.pageBy(1), false);
+        compare(grid._pendingTargetPage, 2);
+
+        for (let i = 24; i < 36; i++)
+            model.append({
+                "name": "item-" + i,
+                "coverKey": "",
+                "favorite": 0
+            });
+        tryCompare(grid, "itemCount", 36);
+        compare(grid.currentIndex, 24);
+        compare(grid._pendingTargetPage, -1);
+    }
+
+    function test_failed_unbounded_page_does_not_auto_retry(): void {
+        fillModel(24);
+        grid.paginationTotalKnown = false;
+        grid.hasMorePages = true;
+        grid.loadingMore = true;
+        grid.setCurrentIndexImmediate(12);
+        compare(grid.pageBy(1), false);
+        compare(grid._pendingTargetPage, 2);
+
+        // Models publish hasMorePages=false before loadingMore=false on a
+        // failed cursor request. The first edge must settle pending navigation
+        // so the completion edge cannot request the same cursor again.
+        grid.hasMorePages = false;
+        compare(grid._pendingTargetPage, -1);
+        loadMoreSpy.clear();
+        grid.loadingMore = false;
+        compare(loadMoreSpy.count, 0);
+    }
+
     // ── Scroll thumb sizing (totalItemsOverride) ─────────────────────────
 
     function test_totalPageCount_uses_override(): void {

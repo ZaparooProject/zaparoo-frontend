@@ -1787,6 +1787,14 @@ fn apply_append_page(
         }
         Err(e) => {
             warn!("media.history follow-up page failed: {}", e.message);
+            // A pending PagedGrid target chains another request whenever
+            // loading_more falls while has_next_page remains true. Disarm the
+            // failed cursor first so the grid settles and waits for explicit
+            // retry instead of spinning on the same RPC indefinitely.
+            model.as_mut().rust_mut().next_cursor = None;
+            if model.has_next_page {
+                model.as_mut().set_has_next_page(false);
+            }
             model
                 .as_mut()
                 .set_error_message(QString::from(e.message.as_str()));

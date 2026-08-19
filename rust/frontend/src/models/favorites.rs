@@ -98,8 +98,6 @@ pub struct FavoritesModelRust {
     // action to this canonical Core system ID.
     current_system_id: QString,
     count: i32,
-    // Core's total across every cursor page. -1 means unknown.
-    total_items: i32,
     loading: bool,
     loading_more: bool,
     error_message: QString,
@@ -154,7 +152,6 @@ impl Default for FavoritesModelRust {
             sort_mode: QString::default(),
             current_system_id: QString::default(),
             count: 0,
-            total_items: -1,
             loading: false,
             loading_more: false,
             error_message: QString::default(),
@@ -207,7 +204,6 @@ pub mod ffi {
         #[qml_element]
         #[qml_singleton]
         #[qproperty(i32, count)]
-        #[qproperty(i32, total_items)]
         #[qproperty(bool, loading)]
         #[qproperty(bool, loading_more)]
         #[qproperty(QString, error_message)]
@@ -370,15 +366,7 @@ impl cxx_qt::Initialize for ffi::FavoritesModel {
 /// Snapshot of a single page that `apply_state` can write onto the
 /// model. Carried by value so the closure is `Send + 'static` for the
 /// `qt_thread` queue.
-type PageSnapshot = (Vec<MediaItem>, bool, Option<String>, i32);
-
-fn total_items_hint(total: i64) -> i32 {
-    if total < 0 {
-        -1
-    } else {
-        i32::try_from(total).unwrap_or(i32::MAX)
-    }
-}
+type PageSnapshot = (Vec<MediaItem>, bool, Option<String>);
 
 /// Project the resource status onto an `(Option<PageSnapshot>, error)`
 /// tuple. `Idle`/`Loading` map to the same `(None, "")` shape so the
@@ -390,7 +378,6 @@ fn project(status: &ResourceStatus<MediaSearchResult>) -> (Option<PageSnapshot>,
                 data.results.clone(),
                 data.has_next_page(),
                 data.next_cursor(),
-                total_items_hint(data.total),
             )),
             String::new(),
         ),
@@ -404,7 +391,7 @@ fn apply_state(
     (data, err): (Option<PageSnapshot>, String),
 ) {
     let apply_started = Instant::now();
-    if let Some((entries, has_next_page, next_cursor, total_items)) = data {
+    if let Some((entries, has_next_page, next_cursor)) = data {
         if model.nav_timing.is_none() {
             model.as_mut().rust_mut().nav_timing = Some(NavTiming::new("cache"));
         }
@@ -421,9 +408,6 @@ fn apply_state(
         clear_current_detail_state(model.as_mut());
         let count = i32::try_from(entries.len()).unwrap_or(i32::MAX);
         let displays = compute_favorites_disambig_displays(&entries, model.show_original_filenames);
-        if model.total_items != total_items {
-            model.as_mut().set_total_items(total_items);
-        }
         model.as_mut().begin_reset_model();
         {
             let mut rust = model.as_mut().rust_mut();
@@ -1721,6 +1705,14 @@ fn apply_append_page(
         }
         Err(e) => {
             warn!("media.search follow-up page failed: {}", e.message);
+            // A pending PagedGrid target chains another request whenever
+            // loading_more falls while has_next_page remains true. Disarm the
+            // failed cursor first so the grid settles and waits for explicit
+            // retry instead of spinning on the same RPC indefinitely.
+            model.as_mut().rust_mut().next_cursor = None;
+            if model.has_next_page {
+                model.as_mut().set_has_next_page(false);
+            }
             model
                 .as_mut()
                 .set_error_message(QString::from(e.message.as_str()));
@@ -1743,14 +1735,6 @@ mod tests {
             },
             ..Default::default()
         }
-    }
-
-    #[test]
-    fn total_items_hint_preserves_unknown_and_clamps_large_totals() {
-        assert_eq!(total_items_hint(-1), -1);
-        assert_eq!(total_items_hint(0), 0);
-        assert_eq!(total_items_hint(42), 42);
-        assert_eq!(total_items_hint(i64::MAX), i32::MAX);
     }
 
     #[test]
