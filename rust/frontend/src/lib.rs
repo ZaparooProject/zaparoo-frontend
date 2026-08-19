@@ -376,8 +376,8 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
 
     // CRT path always renders to one of the native writer's mode
     // geometries (352x240 NTSC, 352x288 PAL, 720x480 480i), selected by
-    // the persisted video standard. Digital MiSTer ignores user-configured
-    // [video] dimensions and resolves an automatic framebuffer size below.
+    // the persisted video standard. Digital MiSTer validates an explicit
+    // [video] render size or resolves an automatic framebuffer size below.
     // frontend.toml remains the durable source for CRT standard and offsets
     // (state.toml lives on tmpfs on MiSTer and mirrors it).
     if crt_native_path_forced {

@@ -46,10 +46,6 @@
 // pixmap decode on the UI thread is the visible "pop in" the user
 // flagged.
 constexpr int kPixmapCacheLimitKiB = 50 * 1024;
-// Native progressive text keeps hard monochrome edges below 720p. At 720p
-// and above, grayscale antialiasing has enough source pixels to improve curves
-// without reading as a doubled blur on integer-scaled output.
-constexpr uint32_t kAntialiasedTextMinHeight = 720;
 
 extern "C" int zaparoo_rust_init(bool crtNativePathForced);
 extern "C" void zaparoo_rust_post_qt_start();
@@ -318,13 +314,9 @@ int main(int argc, char* argv[]) // NOLINT
         QGuiApplication::setFont(defaultFont);
     }
     startupTrace("cpp:font registration complete");
-    bool useUnsmoothedText = crtNativePathEnabled;
+    const bool useUnsmoothedText = crtNativePathEnabled;
 #ifdef ZAPAROO_EMBEDDED_BUILD
     const uint32_t logicalVideoHeight = zaparoo_rust_video_height();
-    // A 960x540 scene is integer-upscaled on 1080p output, so grayscale fringe
-    // pixels become visibly soft 2x blocks. Native 720p has enough source
-    // resolution for grayscale antialiasing to improve curves instead.
-    useUnsmoothedText = useUnsmoothedText || logicalVideoHeight < kAntialiasedTextMinHeight;
 #endif
     if (useUnsmoothedText)
     {
@@ -440,7 +432,6 @@ int main(int argc, char* argv[]) // NOLINT
                              static_cast<int>(zaparoo_rust_video_width()));
     initialProperties.insert(QStringLiteral("videoHeight"),
                              static_cast<int>(zaparoo_rust_video_height()));
-    initialProperties.insert(QStringLiteral("unsmoothedText"), useUnsmoothedText);
     engine.setInitialProperties(initialProperties);
     startupTrace("cpp:QML initial properties set");
 

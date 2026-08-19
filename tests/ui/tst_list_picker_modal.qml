@@ -141,6 +141,19 @@ TestCase {
         compare(acceptedSpy.signalArguments[0][0], "id-2");
     }
 
+    function test_handle_action_accept_with_empty_id_emits_accepted(): void {
+        picker.entries = [
+            {
+                id: "",
+                label: "Automatic"
+            }
+        ];
+        picker.open = true;
+        picker.handleAction("accept");
+        tryCompare(acceptedSpy, "count", 1);
+        compare(acceptedSpy.signalArguments[0][0], "");
+    }
+
     function test_handle_action_accept_with_empty_entries_no_signal(): void {
         picker.entries = [];
         picker.open = true;

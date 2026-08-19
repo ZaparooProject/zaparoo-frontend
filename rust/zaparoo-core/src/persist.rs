@@ -101,8 +101,8 @@ pub struct FavoriteSystemsState {
 }
 
 /// Per-frontend Settings selections. `resolution` is `"WxH"` (e.g.
-/// `"1920x1080"`); empty means "no Settings override" and the value
-/// from `[mister.video_*]` in `frontend.toml` is left in place.
+/// `"1920x1080"`); empty means Automatic and removes explicit `[video]`
+/// dimensions from `frontend.toml`.
 /// `language` mirrors `[general].language` in `frontend.toml` so the UI
 /// settings snapshot stays coherent with the config-backed startup path.
 /// `clock_format` is `auto`, `12h`, or `24h`; `auto` follows the effective

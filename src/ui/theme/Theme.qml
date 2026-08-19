@@ -8,9 +8,6 @@ import QtQuick
 // Never hardcode colors or font families inline — use these instead.
 QtObject {
     property bool crtNativePath: false
-    // Effective native-text raster mode selected before QML construction.
-    // Progressive scenes below 720p and CRT use monochrome glyph masks.
-    property bool unsmoothedText: false
 
     // Backgrounds
     readonly property color bgDeep: "#0f0f23"

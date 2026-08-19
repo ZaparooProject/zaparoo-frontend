@@ -156,8 +156,7 @@ Item {
         onDeferred: {
             const id = modal._pendingId;
             modal._pendingId = "";
-            if (id !== "")
-                modal.accepted(id);
+            modal.accepted(id);
         }
     }
 

@@ -263,35 +263,6 @@ TestCase {
         compare(caption._tagsFullW, expectedTagsWidth);
     }
 
-    function test_tile_caption_strengthens_only_for_progressive_unsmoothed_text(): void {
-        const originalHeight = Sizing.screenHeight;
-        const originalSizingCrt = Sizing.crtNativePath;
-        const originalThemeCrt = Theme.crtNativePath;
-        const originalUnsmoothed = Theme.unsmoothedText;
-        try {
-            Sizing.screenHeight = 540;
-            Sizing.crtNativePath = false;
-            Theme.crtNativePath = false;
-            Theme.unsmoothedText = true;
-
-            const host = createTemporaryObject(missingSystemTile, testCase);
-            verify(host !== null);
-            const caption = findChild(host, "tileCaption");
-            verify(caption !== null);
-            compare(caption.fontPixelSize, Sizing.fontSize(2.4));
-            compare(caption.fontWeight, Font.Medium);
-
-            Theme.unsmoothedText = false;
-            compare(caption.fontPixelSize, Sizing.fontSize(2.2));
-            compare(caption.fontWeight, Font.Normal);
-        } finally {
-            Sizing.screenHeight = originalHeight;
-            Sizing.crtNativePath = originalSizingCrt;
-            Theme.crtNativePath = originalThemeCrt;
-            Theme.unsmoothedText = originalUnsmoothed;
-        }
-    }
-
     function test_media_cover_uses_short_reveal_without_loading_glyph(): void {
         const host = createTemporaryObject(missingSystemTile, testCase, {
             "coverKey": "media-image/example"

@@ -116,6 +116,13 @@ Item {
     // Display = video output and presentation controls.
     readonly property var displayInterfaceFields: {
         const out = [];
+        if (Browse.Settings.is_mister && !Browse.CrtVideo.crt_enabled) {
+            out.push({
+                kind: "field",
+                id: "resolution",
+                label: qsTr("Interface resolution")
+            });
+        }
         out.push({
             kind: "field",
             id: "orientation",
@@ -389,6 +396,8 @@ Item {
     }
 
     function _fieldValue(id: string): string {
+        if (id === "resolution")
+            return settings._resolutionDisplay(Browse.Settings.current_resolution);
         if (id === "language")
             return settings._languageDisplay(Browse.Settings.current_language);
         if (id === "orientation")
@@ -537,7 +546,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "browseLayout" || id === "systemLogoStyle" || id === "buttonLayout" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
+        return id === "resolution" || id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "browseLayout" || id === "systemLogoStyle" || id === "buttonLayout" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
     }
     // True when focused row accepts A without left/right cycling:
     // pickers, jobs, modal/navigation rows, and root category rows.
@@ -600,6 +609,30 @@ Item {
     property int currentIndex: {
         const idx = settings._firstNavigableIndex();
         return idx >= 0 ? idx : 0;
+    }
+
+    function _resolutionList(): list<string> {
+        const raw = Browse.Settings.available_resolutions;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
+    function _resolutionDisplay(value: string): string {
+        if (value === "")
+            return qsTr("Automatic");
+        const parts = value.split("x");
+        if (parts.length !== 2)
+            return value;
+        return qsTr("%1 × %2").arg(parts[0]).arg(parts[1]);
+    }
+
+    function _resolutionPickerDisplay(value: string): string {
+        if (value === "")
+            return qsTr("Automatic (Recommended)");
+        const label = settings._resolutionDisplay(value);
+        const parts = value.split("x");
+        if (parts.length === 2 && Number(parts[1]) >= 1080)
+            return qsTr("%1 (Animations off)").arg(label);
+        return label;
     }
 
     function _buttonLayoutList(): list<string> {
@@ -807,7 +840,16 @@ Item {
         let title = "";
         let entries = [];
         let initialId = "";
-        if (id === "language") {
+        if (id === "resolution") {
+            title = qsTr("Interface resolution");
+            const list = settings._resolutionList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._resolutionPickerDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_resolution;
+        } else if (id === "language") {
             title = qsTr("Language");
             const list = settings._languageList();
             for (let i = 0; i < list.length; i++)

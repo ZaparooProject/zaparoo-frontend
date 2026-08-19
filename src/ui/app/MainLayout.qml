@@ -52,7 +52,6 @@ ApplicationWindow {
     // Desktop preview sets fullScreen=false via initialProperties.
     property bool fullScreen: true
     property bool crtNativePath: false
-    property bool unsmoothedText: false
     property bool debugCrtSafeAreaOverlay: false
     property string activeScreen: ScreenManager.activeScreen
     readonly property bool updateEnabled: Browse.BuildInfo.update_enabled
@@ -249,12 +248,6 @@ ApplicationWindow {
         target: Theme
         property: "crtNativePath"
         value: root.crtNativePath
-    }
-
-    Binding {
-        target: Theme
-        property: "unsmoothedText"
-        value: root.unsmoothedText
     }
 
     Binding {

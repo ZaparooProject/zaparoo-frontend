@@ -484,6 +484,23 @@ TestCase {
         compare(main.activeScreen, main.screenHub);
     }
 
+    function test_settings_resolution_labels_explain_automatic_and_motion(): void {
+        compare(main.settingsScreen._resolutionDisplay(""), "Automatic");
+        compare(main.settingsScreen._resolutionDisplay("1280x720"), "1280 × 720");
+        compare(main.settingsScreen._resolutionPickerDisplay(""), "Automatic (Recommended)");
+        compare(main.settingsScreen._resolutionPickerDisplay("1920x1080"), "1920 × 1080 (Animations off)");
+    }
+
+    function test_settings_resolution_can_stage_automatic_restart(): void {
+        main.stageSettingRestart("resolution", "");
+        compare(main._resolutionRestartPending, true);
+        compare(main._pendingResolutionSelection, "");
+        compare(main.settingNeedsRestartModalVisible, true);
+        main.cancelPendingRestart();
+        compare(main._resolutionRestartPending, false);
+        compare(main.settingNeedsRestartModalVisible, false);
+    }
+
     // Cross-row mapping. The test harness has no live CategoriesModel
     // so we can't drive the full handleAction("down") flow with real
     // categories — instead we unit-test the pure arithmetic helper

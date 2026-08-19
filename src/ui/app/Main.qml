@@ -59,6 +59,8 @@ MainLayout {
     // link drops and reconnects to the same old Core.
     property bool _coreVersionWarningShown: false
     property string _pendingLanguageSelection: ""
+    property string _pendingResolutionSelection: ""
+    property bool _resolutionRestartPending: false
     property string _pendingCrtStandardSelection: ""
     // Staged CRT-mode toggle awaiting the restart-confirm modal:
     // "" (none), "on", or "off". Confirming writes the 1-byte enable
@@ -96,14 +98,15 @@ MainLayout {
     readonly property bool activeCardWritePending: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_pending : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_pending : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_pending : false
     readonly property string activeCardWriteError: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_error : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_error : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_error : ""
 
-    // Feed the Motion singleton's master switch from the persisted
-    // reduce-motion setting. Keeping Motion dependency-free (no
-    // Browse import) means Zaparoo.Theme stays independent; the app
-    // layer is the only place that crosses the module boundary.
+    // Feed the Motion singleton's master switch from persisted preference and
+    // MiSTer's effective render budget. Native 1080p remains available as an
+    // explicit quality override, but animation would repeatedly dirty its much
+    // larger raster surface. This runtime limit does not overwrite the user's
+    // Reduce motion setting, so motion returns when a lower resolution boots.
     Binding {
         target: Motion
         property: "enabled"
-        value: !Browse.Settings.current_reduce_motion
+        value: !Browse.Settings.current_reduce_motion && !(Browse.Settings.is_mister && !root.crtNativePath && root.videoHeight >= 1080)
     }
 
     // Mirror the "Show original filenames" setting onto every model that
@@ -2734,7 +2737,10 @@ MainLayout {
     function stageSettingRestart(fieldId: string, selectedId: string): void {
         if (fieldId === "language")
             root._pendingLanguageSelection = selectedId;
-        else if (fieldId === "crtVideoStandard")
+        else if (fieldId === "resolution") {
+            root._pendingResolutionSelection = selectedId;
+            root._resolutionRestartPending = true;
+        } else if (fieldId === "crtVideoStandard")
             root._pendingCrtStandardSelection = selectedId;
         root.openSettingNeedsRestartModal();
     }
@@ -2746,6 +2752,8 @@ MainLayout {
 
     function cancelPendingRestart(): void {
         root._pendingLanguageSelection = "";
+        root._pendingResolutionSelection = "";
+        root._resolutionRestartPending = false;
         root._pendingCrtStandardSelection = "";
         root._pendingCrtToggle = "";
         root.closeSettingNeedsRestartModal();
@@ -2767,8 +2775,20 @@ MainLayout {
             return;
         }
         const language = root._pendingLanguageSelection;
+        const resolution = root._pendingResolutionSelection;
+        const resolutionPending = root._resolutionRestartPending;
         const crtStandard = root._pendingCrtStandardSelection;
+        if (resolutionPending && !Browse.Settings.set_resolution(resolution)) {
+            root._pendingLanguageSelection = "";
+            root._pendingResolutionSelection = "";
+            root._resolutionRestartPending = false;
+            root._pendingCrtStandardSelection = "";
+            root.closeSettingNeedsRestartModal();
+            return;
+        }
         root._pendingLanguageSelection = "";
+        root._pendingResolutionSelection = "";
+        root._resolutionRestartPending = false;
         root._pendingCrtStandardSelection = "";
         root.closeSettingNeedsRestartModal();
         if (language !== "")
@@ -2921,7 +2941,12 @@ MainLayout {
             root.beginSystemLauncherUpdate(fieldId.slice("system_launcher:".length), selectedId);
             return;
         }
-        if (fieldId === "language") {
+        if (fieldId === "resolution") {
+            root.closeListPickerModal();
+            if (selectedId !== Browse.Settings.current_resolution)
+                root.stageSettingRestart(fieldId, selectedId);
+            return;
+        } else if (fieldId === "language") {
             root.closeListPickerModal();
             if (selectedId !== Browse.Settings.current_language)
                 root.stageSettingRestart(fieldId, selectedId);

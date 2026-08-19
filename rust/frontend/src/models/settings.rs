@@ -10,10 +10,9 @@
 // Field design:
 //   * `is_mister` — CONSTANT. Drives whether MiSTer-only fields render
 //     in the form.
-//   * `available_resolutions` / `current_resolution` — retained as a
-//     persisted compatibility surface for future platforms. Resolution is
-//     no longer user-selectable, and digital MiSTer startup ignores it in
-//     favor of automatic framebuffer sizing.
+//   * `available_resolutions` / `current_resolution` — output-aware MiSTer
+//     interface render sizes. Empty means Automatic; concrete choices preserve
+//     the active output aspect ratio and stop at 1080p.
 //   * `available_languages` — CONSTANT. Curated language tags plus the
 //     `auto` sentinel. The runtime translator is still startup-only, so
 //     this setting applies on the next launch.
@@ -83,19 +82,6 @@ use zaparoo_core::persist::{self, SettingsState};
 use zaparoo_core::platform_paths::config_file_path;
 use zaparoo_core::runtime;
 
-/// Legacy `MiSTer` resolution values retained for config/state compatibility
-/// and possible future platform use. Digital `MiSTer` startup does not consume
-/// this selection while automatic framebuffer sizing is active.
-const MISTER_RESOLUTIONS: &[&str] = &[
-    "",
-    "1280x720",
-    "1920x1080",
-    "2560x1440",
-    "1920x1200",
-    "1920x1440",
-    "640x480",
-    "2048x1536",
-];
 // One picker row per user-visible language. Keep Auto first, then sort by
 // the English display labels returned by SettingsScreen._languageDisplay.
 // Region-specific tags are accepted below as aliases so old configs keep
@@ -255,7 +241,7 @@ pub mod ffi {
         type Settings = super::SettingsRust;
 
         #[qinvokable]
-        fn set_resolution(self: Pin<&mut Settings>, value: QString);
+        fn set_resolution(self: Pin<&mut Settings>, value: QString) -> bool;
 
         #[qinvokable]
         fn set_language(self: Pin<&mut Settings>, value: QString);
@@ -316,13 +302,21 @@ impl Initialize for ffi::Settings {
         let snapshot: SettingsState = with_persist_read(|s| s.settings.clone());
         let config_path = config_file_path();
         let is_mister = runtime::current().is_mister();
+        let output_size = crate::mister_runtime::digital_output_size();
+        let explicit_request_applied = crate::mister_runtime::explicit_request_applied();
         let config = load_config(&config_path);
-        let merged = merge_settings(&snapshot, &config);
+        let merged = merge_settings(
+            &snapshot,
+            &config,
+            is_mister,
+            output_size,
+            explicit_request_applied,
+        );
         persist_if_changed(&snapshot, &merged);
         mirror_settings_to_config(&config_path, &merged);
         self.as_mut().rust_mut().is_mister = is_mister;
         self.as_mut().rust_mut().available_resolutions = if is_mister {
-            curated_resolutions()
+            curated_resolutions(output_size)
         } else {
             QStringList::default()
         };
@@ -368,17 +362,42 @@ impl Initialize for ffi::Settings {
 }
 
 impl ffi::Settings {
-    fn set_resolution(mut self: Pin<&mut Self>, value: QString) {
-        if self.current_resolution == value {
-            return;
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_resolution(mut self: Pin<&mut Self>, value: QString) -> bool {
+        let requested = value.to_string();
+        let value_str = if requested.is_empty()
+            || self
+                .available_resolutions
+                .iter()
+                .map(String::from)
+                .any(|candidate| candidate == requested)
+        {
+            requested
+        } else {
+            String::new()
+        };
+        if self.current_resolution.to_string() == value_str {
+            return true;
         }
-        let value_str = value.to_string();
-        // Resolution is restart-applied, so this setter only updates the
-        // durable state/config read by the next frontend process.
-        let snapshot = persist_settings(|s| s.resolution.clone_from(&value_str));
-        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
-        self.as_mut().rust_mut().current_resolution = value;
+
+        // frontend.toml is authoritative across MiSTer's /tmp lifecycle. Write
+        // it before changing in-memory/state.toml data so QML can keep the
+        // process open when durable persistence fails.
+        let mut proposed = with_persist_read(|s| s.settings.clone());
+        proposed.resolution.clone_from(&value_str);
+        let config_path = config_file_path();
+        if let Err(error) = save_settings_to_config(&config_path, &proposed) {
+            report_config_mirror_error(&config_path, &error);
+            return false;
+        }
+
+        persist_settings(|s| s.resolution.clone_from(&value_str));
+        self.as_mut().rust_mut().current_resolution = QString::from(value_str.as_str());
         self.as_mut().current_resolution_changed();
+        true
     }
 
     #[allow(
@@ -617,8 +636,11 @@ fn persist_if_changed(current: &SettingsState, merged: &SettingsState) {
     persist::save(&snapshot);
 }
 
-pub(super) fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsState) {
-    if let Err(e) = save_settings_mirror(
+fn save_settings_to_config(
+    config_path: &std::path::Path,
+    settings: &SettingsState,
+) -> Result<(), String> {
+    save_settings_mirror(
         config_path,
         SettingsMirror {
             resolution: settings.resolution.as_str(),
@@ -642,12 +664,20 @@ pub(super) fn mirror_settings_to_config(config_path: &std::path::Path, settings:
             crt_h_offset: settings.crt_h_offset,
             crt_v_offset: settings.crt_v_offset,
         },
-    ) {
-        warn!(
-            "could not save settings mirror to {}: {e}",
-            config_path.display()
-        );
-        report_action_error("setting", "");
+    )
+}
+
+fn report_config_mirror_error(config_path: &std::path::Path, error: &str) {
+    warn!(
+        "could not save settings mirror to {}: {error}",
+        config_path.display()
+    );
+    report_action_error("setting", "");
+}
+
+pub(super) fn mirror_settings_to_config(config_path: &std::path::Path, settings: &SettingsState) {
+    if let Err(error) = save_settings_to_config(config_path, settings) {
+        report_config_mirror_error(config_path, &error);
     }
 }
 
@@ -681,14 +711,29 @@ fn merge_crt_settings(snapshot: &SettingsState, config: &Config) -> (String, i32
     clippy::cognitive_complexity,
     reason = "merging all settings is inherently verbose"
 )]
-fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
+fn merge_settings(
+    snapshot: &SettingsState,
+    config: &Config,
+    is_mister: bool,
+    output_size: Option<(u32, u32)>,
+    explicit_request_applied: Option<bool>,
+) -> SettingsState {
     let (crt_video_standard, crt_h_offset, crt_v_offset) = merge_crt_settings(snapshot, config);
-    SettingsState {
-        resolution: if config.video_explicit {
-            format!("{}x{}", config.video_width, config.video_height)
+    let configured_resolution = if config.video_explicit {
+        let requested = (config.video_width, config.video_height);
+        if !is_mister
+            || (explicit_request_applied != Some(false)
+                && crate::mister_runtime::configured_render_size_supported(requested, output_size))
+        {
+            format!("{}x{}", requested.0, requested.1)
         } else {
             String::new()
-        },
+        }
+    } else {
+        String::new()
+    };
+    SettingsState {
+        resolution: configured_resolution,
         language: normalize_language(&config.language).to_string(),
         orientation: normalize_orientation(
             config
@@ -788,10 +833,12 @@ fn merge_settings(snapshot: &SettingsState, config: &Config) -> SettingsState {
     }
 }
 
-fn curated_resolutions() -> QStringList {
+fn curated_resolutions(output_size: Option<(u32, u32)>) -> QStringList {
     let mut list = QStringList::default();
-    for r in MISTER_RESOLUTIONS {
-        list.append(QString::from(*r));
+    list.append(QString::from(""));
+    let sizes = output_size.map_or_else(Vec::new, crate::mister_runtime::selectable_render_sizes);
+    for (width, height) in sizes {
+        list.append(QString::from(format!("{width}x{height}").as_str()));
     }
     list
 }
@@ -997,28 +1044,83 @@ mod tests {
         normalize_system_logo_style, orientations, regions, system_logo_styles, BROWSE_LAYOUTS,
         BUTTON_LAYOUTS, CLOCK_FORMATS, DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT,
         DEFAULT_CLOCK_FORMAT, DEFAULT_LANGUAGE, DEFAULT_ORIENTATION, DEFAULT_REGION,
-        DEFAULT_SYSTEM_LOGO_STYLE, MISTER_RESOLUTIONS, ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
+        DEFAULT_SYSTEM_LOGO_STYLE, ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
     };
 
     #[test]
-    fn curated_resolutions_preserves_order() {
-        let list = curated_resolutions();
+    fn curated_resolutions_only_include_integer_fill_choices() {
+        let list = curated_resolutions(Some((1920, 1080)));
         let collected: Vec<String> = list.iter().map(String::from).collect();
-        let expected: Vec<String> = MISTER_RESOLUTIONS
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect();
-        assert_eq!(collected, expected);
+        assert_eq!(collected, ["", "1920x1080"]);
+
+        let list = curated_resolutions(Some((3840, 2160)));
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        assert_eq!(collected, ["", "1280x720", "1920x1080"]);
     }
 
     #[test]
-    fn curated_list_contains_common_16_9_resolutions() {
-        // Mostly a sanity guard — if a future edit silently drops the
-        // most-likely-to-work 16:9 resolutions, this test catches it.
-        let collected: Vec<&str> = MISTER_RESOLUTIONS.to_vec();
-        assert!(collected.contains(&"1280x720"));
-        assert!(collected.contains(&"1920x1080"));
-        assert!(collected.contains(&"2560x1440"));
+    fn curated_resolutions_include_native_720p_choice() {
+        let list = curated_resolutions(Some((1280, 720)));
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        assert_eq!(collected, ["", "1280x720"]);
+    }
+
+    #[test]
+    fn curated_resolutions_use_only_automatic_when_output_is_unknown() {
+        let list = curated_resolutions(None);
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        assert_eq!(collected, [""]);
+    }
+
+    #[test]
+    fn merge_resets_broken_mister_resolution_above_1080p() {
+        let snapshot = zaparoo_core::persist::SettingsState::default();
+        let mut config = zaparoo_core::config::Config {
+            video_width: 2560,
+            video_height: 1440,
+            video_explicit: true,
+            ..zaparoo_core::config::Config::default()
+        };
+        let merged = super::merge_settings(&snapshot, &config, true, Some((2560, 1440)), None);
+        assert!(merged.resolution.is_empty());
+
+        config.video_width = 1920;
+        config.video_height = 1080;
+        let merged =
+            super::merge_settings(&snapshot, &config, true, Some((2560, 1440)), Some(true));
+        assert!(merged.resolution.is_empty());
+
+        let merged =
+            super::merge_settings(&snapshot, &config, true, Some((3840, 2160)), Some(true));
+        assert_eq!(merged.resolution, "1920x1080");
+
+        let merged = super::merge_settings(&snapshot, &config, true, None, Some(true));
+        assert!(merged.resolution.is_empty());
+    }
+
+    #[test]
+    fn merge_resets_explicit_resolution_that_failed_to_apply() {
+        let snapshot = zaparoo_core::persist::SettingsState::default();
+        let config = zaparoo_core::config::Config {
+            video_width: 1920,
+            video_height: 1080,
+            video_explicit: true,
+            ..zaparoo_core::config::Config::default()
+        };
+        let merged =
+            super::merge_settings(&snapshot, &config, true, Some((1920, 1080)), Some(false));
+        assert!(merged.resolution.is_empty());
+    }
+
+    #[test]
+    fn resolution_config_write_failure_is_reported_to_caller() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let settings = zaparoo_core::persist::SettingsState {
+            resolution: "1920x1080".into(),
+            ..zaparoo_core::persist::SettingsState::default()
+        };
+        let result = super::save_settings_to_config(dir.path(), &settings);
+        assert!(result.is_err());
     }
 
     #[test]
