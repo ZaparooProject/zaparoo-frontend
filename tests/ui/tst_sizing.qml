@@ -24,6 +24,7 @@ TestCase {
     function cleanup(): void {
         main.debugCrtSafeAreaOverlay = false;
         main.crtNativePath = false;
+        setResolution(1280, 720);
     }
 
     function setResolution(w: int, h: int): void {
@@ -146,15 +147,192 @@ TestCase {
         compare(shape.rows, 2);
     }
 
-    function test_crt_systems_grid_is_three_by_three(): void {
-        Sizing.crtNativePath = true;
-        setResolution(352, 240);
-        compare(Sizing.systemsGridColumns, 3);
-        compare(Sizing.systemsGridRows, 3);
+    function test_semantic_tiers_radii_fonts_and_strokes(): void {
+        const cases = [
+            {
+                "w": 320,
+                "h": 240,
+                "tier": "240",
+                "radiusMd": 2,
+                "radiusSm": 1,
+                "fonts": [14, 12, 11, 10, 9, 8],
+                "strokes": [1, 1, 1, 2]
+            },
+            {
+                "w": 640,
+                "h": 480,
+                "tier": "480",
+                "radiusMd": 3,
+                "radiusSm": 2,
+                "fonts": [22, 18, 16, 14, 12, 10],
+                "strokes": [1, 2, 3, 4]
+            },
+            {
+                "w": 960,
+                "h": 540,
+                "tier": "540",
+                "radiusMd": 4,
+                "radiusSm": 2,
+                "fonts": [24, 19, 17, 15, 13, 11],
+                "strokes": [1, 2, 3, 4]
+            },
+            {
+                "w": 1280,
+                "h": 720,
+                "tier": "720",
+                "radiusMd": 6,
+                "radiusSm": 3,
+                "fonts": [29, 23, 21, 19, 17, 16],
+                "strokes": [1, 3, 4, 6]
+            },
+            {
+                "w": 1366,
+                "h": 768,
+                "tier": "720",
+                "radiusMd": 6,
+                "radiusSm": 3,
+                "fonts": [29, 23, 21, 19, 17, 16],
+                "strokes": [2, 3, 5, 6]
+            },
+            {
+                "w": 1920,
+                "h": 1080,
+                "tier": "1080",
+                "radiusMd": 8,
+                "radiusSm": 4,
+                "fonts": [43, 35, 31, 28, 26, 24],
+                "strokes": [2, 4, 6, 9]
+            }
+        ];
+        const fontNames = ["fontHero", "fontTitle", "fontSection", "fontBody", "fontCaption", "fontSmall"];
+        const strokeNames = ["cardBorderWidth", "focusBorderWidth", "focusRingWidth", "pressEdgeHeight"];
+        for (const entry of cases) {
+            setResolution(entry.w, entry.h);
+            compare(Sizing.tier, entry.tier);
+            compare(Sizing.radiusMd, entry.radiusMd);
+            compare(Sizing.radiusSm, entry.radiusSm);
+            verify(Sizing.radiusSm <= Sizing.radiusMd);
+            for (let i = 0; i < fontNames.length; ++i) {
+                compare(Sizing[fontNames[i]], entry.fonts[i], fontNames[i] + " at " + entry.w + "x" + entry.h);
+                if (i > 0)
+                    verify(Sizing[fontNames[i - 1]] > Sizing[fontNames[i]], "font roles must strictly descend");
+            }
+            for (let i = 0; i < strokeNames.length; ++i)
+                compare(Sizing[strokeNames[i]], entry.strokes[i], strokeNames[i] + " at " + entry.w + "x" + entry.h);
+        }
+    }
 
-        setResolution(352, 288);
+    // ContextMenu's corner masks (Part 5) are only baked for radii 1..16;
+    // Resources.cornerCutUrl() silently returns "" outside that band, so a
+    // ladder change that pushes radiusMd/radiusSm past 16 would quietly
+    // stop rounding the scrim hole instead of failing loudly. Covers every
+    // resolution tier, including "crt" which the semantic-tier table above
+    // doesn't exercise.
+    function test_radius_ladder_stays_within_baked_corner_mask_range(): void {
+        const resolutions = [
+            [320, 240],
+            [640, 480],
+            [960, 540],
+            [1280, 720],
+            [1920, 1080]
+        ];
+        for (const [w, h] of resolutions) {
+            setResolution(w, h);
+            verify(Sizing.radiusMd >= 1 && Sizing.radiusMd <= 16, "radiusMd out of baked corner mask range at " + w + "x" + h);
+            verify(Sizing.radiusSm >= 1 && Sizing.radiusSm <= 16, "radiusSm out of baked corner mask range at " + w + "x" + h);
+        }
+
+        main.crtNativePath = true;
+        setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
+        compare(Sizing.tier, "crt");
+        verify(Sizing.radiusMd >= 1 && Sizing.radiusMd <= 16, "radiusMd out of baked corner mask range on crt tier");
+        verify(Sizing.radiusSm >= 1 && Sizing.radiusSm <= 16, "radiusSm out of baked corner mask range on crt tier");
+        main.crtNativePath = false;
+    }
+
+    function test_common_digital_grid_shapes_are_declared(): void {
+        const cases = [
+            {
+                "w": 320,
+                "h": 240,
+                "systems": [2, 2],
+                "games": [2, 2]
+            },
+            {
+                "w": 640,
+                "h": 480,
+                "systems": [3, 3],
+                "games": [4, 2]
+            },
+            {
+                "w": 960,
+                "h": 540,
+                "systems": [4, 3],
+                "games": [5, 2]
+            },
+            {
+                "w": 1280,
+                "h": 720,
+                "systems": [4, 3],
+                "games": [5, 2]
+            },
+            {
+                "w": 1366,
+                "h": 768,
+                "systems": [4, 3],
+                "games": [5, 2]
+            },
+            {
+                "w": 1920,
+                "h": 1080,
+                "systems": [4, 3],
+                "games": [5, 2]
+            }
+        ];
+        for (const entry of cases) {
+            setResolution(entry.w, entry.h);
+            const systems = Sizing.systemsGridShape(entry.w, entry.h);
+            const games = Sizing.gamesGridShape(entry.w, Math.max(1, entry.h * 0.68));
+            compare(systems.columns, entry.systems[0]);
+            compare(systems.rows, entry.systems[1]);
+            compare(games.columns, entry.games[0]);
+            compare(games.rows, entry.games[1]);
+        }
+    }
+
+    function test_nonstandard_scene_uses_adaptive_grid_scorer(): void {
+        setResolution(1000, 600);
+        const shape = Sizing.gamesGridShape(1000, 405);
+        const scored = Sizing._selectGridShape(1000, 405, Sizing._gamesGridConfig);
+        compare(shape.columns, scored.columns);
+        compare(shape.rows, scored.rows);
+    }
+
+    function test_crt_fonts_and_declared_grid_shapes(): void {
+        main.crtNativePath = true;
+        setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
+        compare(Sizing.tier, "crt");
+        compare(Sizing.fontHero, Sizing.fontSize(4.0));
+        compare(Sizing.fontTitle, Sizing.fontSize(3.2));
+        compare(Sizing.fontSection, Sizing.fontSize(2.9));
+        compare(Sizing.fontBody, Sizing.fontSize(2.6));
+        compare(Sizing.fontCaption, Sizing.fontSize(2.4));
+        compare(Sizing.fontSmall, Sizing.fontSize(2.2));
         compare(Sizing.systemsGridColumns, 3);
         compare(Sizing.systemsGridRows, 3);
-        Sizing.crtNativePath = false;
+        compare(Sizing.swapPercentageAxes, false);
+        compare(Sizing.screenHeight, crtSafeHeight(240));
+        const declaredGames = Sizing._declaredGridShape("games");
+        compare(declaredGames.columns, 2);
+        let games = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
+        compare(games.columns, 2);
+        compare(games.rows, 2);
+
+        setResolutionExpect(352, 288, crtSafeWidth(352), crtSafeHeight(288));
+        compare(Sizing.systemsGridColumns, 3);
+        compare(Sizing.systemsGridRows, 3);
+        games = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
+        compare(games.columns, 3);
+        compare(games.rows, 2);
     }
 }

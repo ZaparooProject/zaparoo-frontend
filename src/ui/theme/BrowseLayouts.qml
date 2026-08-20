@@ -52,7 +52,8 @@ QtObject {
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "systemsList": {
@@ -124,7 +125,8 @@ QtObject {
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "systemsListTate": {
@@ -196,7 +198,8 @@ QtObject {
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesGrid": {
@@ -236,7 +239,8 @@ QtObject {
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesList": {
@@ -308,7 +312,8 @@ QtObject {
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesListTate": {
@@ -380,7 +385,8 @@ QtObject {
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 }
             },
@@ -422,7 +428,8 @@ QtObject {
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "systemsList": {
@@ -495,7 +502,8 @@ QtObject {
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "systemsListTate": {
@@ -567,7 +575,8 @@ QtObject {
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesGrid": {
@@ -607,7 +616,8 @@ QtObject {
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesList": {
@@ -680,7 +690,8 @@ QtObject {
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesListTate": {
@@ -752,7 +763,8 @@ QtObject {
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 }
             }
@@ -821,8 +833,10 @@ QtObject {
             return Sizing.pctH(Number(value.substring("pctH:".length)));
         if (value.startsWith("fontSize:"))
             return Sizing.fontSize(Number(value.substring("fontSize:".length)));
-        if (value === "cornerRadius")
-            return Sizing.cornerRadius;
+        if (value === "radiusMd")
+            return Sizing.radiusMd;
+        if (value === "radiusSm")
+            return Sizing.radiusSm;
         if (value === "headerSideMargin")
             return Sizing.headerSideMargin;
         if (value.startsWith("ref:")) {

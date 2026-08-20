@@ -7,54 +7,38 @@
 #include <QCache>
 #include <QImage>
 #include <QMutex>
-#include <QQuickAsyncImageProvider>
-#include <QQuickImageResponse>
-#include <QQuickTextureFactory>
-#include <QRunnable>
+#include <QQuickImageProvider>
 #include <QSize>
 #include <QString>
-#include <QThreadPool>
-#include <memory>
 
-class TintedSvgImageProvider;
-
-class TintedSvgImageResponse : public QQuickImageResponse, public QRunnable
-{
-  public:
-    TintedSvgImageResponse(QString id, QSize requestedSize, QMutex* cacheMutex,
-                           QCache<QString, QImage>* logoCache);
-    ~TintedSvgImageResponse() override = default;
-
-    [[nodiscard]] QQuickTextureFactory* textureFactory() const override;
-    [[nodiscard]] QString errorString() const override;
-    void run() override;
-
-  private:
-    QString m_id;
-    QSize m_requestedSize;
-    QString m_error;
-    QImage m_image;
-    mutable std::unique_ptr<QQuickTextureFactory> m_factory;
-    QMutex* m_cacheMutex;
-    QCache<QString, QImage>* m_logoCache;
-};
-
-class TintedSvgImageProvider : public QQuickAsyncImageProvider
+// Serves themed bundled artwork as image://tinted-svg/<fg>/<sec>/<bg>/<path>.
+//
+// This is a *synchronous* QQuickImageProvider on purpose. The async form
+// (QQuickAsyncImageProvider) implies QQmlImageProviderBase::ForceAsynchronous-
+// ImageLoading, and QQuickPixmap::load() then takes the threaded path for every
+// request regardless of Image.asynchronous -- so even a 100% cache hit cost a
+// thread-pool dispatch, a mutex, and a queued signal, i.e. at least one frame
+// of empty tile. That was the structural cause of tile pop-in, and no cache
+// size could fix it. With no flags set, `asynchronous: false` runs inline on
+// the GUI thread in the same frame and `asynchronous: true` still goes to the
+// shared reader thread, which gives QML per-call-site control.
+//
+// The work is small enough to do inline because the SVG parse and the
+// full-image tone scan happen at build time; see baked_icon_atlas.h. A request
+// larger than the baked raster still falls back to rasterizing the SVG.
+class TintedSvgImageProvider : public QQuickImageProvider
 {
   public:
     TintedSvgImageProvider();
     ~TintedSvgImageProvider() override = default;
 
-    QQuickImageResponse* requestImageResponse(const QString& id,
-                                              const QSize& requestedSize) override;
+    QImage requestImage(const QString& id, QSize* size, const QSize& requestedSize) override;
 
   private:
-    QThreadPool m_pool;
-    // Process-memory cache for tinted logo renders. The tint result is
-    // deterministic per (id, requestedSize) so repeated loads — after
-    // the QML pixmap cache evicts, or across category re-entries — skip
-    // the SVG rasterize + per-pixel tint pass entirely. Cost is tracked
-    // in bytes; maxCost caps the total footprint on MiSTer (<512 MB shared).
-    QMutex m_cacheMutex;
-    QCache<QString, QImage> m_logoCache;
+    // Tint results are deterministic per (ramp, path, output size), so this
+    // absorbs re-tints across screen re-entries and color-scheme changes.
+    // Small on purpose: a miss now costs a sub-millisecond LUT pass instead of
+    // a 10-20 ms SVG parse, so the cache is a comfort rather than load-bearing.
+    mutable QMutex m_cacheMutex;
+    mutable QCache<QString, QImage> m_tintedCache;
 };

@@ -126,6 +126,8 @@ pub struct SettingsState {
     pub favorites_grouping: String,
     #[serde(default = "default_system_logo_style")]
     pub system_logo_style: String,
+    #[serde(default = "default_color_scheme")]
+    pub color_scheme: String,
     #[serde(default = "default_button_layout")]
     pub button_layout: String,
     #[serde(default = "default_mouse_enabled")]
@@ -178,6 +180,7 @@ impl Default for SettingsState {
             browse_layout: default_browse_layout(),
             favorites_grouping: default_favorites_grouping(),
             system_logo_style: default_system_logo_style(),
+            color_scheme: default_color_scheme(),
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
             reduce_motion: false,
@@ -221,6 +224,10 @@ fn default_favorites_grouping() -> String {
 
 fn default_system_logo_style() -> String {
     "tinted".into()
+}
+
+fn default_color_scheme() -> String {
+    "zaparoo-black".into()
 }
 
 fn default_button_layout() -> String {
@@ -376,6 +383,7 @@ mod tests {
                 browse_layout: "list".into(),
                 favorites_grouping: "system".into(),
                 system_logo_style: "color".into(),
+                color_scheme: "midnight-amber".into(),
                 button_layout: "b".into(),
                 mouse_enabled: false,
                 reduce_motion: true,
@@ -415,6 +423,7 @@ resolution = "1920x1080"
         let state = load_from(&path);
         assert!(!state.settings.show_hidden);
         assert_eq!(state.settings.favorites_grouping, "none");
+        assert_eq!(state.settings.color_scheme, "zaparoo-black");
         assert_eq!(state.favorite_systems, FavoriteSystemsState::default());
         // reduce_motion absent from an older state file defaults to false.
         assert!(!state.settings.reduce_motion);
@@ -509,6 +518,7 @@ resolution = "1920x1080"
         assert_eq!(state.settings.language, "");
         assert_eq!(state.settings.clock_format, "auto");
         assert_eq!(state.settings.browse_layout, "grid");
+        assert_eq!(state.settings.color_scheme, "zaparoo-black");
         assert_eq!(state.settings.button_layout, "a");
         assert!(state.settings.mouse_enabled);
         assert!(!state.settings.debug_logging);

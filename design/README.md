@@ -67,17 +67,23 @@ If an effect seems necessary, talk to an engineer first. A flat `Rectangle` or
 
 ## Sizing
 
-The frontend scales from 240p CRT output to 1080p. Use the helpers on the
-`Sizing` singleton (`import Zaparoo.Theme`). Do not hardcode pixel values or
-element counts:
+Frontend scales from 240p CRT output to 1080p. Use `Sizing`
+(`import Zaparoo.Theme`); never hardcode geometry or element counts:
 
-- `Sizing.pctH(n)` — `n` percent of screen height.
-- `Sizing.pctW(n)` — `n` percent of screen width.
-- `Sizing.fontSize(n)` — percent-of-height font size, floored at 8 px.
-- `Sizing.visibleCovers` — element count for tile rows and similar
-  repeaters; drops at very low resolutions to avoid crowding.
+- `pctH(n)` / `pctW(n)` — proportional spacing and dimensions.
+- `px(n)`, `center(parent, child)`, `half(n)`, `stroke(n)` — integer geometry.
+- `radiusMd` / `radiusSm` — outer and nested rounded-square shapes.
+- `fontHero`, `fontTitle`, `fontSection`, `fontBody`, `fontCaption`,
+  `fontSmall` — ordinary text roles.
+- `cardBorderWidth`, `focusBorderWidth`, `focusRingWidth`,
+  `pressEdgeHeight` — semantic thicknesses.
+- `visibleCovers` — low-resolution-aware tile-row count.
 
-On the 1280×720 designer canvas, `Sizing.pctH(10)` previews as 72 px.
+`fontSize(percent)` remains for approved specialist text and geometric values;
+do not use it to create another ordinary text role. Pills still use half their
+height/width rather than radius tokens.
+
+On 1280×720 designer canvas, `Sizing.pctH(10)` previews as 72 px.
 
 ## Handing work back
 

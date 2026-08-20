@@ -98,6 +98,14 @@ MainLayout {
     readonly property bool activeCardWritePending: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_pending : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_pending : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_pending : false
     readonly property string activeCardWriteError: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_error : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_error : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_error : ""
 
+    // Color schemes apply live. Settings normalizes missing or unknown IDs to
+    // Zaparoo Black before exposing this value.
+    Binding {
+        target: Theme
+        property: "colorSchemeId"
+        value: Browse.Settings.current_color_scheme
+    }
+
     // Feed the Motion singleton's master switch from persisted preference and
     // MiSTer's effective render budget. Native 1080p remains available as an
     // explicit quality override, but animation would repeatedly dirty its much
@@ -325,6 +333,13 @@ MainLayout {
             root.startupRestoreCurtainVisible = false;
         }
         root._startupTrace("startup/qml Component.onCompleted", "savedScreen=" + savedScreen, "initialActiveScreen=" + root.activeScreen, "startupRestorePending=" + root._startupRestorePending, "connectionState=" + Browse.AppStatus.connection_state);
+        // Start the `custom/hub/` override scan before first paint. It is a
+        // spawn_blocking directory walk that never touches the GUI thread
+        // (rust/frontend/src/models/image_overrides.rs), so starting it here
+        // costs the first frame nothing and usually lands before it — which is
+        // what makes HubScreen's bundled-key default swap invisibly. The model
+        // has its own idempotency guard, so calling it once here is enough.
+        Browse.ImageOverrides.load_hub_overrides();
         // Fire the focus restore here so Hub focus is seated and marked ready
         // before first paint. Do not cascade into SystemsModel yet: first
         // paint stays Hub-only, and the post-frame handler below runs the
@@ -343,7 +358,6 @@ MainLayout {
 
     on_FirstFrameSeenChanged: {
         if (root._firstFrameSeen) {
-            Browse.ImageOverrides.load_hub_overrides();
             if (Browse.CategoriesModel.count > 0)
                 root.hubScreen.restoreFromCategoriesReset(true);
             // SystemsScreen's QML tree costs about a second to instantiate on
@@ -550,10 +564,6 @@ MainLayout {
 
     onFramePresented: {
         root._finishTransitionTiming();
-        if (!root.systemsCoverRevealReady && root.activeScreen === root.screenSystems && root.pendingTransition === "") {
-            root.systemsCoverRevealReady = true;
-            console.debug("responsiveness system covers enabled after destination frame");
-        }
         if (!root.gamesCoverRevealReady && root.activeScreen === root.screenGames && !Browse.GamesModel.loading && root.pendingTransition === "") {
             const presentedAt = Date.now();
             root.gamesCoverRevealReady = true;
@@ -948,7 +958,6 @@ MainLayout {
                     root._completeTransition(root.screenGames);
                 });
             } else {
-                root.systemsCoverRevealReady = false;
                 root._completeTransition(root.screenSystems);
             }
         }, true);
@@ -1547,8 +1556,8 @@ MainLayout {
         function onRequestSettingsScreen(): void {
             root._navigateToSettings();
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("categories", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("categories", index, anchorRect, anchorRadius);
         }
         function onRequestActionContextMenu(actionId: string, anchorRect): void {
             root.openHubActionContextMenu(actionId, anchorRect);
@@ -1562,8 +1571,8 @@ MainLayout {
             else
                 root._navigateBackToScreen(root.screenHub);
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("favorites", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("favorites", index, anchorRect, anchorRadius);
         }
         function onRequestPageMenu(): void {
             root.openFavoritesPageMenu();
@@ -1578,8 +1587,8 @@ MainLayout {
         function onRequestHubScreen(): void {
             root._navigateBackToScreen(root.screenHub);
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("favorite_systems", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("favorite_systems", index, anchorRect, anchorRadius);
         }
         function onRequestPageMenu(): void {
             root.openFavoriteSystemsPageMenu();
@@ -1590,8 +1599,8 @@ MainLayout {
         function onRequestHubScreen(): void {
             root._navigateBackToScreen(root.screenHub);
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("recents", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("recents", index, anchorRect, anchorRadius);
         }
     }
     Connections {
@@ -1649,8 +1658,8 @@ MainLayout {
         function onRequestHubScreen(): void {
             root._navigateBackToScreen(root.screenHub);
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("systems", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("systems", index, anchorRect, anchorRadius);
         }
     }
     Connections {
@@ -1699,8 +1708,8 @@ MainLayout {
         function onRequestNavigateOutOfFolder(): void {
             root._navigateOutOfFolder();
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("games", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("games", index, anchorRect, anchorRadius);
         }
         function onRequestPageMenu(): void {
             root.openPageMenu();
@@ -1930,13 +1939,14 @@ MainLayout {
         root.contextMenuIndex = 0;
         root.contextMenuMode = "main";
         root.contextMenuAnchor = anchorRect;
+        root.contextMenuAnchorRadius = 0;
         root._requestModal(root.modalContextMenu);
         root.contextMenuVisible = true;
         if (ScreenManager.topModal !== root.modalContextMenu)
             ScreenManager.pushModal(root.modalContextMenu);
     }
 
-    function openContextMenu(owner: string, index: int, anchorRect): void {
+    function openContextMenu(owner: string, index: int, anchorRect, anchorRadius: int): void {
         if (index < 0)
             return;
         let entryType = "";
@@ -1984,6 +1994,7 @@ MainLayout {
         root._discoverParentEntries = [];
         root._discoverMenuPending = false;
         root.contextMenuAnchor = anchorRect;
+        root.contextMenuAnchorRadius = anchorRadius;
         root._requestModal(root.modalContextMenu);
         root.contextMenuVisible = true;
         if (ScreenManager.topModal !== root.modalContextMenu)
@@ -2963,6 +2974,8 @@ MainLayout {
             Browse.Settings.set_browse_layout(selectedId);
         else if (fieldId === "systemLogoStyle")
             Browse.Settings.set_system_logo_style(selectedId);
+        else if (fieldId === "colorScheme")
+            Browse.Settings.set_color_scheme(selectedId);
         else if (fieldId === "buttonLayout")
             Browse.Settings.set_button_layout(selectedId);
         else if (fieldId === "screensaverTimeout")
@@ -3700,7 +3713,7 @@ MainLayout {
     }
 
     // Transition cue. Item, not Rectangle — the source screen's existing
-    // background and circuit-trace texture stay visible underneath; never
+    // page background stays visible underneath; never
     // paint a full-screen fill. The delayed indicator suppresses flashes
     // for quick loads; once it appears, screen `transitioning` bindings hide
     // primary content so the centered "Loading…" reads alone in the cleared

@@ -6,6 +6,7 @@
 // zaparoo_frontend_rs staticlib; Qt plugin wiring is handled here so that
 // Qt's CMake (qt_import_qml_plugins) can emit the correct link flags.
 
+#include "baked_icon_atlas.h"
 #include "custom_image_provider.h"
 #include "frontend_arguments.h"
 #include "media_image_provider.h"
@@ -19,7 +20,6 @@
 #include <QGuiApplication>
 #include <QList>
 #include <QLocale>
-#include <QPixmapCache>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QQuickWindow>
@@ -36,16 +36,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
-
-// Default QPixmapCache cap is 10 MiB. With ~100 system SVGs rasterized at
-// 256 px sourceSize the working set straddles that limit, so navigating
-// through every category evicts earlier system covers and re-renders
-// them on the next visit. Bumping to 50 MiB keeps the entire system-
-// cover set resident across category swaps for the cost of a one-time
-// allocation — a worthwhile trade on MiSTer's 1 GiB DDR3 since
-// pixmap decode on the UI thread is the visible "pop in" the user
-// flagged.
-constexpr int kPixmapCacheLimitKiB = 50 * 1024;
 
 extern "C" int zaparoo_rust_init(bool crtNativePathForced);
 extern "C" void zaparoo_rust_post_qt_start();
@@ -213,8 +203,6 @@ int main(int argc, char* argv[]) // NOLINT
 
     QGuiApplication app(qtArgc, qtArgv);
     startupTrace("cpp:QGuiApplication constructed");
-    QPixmapCache::setCacheLimit(kPixmapCacheLimitKiB);
-    startupTrace("cpp:QPixmapCache limit set");
 
     // addApplicationFont returns -1 on failure (broken qrc path,
     // unreadable file). Logging the failure mode keeps a refactor that
@@ -371,6 +359,13 @@ int main(int argc, char* argv[]) // NOLINT
     engine.addImageProvider(QStringLiteral("media-image"), new MediaImageProvider());
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     engine.addImageProvider(QStringLiteral("tinted-svg"), new TintedSvgImageProvider());
+    // The baked icon masks live in the executable's .rodata, which is a
+    // file-backed MAP_PRIVATE range. On MiSTer that file is on SD, so the first
+    // touch of any page is a synchronous major fault at random-read speed --
+    // exactly the stall the bake exists to remove. Walk the pages once on a
+    // nice'd background runnable so the tint path finds them resident.
+    BakedIconAtlas::instance().prefaultAsync();
+    startupTrace("cpp:baked icon atlas prefault started");
     // User-supplied customization images (system artwork and Hub icons).
     // Files under the `[custom] dir` root in `frontend.toml` are served as-is
     // -- no tint pipeline. The provider validates that decoded paths stay

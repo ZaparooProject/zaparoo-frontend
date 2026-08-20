@@ -35,7 +35,7 @@ Item {
         text: root.label
         color: Theme.textPrimary
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
+        font.pixelSize: Sizing.fontSection
         font.weight: Font.DemiBold
         renderType: Text.NativeRendering
     }

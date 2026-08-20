@@ -20,8 +20,8 @@ Item {
         anchors.fill: parent
         color: Theme.surfaceCard
         border.color: Theme.borderMid
-        border.width: Sizing.stroke(1)
-        radius: Sizing.cornerRadius
+        border.width: Sizing.cardBorderWidth
+        radius: Sizing.radiusSm
     }
 
     Text {

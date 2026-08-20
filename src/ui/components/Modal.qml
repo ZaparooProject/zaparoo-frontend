@@ -26,8 +26,8 @@ import Zaparoo.Theme
 //                    property slot and owns its own `handleAction` and
 //                    dismissal.
 //
-// All four kinds share the same chrome — rounded corners
-// (`Sizing.cornerRadius`), `Theme.bgPanel` fill, dark scrim — so every
+// All four kinds share the same chrome — `Sizing.radiusMd` panel corners,
+// `Theme.bgPanel` fill, dark scrim — so every
 // modal in the app reads as the same surface. See `docs/style.md` →
 // "Modal chrome".
 //
@@ -38,7 +38,7 @@ import Zaparoo.Theme
 // `confirmed` (confirm Yes).
 //
 // Software-rendering safe — only Item, Rectangle, Text, Column, Row,
-// MouseArea, and scale transforms (buttons push in on activation).
+// MouseArea, and small PressableSurface translations.
 Item {
     id: modal
 
@@ -60,10 +60,10 @@ Item {
     // into the next prompt.
     property bool _focusYes: false
 
-    // Push-in scale for button activation, mirroring the tile push-in.
-    // _pressTarget identifies which button is currently scaled; the others
-    // stay at 1.0 so only the pressed button cues the user's intention.
-    property real _pressScale: 1.0
+    // Physical press for button activation, matching grid tiles.
+    // _pressTarget identifies which button is currently lowered; the others
+    // stay raised so only the pressed button cues the user's intention.
+    property bool _pressed: false
     property string _pressTarget: ""
     property string _pendingSignal: ""
 
@@ -89,10 +89,9 @@ Item {
         }
         if (modal.kind === "confirm")
             modal._focusYes = false;
-        modal._pressScale = 1.0;
+        modal._pressed = false;
         modal._pressTarget = "";
         modal._pendingSignal = "";
-        pressAnim.stop();
     }
 
     // Input dispatch. Main.qml routes key/controller actions here while
@@ -128,17 +127,8 @@ Item {
     function _commit(target: string, sig: string): void {
         modal._pressTarget = target;
         modal._pendingSignal = sig;
-        pressAnim.restart();
+        modal._pressed = true;
         actionCommit.arm();
-    }
-
-    NumberAnimation {
-        id: pressAnim
-        target: modal
-        property: "_pressScale"
-        to: Motion.pressScale
-        duration: Motion.dur(Motion.pressMs)
-        easing.type: Easing.OutQuad
     }
 
     DeferredAction {
@@ -146,6 +136,7 @@ Item {
         onDeferred: {
             const sig = modal._pendingSignal;
             modal._pendingSignal = "";
+            modal._pressed = false;
             if (sig === "accepted")
                 modal.accepted();
             else if (sig === "confirmed")
@@ -176,7 +167,7 @@ Item {
             width: Sizing.px(Math.min(parent.width * 0.78, modal.panelMaxWidth))
             height: contentColumn.height + Sizing.pctH(8)
             color: Theme.bgPanel
-            radius: Sizing.cornerRadius
+            radius: Sizing.radiusMd
 
             Column {
                 id: contentColumn
@@ -195,7 +186,7 @@ Item {
                     text: modal.title
                     textFormat: Text.PlainText
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(3.2)
+                    font.pixelSize: Sizing.fontTitle
                     color: Theme.textPrimary
                     wrapMode: Text.WordWrap
                     horizontalAlignment: Text.AlignHCenter
@@ -208,7 +199,7 @@ Item {
                     text: modal.body
                     textFormat: Text.PlainText
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     color: Theme.textPrimary
                     wrapMode: Text.WordWrap
                     horizontalAlignment: Text.AlignHCenter
@@ -235,7 +226,7 @@ Item {
                     height: Sizing.pctH(7)
                     visible: modal.kind === "transient" && !modal.failed
 
-                    Rectangle {
+                    PressableSurface {
                         x: Sizing.center(parent.width, width)
                         y: Sizing.center(parent.height, height)
                         // Cap at pctW(28) for the typical case but never
@@ -244,30 +235,19 @@ Item {
                         // pill can otherwise overflow the panel.
                         width: Math.min(Sizing.pctW(28), cancelSlot.width)
                         height: parent.height
-                        color: Theme.surfaceCard
-                        // Single button — always the default action, so
-                        // render with the focused recipe (accent border,
-                        // 2px) instead of the unfocused borderMid edge.
-                        border.width: Sizing.stroke(2)
-                        border.color: Theme.accent
-                        radius: Sizing.cornerRadius
-                        transformOrigin: Item.Center
-                        scale: modal._pressTarget === "cancel" ? modal._pressScale : 1.0
+                        focused: true
+                        pressed: modal._pressed && modal._pressTarget === "cancel"
+                        pointerAcceptedButtons: Qt.LeftButton
+                        onPointerClicked: modal._commit("cancel", "cancelRequested")
 
                         Text {
                             x: Sizing.center(parent.width, width)
                             y: Sizing.center(parent.height, height)
                             text: qsTr("Cancel")
                             font.family: Theme.fontUi
-                            font.pixelSize: Sizing.fontSize(2.6)
+                            font.pixelSize: Sizing.fontBody
                             color: Theme.textPrimary
                             renderType: Text.NativeRendering
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: modal._commit("cancel", "cancelRequested")
                         }
                     }
                 }
@@ -279,35 +259,24 @@ Item {
                     height: Sizing.pctH(7)
                     visible: modal.kind === "action_error"
 
-                    Rectangle {
+                    PressableSurface {
                         x: Sizing.center(parent.width, width)
                         y: Sizing.center(parent.height, height)
                         width: Math.min(Sizing.pctW(28), acceptSlot.width)
                         height: parent.height
-                        color: Theme.surfaceCard
-                        // Single button — always the default action, so
-                        // render with the focused recipe (accent border,
-                        // 2px) instead of the unfocused borderMid edge.
-                        border.width: Sizing.stroke(2)
-                        border.color: Theme.accent
-                        radius: Sizing.cornerRadius
-                        transformOrigin: Item.Center
-                        scale: modal._pressTarget === "ok" ? modal._pressScale : 1.0
+                        focused: true
+                        pressed: modal._pressed && modal._pressTarget === "ok"
+                        pointerAcceptedButtons: Qt.LeftButton
+                        onPointerClicked: modal._commit("ok", "accepted")
 
                         Text {
                             x: Sizing.center(parent.width, width)
                             y: Sizing.center(parent.height, height)
                             text: modal.buttonLabel
                             font.family: Theme.fontUi
-                            font.pixelSize: Sizing.fontSize(2.6)
+                            font.pixelSize: Sizing.fontBody
                             color: Theme.textPrimary
                             renderType: Text.NativeRendering
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: modal._commit("ok", "accepted")
                         }
                     }
                 }
@@ -335,63 +304,47 @@ Item {
                         y: Sizing.center(parent.height, height)
                         spacing: confirmSlot._gap
 
-                        Rectangle {
+                        PressableSurface {
                             width: confirmSlot._pillWidth
                             height: Sizing.pctH(7)
-                            color: Theme.surfaceCard
-                            border.width: modal._focusYes ? Sizing.stroke(1) : Sizing.stroke(2)
-                            border.color: modal._focusYes ? Theme.borderMid : Theme.accent
-                            radius: Sizing.cornerRadius
-                            transformOrigin: Item.Center
-                            scale: modal._pressTarget === "no" ? modal._pressScale : 1.0
+                            focused: !modal._focusYes
+                            pressed: modal._pressed && modal._pressTarget === "no"
+                            pointerAcceptedButtons: Qt.LeftButton
+                            onPointerClicked: {
+                                modal._focusYes = false;
+                                modal._commit("no", "cancelRequested");
+                            }
 
                             Text {
                                 x: Sizing.center(parent.width, width)
                                 y: Sizing.center(parent.height, height)
                                 text: modal.confirmNoLabel
                                 font.family: Theme.fontUi
-                                font.pixelSize: Sizing.fontSize(2.6)
+                                font.pixelSize: Sizing.fontBody
                                 color: Theme.textPrimary
                                 renderType: Text.NativeRendering
                             }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    modal._focusYes = false;
-                                    modal._commit("no", "cancelRequested");
-                                }
-                            }
                         }
 
-                        Rectangle {
+                        PressableSurface {
                             width: confirmSlot._pillWidth
                             height: Sizing.pctH(7)
-                            color: Theme.surfaceCard
-                            border.width: modal._focusYes ? Sizing.stroke(2) : Sizing.stroke(1)
-                            border.color: modal._focusYes ? Theme.accent : Theme.borderMid
-                            radius: Sizing.cornerRadius
-                            transformOrigin: Item.Center
-                            scale: modal._pressTarget === "yes" ? modal._pressScale : 1.0
+                            focused: modal._focusYes
+                            pressed: modal._pressed && modal._pressTarget === "yes"
+                            pointerAcceptedButtons: Qt.LeftButton
+                            onPointerClicked: {
+                                modal._focusYes = true;
+                                modal._commit("yes", "confirmed");
+                            }
 
                             Text {
                                 x: Sizing.center(parent.width, width)
                                 y: Sizing.center(parent.height, height)
                                 text: modal.confirmYesLabel
                                 font.family: Theme.fontUi
-                                font.pixelSize: Sizing.fontSize(2.6)
+                                font.pixelSize: Sizing.fontBody
                                 color: Theme.textPrimary
                                 renderType: Text.NativeRendering
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    modal._focusYes = true;
-                                    modal._commit("yes", "confirmed");
-                                }
                             }
                         }
                     }

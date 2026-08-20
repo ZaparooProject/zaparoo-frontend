@@ -26,7 +26,7 @@ Item {
     property string tags: ""
 
     readonly property int _slack: Theme.crtNativePath ? 0 : Sizing.px(2)
-    readonly property int _fontSize: Sizing.fontSize(4)
+    readonly property int _fontSize: Sizing.fontHero
     readonly property int _maxWidth: Math.max(0, root.width - 2 * Sizing.pctW(5))
     readonly property bool _hasTags: root.tags !== ""
     readonly property int _gapW: root._hasTags ? Sizing.pctW(1.5) : 0

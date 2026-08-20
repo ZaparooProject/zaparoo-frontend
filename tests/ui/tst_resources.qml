@@ -311,4 +311,88 @@ TestCase {
     function test_empty_key_returns_empty(): void {
         compare(String(Resources.coverUrl("", "#ffffff", "#888888", "#000000")), "");
     }
+
+    // isTintedProviderKey is the load-policy half of coverUrl: it answers "is
+    // this a sub-millisecond LUT pass over a mapped mask, or a real image
+    // decode?". Tile.qml only permits a synchronous, GUI-thread decode for the
+    // former, so a wrong answer here is either pop-in (false negative) or a
+    // multi-millisecond stall per tile (false positive).
+    function test_is_tinted_provider_key_data(): list<var> {
+        return [
+            {
+                tag: "system logo",
+                style: "tinted",
+                key: "systems/SNES",
+                expected: true
+            },
+            {
+                tag: "hub category",
+                style: "tinted",
+                key: "categories/Arcade",
+                expected: true
+            },
+            {
+                tag: "ui glyph",
+                style: "tinted",
+                key: "icons/Settings",
+                expected: true
+            },
+            {
+                tag: "color style system png",
+                style: "color",
+                key: "systems/SNES",
+                expected: false
+            },
+            {
+                tag: "color style aliased system png",
+                style: "color",
+                key: "systems/SVI328",
+                expected: false
+            },
+            {
+                tag: "color style without a png",
+                style: "color",
+                key: "systems/AliceMC10",
+                expected: true
+            },
+            {
+                tag: "color style leaves glyphs tinted",
+                style: "color",
+                key: "icons/Settings",
+                expected: true
+            },
+            {
+                tag: "user override",
+                style: "tinted",
+                key: "custom-image/foo.png",
+                expected: false
+            },
+            {
+                tag: "core media art",
+                style: "tinted",
+                key: "media-image/SNES/game",
+                expected: false
+            },
+            {
+                tag: "empty",
+                style: "tinted",
+                key: "",
+                expected: false
+            }
+        ];
+    }
+
+    function test_is_tinted_provider_key(data: var): void {
+        const originalStyle = Resources.systemLogoStyle;
+        try {
+            Resources.systemLogoStyle = data.style;
+            compare(Resources.isTintedProviderKey(data.key), data.expected);
+            // The predicate is only useful if it agrees with the URL the same
+            // key actually produces, so check both halves against each other.
+            const url = String(Resources.coverUrl(data.key, "#ffffff", "#888888", "#000000"));
+            compare(url.startsWith("image://tinted-svg/"), data.expected, "predicate disagrees with coverUrl");
+        } finally {
+            Resources.systemLogoStyle = originalStyle;
+        }
+    }
 }

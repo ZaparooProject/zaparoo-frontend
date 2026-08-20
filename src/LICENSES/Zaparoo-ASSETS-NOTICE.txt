@@ -8,8 +8,6 @@ third-party asset license:
 
   resources/images/logo.png
   resources/images/logo-crt.png
-  resources/images/bg-circuit.svg
-  resources/images/bg-circuit.png
 
 Redistributors or downstream projects should review README.md's trademark
 section before reusing Zaparoo marks.

@@ -98,9 +98,9 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(parent.width - Sizing.pctW(10), Sizing.pctW(50))
         color: Theme.surfaceCard
-        radius: Sizing.cornerRadius
+        radius: Sizing.radiusMd
         border.color: Theme.borderMid
-        border.width: Sizing.stroke(1)
+        border.width: Sizing.cardBorderWidth
 
         Flickable {
             id: flickable
@@ -155,7 +155,7 @@ Item {
                     text: qsTr("Zaparoo Frontend")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(4)
+                    font.pixelSize: Sizing.fontHero
                     font.weight: Font.Medium
                     renderType: Text.NativeRendering
                 }
@@ -166,7 +166,7 @@ Item {
                     text: qsTr("Version %1 · %2 · %3").arg(Qt.application.version).arg(Browse.BuildInfo.commit).arg(Browse.BuildInfo.channel)
                     color: Theme.textLabel
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.4)
+                    font.pixelSize: Sizing.fontCaption
                     renderType: Text.NativeRendering
                 }
 
@@ -176,7 +176,7 @@ Item {
                     text: qsTr("Built %1").arg(Browse.BuildInfo.build_date)
                     color: Theme.textLabel
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.2)
+                    font.pixelSize: Sizing.fontSmall
                     renderType: Text.NativeRendering
                 }
 
@@ -187,7 +187,7 @@ Item {
                     text: qsTr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     renderType: Text.NativeRendering
                 }
 
@@ -198,7 +198,7 @@ Item {
                     text: qsTr("Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license.")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     renderType: Text.NativeRendering
                 }
 
@@ -209,7 +209,7 @@ Item {
                     text: qsTr("Commercial licensing: legal@zaparoo.org")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     renderType: Text.NativeRendering
                 }
 
@@ -220,7 +220,7 @@ Item {
                     text: qsTr("Project: https://zaparoo.org")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     renderType: Text.NativeRendering
                 }
 
@@ -230,7 +230,7 @@ Item {
                     text: qsTr("Created by")
                     color: Theme.textLabel
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.4)
+                    font.pixelSize: Sizing.fontCaption
                     renderType: Text.NativeRendering
                 }
 
@@ -244,7 +244,7 @@ Item {
                     text: "Andrea Bogazzi\nBossRighteous\nTim Wilsie\nWizzo"
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     renderType: Text.NativeRendering
                 }
 
@@ -254,7 +254,7 @@ Item {
                     text: qsTr("Translations")
                     color: Theme.textLabel
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.4)
+                    font.pixelSize: Sizing.fontCaption
                     renderType: Text.NativeRendering
                 }
 
@@ -267,7 +267,7 @@ Item {
                     text: qsTr("Italiano - Andrea Bogazzi\nEspañol - Carlos R.\nEuskara - devilschile2\nFrançais - Wilfried")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     renderType: Text.NativeRendering
                 }
 
@@ -278,7 +278,7 @@ Item {
                     text: qsTr("Full license text in COPYING.")
                     color: Theme.textLabel
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.4)
+                    font.pixelSize: Sizing.fontCaption
                     renderType: Text.NativeRendering
                 }
 

@@ -2,11 +2,14 @@
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-qt_add_library(zaparoo_ui_theme STATIC)
+qt_add_library(
+    zaparoo_ui_theme STATIC
+)
 
 set_source_files_properties(
     BrowseLayouts.qml
     CategoryIds.qml
+    ColorSchemes.qml
     Motion.qml
     Resources.qml
     Sizing.qml
@@ -16,15 +19,18 @@ set_source_files_properties(
 
 qt_add_qml_module(
     zaparoo_ui_theme
-    URI Zaparoo.Theme
-    VERSION 1.0
+    URI
+    Zaparoo.Theme
+    VERSION
+    1.0
     QML_FILES
-        BrowseLayouts.qml
-        CategoryIds.qml
-        Motion.qml
-        Resources.qml
-        Sizing.qml
-        Theme.qml
+    BrowseLayouts.qml
+    CategoryIds.qml
+    ColorSchemes.qml
+    Motion.qml
+    Resources.qml
+    Sizing.qml
+    Theme.qml
 )
 
 target_link_libraries(

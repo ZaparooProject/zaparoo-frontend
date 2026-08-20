@@ -73,29 +73,33 @@ Item {
     // Normal grids preserve eager variants; systems opt out because every
     // variant requires a separate SVG raster on MiSTer's small ARM CPU.
     property bool eagerFocusedCovers: true
+    // Decode bundled artwork inline so a page's logos paint with the page.
+    // Narrowed per cell below: only the current page, and never during
+    // rapidRenderMode. Hosts that want the old reader-thread behavior for every
+    // cell can set this false.
+    property bool coverSynchronous: true
     // Sizing.visibleCovers is a tile count, not a page count. Convert it through
     // current column count; treating five covers as five whole pages retained up
     // to 110 live Tile trees and made deep-page Back block Qt's main thread.
     readonly property int _coverRetentionPages: Math.max(1, Math.ceil(Sizing.visibleCovers / Math.max(1, root.columns)))
-    // Pulse counter for the one-shot tile push-in. Callers increment via
+    // Pulse counter for the one-shot tile press. Callers increment via
     // pulseActivate(); TileLoader forwards the value to Tile where only the
-    // focused+selected delegate fires its cue. The same cue serves both
+    // focused+selected delegate lowers its face. The same cue serves both
     // forward navigation and game launch.
     property int activatePulse: 0
     function pulseActivate(): void {
         root.activatePulse++;
     }
-    // Release counter for the push-in cue. Callers increment via
-    // releaseActivate() to settle the focused tile back to rest after a launch
-    // that keeps the frontend on the same screen (e.g. an Audio track). Forward
-    // navigation never calls this — the screen transition + `settling` reset
-    // handle the held scale off-screen.
+    // Release counter for the press cue. Callers increment via
+    // releaseActivate() to raise the focused tile after a launch that keeps the
+    // frontend on the same screen (e.g. an Audio track). Forward navigation
+    // never calls this — the screen transition + `settling` reset handles it.
     property int releasePulse: 0
     function releaseActivate(): void {
         root.releasePulse++;
     }
-    // When true, Tile delegates reset their push-in scale back to 1.0
-    // so a held push-in from the previous visit does not persist when
+    // When true, Tile delegates return their raised face to rest so a held
+    // press from the previous visit does not persist when
     // the screen is shown again. Set by the host screen to `!active`
     // (i.e. true while the screen is off-screen).
     property bool screenSettling: false
@@ -113,6 +117,8 @@ Item {
     property var tileTopLabelProvider: null
     property var layoutProfile: null
     readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
+    readonly property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
+    readonly property int _cardRadius: root._surfaceProfile ? root._surfaceProfile.cardRadius : Sizing.radiusMd
 
     // Emitted when the user is sitting on the last loaded page after a
     // selection move. Models with more data fetch the next page in
@@ -251,10 +257,8 @@ Item {
         root._pendingTargetIndex = -1;
     }
 
-    // Reserved chrome around the cell area. Vertical insets must be
-    // large enough to contain the focused tile's 1.06× scale bleed
-    // (~3% of cellHeight per side) — without them, top-row and
-    // bottom-row tiles get clipped when focused. The scrollbar gutter
+    // Reserved chrome around the cell area. Vertical insets provide equal
+    // breathing room around top and bottom rows. The scrollbar gutter
     // (`gutterWidth`) is treated as part of the grid for edge-spacing
     // purposes: it sits inboard of `rightInset` (which matches
     // `leftInset` so the cells+gutter block has equal margin on each
@@ -279,7 +283,10 @@ Item {
     readonly property int _activeGutterWidth: root._scrollIndicatorVisible ? root.gutterWidth : 0
     readonly property int _activeGutterGap: root._scrollIndicatorVisible ? root.gutterGap : 0
     readonly property int _contentWidth: root.columns * root.cellWidth + (root.columns - 1) * root.cellSpacingX
-    readonly property int _scrollGutterX: root._gridProfile && root._gridProfile.gutterFollowsContentWidth ? root.leftInset + root._contentWidth + root._activeGutterGap : width - root.rightInset - root.gutterWidth
+    readonly property int _contentHeight: root.rows * root.cellHeight + (root.rows - 1) * root.cellSpacingY
+    readonly property int _cellBlockOffsetX: Math.max(0, Math.floor((root._availableWidth - root._contentWidth) / 2))
+    readonly property int _cellBlockOffsetY: Math.max(0, Math.floor((root._availableHeight - root._contentHeight) / 2))
+    readonly property int _scrollGutterX: root._gridProfile && root._gridProfile.gutterFollowsContentWidth ? root.leftInset + root._cellBlockOffsetX + root._contentWidth + root._activeGutterGap : width - root.rightInset - root.gutterWidth
 
     // Computed cell dimensions — fill the available area, divided by
     // columns × rows. Multi-page layouts reserve `gutterGap + gutterWidth` on
@@ -310,13 +317,17 @@ Item {
         wheel.accepted = true;
     }
 
+    // Corner radius of the rect `currentCellRectIn()` returns, for
+    // ContextMenu's rounded scrim hole (Part 5).
+    readonly property int currentCellRadius: root._cardRadius
+
     function currentCellRectIn(target: Item): rect {
         if (root.itemCount <= 0)
             return Qt.rect(0, 0, 0, 0);
         const local = root.currentIndex % root.pageSize;
         const row = Math.floor(local / root.columns);
         const col = local % root.columns;
-        const p = root.mapToItem(target, root.leftInset + col * (root.cellWidth + root.cellSpacingX), root.topInset + row * (root.cellHeight + root.cellSpacingY));
+        const p = root.mapToItem(target, root.leftInset + root._cellBlockOffsetX + col * (root.cellWidth + root.cellSpacingX), root.topInset + root._cellBlockOffsetY + row * (root.cellHeight + root.cellSpacingY));
         return Qt.rect(p.x, p.y, root.cellWidth, root.cellHeight);
     }
 
@@ -762,10 +773,10 @@ Item {
 
                 width: root.cellWidth
                 height: root.cellHeight
-                x: root.leftInset + cellCol * (root.cellWidth + root.cellSpacingX)
-                y: root.topInset + cellRow * (root.cellHeight + root.cellSpacingY)
-                // Selected tile draws on top so its scale-up tween isn't
-                // clipped by neighbours below/right of it.
+                x: root.leftInset + root._cellBlockOffsetX + cellCol * (root.cellWidth + root.cellSpacingX)
+                y: root.topInset + root._cellBlockOffsetY + cellRow * (root.cellHeight + root.cellSpacingY)
+                // Selected tile draws on top so its focus treatment remains
+                // authoritative at cell boundaries.
                 z: isSelected ? 1 : 0
                 visible: root.cellsVisible && cellPage === root.currentPage
 
@@ -781,51 +792,45 @@ Item {
                 // gate. The only selection-dependent work here is the
                 // focused placeholder ring below; it stays limited to
                 // the current page by the parent visibility gate.
-                Rectangle {
+                PressableSurface {
                     id: placeholderCard
 
                     anchors.fill: parent
-                    radius: Sizing.cornerRadius
-                    color: Theme.surfaceCard
-                    border.color: Theme.borderMid
-                    border.width: Sizing.stroke(1)
-                    // Track the loaded Tile's push-in scale so the card
-                    // silhouette and the Tile surface shrink together.
-                    // Falls back to 1.0 when no Tile is loaded (skeleton
-                    // state), so the placeholder stays full-size until
-                    // the Tile appears. `cardScale` is a readonly alias
-                    // for `_activateScale` exposed by Tile for exactly
-                    // this cross-sibling binding.
-                    transformOrigin: Item.Center
+                    radius: root._cardRadius
+                    faceColor: Theme.surfaceCard
+                    edgeColor: Theme.tileEdge
+                    // Track the loaded Tile's physical press so both opaque
+                    // surfaces leave the same top gap. At skeleton time the
+                    // placeholder stays raised until a real activation occurs.
                     // qmllint disable missing-property
-                    scale: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.cardScale : 1.0
+                    pressed: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.cardPressed : false
                     // qmllint enable missing-property
-                }
 
-                // Standalone selected-cell ring for skeleton/rapid mode.
-                // Tile.qml owns the normal ring, but rapidRenderMode
-                // deliberately disables TileLoader to keep held d-pad
-                // navigation cheap. Draw the same filled-rect ring on
-                // the placeholder so selection never disappears while
-                // covers/delegates are paused.
-                Rectangle {
-                    id: placeholderFocusRingOuter
+                    // Standalone selected-cell ring for skeleton/rapid mode.
+                    // Tile.qml owns the normal ring, but rapidRenderMode
+                    // deliberately disables TileLoader to keep held d-pad
+                    // navigation cheap. Draw the same filled-rect ring on
+                    // the placeholder so selection never disappears while
+                    // covers/delegates are paused.
+                    Rectangle {
+                        id: placeholderFocusRingOuter
 
-                    anchors.fill: parent
-                    anchors.margins: Sizing.pctH(0.4)
-                    color: Theme.accent
-                    radius: Math.max(0, Sizing.cornerRadius - Sizing.pctH(0.4))
-                    antialiasing: true
-                    visible: cellItem.isSelected && root.focused && root.focusReady && (root.rapidRenderMode || tileLoader.status !== Loader.Ready)
-                }
+                        anchors.fill: parent
+                        anchors.margins: Sizing.pctH(0.4)
+                        color: Theme.accent
+                        radius: Math.max(0, root._cardRadius - Sizing.pctH(0.4))
+                        antialiasing: true
+                        visible: cellItem.isSelected && root.focused && root.focusReady && (root.rapidRenderMode || tileLoader.status !== Loader.Ready)
+                    }
 
-                Rectangle {
-                    anchors.fill: placeholderFocusRingOuter
-                    anchors.margins: Sizing.stroke(Sizing.pctH(0.6))
-                    color: placeholderCard.color
-                    radius: Math.max(0, placeholderFocusRingOuter.radius - Sizing.stroke(Sizing.pctH(0.6)))
-                    antialiasing: true
-                    visible: placeholderFocusRingOuter.visible
+                    Rectangle {
+                        anchors.fill: placeholderFocusRingOuter
+                        anchors.margins: Sizing.focusRingWidth
+                        color: placeholderCard.faceColor
+                        radius: Math.max(0, placeholderFocusRingOuter.radius - Sizing.focusRingWidth)
+                        antialiasing: true
+                        visible: placeholderFocusRingOuter.visible
+                    }
                 }
 
                 TileLoader {
@@ -864,6 +869,13 @@ Item {
                     settling: root.screenSettling
                     focusReady: root.focusReady
                     loadFocusedCover: root.eagerFocusedCovers || cellItem.isSelected
+                    // Mirrors the `asynchronous` rule above, for the same
+                    // reason: only the current page's tints are worth spending
+                    // GUI-thread time on. Off-page retained delegates keep
+                    // decoding on the reader thread so retention-edge warmup
+                    // never blocks input, and held-d-pad rapidRenderMode does
+                    // no synchronous work at all.
+                    coverSynchronous: root.coverSynchronous && cellItem.cellPage === root.currentPage && !root.rapidRenderMode
                 }
 
                 MouseArea {
@@ -903,7 +915,7 @@ Item {
     // frames), so an animated thumb would repaint while the system is
     // already busy.
     // Sits after the cell `track` in the visual tree so the indicator
-    // paints on top of any brief scale-animation bleed at the right edge.
+    // paints above the cells at the right edge.
     Item {
         id: scrollGutter
 
@@ -988,7 +1000,7 @@ Item {
                 anchors.horizontalCenter: root.scrollThumbRightAligned ? undefined : parent.horizontalCenter
                 y: scrollRegion._thumbY
                 color: Theme.textPrimary
-                radius: Sizing.half(width)
+                radius: Sizing.radiusSm
             }
         }
     }

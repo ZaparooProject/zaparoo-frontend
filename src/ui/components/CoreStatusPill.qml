@@ -108,7 +108,7 @@ Item {
     readonly property int _minimumWidth: Theme.crtNativePath ? Sizing.pctH(42) : Math.min(Math.max(Sizing.pctH(28), Sizing.pctW(18)), Sizing.pctH(30))
     readonly property int _textMargin: Sizing.pctW(1.2)
     readonly property int _textMeasureSlack: Sizing.stroke(2)
-    readonly property int _spinnerSize: Math.max(Sizing.pctH(1.8), Sizing.fontSize(2.2))
+    readonly property int _spinnerSize: Math.max(Sizing.pctH(1.8), Sizing.fontSmall)
     readonly property int _spinnerDotSize: Math.max(Sizing.stroke(2), Sizing.px(pill._spinnerSize / 3))
     readonly property int _spinnerGap: Sizing.pctW(0.8)
     readonly property int _labelNaturalWidth: Math.ceil(Math.max(labelMetrics.advanceWidth, labelMetrics.boundingRect.x + labelMetrics.boundingRect.width) - Math.min(0, labelMetrics.boundingRect.x))
@@ -159,7 +159,7 @@ Item {
 
         text: pill._label
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.2)
+        font.pixelSize: Sizing.fontSmall
     }
 
     Rectangle {
@@ -225,7 +225,7 @@ Item {
             horizontalAlignment: pill._spinnerActive ? Text.AlignLeft : Text.AlignHCenter
             text: pill._label
             font.family: Theme.fontUi
-            font.pixelSize: Sizing.fontSize(2.2)
+            font.pixelSize: Sizing.fontSmall
             color: Theme.textPrimary
             renderType: Text.NativeRendering
         }
@@ -279,7 +279,7 @@ Item {
                 horizontalAlignment: pill._spinnerActive ? Text.AlignLeft : Text.AlignHCenter
                 text: pill._label
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.2)
+                font.pixelSize: Sizing.fontSmall
                 color: Theme.bgBar
                 renderType: Text.NativeRendering
             }

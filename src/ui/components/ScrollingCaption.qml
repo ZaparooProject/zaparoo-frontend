@@ -40,7 +40,7 @@ Item {
     property bool focused: false
     // Center the static block (grid tiles) vs. left-align it (list rows).
     property bool centerContent: false
-    property int fontPixelSize: Sizing.fontSize(2.2)
+    property int fontPixelSize: Sizing.fontSmall
     property int fontWeight: Font.Normal
     property string fontFamily: Theme.fontUi
     property color nameColor: Theme.textLabel

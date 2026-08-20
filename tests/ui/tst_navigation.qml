@@ -95,7 +95,6 @@ TestCase {
         main.settingsScreenRequested = true;
         main.activeScreen = main.screenHub;
         main.pendingTransition = "";
-        main.systemsCoverRevealReady = true;
         main.gamesCoverRevealReady = true;
         main.gamesNavigationInputAt = 0;
         main.gamesNavigationModelReadyAt = 0;
@@ -273,14 +272,39 @@ TestCase {
         compare(main.gamesScreen.lastNavigationInputAt, 0);
     }
 
-    function test_system_covers_wait_for_destination_frame(): void {
-        main.activeScreen = main.screenSystems;
-        main.systemsCoverRevealReady = false;
-        compare(main.systemsScreen.coverRevealReady, false);
-        compare(main.systemsScreen.systemsGrid.coverRequestsEnabled, false);
+    // The Systems grid used to withhold covers for one extra frame after the
+    // transition landed: `_completeTransition(screenSystems)` cleared a router
+    // flag and only `onFramePresented` set it again. That existed because an
+    // async tint could outlast the transition, so revealing early meant a grid
+    // of empty tiles. Tints come synchronously out of the baked atlas now, so
+    // the flag is gone and the destination grid must ask for its logos in the
+    // same binding pass that completes the transition -- the first frame the
+    // user sees is the frame with artwork in it.
+    function test_system_covers_are_requested_as_soon_as_the_transition_completes(): void {
+        const originalLoading = Browse.SystemsModel.loading;
+        const originalError = Browse.SystemsModel.error_message;
+        const originalCatalogLoaded = Browse.CategoriesModel.loaded;
+        // A booting catalog puts the screen in `optimisticLoading`, which hides
+        // the whole grid. Settle it so the only thing left that could hold
+        // covers back is the router.
+        Browse.CategoriesModel.loaded = true;
+        Browse.SystemsModel.loading = false;
+        Browse.SystemsModel.error_message = "";
 
-        main.systemsCoverRevealReady = true;
-        compare(main.systemsScreen.coverRevealReady, true);
+        main.activeScreen = main.screenHub;
+        main.pendingTransition = "systems";
+        compare(main.systemsScreen.systemsGrid.coverRequestsEnabled, false, "an in-flight transition gates covers");
+
+        main._completeTransition(main.screenSystems);
+        compare(main.pendingTransition, "");
+        // No presented frame in between -- this is the assertion the deleted
+        // reveal flag would have failed.
+        compare(main.systemsScreen._gateHide, false);
+        compare(main.systemsScreen.systemsGrid.coverRequestsEnabled, true);
+
+        Browse.SystemsModel.error_message = originalError;
+        Browse.SystemsModel.loading = originalLoading;
+        Browse.CategoriesModel.loaded = originalCatalogLoaded;
     }
 
     function test_system_grid_withholds_covers_during_transition(): void {
@@ -554,6 +578,32 @@ TestCase {
     function test_prefer_override_falls_back_on_empty(): void {
         const pick = main.hubScreen._preferOverride;
         compare(pick("", "icons/HeartOutline"), "icons/HeartOutline", "Empty override falls back to bundled key");
+    }
+
+    // _hubCoverKey used to return "" until the `custom/hub/` scan reported in,
+    // which meant every Hub tile painted its first frame with no source at all
+    // and then swapped once a filesystem walk finished. That is a blank frame
+    // charged to every user to spare the few with overrides a one-frame swap.
+    // The bundled key is always known up front, so the resolver must never
+    // return empty for a non-empty fallback — whatever hub_loaded currently is.
+    function test_hub_cover_key_never_withholds_the_bundled_key(): void {
+        const resolve = main.hubScreen._hubCoverKey;
+        const cases = [[CategoryIds.arcadeId, CategoryIds.coverKey(CategoryIds.arcadeId)], ["favorites", "icons/HeartOutline"], ["settings", "icons/Tools"]];
+        for (let i = 0; i < cases.length; ++i) {
+            const fallback = cases[i][1];
+            verify(fallback !== "", "test bug: the fallback itself must be non-empty");
+            compare(resolve(cases[i][0], fallback), fallback, "no override is configured in the test environment, so the bundled key must come straight back");
+        }
+    }
+
+    // The same invariant one level up, on what the Hub actually renders. A
+    // resolver regression that only bites a subset of ids would slip past the
+    // direct test above; an empty coverKey here is a guaranteed blank tile.
+    function test_hub_entries_all_carry_a_cover_key(): void {
+        const entries = main.hubScreen.visibleCategoryEntries.concat(main.hubScreen.actionEntries);
+        verify(entries.length > 0, "the Hub always has placeholder categories and actions");
+        for (let i = 0; i < entries.length; ++i)
+            verify(entries[i].coverKey !== "", "empty coverKey on Hub entry " + entries[i].id);
     }
 
     // Up on the top row wraps onto the bottom row (the two rows form a

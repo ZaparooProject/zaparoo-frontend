@@ -53,7 +53,7 @@ Item {
         horizontalAlignment: Text.AlignLeft
         text: status.totalText
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
+        font.pixelSize: Sizing.fontSection
         color: Theme.textPrimary
         renderType: Text.NativeRendering
     }
@@ -63,7 +63,7 @@ Item {
 
         text: status.title
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(4)
+        font.pixelSize: Sizing.fontHero
         font.weight: Font.Medium
     }
 
@@ -73,12 +73,12 @@ Item {
         x: Sizing.center(parent.width, width)
         y: Sizing.center(parent.height, height)
         width: status._titleTextWidth
-        height: Sizing.fontSize(4)
+        height: Sizing.fontHero
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
         text: status.title
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(4)
+        font.pixelSize: Sizing.fontHero
         font.weight: Font.Medium
         color: Theme.textPrimary
         renderType: Text.NativeRendering
@@ -96,7 +96,7 @@ Item {
         horizontalAlignment: Text.AlignRight
         text: status.pageText
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
+        font.pixelSize: Sizing.fontSection
         color: Theme.textPrimary
         renderType: Text.NativeRendering
     }

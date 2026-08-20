@@ -34,7 +34,8 @@ Item {
     readonly property int itemCount: listView.count
     readonly property int totalItems: totalItemsOverride >= 0 ? totalItemsOverride : itemCount
     readonly property bool _portraitNonCrt: !Theme.crtNativePath && Sizing.screenWidth < Sizing.screenHeight
-    readonly property int _selectionRadius: root._surface ? root._surface.cornerRadius : Sizing.cornerRadius
+    readonly property int _cardRadius: root._surface ? root._surface.cardRadius : Sizing.radiusMd
+    readonly property int _selectionRadius: root._surface ? root._surface.rowRadius : Sizing.radiusSm
     readonly property int cardPaddingLeft: root._list ? root._list.cardPaddingLeft : Sizing.pctW(2)
     readonly property int cardPaddingRight: root._list ? root._list.cardPaddingRight : Sizing.pctW(2)
     readonly property int cardPaddingTop: root._list ? root._list.cardPaddingTop : Sizing.pctH(2)
@@ -61,18 +62,16 @@ Item {
     readonly property int _favoriteRightPadding: root._list ? root._list.favoriteRightPadding : Sizing.pctW(1.6)
     // qmllint enable compiler
 
-    // Pulse counter for the one-shot row push-in. Callers increment via
-    // activatePulse; only the selected row fires its animation, matching
-    // the Tile activation-pulse vocabulary. Forward navigation and game
-    // launch share this single cue.
+    // Pulse counter for the selected row's cursor latch. Callers increment via
+    // activatePulse; only the selected row moves its accent rail and title
+    // inward. Forward navigation and game launch share this single cue.
     property int activatePulse: 0
-    // Release counter for the row push-in. Incremented by the host to settle
-    // the selected row's scale back to 1.0 after a launch that keeps the
-    // frontend on the same screen. Forward navigation never increments it (the
-    // screen transition resets the push-in off-screen via screenSettling).
+    // Release counter for the cursor latch. Incremented by the host after a
+    // launch that keeps the frontend on the same screen. Forward navigation
+    // never increments it; screenSettling releases the latch off-screen.
     property int releasePulse: 0
-    // When true, resets the row push-in scale back to 1.0 so a held press does
-    // not persist when the screen is shown again. Set by the host to
+    // When true, releases the row latch so a held activation does not persist
+    // when the screen is shown again. Set by the host to
     // !active while the screen is off-screen.
     property bool screenSettling: false
 
@@ -89,6 +88,10 @@ Item {
         root.pageWheelRequested(amount < 0 ? 1 : -1);
         wheel.accepted = true;
     }
+
+    // Corner radius of the rect `currentCellRectIn()` returns, for
+    // ContextMenu's rounded scrim hole (Part 5).
+    readonly property int currentCellRadius: root._selectionRadius
 
     function currentCellRectIn(target: Item): rect {
         if (root.itemCount <= 0)
@@ -112,9 +115,9 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.surfaceCard
-        border.width: Sizing.stroke(1)
+        border.width: Sizing.cardBorderWidth
         border.color: Theme.borderMid
-        radius: root._selectionRadius
+        radius: root._cardRadius
         visible: root.showChrome
     }
 
@@ -158,6 +161,7 @@ Item {
         delegate: Item {
             id: row
 
+            objectName: "browseListRow-" + row.index
             required property int index
             required property string name
             required property string fileStem
@@ -169,12 +173,15 @@ Item {
 
             width: listView.width
             height: root.rowHeight
-            // One-shot push-in cue, identical to the tile vocabulary: the
-            // selected row scales to Motion.rowPressScale on accept/activate.
-            scale: row._activateScale
-            transformOrigin: Item.Center
 
             readonly property bool selected: row.index === root.currentIndex
+            onSelectedChanged: {
+                if (!row.selected) {
+                    activateAnim.stop();
+                    releaseAnim.stop();
+                    row._latchProgress = 0.0;
+                }
+            }
             // Visual highlight is withheld until the host marks focus ready, so
             // the default row 0 never paints the accent before restore lands.
             // `selected` itself stays ungated so the detail-pane bindings below
@@ -183,18 +190,19 @@ Item {
             readonly property string _baseTitle: row.name !== "" ? row.name : row.fileStem
             // Horizontal space reserved on the right for the favorite heart.
             readonly property int _favoriteSlot: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) : 0
-            property real _activateScale: 1.0
+            readonly property int _latchDistance: Sizing.focusRingWidth
+            readonly property int _latchOffset: Sizing.px(row._latchProgress * row._latchDistance)
+            property real _latchProgress: 0
 
-            // Push in and hold — mirrors Tile.qml. The activate leg has no
-            // return-to-rest because a forward navigation holds the row pressed
-            // while the screen transitions; the release leg settles it back only
-            // when the launch stays on this screen (e.g. an Audio track), and
-            // `screenSettling` resets it off-screen so it is clean on return.
+            // The list is one recessed card rather than a stack of buttons.
+            // Activation moves only the selected cursor rail and title inward,
+            // like a latch engaging in a slot. Rounded integer geometry keeps
+            // every animation frame crisp on the software renderer.
             NumberAnimation {
                 id: activateAnim
                 target: row
-                property: "_activateScale"
-                to: Motion.rowPressScale
+                property: "_latchProgress"
+                to: 1.0
                 duration: Motion.dur(Motion.pressMs)
                 easing.type: Easing.OutQuad
             }
@@ -202,8 +210,8 @@ Item {
             NumberAnimation {
                 id: releaseAnim
                 target: row
-                property: "_activateScale"
-                to: 1.0
+                property: "_latchProgress"
+                to: 0.0
                 duration: Motion.dur(Motion.settleMs)
                 easing.type: Easing.OutQuad
             }
@@ -224,7 +232,7 @@ Item {
                     if (root.screenSettling) {
                         activateAnim.stop();
                         releaseAnim.stop();
-                        row._activateScale = 1.0;
+                        row._latchProgress = 0.0;
                     }
                 }
             }
@@ -265,7 +273,25 @@ Item {
                 }
             }
 
+            // One opaque keyline along the bottom makes the active row read as
+            // a recessed channel cut into the containing list card, without
+            // shadows. It sits on the bottom rather than the top because the
+            // whole UI is lit low and from the front: a raised PressableSurface
+            // catches that light on its near face, so the near wall of a recess
+            // must fall into shade. `Theme.selectionShade` carries the tone —
+            // Qt.darker() is an HSV value multiply and would be a no-op on a
+            // near-black selection surface.
             Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: Sizing.cardBorderWidth
+                color: Theme.selectionShade
+                visible: row._highlightVisible
+            }
+
+            Rectangle {
+                x: row._latchOffset
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: root._selectionAccentWidth
@@ -281,7 +307,7 @@ Item {
             // margin reserves the favorite-heart slot.
             ScrollingCaption {
                 anchors.left: parent.left
-                anchors.leftMargin: root._rowTextLeftPadding
+                anchors.leftMargin: root._rowTextLeftPadding + row._latchOffset
                 anchors.right: parent.right
                 anchors.rightMargin: row._favoriteSlot + root._rowTextRightPadding
                 anchors.verticalCenter: parent.verticalCenter
@@ -290,17 +316,17 @@ Item {
                 tags: row.disambiguatingTags
                 focused: row._highlightVisible
                 centerContent: false
-                fontPixelSize: Sizing.fontSize(2.9)
+                fontPixelSize: Sizing.fontSection
                 nameColor: row._highlightVisible ? Theme.textPrimary : Theme.textLabel
             }
 
             Image {
                 anchors.right: parent.right
-                anchors.rightMargin: root._favoriteRightPadding
+                anchors.rightMargin: Math.max(0, root._favoriteRightPadding - row._latchOffset)
                 anchors.verticalCenter: parent.verticalCenter
                 width: Sizing.pctH(3.2)
                 height: width
-                source: Resources.iconUrl("Heart")
+                source: Resources.coverUrl("icons/Heart", Theme.accent, Theme.accent, Theme.bgBar)
                 sourceSize.width: Sizing.px(width)
                 sourceSize.height: Sizing.px(height)
                 fillMode: Image.PreserveAspectFit
@@ -403,7 +429,7 @@ Item {
                 anchors.horizontalCenter: root._scrollThumbRightAligned ? undefined : parent.horizontalCenter
                 y: scrollRegion._thumbY
                 color: Theme.textPrimary
-                radius: Sizing.half(width)
+                radius: Sizing.radiusSm
             }
         }
     }

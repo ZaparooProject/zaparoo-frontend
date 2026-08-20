@@ -41,6 +41,9 @@
 //     theme-colored SVGs; "color" opts into restored full-color logos.
 //   * `current_system_logo_style` — READ + NOTIFY, persisted. Defaults to
 //     "tinted" so existing installs keep current behavior.
+//   * `available_color_schemes` / `current_color_scheme` — curated live color
+//     presets. Missing and unknown values normalize to "zaparoo-black"; the
+//     setting is mirrored into state.toml and frontend.toml.
 //   * `available_button_layouts` — CONSTANT. Single-letter ids used to
 //     compose resources/images/buttons/<layout>/Button*.png. User-facing
 //     labels are "Style A/B/C/D" (see
@@ -128,6 +131,8 @@ const FAVORITES_GROUPINGS: &[&str] = &["none", "system"];
 const DEFAULT_FAVORITES_GROUPING: &str = "none";
 const SYSTEM_LOGO_STYLES: &[&str] = &["tinted", "color"];
 const DEFAULT_SYSTEM_LOGO_STYLE: &str = "tinted";
+const COLOR_SCHEMES: &[&str] = &["zaparoo-black", "midnight-amber", "zaparoo-white"];
+const DEFAULT_COLOR_SCHEME: &str = "zaparoo-black";
 const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
 const DEFAULT_BUTTON_LAYOUT: &str = "a";
 // Screensaver idle-timeout choices. Values are seconds as ASCII
@@ -181,6 +186,8 @@ pub struct SettingsRust {
     current_favorites_grouping: QString,
     available_system_logo_styles: QStringList,
     current_system_logo_style: QString,
+    available_color_schemes: QStringList,
+    current_color_scheme: QString,
     available_button_layouts: QStringList,
     current_button_layout: QString,
     current_mouse_enabled: bool,
@@ -224,6 +231,8 @@ pub mod ffi {
         #[qproperty(QString, current_favorites_grouping, READ, WRITE = set_favorites_grouping, NOTIFY)]
         #[qproperty(QStringList, available_system_logo_styles, READ, CONSTANT)]
         #[qproperty(QString, current_system_logo_style, READ, WRITE = set_system_logo_style, NOTIFY)]
+        #[qproperty(QStringList, available_color_schemes, READ, CONSTANT)]
+        #[qproperty(QString, current_color_scheme, READ, WRITE = set_color_scheme, NOTIFY)]
         #[qproperty(QStringList, available_button_layouts, READ, CONSTANT)]
         #[qproperty(QString, current_button_layout, READ, WRITE = set_button_layout, NOTIFY)]
         #[qproperty(bool, current_mouse_enabled, READ, WRITE = set_mouse_enabled, NOTIFY)]
@@ -260,6 +269,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_system_logo_style(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_color_scheme(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_button_layout(self: Pin<&mut Settings>, value: QString);
@@ -335,6 +347,8 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().available_system_logo_styles = system_logo_styles();
         self.as_mut().rust_mut().current_system_logo_style =
             QString::from(merged.system_logo_style.as_str());
+        self.as_mut().rust_mut().available_color_schemes = color_schemes();
+        self.as_mut().rust_mut().current_color_scheme = QString::from(merged.color_scheme.as_str());
         self.as_mut().rust_mut().available_button_layouts = button_layouts();
         self.as_mut().rust_mut().current_button_layout =
             QString::from(merged.button_layout.as_str());
@@ -488,6 +502,21 @@ impl ffi::Settings {
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
         self.as_mut().rust_mut().current_system_logo_style = QString::from(value_str.as_str());
         self.as_mut().current_system_logo_style_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_color_scheme(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_color_scheme(&value.to_string()).to_string();
+        if self.current_color_scheme.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.color_scheme.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_color_scheme = QString::from(value_str.as_str());
+        self.as_mut().current_color_scheme_changed();
     }
 
     #[allow(
@@ -649,6 +678,7 @@ fn save_settings_to_config(
             clock_format: settings.clock_format.as_str(),
             browse_layout: settings.browse_layout.as_str(),
             system_logo_style: settings.system_logo_style.as_str(),
+            color_scheme: settings.color_scheme.as_str(),
             button_layout: settings.button_layout.as_str(),
             mouse_enabled: settings.mouse_enabled,
             reduce_motion: settings.reduce_motion,
@@ -775,6 +805,14 @@ fn merge_settings(
                 .unwrap_or(snapshot.system_logo_style.as_str()),
         )
         .to_string(),
+        color_scheme: normalize_color_scheme(
+            config
+                .settings
+                .color_scheme
+                .as_deref()
+                .unwrap_or(snapshot.color_scheme.as_str()),
+        )
+        .to_string(),
         button_layout: normalize_button_layout(
             config
                 .settings
@@ -839,6 +877,14 @@ fn curated_resolutions(output_size: Option<(u32, u32)>) -> QStringList {
     let sizes = output_size.map_or_else(Vec::new, crate::mister_runtime::selectable_render_sizes);
     for (width, height) in sizes {
         list.append(QString::from(format!("{width}x{height}").as_str()));
+    }
+    list
+}
+
+fn color_schemes() -> QStringList {
+    let mut list = QStringList::default();
+    for scheme in COLOR_SCHEMES {
+        list.append(QString::from(*scheme));
     }
     list
 }
@@ -982,6 +1028,15 @@ fn normalize_system_logo_style(value: &str) -> &'static str {
         .unwrap_or(DEFAULT_SYSTEM_LOGO_STYLE)
 }
 
+fn normalize_color_scheme(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    COLOR_SCHEMES
+        .iter()
+        .copied()
+        .find(|scheme| *scheme == trimmed)
+        .unwrap_or(DEFAULT_COLOR_SCHEME)
+}
+
 fn normalize_screensaver_timeout(value: &str) -> &'static str {
     let trimmed = value.trim();
     #[cfg(debug_assertions)]
@@ -1038,13 +1093,14 @@ fn normalize_button_layout(value: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        browse_layouts, button_layouts, clock_formats, curated_resolutions, languages,
-        normalize_browse_layout, normalize_button_layout, normalize_clock_format,
-        normalize_favorites_grouping, normalize_language, normalize_orientation, normalize_region,
-        normalize_system_logo_style, orientations, regions, system_logo_styles, BROWSE_LAYOUTS,
-        BUTTON_LAYOUTS, CLOCK_FORMATS, DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT,
-        DEFAULT_CLOCK_FORMAT, DEFAULT_LANGUAGE, DEFAULT_ORIENTATION, DEFAULT_REGION,
-        DEFAULT_SYSTEM_LOGO_STYLE, ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
+        browse_layouts, button_layouts, clock_formats, color_schemes, curated_resolutions,
+        languages, normalize_browse_layout, normalize_button_layout, normalize_clock_format,
+        normalize_color_scheme, normalize_favorites_grouping, normalize_language,
+        normalize_orientation, normalize_region, normalize_system_logo_style, orientations,
+        regions, system_logo_styles, BROWSE_LAYOUTS, BUTTON_LAYOUTS, CLOCK_FORMATS, COLOR_SCHEMES,
+        DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT, DEFAULT_COLOR_SCHEME,
+        DEFAULT_LANGUAGE, DEFAULT_ORIENTATION, DEFAULT_REGION, DEFAULT_SYSTEM_LOGO_STYLE,
+        ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
     };
 
     #[test]
@@ -1128,6 +1184,18 @@ mod tests {
         assert_eq!(normalize_favorites_grouping(" none "), "none");
         assert_eq!(normalize_favorites_grouping("system"), "system");
         assert_eq!(normalize_favorites_grouping("genre"), "none");
+    }
+
+    #[test]
+    fn color_schemes_preserve_order_and_default_unknown_values() {
+        let list = color_schemes();
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        let expected: Vec<String> = COLOR_SCHEMES.iter().map(|s| (*s).to_string()).collect();
+        assert_eq!(collected, expected);
+        assert_eq!(normalize_color_scheme("midnight-amber"), "midnight-amber");
+        assert_eq!(normalize_color_scheme("zaparoo-white"), "zaparoo-white");
+        assert_eq!(normalize_color_scheme("removed"), DEFAULT_COLOR_SCHEME);
+        assert_eq!(normalize_color_scheme(""), "zaparoo-black");
     }
 
     #[test]

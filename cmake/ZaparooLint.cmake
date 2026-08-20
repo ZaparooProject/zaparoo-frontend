@@ -20,6 +20,11 @@ file(
     "${CMAKE_SOURCE_DIR}/src/*.h"
     "${CMAKE_SOURCE_DIR}/tests/*.cpp"
     "${CMAKE_SOURCE_DIR}/tests/*.h"
+    # tools/ is a standalone project the root build never configures, so it has no
+    # compile_commands.json entry and cannot be tidied — but it is still our code and must match the
+    # format. Empty on ARM32, where tools/ is not in the Docker context at all.
+    "${CMAKE_SOURCE_DIR}/tools/*.cpp"
+    "${CMAKE_SOURCE_DIR}/tools/*.h"
 )
 
 # Translation units only. run-clang-tidy treats its positional args as regex filters against

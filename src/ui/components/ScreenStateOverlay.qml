@@ -73,7 +73,7 @@ Item {
                 return "";
             }
             font.family: Theme.fontUi
-            font.pixelSize: Sizing.fontSize(2.9)
+            font.pixelSize: Sizing.fontSection
             color: Theme.textPrimary
             horizontalAlignment: Text.AlignHCenter
             renderType: Text.NativeRendering
@@ -84,7 +84,7 @@ Item {
             visible: overlay.viewState === "error" && overlay.errorText !== ""
             text: overlay.errorText
             font.family: Theme.fontUi
-            font.pixelSize: Sizing.fontSize(2.4)
+            font.pixelSize: Sizing.fontCaption
             color: Theme.textPrimary
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter

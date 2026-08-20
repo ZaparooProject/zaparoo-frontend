@@ -60,6 +60,7 @@ pub struct SettingsConfig {
     pub browse_layout: Option<String>,
     pub favorites_sort: Option<String>,
     pub system_logo_style: Option<String>,
+    pub color_scheme: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
     pub reduce_motion: Option<bool>,
@@ -89,6 +90,7 @@ pub struct SettingsMirror<'a> {
     pub clock_format: &'a str,
     pub browse_layout: &'a str,
     pub system_logo_style: &'a str,
+    pub color_scheme: &'a str,
     pub button_layout: &'a str,
     pub mouse_enabled: bool,
     pub reduce_motion: bool,
@@ -182,6 +184,7 @@ struct RawSettings {
     browse_layout: Option<String>,
     favorites_sort: Option<String>,
     system_logo_style: Option<String>,
+    color_scheme: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
     reduce_motion: Option<bool>,
@@ -325,6 +328,7 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         browse_layout: trim_opt(raw.browse_layout),
         favorites_sort: trim_opt(raw.favorites_sort),
         system_logo_style: trim_opt(raw.system_logo_style),
+        color_scheme: trim_opt(raw.color_scheme),
         button_layout: trim_opt(raw.button_layout),
         mouse_enabled: raw.mouse_enabled,
         reduce_motion: raw.reduce_motion,
@@ -448,6 +452,10 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     settings.insert(
         "system_logo_style".into(),
         toml::Value::String(mirror.system_logo_style.trim().to_string()),
+    );
+    settings.insert(
+        "color_scheme".into(),
+        toml::Value::String(mirror.color_scheme.trim().to_string()),
     );
     settings.insert(
         "button_layout".into(),
@@ -730,6 +738,7 @@ mod tests {
             clock_format: "auto",
             browse_layout: "grid",
             system_logo_style: "tinted",
+            color_scheme: "zaparoo-black",
             button_layout: "a",
             mouse_enabled: true,
             reduce_motion: false,
@@ -1254,6 +1263,7 @@ mod tests {
                 clock_format: "24h",
                 browse_layout: "list",
                 system_logo_style: "color",
+                color_scheme: "midnight-amber",
                 button_layout: "b",
                 mouse_enabled: false,
                 reduce_motion: true,
@@ -1280,6 +1290,7 @@ mod tests {
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("24h"));
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
         assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("color"));
+        assert_eq!(cfg.settings.color_scheme.as_deref(), Some("midnight-amber"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
         assert_eq!(cfg.settings.reduce_motion, Some(true));
@@ -1310,6 +1321,7 @@ mod tests {
                 clock_format: "auto",
                 browse_layout: "grid",
                 system_logo_style: "tinted",
+                color_scheme: "zaparoo-black",
                 button_layout: "a",
                 mouse_enabled: true,
                 reduce_motion: false,
@@ -1338,6 +1350,7 @@ mod tests {
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("auto"));
         assert_eq!(cfg.settings.browse_layout.as_deref(), Some("grid"));
         assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("tinted"));
+        assert_eq!(cfg.settings.color_scheme.as_deref(), Some("zaparoo-black"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("a"));
         assert_eq!(cfg.settings.mouse_enabled, Some(true));
         assert_eq!(cfg.settings.reduce_motion, Some(false));
@@ -1359,6 +1372,7 @@ mod tests {
             clock_format: "12h",
             browse_layout: "list",
             system_logo_style: "color",
+            color_scheme: "midnight-amber",
             button_layout: "c",
             mouse_enabled: false,
             reduce_motion: false,

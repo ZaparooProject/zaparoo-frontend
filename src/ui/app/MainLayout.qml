@@ -115,9 +115,23 @@ ApplicationWindow {
     function _startupTrace(): void {
         if (!root._startupTraceActive)
             return;
+        root._trace(arguments);
+    }
+
+    // Cover load events, deliberately outside the `_startupTraceActive` gate.
+    // That gate closes on the first Hub paint, which is before the Systems grid
+    // and the Settings tiles have drawn a single icon -- exactly where pop-in
+    // would still be hiding. `console.debug` is already silent unless
+    // `[logging] debug = true`, so there is no second gate to add.
+    // See docs/architecture.md -> "Measuring cover pop-in".
+    function _coverTrace(): void {
+        root._trace(arguments);
+    }
+
+    function _trace(args: var): void {
         const parts = [];
-        for (let i = 0; i < arguments.length; i++)
-            parts.push(String(arguments[i]));
+        for (let i = 0; i < args.length; i++)
+            parts.push(String(args[i]));
         console.debug(parts.join(" "));
     }
 
@@ -257,12 +271,6 @@ ApplicationWindow {
     }
 
     Binding {
-        target: Motion
-        property: "crtNativePath"
-        value: root.crtNativePath
-    }
-
-    Binding {
         target: Sizing
         property: "swapPercentageAxes"
         value: root._sceneRotated
@@ -334,6 +342,10 @@ ApplicationWindow {
     property string listPickerFieldId: ""
     property bool contextMenuVisible: false
     property rect contextMenuAnchor: Qt.rect(0, 0, 0, 0)
+    // Corner radius of the anchored tile/row, for ContextMenu's rounded
+    // scrim hole. 0 keeps the square hole (e.g. hub_favorites' action
+    // tile, which isn't yet known to be a PressableSurface).
+    property int contextMenuAnchorRadius: 0
     // Owner-aware. Written by Main.qml at openContextMenu time; each entry
     // is `{ id: string, label: string }`. The router switches on `id`, not
     // position, so adding/removing entries can't silently re-map actions.
@@ -357,10 +369,6 @@ ApplicationWindow {
     readonly property int loadingIndicatorDelayMs: 300
     readonly property int minimumLoadingVisibleMs: 200
     property bool transitionCueVisible: false
-    // Systems destination paints one stable frame without SVG requests. Main
-    // flips this true from the following frame-presented callback so cover
-    // decoding cannot delay the navigation cut itself.
-    property bool systemsCoverRevealReady: true
     // Games uses same progressive reveal for screen entry and in-screen folder
     // replacement: model/card frame first, raster covers from following frame.
     property bool gamesCoverRevealReady: true
@@ -566,49 +574,6 @@ ApplicationWindow {
                 color: Theme.bgDeep
             }
 
-            // Faint circuit-trace texture, tiled across the whole window. The
-            // PNG is pre-rendered from resources/images/bg-circuit.svg at the
-            // source pattern's native 304×304 size, with white at ~8 % alpha
-            // baked into the pixmap so QtSvg isn't needed at runtime. Sits
-            // between bgDeep and the rest of the tree so logos, captions, and
-            // selection cards stay fully legible. `Image.Tile` is software-
-            // rendered, so this is MiSTer-safe; `cache: true` keeps the
-            // pixmap in QPixmapCache after first decode.
-            Image {
-                id: backgroundTexture
-
-                anchors.fill: parent
-                // Full bleed past the safe-area inset, same as bgDeep.
-                anchors.margins: -Math.max(root._crtInsetW, root._crtInsetH)
-                source: "qrc:/qt/qml/Zaparoo/App/resources/images/bg-circuit.png"
-                fillMode: Image.Tile
-                cache: true
-                smooth: false        // 1:1 tile — filtering would just blur the lines
-                // Synchronous so the first frame paints with the texture instead
-                // of flashing the bare bgDeep underneath. One small PNG decode
-                // at startup is cheap.
-                asynchronous: false
-
-                property double _startupTraceLoadStartedAt: 0
-
-                onStatusChanged: {
-                    if (!root._startupTraceActive && !root._firstFrameSeen)
-                        return;
-                    if (status === Image.Loading) {
-                        backgroundTexture._startupTraceLoadStartedAt = Date.now();
-                        root._startupTrace("startup/qml resource load start", "coverKey=background/bg-circuit", "source=" + source);
-                    } else if (status === Image.Ready) {
-                        const durMs = backgroundTexture._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - backgroundTexture._startupTraceLoadStartedAt) : 0;
-                        root._startupTrace("startup/qml resource load ready", "coverKey=background/bg-circuit", "source=" + source, "dur_ms=" + durMs, "tileWidth=" + sourceSize.width, "tileHeight=" + sourceSize.height);
-                        backgroundTexture._startupTraceLoadStartedAt = 0;
-                    } else if (status === Image.Error) {
-                        const durMs = backgroundTexture._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - backgroundTexture._startupTraceLoadStartedAt) : 0;
-                        root._startupTrace("startup/qml resource load error", "coverKey=background/bg-circuit", "source=" + source, "dur_ms=" + durMs);
-                        backgroundTexture._startupTraceLoadStartedAt = 0;
-                    }
-                }
-            }
-
             // ── Top header (logo + status row + status pill) ───────────────────────────
 
             // Single component owning the brand mark, host status icons +
@@ -692,7 +657,6 @@ ApplicationWindow {
                             transitioning: root.transitionCueVisible
                             preparingTransition: root.pendingTransition === "systems"
                             active: root.activeScreen === root.screenSystems
-                            coverRevealReady: root.systemsCoverRevealReady
                             optimisticLoading: root.activeScreen === root.screenSystems && root.catalogStillBooting
                         }
                     }
@@ -889,6 +853,7 @@ ApplicationWindow {
                     ContextMenu {
                         open: root.contextMenuVisible
                         anchorRect: root.contextMenuAnchor
+                        anchorRadius: root.contextMenuAnchorRadius
                         entries: root.contextMenuEntries
                         bottomUnsafeHeight: BrowseLayouts.numberValue(root._browseViewProfile, "footer.bottomUnsafeHeight", Sizing.pctH(6) + Sizing.pctH(2))
                         onAccepted: id => root.contextMenuAccepted(id)
@@ -1561,7 +1526,7 @@ ApplicationWindow {
                                 anchors.verticalCenter: helpEntry.verticalCenter
                                 text: helpEntry.modelData.label
                                 font.family: Theme.fontUi
-                                font.pixelSize: Sizing.fontSize(2.6)
+                                font.pixelSize: Sizing.fontBody
                                 color: Theme.textPrimary
                                 renderType: Text.NativeRendering
                             }

@@ -37,11 +37,8 @@ Item {
     property bool preparingTransition: false
     // Set false by MainLayout when this screen is not the active screen.
     // Forwarded to systemsGrid.screenSettling so tile delegates reset
-    // their push-in scale off-screen.
+    // their held activation cue off-screen.
     property bool active: true
-    // False for the first destination frame so layout/text can paint before
-    // current-page SVG decoding begins. Router enables it after frame swap.
-    property bool coverRevealReady: true
     // Router-driven flag: `MainLayout` writes this to
     // `!ScreenManager.hasModal` so the focused tile's accent ring
     // hides while a modal (the context menu) is on top of the stack.
@@ -81,7 +78,7 @@ Item {
 
     signal requestAccept(systemId: string)
     signal requestHubScreen
-    signal requestContextMenu(int index, var anchorRect)
+    signal requestContextMenu(int index, var anchorRect, int anchorRadius)
 
     // Move selection by (dx, dy) and commit the new system id on
     // success. Returns the moveSelection result; row/column moves wrap
@@ -203,7 +200,7 @@ Item {
             if (systems.systemsGrid.itemCount > 0) {
                 const idx = systems.systemsGrid.currentIndex;
                 Browse.SystemsState.system_id = Browse.SystemsModel.system_id_at(idx);
-                systems.requestContextMenu(idx, systems._listLayout ? listCard.currentCellRectIn(systems) : systems.systemsGrid.currentCellRectIn(systems));
+                systems.requestContextMenu(idx, systems._listLayout ? listCard.currentCellRectIn(systems) : systems.systemsGrid.currentCellRectIn(systems), systems._listLayout ? listCard.currentCellRadius : systems.systemsGrid.currentCellRadius);
             }
         } else if (action === "cancel") {
             // Disarm a pending accept so a press-then-back inside the deferred
@@ -307,7 +304,7 @@ Item {
         // Repeater's model tears down the prior category synchronously and made
         // the transition itself wait on that cleanup.
         suspendDelegates: systems._listLayout
-        coverRequestsEnabled: systems.active && systems.coverRevealReady && !systems.preparingTransition && !systems._gateHide
+        coverRequestsEnabled: systems.active && !systems.preparingTransition && !systems._gateHide
         // Router already warms visible page. Do not simultaneously rasterize
         // hidden next-page logos or focused variants for every system.
         coverLookaheadPages: 0
@@ -358,13 +355,13 @@ Item {
         anchors.leftMargin: systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
         width: Sizing.px(parent.width / 3) - (systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0)
-        height: Sizing.fontSize(2.9)
+        height: Sizing.fontSection
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
         text: qsTr("%1 systems").arg(Browse.SystemsModel.count)
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
+        font.pixelSize: Sizing.fontSection
         color: Theme.textPrimary
         renderType: Text.NativeRendering
     }
@@ -375,13 +372,13 @@ Item {
         anchors.rightMargin: systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
         width: Sizing.px(parent.width / 3) - (systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0)
-        height: Sizing.fontSize(2.9)
+        height: Sizing.fontSection
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight
         verticalAlignment: Text.AlignVCenter
         text: qsTr("%1 / %2").arg(systemsGrid.currentPage + 1).arg(Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize)))
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
+        font.pixelSize: Sizing.fontSection
         color: Theme.textPrimary
         renderType: Text.NativeRendering
     }

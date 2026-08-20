@@ -17,12 +17,18 @@ import Zaparoo.Theme
 // the menu off-screen. The scrim is drawn as four bands around `anchorRect`
 // so the anchored tile stays bright while the rest of the screen dims —
 // a full-screen scrim would defeat the "this menu is about *that* tile"
-// affordance.
+// affordance. When `anchorRadius` is set, four baked corner masks cut the
+// bands' square hole down to the anchor's actual rounded silhouette instead
+// of leaving bright square notches past its arcs.
 Item {
     id: menu
 
     property bool open: false
     property rect anchorRect: Qt.rect(0, 0, 0, 0)
+    // Corner radius of the anchored tile/row, in px. 0 (the default) keeps
+    // today's square hole byte-identical -- this property is purely
+    // additive. See Resources.cornerCutUrl() for the baked radius range.
+    property int anchorRadius: 0
     // Each entry is `{ id: string, label: string }`. `id` is the dispatch
     // key the router switches on (e.g. "launch_game", "qr_code"); `label`
     // is the localized text. Position-keyed dispatch was a footgun —
@@ -31,8 +37,7 @@ Item {
     property int currentIndex: 0
     property int bottomUnsafeHeight: Sizing.pctH(6) + Sizing.pctH(2)
 
-    // Push-in scale for the activated row, mirroring the tile push-in.
-    property real _pressScale: 1.0
+    property bool _pressed: false
     property string _pendingId: ""
 
     signal accepted(string id)
@@ -49,11 +54,11 @@ Item {
     readonly property int _minPanelWidth: Math.max(Sizing.pctW(24), Sizing.pctH(32))
     readonly property int _desiredPanelWidth: _widestLabelWidth + 2 * horizontalPadding + 2 * panelSideMargin + 2 * Sizing.stroke(2)
     readonly property int panelWidth: Math.min(Math.max(_minPanelWidth, _desiredPanelWidth), Math.max(0, width - 2 * margin))
-    // Top/bottom margins inside the panel are sized to the panel
-    // radius so a focused row's accent ring never intersects the
-    // rounded corners — see the panel `Rectangle` below.
-    readonly property int panelRadius: Sizing.half(Sizing.cornerRadius)
-    readonly property int panelHeight: Math.min(entries.length * rowHeight + Math.max(0, entries.length - 1) * rowSpacing + 2 * panelRadius, Math.max(0, _usableBottom - menu.margin))
+    // Panel padding is independent of corner shape so tightening the radius
+    // never crowds the first and last focused rows.
+    readonly property int panelRadius: Sizing.radiusMd
+    readonly property int panelVerticalPadding: Sizing.pctH(1.5)
+    readonly property int panelHeight: Math.min(entries.length * rowHeight + Math.max(0, entries.length - 1) * rowSpacing + 2 * panelVerticalPadding, Math.max(0, _usableBottom - menu.margin))
     readonly property bool _fitsRight: anchorRect.x + anchorRect.width + gap + panelWidth <= width - margin
     readonly property bool _fitsLeft: anchorRect.x - gap - panelWidth >= margin
     readonly property bool _placeBesideAnchor: _fitsRight || _fitsLeft
@@ -69,8 +74,7 @@ Item {
     onOpenChanged: {
         if (open) {
             currentIndex = 0;
-            menu._pressScale = 1.0;
-            pressAnim.stop();
+            menu._pressed = false;
             menu._pendingId = "";
         }
     }
@@ -117,17 +121,8 @@ Item {
     // deferred so the animation completes before the caller acts.
     function _commitAccept(id: string): void {
         menu._pendingId = id;
-        pressAnim.restart();
+        menu._pressed = true;
         acceptCommit.arm();
-    }
-
-    NumberAnimation {
-        id: pressAnim
-        target: menu
-        property: "_pressScale"
-        to: Motion.rowPressScale
-        duration: Motion.dur(Motion.pressMs)
-        easing.type: Easing.OutQuad
     }
 
     DeferredAction {
@@ -135,6 +130,7 @@ Item {
         onDeferred: {
             const id = menu._pendingId;
             menu._pendingId = "";
+            menu._pressed = false;
             if (id !== "")
                 menu.accepted(id);
         }
@@ -143,14 +139,14 @@ Item {
     FontMetrics {
         id: labelMetrics
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.4)
+        font.pixelSize: Sizing.fontCaption
     }
 
     // Catches dismiss-clicks on the dimmed area around the anchor.
     // Sits beneath the four scrim bands and the panel; per-row
     // MouseAreas inside the panel win for clicks on rows because the
-    // panel is declared after this MouseArea, so the panel subtree
-    // sits on top in z-order. Clicks on the anchor area also hit this
+    // panel is declared after this MouseArea, so row pointer handlers
+    // sit on top in z-order. Clicks on the anchor area also hit this
     // MouseArea (the bands don't cover the anchor) and close the menu.
     // Clicks inside the panel chrome (top/bottom radius padding, side
     // margins, row spacing) are filtered out by the bounding-rect
@@ -171,6 +167,18 @@ Item {
         }
     }
 
+    // Shared, Sizing.px()-rounded hole edges. The four bands and the four
+    // corner Images below both key off these so a corner piece always lands
+    // flush with its two bands. Rounding a sum in one place and a difference
+    // in another (the old per-band computation) could disagree by a pixel.
+    readonly property int _holeLeft: Sizing.px(Math.max(0, menu.anchorRect.x))
+    readonly property int _holeTop: Sizing.px(Math.max(0, menu.anchorRect.y))
+    readonly property int _holeRight: Sizing.px(Math.max(0, menu.anchorRect.x + menu.anchorRect.width))
+    readonly property int _holeBottom: Sizing.px(Math.max(0, menu.anchorRect.y + menu.anchorRect.height))
+    // Skip the corner pieces rather than overlap them when the anchor is too
+    // small to fit two radii across either axis.
+    readonly property bool _canCutCorners: menu.anchorRadius > 0 && (menu._holeRight - menu._holeLeft) >= 2 * menu.anchorRadius && (menu._holeBottom - menu._holeTop) >= 2 * menu.anchorRadius
+
     // Four scrim bands framing `anchorRect`. The anchor area itself is
     // intentionally not painted so the tile the menu is *about* stays
     // bright. `Math.max(0, ...)` clamps every dimension so an anchor
@@ -180,29 +188,87 @@ Item {
         x: 0
         y: 0
         width: menu.width
-        height: Sizing.px(Math.max(0, menu.anchorRect.y))
+        height: menu._holeTop
         color: Theme.scrim
     }
     Rectangle {
         x: 0
-        y: Sizing.px(menu.anchorRect.y + menu.anchorRect.height)
+        y: menu._holeBottom
         width: menu.width
-        height: Sizing.px(Math.max(0, menu.height - (menu.anchorRect.y + menu.anchorRect.height)))
+        height: Math.max(0, menu.height - menu._holeBottom)
         color: Theme.scrim
     }
     Rectangle {
         x: 0
-        y: Sizing.px(menu.anchorRect.y)
-        width: Sizing.px(Math.max(0, menu.anchorRect.x))
-        height: Sizing.px(Math.max(0, menu.anchorRect.height))
+        y: menu._holeTop
+        width: menu._holeLeft
+        height: Math.max(0, menu._holeBottom - menu._holeTop)
         color: Theme.scrim
     }
     Rectangle {
-        x: Sizing.px(menu.anchorRect.x + menu.anchorRect.width)
-        y: Sizing.px(menu.anchorRect.y)
-        width: Sizing.px(Math.max(0, menu.width - (menu.anchorRect.x + menu.anchorRect.width)))
-        height: Sizing.px(Math.max(0, menu.anchorRect.height))
+        x: menu._holeRight
+        y: menu._holeTop
+        width: Math.max(0, menu.width - menu._holeRight)
+        height: Math.max(0, menu._holeBottom - menu._holeTop)
         color: Theme.scrim
+    }
+
+    // Baked antialiased quarter-disc masks (Part 5) cutting the four square
+    // notches the bands above would otherwise leave past the anchor's real
+    // rounded corners down to its actual silhouette. Each mask's alpha is
+    // the exact complement of the tile's own corner coverage, so tile and
+    // scrim coverage sum to 1 by construction -- no seam to tune.
+    Image {
+        objectName: "contextMenuCornerTl"
+        visible: menu._canCutCorners
+        x: menu._holeLeft
+        y: menu._holeTop
+        width: menu.anchorRadius
+        height: menu.anchorRadius
+        sourceSize.width: menu.anchorRadius
+        sourceSize.height: menu.anchorRadius
+        smooth: false
+        cache: true
+        source: menu._canCutCorners ? Resources.cornerCutUrl(menu.anchorRadius, "tl", Theme.scrim) : ""
+    }
+    Image {
+        objectName: "contextMenuCornerTr"
+        visible: menu._canCutCorners
+        x: menu._holeRight - menu.anchorRadius
+        y: menu._holeTop
+        width: menu.anchorRadius
+        height: menu.anchorRadius
+        sourceSize.width: menu.anchorRadius
+        sourceSize.height: menu.anchorRadius
+        smooth: false
+        cache: true
+        source: menu._canCutCorners ? Resources.cornerCutUrl(menu.anchorRadius, "tr", Theme.scrim) : ""
+    }
+    Image {
+        objectName: "contextMenuCornerBl"
+        visible: menu._canCutCorners
+        x: menu._holeLeft
+        y: menu._holeBottom - menu.anchorRadius
+        width: menu.anchorRadius
+        height: menu.anchorRadius
+        sourceSize.width: menu.anchorRadius
+        sourceSize.height: menu.anchorRadius
+        smooth: false
+        cache: true
+        source: menu._canCutCorners ? Resources.cornerCutUrl(menu.anchorRadius, "bl", Theme.scrim) : ""
+    }
+    Image {
+        objectName: "contextMenuCornerBr"
+        visible: menu._canCutCorners
+        x: menu._holeRight - menu.anchorRadius
+        y: menu._holeBottom - menu.anchorRadius
+        width: menu.anchorRadius
+        height: menu.anchorRadius
+        sourceSize.width: menu.anchorRadius
+        sourceSize.height: menu.anchorRadius
+        smooth: false
+        cache: true
+        source: menu._canCutCorners ? Resources.cornerCutUrl(menu.anchorRadius, "br", Theme.scrim) : ""
     }
 
     Rectangle {
@@ -217,8 +283,8 @@ Item {
 
         Column {
             anchors.fill: parent
-            anchors.topMargin: menu.panelRadius
-            anchors.bottomMargin: menu.panelRadius
+            anchors.topMargin: menu.panelVerticalPadding
+            anchors.bottomMargin: menu.panelVerticalPadding
             anchors.leftMargin: menu.panelSideMargin
             anchors.rightMargin: menu.panelSideMargin
             spacing: menu.rowSpacing
@@ -226,7 +292,7 @@ Item {
             Repeater {
                 model: menu.entries
 
-                Rectangle {
+                PressableSurface {
                     id: row
 
                     required property int index
@@ -234,12 +300,12 @@ Item {
 
                     width: parent.width
                     height: menu.rowHeight
-                    color: Theme.surfaceCard
-                    border.width: index === menu.currentIndex ? Sizing.stroke(2) : Sizing.stroke(1)
-                    border.color: index === menu.currentIndex ? Theme.accent : Theme.borderMid
-                    radius: Sizing.cornerRadius
-                    transformOrigin: Item.Center
-                    scale: row.index === menu.currentIndex ? menu._pressScale : 1.0
+                    focused: index === menu.currentIndex
+                    pressed: menu._pressed && row.modelData.id === menu._pendingId
+                    pointerAcceptedButtons: Qt.LeftButton
+                    pointerHoverEnabled: true
+                    onPointerEntered: menu.currentIndex = row.index
+                    onPointerClicked: menu._commitAccept(row.modelData.id)
 
                     Text {
                         anchors.left: parent.left
@@ -250,18 +316,9 @@ Item {
                         text: row.modelData.label
                         color: Theme.textPrimary
                         font.family: Theme.fontUi
-                        font.pixelSize: Sizing.fontSize(2.4)
+                        font.pixelSize: Sizing.fontCaption
                         elide: Text.ElideRight
                         renderType: Text.NativeRendering
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        acceptedButtons: Qt.LeftButton
-                        cursorShape: Qt.PointingHandCursor
-                        onEntered: menu.currentIndex = row.index
-                        onClicked: menu._commitAccept(row.modelData.id)
                     }
                 }
             }

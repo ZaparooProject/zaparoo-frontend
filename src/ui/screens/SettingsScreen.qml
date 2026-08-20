@@ -130,6 +130,11 @@ Item {
         });
         out.push({
             kind: "field",
+            id: "colorScheme",
+            label: qsTr("Color scheme")
+        });
+        out.push({
+            kind: "field",
             id: "screensaverTimeout",
             label: qsTr("Screensaver")
         });
@@ -406,6 +411,8 @@ Item {
             return settings._browseLayoutDisplay(Browse.Settings.current_browse_layout);
         if (id === "systemLogoStyle")
             return settings._systemLogoStyleDisplay(Browse.Settings.current_system_logo_style);
+        if (id === "colorScheme")
+            return settings._colorSchemeDisplay(Browse.Settings.current_color_scheme);
         if (id === "buttonLayout")
             return settings._buttonLayoutDisplay(Browse.Settings.current_button_layout);
         if (id === "screensaverTimeout")
@@ -635,6 +642,11 @@ Item {
         return label;
     }
 
+    function _colorSchemeList(): list<string> {
+        const raw = Browse.Settings.available_color_schemes;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
     function _buttonLayoutList(): list<string> {
         const raw = Browse.Settings.available_button_layouts;
         return raw === undefined || raw === null ? [] : raw;
@@ -746,6 +758,14 @@ Item {
         if (value === "color")
             return qsTr("Full color");
         return qsTr("Tinted");
+    }
+
+    function _colorSchemeDisplay(value: string): string {
+        if (value === "midnight-amber")
+            return qsTr("Midnight Amber");
+        if (value === "zaparoo-white")
+            return qsTr("Zaparoo White");
+        return qsTr("Zaparoo Black");
     }
 
     function _buttonLayoutDisplay(value: string): string {
@@ -903,6 +923,15 @@ Item {
                     label: settings._systemLogoStyleDisplay(list[i])
                 });
             initialId = Browse.Settings.current_system_logo_style;
+        } else if (id === "colorScheme") {
+            title = qsTr("Color scheme");
+            const list = settings._colorSchemeList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._colorSchemeDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_color_scheme;
         } else if (id === "buttonLayout") {
             title = qsTr("Button style");
             const list = settings._buttonLayoutList();
@@ -1538,7 +1567,7 @@ Item {
         text: qsTr("No settings available on this platform")
         color: Theme.textLabel
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.6)
+        font.pixelSize: Sizing.fontBody
         renderType: Text.NativeRendering
     }
 

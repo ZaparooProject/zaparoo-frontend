@@ -60,7 +60,7 @@ Item {
     readonly property int _imageReservedWidth: root._detail && root._detail.imageReservedWidth !== undefined ? root._detail.imageReservedWidth : 0
     readonly property int _imageReservedHeight: root._detail && root._detail.imageReservedHeight !== undefined ? root._detail.imageReservedHeight : 0
     readonly property int _imageBottomMargin: root._detail && root._detail.imageBottomMargin !== undefined ? root._detail.imageBottomMargin : 0
-    readonly property int _cardRadius: root._surface ? root._surface.cornerRadius : Sizing.cornerRadius
+    readonly property int _cardRadius: root._surface ? root._surface.cardRadius : Sizing.radiusMd
     // Reserve the side gutter whenever this screen supports image cycling
     // (reserveImageNav) OR when can_prev/can_next are already known, so the
     // cover footprint never changes when can_next flips async after meta loads.
@@ -85,7 +85,7 @@ Item {
     readonly property bool _emptyPaneLoading: root._delayedPaneLoading && !root._coverBusyIndicatorVisible && root._coverSource === "" && root._displayRows.length === 0 && root.title === ""
     readonly property var _detailRows: _parseDetailTags(detailTags)
     readonly property int _tagRowCount: _displayRows.length
-    readonly property int _tagTextSize: Sizing.fontSize(2.2)
+    readonly property int _tagTextSize: Sizing.fontSmall
     readonly property int _tagLabelGap: Sizing.pctW(1.4)
     readonly property int _metadataLabelMaxWidth: root._detail && root._detail.metadataLabelMaxWidth !== undefined ? root._detail.metadataLabelMaxWidth : 0
     readonly property int _labelColumnWidth: root._metadataLabelMaxWidth > 0 ? Math.min(root._labelColumnNaturalWidth, root._metadataLabelMaxWidth) : root._labelColumnNaturalWidth
@@ -206,7 +206,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.surfaceCard
-        border.width: Sizing.stroke(1)
+        border.width: Sizing.cardBorderWidth
         border.color: Theme.borderMid
         radius: root._cardRadius
         visible: root.showChrome
@@ -401,7 +401,7 @@ Item {
                     text: root.title
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(3.2)
+                    font.pixelSize: Sizing.fontTitle
                     wrapMode: Text.Wrap
                     maximumLineCount: 3
                     elide: Text.ElideRight

@@ -98,6 +98,42 @@ QtObject {
         return baseUrl + "images/" + key + ".svg";
     }
 
+    // True when `coverUrl(key, ...)` would route through the tinted-svg
+    // provider. Load policy depends on this: the tinted provider is
+    // synchronous and costs a sub-millisecond LUT pass per icon, so a call site
+    // can ask for a same-frame decode. Everything else is a real image decode
+    // — a colored system PNG is ~1-3 ms on ARM, and thirteen of them in one
+    // binding pass is the stutter this exists to prevent.
+    // Must mirror coverUrl()'s routing exactly, including the color-style
+    // short-circuit; see docs/architecture.md -> "Measuring cover pop-in".
+    function isTintedProviderKey(key: string): bool {
+        if (key === "" || key.startsWith("custom-image/") || key.startsWith("media-image/"))
+            return false;
+
+        if (key.startsWith("categories/") || key.startsWith("icons/") || key.startsWith("corners/"))
+            return true;
+
+        if (!key.startsWith("systems/"))
+            return false;
+
+        return _coloredSystemUrl(_systemArtworkKey(key)) === "";
+    }
+
+    // ContextMenu's rounded scrim hole (Part 5). Corner masks are baked at
+    // integer radii 1..16 only -- see docs/style.md -> "Radius ladder"; a
+    // radius outside that range has no atlas entry, so callers must treat ""
+    // as "render no corner piece and keep the square hole".
+    function cornerCutUrl(radius: int, corner: string, color: var): url {
+        if (radius < 1 || radius > 16)
+            return "";
+
+        if (corner !== "tl" && corner !== "tr" && corner !== "bl" && corner !== "br")
+            return "";
+
+        const token = _colorToken(color);
+        return "image://tinted-svg/" + token + "/" + token + "/" + token + "/images/corners/cut-" + radius + "-" + corner;
+    }
+
     // Top-right HUD host-status icons (NFC/Wi-Fi/LAN/Bluetooth).
     function statusIconUrl(name: string): url {
         if (name === "")

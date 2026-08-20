@@ -5,8 +5,8 @@
        maps the darkest source pixels to its background token and the brightest
        to its foreground token: the black keyline becomes the dark outline
        (Theme.bgBar) and the white fill becomes the marker color
-       (Theme.stateMarker). Tile.qml requests it via
-       Resources.coverUrl("icons/Heart", stateMarker, stateMarker, bgBar). The
+       (Theme.accent). Tile.qml and BrowseList.qml request it via
+       Resources.coverUrl("icons/Heart", accent, accent, bgBar). The
        keyline layer extends past the fill so its outset reads as an outline; the
        widened viewBox keeps it from clipping. Plain fill + stroke only (no
        paint-order/effects) so it renders identically under Qt's software SVG

@@ -172,7 +172,7 @@ Item {
     readonly property bool _gateHide: root.transitioning || root._loading() || root._overlayLoadingVisible || root._errorMessage() !== ""
 
     signal requestHubScreen
-    signal requestContextMenu(int index, var anchorRect)
+    signal requestContextMenu(int index, var anchorRect, int anchorRadius)
     // Page-scoped operations entry point (West button). The router decides
     // what the menu contains; the screen just reports the press when the list
     // is in a usable state.
@@ -454,7 +454,8 @@ Item {
                     return;
                 root._persistFocus();
                 const rect = root._listLayout ? listCard.currentCellRectIn(root) : mediaGrid.currentCellRectIn(root);
-                root.requestContextMenu(idx, rect);
+                const radius = root._listLayout ? listCard.currentCellRadius : mediaGrid.currentCellRadius;
+                root.requestContextMenu(idx, rect, radius);
             }
         } else if (action === "cancel") {
             if (typeof root.cancelAction === "function")
@@ -643,13 +644,13 @@ Item {
         anchors.leftMargin: root.bottomStatusLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
         width: Sizing.px(parent.width / 3) - root.bottomStatusLeftMargin
-        height: Sizing.fontSize(2.9)
+        height: Sizing.fontSection
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
         text: root.bottomStatusLeftText
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
+        font.pixelSize: Sizing.fontSection
         color: Theme.textPrimary
         renderType: Text.NativeRendering
     }
@@ -660,13 +661,13 @@ Item {
         anchors.rightMargin: root.bottomStatusRightMargin
         anchors.verticalCenter: activeLabel.verticalCenter
         width: Sizing.px(parent.width / 3) - root.bottomStatusRightMargin
-        height: Sizing.fontSize(2.9)
+        height: Sizing.fontSection
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight
         verticalAlignment: Text.AlignVCenter
         text: root.bottomStatusRightText
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
+        font.pixelSize: Sizing.fontSection
         color: Theme.textPrimary
         renderType: Text.NativeRendering
     }
@@ -735,9 +736,10 @@ Item {
     // these hidden Images decode the next and previous rows' covers into
     // Qt's pixmap cache at the same sourceSize as the visible detail cover
     // (the shared Sizing.detailCoverSourceWidth tier), so the detail cover switch on a d-pad move is a
-    // synchronous cache hit rather than an async decode. Mirrors the
-    // system-cover prefetch pattern in Main.qml:2629. Active only in list
-    // layout; in grid layout there is no per-row detail pane.
+    // synchronous cache hit rather than an async decode. This is media art
+    // from Core, which is a real decode and genuinely needs warming — bundled
+    // artwork does not, since it tints synchronously out of the baked atlas.
+    // Active only in list layout; in grid layout there is no per-row detail pane.
     // The source guard (`k.startsWith("media-image/")`) keeps the source
     // empty for placeholder keys (`icons/*`) so no decode work is done for
     // folder entries or cold-cache neighbors that haven't resolved yet.

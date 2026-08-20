@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
+#include "tinted_svg_image_provider.h"
+
 #include <QDir>
 #include <QFile>
 #include <QQmlEngine>
@@ -68,10 +70,15 @@ class UiSetup : public QObject
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static) — Qt slot, must be a member
     void qmlEngineAvailable(QQmlEngine* engine)
     {
+        // The tinted-svg provider is what makes a bundled icon resolve at all.
+        // Without it every `image://tinted-svg/...` request fails, and a test
+        // that asserts an icon is decoded before the tile's first frame would
+        // pass or fail for the wrong reason. Registering it here also means the
+        // QML suite exercises the real baked-atlas path, not a stub.
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        engine->addImageProvider(QStringLiteral("tinted-svg"), new TintedSvgImageProvider());
 #ifdef ZAPAROO_UPDATE_RUNTIME_QML_IMPORT_PATH
         engine->addImportPath(QStringLiteral(ZAPAROO_UPDATE_RUNTIME_QML_IMPORT_PATH));
-#else
-        Q_UNUSED(engine)
 #endif
     }
 };

@@ -76,6 +76,19 @@ in full color. If you want an image that tracks the theme colors, supply a
 monochrome SVG drawn in the theme's terms; otherwise expect your PNG/JPG to
 appear unchanged.
 
+## Color scheme
+
+Choose a preset live under Settings → Display → Color scheme. Selection is
+stored as `[settings] color_scheme` in `frontend.toml`:
+
+```toml
+[settings]
+color_scheme = "zaparoo-black" # or "midnight-amber"
+```
+
+Unknown values fall back to `zaparoo-black`. Presets recolor built-in tinted
+artwork; custom and full-color artwork remains unchanged.
+
 ## System display names
 
 To rename a system for display (for example `SNES` to `Super Nintendo`, or to

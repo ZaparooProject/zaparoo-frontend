@@ -16,8 +16,36 @@ QtObject {
     property bool crtNativePath: false
     property bool swapPercentageAxes: false
 
+    // Shape and type hierarchy use discrete logical-resolution tiers. In TATE
+    // the scene dimensions are swapped, so read the original framebuffer's
+    // height axis rather than promoting 720p portrait to the 1080 tier.
+    readonly property int effectiveHeight: swapPercentageAxes ? screenWidth : screenHeight
+    readonly property string tier: crtNativePath ? "crt" : effectiveHeight >= 900 ? "1080" : effectiveHeight >= 660 ? "720" : effectiveHeight >= 520 ? "540" : effectiveHeight >= 400 ? "480" : "240"
+
+    // Discrete shape tokens. Rounded-square geometry is deliberately not a
+    // percentage: resolution changes thickness, not the design's silhouette.
+    readonly property int radiusMd: tier === "1080" ? 8 : tier === "720" ? 6 : tier === "540" ? 4 : tier === "480" ? 3 : 2
+    readonly property int radiusSm: Math.max(1, half(radiusMd))
+
+    // Six semantic text roles. CRT keeps the bitmap face's existing 8/16px
+    // quantization by resolving through fontSize(); other paths use a tiered
+    // ladder so adjacent roles never collapse at 240p/480p/540p.
+    readonly property int fontHero: crtNativePath ? fontSize(4.0) : _fontForTier(0)
+    readonly property int fontTitle: crtNativePath ? fontSize(3.2) : _fontForTier(1)
+    readonly property int fontSection: crtNativePath ? fontSize(2.9) : _fontForTier(2)
+    readonly property int fontBody: crtNativePath ? fontSize(2.6) : _fontForTier(3)
+    readonly property int fontCaption: crtNativePath ? fontSize(2.4) : _fontForTier(4)
+    readonly property int fontSmall: crtNativePath ? fontSize(2.2) : _fontForTier(5)
+
+    // Semantic thickness ladder. Every helper returns an integer and clamps to
+    // at least one physical pixel through stroke().
+    readonly property int cardBorderWidth: stroke(pctH(0.2))
+    readonly property int focusBorderWidth: stroke(pctH(0.4))
+    readonly property int focusRingWidth: stroke(pctH(0.6))
+    readonly property int pressEdgeHeight: stroke(pctH(0.8))
+
     // Visible tile-row covers: fewer at very low resolution to avoid crowding.
-    readonly property int visibleCovers: screenHeight < 300 ? 3 : 5
+    readonly property int visibleCovers: effectiveHeight < 300 ? 3 : 5
     // Shared browse-grid bounds. Systems and games both solve the same
     // viewport-fit problem now, so the common limits live here and the
     // per-surface configs only override what is materially different.
@@ -53,11 +81,6 @@ QtObject {
     readonly property int gamesGridColumns: _gamesGridShape.columns
     readonly property int gamesGridRows: _gamesGridShape.rows
     // qmllint enable compiler
-    // Standard corner radius for rounded surfaces — tile cards, focus
-    // rings (computed as `cornerRadius - outlineGap`), settings rows.
-    // Pill controls (toggle track/thumb) use `height/2` instead and
-    // are intentionally a different shape. See docs/style.md.
-    readonly property int cornerRadius: pctH(3.5)
     // ── Top header (logo + status row + status pill) ──────────────────
     // Single source of truth for the header bar that sits at the top of
     // every screen. The logo's height is locked to the stacked-row
@@ -107,7 +130,8 @@ QtObject {
     }
 
     function gamesGridShape(viewportWidth: int, viewportHeight: int): var {
-        return root._selectGridShape(viewportWidth, viewportHeight, root._gamesGridConfig);
+        const declared = root._declaredGridShape("games");
+        return declared === null ? root._selectGridShape(viewportWidth, viewportHeight, root._gamesGridConfig) : declared;
     }
 
     // Cover decode tiers, mirroring Core's resize ladder. A cover's source
@@ -124,19 +148,20 @@ QtObject {
         return 768;
     }
 
-    // Raw painted height (px) of a games-grid cover in caption mode: the cell
-    // height minus the top padding and the bottom caption band. Box art is
+    // Raw painted height (px) of a games-grid cover in caption mode: raised
+    // face height minus top padding and bottom caption band. Box art is
     // portrait, so this height is the bounding side. Pure function of the
     // resolution — the same value for every grid tile — so callers use it as a
     // stable Image.sourceSize input rather than the live painted height, which
     // fluctuates per layout/recycle and would make Qt reload the Image on every
-    // change. The percentage bands track Tile.qml's _padding / _captionHeight /
-    // _captionGap; exact agreement is not required since the result is snapped.
+    // change. Percentage bands track Tile.qml's front edge, _padding,
+    // _captionHeight, and _captionGap; exact agreement is not required since
+    // the result is snapped.
     // qmllint disable compiler
     function _gamesGridCoverBox(viewportWidth: int, viewportHeight: int): int {
         const shape = gamesGridShape(viewportWidth, viewportHeight);
         const tileHeight = Math.ceil(Math.max(1, viewportHeight) / Math.max(1, shape.rows));
-        const coverBox = tileHeight - pctH(2) - (pctH(5.5) + pctH(0.4));
+        const coverBox = tileHeight - pressEdgeHeight - pctH(2) - (pctH(5.5) + pctH(0.4));
         return Math.max(1, coverBox);
     }
     // qmllint enable compiler
@@ -195,7 +220,64 @@ QtObject {
     }
 
     function systemsGridShape(viewportWidth: int, viewportHeight: int): var {
-        return root._selectGridShape(viewportWidth, viewportHeight, root._systemsGridConfig);
+        const declared = root._declaredGridShape("systems");
+        return declared === null ? root._selectGridShape(viewportWidth, viewportHeight, root._systemsGridConfig) : declared;
+    }
+
+    // Common horizontal framebuffer sizes have declared page geometry. This
+    // prevents a few pixels of header or safe-area drift from changing the
+    // whole page shape. Rotated and arbitrary desktop scenes retain the
+    // adaptive scorer below.
+    function _declaredGridShape(kind: string): var {
+        if (root.swapPercentageAxes)
+            return null;
+        if (root.crtNativePath) {
+            if (kind === "systems")
+                return root._gridShape(3, 3);
+            if (root.screenHeight <= 240)
+                return root._gridShape(2, 2);
+            return root._gridShape(3, 2);
+        }
+
+        const common = root._commonDigitalScene();
+        if (common === "")
+            return null;
+        if (kind === "systems") {
+            if (common === "240")
+                return root._gridShape(2, 2);
+            if (common === "480")
+                return root._gridShape(3, 3);
+            return root._gridShape(4, 3);
+        }
+        if (common === "240")
+            return root._gridShape(2, 2);
+        if (common === "480")
+            return root._gridShape(4, 2);
+        return root._gridShape(5, 2);
+    }
+
+    function _gridShape(columns: int, rows: int): var {
+        return {
+            "columns": columns,
+            "rows": rows
+        };
+    }
+
+    function _commonDigitalScene(): string {
+        const close = (actual, expected) => Math.abs(actual - expected) <= 2;
+        if (close(root.screenWidth, 320) && close(root.screenHeight, 240))
+            return "240";
+        if (close(root.screenWidth, 640) && close(root.screenHeight, 480))
+            return "480";
+        if (close(root.screenWidth, 960) && close(root.screenHeight, 540))
+            return "540";
+        if (close(root.screenWidth, 1280) && close(root.screenHeight, 720))
+            return "720";
+        if (close(root.screenWidth, 1366) && close(root.screenHeight, 768))
+            return "720";
+        if (close(root.screenWidth, 1920) && close(root.screenHeight, 1080))
+            return "1080";
+        return "";
     }
 
     function _gridConfig(base: var, overrides: var): var {
@@ -242,7 +324,13 @@ QtObject {
     }
     // qmllint enable compiler
 
-    // Minimum 8px to remain legible on CRT 240p displays.
+    function _fontForTier(role: int): int {
+        const table = tier === "1080" ? [43, 35, 31, 28, 26, 24] : tier === "720" ? [29, 23, 21, 19, 17, 16] : tier === "540" ? [24, 19, 17, 15, 13, 11] : tier === "480" ? [22, 18, 16, 14, 12, 10] : [14, 12, 11, 10, 9, 8];
+        return table[Math.max(0, Math.min(table.length - 1, role))];
+    }
+
+    // Minimum 8px to remain legible on CRT 240p displays. Kept for specialist
+    // text and geometry; ordinary text chooses one of the six roles above.
     function fontSize(percent: real): int {
         const size = Math.max(8, pctH(percent));
         if (!crtNativePath)

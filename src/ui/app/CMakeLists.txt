@@ -18,13 +18,6 @@ set(_APP_RESOURCES
     "${_RESOURCE_ROOT}/fonts/NotoSansKR.ttf"
     "${_RESOURCE_ROOT}/fonts/NotoSansTC.ttf"
     "${_RESOURCE_ROOT}/images/logo.png"
-    # Tiled circuit-trace background. The .png is pre-rendered from the
-    # .svg at the pattern's native 304×304 (rsvg-convert / Inkscape /
-    # ImageMagick); shipping both keeps the source available for
-    # re-rendering. The .png is what `Image.Tile` consumes — tiled SVG
-    # would re-rasterize the source on every paint of the dirty rect.
-    "${_RESOURCE_ROOT}/images/bg-circuit.png"
-    "${_RESOURCE_ROOT}/images/bg-circuit.svg"
 )
 
 # System logos are black/white SVGs (curated from PRO100BYTE/console-logos — see
@@ -32,8 +25,10 @@ set(_APP_RESOURCES
 # tinted-svg image provider by default. Optional full-color PNG system logos live
 # under resources/images/systems-color/ and are selected by Settings. Categories
 # and status icons accept either PNG or SVG
-# so SVGs can be dropped straight in without a pre-render step; QtSvg rasterizes
-# once on first load and the result is cached in QPixmapCache. Top-level icons
+# so SVGs can be dropped straight in without a pre-render step. Bundled system,
+# category, and icon SVGs are pre-rasterized into resources/baked/icons.zbin by
+# `just bake-icons`; anything not in that atlas falls back to rasterizing through
+# QtSvg on first load. Top-level icons
 # (folder, file, loading, settings, navigation arrows, D-pad, ...) live under
 # resources/images/icons/. Gamepad button glyphs (ButtonA/B/X/Y/L/R) ship
 # as PNG under resources/images/buttons/<layout>/.
@@ -91,6 +86,37 @@ qt_add_qml_module(
         ${_APP_QML_FILES}
     RESOURCES ${_APP_RESOURCES}
     IMPORTS ${_APP_IMPORTS}
+)
+
+# The baked icon atlas is registered separately from _APP_RESOURCES purely so
+# it can carry -no-compress. rcc would otherwise zstd it (alpha masks compress
+# well), and QResource::data() would then heap-inflate all 6 MB on first touch
+# -- exactly the allocation the atlas exists to delete. Uncompressed, rcc emits
+# it verbatim into .rodata, which is a MAP_PRIVATE file-backed range of the
+# executable: the runtime reads mask bytes straight out of mapped memory and
+# the kernel can drop those clean pages for free under pressure.
+# BakedIconAtlas asserts NoCompression at startup because a silent regression
+# here has no visible symptom.
+#
+# BIG_RESOURCES makes rcc emit an object file instead of a multi-megabyte
+# generated C hex array, which the ARM32 cross compiler would grind on.
+#
+# Attached to zaparoo_ui_app rather than to frontend so tst_ui gets the atlas
+# too -- it links zaparoo_ui_appplugin.
+set(_BAKED_ATLAS "${CMAKE_SOURCE_DIR}/resources/baked/icons.zbin")
+set_source_files_properties(
+    "${_BAKED_ATLAS}" PROPERTIES QT_RESOURCE_ALIAS "resources/baked/icons.zbin"
+)
+qt_add_resources(
+    zaparoo_ui_app
+    "zaparoo_baked_icons"
+    PREFIX
+    "/qt/qml/Zaparoo/App"
+    FILES
+    "${_BAKED_ATLAS}"
+    OPTIONS
+    -no-compress
+    BIG_RESOURCES
 )
 
 target_link_libraries(

@@ -122,6 +122,101 @@ TestCase {
         height: 300
     }
 
+    ListModel {
+        id: coverSyncModel
+        ListElement {
+            name: "p0a"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+        ListElement {
+            name: "p0b"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+        ListElement {
+            name: "p1a"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+        ListElement {
+            name: "p1b"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+        }
+    }
+
+    // Reads the synchronous-decode flag back off its TileLoader host so the
+    // per-cell rule can be asserted without instantiating a real Tile.
+    Component {
+        id: coverSyncDelegate
+        Item {
+            property string name: ""
+            property string coverKey: ""
+            property bool isSelected: false
+            property bool isFocused: false
+            property int favorite: 0
+            // A Loader does not forward its own properties onto the loaded
+            // item, so the delegate reads the contract off `parent` — same as
+            // Tile.qml does.
+            // qmllint disable missing-property
+            readonly property bool observedCoverSynchronous: parent.coverSynchronous
+            objectName: "coverSyncCell-" + parent.name
+            // qmllint enable missing-property
+        }
+    }
+
+    // One page of two cells, so page 0 holds p0a/p0b and page 1 holds p1a/p1b
+    // while both stay inside the retention window.
+    PagedGrid {
+        id: coverSyncProbe
+        model: coverSyncModel
+        delegate: coverSyncDelegate
+        columnsOverride: 2
+        rowsOverride: 1
+        width: 300
+        height: 150
+    }
+
+    PagedGrid {
+        id: geometryProbe
+        model: model
+        delegate: cellDelegate
+        columnsOverride: 3
+        rowsOverride: 2
+        width: 307
+        height: 293
+        layoutProfile: ({
+                "grid": {
+                    "leftInset": 4,
+                    "rightInset": 0,
+                    "gutterWidth": 8,
+                    "gutterGap": 4,
+                    "scrollThumbWidth": 4,
+                    "scrollThumbRightInset": 2,
+                    "scrollThumbRightAligned": false,
+                    "scrollArrowSize": 8,
+                    "topInset": 3,
+                    "bottomInset": 4,
+                    "columnGap": 5,
+                    "rowGap": 7,
+                    "gutterFollowsContentWidth": true
+                },
+                "surface": {
+                    "cardRadius": 2,
+                    "rowRadius": 1
+                }
+            })
+    }
+
     function fillModel(count: int): void {
         model.clear();
         for (let i = 0; i < count; i++)
@@ -188,6 +283,23 @@ TestCase {
         compare(grid.rows, 3, "expected 3 rows at 480px height");
         compare(grid.pageSize, 12);
         compare(grid._coverRetentionPages, 2, "tile retention must convert cover count to pages");
+    }
+
+    function test_integer_cell_remainders_are_centered(): void {
+        fillModel(7);
+        geometryProbe.setCurrentIndexImmediate(0);
+
+        const rightRemainder = geometryProbe._availableWidth - geometryProbe._cellBlockOffsetX - geometryProbe._contentWidth;
+        const bottomRemainder = geometryProbe._availableHeight - geometryProbe._cellBlockOffsetY - geometryProbe._contentHeight;
+        verify(Math.abs(geometryProbe._cellBlockOffsetX - rightRemainder) <= 1);
+        verify(Math.abs(geometryProbe._cellBlockOffsetY - bottomRemainder) <= 1);
+
+        const rect = geometryProbe.currentCellRectIn(geometryProbe);
+        compare(rect.x, geometryProbe.leftInset + geometryProbe._cellBlockOffsetX);
+        compare(rect.y, geometryProbe.topInset + geometryProbe._cellBlockOffsetY);
+        compare(rect.width, geometryProbe.cellWidth);
+        compare(rect.height, geometryProbe.cellHeight);
+        compare(geometryProbe._scrollGutterX, geometryProbe.leftInset + geometryProbe._cellBlockOffsetX + geometryProbe._contentWidth + geometryProbe._activeGutterGap);
     }
 
     function test_empty_model_refuses_movement(): void {
@@ -974,5 +1086,46 @@ TestCase {
         compare(grid.hasPendingTarget, true, "page-wrap arms the generic pending flag");
         compare(grid.hasPendingJump, false, "page-wrap is not a jump");
         _resetPartialLoadState();
+    }
+
+    // Synchronous cover decoding is a GUI-thread cost, so PagedGrid spends it
+    // only where it buys a visibly complete page. These three rules are what
+    // keep it from turning into a stall; see Tile.qml's `delegateCoverSynchronous`.
+    function test_cover_synchronous_only_on_the_current_page(): void {
+        coverSyncProbe.setCurrentIndexImmediate(0);
+        tryCompare(coverSyncProbe, "currentPage", 0);
+        const onPage = findChild(coverSyncProbe, "coverSyncCell-p0a");
+        const offPage = findChild(coverSyncProbe, "coverSyncCell-p1a");
+        verify(onPage !== null);
+        verify(offPage !== null, "the next page must stay materialized inside the retention window");
+        compare(onPage.observedCoverSynchronous, true);
+        compare(offPage.observedCoverSynchronous, false, "retention-edge warmup must not block the GUI thread");
+    }
+
+    function test_cover_synchronous_follows_the_current_page(): void {
+        coverSyncProbe.setCurrentIndexImmediate(2);
+        tryCompare(coverSyncProbe, "currentPage", 1);
+        compare(findChild(coverSyncProbe, "coverSyncCell-p1a").observedCoverSynchronous, true);
+        compare(findChild(coverSyncProbe, "coverSyncCell-p0a").observedCoverSynchronous, false);
+        coverSyncProbe.setCurrentIndexImmediate(0);
+    }
+
+    function test_rapid_render_mode_never_decodes_synchronously(): void {
+        coverSyncProbe.setCurrentIndexImmediate(0);
+        coverSyncProbe.rapidRenderMode = true;
+        // rapidRenderMode also deactivates the TileLoaders, so the assertion is
+        // that nothing survives to request a synchronous decode.
+        tryCompare(coverSyncProbe, "rapidRenderMode", true);
+        compare(findChild(coverSyncProbe, "coverSyncCell-p0a"), null, "held d-pad must not keep delegates alive");
+        coverSyncProbe.rapidRenderMode = false;
+        tryCompare(coverSyncProbe, "rapidRenderMode", false);
+    }
+
+    function test_cover_synchronous_can_be_disabled_wholesale(): void {
+        coverSyncProbe.setCurrentIndexImmediate(0);
+        coverSyncProbe.coverSynchronous = false;
+        compare(findChild(coverSyncProbe, "coverSyncCell-p0a").observedCoverSynchronous, false);
+        coverSyncProbe.coverSynchronous = true;
+        compare(findChild(coverSyncProbe, "coverSyncCell-p0a").observedCoverSynchronous, true);
     }
 }

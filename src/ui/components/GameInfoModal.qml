@@ -74,7 +74,7 @@ Item {
             width: Sizing.px(Math.min(parent.width - Sizing.pctW(6), Sizing.pctH(150)))
             height: Sizing.px(parent.height - Sizing.pctH(16))
             color: Theme.bgPanel
-            radius: Sizing.cornerRadius
+            radius: Sizing.radiusMd
 
             MouseArea {
                 anchors.fill: parent
@@ -120,7 +120,7 @@ Item {
                 text: qsTr("Could not load details. Check Zaparoo Core and try again.")
                 color: Theme.textPrimary
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.6)
+                font.pixelSize: Sizing.fontBody
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignLeft
                 renderType: Text.NativeRendering
@@ -167,7 +167,7 @@ Item {
                             x: Sizing.center(parent.width, width)
                             y: Sizing.center(parent.height, height)
                             text: qsTr("Loading image…")
-                            glyphSize: Sizing.fontSize(2.4)
+                            glyphSize: Sizing.fontCaption
                         }
 
                         Image {
@@ -219,7 +219,7 @@ Item {
                                     id: labelMetrics
                                     text: tagRow.label
                                     font.family: Theme.fontUi
-                                    font.pixelSize: Sizing.fontSize(2.4)
+                                    font.pixelSize: Sizing.fontCaption
                                     onAdvanceWidthChanged: root._labelColumnWidth = Math.max(root._labelColumnWidth, Math.ceil(advanceWidth))
                                 }
 
@@ -232,7 +232,7 @@ Item {
                                     text: tagRow.label
                                     color: Theme.textLabel
                                     font.family: Theme.fontUi
-                                    font.pixelSize: Sizing.fontSize(2.4)
+                                    font.pixelSize: Sizing.fontCaption
                                     elide: Text.ElideRight
                                     horizontalAlignment: Text.AlignLeft
                                     renderType: Text.NativeRendering
@@ -248,7 +248,7 @@ Item {
                                     text: tagRow.value
                                     color: Theme.textPrimary
                                     font.family: Theme.fontUi
-                                    font.pixelSize: Sizing.fontSize(2.4)
+                                    font.pixelSize: Sizing.fontCaption
                                     wrapMode: Text.Wrap
                                     horizontalAlignment: Text.AlignLeft
                                     renderType: Text.NativeRendering
@@ -263,7 +263,7 @@ Item {
                         text: Browse.GameInfo.description
                         color: Theme.textPrimary
                         font.family: Theme.fontUi
-                        font.pixelSize: Sizing.fontSize(2.6)
+                        font.pixelSize: Sizing.fontBody
                         wrapMode: Text.WordWrap
                         horizontalAlignment: Text.AlignLeft
                         renderType: Text.NativeRendering

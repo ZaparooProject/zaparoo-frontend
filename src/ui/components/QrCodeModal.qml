@@ -43,7 +43,7 @@ Item {
                 id: instructionsMetrics
 
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.4)
+                font.pixelSize: Sizing.fontCaption
                 text: instructions.text
             }
 
@@ -54,7 +54,7 @@ Item {
                 width: Math.min(parent.width, Sizing.px(instructionsMetrics.advanceWidth))
                 text: qsTr("Scan this code with your phone to write this game to a Zaparoo token.")
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.4)
+                font.pixelSize: Sizing.fontCaption
                 color: Theme.textPrimary
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap

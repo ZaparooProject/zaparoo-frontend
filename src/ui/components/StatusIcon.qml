@@ -12,7 +12,7 @@ Item {
     property string name: ""
 
     objectName: root.name
-    width: root.visible ? Sizing.fontSize(2.4) : 0
+    width: root.visible ? Sizing.fontCaption : 0
     height: width
 
     Image {

@@ -63,10 +63,10 @@ shared QML, not behind a `crtNativePath` branch.
   `y: Sizing.center(parent.height, height)`. This keeps capsule fills behind
   the text without blurring or z-order hacks.
 
-- **Quantize CRT font sizes.** `Sizing.fontSize()` snaps to `8` or `16`
-  pixels when `crtNativePath` is active. This is a runtime quantization,
-  not a design rule — call `fontSize()` everywhere; the singleton handles
-  the quantization where it applies.
+- **Quantize CRT font sizes.** Semantic `Sizing.fontHero` … `fontSmall`
+  tokens resolve through `Sizing.fontSize()` on CRT, which snaps to `8` or
+  `16` pixels. Specialist calls may still use `fontSize()` directly; never
+  bypass Sizing with a raw pixel size.
 
 - **Reserve space from worst-case metrics.** If dynamic text shares a row with
   icons, measure the widest expected string with `TextMetrics` and reserve that
@@ -122,8 +122,8 @@ Pick animations from the cheap column when targeting MiSTer.
 
 | Cheap on raster | Expensive on raster |
 |---|---|
-| Instant cut + small one-shot cue (the tile/row push-in) | Translucent overlays of any size (see below) |
-| Translation/scale of small items (one Tile, the scroll-thumb) | Translation of large content (band of N tiles) |
+| Instant cut + small one-shot cue (tile press or row latch) | Translucent overlays of any size (see below) |
+| Integer translation of small items (one tile face or cursor rail) | Translation of large content (band of N tiles) |
 | ColorAnimation on tints / borders | Concurrent slide + scale (compounds raster cost) |
 | Static scenes with one ramping property on a small element | `ShaderEffect` of any kind, `Qt5Compat.GraphicalEffects` |
 | `layer.enabled` for caching a complex sub-tree | `Animator` types (no benefit on basic render loop) |
@@ -170,7 +170,7 @@ plain animations, and `layer.enabled` without an effect.
 ### Recommendation
 
 For state-change feedback, prefer instant cuts with a small localized cue
-(the push-in cue, a help-bar text change) over any fade.
+(the physical press, cursor latch, or help-bar text change) over any fade.
 Cues are small elements with small dirty rectangles; they paint cheaply
 on raster regardless of DPR or partial-update status. Reach for a fade
 only after diagnosing DPR and ensuring the destination scene is
@@ -182,16 +182,15 @@ translucent overlay.
 The rule above bans **persistent** motion that runs every frame while content
 is busy (e.g., a scale held on every focused tile on every d-pad move). It
 does NOT ban short one-shot animations on a single small element triggered
-at a state-change moment (activate/launch, selection land). Those are cheap
-for the same reason a single-tile push-in is cheap: one element, one short
-burst, then back to a static scene.
+at a state-change moment (activate/launch, selection land). Those are cheap for the same reason a single-tile face translation is cheap:
+one element, one short burst, then back to a static scene.
 
 Sanctioned patterns and why they are safe:
 
 | Cue | Cost analysis |
 |---|---|
-| Tile push-in on activate or launch (single scale leg, ~80 ms, held) | Single tile's pixmap scales transiently; dirty rect = one tile; the host screen's `settling` flag resets `scale` to 1.0 off-screen so there is no resampling per frame once the screen is hidden. One shared cue covers both forward navigation and game launch |
-| List-detail row push-in on activate or launch (single scale leg, ~80 ms, held) | The same cue as the tile, applied to the selected list row; dirty rect = one row; all neighboring rows are static |
+| Tile physical press on activate or launch (~80 ms, held) | One opaque face translates down by `Sizing.pressEdgeHeight`; dirty rect = one tile; no cover-art resampling. The host screen's `settling` flag raises the face off-screen. One shared cue covers forward navigation and game launch |
+| List-detail cursor latch on activate or launch (~80 ms, held) | Only selected row's accent rail, title margin, and optional heart inset move by `Sizing.focusRingWidth`; background and neighboring rows remain static |
 | Settings toggle-knob slide (x, ~110 ms) | One tiny Rectangle handle; 1 pctW |
 
 The shared constraint: the source scene must be static or near-static during
@@ -240,9 +239,8 @@ Token summary (`Motion.qml`):
 
 | Token | Value | Use |
 |---|---|---|
-| `pressMs` | 80 | Push-in cue (accept/activate) |
-| `settleMs` | 110 | Push-in release leg; toggle-knob slide |
-| `pressScale` | 0.96 | Push-in target |
+| `pressMs` | 80 | Physical press or cursor-latch cue |
+| `settleMs` | 110 | Release leg; toggle-knob slide |
 
 Both durations sit just above MiSTer's frame-budget floor (~3 frames at
 ~30fps); see the comments in `Motion.qml` before lowering them.
@@ -250,8 +248,8 @@ Both durations sit just above MiSTer's frame-budget floor (~3 frames at
 Pulse counter pattern (how hosts trigger tile cues without coupling to
 animation internals): the host increments the `activatePulse` int property
 on the grid or TileLoader; `Tile.qml` watches the delegate contract
-`delegateActivatePulse` and fires the push-in `NumberAnimation` if
-`_focusedSelection` is true. This keeps the animation entirely inside
-`Tile.qml` - hosts only bump a counter. There is a single push-in cue for
-every button-like action: forward navigation and game launch both use it,
-so there is no separate launch animation or pulse counter.
+`delegateActivatePulse` and lowers the `PressableSurface` face if
+`_focusedSelection` is true. This keeps cue state entirely inside `Tile.qml` -
+hosts only bump a counter. One physical press covers every button-like action:
+forward navigation and game launch both use it, so there is no separate launch
+animation or pulse counter.

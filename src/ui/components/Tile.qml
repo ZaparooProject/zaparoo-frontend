@@ -26,6 +26,8 @@
 //   - coverKey:   string — relative path under resources/images/ (no extension)
 //   - topLabel:   string — optional compact label above cover art
 //   - favorite:   int    — optional 0/1; shows a small heart badge when 1
+//   - coverSynchronous: bool — optional; decode bundled artwork inline on the
+//                          GUI thread so it paints in the tile's first frame
 
 import QtQuick
 import Zaparoo.Theme
@@ -56,10 +58,10 @@ Item {
     // covered grids. That scale was a persistent, per-focus-move cost
     // across the whole visible grid.
     //
-    // The activate/launch animations below are a different cost class:
-    // a one-shot transient triggered on a single tile at the moment of
-    // activation. The dirty rect is bounded to one cell for ~90-360ms
-    // total and neighbours are unaffected. See `docs/qml-gotchas.md` →
+    // The activate/launch press below is a different cost class: one tile's
+    // face translates by a few integer pixels at activation. The dirty rect
+    // stays inside one cell, cover art is never resampled, and neighbours are
+    // unaffected. See `docs/qml-gotchas.md` →
     // "Software-renderer animation costs" for the full distinction.
     // Bottom caption strip (caption mode only). Single line, ellipsised
     // when long. Tints to `textPrimary` on the focused tile so the
@@ -68,6 +70,7 @@ Item {
     // focus tint above.
 
     id: root
+    objectName: "tile"
 
     // qmllint disable missing-property compiler
     readonly property bool delegateIsSelected: parent.isSelected
@@ -84,22 +87,21 @@ Item {
     // the name in the bottom caption (see ScrollingCaption), identically on the
     // default and CRT paths.
     readonly property string delegateDisambiguatingTags: parent.disambiguatingTags ?? ""
-    // Pulse counter forwarded by TileLoader — increment to trigger the
-    // push-in cue on the focused tile. Every button-like action (folder
+    // Pulse counter forwarded by TileLoader — increment to lower the raised
+    // face on the focused tile. Every button-like action (folder
     // drill-in, system select, game launch) shares this single cue, so
     // there is no separate launch animation. Default to 0 so hosts that
     // do not wire it are silently no-ops.
     readonly property int delegateActivatePulse: parent.activatePulse ?? 0
-    // Release counter forwarded by TileLoader — increment to settle the
-    // push-in cue back to rest (scale 1.0). Fired only after a launch that
-    // keeps the frontend on the same screen (e.g. an Audio track that does
-    // not take the FPGA); forward navigation never fires it because the
-    // screen transition + `settling` already reset the held scale off-screen.
+    // Release counter forwarded by TileLoader — increment to raise the face
+    // after a launch that keeps the frontend on the same screen (e.g. an Audio
+    // track that does not take the FPGA). Forward navigation never fires it;
+    // the screen transition + `settling` resets the held press off-screen.
     // Defaults to 0 so hosts that do not wire it are silently no-ops.
     readonly property int delegateReleasePulse: parent.releasePulse ?? 0
     // `settling` is set true by the host screen when the screen becomes
-    // inactive (off-screen). Used to reset a held push-in scale so the
-    // tile is back at 1.0 before the screen is shown again.
+    // inactive (off-screen). Used to raise a held face before the screen is
+    // shown again.
     readonly property bool delegateSettling: parent.settling ?? false
     // `focusReady` gates whether this tile renders its focused styling at all
     // (ring + focused cover ramp). The host leaves it false until the screen's
@@ -110,6 +112,11 @@ Item {
     // Defaults true for hosts that do not wire it.
     readonly property bool delegateFocusReady: parent.focusReady ?? true
     readonly property bool delegateLoadFocusedCover: parent.loadFocusedCover ?? true
+    // Opt-in same-frame cover decode, forwarded by TileLoader/PagedGrid. Only
+    // honored for tinted-provider keys, where the request is a sub-millisecond
+    // LUT pass over a mapped mask (see BakedIconAtlas). Defaults true so a host
+    // that does not wire it still gets instant bundled icons.
+    readonly property bool delegateCoverSynchronous: parent.coverSynchronous ?? true
     // qmllint enable missing-property
     property var layoutProfile: null
     readonly property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
@@ -130,16 +137,16 @@ Item {
     // bottom edge, separated from the cover by `_captionGap`.
     readonly property int _padding: Sizing.pctH(2)
     readonly property int _outlineGap: Sizing.pctH(0.4)
-    readonly property int _outlineWidth: Sizing.stroke(Sizing.pctH(0.6))
+    readonly property int _outlineWidth: Sizing.focusRingWidth
     readonly property int _captionHeight: Sizing.pctH(5.5)
     readonly property int _captionGap: Sizing.pctH(0.4)
-    readonly property int _captionTextSize: Sizing.fontSize(2.2)
+    readonly property int _captionTextSize: Sizing.fontSmall
     readonly property int _captionTextWeight: Font.Normal
     readonly property bool _hasTopLabel: root.delegateTopLabel !== ""
     readonly property int _topLabelHeight: Sizing.pctH(4.2)
     readonly property int _topLabelGap: Sizing.pctH(0.4)
     readonly property int _topLabelTextSize: Sizing.fontSize(2)
-    readonly property int _tileCornerRadius: root._surfaceProfile ? root._surfaceProfile.cornerRadius : Sizing.cornerRadius
+    readonly property int _tileCornerRadius: root._surfaceProfile ? root._surfaceProfile.cardRadius : Sizing.radiusMd
     // Width available to the bottom caption. A half-corner-radius inset on each
     // side keeps glyphs clear of the rounded corners while giving the title a
     // bit more room than the old full-radius inset. ScrollingCaption does its
@@ -152,7 +159,7 @@ Item {
     // tile from painting a ring during the window between first paint and the
     // programmatic restore that finalizes the real selection — the source of
     // the load-time "wrong tile flashes focused" bug. The focus ring snaps on
-    // and off with selection; the only per-tile motion is the push-in cue.
+    // and off with selection; the only per-tile motion is the press cue.
     readonly property bool _focusedSelection: root.delegateIsSelected && root.delegateIsFocused && root.delegateFocusReady
     // `coverKey` is the relative path under `resources/images/` without
     // extension — `systems/snes`, `categories/Consoles`, etc. The model
@@ -164,11 +171,20 @@ Item {
     // the sentinel in the cover slot would scale an hourglass across the card.
     readonly property bool _coverPending: root.delegateCoverKey === "icons/Loading"
     readonly property bool _systemCover: root.delegateCoverKey.startsWith("systems/")
-    // True for any built-in icon routed through the tinted-svg provider:
-    // system logos, hub category icons, folder/file/action UI glyphs.
-    // False for real art (media-image/, custom-image/) which is never recolored
-    // — a user override is shown exactly as it is on disk.
-    readonly property bool _isTinted: root.delegateCoverKey.startsWith("systems/") || root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey.startsWith("icons/")
+    // True for any built-in vector asset: system logos, hub category icons,
+    // folder/file/action UI glyphs. False for real art (media-image/,
+    // custom-image/) which is never recolored — a user override is shown
+    // exactly as it is on disk. This is an identity test, so it stays stable
+    // across logo styles; it drives the wordmark treatment, which must read the
+    // same for every system tile in a grid even though the color style routes
+    // some of them around the tint.
+    readonly property bool _isBundledArtwork: root.delegateCoverKey.startsWith("systems/") || root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey.startsWith("icons/")
+    // Narrower: the subset of bundled artwork that routes through the
+    // tinted-svg provider *right now*. Under the color logo style a `systems/`
+    // key short-circuits to a plain qrc PNG, which has no focused ramp and
+    // costs a real 1-3 ms decode on ARM — so it must take neither the
+    // focus-ramp path nor the synchronous path below.
+    readonly property bool _isTinted: Resources.isTintedProviderKey(root.delegateCoverKey)
     // True for real raster cover art (a fetched media/custom image) as opposed
     // to the built-in tinted vector assets (system logos, category/UI glyphs).
     // Drives the cover decode size below; defined on the art's own identity
@@ -190,101 +206,53 @@ Item {
     // for Null/Loading, and never substitute text for failed category, icon, or
     // media artwork.
     readonly property bool _fallbackVisible: root._systemCover && !root.showCaption && !root._coverPending && coverBase.status === Image.Error
-    readonly property int _fallbackTextSize: root._systemCover ? Sizing.fontSize(5.8) : Sizing.fontSize(2.4)
-    readonly property int _fallbackMinimumTextSize: root._systemCover ? Sizing.fontSize(2.8) : Sizing.fontSize(2.4)
-    readonly property bool _startupTraceResource: root.delegateCoverKey.startsWith("categories/") || root.delegateCoverKey === "icons/PlayOutline" || root.delegateCoverKey === "icons/HeartOutline" || root.delegateCoverKey === "icons/History" || root.delegateCoverKey === "icons/Settings"
-    property double _startupTraceLoadStartedAt: 0
+    readonly property int _fallbackTextSize: root._systemCover ? Sizing.fontSize(5.8) : Sizing.fontCaption
+    readonly property int _fallbackMinimumTextSize: root._systemCover ? Sizing.fontSize(2.8) : Sizing.fontCaption
+    // Every key the tinted-svg provider serves, which is exactly the set this
+    // tile can decode in its own first frame. It used to be five hard-coded Hub
+    // keys, which made the instrument blind to the Systems grid and the Settings
+    // tiles -- the two places remaining pop-in would actually hide.
+    readonly property bool _coverTraceResource: root._isTinted
+    property double _coverTraceLoadStartedAt: 0
+    // The pop-in metric itself. A cover that was never observed in
+    // Image.Loading resolved inline during construction, so the tile has
+    // painted artwork in the first frame it appears in -- zero blank frames,
+    // which is the literal definition of no pop-in. Reset per source so a
+    // recycled delegate reports on the cover it is showing now.
+    // See docs/architecture.md -> "Measuring cover pop-in".
+    property bool _coverEverLoading: false
 
     anchors.fill: parent
-    // One-shot push-in scale, shared by every button-like action. The
-    // persistent 1.06 focus scale was removed; this is a bounded transient
-    // on a single tile at activation time. See the comment above for the
-    // cost-profile distinction.
-    property real _activateScale: 1.0
-    // Public read for siblings that must track this scale (e.g.
-    // PagedGrid's placeholderCard, which sits behind TileLoader).
-    readonly property real cardScale: root._activateScale
-    scale: root._activateScale
-    transformOrigin: Item.Center
+    // Grid tiles use the same raised-face vocabulary as modal and settings
+    // controls. Activation lowers the face by the front-edge depth and holds it
+    // there while navigation or launch completes; no cover-art resampling is
+    // involved.
+    property bool _pressed: false
+    // Public read for PagedGrid's placeholder surface, which sits behind the
+    // asynchronously loaded Tile and must leave the same top gap while pressed.
+    readonly property bool cardPressed: root._pressed
 
-    // Fire the push-in cue only for a genuine activation, never as a
-    // side effect of delegate creation. A freshly built delegate sees its
-    // `delegateActivatePulse` resolve from the `?? 0` fallback up to the
-    // current pulse, which fires this handler once during construction. When
-    // such a delegate is momentarily the focused selection (e.g. the Settings
-    // category grid rebuilt with a stale currentIndex on a page switch), that
-    // spurious change would restart the animation and leave the wrong tile
-    // pushed in. `_mounted` flips true one event-loop pass after completion,
-    // after every construction-time transient has settled, so only real pulse
-    // increments (always delivered well after mount) play the cue.
+    // Ignore construction-time pulse resolution. `_mounted` flips one event
+    // loop after completion, once delegate bindings have settled, so only a
+    // genuine user activation can lower the face.
     property bool _mounted: false
     onDelegateActivatePulseChanged: {
         if (root._mounted && root._focusedSelection)
-            activateAnim.restart();
+            root._pressed = true;
     }
 
-    // Settle the held push-in back to rest. Used when the activation kept us
-    // on the same screen (a launcher that did not take the FPGA), so the cue
-    // does not stay stuck pushed in. The `_mounted` guard ignores any
-    // construction-time pulse transient, matching the activate handler above.
+    // A launch that remains on this screen releases the tile. Forward
+    // navigation leaves it lowered until the screen's settling flag resets it.
     onDelegateReleasePulseChanged: {
-        // Only the focused selection can be holding a push-in, so only it needs
-        // to settle back — matches the activate handler's gate and avoids
-        // starting a redundant animation on every tile in the grid.
-        if (root._mounted && root._focusedSelection) {
-            activateAnim.stop();
-            releaseAnim.restart();
-        }
+        if (root._mounted && root._focusedSelection)
+            root._pressed = false;
     }
 
-    // Bleed guard — stop and reset if the delegate is rebound to a
-    // different entry while an animation is in flight (rapid-scroll +
-    // accept on the same frame). delegateName changes only on a genuine
-    // content rebind, not on cover-load completion, so this never cuts
-    // a legitimate same-tile cue short. DeferredAction's lead means the
-    // cue usually completes before teardown anyway; this is belt-and-suspenders.
-    onDelegateNameChanged: {
-        activateAnim.stop();
-        root._activateScale = 1.0;
-    }
-
-    // Reset scale when the host screen goes inactive so the tile is at
-    // 1.0 before it is shown again. The single-leg push-in holds at
-    // pressScale; without this reset, returning to a screen with a
-    // persistent delegate would show a permanently shrunken tile.
+    // Recycled delegates and off-screen pages must always return at rest.
+    onDelegateNameChanged: root._pressed = false
     onDelegateSettlingChanged: {
-        if (root.delegateSettling) {
-            activateAnim.stop();
-            root._activateScale = 1.0;
-        }
-    }
-
-    // Push in and hold — the single cue for every button-like action,
-    // whether the press navigates forward or launches a game. The screen
-    // changes while the tile is held at pressScale; the host screen's
-    // `settling` flag resets scale to 1.0 off-screen so the tile is clean
-    // when the user returns. No return-to-normal leg — the user is
-    // navigating away; a bounce-back was visible and unwanted because the
-    // source screen is held visible for the full 300 ms deferred-flip grace.
-    NumberAnimation {
-        id: activateAnim
-        target: root
-        property: "_activateScale"
-        to: Motion.pressScale
-        duration: Motion.dur(Motion.pressMs)
-        easing.type: Easing.OutQuad
-    }
-
-    // Release leg — settles the held push-in back to rest after a launch that
-    // stays on the page. Stops `activateAnim` first so a release that lands
-    // mid-push does not fight it. See `onDelegateReleasePulseChanged`.
-    NumberAnimation {
-        id: releaseAnim
-        target: root
-        property: "_activateScale"
-        to: 1.0
-        duration: Motion.dur(Motion.settleMs)
-        easing.type: Easing.OutQuad
+        if (root.delegateSettling)
+            root._pressed = false;
     }
 
     Component.onCompleted: {
@@ -302,327 +270,348 @@ Item {
         });
     }
 
-    function _startupTrace(stage: string, details: string): void {
-        if (!root._startupTraceResource)
+    // Cover load events go to the nearest ancestor that offers a `_coverTrace`
+    // sink (MainLayout), which logs them for as long as debug logging is on.
+    // Deliberately not the `_startupTrace` sink: that one goes quiet after the
+    // first Hub paint, and pop-in on Systems and Settings happens later.
+    // Extra arguments past `details` are forwarded; the sink is variadic.
+    function _coverTrace(stage: string, details: string): void {
+        if (!root._coverTraceResource)
             return;
+        const extra = Array.prototype.slice.call(arguments, 1);
         let node = root.parent;
         while (node) {
-            if (typeof node._startupTrace === "function") {
-                node._startupTrace(stage, "coverKey=" + root.delegateCoverKey, details);
+            if (typeof node._coverTrace === "function") {
+                node._coverTrace.apply(node, [stage, "coverKey=" + root.delegateCoverKey].concat(extra));
                 return;
             }
             node = node.parent;
         }
-        console.debug(stage + " coverKey=" + root.delegateCoverKey + " " + details);
+        console.debug([stage, "coverKey=" + root.delegateCoverKey].concat(extra).join(" "));
     }
 
-    // Tile body. Solid card so the white icon has a high-contrast
-    // surface. Always visible — no opacity gating — which is the
-    // unified-Tile contract: every grid renders the same shape.
-    // Static 1px borderMid edge gives every tile a card edge whether
-    // focused or not — same depth cue settings rows carry. The accent
-    // focus ring still paints on top when this tile is the focused
-    // selection.
-    Rectangle {
+    // Raised tile surface. PressableSurface reserves its opaque front edge
+    // inside the existing cell footprint, preserving grid shape and pagination.
+    // All artwork, captions, badges, and the focus ring live on the moving face.
+    PressableSurface {
+        id: tileSurface
+
+        objectName: "tileSurface"
         anchors.fill: parent
         radius: root._tileCornerRadius
-        color: Theme.surfaceCard
-        border.color: Theme.borderMid
-        border.width: Sizing.stroke(1)
-    }
+        edgeColor: Theme.tileEdge
+        pressed: root._pressed
 
-    // Focus outline ring. Drawn *inside* the card edge so the ring
-    // never bleeds past the cell bounds — that's the project standard:
-    // borders/outlines stay within their parent rather than overflowing
-    // it. Keeps the ring out of PagedGrid's clip rect at the row edges
-    // and means callers don't have to reserve bleed room for it. Gated
-    // on `_focusedSelection` so only the focused tile in the focused
-    // section lights up — keeps multiple tile sections on screen from
-    // competing for the eye. Drawn after the card so the border sits on
-    // top; the icon padding (`_padding = pctH(3)`) is far larger than
-    // the inset (`_outlineGap = pctH(0.4)`), so the ring never overlaps
-    // content.
-    // Focus ring drawn as two stacked *filled* rounded rectangles — an
-    // outer accent pill and an inner surfaceCard mask that punches the
-    // centre back, leaving a uniform outline. Equivalent to the older
-    // single-Rectangle `border.color` + `border.width` approach but
-    // significantly smoother on the corners under Qt's software
-    // adaptation: filled rounded rects honour the AA path, while thin
-    // rounded *borders* are tessellated without subpixel coverage and
-    // step visibly at the corners (see QTBUG-123210). Both rectangles
-    // are still inside the card edge by `_outlineGap`, so the ring
-    // never bleeds past the cell bounds. The ring is an accent rect with a
-    // surface-colored inner mask punched out of its center; both snap on and
-    // off with `_focusedSelection` (no fade).
-    Rectangle {
-        id: focusRingOuter
+        // Focus outline ring. Drawn *inside* the card edge so the ring
+        // never bleeds past the cell bounds — that's the project standard:
+        // borders/outlines stay within their parent rather than overflowing
+        // it. Keeps the ring out of PagedGrid's clip rect at the row edges
+        // and means callers don't have to reserve bleed room for it. Gated
+        // on `_focusedSelection` so only the focused tile in the focused
+        // section lights up — keeps multiple tile sections on screen from
+        // competing for the eye. Drawn after the card so the border sits on
+        // top; the icon padding (`_padding = pctH(3)`) is far larger than
+        // the inset (`_outlineGap = pctH(0.4)`), so the ring never overlaps
+        // content.
+        // Focus ring drawn as two stacked *filled* rounded rectangles — an
+        // outer accent pill and an inner surfaceCard mask that punches the
+        // centre back, leaving a uniform outline. Equivalent to the older
+        // single-Rectangle `border.color` + `border.width` approach but
+        // significantly smoother on the corners under Qt's software
+        // adaptation: filled rounded rects honour the AA path, while thin
+        // rounded *borders* are tessellated without subpixel coverage and
+        // step visibly at the corners (see QTBUG-123210). Both rectangles
+        // are still inside the card edge by `_outlineGap`, so the ring
+        // never bleeds past the cell bounds. The ring is an accent rect with a
+        // surface-colored inner mask punched out of its center; both snap on and
+        // off with `_focusedSelection` (no fade).
+        Rectangle {
+            id: focusRingOuter
 
-        anchors.fill: parent
-        anchors.margins: root._outlineGap
-        color: Theme.accent
-        radius: Math.max(0, root._tileCornerRadius - root._outlineGap)
-        antialiasing: true
-        visible: root._focusedSelection
-    }
-
-    Rectangle {
-        anchors.fill: focusRingOuter
-        anchors.margins: root._outlineWidth
-        color: Theme.surfaceCard
-        // Inner radius shrinks to keep the visible ring's outer edge
-        // and inner edge concentric with the card corners. Floor at 0
-        // so very small tiles (where _outlineWidth approaches the
-        // outer radius) collapse to a sharp inner mask rather than
-        // negative-radius garbage.
-        radius: Math.max(0, focusRingOuter.radius - root._outlineWidth)
-        antialiasing: true
-        visible: root._focusedSelection
-    }
-
-    // Icon area — two stacked Images for the unfocused and focused tint ramps.
-    // Both share identical geometry; `coverFocus` sits above `coverBase` (z: 1)
-    // and is only loaded for tinted keys (system logos, category icons, UI
-    // glyphs). Real art (media-image/, custom-image/) uses only `coverBase`.
-    //
-    // Focus transitions are an instant visibility swap with zero async work:
-    // both ramps are decoded while the tile is idle (coverBase during the
-    // prefetch gate; coverFocus as soon as it enters the visible delegate pool),
-    // so moving the cursor never re-requests the SVG render or drops to the
-    // procedural Text fallback.
-    //
-    // `_focusCoverActive` suppresses coverBase when the focused ramp is on top,
-    // preventing the two opaque layers from stacking their alpha on hidden tiles.
-    TextMetrics {
-        id: topLabelMetrics
-
-        font.family: Theme.fontUi
-        font.pixelSize: root._topLabelTextSize
-        font.weight: Font.Medium
-        text: root.delegateTopLabel
-    }
-
-    Text {
-        objectName: "tileTopLabel"
-        x: Sizing.center(parent.width, width)
-        y: root._padding + Sizing.center(root._topLabelHeight, height)
-        width: Math.min(root._captionTextMaxWidth, Sizing.px(topLabelMetrics.advanceWidth))
-        height: Sizing.px(implicitHeight)
-        visible: root._hasTopLabel
-        text: root.delegateTopLabel
-        elide: Text.ElideRight
-        horizontalAlignment: Text.AlignLeft
-        font.family: Theme.fontUi
-        font.pixelSize: root._topLabelTextSize
-        font.weight: Font.Medium
-        color: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
-        renderType: Text.NativeRendering
-    }
-
-    Image {
-        id: coverBase
-        objectName: "tileCoverBase"
-
-        width: parent.width - 2 * root._padding
-        source: root._coverBaseSrc
-        // Cover decode size, split by what the image IS (not whether it is
-        // tinted). Real raster art decodes at the per-view `coverSourceSize` the
-        // owning screen supplies — box art is portrait, so height is the bounding
-        // side. That value is a stable, resolution-derived tier, NOT the live
-        // painted height: Qt reloads an Image whenever sourceSize changes ("Avoid
-        // changing this property dynamically"), so binding it to the fluctuating
-        // box height (per layout pass, recycle, and grid retention revisit) would
-        // re-decode the same cover many times over. A constant requestedSize lets
-        // every reload short-circuit to the pixmap cache. Built-in tinted vector
-        // assets (system logos, category/UI glyphs) instead pin a fixed 256 px
-        // raster: the same logo appears at different sizes across screens, and
-        // the tinted-svg image provider's cache (16 MB cap, keyed id+size) would
-        // churn if each screen requested its own size — the fixed raster
-        // consolidates every tile to one cache entry per logo.
-        sourceSize.width: root._coverIsRealArt ? 0 : 256
-        sourceSize.height: root._coverIsRealArt ? root.coverSourceSize : 0
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        asynchronous: true
-        // Real media covers get one brief reveal after decode. Tinted system,
-        // category, and action artwork remains instant. Keeping this multiplier
-        // separate prevents focus-ramp swaps and hidden-state dimming from
-        // accidentally becoming opacity animations.
-        property real revealOpacity: root._coverIsRealArt ? 0 : 1
-        opacity: (coverBase.status === Image.Ready && !root._focusCoverActive) ? coverBase.revealOpacity * (root.delegateHidden ? 0.4 : 1.0) : 0
-
-        NumberAnimation {
-            id: coverRevealAnimation
-            objectName: "tileCoverRevealAnimation"
-
-            target: coverBase
-            property: "revealOpacity"
-            from: 0
-            to: 1
-            duration: Motion.dur(Motion.pressMs)
-            easing.type: Easing.OutQuad
+            anchors.fill: parent
+            anchors.margins: root._outlineGap
+            color: Theme.accent
+            radius: Math.max(0, root._tileCornerRadius - root._outlineGap)
+            antialiasing: true
+            visible: root._focusedSelection
         }
 
-        function updateReveal(): void {
-            coverRevealAnimation.stop();
-            if (coverBase.status === Image.Ready && root._coverIsRealArt) {
-                coverBase.revealOpacity = 0;
-                coverRevealAnimation.restart();
-            } else {
-                coverBase.revealOpacity = coverBase.status === Image.Ready ? 1 : 0;
+        Rectangle {
+            anchors.fill: focusRingOuter
+            anchors.margins: root._outlineWidth
+            color: Theme.surfaceCard
+            // Inner radius shrinks to keep the visible ring's outer edge
+            // and inner edge concentric with the card corners. Floor at 0
+            // so very small tiles (where _outlineWidth approaches the
+            // outer radius) collapse to a sharp inner mask rather than
+            // negative-radius garbage.
+            radius: Math.max(0, focusRingOuter.radius - root._outlineWidth)
+            antialiasing: true
+            visible: root._focusedSelection
+        }
+
+        // Icon area — two stacked Images for the unfocused and focused tint ramps.
+        // Both share identical geometry; `coverFocus` sits above `coverBase` (z: 1)
+        // and is only loaded for tinted keys (system logos, category icons, UI
+        // glyphs). Real art (media-image/, custom-image/) uses only `coverBase`.
+        //
+        // Focus transitions are an instant visibility swap with zero async work:
+        // both ramps are decoded while the tile is idle (coverBase during the
+        // prefetch gate; coverFocus as soon as it enters the visible delegate pool),
+        // so moving the cursor never re-requests the SVG render or drops to the
+        // procedural Text fallback.
+        //
+        // `_focusCoverActive` suppresses coverBase when the focused ramp is on top,
+        // preventing the two opaque layers from stacking their alpha on hidden tiles.
+        TextMetrics {
+            id: topLabelMetrics
+
+            font.family: Theme.fontUi
+            font.pixelSize: root._topLabelTextSize
+            font.weight: Font.Medium
+            text: root.delegateTopLabel
+        }
+
+        Text {
+            objectName: "tileTopLabel"
+            x: Sizing.center(parent.width, width)
+            y: root._padding + Sizing.center(root._topLabelHeight, height)
+            width: Math.min(root._captionTextMaxWidth, Sizing.px(topLabelMetrics.advanceWidth))
+            height: Sizing.px(implicitHeight)
+            visible: root._hasTopLabel
+            text: root.delegateTopLabel
+            elide: Text.ElideRight
+            horizontalAlignment: Text.AlignLeft
+            font.family: Theme.fontUi
+            font.pixelSize: root._topLabelTextSize
+            font.weight: Font.Medium
+            color: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
+            renderType: Text.NativeRendering
+        }
+
+        Image {
+            id: coverBase
+            objectName: "tileCoverBase"
+
+            width: parent.width - 2 * root._padding
+            source: root._coverBaseSrc
+            // Cover decode size, split by what the image IS (not whether it is
+            // tinted). Real raster art decodes at the per-view `coverSourceSize` the
+            // owning screen supplies — box art is portrait, so height is the bounding
+            // side. That value is a stable, resolution-derived tier, NOT the live
+            // painted height: Qt reloads an Image whenever sourceSize changes ("Avoid
+            // changing this property dynamically"), so binding it to the fluctuating
+            // box height (per layout pass, recycle, and grid retention revisit) would
+            // re-decode the same cover many times over. A constant requestedSize lets
+            // every reload short-circuit to the pixmap cache. Built-in tinted vector
+            // assets (system logos, category/UI glyphs) instead pin a fixed 256 px
+            // raster: the same logo appears at different sizes across screens, and
+            // the tinted-svg image provider's cache (4 MiB cap, keyed on the
+            // colors plus the resolved output size) would churn if each screen
+            // requested its own size — the fixed raster consolidates every tile
+            // to one cache entry per logo, and 256 is the baked size, so it is
+            // also the only size that tints straight out of mapped memory with
+            // no rescale.
+            sourceSize.width: root._coverIsRealArt ? 0 : 256
+            sourceSize.height: root._coverIsRealArt ? root.coverSourceSize : 0
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            // Bundled artwork decodes inline on the GUI thread when the host
+            // asks for it, so the tile paints its icon in the frame it appears
+            // in. Everything else — real cover art and color-style system PNGs
+            // — stays on the reader thread.
+            asynchronous: !root._isTinted || !root.delegateCoverSynchronous
+            // Real media covers get one brief reveal after decode. Tinted system,
+            // category, and action artwork remains instant. Keeping this multiplier
+            // separate prevents focus-ramp swaps and hidden-state dimming from
+            // accidentally becoming opacity animations.
+            property real revealOpacity: root._coverIsRealArt ? 0 : 1
+            opacity: (coverBase.status === Image.Ready && !root._focusCoverActive) ? coverBase.revealOpacity * (root.delegateHidden ? 0.4 : 1.0) : 0
+
+            NumberAnimation {
+                id: coverRevealAnimation
+                objectName: "tileCoverRevealAnimation"
+
+                target: coverBase
+                property: "revealOpacity"
+                from: 0
+                to: 1
+                duration: Motion.dur(Motion.pressMs)
+                easing.type: Easing.OutQuad
+            }
+
+            function updateReveal(): void {
+                coverRevealAnimation.stop();
+                if (coverBase.status === Image.Ready && root._coverIsRealArt) {
+                    coverBase.revealOpacity = 0;
+                    coverRevealAnimation.restart();
+                } else {
+                    coverBase.revealOpacity = coverBase.status === Image.Ready ? 1 : 0;
+                }
+            }
+
+            Component.onCompleted: coverBase.updateReveal()
+
+            anchors {
+                top: parent.top
+                topMargin: root._padding + (root._hasTopLabel ? root._topLabelHeight + root._topLabelGap : 0)
+                bottom: parent.bottom
+                // In caption mode the cover sits above the bottom caption strip with
+                // only `_captionGap` of breathing room. The caption is flush against
+                // the card's bottom edge, so the cover's lower bound is just
+                // (caption height + gap) — no second layer of card padding below.
+                bottomMargin: root.showCaption ? root._captionHeight + root._captionGap : root._padding
+                horizontalCenter: parent.horizontalCenter
+            }
+
+            // A new source restarts the measurement. Qt emits sourceChanged
+            // before it kicks off the load, so this always lands ahead of the
+            // status edges below.
+            onSourceChanged: {
+                root._coverEverLoading = false;
+                root._coverTraceLoadStartedAt = 0;
+            }
+
+            onStatusChanged: {
+                coverBase.updateReveal();
+                if (status === Image.Loading)
+                    root._coverEverLoading = true;
+                if (!root._coverTraceResource)
+                    return;
+                if (status === Image.Loading) {
+                    root._coverTraceLoadStartedAt = Date.now();
+                    root._coverTrace("startup/qml resource load start", "source=" + source);
+                } else if (status === Image.Ready) {
+                    const durMs = root._coverTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - root._coverTraceLoadStartedAt) : 0;
+                    root._coverTrace("startup/qml resource load ready", "source=" + source, "dur_ms=" + durMs, "everLoading=" + root._coverEverLoading, "paintedWidth=" + width, "paintedHeight=" + height);
+                    root._coverTraceLoadStartedAt = 0;
+                } else if (status === Image.Error) {
+                    const durMs = root._coverTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - root._coverTraceLoadStartedAt) : 0;
+                    root._coverTrace("startup/qml resource load error", "source=" + source, "dur_ms=" + durMs);
+                    root._coverTraceLoadStartedAt = 0;
+                }
             }
         }
 
-        Component.onCompleted: coverBase.updateReveal()
+        // Focused-ramp variant. Only loaded for tinted keys (_isTinted); source is
+        // "" for real art so this Image never initiates a fetch for boxart tiles.
+        // Painted on top of coverBase (z: 1); visible only on the focused+selected
+        // tile. When not yet decoded (status != Ready) opacity is 0, so coverBase
+        // shows through as a fallback unfocused-ramp — no flash to text.
+        Image {
+            id: coverFocus
 
-        anchors {
-            top: parent.top
-            topMargin: root._padding + (root._hasTopLabel ? root._topLabelHeight + root._topLabelGap : 0)
-            bottom: parent.bottom
-            // In caption mode the cover sits above the bottom caption strip with
-            // only `_captionGap` of breathing room. The caption is flush against
-            // the card's bottom edge, so the cover's lower bound is just
-            // (caption height + gap) — no second layer of card padding below.
-            bottomMargin: root.showCaption ? root._captionHeight + root._captionGap : root._padding
-            horizontalCenter: parent.horizontalCenter
-        }
+            z: 1
+            width: coverBase.width
+            source: root._coverFocusSrc
+            sourceSize.width: 256
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            asynchronous: !root._isTinted || !root.delegateCoverSynchronous
+            visible: root._focusedSelection && root._isTinted
+            opacity: coverFocus.status === Image.Ready ? (root.delegateHidden ? 0.4 : 1.0) : 0
 
-        onStatusChanged: {
-            coverBase.updateReveal();
-            if (!root._startupTraceResource)
-                return;
-            if (status === Image.Loading) {
-                root._startupTraceLoadStartedAt = Date.now();
-                root._startupTrace("startup/qml resource load start", "source=" + source);
-            } else if (status === Image.Ready) {
-                const durMs = root._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - root._startupTraceLoadStartedAt) : 0;
-                root._startupTrace("startup/qml resource load ready", "source=" + source, "dur_ms=" + durMs, "paintedWidth=" + width, "paintedHeight=" + height);
-                root._startupTraceLoadStartedAt = 0;
-            } else if (status === Image.Error) {
-                const durMs = root._startupTraceLoadStartedAt > 0 ? Math.max(0, Date.now() - root._startupTraceLoadStartedAt) : 0;
-                root._startupTrace("startup/qml resource load error", "source=" + source, "dur_ms=" + durMs);
-                root._startupTraceLoadStartedAt = 0;
+            anchors {
+                top: parent.top
+                topMargin: root._padding + (root._hasTopLabel ? root._topLabelHeight + root._topLabelGap : 0)
+                bottom: parent.bottom
+                bottomMargin: root.showCaption ? root._captionHeight + root._captionGap : root._padding
+                horizontalCenter: parent.horizontalCenter
             }
         }
-    }
 
-    // Focused-ramp variant. Only loaded for tinted keys (_isTinted); source is
-    // "" for real art so this Image never initiates a fetch for boxart tiles.
-    // Painted on top of coverBase (z: 1); visible only on the focused+selected
-    // tile. When not yet decoded (status != Ready) opacity is 0, so coverBase
-    // shows through as a fallback unfocused-ramp — no flash to text.
-    Image {
-        id: coverFocus
+        Image {
+            id: favoriteGlyph
 
-        z: 1
-        width: coverBase.width
-        source: root._coverFocusSrc
-        sourceSize.width: 256
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        asynchronous: true
-        visible: root._focusedSelection && root._isTinted
-        opacity: coverFocus.status === Image.Ready ? (root.delegateHidden ? 0.4 : 1.0) : 0
-
-        anchors {
-            top: parent.top
-            topMargin: root._padding + (root._hasTopLabel ? root._topLabelHeight + root._topLabelGap : 0)
-            bottom: parent.bottom
-            bottomMargin: root.showCaption ? root._captionHeight + root._captionGap : root._padding
-            horizontalCenter: parent.horizontalCenter
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.leftMargin: Sizing.px(parent.width / 12)
+            anchors.topMargin: Sizing.px(parent.width / 12)
+            width: Sizing.px(parent.width / 6)
+            height: width
+            // Tinted on the fly from theme tokens (fill -> accent, keyline ->
+            // bgBar dark outline) via the tinted-svg provider, like every other
+            // icon. The source SVG is neutral grayscale; colors live in Theme.
+            source: Resources.coverUrl("icons/Heart", Theme.accent, Theme.accent, Theme.bgBar)
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            asynchronous: false
+            visible: root.delegateFavorite
         }
-    }
 
-    Image {
-        id: favoriteGlyph
+        // User-hidden state badge. It stays fully opaque over dimmed art
+        // so hidden tiles remain visually distinct when Show hidden items
+        // is enabled.
+        TileBadge {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.rightMargin: Sizing.px(parent.width / 12)
+            anchors.topMargin: Sizing.px(parent.width / 12)
+            label: qsTr("Hidden")
+            visible: root.delegateHidden
+        }
 
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.leftMargin: Sizing.px(parent.width / 12)
-        anchors.topMargin: Sizing.px(parent.width / 12)
-        width: Sizing.px(parent.width / 6)
-        height: width
-        // Tinted on the fly from theme tokens (fill -> stateMarker lavender,
-        // keyline -> bgBar dark outline) via the tinted-svg provider, like every
-        // other icon. The source SVG is neutral grayscale; colors live in Theme.
-        source: Resources.coverUrl("icons/Heart", Theme.stateMarker, Theme.stateMarker, Theme.bgBar)
-        sourceSize.width: Sizing.px(width)
-        sourceSize.height: Sizing.px(height)
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        asynchronous: false
-        visible: root.delegateFavorite
-    }
+        // Non-caption procedural fallback. Sits at the same geometry as the
+        // cover and appears only when the icon fails to load (Image.Error), not
+        // while it is decoding — the slot stays blank until the icon pops in so
+        // the name never flashes in first. Missing system logos use a larger
+        // fitted wordmark-style treatment so the tile reads as intentional text
+        // artwork, not a broken-image placeholder. In caption mode this is
+        // suppressed — the bottom caption already shows the name and the
+        // hourglass above signals load progress, so a wrapping copy of the name
+        // in this slot is redundant.
+        Text {
+            objectName: "tileFallbackText"
+            anchors.fill: coverBase
+            anchors.margins: root._systemCover ? Sizing.pctH(1) : 0
+            text: root.delegateName
+            font.family: Theme.fontUi
+            font.pixelSize: root._fallbackTextSize
+            fontSizeMode: root._systemCover ? Text.Fit : Text.FixedSize
+            minimumPixelSize: root._fallbackMinimumTextSize
+            font.weight: root._systemCover ? Font.DemiBold : Font.Normal
+            color: root._isBundledArtwork ? (root._focusedSelection ? Theme.logoFocusPrimary : Theme.logoPrimary) : (root._focusedSelection ? Theme.textPrimary : Theme.textLabel)
+            // Wrap (not WordWrap): an unbreakable identifier like
+            // `_LongCollectionName_Definitive_Cut.smc` would otherwise
+            // render past `width` and bleed out of the tile.
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            renderType: Text.NativeRendering
+            opacity: root._fallbackVisible ? (root.delegateHidden ? 0.4 : 1.0) : 0
+            clip: true
+        }
 
-    // User-hidden state badge. It stays fully opaque over dimmed art
-    // so hidden tiles remain visually distinct when Show hidden items
-    // is enabled.
-    TileBadge {
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.rightMargin: Sizing.px(parent.width / 12)
-        anchors.topMargin: Sizing.px(parent.width / 12)
-        label: qsTr("Hidden")
-        visible: root.delegateHidden
-    }
+        // Bottom caption (caption mode only). Single line carrying the name plus an
+        // inline dim suffix of disambiguating tokens; ScrollingCaption centers and
+        // elides it, pins the top token after the name elides, and marquees the
+        // full string while this tile is the focused selection (reduce-motion falls
+        // back to a static elide).
+        //
+        // The strip sits flush at the card's bottom edge so the title visually owns
+        // the bottom of the tile. The width clears `cornerRadius` on both sides so
+        // glyphs never enter the rounded-corner region. The text lands well inside
+        // the focus ring's inner mask zone, so its background stays surfaceCard even
+        // on a focused tile. Tints to `textPrimary` on the focused tile so the
+        // selection reads at a glance.
+        ScrollingCaption {
+            id: caption
 
-    // Non-caption procedural fallback. Sits at the same geometry as the
-    // cover and appears only when the icon fails to load (Image.Error), not
-    // while it is decoding — the slot stays blank until the icon pops in so
-    // the name never flashes in first. Missing system logos use a larger
-    // fitted wordmark-style treatment so the tile reads as intentional text
-    // artwork, not a broken-image placeholder. In caption mode this is
-    // suppressed — the bottom caption already shows the name and the
-    // hourglass above signals load progress, so a wrapping copy of the name
-    // in this slot is redundant.
-    Text {
-        objectName: "tileFallbackText"
-        anchors.fill: coverBase
-        anchors.margins: root._systemCover ? Sizing.pctH(1) : 0
-        text: root.delegateName
-        font.family: Theme.fontUi
-        font.pixelSize: root._fallbackTextSize
-        fontSizeMode: root._systemCover ? Text.Fit : Text.FixedSize
-        minimumPixelSize: root._fallbackMinimumTextSize
-        font.weight: root._systemCover ? Font.DemiBold : Font.Normal
-        color: root._isTinted ? (root._focusedSelection ? Theme.logoFocusPrimary : Theme.logoPrimary) : (root._focusedSelection ? Theme.textPrimary : Theme.textLabel)
-        // Wrap (not WordWrap): an unbreakable identifier like
-        // `_LongCollectionName_Definitive_Cut.smc` would otherwise
-        // render past `width` and bleed out of the tile.
-        wrapMode: Text.Wrap
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        renderType: Text.NativeRendering
-        opacity: root._fallbackVisible ? (root.delegateHidden ? 0.4 : 1.0) : 0
-        clip: true
-    }
-
-    // Bottom caption (caption mode only). Single line carrying the name plus an
-    // inline dim suffix of disambiguating tokens; ScrollingCaption centers and
-    // elides it, pins the top token after the name elides, and marquees the
-    // full string while this tile is the focused selection (reduce-motion falls
-    // back to a static elide).
-    //
-    // The strip sits flush at the card's bottom edge so the title visually owns
-    // the bottom of the tile. The width clears `cornerRadius` on both sides so
-    // glyphs never enter the rounded-corner region. The text lands well inside
-    // the focus ring's inner mask zone, so its background stays surfaceCard even
-    // on a focused tile. Tints to `textPrimary` on the focused tile so the
-    // selection reads at a glance.
-    ScrollingCaption {
-        id: caption
-
-        objectName: "tileCaption"
-        x: root._captionSideInset
-        y: parent.height - root._captionHeight
-        width: root._captionTextMaxWidth
-        height: root._captionHeight
-        visible: root.showCaption
-        centerContent: true
-        focused: root._focusedSelection
-        name: root.delegateName
-        tags: root.delegateDisambiguatingTags
-        fontPixelSize: root._captionTextSize
-        fontWeight: root._captionTextWeight
-        nameColor: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
+            objectName: "tileCaption"
+            x: root._captionSideInset
+            y: parent.height - root._captionHeight
+            width: root._captionTextMaxWidth
+            height: root._captionHeight
+            visible: root.showCaption
+            centerContent: true
+            focused: root._focusedSelection
+            name: root.delegateName
+            tags: root.delegateDisambiguatingTags
+            fontPixelSize: root._captionTextSize
+            fontWeight: root._captionTextWeight
+            nameColor: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
+        }
     }
 }

@@ -61,12 +61,17 @@ Item {
     }
 
     // Resolve the cover key for a Hub item: a user override from the `hub/`
-    // namespace if present, else the bundled key. Before the deferred scan
-    // completes, return empty so first paint does no icon image work and avoids
-    // a bundled-to-custom flash.
+    // namespace if present, else the bundled key.
+    //
+    // Never returns empty. Withholding the bundled key until the override scan
+    // lands used to guarantee at least one blank frame on every Hub tile —
+    // a filesystem round-trip's worth of pop-in charged to every user, to spare
+    // the few with a `custom/hub/` folder a one-frame swap. Main.qml now starts
+    // the scan at construction rather than after the first frame, so it usually
+    // completes before first paint and the swap is invisible anyway.
     function _hubCoverKey(id: string, fallbackKey: string): string {
         if (!Browse.ImageOverrides.hub_loaded)
-            return "";
+            return fallbackKey;
         return hub._preferOverride(Browse.ImageOverrides.override_cover_key("hub", id), fallbackKey);
     }
 
@@ -169,8 +174,10 @@ Item {
     signal requestSettingsScreen
     // Emitted when the user opens the options menu on a category tile.
     // `anchorRect` is the tile's bounding rect mapped to hub coordinates,
-    // used by the context menu to position itself.
-    signal requestContextMenu(index: int, anchorRect: rect)
+    // used by the context menu to position itself. `anchorRadius` is the
+    // tile's corner radius so the menu's scrim can cut a rounded hole
+    // around it instead of a square one.
+    signal requestContextMenu(index: int, anchorRect: rect, anchorRadius: int)
     signal requestActionContextMenu(actionId: string, anchorRect: rect)
 
     // Vertically center the (categories row + actions row + activeLabel)
@@ -571,7 +578,7 @@ Item {
             // Only real categories have category actions. Favorites is the
             // only Hub action tile with a collection-scoped Options menu.
             if (hub.currentRow === 0 && hub.currentIndex < Browse.CategoriesModel.count) {
-                hub.requestContextMenu(hub.currentIndex, hub._currentCategoryCellRect());
+                hub.requestContextMenu(hub.currentIndex, hub._currentCategoryCellRect(), Sizing.radiusMd);
             } else if (hub.currentRow === 1) {
                 const entry = hub.actionEntries[hub.currentIndex];
                 if (entry && entry.id === "favorites")
@@ -605,15 +612,13 @@ Item {
         // user has nothing to navigate to.
         readonly property int rawCellWidth: n > 0 ? Math.floor((width - 2 * sideInset - (n - 1) * spacing) / n) : maxCellWidth
         readonly property int cellWidth: Math.min(maxCellWidth, rawCellWidth)
-        // Square cells (1:1) for the main menu. The focused tile's
-        // 1.06× scale bleed is absorbed by `verticalPadding` on the
-        // row Item, not by inflating the cell.
+        // Square cells (1:1) for the main menu. `verticalPadding` supplies
+        // balanced breathing room without inflating the cell.
         readonly property int cellHeight: cellWidth
         readonly property int totalRowWidth: n > 0 ? n * cellWidth + (n - 1) * spacing : 0
         readonly property int rowOriginX: Sizing.center(width, totalRowWidth)
 
-        // Symmetric padding contains the focused tile's 1.06× scale
-        // bleed inside the row's own bounds.
+        // Symmetric padding keeps both tile rows clear of surrounding chrome.
         readonly property int verticalPadding: Sizing.pctH(2)
 
         anchors.horizontalCenter: parent.horizontalCenter
@@ -651,8 +656,8 @@ Item {
                 height: categoriesRow.cellHeight
 
                 readonly property bool isSelected: hub.currentRow === 0 && index === hub.currentIndex
-                // Focused tile draws on top so its 1.06× scale-up isn't
-                // clipped by neighbours to the right.
+                // Focused tile draws on top so its ring remains authoritative
+                // at cell boundaries.
                 z: isSelected ? 1 : 0
 
                 TileLoader {
@@ -679,7 +684,7 @@ Item {
                         hub._focusCategory(cellItem.index);
                         if (mouse.button === Qt.RightButton) {
                             if (cellItem.index < Browse.CategoriesModel.count)
-                                hub.requestContextMenu(cellItem.index, cellItem.mapToItem(hub, 0, 0, cellItem.width, cellItem.height));
+                                hub.requestContextMenu(cellItem.index, cellItem.mapToItem(hub, 0, 0, cellItem.width, cellItem.height), Sizing.radiusMd);
                         } else {
                             hub._activateCurrent();
                         }
@@ -713,8 +718,7 @@ Item {
         // Visual gap between the bottom edge of a category cell and the
         // top edge of an action cell must equal the horizontal `spacing`
         // between tiles within a row. Both rows reserve `verticalPadding`
-        // above and below their cells (to contain the focused tile's
-        // 1.06× scale bleed); without compensating here the visible gap
+        // above and below their cells; without compensating here the visible gap
         // would be `spacing + 2 × verticalPadding`.
         anchors.topMargin: categoriesRow.spacing - categoriesRow.verticalPadding - actionsRow.verticalPadding
         width: parent.width

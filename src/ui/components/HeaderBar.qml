@@ -64,7 +64,7 @@ Item {
         verticalAlignment: Text.AlignVCenter
         text: header.browseProgressText
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
+        font.pixelSize: Sizing.fontSection
         color: Theme.textPrimary
         renderType: Text.NativeRendering
     }

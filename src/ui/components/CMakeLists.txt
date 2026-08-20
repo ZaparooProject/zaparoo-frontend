@@ -30,6 +30,7 @@ qt_add_qml_module(
         LogUploadModal.qml
         Modal.qml
         PagedGrid.qml
+        PressableSurface.qml
         QrCodeModal.qml
         RapidScrollIndicator.qml
         ScreensaverOverlay.qml

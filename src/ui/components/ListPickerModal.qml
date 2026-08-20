@@ -38,8 +38,7 @@ Item {
     property string initialId: ""
     property int currentIndex: 0
 
-    // Push-in scale for the activated row, mirroring the tile push-in.
-    property real _pressScale: 1.0
+    property bool _pressed: false
     property string _pendingId: ""
 
     signal accepted(string id)
@@ -76,8 +75,7 @@ Item {
             return;
         }
         modal._applyInitialIndex();
-        modal._pressScale = 1.0;
-        pressAnim.stop();
+        modal._pressed = false;
         modal._pendingId = "";
     }
 
@@ -138,17 +136,8 @@ Item {
 
     function _commitAccept(id: string): void {
         modal._pendingId = id;
-        pressAnim.restart();
+        modal._pressed = true;
         acceptCommit.arm();
-    }
-
-    NumberAnimation {
-        id: pressAnim
-        target: modal
-        property: "_pressScale"
-        to: Motion.rowPressScale
-        duration: Motion.dur(Motion.pressMs)
-        easing.type: Easing.OutQuad
     }
 
     DeferredAction {
@@ -156,6 +145,7 @@ Item {
         onDeferred: {
             const id = modal._pendingId;
             modal._pendingId = "";
+            modal._pressed = false;
             modal.accepted(id);
         }
     }
@@ -196,7 +186,7 @@ Item {
                     Repeater {
                         model: modal.entries
 
-                        Rectangle {
+                        PressableSurface {
                             id: row
 
                             required property int index
@@ -204,12 +194,12 @@ Item {
 
                             width: rowColumn.width
                             height: modal._rowHeight
-                            color: Theme.surfaceCard
-                            border.width: row.index === modal.currentIndex ? Sizing.stroke(2) : Sizing.stroke(1)
-                            border.color: row.index === modal.currentIndex ? Theme.accent : Theme.borderMid
-                            radius: Sizing.cornerRadius
-                            transformOrigin: Item.Center
-                            scale: row.index === modal.currentIndex ? modal._pressScale : 1.0
+                            focused: row.index === modal.currentIndex
+                            pressed: modal._pressed && row.modelData.id === modal._pendingId
+                            pointerAcceptedButtons: Qt.LeftButton
+                            pointerHoverEnabled: true
+                            onPointerEntered: modal.currentIndex = row.index
+                            onPointerClicked: modal._commitAccept(row.modelData.id)
 
                             Text {
                                 anchors.left: parent.left
@@ -220,19 +210,10 @@ Item {
                                 text: row.modelData.label
                                 color: Theme.textPrimary
                                 font.family: Theme.fontUi
-                                font.pixelSize: Sizing.fontSize(2.6)
+                                font.pixelSize: Sizing.fontBody
                                 horizontalAlignment: Text.AlignHCenter
                                 elide: Text.ElideRight
                                 renderType: Text.NativeRendering
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                acceptedButtons: Qt.LeftButton
-                                cursorShape: Qt.PointingHandCursor
-                                onEntered: modal.currentIndex = row.index
-                                onClicked: modal._commitAccept(row.modelData.id)
                             }
                         }
                     }

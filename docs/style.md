@@ -1,317 +1,330 @@
 # UI Style
 
-Zaparoo Frontend's design language. `Theme.qml` owns the colour and
-font tokens; `Sizing.qml` owns the percentage helpers and the corner
-radius. Anything not covered here defers to those two singletons.
+Zaparoo Frontend's design language. `Theme.qml` owns color and font tokens;
+`Sizing.qml` owns integer geometry, resolution tiers, radii, type roles, and
+stroke weights. Anything not covered here defers to those singletons.
 
-The whole app runs on Qt Quick's software adaptation — no shaders, no
-shadows, no gradients, no `Shape`. Every surface in this guide is built
-from `Rectangle` + `Text` + `Image`.
+UI runs on Qt Quick's software adaptation: no shaders, shadows, gradients, or
+`Shape`. Build surfaces from `Rectangle`, `Item`, `Text`, and `Image`.
 
-## Cards: the focusable surface recipe
+## Color schemes
 
-A *card* is any selectable, pressable surface in the app. Cards are
-the design's keystone — once a reader has the card recipe, every
-focusable surface in the frontend reads the same way:
+A preset authors exactly **three** colors and `ColorSchemes.qml` derives every
+other semantic role from them:
+
+| Authored | Role |
+|---|---|
+| `primary` | Page background, and the base every surface mixes from |
+| `accent` | Focus, and every highlight in the UI |
+| `text` | Primary content color |
+
+There is no fourth color. State markers — the favorite heart, the Hidden badge —
+use `accent` rather than a marker color of their own, so adding a preset never
+means picking a coordinating fifth hue.
+
+Two roles do not derive. `scrim` is always a dark veil, because its job is to
+separate a panel from what sits behind it whichever direction the preset runs.
+`errorHex` is a semantic constant: deriving it from the accent would make an
+amber preset signal danger in amber.
+
+Derivation direction follows `up = luma(text) > luma(primary)`, so light presets
+work without a separate ladder. `Qt.lighter()`/`Qt.darker()` are HSV value
+multiplies and are no-ops on pure black — the catalog mixes channels explicitly
+instead, and components must too.
+
+`Theme.qml` exposes the derived roles to components. Never branch on scheme ID in
+a component or hardcode a preset color outside the catalog. `zaparoo-black` is
+fallback for missing, unknown, or removed IDs.
+
+Selection applies live and persists as `[settings] color_scheme` in
+`frontend.toml` plus `state.toml`. Tinted image URLs naturally change with
+palette roles; custom and full-color artwork remains unchanged.
+
+## Cards: focusable surface recipe
+
+Card means selectable surface that guarantees content contrast regardless of
+page background. Keep opaque card plates under cover art; future custom
+backgrounds must not weaken art, caption, or focus contrast.
 
 | Property | Value |
 |---|---|
 | Fill | `Theme.surfaceCard` |
-| Static border | `1px`, `Theme.borderMid` |
-| Focused border | `2px`, `Theme.accent` |
-| Corner radius | `Sizing.cornerRadius` |
+| Static border | `Sizing.cardBorderWidth`, `Theme.borderMid` |
+| Focus border | `Sizing.focusBorderWidth`, `Theme.accent` |
+| Outer/card radius | `Sizing.radiusMd` |
+| Nested control radius | `Sizing.radiusSm` |
 
-Surfaces that follow the recipe today: tile bodies (Hub categories,
-Hub action row, Systems / Games / Favorites / Recents grids),
-SettingsField rows, Modal accept/cancel pills, ContextMenu rows,
-ListPickerModal rows, and the About / License body card.
+Tile bodies, browse cards, detail panes, and About body use `radiusMd`.
+Settings rows, modal buttons, menu/picker rows, nested list selection,
+scrollbar thumbs, toggle tracks/handles, and rapid-scroll chrome use `radiusSm`.
+Checked toggles use a `bgDeep` handle against the accent track; unchecked toggles
+use `textPrimary` against `borderMid`. Handle insets preserve integer centering.
 
-The static `borderMid` edge gives every card a subtle depth cue
-whether focused or not. The accent border on the focused card sits
-*on top* of the static edge, so unfocused cards never look like
-"focus minus colour" — they look like cards in a resting state.
+### Tile focus ring
 
-When adding a new surface that responds to a press, use the recipe.
-When adding a surface that doesn't respond to a press, do not put it
-on a card — see "Plain text on background" below.
+`Tile.qml` draws focus as two stacked filled rectangles rather than
+`border.width`. Outer accent and inner `surfaceCard` mask avoid stepped rounded
+borders under Qt software rendering (QTBUG-123210). Ring thickness is
+`Sizing.focusRingWidth`; Tile and PagedGrid placeholder geometry stay
+synchronized during press/rapid-render states.
 
-### Tile focus ring (special case)
+Tiles use a physical front edge inside their existing cell footprint. Activation
+lowers artwork, caption, badges, and ring together without scaling cover art.
 
-Tile.qml's focus ring isn't drawn with `border.width` — it's two
-stacked filled rounded rectangles (an outer accent pill and an inner
-`surfaceCard` mask that punches the centre back). Equivalent shape,
-significantly smoother corners under software rendering. Both
-rectangles sit inside the card edge by `_outlineGap` so the ring
-never bleeds past the cell. See the comment on `focusRingOuter` in
-`Tile.qml` for the QTBUG reference.
+### Browse-list selection latch
+
+Browse lists remain one containing card with flat rows; never turn every row into
+a separate raised button. Selected row uses `selectionSurface`, one opaque
+`selectionShade` keyline along its **bottom** edge, and the accent rail.
+Activation moves only accent rail, title inset, and optional favorite inset
+inward by `Sizing.focusRingWidth`, then holds until release/settling. This reads
+as a cursor engaging a recessed slot.
+
+The keyline is on the bottom because a recess and a raised object shade
+oppositely under the same light. The scene is lit low and from the front, so a
+raised `PressableSurface` catches that light on its near face while the near wall
+of a recess falls into shade. A top keyline inverts the recess and fights the
+tiles beside it.
+
+### Pressable front edge
+
+Grid tiles, buttons, Settings rows, ContextMenu rows, and picker rows use
+`PressableSurface.qml`.
+
+**Front edge is not a shadow.** It is opaque physical material. Grid tiles use
+`Theme.tileEdge` against `bgDeep`; controls use `Theme.controlEdge`, one step
+further along the accent ramp, when embedded in panels. Do not describe either as
+"lighter" — on a light preset both are darker than their ground. The invariant,
+pinned by `tst_pressable_surface.qml`, is that the control edge sits *further
+from the ground* than the tile edge, in whichever direction the preset runs.
+
+Edge top corners are square and extend behind the face by its corner radius,
+while only bottom corners remain rounded. Never use black, transparency,
+gradients, or shader effects. Rest exposes `Sizing.pressEdgeHeight`; press moves
+face/content down and collapses exposed bottom edge. Motion routes through
+`Motion`, so Reduce motion and native 1080p MiSTer snap immediately.
+
+**Why it reads as gloss.** Two properties do the work, and both are easy to lose
+in a refactor that "simplifies" the edge:
+
+1. The edge is *more saturated* than the face and sits well off it on the accent
+   ramp. A cast shadow would be a desaturated darkening; a chromatic strip along
+   the near face reads as reflected light instead.
+2. Because the edge rect is `edgeHeight + radius` tall with square top corners
+   and rounded bottom corners, its color fills the notch left by the face's
+   rounded corner and follows that curvature. A highlight that follows curvature
+   is the canonical gloss cue and is the larger of the two contributions.
+
+The specular read genuinely depends on a dark ground. On a light preset the
+accent-derived edge is darker than the face and reads as a correctly-lit bevel
+rather than a shine. Depth survives; the shine is a dark-preset property. Tests
+therefore assert chromatic separation along the accent ramp, not lightness.
 
 ## Plain text on background
 
-Text that isn't on a card sits straight on `Theme.bgDeep`. This is
-fine — the background is dark enough that white text reads cleanly
-without a chrome panel — but it's reserved for **non-interactive**
-elements:
+Non-interactive text may sit directly on `Theme.bgDeep`:
 
-- Page titles in `TopStatusStrip`
-- Settings section headers (`SettingsSectionHeader.qml`)
-- The global "Loading…" overlay
-- The active-tile name caption under each grid (`ActiveLabel.qml`)
+- TopStatusStrip titles
+- Settings section headers
+- global Loading cue
+- ActiveLabel selected name
 
-Rules:
-
-- Use `Theme.textPrimary` for primary content, `Theme.textLabel` for
-  secondary/metadata.
-- Use a font size of **2.6 or larger** (Body and up — see "Fonts"
-  below). Smaller text on plain background reads as fragile.
-- Never put a pressable element on plain background. If it responds
-  to a press, it goes on a card.
+Use `Theme.textPrimary` for primary content and `Theme.textLabel` for metadata.
+Use Body or larger unless space has an explicitly documented specialist role.
+Pressable content belongs on card/control surface.
 
 ## Focus
 
-Focus is **always `Theme.accent`** across every surface in the app —
-tile rings, card borders, modal buttons, picker rows, context-menu
-rows, settings rows. There is no second focus colour.
-
-Configurable accent (so users can pick their own palette) is a planned
-settings feature, not a per-surface override. If you find yourself
-reaching for a focus colour that isn't `Theme.accent`, stop and ask.
+Focus is always `Theme.accent`. No second focus color. Accent configurability is
+future theme work, not per-surface override.
 
 ## Pills
 
-Toggle controls (`SettingsField.qml` track + thumb) use `height/2`
-and `width/2` for radius. They're pills, not rounded squares — a
-deliberately different shape for binary on/off. Same convention as
-iOS toggles.
-
-The toggle pill is borderless: fill alone carries state.
+Toggle track/thumb use `height / 2` or `width / 2`. Pills are distinct from
+rounded squares and remain borderless; outer Settings row carries focus.
 
 | State | Fill |
 |---|---|
 | On | `Theme.accent` |
 | Off | `Theme.borderMid` |
 
-The row's outer card carries the focus indicator; the pill itself
-doesn't get a focus ring.
-
 ## Colors
 
-Every colour in the UI must come from `Theme.qml`. Never inline a
-hex literal.
+Every UI color comes from `Theme.qml`; never inline hex except diagnostic
+calibration surfaces with documented reason. Roles have no fixed hex — they are
+derived per preset from `primary`, `accent`, and `text`. `mix(a, b, t)` is a
+per-channel lerp; `surface(t, bias)` is `mix(mix(primary, text, t), accent, bias)`,
+the neutral ladder with a slight accent cast; `ink` is the pole away from `text`.
 
-| Token | Hex | Used for |
+| Token | Derivation | Use |
 |---|---|---|
-| `bgDeep` | `#0f0f23` | Page background — every screen body |
-| `bgPanel` | `#1a1a35` | Modal panels, ContextMenu panel |
-| `bgBar` | `#0a0a15` | Help bar at the bottom of the screen |
-| `surfaceCard` | `#2a2a45` | Card fill (see "Cards" above) |
-| `scrim` | `#cc000000` | Modal scrim — translucent black |
-| `borderSubtle` | `#1a1a2e` | Reserved for low-contrast borders |
-| `borderMid` | `#404060` | Static card edge, unfocused row borders |
-| `textPrimary` | `#ffffff` | Primary text, focused captions |
-| `textLabel` | `#888888` | Secondary text, metadata, idle status |
-| `accent` | `#FFB347` | Focus indicator everywhere |
+| `bgDeep` | `primary` | Flat page background |
+| `bgBar` | `mix(primary, ink, 0.35)` | Help bar |
+| `bgPanel` | `surface(0.05, 0.04)` | Modal/ContextMenu panel |
+| `surfaceCard` | `surface(0.08, 0.05)` | Card/control face |
+| `borderSubtle` | `surface(0.14, 0.03)` | Low-contrast edges |
+| `borderMid` | `surface(0.32, 0.05)` | Resting card edge |
+| `selectionSurface` | `mix(edgeBase, accent, 0.22)` | Selected list row |
+| `selectionShade` | `mix(selectionSurface, black, 0.40/0.12)` | Selected-row bottom keyline |
+| `tileEdge` | `mix(edgeBase, accent, 0.44)` | Grid tile front edge |
+| `controlEdge` | `mix(edgeBase, accent, 0.54)` | Control front edge in panels |
+| `scrim` | `#cc000000` | Modal scrim, always dark |
+| `textPrimary` | `text` | Primary text |
+| `textLabel` | `mix(primary, text, 0.62)` | Secondary text |
+| `textVariant` | `surface(0.58, 0.14)` | Tinted secondary text |
+| `accent` | `accent` | Focus, and every state marker |
+| `logoShadow` / `logoSecondary` / `logoPrimary` | `surface(0.16, 0.22)` / `surface(0.45, 0.10)` / `surface(0.72, 0.04)` | Resting tinted-artwork ramp |
+| `logoFocusShadow` / `logoFocusSecondary` / `logoFocusPrimary` | `mix(accent, ink, 0.35/0.62)` / `accent` / `mix(accent, text, 0.92)` | Focused tinted-artwork ramp |
+| `errorHex` | `#ff4f91` dark / `#c2185b` light | Failure text |
 
-Three background tokens cover the layered hierarchy: page (`bgDeep`)
-< card (`surfaceCard`) sits above page, panel (`bgPanel`) replaces
-the page when a modal is up, bar (`bgBar`) is the help-strip footer.
+`edgeBase` is `mix(primary, text, 0.06)` — one rung up the neutral ladder, so the
+accent ramp keeps some body on a near-black primary. Two constants are
+direction-dependent (`selectionShade`, `logoFocusShadow`) because equal channel
+mixes are not equal perceived steps at opposite ends of the sRGB curve.
+
+## Resolution tiers
+
+Shape/type tier uses effective unrotated scene height. TATE swaps axes before
+tier selection; CRT always uses `crt` despite safe-area reduction.
+
+| Tier | Effective height |
+|---|---|
+| `240` | below 400 |
+| `480` | 400–519 |
+| `540` | 520–659 |
+| `720` | 660–899 |
+| `1080` | 900+ |
+| `crt` | any CRT-native scene |
+
+Thickness scales with resolution. Shape and hierarchy use discrete tiers.
 
 ## Fonts
 
-`Theme.fontUi` is **Noto Sans** for normal UI rendering and
-**MxPlus HP 100LX 6x8** on the CRT native path. `Theme.fontMono` is
-`monospace` normally and **MxPlus HP 100LX 6x8** on the CRT native path;
-it is reserved for diagnostic / log views.
+`Theme.fontUi` is Noto Sans normally and MxPlus HP 100LX 6x8 on CRT native
+path. `Theme.fontMono` is diagnostic/log text only.
 
-### Font-size ladder
+### Type ladder
 
-Six sizes only. Each role earns its slot — don't introduce a seventh.
-At 240p the small end floors to 8px (`Sizing.fontSize` clamps at 8
-for legibility on CRT), so the visual distinction shows up only on
-larger screens; the ladder is robust either way.
+Six ordinary text roles only:
 
-| Token | Role | Where it's used |
+| Token | Role | 240 | 480 | 540 | 720 | 1080 |
+|---|---|---:|---:|---:|---:|---:|
+| `Sizing.fontHero` | Page/selected title | 14 | 22 | 24 | 29 | 43 |
+| `Sizing.fontTitle` | Modal/detail title | 12 | 18 | 19 | 23 | 35 |
+| `Sizing.fontSection` | Section/list/status | 11 | 16 | 17 | 21 | 31 |
+| `Sizing.fontBody` | Body/control/help | 10 | 14 | 15 | 19 | 28 |
+| `Sizing.fontCaption` | Secondary/menu/tile fallback | 9 | 12 | 13 | 17 | 26 |
+| `Sizing.fontSmall` | Tile/detail small print | 8 | 10 | 11 | 16 | 24 |
+
+CRT tokens resolve through former percentage roles and retain mandatory 8/16px
+bitmap quantization. `Sizing.fontSize(percent)` remains for approved specialist
+sizes and geometry such as header row height; do not use it to invent seventh
+ordinary text role.
+
+Use `renderType: Text.NativeRendering`. Center Text item with
+`Sizing.center()` and keep glyph run left-aligned when pixel sharpness matters.
+
+## Stroke ladder
+
+| Token | Formula | Use |
 |---|---|---|
-| `fontSize(4.0)` | Hero | Page title, About wordmark, ActiveLabel selected name |
-| `fontSize(3.2)` | Title | Modal title, BrowseDetailPane title |
-| `fontSize(2.9)` | Section | Settings section header, top-strip side metadata, list-view row |
-| `fontSize(2.6)` | Body | Settings label/value, About body, modal body, modal button, picker row, help bar |
-| `fontSize(2.4)` | Caption | Action status, tile fallback name, secondary About labels, ContextMenu row, ScreenStateOverlay secondary |
-| `fontSize(2.2)` | Small | Tile bottom caption, CoreStatusPill, BrowseDetailPane small text, modal small print |
+| `cardBorderWidth` | `stroke(pctH(0.2))` | Resting card edge |
+| `focusBorderWidth` | `stroke(pctH(0.4))` | Focused controls |
+| `focusRingWidth` | `stroke(pctH(0.6))` | Tile/placeholder ring |
+| `pressEdgeHeight` | `stroke(pctH(0.8))` | Control front edge |
 
-`Body` covers both "text on the screen" (settings labels, About
-paragraphs) and "text on a control" (modal buttons, picker rows,
-help bar). They were split across two sizes historically; the
-split was too subtle on every target resolution to earn the
-extra rung.
+Dividers, tiny badges, help-bar edges, and other literal hairlines stay
+`Sizing.stroke(1)` unless promoted deliberately.
 
-`renderType: Text.NativeRendering` is the project default for crisp
-text under software rendering — set it on every `Text`. Some
-components disable it specifically (rare); when in doubt, leave it
-on.
+## Radius ladder
+
+| Tier | `radiusMd` | `radiusSm` |
+|---|---:|---:|
+| `crt` / `240` | 2 | 1 |
+| `480` | 3 | 2 |
+| `540` | 4 | 2 |
+| `720` | 6 | 3 |
+| `1080` | 8 | 4 |
+
+Nesting rule: inner surface uses smaller rung. Pills remain separate family.
+No percentage-derived rounded-square radius.
+
+True super-ellipses need unsupported Shape/shader paths. Frontend no longer
+wants large squircle arcs anyway: small circular corners land close to integer
+right angles and avoid software-rasterizer fringe artifacts.
 
 ## Padding scale
 
-Padding tightens as you move inward. Three layers, with documented
-percentages for each:
+Padding tightens inward:
 
-| Layer | Inset | Where |
-|---|---|---|
-| Grid edge | `Sizing.pctW(5)` left/right, `Sizing.pctH(2)` top/bottom | `PagedGrid.qml` cell rows |
-| Modal panel | `Sizing.pctW(4)` sides, `Sizing.pctH(4)` top, `Sizing.pctH(3)` column spacing | `Modal.qml` content column |
-| Inside a card | `Sizing.pctW(2)` left/right | `SettingsField.qml` row content |
-| About card body | `Sizing.pctW(3)` sides, `Sizing.pctH(3)` top/bottom | `AboutScreen.qml` Flickable |
+| Layer | Typical inset |
+|---|---|
+| Grid edge | `pctW(5)` sides, `pctH(2)` vertical |
+| Modal panel | `pctW(4)` sides, `pctH(4)` top |
+| Card content | `pctW(2)` sides |
+| About body | `pctW(3)` sides, `pctH(3)` vertical |
 
-The closer to the content, the tighter the padding. The grid is the
-loosest because tiles already provide their own visual chunking;
-inside a single card, content sits closer to the edge because the
-card itself is the visual container.
+Radius never doubles as padding. ContextMenu panel vertical padding is
+`pctH(1.5)` independently of panel radius.
 
 ## Modal chrome
 
-Every modal panel uses the same shell:
-
 | Surface | Token |
 |---|---|
-| Background | `Theme.bgPanel` |
-| Corner radius | `Sizing.cornerRadius` |
+| Panel | `Theme.bgPanel`, `Sizing.radiusMd` |
 | Scrim | `Theme.scrim` |
-| Column top margin | `Sizing.pctH(4)` |
-| Column side margins | `Sizing.pctW(4)` |
-| Column spacing | `Sizing.pctH(3)` |
-| Title | `Sizing.fontSize(3.2)`, `Theme.textPrimary` |
-| Body | `Sizing.fontSize(2.6)`, `Theme.textPrimary` |
-| Button slot height | `Sizing.pctH(7)` |
-| Button width | `Sizing.pctW(28)` |
-| Button background | `Theme.surfaceCard` |
-| Button border | `1px`, `Theme.borderMid` (focus: `2px`, `Theme.accent`) |
-| Button radius | `Sizing.cornerRadius` |
-| Button text | `Sizing.fontSize(2.6)`, `Theme.textPrimary` |
+| Title | `Sizing.fontTitle` |
+| Body/button | `Sizing.fontBody` |
+| Button surface | `PressableSurface`, `Sizing.radiusSm` |
+| Button slot | `pctH(7)` |
 
-The panel itself has no border — `bgPanel` against the scrim-dimmed
-screen behind already separates the panel cleanly, and adding a
-static edge here would be louder than the focused button inside.
-
-When adding a new modal, prefer extending `Modal.qml` (a new `kind`
-or the shell content slot) over a bespoke panel. The first-run,
-commercial-notice, and log-upload modals all wrap `Modal.qml` via
-`kind: "shell"`.
-
-### QrCodeModal
-
-`QrCodeModal.qml` is currently a partial implementation: it paints a
-full-screen `Theme.scrim` and centres the QR pixmap on it, with no
-panel chrome around the code. Full chrome (panel + title + close
-affordance) is a future round; the scrim alone is enough to dim
-the screen behind so the QR reads cleanly.
+Panel has no border. Prefer extending `Modal.qml` shell over bespoke chrome.
+GameInfo uses same panel radius. QrCodeModal remains shell-based QR content.
 
 ## ContextMenu chrome
 
-`ContextMenu.qml` joins the rounded-square family on the same rules
-as `Modal.qml`: `bgPanel` panel fill, `Sizing.cornerRadius` corners,
-no panel border. Rows follow the card recipe (`surfaceCard` fill,
-1px `borderMid` unfocused, 2px `accent` focused).
+Panel uses `bgPanel` + `radiusMd`, no border. Rows use PressableSurface +
+`radiusSm`. Panel vertical padding is independent from radius.
 
-The scrim is the one departure from `Modal.qml`. A context menu is
-*about* the tile it's anchored to; a full-screen scrim would dim
-that tile and defeat the affordance. Instead the menu paints four
-`Theme.scrim` bands framing `anchorRect`:
+Four `Theme.scrim` bands frame `anchorRect` so anchor stays bright. Dimensions
+clamp to nonnegative values. Full-parent MouseArea dismisses outside panel,
+including anchor gap, while row MouseAreas win inside.
 
-| Band | Geometry |
-|---|---|
-| top | `(0, 0)` → `(width, anchorRect.y)` |
-| bottom | `(0, anchorRect.y + anchorRect.height)` → `(width, height)` |
-| left | `(0, anchorRect.y)` → `(anchorRect.x, anchorRect.y + anchorRect.height)` |
-| right | `(anchorRect.x + anchorRect.width, anchorRect.y)` → `(width, anchorRect.y + anchorRect.height)` |
+When the caller passes `anchorRadius` (the anchored tile/row's own corner
+radius), four baked antialiased quarter-disc masks cut the bands' square hole
+down to the anchor's actual rounded silhouette, closing the bright square
+notches a plain rectangular hole leaves past a rounded tile's arcs. Each
+mask's alpha is the exact complement of the tile's own corner coverage, baked
+once by `tools/bake-icons` for every integer radius in the [Radius
+ladder](#radius-ladder) (1..16) and served through
+`Resources.cornerCutUrl()`. `anchorRadius: 0` (the default) keeps the plain
+square hole byte-identical — callers that haven't confirmed their anchor is a
+`PressableSurface` (e.g. `hub_favorites`' action tile) stay on this path.
+Corners are skipped, not overlapped, when the anchor is narrower than two
+radii on either axis.
 
-Every dimension is clamped with `Math.max(0, ...)` so an anchor
-flush against an edge collapses the matching band rather than
-overflowing. The anchored tile sits in the un-painted gap and stays
-bright, doubling as "this menu is about *that* tile" feedback.
-Total scrim-painted pixels go down vs. a full-screen scrim because
-the anchor area isn't painted; software-renderer cost is four
-opaque rects vs. one.
+## Tile aspect and grid blocks
 
-A click anywhere outside the panel — including on the punched-through
-anchor area — fires `closeRequested()` (a single full-parent
-`MouseArea` sits beneath the bands so the dismiss area is the union
-of scrim + anchor, with the panel's interior `MouseArea`s on top
-winning for clicks inside the panel).
+Hub rows remain square. Systems and media grids use Sizing-declared common
+resolution shapes with adaptive fallback for nonstandard desktop/TATE scenes.
+PagedGrid floors uniform cell dimensions, then centers cells-plus-gutters block;
+odd remainders may differ by one pixel only.
 
-## Corner radius
+## Consistency rules
 
-One token, one value: `Sizing.cornerRadius` (`pctH(3.5)`). Every
-rounded-square surface in the app uses it.
-
-| Surface | Code |
-|---|---|
-| Tile card body | `radius: Sizing.cornerRadius` |
-| Tile focus ring | `radius: Sizing.cornerRadius - root._outlineGap` |
-| SettingsField row | `radius: Sizing.cornerRadius` |
-| Modal panel | `radius: Sizing.cornerRadius` |
-| Modal button | `radius: Sizing.cornerRadius` |
-| ContextMenu panel | `radius: Sizing.cornerRadius` |
-| About body card | `radius: Sizing.cornerRadius` |
-
-The Tile focus ring is computed from the token (not hardcoded to a
-smaller value) so the ring stays concentric with the card if the
-token ever changes.
-
-When adding a new rounded-square surface, use the token. Don't
-introduce a second radius value — the visual language is one shape,
-one radius.
-
-## Tile aspect
-
-| Surface | Aspect |
-|---|---|
-| Hub categories row | 1:1 (square, `cellHeight = cellWidth`) |
-| Hub action row | 1:1 (mirrors categories row metrics) |
-| Systems grid | Aspect driven by `PagedGrid` available height |
-| Games grid | Aspect driven by `PagedGrid` available height |
-| Favorites grid | Aspect driven by `PagedGrid` available height |
-| Recents grid | Aspect driven by `PagedGrid` available height |
-
-The hub uses square tiles because the icons are simple silhouettes
-that read fine at 1:1. Cover-art surfaces (systems, games,
-favorites, recents) get taller cells from `PagedGrid` because
-logos and box-art benefit from vertical room.
-
-## True squircles aren't achievable
-
-A super-ellipse curve needs `Shape` + `PathSvg` or shaders. The
-MiSTer build runs Qt Quick's software adaptation — no GPU, no
-shaders, no `Shape`, no `MultiEffect`. See `qml-gotchas.md`. The
-large `Rectangle.radius` value is a circular-arc approximation;
-close enough at this scale that the lack of super-ellipse curvature
-is invisible at typical viewing distances.
-
-## Consistency rule
-
-If a new surface has rounded corners, it picks `Sizing.cornerRadius`
-or it joins the pill family. There is no third option.
-
-If a new surface is pressable, it follows the card recipe. There is
-no second focus colour.
-
-If a new piece of text is added, it picks a size from the six-rung
-ladder. There is no seventh size.
-
-Inconsistent radii, focus colours, and font sizes were the problems
-these tokens were introduced to solve.
+- Rounded square chooses `radiusMd` or `radiusSm`; pill chooses half-height.
+- Pressable non-browse control uses PressableSurface.
+- Focus uses `Theme.accent`.
+- Ordinary text chooses six-role ladder.
+- Geometry routes through `Sizing.px()`, `center()`, `half()`, or `stroke()`.
 
 ## Integer-pixel drawing
 
-These rules apply to every screen, not just CRT-targeted code paths.
-The whole app must render cleanly at 240p; the frontend has one
-rendering path, not two.
+Rules apply everywhere, not only CRT:
 
-- Geometry lands on integer pixels (`Sizing.px()`, `Sizing.center()`,
-  `Sizing.half()`).
-- Stroke widths are integer pixels (`Sizing.stroke()`).
-- Text sizes are restricted to `8px` or `16px` when `crtNativePath` is
-  active; `Sizing.fontSize()` handles the quantization.
-- Bitmap-style text doesn't rely on centered glyph layout; center the
-  text item, not the glyph run.
+- static geometry lands on integer pixels
+- stroke widths are integer pixels
+- CRT text remains 8/16px
+- user-visible centered text centers item, not a half-pixel glyph run
 
-These are implementation constraints, not aesthetic preferences. If a
-new surface needs an exception, document the reason in the same change.
+Document any exception beside code that needs it.

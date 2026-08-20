@@ -4,7 +4,7 @@
 
 // cxx-qt 0.8 exposes singletons without `isFinal` on method entries, so every
 // Browse.Settings write trips "Member can be shadowed". The profile sub-property
-// accesses (layoutProfile.surface.cornerRadius etc.) are on JS-object vars and
+// accesses (layoutProfile.surface.cardRadius etc.) are on JS-object vars and
 // cannot be statically typed. Both are structural; suppress the compiler category.
 // qmllint disable compiler
 import QtQuick
@@ -51,7 +51,8 @@ TestCase {
         Browse.Settings.current_browse_layout = "grid";
 
         compare(main.headerBar.layoutProfile.header.titleInHeader, true);
-        compare(main.systemsScreen.systemsGrid.layoutProfile.surface.cornerRadius, 4);
+        compare(main.systemsScreen.systemsGrid.layoutProfile.surface.cardRadius, 2);
+        compare(main.systemsScreen.systemsGrid.layoutProfile.surface.rowRadius, 1);
         compare(main.systemsScreen.systemsGrid.leftInset, 4);
         compare(main.systemsScreen.systemsGrid.gutterWidth, 8);
         compare(main.systemsScreen.systemsGrid.scrollArrowSize, 8);
@@ -62,7 +63,8 @@ TestCase {
         Browse.Settings.current_browse_layout = "list";
 
         compare(main.headerBar.layoutProfile.header.titleInHeader, true);
-        compare(main.systemsScreen.listCard.layoutProfile.surface.cornerRadius, 4);
+        compare(main.systemsScreen.listCard.layoutProfile.surface.cardRadius, 2);
+        compare(main.systemsScreen.listCard.layoutProfile.surface.rowRadius, 1);
         compare(main.systemsScreen.listCard.layoutProfile.list.rowHeight, 12);
         compare(main.systemsScreen.listCard.layoutProfile.list.scrollbarGap, 2);
     }
