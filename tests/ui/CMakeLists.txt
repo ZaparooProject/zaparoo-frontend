@@ -26,6 +26,7 @@ set(_TST_UI_QML_FILES
     tst_paged_grid.qml
     tst_pressable_surface.qml
     tst_context_menu.qml
+    tst_modal.qml
     tst_press_cues.qml
     tst_screen_state_overlay.qml
     tst_focused_media_detail_controller.qml
@@ -34,6 +35,7 @@ set(_TST_UI_QML_FILES
     tst_media_list_paging.qml
     tst_list_picker_modal.qml
     tst_letter_jump_modal.qml
+    tst_settings_field_control.qml
     tst_motion.qml
     tst_deferred_action.qml
     tst_tile_cover_sync.qml

@@ -131,7 +131,32 @@ const FAVORITES_GROUPINGS: &[&str] = &["none", "system"];
 const DEFAULT_FAVORITES_GROUPING: &str = "none";
 const SYSTEM_LOGO_STYLES: &[&str] = &["tinted", "color"];
 const DEFAULT_SYSTEM_LOGO_STYLE: &str = "tinted";
-const COLOR_SCHEMES: &[&str] = &["zaparoo-black", "midnight-amber", "zaparoo-white"];
+const COLOR_SCHEMES: &[&str] = &[
+    "zaparoo-black",
+    "midnight-amber",
+    "zaparoo-white",
+    "catppuccin-mocha",
+    "catppuccin-macchiato",
+    "catppuccin-frappe",
+    "nord",
+    "dracula",
+    "gruvbox-dark",
+    "gruvbox-light",
+    "tokyo-night",
+    "rose-pine",
+    "kanagawa-wave",
+    "ayu-dark",
+    "nightfox",
+    "monokai",
+    "one-dark-pro",
+    "everforest-dark",
+    "synthwave-84",
+    "amber-phosphor",
+    "green-phosphor",
+    "neo-geo",
+    "nes",
+    "virtual-boy",
+];
 const DEFAULT_COLOR_SCHEME: &str = "zaparoo-black";
 const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
 const DEFAULT_BUTTON_LAYOUT: &str = "a";

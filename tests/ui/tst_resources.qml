@@ -389,6 +389,13 @@ TestCase {
                 scheme: "midnight-amber",
                 rung: 144,
                 variant: "on-dark"
+            },
+            {
+                tag: "second light preset also picks on-light variant",
+                width: 144,
+                scheme: "gruvbox-light",
+                rung: 144,
+                variant: "on-light"
             }
         ];
     }

@@ -530,10 +530,12 @@ Item {
             anchors.topMargin: Sizing.px(parent.width / 12)
             width: Sizing.px(parent.width / 6)
             height: width
-            // Tinted on the fly from theme tokens (fill -> accent, keyline ->
+            // Tinted on the fly from theme tokens (fill -> marker, keyline ->
             // markerOutline rim) via the tinted-svg provider, like every other
             // icon. The source SVG is neutral grayscale; colors live in Theme.
-            source: Resources.coverUrl("icons/Heart", Theme.accent, Theme.accent, Theme.markerOutline)
+            // `marker` is a fixed hue independent of `accent` so a favorited
+            // tile stays distinguishable from the focus ring (item 4).
+            source: Resources.coverUrl("icons/Heart", Theme.marker, Theme.marker, Theme.markerOutline)
             sourceSize.width: Sizing.px(width)
             sourceSize.height: Sizing.px(height)
             fillMode: Image.PreserveAspectFit

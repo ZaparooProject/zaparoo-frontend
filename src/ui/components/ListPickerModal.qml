@@ -63,6 +63,35 @@ Item {
     readonly property bool _hasContentAbove: viewport.contentY > 1
     readonly property bool _hasContentBelow: viewport.contentY + viewport.height < viewport.contentHeight - 1
 
+    // Content-driven panel width, mirroring ContextMenu.qml's
+    // `_widestEntryLabelWidth` pattern (Modal.qml can't measure this itself —
+    // shell content is an opaque caller-supplied Item to it) — see
+    // docs/style.md -> "Content-driven modal width".
+    readonly property int _rowHorizontalPadding: Sizing.pctW(2)
+    readonly property int _contentHorizontalMargin: Sizing.pctW(4)
+    readonly property int _widestEntryLabelWidth: {
+        let widest = 0;
+        for (let i = 0; i < modal.entries.length; ++i) {
+            const label = modal.entries[i] && modal.entries[i].label !== undefined ? String(modal.entries[i].label) : "";
+            widest = Math.max(widest, Math.ceil(_rowLabelMetrics.advanceWidth(label)));
+        }
+        return widest;
+    }
+    readonly property int _titleWidth: modal.title !== "" ? Math.ceil(_titleLabelMetrics.advanceWidth(modal.title)) : 0
+    // Optional per-entry color-swatch preview (the color-scheme picker).
+    // `entries[i].swatch` is a 3-color array or undefined; the picker is
+    // homogeneous (either every entry carries one or none do), so checking
+    // the first entry is enough to flag the whole modal into swatch layout.
+    // See docs/style.md -> "Picker swatch preview".
+    readonly property bool _hasSwatchPreview: modal.entries.length > 0 && modal.entries[0].swatch !== undefined
+    readonly property int _swatchBoxSize: Sizing.pctH(2.4)
+    readonly property int _swatchGap: Sizing.pctW(0.6)
+    readonly property int _swatchLabelGap: Sizing.pctW(2)
+    readonly property int _swatchBandWidth: modal._hasSwatchPreview ? 3 * modal._swatchBoxSize + 2 * modal._swatchGap : 0
+    readonly property int _desiredPanelWidth: Math.max(modal._widestEntryLabelWidth + (modal._hasSwatchPreview ? modal._swatchBandWidth + modal._swatchLabelGap : 0) + 2 * modal._rowHorizontalPadding, modal._titleWidth) + 2 * modal._contentHorizontalMargin
+    // Degenerate-case floor only, matching Modal.qml's own floor.
+    readonly property int _minPanelWidth: Sizing.pctW(30)
+
     visible: modal.open
     anchors.fill: parent
     z: 300
@@ -150,12 +179,25 @@ Item {
         }
     }
 
+    FontMetrics {
+        id: _rowLabelMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontBody
+    }
+
+    FontMetrics {
+        id: _titleLabelMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontTitle
+    }
+
     Modal {
         id: shell
 
         open: modal.open
         kind: "shell"
         title: modal.title
+        panelMaxWidth: Math.max(modal._minPanelWidth, modal._desiredPanelWidth)
 
         Item {
             id: viewportSlot
@@ -192,6 +234,7 @@ Item {
                             required property int index
                             required property var modelData
 
+                            objectName: "listPickerRow-" + row.index
                             width: rowColumn.width
                             height: modal._rowHeight
                             focused: row.index === modal.currentIndex
@@ -201,19 +244,77 @@ Item {
                             onPointerEntered: modal.currentIndex = row.index
                             onPointerClicked: modal._commitAccept(row.modelData.id)
 
+                            // Plain centered label — every picker except the
+                            // color-scheme one (below). Untouched by the
+                            // swatch-preview addition.
                             Text {
-                                anchors.left: parent.left
-                                anchors.right: parent.right
+                                // Centered as a box sized to this row's own
+                                // measured text, not full row width +
+                                // AlignHCenter — a glyph run that straddles a
+                                // half-pixel softens under the software
+                                // renderer. See "Integer-pixel rules" in
+                                // docs/qml-gotchas.md, and ContextMenu.qml's
+                                // identical row-label construction.
+                                readonly property int _availableWidth: Math.max(0, parent.width - 2 * modal._rowHorizontalPadding)
+                                readonly property int _textWidth: Math.min(Math.ceil(_rowLabelMetrics.advanceWidth(row.modelData.label)), _availableWidth)
+
+                                objectName: "listPickerRowLabelCentered"
+                                visible: !modal._hasSwatchPreview
                                 anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: Sizing.pctW(2)
-                                anchors.rightMargin: Sizing.pctW(2)
+                                x: Sizing.center(parent.width, _textWidth)
+                                width: _textWidth
                                 text: row.modelData.label
                                 color: Theme.textPrimary
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontBody
-                                horizontalAlignment: Text.AlignHCenter
                                 elide: Text.ElideRight
                                 renderType: Text.NativeRendering
+                            }
+
+                            // Label-left, swatch-right — the color-scheme
+                            // picker. Label is left-aligned rather than
+                            // centered so it reads as a row leading into its
+                            // own preview, not two independently-centered
+                            // elements. See docs/style.md -> "Picker swatch
+                            // preview".
+                            Text {
+                                readonly property int _availableWidth: Math.max(0, parent.width - 2 * modal._rowHorizontalPadding - modal._swatchBandWidth - modal._swatchLabelGap)
+                                readonly property int _textWidth: Math.min(Math.ceil(_rowLabelMetrics.advanceWidth(row.modelData.label)), _availableWidth)
+
+                                objectName: "listPickerRowLabelSwatch"
+                                visible: modal._hasSwatchPreview
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: modal._rowHorizontalPadding
+                                width: _textWidth
+                                text: row.modelData.label
+                                color: Theme.textPrimary
+                                font.family: Theme.fontUi
+                                font.pixelSize: Sizing.fontBody
+                                elide: Text.ElideRight
+                                renderType: Text.NativeRendering
+                            }
+
+                            Row {
+                                objectName: "listPickerRowSwatches"
+                                visible: modal._hasSwatchPreview
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: parent.width - modal._rowHorizontalPadding - modal._swatchBandWidth
+                                spacing: modal._swatchGap
+
+                                Repeater {
+                                    model: modal._hasSwatchPreview ? row.modelData.swatch : 0
+
+                                    Rectangle {
+                                        required property color modelData
+                                        required property int index
+
+                                        objectName: "listPickerRowSwatch-" + index
+                                        width: modal._swatchBoxSize
+                                        height: modal._swatchBoxSize
+                                        radius: Sizing.half(Sizing.radiusSm)
+                                        color: modelData
+                                    }
+                                }
                             }
                         }
                     }

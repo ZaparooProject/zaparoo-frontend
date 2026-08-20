@@ -30,7 +30,7 @@ Item {
     property string totalText: "" // formatted; empty hides the slot
     property string rightTextOverride: "" // formatted; non-empty replaces page text
     readonly property string pageText: status.rightTextOverride !== "" ? status.rightTextOverride : (status.pageTotalKnown ? qsTr("Page %1 / %2").arg(status.currentPage + 1).arg(status.totalPages) : qsTr("Page %1").arg(status.currentPage + 1))
-    property int slotMargin: Sizing.pctW(5)
+    property int slotMargin: Sizing.pctW(3)
     readonly property int _slotWidth: Sizing.px(status.width / 3)
     readonly property int _textMeasureSlack: Theme.crtNativePath ? 0 : 2
     readonly property int _titleMeasuredWidth: Math.ceil(Math.max(titleMetrics.advanceWidth, titleMetrics.boundingRect.width) + status._textMeasureSlack)

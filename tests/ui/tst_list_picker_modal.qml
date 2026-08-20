@@ -69,6 +69,20 @@ TestCase {
         return list;
     }
 
+    // Swatch-bearing entries — the color-scheme picker's shape. Every entry
+    // carries a 3-color `swatch` array; `_hasSwatchPreview` only checks the
+    // first entry, so the picker is assumed homogeneous.
+    function _swatchEntries(count) {
+        const list = [];
+        for (let i = 0; i < count; ++i)
+            list.push({
+                id: "id-" + i,
+                label: "Item " + i,
+                swatch: [Qt.rgba(0.1 * i, 0, 0, 1), Qt.rgba(0, 0.1 * i, 0, 1), Qt.rgba(0, 0, 0.1 * i, 1)]
+            });
+        return list;
+    }
+
     function test_open_with_no_initial_id_starts_at_zero(): void {
         picker.entries = _entries(3);
         picker.open = true;
@@ -250,5 +264,57 @@ TestCase {
         picker.open = true;
         compare(picker._visibleRows, 2);
         compare(picker._viewportHeight, picker._contentHeight);
+    }
+
+    // Regression coverage for the color-scheme picker's swatch preview
+    // (round 5). Plain `{id, label}` entries — every picker except color
+    // scheme — must render pixel-for-pixel as before: centered label
+    // visible, swatch elements absent and reserving no panel width.
+    function test_entries_without_swatch_use_plain_centered_row(): void {
+        picker.entries = _entries(1);
+        picker.open = true;
+        verify(!picker._hasSwatchPreview);
+        compare(picker._swatchBandWidth, 0);
+
+        const row = findChild(picker, "listPickerRow-0");
+        verify(row !== null);
+        const centered = findChild(row, "listPickerRowLabelCentered");
+        const swatchLabel = findChild(row, "listPickerRowLabelSwatch");
+        const swatches = findChild(row, "listPickerRowSwatches");
+        verify(centered !== null);
+        verify(centered.visible);
+        verify(swatchLabel !== null);
+        verify(!swatchLabel.visible);
+        verify(swatches !== null);
+        verify(!swatches.visible);
+    }
+
+    // Entries carrying a `swatch` array — the color-scheme picker's shape —
+    // switch the row to a left-aligned label plus three color boxes on the
+    // right, and the panel reserves width for the swatch band.
+    function test_entries_with_swatch_render_label_left_and_three_boxes(): void {
+        picker.entries = _swatchEntries(2);
+        picker.open = true;
+        verify(picker._hasSwatchPreview);
+        verify(picker._swatchBandWidth > 0);
+
+        const row = findChild(picker, "listPickerRow-1");
+        verify(row !== null);
+        const centered = findChild(row, "listPickerRowLabelCentered");
+        const swatchLabel = findChild(row, "listPickerRowLabelSwatch");
+        const swatches = findChild(row, "listPickerRowSwatches");
+        verify(centered !== null);
+        verify(!centered.visible);
+        verify(swatchLabel !== null);
+        verify(swatchLabel.visible);
+        verify(swatches !== null);
+        verify(swatches.visible);
+
+        const expected = picker.entries[1].swatch;
+        for (let i = 0; i < 3; ++i) {
+            const box = findChild(row, "listPickerRowSwatch-" + i);
+            verify(box !== null, "swatch box " + i + " must exist");
+            compare(box.color.toString(), expected[i].toString());
+        }
     }
 }

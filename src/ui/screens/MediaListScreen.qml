@@ -507,7 +507,7 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: Sizing.headerBottom + (root._statusProfile ? root._statusProfile.topMargin : Sizing.pctH(1))
         height: root._statusProfile ? root._statusProfile.stripHeight : (root.showTopStrip ? Sizing.pctH(7) : 0)
-        slotMargin: root._statusProfile ? root._statusProfile.slotMargin : Sizing.pctW(5)
+        slotMargin: root._statusProfile ? root._statusProfile.slotMargin : Sizing.pctW(3)
         title: typeof root.topStripTitleProvider === "function" ? root.topStripTitleProvider() : root.screenTitle
         currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : mediaGrid.currentPage
         totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize))
@@ -521,9 +521,9 @@ Item {
 
         visible: !root._gateHide && root._listLayout
         anchors.left: parent.left
-        anchors.leftMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(5)
+        anchors.leftMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(3)
         anchors.right: parent.right
-        anchors.rightMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(5)
+        anchors.rightMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(3)
         anchors.top: topStrip.bottom
         anchors.topMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardTopMargin : Sizing.pctH(2)
         anchors.bottom: parent.bottom

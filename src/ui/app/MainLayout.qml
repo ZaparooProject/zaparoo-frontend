@@ -1057,9 +1057,32 @@ ApplicationWindow {
                 // (helpEntries above branches per topModal), so the cue under
                 // the modal is the right one.
                 z: 400
-                color: Theme.bgBar
-                border.width: Sizing.stroke(1)
-                border.color: Theme.borderSubtle
+                // No fill or border of its own — a bordered box reads as a
+                // floating bar. The two children below paint a background and
+                // a single top keyline instead, both full-bleed past the CRT
+                // safe-area inset (the same trick the scene background uses
+                // at L582-588) so on the CRT path the fill reaches the true
+                // framebuffer edge and covers the whole bottom overscan band,
+                // with the keyline landing exactly on the safe-area line.
+                color: "transparent"
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.leftMargin: -Math.max(root._crtInsetW, root._crtInsetH)
+                    anchors.rightMargin: -Math.max(root._crtInsetW, root._crtInsetH)
+                    anchors.bottomMargin: -Math.max(root._crtInsetW, root._crtInsetH)
+                    color: Theme.bgBar
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.leftMargin: -Math.max(root._crtInsetW, root._crtInsetH)
+                    anchors.right: parent.right
+                    anchors.rightMargin: -Math.max(root._crtInsetW, root._crtInsetH)
+                    anchors.top: parent.top
+                    height: Sizing.stroke(1)
+                    color: Theme.borderSubtle
+                }
 
                 // (activeScreen, screenState, modal?)-keyed lookup. The modal
                 // row wins outright; otherwise per-screen entries vary with
@@ -1500,7 +1523,12 @@ ApplicationWindow {
 
                 Row {
                     x: Sizing.center(parent.width, width)
-                    y: Sizing.center(parent.height, height)
+                    // A small downward bias off dead-center — arithmetic
+                    // centering here has no dependency on the bar's own
+                    // border (it never had a bottom border of its own; see
+                    // the two full-bleed fill/keyline Rectangles above),
+                    // this is purely a feel adjustment.
+                    y: Sizing.center(parent.height, height) + Sizing.pctH(0.4)
                     spacing: Sizing.pctW(2)
 
                     Repeater {

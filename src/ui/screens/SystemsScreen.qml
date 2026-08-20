@@ -243,7 +243,7 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: Sizing.headerBottom + (systems._statusProfile ? systems._statusProfile.topMargin : Sizing.pctH(1))
         height: systems._statusProfile ? systems._statusProfile.stripHeight : Sizing.pctH(7)
-        slotMargin: systems._statusProfile ? systems._statusProfile.slotMargin : Sizing.pctW(5)
+        slotMargin: systems._statusProfile ? systems._statusProfile.slotMargin : Sizing.pctW(3)
         title: CategoryIds.displayName(Browse.SystemsModel.current_category)
         currentPage: systemsGrid.currentPage
         totalPages: systems._footerProfile && systems._footerProfile.bottomStatusVisible ? 1 : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
@@ -257,9 +257,9 @@ Item {
 
         visible: !systems._gateHide && systems._listLayout
         anchors.left: parent.left
-        anchors.leftMargin: systems._listProfile ? systems._listProfile.cardSideMargin : Sizing.pctW(5)
+        anchors.leftMargin: systems._listProfile ? systems._listProfile.cardSideMargin : Sizing.pctW(3)
         anchors.right: parent.right
-        anchors.rightMargin: systems._listProfile ? systems._listProfile.cardSideMargin : Sizing.pctW(5)
+        anchors.rightMargin: systems._listProfile ? systems._listProfile.cardSideMargin : Sizing.pctW(3)
         anchors.top: topStrip.bottom
         anchors.topMargin: systems._listProfile ? systems._listProfile.cardTopMargin : Sizing.pctH(2)
         anchors.bottom: parent.bottom

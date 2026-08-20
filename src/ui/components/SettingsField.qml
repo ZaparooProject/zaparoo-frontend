@@ -14,10 +14,11 @@ import Zaparoo.Theme
 //   "navigate" — `›` chevron. Reserved for rows that open another
 //                screen (subpages, About / License).
 //
-// Rows are channels cut into the section card behind them, not buttons: no
-// fill or border at rest, and activating one never pushes the row in. This
-// is the same `LatchSurface` recessed-slot vocabulary `BrowseList` uses, so
-// the two lists cannot drift apart — see LatchSurface.qml.
+// Rows are lines of text on the section card behind them, not buttons: no
+// fill or border at rest, and a selected row inverts to solid accent rather
+// than lifting off the page. This is the same `SelectionBar` inverse-video
+// vocabulary `BrowseList` uses, so the two lists cannot drift apart — see
+// SelectionBar.qml.
 //
 // The component is purely presentational. The screen owns layout (Column
 // stacking + selection index) and value mutation.
@@ -30,7 +31,7 @@ Item {
     property bool checked: false
     property bool isFocused: false
     // Set false by SettingsScreen during a page switch so reused delegates
-    // do not animate the focus latch or toggle position when the new
+    // do not animate the row flash or toggle position when the new
     // page's model data lands. Restored to true on the next event-loop
     // tick so ordinary user navigation still animates.
     property bool animateChanges: true
@@ -38,13 +39,12 @@ Item {
     // right ("In progress", "Paused", or "" when idle). The screen
     // owns the binding; the field treats it as a plain caption.
     property string actionStatus: ""
-    // Latch cue, matching the BrowseList vocabulary. The host increments
-    // this on accept; the focused row latches its rail and label inward
-    // then settles back, like a cursor engaging a slot. Toggle rows are
-    // exempt — the knob slide is their feedback — so they ignore it.
+    // Inverse-blink cue, matching the BrowseList vocabulary. The host
+    // increments this on accept; the focused row flashes bar/content colors
+    // and settles back. Toggle rows are exempt — the knob slide is their
+    // feedback — so they ignore it.
     property int activatePulse: 0
-    property int _latchActivatePulse: 0
-    property int _latchReleasePulse: 0
+    property int _barActivatePulse: 0
 
     signal hovered
     signal clicked
@@ -61,46 +61,36 @@ Item {
     opacity: enabled ? 1 : 0.4
     implicitHeight: Sizing.pctH(8)
 
-    // One-shot latch. Non-toggle rows only; focused row plays it.
+    // One-shot inverse blink. Non-toggle rows only; focused row plays it.
     // `animateChanges` is false during a page switch (same gate the field's
-    // other animations use), so a reused delegate cannot latch as a new
-    // page mounts. The release side is timed locally rather than driven by
-    // the screen: unlike a BrowseList row (which is released explicitly
-    // after a launch that keeps the frontend on the same screen, or snaps
-    // instantly when the selection moves off it), every settings accept
-    // keeps the row selected, so the row settles itself back out shortly
-    // after latching in.
+    // other animations use), so a reused delegate cannot flash as a new page
+    // mounts. Unlike BrowseList (which forwards a host-driven releasePulse),
+    // the blink here self-terminates after `Motion.pressMs` — see
+    // SelectionBar.qml — so the field just forwards the raw pulse.
     onActivatePulseChanged: {
-        if (root.isFocused && root.control !== "toggle" && root.animateChanges) {
-            root._latchActivatePulse++;
-            latchReleaseTimer.restart();
-        }
+        if (root.isFocused && root.control !== "toggle" && root.animateChanges)
+            root._barActivatePulse++;
     }
 
-    Timer {
-        id: latchReleaseTimer
-        interval: Motion.dur(Motion.pressMs)
-        repeat: false
-        onTriggered: root._latchReleasePulse++
-    }
-
-    LatchSurface {
-        id: latch
-        objectName: "latchSurface"
+    SelectionBar {
+        id: bar
+        objectName: "selectionBar"
         anchors.fill: parent
         active: root.isFocused
-        activatePulse: root._latchActivatePulse
-        releasePulse: root._latchReleasePulse
+        activatePulse: root._barActivatePulse
     }
 
     Text {
         id: labelText
 
         anchors.left: parent.left
-        anchors.leftMargin: Sizing.pctW(2) + latch.latchOffset
+        anchors.leftMargin: Sizing.pctW(2)
         anchors.verticalCenter: parent.verticalCenter
         text: root.label
-        color: Theme.textPrimary
+        // Action rows tint their label accent (unselected) / onAccent
+        // (selected) instead of getting a chevron — the "Erase All Content
+        // and Settings" pattern. See the chevron Image below.
+        color: bar.active ? bar.contentColor : (root.control === "action" ? Theme.accent : Theme.textPrimary)
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontBody
         renderType: Text.NativeRendering
@@ -110,18 +100,18 @@ Item {
     // a picker row opens the list-picker modal owned by `Main.qml`;
     // left/right are no-ops (no inline cycling — see `SettingsScreen`).
     //
-    // Anchors clamp between the label's right edge and the row's
-    // right padding so a long localized value (e.g. a translated
-    // language name) elides instead of overlapping `labelText`.
+    // Anchors clamp between the label's right edge and the chevron's left
+    // edge so a long localized value (e.g. a translated language name)
+    // elides instead of overlapping `labelText` or the chevron.
     Text {
         visible: root.control === "picker"
         anchors.left: labelText.right
         anchors.leftMargin: Sizing.pctW(2)
-        anchors.right: parent.right
+        anchors.right: navChevron.left
         anchors.rightMargin: Sizing.pctW(2)
         anchors.verticalCenter: parent.verticalCenter
         text: root.value
-        color: Theme.textPrimary
+        color: bar.active ? bar.contentColor : Theme.textPrimary
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontBody
         elide: Text.ElideRight
@@ -148,11 +138,12 @@ Item {
             objectName: "settingsToggleTrack"
             anchors.fill: parent
             radius: Sizing.radiusSm
-            // Fill alone carries on/off state — no border. The row's
-            // recessed-slot highlight carries the focus indicator, and
-            // against the always-on card behind the toggle a static track
-            // border read as chrome-on-chrome.
-            color: root.checked ? Theme.accent : Theme.borderMid
+            // The track alone carries on/off state, at maximum contrast
+            // against the row's own current background — `accent`/`borderMid`
+            // on the plain card, `onAccent`/`onAccentMuted` once the row's
+            // own background is solid accent. See docs/style.md ->
+            // "Toggle rows".
+            color: bar.active ? (root.checked ? Theme.onAccent : Theme.onAccentMuted) : (root.checked ? Theme.accent : Theme.borderMid)
         }
 
         Rectangle {
@@ -162,7 +153,21 @@ Item {
             radius: Sizing.radiusSm
             x: root.checked ? toggle.width - width - toggle._knobInset : toggle._knobInset
             y: Sizing.center(toggle.height, height)
-            color: root.checked ? Theme.bgDeep : Theme.textPrimary
+            // Always the row's own current background — a hole cut through
+            // the track, never a second on/off signal. This alone let the
+            // knob disappear into a selected row (round 4's rule made the
+            // fill literally equal `Theme.accent`, the same solid color as
+            // the row itself). The border below is what round 5 adds: it
+            // reuses the track's own "on" color for that register, which
+            // the semantic-tier tests already guarantee clears >=4.5:1
+            // against this exact fill (test_accent_against_bg_deep_clears_body_text_contrast
+            // for the unselected case, test_on_accent_clears_body_text_contrast
+            // for the selected one) — so the knob keeps a visible silhouette
+            // with no new color derivation needed. See docs/style.md ->
+            // "Toggle rows".
+            color: bar.active ? Theme.accent : Theme.surfaceCard
+            border.color: bar.active ? Theme.onAccent : Theme.accent
+            border.width: Sizing.cardBorderWidth
 
             Behavior on x {
                 enabled: Motion.enabled && root.animateChanges
@@ -187,7 +192,7 @@ Item {
         anchors.rightMargin: Sizing.pctW(2)
         anchors.verticalCenter: parent.verticalCenter
         text: root.actionStatus
-        color: Theme.textPrimary
+        color: bar.active ? bar.contentColor : Theme.textPrimary
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontBody
         elide: Text.ElideRight
@@ -195,15 +200,20 @@ Item {
         renderType: Text.NativeRendering
     }
 
-    // Right-side chevron for `control: "navigate"`. Means "this row
-    // opens another page" — used for About / License today and any
-    // future subpage entries.
+    // Right-side chevron. Means "this row opens something else" — a
+    // list-picker modal (`control: "picker"`) or another page
+    // (`control: "navigate"`, e.g. About / License), per the iOS/Android
+    // disclosure-indicator convention. Toggles get nothing (the switch
+    // itself is the affordance) and action rows get an accent-tinted label
+    // instead (see `labelText` above) — a chevron there would promise
+    // navigation that does not happen.
     Image {
-        visible: root.control === "navigate"
+        id: navChevron
+        visible: root.control === "picker" || root.control === "navigate"
         anchors.right: parent.right
         anchors.rightMargin: Sizing.pctW(2)
         anchors.verticalCenter: parent.verticalCenter
-        source: Resources.iconUrl("NavRight", Theme.textPrimary)
+        source: Resources.iconUrl("NavRight", bar.active ? bar.contentColor : Theme.textPrimary)
         width: Sizing.pctH(3.5)
         height: width
         sourceSize.width: Sizing.px(width)

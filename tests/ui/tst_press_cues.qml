@@ -88,7 +88,7 @@ TestCase {
                     fileStem: "beta"
                     coverKey: ""
                     favorite: 1
-                    disambiguatingTags: ""
+                    disambiguatingTags: "US"
                 }
             }
 
@@ -130,7 +130,7 @@ TestCase {
         Motion.enabled = true;
     }
 
-    function test_toggle_knob_is_larger_centered_and_contrasts_when_checked(): void {
+    function test_toggle_knob_geometry(): void {
         const field = createTemporaryObject(toggleHost, testCase);
         verify(field !== null);
 
@@ -138,12 +138,70 @@ TestCase {
         const knob = findChild(field, "settingsToggleKnob");
         verify(track !== null);
         verify(knob !== null);
+        // Geometry is unaffected by which row register the toggle sits in —
+        // knob size/travel are the primary on/off cue in both.
         compare(knob.width, track.height - Sizing.pctH(0.9) + 1);
         compare(knob.height, knob.width);
         compare(knob.y, Sizing.center(track.height, knob.height));
         compare(track.width - knob.x - knob.width, knob.y);
-        compare(knob.color, Theme.bgDeep);
+    }
+
+    // The track alone carries on/off state, at maximum contrast against the
+    // row's own current background; the knob always matches that same
+    // background, reading as a hole punched through the track rather than a
+    // second state signal — see SettingsField.qml and docs/style.md ->
+    // "Toggle rows". This is deliberately the same rule in both row
+    // registers: only which background the track/knob resolve against
+    // changes.
+    //
+    // Round 5 adds a border to the knob, in the track's own "on" color for
+    // that register — this is what stops the knob from visually merging
+    // into a selected row (whose own background is the same solid
+    // `Theme.accent` the knob's fill uses). The border reuses colors the
+    // semantic-tier guardrail tests already guarantee clear >=4.5:1 against
+    // the fill, so no new color derivation was needed.
+    function test_toggle_track_carries_state_knob_matches_row_background(): void {
+        const field = createTemporaryObject(toggleHost, testCase);
+        verify(field !== null);
+
+        const track = findChild(field, "settingsToggleTrack");
+        const knob = findChild(field, "settingsToggleKnob");
+        verify(track !== null);
+        verify(knob !== null);
+
+        field.isFocused = false;
+        field.checked = true;
+        compare(track.color, Theme.accent);
+        compare(knob.color, Theme.surfaceCard);
+        compare(knob.border.color, Theme.accent);
         verify(_contrastRatio(knob.color, track.color) >= 3.0);
+        verify(_contrastRatio(knob.border.color, knob.color) >= 3.0);
+
+        field.checked = false;
+        compare(track.color, Theme.borderMid);
+        compare(knob.color, Theme.surfaceCard);
+        compare(knob.border.color, Theme.accent);
+        // Track/knob-fill contrast is deliberately low here: `borderMid` is
+        // itself a subtle, near-card neutral, so a "hole" cut through it
+        // reveals a similarly subtle color. The off state's affordance
+        // comes from knob position, not track/fill color contrast — see
+        // the geometry test above. The knob's own border still separates
+        // it from its fill regardless.
+
+        field.isFocused = true;
+        field.checked = true;
+        compare(track.color, Theme.onAccent);
+        compare(knob.color, Theme.accent);
+        compare(knob.border.color, Theme.onAccent);
+        verify(_contrastRatio(knob.color, track.color) >= 3.0);
+        verify(_contrastRatio(knob.border.color, knob.color) >= 3.0);
+
+        field.checked = false;
+        compare(track.color, Theme.onAccentMuted);
+        compare(knob.color, Theme.accent);
+        compare(knob.border.color, Theme.onAccent);
+        verify(_contrastRatio(knob.color, track.color) >= 3.0);
+        verify(_contrastRatio(knob.border.color, knob.color) >= 3.0);
     }
 
     function test_tile_uses_physical_press_without_scaling(): void {
@@ -169,7 +227,7 @@ TestCase {
         tryCompare(surface, "faceOffset", 0, Motion.settleMs + 100);
     }
 
-    function test_list_activation_latches_cursor_inward(): void {
+    function test_list_activation_flashes_selected_row(): void {
         const host = createTemporaryObject(listHost, testCase);
         verify(host !== null);
         wait(1);
@@ -178,73 +236,100 @@ TestCase {
         const firstRow = findChild(host, "browseListRow-0");
         verify(list !== null);
         verify(firstRow !== null);
-        const latch = findChild(firstRow, "latchSurface");
-        verify(latch !== null);
-        compare(latch.latchOffset, 0);
+        const bar = findChild(firstRow, "selectionBar");
+        verify(bar !== null);
+        compare(bar.flashing, false);
         compare(firstRow.scale, 1.0);
 
         list.activatePulse++;
-        tryCompare(latch, "latchOffset", Sizing.focusRingWidth, Motion.pressMs + 100);
+        compare(bar.flashing, true);
         compare(firstRow.scale, 1.0);
-
-        list.releasePulse++;
-        tryCompare(latch, "latchOffset", 0, Motion.settleMs + 100);
+        tryCompare(bar, "flashing", false, Motion.pressMs + 100);
     }
 
-    function test_list_selection_change_releases_old_latch(): void {
+    // Regression test for item 2: the row title's inline tag suffix uses a
+    // separate `variantColor` from the name's own `nameColor`, and it went
+    // unset when the inverse-video row background flipped to accent -- there
+    // was no coverage for this at all, which is how it shipped illegible.
+    function test_list_tag_suffix_color_flips_with_selected_row(): void {
         const host = createTemporaryObject(listHost, testCase);
         verify(host !== null);
-        wait(1);
+        // Under load (the full suite, not this file run in isolation) the
+        // second delegate can take longer than the first to be created —
+        // wait for it explicitly rather than assuming one event-loop tick
+        // is always enough.
+        tryVerify(() => findChild(host, "browseListRow-1") !== null, 1000);
 
-        const list = findChild(host, "browseList");
         const firstRow = findChild(host, "browseListRow-0");
-        verify(list !== null);
+        const secondRow = findChild(host, "browseListRow-1");
         verify(firstRow !== null);
-        const latch = findChild(firstRow, "latchSurface");
-        verify(latch !== null);
+        verify(secondRow !== null);
+        const secondSuffix = findChild(secondRow, "scrollingCaptionSuffixText");
+        verify(secondSuffix !== null);
 
-        list.activatePulse++;
-        tryCompare(latch, "latchOffset", Sizing.focusRingWidth, Motion.pressMs + 100);
+        // Compared as hex strings, not `color` values directly: `Text.color`
+        // round-trips through Qt Quick's 8-bit-per-channel paint path, so a
+        // value read back can differ from the assigned `color` property by a
+        // sub-visible amount despite both displaying (and printing) the same
+        // `#rrggbb` -- a direct `color` compare() is comparing precision the
+        // rendering pipeline itself doesn't preserve.
+        const list = findChild(host, "browseList");
+        list.currentIndex = 0;
+        compare(secondSuffix.color.toString(), Theme.textVariant.toString());
+
         list.currentIndex = 1;
-        compare(latch.latchOffset, 0);
+        compare(secondSuffix.color.toString(), Theme.onAccentMuted.toString());
     }
 
-    // SettingsField mounts the same LatchSurface BrowseList does (see
-    // LatchSurface.qml) so the two recessed-slot lists cannot drift apart.
-    // Unlike BrowseList, a field self-releases on a timer after
-    // `Motion.pressMs` rather than waiting for a host-driven releasePulse —
-    // there is no "selection moved off this row" signal separate from
-    // "the accept press finished" in a single-row form field.
-    function test_settings_field_activation_latches_cursor_inward(): void {
+    function test_list_selection_change_cuts_flash_short(): void {
+        const host = createTemporaryObject(listHost, testCase);
+        verify(host !== null);
+        wait(1);
+
+        const list = findChild(host, "browseList");
+        const firstRow = findChild(host, "browseListRow-0");
+        verify(list !== null);
+        verify(firstRow !== null);
+        const bar = findChild(firstRow, "selectionBar");
+        verify(bar !== null);
+
+        list.activatePulse++;
+        compare(bar.flashing, true);
+        list.currentIndex = 1;
+        compare(bar.flashing, false);
+    }
+
+    // SettingsField mounts the same SelectionBar BrowseList does (see
+    // SelectionBar.qml) so the two lists cannot drift apart.
+    function test_settings_field_activation_flashes_selected_row(): void {
         const field = createTemporaryObject(pickerFieldHost, testCase);
         verify(field !== null);
         wait(1);
 
-        const latch = findChild(field, "latchSurface");
-        verify(latch !== null);
-        compare(latch.latchOffset, 0);
+        const bar = findChild(field, "selectionBar");
+        verify(bar !== null);
+        compare(bar.flashing, false);
 
         field.activatePulse++;
-        tryCompare(latch, "latchOffset", Sizing.focusRingWidth, Motion.pressMs + 100);
-
-        tryCompare(latch, "latchOffset", 0, Motion.pressMs + Motion.settleMs + 200);
+        compare(bar.flashing, true);
+        tryCompare(bar, "flashing", false, Motion.pressMs + 100);
     }
 
-    // Toggle rows are exempt from the latch — the knob slide is their own
+    // Toggle rows are exempt from the flash — the knob slide is their own
     // activation feedback (see SettingsField.qml's onActivatePulseChanged
-    // guard on `control !== "toggle"`), so a rail sliding in on top of a
+    // guard on `control !== "toggle"`), so an inverse blink on top of a
     // sliding knob would double up the cue.
-    function test_settings_field_toggle_row_does_not_latch(): void {
+    function test_settings_field_toggle_row_does_not_flash(): void {
         const field = createTemporaryObject(toggleHost, testCase);
         verify(field !== null);
         field.isFocused = true;
         wait(1);
 
-        const latch = findChild(field, "latchSurface");
-        verify(latch !== null);
+        const bar = findChild(field, "selectionBar");
+        verify(bar !== null);
 
         field.activatePulse++;
         wait(Motion.pressMs + 100);
-        compare(latch.latchOffset, 0);
+        compare(bar.flashing, false);
     }
 }

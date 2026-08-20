@@ -432,8 +432,9 @@ Item {
         if (id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion" || id === "crtEnabled")
             return "toggle";
         if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration")
-            if (id === "updateMediaDb" || id === "runScraper" || id === "uploadLog")
-                return "action";
+            return "navigate";
+        if (id === "updateMediaDb" || id === "runScraper" || id === "uploadLog")
+            return "action";
         return "picker";
     }
 
@@ -553,7 +554,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "resolution" || id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "browseLayout" || id === "systemLogoStyle" || id === "buttonLayout" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
+        return id === "resolution" || id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "browseLayout" || id === "systemLogoStyle" || id === "colorScheme" || id === "buttonLayout" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
     }
     // True when focused row accepts A without left/right cycling:
     // pickers, jobs, modal/navigation rows, and root category rows.
@@ -760,12 +761,38 @@ Item {
         return qsTr("Tinted");
     }
 
+    // A lookup table rather than an if-chain now that the catalog has grown
+    // past a handful of presets (round 5). Every label is still a literal
+    // qsTr() call so lupdate can harvest it -- a computed/templated string
+    // would not be translator-visible.
     function _colorSchemeDisplay(value: string): string {
-        if (value === "midnight-amber")
-            return qsTr("Midnight Amber");
-        if (value === "zaparoo-white")
-            return qsTr("Zaparoo White");
-        return qsTr("Zaparoo Black");
+        const names = {
+            "zaparoo-black": qsTr("Zaparoo Black"),
+            "midnight-amber": qsTr("Midnight Amber"),
+            "zaparoo-white": qsTr("Zaparoo White"),
+            "catppuccin-mocha": qsTr("Catppuccin Mocha"),
+            "catppuccin-macchiato": qsTr("Catppuccin Macchiato"),
+            "catppuccin-frappe": qsTr("Catppuccin Frappé"),
+            "nord": qsTr("Nord"),
+            "dracula": qsTr("Dracula"),
+            "gruvbox-dark": qsTr("Gruvbox Dark"),
+            "gruvbox-light": qsTr("Gruvbox Light"),
+            "tokyo-night": qsTr("Tokyo Night"),
+            "rose-pine": qsTr("Rosé Pine"),
+            "kanagawa-wave": qsTr("Kanagawa Wave"),
+            "ayu-dark": qsTr("Ayu Dark"),
+            "nightfox": qsTr("Nightfox"),
+            "monokai": qsTr("Monokai"),
+            "one-dark-pro": qsTr("One Dark Pro"),
+            "everforest-dark": qsTr("Everforest Dark"),
+            "synthwave-84": qsTr("Synthwave '84"),
+            "amber-phosphor": qsTr("Amber Phosphor"),
+            "green-phosphor": qsTr("Green Phosphor"),
+            "neo-geo": qsTr("Neo Geo"),
+            "nes": qsTr("NES"),
+            "virtual-boy": qsTr("Virtual Boy")
+        };
+        return names[value] !== undefined ? names[value] : names["zaparoo-black"];
     }
 
     function _buttonLayoutDisplay(value: string): string {
@@ -929,7 +956,14 @@ Item {
             for (let i = 0; i < list.length; i++)
                 entries.push({
                     id: list[i],
-                    label: settings._colorSchemeDisplay(list[i])
+                    label: settings._colorSchemeDisplay(list[i]),
+                    // Precomputed once here rather than per-delegate in
+                    // ListPickerModal's Repeater -- ColorSchemes.previewColors()
+                    // is cheap, but there's no reason to re-run it on every
+                    // binding re-evaluation. Undefined for every other picker's
+                    // entries, which is the flag ListPickerModal uses to fall
+                    // back to its plain centered-label row.
+                    swatch: ColorSchemes.previewColors(list[i])
                 });
             initialId = Browse.Settings.current_color_scheme;
         } else if (id === "buttonLayout") {
@@ -1303,8 +1337,8 @@ Item {
 
         readonly property int columns: settings.rootGridColumns
         readonly property int rows: settings.rootGridRows
-        readonly property int leftInset: Sizing.pctW(5)
-        readonly property int rightInset: Sizing.pctW(5)
+        readonly property int leftInset: Sizing.pctW(3)
+        readonly property int rightInset: Sizing.pctW(3)
         readonly property int topInset: Sizing.pctH(2)
         readonly property int bottomInset: Sizing.pctH(2)
         readonly property int cellSpacingX: Sizing.pctW(3)
@@ -1401,15 +1435,20 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Sizing.pctH(10)
         anchors.horizontalCenter: parent.horizontalCenter
-        width: Math.min(parent.width - Sizing.pctW(10), Sizing.pctW(70))
+        width: Math.min(parent.width - Sizing.pctW(6), Sizing.pctW(70))
         contentWidth: width
         contentHeight: form.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
 
-        // One card behind every section so the rows read as channels cut
-        // into something, matching the recessed-slot vocabulary each row
-        // itself uses (see SettingsField.qml / LatchSurface.qml) rather
+        // Inset applied to every row mount below so the card keeps a
+        // visible lip on both sides, matching BrowseList's row inset
+        // (see the "Row edge consistency" note in docs/style.md).
+        readonly property int cardPadding: Sizing.pctW(2)
+
+        // One card behind every section so the rows read as lines of text
+        // cut into something, matching the inverse-video vocabulary each
+        // row itself uses (see SettingsField.qml / SelectionBar.qml) rather
         // than floating loose on the screen background.
         Rectangle {
             width: form.width
@@ -1464,7 +1503,9 @@ Item {
                         id: header
                         visible: row.isHeader
                         anchors.left: parent.left
+                        anchors.leftMargin: flickable.cardPadding
                         anchors.right: parent.right
+                        anchors.rightMargin: flickable.cardPadding
                         label: row.modelData.label
                     }
 
@@ -1472,7 +1513,9 @@ Item {
                         id: field
                         visible: !row.isHeader
                         anchors.left: parent.left
+                        anchors.leftMargin: flickable.cardPadding
                         anchors.right: parent.right
+                        anchors.rightMargin: flickable.cardPadding
                         isFocused: row.index === settings.currentIndex
                         animateChanges: !settings._pageSwitching
                         activatePulse: settings.fieldActivatePulse

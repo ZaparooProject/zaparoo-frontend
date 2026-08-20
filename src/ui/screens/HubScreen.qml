@@ -602,7 +602,7 @@ Item {
         // the focused tile renders below the grid in `activeLabel`,
         // not inside the tile.
         readonly property int spacing: Sizing.pctW(3)
-        readonly property int sideInset: Sizing.pctW(5)
+        readonly property int sideInset: Sizing.pctW(3)
         readonly property int maxCellWidth: Sizing.pctH(22)
         readonly property int n: hub.visibleCategoryEntries.length
         // n=0 falls back to maxCellWidth so the actions row (which

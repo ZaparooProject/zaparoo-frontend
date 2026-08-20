@@ -267,8 +267,8 @@ Item {
     // tighter than `cellSpacingX` — the scrollbar reads as chrome,
     // not as another cell, so a full inter-cell gap looks like wasted
     // space next to it. Single-page grids reserve no invisible gutter.
-    readonly property int leftInset: root._gridProfile ? root._gridProfile.leftInset : Sizing.pctW(5)
-    readonly property int rightInset: root._gridProfile ? root._gridProfile.rightInset : Sizing.pctW(5)
+    readonly property int leftInset: root._gridProfile ? root._gridProfile.leftInset : Sizing.pctW(3)
+    readonly property int rightInset: root._gridProfile ? root._gridProfile.rightInset : Sizing.pctW(3)
     readonly property int gutterWidth: root._gridProfile ? root._gridProfile.gutterWidth : Sizing.pctW(3)
     readonly property int gutterGap: root._gridProfile ? root._gridProfile.gutterGap : Sizing.pctW(1.5)
     readonly property int scrollThumbWidth: root._gridProfile ? root._gridProfile.scrollThumbWidth : Sizing.pctW(1.2)

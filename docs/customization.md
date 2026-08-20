@@ -78,14 +78,19 @@ appear unchanged.
 
 ## Color scheme
 
-Choose a preset live under Settings → Display → Color scheme. Selection is
-stored as `[settings] color_scheme` in `frontend.toml`:
+Choose a preset live under Settings → Display → Color scheme. There are 24
+built-in presets — the three original Zaparoo themes plus popular editor/
+terminal palettes (Catppuccin, Nord, Dracula, Gruvbox, Tokyo Night, Rosé
+Pine, and more) and a handful of retro/console-inspired ones — each shown
+with a 3-color swatch preview in the picker. Selection is stored as
+`[settings] color_scheme` in `frontend.toml`:
 
 ```toml
 [settings]
-color_scheme = "zaparoo-black" # or "midnight-amber"
+color_scheme = "zaparoo-black" # or "catppuccin-mocha", "nord", "dracula", ...
 ```
 
+See `src/ui/theme/ColorSchemes.qml`'s `ids` list for every available id.
 Unknown values fall back to `zaparoo-black`. Presets recolor built-in tinted
 artwork; custom and full-color artwork remains unchanged.
 

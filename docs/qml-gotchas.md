@@ -162,7 +162,7 @@ Pick animations from the cheap column when targeting MiSTer.
 
 | Cheap on raster | Expensive on raster |
 |---|---|
-| Instant cut + small one-shot cue (tile press or row latch) | Translucent overlays of any size (see below) |
+| Instant cut + small one-shot cue (tile press or row flash) | Translucent overlays of any size (see below) |
 | Integer translation of small items (one tile face or cursor rail) | Translation of large content (band of N tiles) |
 | ColorAnimation on tints / borders | Concurrent slide + scale (compounds raster cost) |
 | Static scenes with one ramping property on a small element | `ShaderEffect` of any kind, `Qt5Compat.GraphicalEffects` |
@@ -210,7 +210,7 @@ plain animations, and `layer.enabled` without an effect.
 ### Recommendation
 
 For state-change feedback, prefer instant cuts with a small localized cue
-(the physical press, cursor latch, or help-bar text change) over any fade.
+(the physical press, row flash, or help-bar text change) over any fade.
 Cues are small elements with small dirty rectangles; they paint cheaply
 on raster regardless of DPR or partial-update status. Reach for a fade
 only after diagnosing DPR and ensuring the destination scene is
@@ -230,7 +230,7 @@ Sanctioned patterns and why they are safe:
 | Cue | Cost analysis |
 |---|---|
 | Tile physical press on activate or launch (~80 ms, held) | One opaque face translates down by `Sizing.pressEdgeHeight`; dirty rect = one tile; no cover-art resampling. The host screen's `settling` flag raises the face off-screen. One shared cue covers forward navigation and game launch |
-| List-detail cursor latch on activate or launch (~80 ms, held) | Only selected row's accent rail, title margin, and optional heart inset move by `Sizing.focusRingWidth`; background and neighboring rows remain static |
+| List/settings row inverse-blink on activate or launch (~80 ms, self-clearing) | Only the selected row's `SelectionBar` swaps fill and content color for `Motion.pressMs`, then swaps back — 2 repaints total, nothing moves; background and neighboring rows remain static |
 | Settings toggle-knob slide (x, ~110 ms) | One tiny Rectangle handle; 1 pctW |
 
 The shared constraint: the source scene must be static or near-static during
@@ -279,7 +279,7 @@ Token summary (`Motion.qml`):
 
 | Token | Value | Use |
 |---|---|---|
-| `pressMs` | 80 | Physical press or cursor-latch cue |
+| `pressMs` | 80 | Physical press or row inverse-blink cue |
 | `settleMs` | 110 | Release leg; toggle-knob slide |
 
 Both durations sit just above MiSTer's frame-budget floor (~3 frames at

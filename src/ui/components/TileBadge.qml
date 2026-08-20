@@ -5,11 +5,11 @@
 import QtQuick
 import Zaparoo.Theme
 
-// Compact pill badge for tile state overlays. Filled accent surface with a
-// dark label and border that stay readable over dimmed art and system icons.
-// A preset authors two colors, so state markers share the accent rather than
-// introducing a third; the pill shape and dark label keep it distinct from the
-// focus ring.
+// Compact pill badge for tile state overlays. Filled with `Theme.marker` --
+// the same fixed-hue state-marker role the favorite heart uses, so "this
+// item has a property" reads consistently -- with a `markerOutline` label
+// and border that stay readable over dimmed art and system icons regardless
+// of preset. The pill shape keeps it distinct from the focus ring.
 Rectangle {
     id: root
 
@@ -21,9 +21,9 @@ Rectangle {
     width: labelText.implicitWidth + 2 * root._horizontalPadding
     height: labelText.implicitHeight + 2 * root._verticalPadding
     radius: Sizing.half(height)
-    color: Theme.accent
+    color: Theme.marker
     border.width: Sizing.stroke(1)
-    border.color: Theme.bgBar
+    border.color: Theme.markerOutline
     antialiasing: true
 
     Text {
@@ -31,7 +31,7 @@ Rectangle {
 
         anchors.centerIn: parent
         text: root.label
-        color: Theme.bgBar
+        color: Theme.markerOutline
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontSize(1.8)
         font.bold: true

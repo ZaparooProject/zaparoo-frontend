@@ -158,6 +158,7 @@ Item {
 
         Text {
             id: nameText
+            objectName: "scrollingCaptionNameText"
 
             x: 0
             width: root._nameRenderW
@@ -175,6 +176,7 @@ Item {
 
         Text {
             id: suffixText
+            objectName: "scrollingCaptionSuffixText"
 
             x: root._nameRenderW + root._gapW
             width: root._tagsRenderW

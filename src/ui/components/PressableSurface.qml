@@ -27,7 +27,11 @@ Item {
 
     readonly property real faceOffset: face.y
     readonly property int visibleEdgeHeight: root.pressed ? 0 : Math.min(root.edgeHeight, root.height)
-    readonly property int faceBorderWidth: focused ? Sizing.focusBorderWidth : Sizing.cardBorderWidth
+    // Ring inset and width reuse the same tokens Tile.qml's focus ring uses
+    // (see the ring construction below), so a modal button and a grid tile
+    // read as the same weight of "this is focused."
+    readonly property int _ringGap: Sizing.focusBorderWidth
+    readonly property int _ringWidth: Sizing.focusRingWidth
 
     clip: true
 
@@ -64,8 +68,8 @@ Item {
         height: Math.max(0, root.height - Math.min(root.edgeHeight, root.height))
         color: root.faceColor
         radius: root.radius
-        border.color: root.focused ? Theme.accent : Theme.borderMid
-        border.width: root.faceBorderWidth
+        border.color: Theme.borderMid
+        border.width: Sizing.cardBorderWidth
 
         Behavior on y {
             enabled: Motion.enabled
@@ -73,6 +77,36 @@ Item {
                 duration: Motion.dur(root.pressed ? Motion.pressMs : Motion.settleMs)
                 easing.type: Easing.OutQuad
             }
+        }
+
+        // Focus ring — two stacked *filled* rounded rectangles rather than a
+        // thicker border: thin rounded borders are tessellated without
+        // subpixel AA coverage under Qt's software adaptation and step
+        // visibly at the corners (QTBUG-123210), while filled rounded rects
+        // honor the AA path. See Tile.qml's identical construction. Inset
+        // within `face` (not the root Item, which clips) so the ring stays
+        // inside the button's own bounds through the press translation, and
+        // drawn before `faceContent` so caller content paints on top of it.
+        Rectangle {
+            id: focusRingOuter
+            objectName: "pressableFocusRingOuter"
+
+            anchors.fill: parent
+            anchors.margins: root._ringGap
+            color: Theme.accent
+            radius: Math.max(0, face.radius - root._ringGap)
+            antialiasing: true
+            visible: root.focused
+        }
+
+        Rectangle {
+            objectName: "pressableFocusRingInner"
+            anchors.fill: focusRingOuter
+            anchors.margins: root._ringWidth
+            color: root.faceColor
+            radius: Math.max(0, focusRingOuter.radius - root._ringWidth)
+            antialiasing: true
+            visible: root.focused
         }
 
         Item {

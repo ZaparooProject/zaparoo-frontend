@@ -24,7 +24,6 @@ qt_add_qml_module(
         FocusedMediaDetailController.qml
         GameInfoModal.qml
         HeaderBar.qml
-        LatchSurface.qml
         LetterJumpModal.qml
         LoadingIndicator.qml
         ListPickerModal.qml
@@ -37,6 +36,7 @@ qt_add_qml_module(
         ScreensaverOverlay.qml
         ScreenStateOverlay.qml
         ScrollingCaption.qml
+        SelectionBar.qml
         SettingsField.qml
         SettingsSectionHeader.qml
         StatusIcon.qml

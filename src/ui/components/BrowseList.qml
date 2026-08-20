@@ -56,23 +56,22 @@ Item {
     readonly property int _scrollThumbRightInset: root._grid ? root._grid.scrollThumbRightInset : 0
     readonly property bool _scrollThumbRightAligned: root._grid && root._grid.scrollThumbRightAligned !== undefined ? root._grid.scrollThumbRightAligned : false
     readonly property int _scrollArrowSize: root._grid ? root._grid.scrollArrowSize : Math.min(root._gutterWidth, Sizing.pctH(4))
-    readonly property int _selectionAccentWidth: root._list && root._list.selectionAccentWidth !== undefined ? root._list.selectionAccentWidth : Sizing.pctW(0.45)
     readonly property int _rowTextLeftPadding: root._list ? root._list.rowTextLeftPadding : Sizing.pctW(1.6)
     readonly property int _rowTextRightPadding: root._list ? root._list.rowTextRightPadding : Sizing.pctW(1.6)
     readonly property int _favoriteRightPadding: root._list ? root._list.favoriteRightPadding : Sizing.pctW(1.6)
     // qmllint enable compiler
 
-    // Pulse counter for the selected row's cursor latch. Callers increment via
-    // activatePulse; only the selected row moves its accent rail and title
-    // inward. Forward navigation and game launch share this single cue.
+    // Pulse counter for the selected row's inverse-video flash. Callers
+    // increment via activatePulse; only the selected row's bar/content colors
+    // swap. Forward navigation and game launch share this single cue.
     property int activatePulse: 0
-    // Release counter for the cursor latch. Incremented by the host after a
-    // launch that keeps the frontend on the same screen. Forward navigation
-    // never increments it; screenSettling releases the latch off-screen.
+    // Cuts a held flash short. Incremented by the host after a launch that
+    // keeps the frontend on the same screen. Forward navigation never
+    // increments it; screenSettling cuts the flash off-screen.
     property int releasePulse: 0
-    // When true, releases the row latch so a held activation does not persist
-    // when the screen is shown again. Set by the host to
-    // !active while the screen is off-screen.
+    // When true, cuts a held flash short so it does not persist when the
+    // screen is shown again. Set by the host to !active while the screen is
+    // off-screen.
     property bool screenSettling: false
 
     signal itemHovered(int index)
@@ -200,19 +199,18 @@ Item {
                 restoreMode: Binding.RestoreNone
             }
 
-            // Recessed-slot highlight. See LatchSurface.qml for why the keyline
-            // sits on the bottom rather than the top (the whole UI is lit low
-            // and from the front, so a recess's near wall falls into shade).
-            LatchSurface {
-                id: latch
-                objectName: "latchSurface"
+            // Inverse-video highlight. See SelectionBar.qml -- selection is a
+            // line of text swapping foreground and background, not an object
+            // lifting off the page.
+            SelectionBar {
+                id: bar
+                objectName: "selectionBar"
                 anchors.fill: parent
                 active: row._highlightVisible
                 activatePulse: root.activatePulse
                 releasePulse: root.releasePulse
                 screenSettling: root.screenSettling
                 radius: root._selectionRadius
-                railWidth: root._selectionAccentWidth
             }
 
             // Row title carrying the inline dim token suffix. ScrollingCaption
@@ -222,7 +220,7 @@ Item {
             // margin reserves the favorite-heart slot.
             ScrollingCaption {
                 anchors.left: parent.left
-                anchors.leftMargin: root._rowTextLeftPadding + latch.latchOffset
+                anchors.leftMargin: root._rowTextLeftPadding
                 anchors.right: parent.right
                 anchors.rightMargin: row._favoriteSlot + root._rowTextRightPadding
                 anchors.verticalCenter: parent.verticalCenter
@@ -232,16 +230,17 @@ Item {
                 focused: row._highlightVisible
                 centerContent: false
                 fontPixelSize: Sizing.fontSection
-                nameColor: row._highlightVisible ? Theme.textPrimary : Theme.textLabel
+                nameColor: row._highlightVisible ? bar.contentColor : Theme.textLabel
+                variantColor: row._highlightVisible ? Theme.onAccentMuted : Theme.textVariant
             }
 
             Image {
                 anchors.right: parent.right
-                anchors.rightMargin: Math.max(0, root._favoriteRightPadding - latch.latchOffset)
+                anchors.rightMargin: root._favoriteRightPadding
                 anchors.verticalCenter: parent.verticalCenter
                 width: Sizing.pctH(3.2)
                 height: width
-                source: Resources.coverUrl("icons/Heart", Theme.accent, Theme.accent, Theme.markerOutline)
+                source: row._highlightVisible ? Resources.coverUrl("icons/Heart", Theme.onAccent, Theme.onAccent, Theme.accent) : Resources.coverUrl("icons/Heart", Theme.marker, Theme.marker, Theme.markerOutline)
                 sourceSize.width: Sizing.px(width)
                 sourceSize.height: Sizing.px(height)
                 fillMode: Image.PreserveAspectFit

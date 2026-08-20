@@ -24,12 +24,12 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "grid": {
-                        "leftInset": "pctW:5",
-                        "rightInset": "pctW:5",
+                        "leftInset": "pctW:3",
+                        "rightInset": "pctW:3",
                         "gutterWidth": "pctW:3",
                         "gutterGap": "pctW:1.5",
                         "columnGap": "pctW:2",
@@ -46,8 +46,8 @@ QtObject {
                         "activeLabelHeight": "pctH:7",
                         "activeLabelBottomMargin": "pctH:8",
                         "bottomStatusVisible": false,
-                        "bottomStatusLeftMargin": "pctW:5",
-                        "bottomStatusRightMargin": "pctW:5",
+                        "bottomStatusLeftMargin": "pctW:3",
+                        "bottomStatusRightMargin": "pctW:3",
                         "gridBottomMargin": "sum(pctH:8,pctH:7)",
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
@@ -65,7 +65,7 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "list": {
@@ -74,7 +74,7 @@ QtObject {
                         "detailShare": 1,
                         "dividerWidth": 1,
                         "dividerMargin": 0,
-                        "cardSideMargin": "pctW:5",
+                        "cardSideMargin": "pctW:3",
                         "cardTopMargin": "pctH:2",
                         "cardBottomMargin": "pctH:8",
                         "cardPaddingLeft": "pctW:2",
@@ -85,7 +85,6 @@ QtObject {
                         "rowSpacing": "pctH:0.7",
                         "centerSlot": -1,
                         "scrollbarGap": "pctW:1.5",
-                        "selectionAccentWidth": "pctW:0.45",
                         "rowTextLeftPadding": "pctW:1.6",
                         "rowTextRightPadding": "pctW:1.6",
                         "favoriteRightPadding": "pctW:1.6",
@@ -138,7 +137,7 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "list": {
@@ -147,7 +146,7 @@ QtObject {
                         "detailShare": 5,
                         "dividerWidth": 1,
                         "dividerMargin": 0,
-                        "cardSideMargin": "pctW:5",
+                        "cardSideMargin": "pctW:3",
                         "cardTopMargin": "pctH:2",
                         "cardBottomMargin": "pctH:8",
                         "cardPaddingLeft": "pctW:2",
@@ -158,7 +157,6 @@ QtObject {
                         "rowSpacing": "pctH:0.3",
                         "centerSlot": -1,
                         "scrollbarGap": "pctW:1.5",
-                        "selectionAccentWidth": "pctW:0.45",
                         "rowTextLeftPadding": "pctW:1.6",
                         "rowTextRightPadding": "pctW:1.6",
                         "favoriteRightPadding": "pctW:1.6",
@@ -211,12 +209,12 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "grid": {
-                        "leftInset": "pctW:5",
-                        "rightInset": "pctW:5",
+                        "leftInset": "pctW:3",
+                        "rightInset": "pctW:3",
                         "gutterWidth": "pctW:3",
                         "gutterGap": "pctW:1.5",
                         "columnGap": "pctW:2",
@@ -233,8 +231,8 @@ QtObject {
                         "activeLabelHeight": "pctH:7",
                         "activeLabelBottomMargin": "pctH:8",
                         "bottomStatusVisible": false,
-                        "bottomStatusLeftMargin": "pctW:5",
-                        "bottomStatusRightMargin": "pctW:5",
+                        "bottomStatusLeftMargin": "pctW:3",
+                        "bottomStatusRightMargin": "pctW:3",
                         "gridBottomMargin": "sum(pctH:8,pctH:7)",
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
@@ -252,7 +250,7 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "list": {
@@ -261,7 +259,7 @@ QtObject {
                         "detailShare": 1,
                         "dividerWidth": 1,
                         "dividerMargin": 0,
-                        "cardSideMargin": "pctW:5",
+                        "cardSideMargin": "pctW:3",
                         "cardTopMargin": "pctH:2",
                         "cardBottomMargin": "pctH:8",
                         "cardPaddingLeft": "pctW:2",
@@ -272,7 +270,6 @@ QtObject {
                         "rowSpacing": "pctH:0.7",
                         "centerSlot": -1,
                         "scrollbarGap": "pctW:1.5",
-                        "selectionAccentWidth": "pctW:0.45",
                         "rowTextLeftPadding": "pctW:1.6",
                         "rowTextRightPadding": "pctW:1.6",
                         "favoriteRightPadding": "pctW:1.6",
@@ -325,7 +322,7 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "list": {
@@ -334,7 +331,7 @@ QtObject {
                         "detailShare": 5,
                         "dividerWidth": 1,
                         "dividerMargin": 0,
-                        "cardSideMargin": "pctW:5",
+                        "cardSideMargin": "pctW:3",
                         "cardTopMargin": "pctH:2",
                         "cardBottomMargin": "pctH:8",
                         "cardPaddingLeft": "pctW:2",
@@ -345,7 +342,6 @@ QtObject {
                         "rowSpacing": "pctH:0.3",
                         "centerSlot": -1,
                         "scrollbarGap": "pctW:1.5",
-                        "selectionAccentWidth": "pctW:0.45",
                         "rowTextLeftPadding": "pctW:1.6",
                         "rowTextRightPadding": "pctW:1.6",
                         "favoriteRightPadding": "pctW:1.6",
@@ -461,7 +457,6 @@ QtObject {
                         "rowSpacing": 0,
                         "centerSlot": 7,
                         "scrollbarGap": 2,
-                        "selectionAccentWidth": 2,
                         "rowTextLeftPadding": 4,
                         "rowTextRightPadding": 2,
                         "favoriteRightPadding": 2,
@@ -535,7 +530,6 @@ QtObject {
                         "rowSpacing": 0,
                         "centerSlot": 7,
                         "scrollbarGap": 2,
-                        "selectionAccentWidth": 2,
                         "rowTextLeftPadding": 4,
                         "rowTextRightPadding": 2,
                         "favoriteRightPadding": 2,
@@ -649,7 +643,6 @@ QtObject {
                         "rowSpacing": 0,
                         "centerSlot": 7,
                         "scrollbarGap": 2,
-                        "selectionAccentWidth": 2,
                         "rowTextLeftPadding": 4,
                         "rowTextRightPadding": 2,
                         "favoriteRightPadding": 2,
@@ -723,7 +716,6 @@ QtObject {
                         "rowSpacing": 0,
                         "centerSlot": 7,
                         "scrollbarGap": 2,
-                        "selectionAccentWidth": 2,
                         "rowTextLeftPadding": 4,
                         "rowTextRightPadding": 2,
                         "favoriteRightPadding": 2,

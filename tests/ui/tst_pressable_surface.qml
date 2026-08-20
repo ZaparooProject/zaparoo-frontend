@@ -88,11 +88,46 @@ TestCase {
         compare(pointerSpy.count, 2);
     }
 
-    function test_focus_selects_semantic_border_width(): void {
+    // The face border no longer changes with focus — Tile-weight focus now
+    // reads through the two-rect accent ring below, matching how a grid
+    // tile's own focus ring works (see PressableSurface.qml and Tile.qml).
+    function test_face_border_is_constant_regardless_of_focus(): void {
+        const face = findChild(surface, "pressableFace");
+        verify(face !== null);
         surface.focused = false;
-        compare(surface.faceBorderWidth, Sizing.cardBorderWidth);
+        compare(face.border.width, Sizing.cardBorderWidth);
+        compare(face.border.color, Theme.borderMid);
         surface.focused = true;
-        compare(surface.faceBorderWidth, Sizing.focusBorderWidth);
+        compare(face.border.width, Sizing.cardBorderWidth);
+        compare(face.border.color, Theme.borderMid);
+    }
+
+    // Focus ring: an outer accent-filled rounded rect with an inner
+    // face-colored mask punched out of its center, snapping on/off with
+    // `focused` rather than fading — mirrors Tile.qml's construction
+    // byte-for-byte because thin rounded *borders* step visibly at the
+    // corners under Qt's software adaptation (QTBUG-123210) while filled
+    // rounded rects don't.
+    function test_focus_ring_is_two_stacked_filled_rects(): void {
+        const outer = findChild(surface, "pressableFocusRingOuter");
+        const inner = findChild(surface, "pressableFocusRingInner");
+        verify(outer !== null);
+        verify(inner !== null);
+
+        surface.focused = false;
+        compare(outer.visible, false);
+        compare(inner.visible, false);
+
+        surface.focused = true;
+        compare(outer.visible, true);
+        compare(inner.visible, true);
+        compare(outer.color, Theme.accent);
+        compare(inner.color, surface.faceColor);
+        // Inner mask sits strictly inside the outer ring by the ring width,
+        // leaving a uniform accent border rather than covering it entirely.
+        verify(inner.width < outer.width);
+        verify(inner.height < outer.height);
+        verify(_contrastRatio(outer.color, surface.faceColor) >= 3.0);
     }
 
     function test_default_geometry_uses_small_radius_and_opaque_edge(): void {

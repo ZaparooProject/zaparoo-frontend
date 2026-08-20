@@ -95,9 +95,9 @@ void tintImage(QImage& image, const QColor& highlight, const QColor& midtone, co
                 continue;
             }
 
-            int red = highlightR;
-            int green = highlightG;
-            int blue = highlightB;
+            int red = midtoneR;
+            int green = midtoneG;
+            int blue = midtoneB;
             if (!singleTone)
             {
                 const int tone = std::clamp((lumaOf(source) - range.min) * 255 /
@@ -241,19 +241,20 @@ bool testParity()
 }
 
 // The single-tone early-out must be an optimization, not a second code path:
-// every `tone` entry equals the highlight, so a caller that ignores the flag
+// every `tone` entry equals the midtone (the ramp's true center and its
+// fullest-chroma rung — see tint_lut.cpp), so a caller that ignores the flag
 // still gets the same answer.
 bool testSingleToneCollapses()
 {
-    const QColor highlight = QColor::fromRgb(0xff168bff);
-    const tint::TintLut lut = tint::makeTintLut(highlight, QColor::fromRgb(0xff7c8794),
-                                                QColor::fromRgb(0xff2c3542), true);
+    const QColor midtone = QColor::fromRgb(0xff7c8794);
+    const tint::TintLut lut =
+        tint::makeTintLut(QColor::fromRgb(0xff168bff), midtone, QColor::fromRgb(0xff2c3542), true);
     bool flat = true;
     for (QRgb entry : lut.tone)
     {
-        flat = flat && entry == qRgb(highlight.red(), highlight.green(), highlight.blue());
+        flat = flat && entry == qRgb(midtone.red(), midtone.green(), midtone.blue());
     }
-    return check(flat, "single-tone ramp must be flat highlight across all 256 entries");
+    return check(flat, "single-tone ramp must be flat midtone across all 256 entries");
 }
 
 // Part 5's ContextMenu corner masks are single-tone entries tinted with

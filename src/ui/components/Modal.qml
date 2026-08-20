@@ -52,8 +52,38 @@ Item {
     property bool failed: false              // transient only
     // Override the panel's max width on a per-callsite basis. The
     // content-heavier shell modals (legal notice, log upload with QR)
-    // bump this up.
+    // bump this up; shell consumers with narrower content (e.g.
+    // ListPickerModal) bring it down to their own measured content width.
     property int panelMaxWidth: Sizing.pctH(90)
+
+    // Content-driven width for the four prebaked kinds (title/body/buttons —
+    // content Modal owns and can measure), mirroring ContextMenu.qml's
+    // `_widestEntryLabelWidth` pattern. `kind: "shell"` content is opaque to
+    // Modal (an arbitrary caller-supplied Item), so it keeps the old
+    // percentage-of-viewport sizing instead; a shell caller with narrow,
+    // measurable content overrides `panelMaxWidth` itself.
+    readonly property int _contentHorizontalMargin: Sizing.pctW(4)
+    readonly property int _buttonHorizontalPadding: Sizing.pctW(8)
+    readonly property string _cancelLabel: qsTr("Cancel")
+    readonly property int _titleWidth: modal.title !== "" ? Math.ceil(_titleMetrics.advanceWidth(modal.title)) : 0
+    // 45 characters is the low end of the 45-75 standard readable measure —
+    // a long body paragraph wraps onto more lines instead of forcing a
+    // full-width panel.
+    readonly property int _bodyMaxLineWidth: Math.ceil(_bodyMetrics.averageCharacterWidth * 45)
+    readonly property int _bodyWidth: (modal.body !== "" && modal.kind !== "shell") ? Math.min(Math.ceil(_bodyMetrics.advanceWidth(modal.body)), modal._bodyMaxLineWidth) : 0
+    readonly property int _buttonsWidth: {
+        if (modal.kind === "action_error")
+            return Math.ceil(_bodyMetrics.advanceWidth(modal.buttonLabel)) + modal._buttonHorizontalPadding;
+        if (modal.kind === "transient")
+            return Math.ceil(_bodyMetrics.advanceWidth(modal._cancelLabel)) + modal._buttonHorizontalPadding;
+        if (modal.kind === "confirm")
+            return Math.ceil(_bodyMetrics.advanceWidth(modal.confirmNoLabel)) + modal._buttonHorizontalPadding + Math.ceil(_bodyMetrics.advanceWidth(modal.confirmYesLabel)) + modal._buttonHorizontalPadding + Sizing.pctW(2);
+        return 0;
+    }
+    readonly property int _desiredPanelWidth: Math.max(modal._titleWidth, modal._bodyWidth, modal._buttonsWidth) + 2 * modal._contentHorizontalMargin
+    // Degenerate-case floor only — real prompts size around
+    // `_desiredPanelWidth`, which tracks the longer of title/body/buttons.
+    readonly property int _minPanelWidth: Sizing.pctW(30)
 
     // confirm-only focus. False = No focused (safe default), true = Yes
     // focused. Reset on every open so a previous Yes-focus doesn't leak
@@ -131,6 +161,18 @@ Item {
         actionCommit.arm();
     }
 
+    FontMetrics {
+        id: _titleMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontTitle
+    }
+
+    FontMetrics {
+        id: _bodyMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontBody
+    }
+
     DeferredAction {
         id: actionCommit
         onDeferred: {
@@ -162,9 +204,14 @@ Item {
         }
 
         Rectangle {
+            objectName: "modalPanel"
             x: Sizing.center(parent.width, width)
             y: Sizing.center(parent.height, height)
-            width: Sizing.px(Math.min(parent.width * 0.78, modal.panelMaxWidth))
+            // `panelMaxWidth` (and the viewport itself) is an unconditional
+            // ceiling -- clamped first -- with the desired/floor width
+            // applied beneath it, so a caller-supplied cap always wins even
+            // when it is tighter than `_minPanelWidth`'s own default floor.
+            width: modal.kind === "shell" ? Sizing.px(Math.min(parent.width * 0.78, modal.panelMaxWidth)) : Sizing.px(Math.min(Math.min(parent.width * 0.92, modal.panelMaxWidth), Math.max(modal._minPanelWidth, modal._desiredPanelWidth)))
             height: contentColumn.height + Sizing.pctH(8)
             color: Theme.bgPanel
             radius: Sizing.radiusMd
@@ -243,7 +290,7 @@ Item {
                         Text {
                             x: Sizing.center(parent.width, width)
                             y: Sizing.center(parent.height, height)
-                            text: qsTr("Cancel")
+                            text: modal._cancelLabel
                             font.family: Theme.fontUi
                             font.pixelSize: Sizing.fontBody
                             color: Theme.textPrimary

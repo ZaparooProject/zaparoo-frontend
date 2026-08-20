@@ -67,17 +67,24 @@ TintLut makeTintLut(const QColor& highlight, const QColor& midtone, const QColor
     const int highlightR = highlight.red();
     const int highlightG = highlight.green();
     const int highlightB = highlight.blue();
+    const int midtoneR = midtone.red();
+    const int midtoneG = midtone.green();
+    const int midtoneB = midtone.blue();
 
     if (singleTone)
     {
-        const QRgb flat = qRgb(highlightR, highlightG, highlightB);
+        // The highlight rung is a rim light; a flat-luma source (most
+        // bundled system logos) has no rim to catch it, so filling with it
+        // painted flat logos in a near-white/near-black corner of the ramp
+        // instead of the accent hue itself. The midtone is the ramp's true
+        // center and carries the fullest chroma (see ColorSchemes.qml's
+        // logoFocus* derivation), so a flat logo now paints in the accent
+        // color when focused and the neutral mid-grey when not.
+        const QRgb flat = qRgb(midtoneR, midtoneG, midtoneB);
         lut.tone.fill(flat);
     }
     else
     {
-        const int midtoneR = midtone.red();
-        const int midtoneG = midtone.green();
-        const int midtoneB = midtone.blue();
         const int shadowR = shadow.red();
         const int shadowG = shadow.green();
         const int shadowB = shadow.blue();

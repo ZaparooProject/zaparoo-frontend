@@ -24,8 +24,6 @@ QtObject {
     readonly property color bgPanel: _palette.bgPanel
     readonly property color bgBar: _palette.bgBar
     readonly property color surfaceCard: _palette.surfaceCard
-    readonly property color selectionSurface: _palette.selectionSurface
-    readonly property color selectionShade: _palette.selectionShade
     readonly property color tileEdge: _palette.tileEdge
     readonly property color controlEdge: _palette.controlEdge
     readonly property color scrim: _palette.scrim
@@ -35,12 +33,18 @@ QtObject {
     readonly property color textLabel: _palette.textLabel
     readonly property color textVariant: _palette.textVariant
     readonly property color accent: _palette.accent
+    // Semantic tier — see ColorSchemes.qml. Body text/glyphs/control fills
+    // sitting on an accent-filled surface, and their subordinate variant.
+    readonly property color onAccent: _palette.onAccent
+    readonly property color onAccentMuted: _palette.onAccentMuted
     readonly property color logoPrimary: _palette.logoPrimary
     readonly property color logoSecondary: _palette.logoSecondary
     readonly property color logoShadow: _palette.logoShadow
     readonly property color logoFocusPrimary: _palette.logoFocusPrimary
     readonly property color logoFocusSecondary: _palette.logoFocusSecondary
     readonly property color logoFocusShadow: _palette.logoFocusShadow
+    // Fixed-hue state marker (favorite heart, Hidden badge) and its keyline.
+    readonly property color marker: _palette.marker
     readonly property color markerOutline: _palette.markerOutline
     readonly property string errorHex: _palette.errorHex
     readonly property color error: errorHex

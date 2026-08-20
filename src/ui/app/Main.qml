@@ -1269,6 +1269,15 @@ MainLayout {
         root._beginFolderNavigationTiming("forward");
         Browse.GamesState.push_level(path, "");
         root.gamesCoverRevealReady = false;
+        // Cut the accept flash before the model swaps content. This stays on
+        // screenGames — active never toggles false, so screenSettling cannot
+        // catch it — and a same-index selection (row 0 in both the old and
+        // new folder) means the row's `active` binding never changes either,
+        // so nothing else clears an in-flight flash. Without this, a fast
+        // (cached) folder load can land while the flash's PauseAnimation is
+        // still mid-flight, painting the new folder's row inverted.
+        if (root.gamesScreen !== null)
+            root.gamesScreen.releaseActivate();
         Browse.GamesModel.set_path(path);
     }
 
