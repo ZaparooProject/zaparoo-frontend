@@ -14,6 +14,7 @@ QtObject {
     property real screenWidth: 640
     property real screenHeight: 480
     property bool crtNativePath: false
+    property bool bitmapType: false
     property bool swapPercentageAxes: false
 
     // Shape and type hierarchy use discrete logical-resolution tiers. In TATE
@@ -27,15 +28,16 @@ QtObject {
     readonly property int radiusMd: tier === "1080" ? 8 : tier === "720" ? 6 : tier === "540" ? 4 : tier === "480" ? 3 : 2
     readonly property int radiusSm: Math.max(1, half(radiusMd))
 
-    // Six semantic text roles. CRT keeps the bitmap face's existing 8/16px
-    // quantization by resolving through fontSize(); other paths use a tiered
-    // ladder so adjacent roles never collapse at 240p/480p/540p.
-    readonly property int fontHero: crtNativePath ? fontSize(4.0) : _fontForTier(0)
-    readonly property int fontTitle: crtNativePath ? fontSize(3.2) : _fontForTier(1)
-    readonly property int fontSection: crtNativePath ? fontSize(2.9) : _fontForTier(2)
-    readonly property int fontBody: crtNativePath ? fontSize(2.6) : _fontForTier(3)
-    readonly property int fontCaption: crtNativePath ? fontSize(2.4) : _fontForTier(4)
-    readonly property int fontSmall: crtNativePath ? fontSize(2.2) : _fontForTier(5)
+    // Six semantic text roles. Bitmap type (CRT, or embedded 240p without
+    // --crt) keeps the bitmap face's existing 8/16px quantization by
+    // resolving through fontSize(); other paths use a tiered ladder so
+    // adjacent roles never collapse at 240p/480p/540p.
+    readonly property int fontHero: bitmapType ? fontSize(4.0) : _fontForTier(0)
+    readonly property int fontTitle: bitmapType ? fontSize(3.2) : _fontForTier(1)
+    readonly property int fontSection: bitmapType ? fontSize(2.9) : _fontForTier(2)
+    readonly property int fontBody: bitmapType ? fontSize(2.6) : _fontForTier(3)
+    readonly property int fontCaption: bitmapType ? fontSize(2.4) : _fontForTier(4)
+    readonly property int fontSmall: bitmapType ? fontSize(2.2) : _fontForTier(5)
 
     // Semantic thickness ladder. Every helper returns an integer and clamps to
     // at least one physical pixel through stroke().
@@ -146,6 +148,24 @@ QtObject {
         if (px <= 512)
             return 512;
         return 768;
+    }
+
+    // Header-logo asset ladder (resources/images/logo/logo-<variant>-<w>.png).
+    // Pre-sized rungs so HeaderBar decodes close to its painted width instead
+    // of bilinearly downscaling the 600px master at paint time. Snaps up to
+    // the smallest rung that covers `px`, mirroring snapCoverTier.
+    function snapLogoWidth(px: real): int {
+        if (px <= 96)
+            return 96;
+        if (px <= 144)
+            return 144;
+        if (px <= 192)
+            return 192;
+        if (px <= 256)
+            return 256;
+        if (px <= 384)
+            return 384;
+        return 600;
     }
 
     // Raw painted height (px) of a games-grid cover in caption mode: raised
@@ -325,15 +345,15 @@ QtObject {
     // qmllint enable compiler
 
     function _fontForTier(role: int): int {
-        const table = tier === "1080" ? [43, 35, 31, 28, 26, 24] : tier === "720" ? [29, 23, 21, 19, 17, 16] : tier === "540" ? [24, 19, 17, 15, 13, 11] : tier === "480" ? [22, 18, 16, 14, 12, 10] : [14, 12, 11, 10, 9, 8];
+        const table = tier === "1080" ? [43, 35, 31, 28, 26, 24] : tier === "720" ? [29, 23, 21, 19, 17, 16] : tier === "540" ? [24, 20, 18, 17, 15, 14] : tier === "480" ? [22, 18, 17, 16, 14, 13] : [14, 12, 11, 10, 9, 8];
         return table[Math.max(0, Math.min(table.length - 1, role))];
     }
 
-    // Minimum 8px to remain legible on CRT 240p displays. Kept for specialist
+    // Minimum 8px to remain legible on 240p displays. Kept for specialist
     // text and geometry; ordinary text chooses one of the six roles above.
     function fontSize(percent: real): int {
         const size = Math.max(8, pctH(percent));
-        if (!crtNativePath)
+        if (!bitmapType)
             return size;
         return size < 12 ? 8 : 16;
     }

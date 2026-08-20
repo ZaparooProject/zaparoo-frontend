@@ -221,9 +221,11 @@ Item {
             }
 
             Image {
-                source: Resources.iconUrl("ScrollUp")
+                source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
                 width: modal._scrollArrowSize
                 height: width
+                sourceSize.width: Sizing.px(width)
+                sourceSize.height: Sizing.px(height)
                 anchors.bottom: viewport.top
                 anchors.bottomMargin: modal._scrollArrowGap
                 anchors.horizontalCenter: viewport.horizontalCenter
@@ -233,9 +235,11 @@ Item {
             }
 
             Image {
-                source: Resources.iconUrl("ScrollDown")
+                source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
                 width: modal._scrollArrowSize
                 height: width
+                sourceSize.width: Sizing.px(width)
+                sourceSize.height: Sizing.px(height)
                 anchors.top: viewport.bottom
                 anchors.topMargin: modal._scrollArrowGap
                 anchors.horizontalCenter: viewport.horizontalCenter

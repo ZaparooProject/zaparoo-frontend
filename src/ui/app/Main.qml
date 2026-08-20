@@ -3568,7 +3568,7 @@ MainLayout {
         // bounding box.
         const w = lg.paintedWidth > 0 ? lg.paintedWidth : lg.width;
         const h = lg.paintedHeight > 0 ? lg.paintedHeight : lg.height;
-        screensaverOverlay.activate("qrc:/qt/qml/Zaparoo/App/resources/images/logo.png", Qt.rect(pt.x, pt.y, w, h));
+        screensaverOverlay.activate(Resources.logoUrl(w), Qt.rect(pt.x, pt.y, w, h));
     }
 
     Timer {
@@ -3719,12 +3719,23 @@ MainLayout {
     // primary content so the centered "Loading…" reads alone in the cleared
     // band. Do not apply a minimum-visible tail here: when the work completes
     // near the delay threshold, the destination must not paint underneath a
-    // stale loading label. Sized to the full window so anchors.centerIn parks
-    // the row in the geometric center regardless of which screen is the source.
+    // stale loading label. Parented into `scene` (not `root`) and sized to
+    // it, not the window, so the centered position matches the per-screen
+    // ScreenStateOverlay cue it hands off to — both now center within the
+    // same safe-area-inset rect instead of the cue centering on the raw
+    // window and the screen cue centering on the smaller inset content,
+    // which used to jump the row a few pixels at handoff. Living outside
+    // `scene` also meant this cue ignored the CRT safe-area inset and
+    // `scene.rotation`, so it painted unrotated over a rotated TATE scene;
+    // reparenting fixes that too. z: 250 sits above chrome (headerBar: 200,
+    // BootOverlay: 50, screen content: 0) but below real modals (commercial
+    // notice and up start at 310) so a modal that legitimately coexists with
+    // a pending transition still wins visually.
     Item {
+        parent: root.scene
         anchors.fill: parent
         visible: transitionCueActive || transitionCue.showing
-        z: 100
+        z: 250
 
         readonly property bool startupRestoreCueActive: root.bootComplete && root.startupRestoreCurtainVisible && root._startupRestoreScreen !== ""
         readonly property bool transitionCueActive: (root.pendingTransition !== "" && !root.startupRestoreCurtainVisible) || startupRestoreCueActive

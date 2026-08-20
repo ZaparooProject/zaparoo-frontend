@@ -10,7 +10,7 @@ TestCase {
     name: "ColorSchemes"
     when: windowShown
 
-    readonly property var requiredRoles: ["bgDeep", "bgPanel", "bgBar", "surfaceCard", "selectionSurface", "selectionShade", "tileEdge", "controlEdge", "scrim", "borderSubtle", "borderMid", "textPrimary", "textLabel", "textVariant", "accent", "logoPrimary", "logoSecondary", "logoShadow", "logoFocusPrimary", "logoFocusSecondary", "logoFocusShadow", "errorHex"]
+    readonly property var requiredRoles: ["bgDeep", "bgPanel", "bgBar", "surfaceCard", "selectionSurface", "selectionShade", "tileEdge", "controlEdge", "scrim", "borderSubtle", "borderMid", "textPrimary", "textLabel", "textVariant", "accent", "logoPrimary", "logoSecondary", "logoShadow", "logoFocusPrimary", "logoFocusSecondary", "logoFocusShadow", "markerOutline", "errorHex"]
 
     function _linearChannel(value: real): real {
         return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
@@ -43,6 +43,17 @@ TestCase {
         verify(ColorSchemes.isKnown("midnight-amber"));
         verify(ColorSchemes.isKnown("zaparoo-white"));
         compare(ColorSchemes.effectiveId("missing"), ColorSchemes.defaultId);
+    }
+
+    // Asset-selection flag for HeaderBar's logo PNG ladder (item 3b) — not a
+    // color role, so it is deliberately absent from requiredRoles. Must
+    // agree with each preset's own primary/text luma ordering, independent
+    // of palette()'s internal `up` flag.
+    function test_is_light_surface_matches_preset_luma(): void {
+        verify(!ColorSchemes.isLightSurface("zaparoo-black"));
+        verify(!ColorSchemes.isLightSurface("midnight-amber"));
+        verify(ColorSchemes.isLightSurface("zaparoo-white"));
+        compare(ColorSchemes.isLightSurface("missing"), ColorSchemes.isLightSurface(ColorSchemes.defaultId));
     }
 
     // The whole point of the catalog is that a preset is three colors. If a

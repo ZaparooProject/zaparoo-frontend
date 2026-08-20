@@ -390,6 +390,11 @@ Item {
         y: systems._listLayout ? listCard.y : systemsGrid.y
         width: systems._listLayout ? systems.width : systemsGrid.width
         height: systems._listLayout ? Math.max(0, systems.height - listCard.y - systems._listOverlayBottomMargin) : systemsGrid.height
+        // Content rect starts below the header, so recenter on the full
+        // screen (which matches `scene`, the global transition cue's new
+        // parent) rather than this rect's own smaller height — otherwise
+        // the loading cue jumps up when the global cue hands off here.
+        cueCenterY: systems.height / 2 - y
         enabled: true
         loading: systems._loading
         errorMessage: Browse.SystemsModel.error_message ?? ""

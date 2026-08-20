@@ -781,9 +781,12 @@ Item {
     }
 
     // Active label — single big line under the bottom row, swaps text
-    // on every move. Reads from whichever row owns focus. Keep it visible
-    // while tiles hide for a forward transition so source context remains
-    // stable until the destination cut.
+    // on every move. Reads from whichever row owns focus. Hidden during a
+    // forward transition like the categories/actions rows above (`hub.
+    // transitioning`) — the label used to stay up under the destination's
+    // "Loading…" cue (e.g. "Recently Played" lingering while Games loads),
+    // reading as stale source context rather than the settled label the
+    // Favorites path already showed correctly.
     ActiveLabel {
         id: activeLabel
 
@@ -806,7 +809,7 @@ Item {
                 return entry.name;
             return "";
         }
-        visible: hub.currentRow === 1 || (Browse.CategoriesModel.error_message ?? "") === ""
+        visible: !hub.transitioning && (hub.currentRow === 1 || (Browse.CategoriesModel.error_message ?? "") === "")
     }
 
     // CategoriesModel has no `loading` qproperty — the catalog is

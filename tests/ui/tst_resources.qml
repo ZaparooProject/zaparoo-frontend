@@ -312,6 +312,98 @@ TestCase {
         compare(String(Resources.coverUrl("", "#ffffff", "#888888", "#000000")), "");
     }
 
+    // logoUrl is item 9d's shared rung/variant derivation for HeaderBar,
+    // AboutScreen and the screensaver's bouncing copy. `data.width` is a
+    // painted width; `data.rung` is the pre-sized ladder rung it must snap
+    // up to (Sizing.snapLogoWidth), and `data.variant` is the light/dark
+    // wordmark picked from Theme.lightSurface (itself derived from
+    // Theme.colorSchemeId).
+    function test_logo_url_snaps_rung_and_picks_variant_data(): list<var> {
+        return [
+            {
+                tag: "exact rung 96",
+                width: 96,
+                scheme: "zaparoo-black",
+                rung: 96,
+                variant: "on-dark"
+            },
+            {
+                tag: "just over 96 snaps to 144",
+                width: 97,
+                scheme: "zaparoo-black",
+                rung: 144,
+                variant: "on-dark"
+            },
+            {
+                tag: "exact rung 144",
+                width: 144,
+                scheme: "zaparoo-black",
+                rung: 144,
+                variant: "on-dark"
+            },
+            {
+                tag: "just over 144 snaps to 192",
+                width: 145,
+                scheme: "zaparoo-black",
+                rung: 192,
+                variant: "on-dark"
+            },
+            {
+                tag: "exact rung 256",
+                width: 256,
+                scheme: "zaparoo-black",
+                rung: 256,
+                variant: "on-dark"
+            },
+            {
+                tag: "exact rung 384",
+                width: 384,
+                scheme: "zaparoo-black",
+                rung: 384,
+                variant: "on-dark"
+            },
+            {
+                tag: "above largest sub-600 rung clamps to 600",
+                width: 500,
+                scheme: "zaparoo-black",
+                rung: 600,
+                variant: "on-dark"
+            },
+            {
+                tag: "far above 600 still clamps to 600",
+                width: 1200,
+                scheme: "zaparoo-black",
+                rung: 600,
+                variant: "on-dark"
+            },
+            {
+                tag: "light surface picks on-light variant",
+                width: 144,
+                scheme: "zaparoo-white",
+                rung: 144,
+                variant: "on-light"
+            },
+            {
+                tag: "dark accent preset still picks on-dark variant",
+                width: 144,
+                scheme: "midnight-amber",
+                rung: 144,
+                variant: "on-dark"
+            }
+        ];
+    }
+
+    function test_logo_url_snaps_rung_and_picks_variant(data: var): void {
+        const originalScheme = Theme.colorSchemeId;
+        try {
+            Theme.colorSchemeId = data.scheme;
+            const url = String(Resources.logoUrl(data.width));
+            compare(url, "qrc:/qt/qml/Zaparoo/App/resources/images/logo/logo-" + data.variant + "-" + data.rung + ".png");
+        } finally {
+            Theme.colorSchemeId = originalScheme;
+        }
+    }
+
     // isTintedProviderKey is the load-policy half of coverUrl: it answers "is
     // this a sub-millisecond LUT pass over a mapped mask, or a real image
     // decode?". Tile.qml only permits a synchronous, GUI-thread decode for the

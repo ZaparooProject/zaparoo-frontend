@@ -53,6 +53,20 @@ TestCase {
     }
 
     Component {
+        id: pickerFieldHost
+
+        SettingsField {
+            objectName: "pickerField"
+            width: 420
+            height: 48
+            label: "Picker"
+            value: "Value"
+            control: "picker"
+            isFocused: true
+        }
+    }
+
+    Component {
         id: listHost
 
         Item {
@@ -164,15 +178,17 @@ TestCase {
         const firstRow = findChild(host, "browseListRow-0");
         verify(list !== null);
         verify(firstRow !== null);
-        compare(firstRow._latchOffset, 0);
+        const latch = findChild(firstRow, "latchSurface");
+        verify(latch !== null);
+        compare(latch.latchOffset, 0);
         compare(firstRow.scale, 1.0);
 
         list.activatePulse++;
-        tryCompare(firstRow, "_latchOffset", Sizing.focusRingWidth, Motion.pressMs + 100);
+        tryCompare(latch, "latchOffset", Sizing.focusRingWidth, Motion.pressMs + 100);
         compare(firstRow.scale, 1.0);
 
         list.releasePulse++;
-        tryCompare(firstRow, "_latchOffset", 0, Motion.settleMs + 100);
+        tryCompare(latch, "latchOffset", 0, Motion.settleMs + 100);
     }
 
     function test_list_selection_change_releases_old_latch(): void {
@@ -184,10 +200,51 @@ TestCase {
         const firstRow = findChild(host, "browseListRow-0");
         verify(list !== null);
         verify(firstRow !== null);
+        const latch = findChild(firstRow, "latchSurface");
+        verify(latch !== null);
 
         list.activatePulse++;
-        tryCompare(firstRow, "_latchOffset", Sizing.focusRingWidth, Motion.pressMs + 100);
+        tryCompare(latch, "latchOffset", Sizing.focusRingWidth, Motion.pressMs + 100);
         list.currentIndex = 1;
-        compare(firstRow._latchOffset, 0);
+        compare(latch.latchOffset, 0);
+    }
+
+    // SettingsField mounts the same LatchSurface BrowseList does (see
+    // LatchSurface.qml) so the two recessed-slot lists cannot drift apart.
+    // Unlike BrowseList, a field self-releases on a timer after
+    // `Motion.pressMs` rather than waiting for a host-driven releasePulse —
+    // there is no "selection moved off this row" signal separate from
+    // "the accept press finished" in a single-row form field.
+    function test_settings_field_activation_latches_cursor_inward(): void {
+        const field = createTemporaryObject(pickerFieldHost, testCase);
+        verify(field !== null);
+        wait(1);
+
+        const latch = findChild(field, "latchSurface");
+        verify(latch !== null);
+        compare(latch.latchOffset, 0);
+
+        field.activatePulse++;
+        tryCompare(latch, "latchOffset", Sizing.focusRingWidth, Motion.pressMs + 100);
+
+        tryCompare(latch, "latchOffset", 0, Motion.pressMs + Motion.settleMs + 200);
+    }
+
+    // Toggle rows are exempt from the latch — the knob slide is their own
+    // activation feedback (see SettingsField.qml's onActivatePulseChanged
+    // guard on `control !== "toggle"`), so a rail sliding in on top of a
+    // sliding knob would double up the cue.
+    function test_settings_field_toggle_row_does_not_latch(): void {
+        const field = createTemporaryObject(toggleHost, testCase);
+        verify(field !== null);
+        field.isFocused = true;
+        wait(1);
+
+        const latch = findChild(field, "latchSurface");
+        verify(latch !== null);
+
+        field.activatePulse++;
+        wait(Motion.pressMs + 100);
+        compare(latch.latchOffset, 0);
     }
 }

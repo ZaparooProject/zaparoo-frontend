@@ -57,14 +57,15 @@ bool parseRequest(const QString& id, Request* out, QString* error)
     out->shadow = colorFromToken(parts.at(2), QColor(Qt::black));
     out->resourcePath = parts.mid(3).join(QLatin1Char('/'));
 
-    // System logos, Hub category icons, and UI glyphs all share the provider.
-    // Corner masks (ContextMenu's rounded scrim hole) share it too, but have no
-    // SVG source -- they are baked directly from a Qt Quick render -- so they
-    // are exempt from the .svg suffix check below.
+    // System logos, Hub category icons, UI glyphs, and host-status icons all
+    // share the provider. Corner masks (ContextMenu's rounded scrim hole)
+    // share it too, but have no SVG source -- they are baked directly from a
+    // Qt Quick render -- so they are exempt from the .svg suffix check below.
     const bool cornerPrefix = out->resourcePath.startsWith(QStringLiteral("images/corners/"));
     const bool knownPrefix = out->resourcePath.startsWith(QStringLiteral("images/systems/")) ||
                              out->resourcePath.startsWith(QStringLiteral("images/categories/")) ||
                              out->resourcePath.startsWith(QStringLiteral("images/icons/")) ||
+                             out->resourcePath.startsWith(QStringLiteral("images/status/")) ||
                              cornerPrefix;
     if (!knownPrefix || (!cornerPrefix && !out->resourcePath.endsWith(QStringLiteral(".svg"))))
     {

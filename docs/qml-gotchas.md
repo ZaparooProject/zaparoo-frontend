@@ -73,6 +73,46 @@ shared QML, not behind a `crtNativePath` branch.
   width up front. Current example: the header clock reserves the advance width
   of `23:59`.
 
+## Loading-cue anchor rule
+
+There are two loading cues in sequence for any screen transition that takes
+long enough to show one: the global transition cue (`Main.qml`, shown while
+the destination screen has no content yet) hands off to that screen's own
+`ScreenStateOverlay` loading cue once the screen mounts. Both cues render the
+same `DelayedLoadingIndicator`, so if they center on different rects the
+handoff visibly jumps the label by a few pixels — worse in TATE, worse again
+at higher resolutions.
+
+**Both cues must center on the same coordinate space.** The global cue is
+parented into `scene` (not a bare window-relative `Item`) and sized to it, so
+it already accounts for the CRT safe-area inset and `scene.rotation`. A
+screen's `ScreenStateOverlay` is not necessarily the same rect: `MediaListScreen`
+and `SystemsScreen` both start their overlay below a header bar, so the
+overlay's own `height / 2` is *not* the point the global cue centered on.
+
+`ScreenStateOverlay` exposes `cueCenterY` (default `overlay.height / 2`,
+correct when the overlay genuinely fills the screen, e.g. `SettingsScreen`)
+specifically so an inset host can override it:
+
+```qml
+// Content rect starts below the header, so recenter on the full screen
+// (which matches `scene`, the global cue's parent) instead of this rect's
+// own smaller height.
+cueCenterY: root.height / 2 - y
+```
+
+The `- y` term converts a window-space target back into the overlay's own
+local coordinate space, since `cueCenterY` is consumed as
+`y: Sizing.px(cueCenterY - height / 2)` inside the overlay. Get this formula
+wrong (e.g. omit the `- y`) and the cue centers on the wrong point only on
+screens whose overlay is offset from the window origin — exactly the kind of
+regression that is invisible on `SettingsScreen` and only shows up on
+`MediaListScreen`/`SystemsScreen`. `tests/ui/tst_screen_state_overlay.qml`
+maps both a default and an offset-content-rect overlay's cue into a shared
+"window space" `Item` and asserts they land at the same y — add a case there
+for any new loading-capable screen with a content rect offset from its
+container.
+
 ## Software-renderer animation costs
 
 The MiSTer build runs on Qt Quick's Software adaptation — raster paint engine,

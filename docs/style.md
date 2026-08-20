@@ -32,6 +32,13 @@ work without a separate ladder. `Qt.lighter()`/`Qt.darker()` are HSV value
 multiplies and are no-ops on pure black — the catalog mixes channels explicitly
 instead, and components must too.
 
+The two logo ramps and `markerOutline` (below) do not mix toward `primary`/
+`text` directly — that axis is what silently ran backwards on the `zaparoo-white`
+preset. They mix toward `lightPole`/`darkPole` instead, the same two colors
+ordered by luma (`up ? text : primary` / `up ? primary : text`), so the shadow
+rung of a ramp is always the darker end regardless of which of `primary`/`text`
+happens to be light on a given preset.
+
 `Theme.qml` exposes the derived roles to components. Never branch on scheme ID in
 a component or hardcode a preset color outside the catalog. `zaparoo-black` is
 fallback for missing, unknown, or removed IDs.
@@ -39,6 +46,19 @@ fallback for missing, unknown, or removed IDs.
 Selection applies live and persists as `[settings] color_scheme` in
 `frontend.toml` plus `state.toml`. Tinted image URLs naturally change with
 palette roles; custom and full-color artwork remains unchanged.
+
+Status icons (`Resources.statusIconUrl()`, `resources/images/status/`) and the
+general UI glyph set (`Resources.iconUrl()`, `resources/images/icons/`) are
+also SVGs routed through the tinted-svg provider — a required `color` argument
+fills all three tint slots so the glyph is a flat tint rather than a ramp.
+Every source SVG in both directories is authored white-on-transparent, and a
+raw white glyph disappears on a light preset whose `bgBar` resolves lighter
+than white; callers pass `Theme.textPrimary` (or another in-scope text/accent
+role for context, e.g. `Theme.logoFocusPrimary` where a glyph shares a slot
+with tinted cover art) rather than loading the qrc path directly. Gamepad
+button glyphs (`Button*`) and D-pad glyphs (`Dpad*`) stay raw PNG — they are
+rasters with their own baked shading, not tintable SVGs, and `iconUrl()`
+returns their path unchanged regardless of `color`.
 
 ## Cards: focusable surface recipe
 
@@ -71,14 +91,14 @@ synchronized during press/rapid-render states.
 Tiles use a physical front edge inside their existing cell footprint. Activation
 lowers artwork, caption, badges, and ring together without scaling cover art.
 
-### Browse-list selection latch
+### Recessed-slot latch (browse lists and Settings rows)
 
-Browse lists remain one containing card with flat rows; never turn every row into
-a separate raised button. Selected row uses `selectionSurface`, one opaque
-`selectionShade` keyline along its **bottom** edge, and the accent rail.
-Activation moves only accent rail, title inset, and optional favorite inset
-inward by `Sizing.focusRingWidth`, then holds until release/settling. This reads
-as a cursor engaging a recessed slot.
+Browse lists and Settings rows are both one containing card with flat rows;
+never turn every row into a separate raised button. Selected row uses
+`selectionSurface`, one opaque `selectionShade` keyline along its **bottom**
+edge, and the accent rail. Activation moves only accent rail, title inset, and
+optional favorite inset inward by `Sizing.focusRingWidth`, then holds until
+release/settling. This reads as a cursor engaging a recessed slot.
 
 The keyline is on the bottom because a recess and a raised object shade
 oppositely under the same light. The scene is lit low and from the front, so a
@@ -86,10 +106,19 @@ raised `PressableSurface` catches that light on its near face while the near wal
 of a recess falls into shade. A top keyline inverts the recess and fights the
 tiles beside it.
 
+The highlight itself lives once in `LatchSurface.qml` so `BrowseList` and
+`SettingsField` cannot drift apart — each row mounts one, binds its own label's
+leading inset to the surface's `latchOffset`, and forwards its host's
+`activatePulse`/`releasePulse` (or, for a single-row field with no separate
+"selection moved off this row" signal, a locally timed release). Settings rows
+using `control: "toggle"` are exempt: the knob slide is their own activation
+cue, so `LatchSurface` never latches for them. `ContextMenu` rows stay on
+`PressableSurface` below — a menu entry *is* a button and a press-in is correct
+there.
+
 ### Pressable front edge
 
-Grid tiles, buttons, Settings rows, ContextMenu rows, and picker rows use
-`PressableSurface.qml`.
+Grid tiles, buttons, ContextMenu rows, and picker rows use `PressableSurface.qml`.
 
 **Front edge is not a shadow.** It is opaque physical material. Grid tiles use
 `Theme.tileEdge` against `bgDeep`; controls use `Theme.controlEdge`, one step
@@ -173,14 +202,40 @@ the neutral ladder with a slight accent cast; `ink` is the pole away from `text`
 | `textLabel` | `mix(primary, text, 0.62)` | Secondary text |
 | `textVariant` | `surface(0.58, 0.14)` | Tinted secondary text |
 | `accent` | `accent` | Focus, and every state marker |
-| `logoShadow` / `logoSecondary` / `logoPrimary` | `surface(0.16, 0.22)` / `surface(0.45, 0.10)` / `surface(0.72, 0.04)` | Resting tinted-artwork ramp |
-| `logoFocusShadow` / `logoFocusSecondary` / `logoFocusPrimary` | `mix(accent, ink, 0.35/0.62)` / `accent` / `mix(accent, text, 0.92)` | Focused tinted-artwork ramp |
+| `logoShadow` / `logoSecondary` / `logoPrimary` | `mix(accent, darkPole, 0.55)` / `mix(accent, darkPole, 0.18)` / `mix(accent, lightPole, 0.28)` | Resting tinted-artwork ramp |
+| `logoFocusShadow` / `logoFocusSecondary` / `logoFocusPrimary` | `mix(accent, darkPole, 0.30)` / `accent` / `mix(accent, lightPole, 0.85)` | Focused tinted-artwork ramp |
+| `markerOutline` | `mix(luma(accent) > 0.5 ? darkPole : lightPole, accent, 0.12)` | Favorite-heart / marker keyline |
 | `errorHex` | `#ff4f91` dark / `#c2185b` light | Failure text |
 
 `edgeBase` is `mix(primary, text, 0.06)` — one rung up the neutral ladder, so the
-accent ramp keeps some body on a near-black primary. Two constants are
-direction-dependent (`selectionShade`, `logoFocusShadow`) because equal channel
-mixes are not equal perceived steps at opposite ends of the sRGB curve.
+accent ramp keeps some body on a near-black primary. `selectionShade` is
+direction-dependent (`0.40` dark preset / `0.12` light preset) because equal
+channel mixes are not equal perceived steps at opposite ends of the sRGB curve;
+the logo ramps and `markerOutline` sidestep the same problem by mixing toward
+`lightPole`/`darkPole` (luma-ordered) instead of needing a direction-dependent
+weight of their own.
+
+### Header logo asset ladder
+
+The bundled wordmark logo cannot be recolored by a palette role — it's a
+full-color brand mark, not a single-hue tinted glyph. `HeaderBar.qml`
+instead selects between two pre-rendered PNG variants under
+`resources/images/logo/logo-<variant>-<w>.png`:
+
+- `on-dark-<w>` — light wordmark, for `zaparoo-black` / `midnight-amber`.
+- `on-light-<w>` — dark wordmark, for `zaparoo-white`.
+
+`Theme.lightSurface` (`ColorSchemes.isLightSurface(id)`) picks the variant.
+It is deliberately not a palette role — it's excluded from `requiredRoles`
+in `tst_color_schemes.qml` — because it selects an asset, not a color.
+`w` is one of `96, 144, 192, 256, 384, 600` (600 is the largest rung, at the
+master's own aspect ratio). `Resources.logoUrl(paintedWidth)` is the single
+place that snaps a painted width to a rung (`Sizing.snapLogoWidth(px)`,
+mirroring `snapCoverTier()`'s "snap up" contract for grid covers) and picks
+the variant; `HeaderBar.qml`, `AboutScreen.qml`, and the screensaver's
+bouncing copy all call it instead of hardcoding a path, so none of them ever
+decode a texture larger than their own painted size. There is no unscaled
+monolithic `logo.png` any more — every call site goes through the ladder.
 
 ## Resolution tiers
 
@@ -200,8 +255,16 @@ Thickness scales with resolution. Shape and hierarchy use discrete tiers.
 
 ## Fonts
 
-`Theme.fontUi` is Noto Sans normally and MxPlus HP 100LX 6x8 on CRT native
-path. `Theme.fontMono` is diagnostic/log text only.
+`Theme.fontUi` is Noto Sans normally and MxPlus HP 100LX 6x8 when
+`Theme.bitmapType` is set. `Theme.fontMono` is diagnostic/log text only.
+
+`bitmapType` is a typography-only flag, separate from `crtNativePath` (CRT
+*layout*: overscan insets, grid density, high-DPI pinning, TATE). It is true
+on the CRT native path, and also auto-engages on embedded hardware at 240p
+(`logicalVideoHeight < 400`) even without `--crt` — a proportional
+antialiased face at 8-14px is illegible at that resolution, and the desktop
+build never sets it outside the CRT path because a resizable window can cross
+the 400px tier boundary at runtime. See `main.cpp`'s `bitmapTypeEnabled`.
 
 ### Type ladder
 
@@ -210,16 +273,18 @@ Six ordinary text roles only:
 | Token | Role | 240 | 480 | 540 | 720 | 1080 |
 |---|---|---:|---:|---:|---:|---:|
 | `Sizing.fontHero` | Page/selected title | 14 | 22 | 24 | 29 | 43 |
-| `Sizing.fontTitle` | Modal/detail title | 12 | 18 | 19 | 23 | 35 |
-| `Sizing.fontSection` | Section/list/status | 11 | 16 | 17 | 21 | 31 |
-| `Sizing.fontBody` | Body/control/help | 10 | 14 | 15 | 19 | 28 |
-| `Sizing.fontCaption` | Secondary/menu/tile fallback | 9 | 12 | 13 | 17 | 26 |
-| `Sizing.fontSmall` | Tile/detail small print | 8 | 10 | 11 | 16 | 24 |
+| `Sizing.fontTitle` | Modal/detail title | 12 | 18 | 20 | 23 | 35 |
+| `Sizing.fontSection` | Section/list/status | 11 | 17 | 18 | 21 | 31 |
+| `Sizing.fontBody` | Body/control/help | 10 | 16 | 17 | 19 | 28 |
+| `Sizing.fontCaption` | Secondary/menu/tile fallback | 9 | 14 | 15 | 17 | 26 |
+| `Sizing.fontSmall` | Tile/detail small print | 8 | 13 | 14 | 16 | 24 |
 
-CRT tokens resolve through former percentage roles and retain mandatory 8/16px
-bitmap quantization. `Sizing.fontSize(percent)` remains for approved specialist
-sizes and geometry such as header row height; do not use it to invent seventh
-ordinary text role.
+When `Sizing.bitmapType` is set, the six tokens resolve through
+`Sizing.fontSize(percent)` instead of this ladder and retain mandatory 8/16px
+bitmap quantization — the bitmap face only ships those two strikes, so the
+ladder and the quantization must move together. `fontSize(percent)` remains
+for approved specialist sizes and geometry such as header row height; do not
+use it to invent a seventh ordinary text role.
 
 Use `renderType: Text.NativeRendering`. Center Text item with
 `Sizing.center()` and keep glyph run left-aligned when pixel sharpness matters.
@@ -263,9 +328,12 @@ Padding tightens inward:
 | Modal panel | `pctW(4)` sides, `pctH(4)` top |
 | Card content | `pctW(2)` sides |
 | About body | `pctW(3)` sides, `pctH(3)` vertical |
+| Tile caption side inset | `pctH(2)` (matches `Tile._padding`, the cover art's own inset) |
 
 Radius never doubles as padding. ContextMenu panel vertical padding is
-`pctH(1.5)` independently of panel radius.
+`pctH(1.5)` independently of panel radius. Tile caption inset shares the
+cover's own padding rather than a radius-derived value so caption text clears
+the focus ring's inner edge instead of running under it.
 
 ## Modal chrome
 
@@ -285,6 +353,14 @@ GameInfo uses same panel radius. QrCodeModal remains shell-based QR content.
 
 Panel uses `bgPanel` + `radiusMd`, no border. Rows use PressableSurface +
 `radiusSm`. Panel vertical padding is independent from radius.
+
+Row labels center the `Text` item itself (`Sizing.center(parent.width,
+_textWidth)`), per the integer-pixel rule below — never
+`anchors.horizontalCenter` + `AlignHCenter`. Panel width tracks content:
+`panelWidth` clamps `_desiredPanelWidth` (the widest entry label plus padding)
+between a degenerate-case floor (`_minPanelWidth: Sizing.pctW(12)`) and the
+available width, so a menu with short labels narrows instead of always paying
+for a fixed minimum panel width.
 
 Four `Theme.scrim` bands frame `anchorRect` so anchor stays bright. Dimensions
 clamp to nonnegative values. Full-parent MouseArea dismisses outside panel,
@@ -309,6 +385,12 @@ Hub rows remain square. Systems and media grids use Sizing-declared common
 resolution shapes with adaptive fallback for nonstandard desktop/TATE scenes.
 PagedGrid floors uniform cell dimensions, then centers cells-plus-gutters block;
 odd remainders may differ by one pixel only.
+
+Default-theme grid gaps (`crt` keeps its own raw pixel values, unaffected):
+`systemsGrid`/`gamesGrid` `columnGap` is `pctW(2)` and `gamesGrid` `rowGap` is
+`pctH(3)` (matching `systemsGrid`'s own `rowGap`), both set in
+`BrowseLayouts.qml`. `PagedGrid.qml`'s `cellSpacingX` fallback (used when no
+layout profile supplies `columnGap`) mirrors the same `pctW(2)`.
 
 ## Consistency rules
 

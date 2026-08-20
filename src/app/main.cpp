@@ -180,6 +180,19 @@ int main(int argc, char* argv[]) // NOLINT
     const QLocale locale = langCode.isEmpty() ? QLocale::system() : QLocale(langCode);
     const QLocale::Language uiLanguage = locale.language();
     const bool crtNativePathEnabled = zaparoo_rust_crt_native_path_enabled();
+#ifdef ZAPAROO_EMBEDDED_BUILD
+    const uint32_t logicalVideoHeight = zaparoo_rust_video_height();
+    // Bitmap type auto-engages at 240p on embedded hardware even without
+    // --crt: a proportional antialiased face at 8-14px is illegible at that
+    // resolution. 400 matches Sizing.qml's 240-tier boundary. Gated to
+    // embedded builds only -- a resizable desktop window can cross this
+    // threshold at runtime and QGuiApplication::setFont() cannot follow a
+    // live resize.
+    const bool bitmapTypeEnabled =
+        crtNativePathEnabled || (logicalVideoHeight > 0 && logicalVideoHeight < 400);
+#else
+    const bool bitmapTypeEnabled = crtNativePathEnabled;
+#endif
 
     // Push the effective locale into Rust so `system_region::current_region()`
     // can resolve the `auto` region setting without calling back into Qt.
@@ -231,7 +244,7 @@ int main(int argc, char* argv[]) // NOLINT
         QFontDatabase::addApplicationFallbackFontFamily(font.script, font.family);
     };
 
-    if (crtNativePathEnabled)
+    if (bitmapTypeEnabled)
     {
         registerFont(
             QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/MxPlus_HP_100LX_6x8.ttf"));
@@ -250,7 +263,7 @@ int main(int argc, char* argv[]) // NOLINT
                               QStringLiteral("Noto Sans Arabic")});
         registeredScriptFallback = true;
     }
-    if (!crtNativePathEnabled && uiLanguage == QLocale::Hebrew)
+    if (!bitmapTypeEnabled && uiLanguage == QLocale::Hebrew)
     {
         registerFallbackFont({QChar::Script_Hebrew,
                               QStringLiteral(":/qt/qml/Zaparoo/App/resources/fonts/"
@@ -297,15 +310,12 @@ int main(int argc, char* argv[]) // NOLINT
     }
     {
         QFont defaultFont = QGuiApplication::font();
-        defaultFont.setFamily(crtNativePathEnabled ? QStringLiteral("MxPlus HP 100LX 6x8")
-                                                   : QStringLiteral("Noto Sans"));
+        defaultFont.setFamily(bitmapTypeEnabled ? QStringLiteral("MxPlus HP 100LX 6x8")
+                                                : QStringLiteral("Noto Sans"));
         QGuiApplication::setFont(defaultFont);
     }
     startupTrace("cpp:font registration complete");
-    const bool useUnsmoothedText = crtNativePathEnabled;
-#ifdef ZAPAROO_EMBEDDED_BUILD
-    const uint32_t logicalVideoHeight = zaparoo_rust_video_height();
-#endif
+    const bool useUnsmoothedText = bitmapTypeEnabled;
     if (useUnsmoothedText)
     {
         QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
@@ -319,10 +329,14 @@ int main(int argc, char* argv[]) // NOLINT
         qInfo("CRT native path: using unsmoothed native text");
     }
 #ifdef ZAPAROO_EMBEDDED_BUILD
+    else if (bitmapTypeEnabled)
+    {
+        qInfo("Bitmap type auto-engaged at %up: using unsmoothed native text",
+              static_cast<unsigned int>(logicalVideoHeight));
+    }
     else
     {
-        qInfo("Embedded progressive path: using %s native text at %up",
-              useUnsmoothedText ? "unsmoothed" : "antialiased",
+        qInfo("Embedded progressive path: using antialiased native text at %up",
               static_cast<unsigned int>(logicalVideoHeight));
     }
 #endif
@@ -379,6 +393,7 @@ int main(int argc, char* argv[]) // NOLINT
 
     QVariantMap initialProperties = {
         {"crtNativePath", crtNativePathEnabled},
+        {"bitmapType", bitmapTypeEnabled},
         {"debugCrtSafeAreaOverlay", debugCrtSafeAreaOverlay},
     };
 #ifdef ZAPAROO_EMBEDDED_BUILD

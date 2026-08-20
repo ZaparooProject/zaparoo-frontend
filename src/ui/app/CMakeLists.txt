@@ -17,7 +17,6 @@ set(_APP_RESOURCES
     "${_RESOURCE_ROOT}/fonts/NotoSansJP.ttf"
     "${_RESOURCE_ROOT}/fonts/NotoSansKR.ttf"
     "${_RESOURCE_ROOT}/fonts/NotoSansTC.ttf"
-    "${_RESOURCE_ROOT}/images/logo.png"
 )
 
 # System logos are black/white SVGs (curated from PRO100BYTE/console-logos — see
@@ -34,6 +33,8 @@ set(_APP_RESOURCES
 # as PNG under resources/images/buttons/<layout>/.
 # Globs use CONFIGURE_DEPENDS so adding/removing a file triggers a re-glob
 # on the next build.
+file(GLOB _HEADER_LOGO CONFIGURE_DEPENDS
+    "${_RESOURCE_ROOT}/images/logo/*.png")
 file(GLOB _SYSTEM_LOGOS CONFIGURE_DEPENDS
     "${_RESOURCE_ROOT}/images/systems/*.svg")
 file(GLOB _SYSTEM_COLOR_LOGOS CONFIGURE_DEPENDS
@@ -49,7 +50,7 @@ file(GLOB _UI_ICONS CONFIGURE_DEPENDS
 file(GLOB _BUTTON_ICONS CONFIGURE_DEPENDS
     "${_RESOURCE_ROOT}/images/buttons/*/*.png")
 list(APPEND _APP_RESOURCES
-    ${_SYSTEM_LOGOS} ${_SYSTEM_COLOR_LOGOS} ${_CATEGORY_LOGOS} ${_STATUS_ICONS}
+    ${_HEADER_LOGO} ${_SYSTEM_LOGOS} ${_SYSTEM_COLOR_LOGOS} ${_CATEGORY_LOGOS} ${_STATUS_ICONS}
     ${_UI_ICONS} ${_BUTTON_ICONS})
 
 foreach(_res IN LISTS _APP_RESOURCES)

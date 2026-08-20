@@ -314,7 +314,11 @@ Item {
                     // as a modest accent rather than a large placeholder icon.
                     width: Math.round(parent.width * 0.5)
                     height: width
-                    source: root._coverBusy ? Resources.iconUrl("Loading") : Resources.coverUrl("icons/File", Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
+                    // Loading branch is tinted the same as the File fallback it
+                    // alternates with (logoFocusPrimary), not plain textPrimary
+                    // like other chrome glyphs -- they share one image slot and
+                    // a color swap between states would read as a flicker.
+                    source: root._coverBusy ? Resources.iconUrl("Loading", Theme.logoFocusPrimary) : Resources.coverUrl("icons/File", Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
                     sourceSize.width: Sizing.px(width)
                     sourceSize.height: Sizing.px(height)
                     fillMode: Image.PreserveAspectFit
@@ -351,9 +355,11 @@ Item {
         }
 
         Image {
-            source: Resources.iconUrl("NavLeft")
+            source: Resources.iconUrl("NavLeft", Theme.textPrimary)
             width: Sizing.pctH(4)
             height: width
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.left: parent.left
             anchors.verticalCenter: imageSlot.verticalCenter
             fillMode: Image.PreserveAspectFit
@@ -362,9 +368,11 @@ Item {
         }
 
         Image {
-            source: Resources.iconUrl("NavRight")
+            source: Resources.iconUrl("NavRight", Theme.textPrimary)
             width: Sizing.pctH(4)
             height: width
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.right: parent.right
             anchors.verticalCenter: imageSlot.verticalCenter
             fillMode: Image.PreserveAspectFit

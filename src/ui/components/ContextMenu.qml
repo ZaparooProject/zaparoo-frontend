@@ -51,7 +51,10 @@ Item {
     readonly property int panelSideMargin: Sizing.pctW(1)
     readonly property int _widestLabelWidth: _widestEntryLabelWidth(entries)
     readonly property int _usableBottom: Math.max(menu.margin, height - menu.bottomUnsafeHeight - menu.margin)
-    readonly property int _minPanelWidth: Math.max(Sizing.pctW(24), Sizing.pctH(32))
+    // Only a floor against degenerate cases (a single tiny label) — real
+    // menus size around `_desiredPanelWidth`, which tracks the longest
+    // entry.
+    readonly property int _minPanelWidth: Sizing.pctW(12)
     readonly property int _desiredPanelWidth: _widestLabelWidth + 2 * horizontalPadding + 2 * panelSideMargin + 2 * Sizing.stroke(2)
     readonly property int panelWidth: Math.min(Math.max(_minPanelWidth, _desiredPanelWidth), Math.max(0, width - 2 * margin))
     // Panel padding is independent of corner shape so tightening the radius
@@ -308,11 +311,17 @@ Item {
                     onPointerClicked: menu._commitAccept(row.modelData.id)
 
                     Text {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
+                        // Centered as a box sized to this row's own measured
+                        // text, not anchored left+right with AlignHCenter —
+                        // a glyph run that straddles a half-pixel softens
+                        // under the software renderer. See "Integer-pixel
+                        // rules" in docs/qml-gotchas.md.
+                        readonly property int _availableWidth: Math.max(0, parent.width - 2 * menu.horizontalPadding)
+                        readonly property int _textWidth: Math.min(Math.ceil(labelMetrics.advanceWidth(row.modelData.label)), _availableWidth)
+
                         anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: menu.horizontalPadding
-                        anchors.rightMargin: menu.horizontalPadding
+                        x: Sizing.center(parent.width, _textWidth)
+                        width: _textWidth
                         text: row.modelData.label
                         color: Theme.textPrimary
                         font.family: Theme.fontUi

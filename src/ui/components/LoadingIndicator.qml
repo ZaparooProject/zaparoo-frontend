@@ -39,7 +39,7 @@ Row {
         width: height
         sourceSize.height: Sizing.px(height)
         sourceSize.width: Sizing.px(width)
-        source: Resources.iconUrl("Loading")
+        source: Resources.iconUrl("Loading", Theme.textPrimary)
         fillMode: Image.PreserveAspectFit
         smooth: true
     }

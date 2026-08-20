@@ -52,6 +52,7 @@ ApplicationWindow {
     // Desktop preview sets fullScreen=false via initialProperties.
     property bool fullScreen: true
     property bool crtNativePath: false
+    property bool bitmapType: false
     property bool debugCrtSafeAreaOverlay: false
     property string activeScreen: ScreenManager.activeScreen
     readonly property bool updateEnabled: Browse.BuildInfo.update_enabled
@@ -268,6 +269,18 @@ ApplicationWindow {
         target: Sizing
         property: "crtNativePath"
         value: root.crtNativePath
+    }
+
+    Binding {
+        target: Theme
+        property: "bitmapType"
+        value: root.bitmapType
+    }
+
+    Binding {
+        target: Sizing
+        property: "bitmapType"
+        value: root.bitmapType
     }
 
     Binding {
@@ -1517,7 +1530,7 @@ ApplicationWindow {
                                     fillMode: Image.PreserveAspectFit
                                     sourceSize.height: Sizing.px(height)
                                     sourceSize.width: Sizing.px(width)
-                                    source: Resources.iconUrl(modelData)
+                                    source: Resources.iconUrl(modelData, Theme.textPrimary)
                                     smooth: true
                                 }
                             }

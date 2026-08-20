@@ -27,6 +27,7 @@ set(_TST_UI_QML_FILES
     tst_pressable_surface.qml
     tst_context_menu.qml
     tst_press_cues.qml
+    tst_screen_state_overlay.qml
     tst_focused_media_detail_controller.qml
     tst_browse_detail_pane.qml
     tst_media_list_titles.qml

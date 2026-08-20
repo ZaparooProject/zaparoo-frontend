@@ -9,52 +9,52 @@
         <translation>情報 / ライセンス</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="155"/>
+        <location filename="../screens/AboutScreen.qml" line="160"/>
         <source>Zaparoo Frontend</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="166"/>
+        <location filename="../screens/AboutScreen.qml" line="171"/>
         <source>Version %1 · %2 · %3</source>
         <translation>バージョン %1 · %2 · %3</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="176"/>
+        <location filename="../screens/AboutScreen.qml" line="181"/>
         <source>Built %1</source>
         <translation>ビルド日 %1</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="187"/>
+        <location filename="../screens/AboutScreen.qml" line="192"/>
         <source>Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.</source>
         <translation>Copyright 2026 Wizzo Pty Ltd および Zaparoo Project contributors.</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="198"/>
+        <location filename="../screens/AboutScreen.qml" line="203"/>
         <source>Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license.</source>
         <translation>PolyForm Noncommercial License 1.0.0 のもとでソースを公開しています。個人・非商用利用は無料です。商用利用または再配布には別途ライセンスが必要です。</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="209"/>
+        <location filename="../screens/AboutScreen.qml" line="214"/>
         <source>Commercial licensing: legal@zaparoo.org</source>
         <translation>商用ライセンス: legal@zaparoo.org</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="220"/>
+        <location filename="../screens/AboutScreen.qml" line="225"/>
         <source>Project: https://zaparoo.org</source>
         <translation>プロジェクト: https://zaparoo.org</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="230"/>
+        <location filename="../screens/AboutScreen.qml" line="235"/>
         <source>Created by</source>
         <translation>制作</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="254"/>
+        <location filename="../screens/AboutScreen.qml" line="259"/>
         <source>Translations</source>
         <translation>翻訳</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="267"/>
+        <location filename="../screens/AboutScreen.qml" line="272"/>
         <source>Italiano - Andrea Bogazzi
 Español - Carlos R.
 Euskara - devilschile2
@@ -62,7 +62,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="278"/>
+        <location filename="../screens/AboutScreen.qml" line="283"/>
         <source>Full license text in COPYING.</source>
         <translation>ライセンス全文は COPYING をご覧ください。</translation>
     </message>
@@ -570,7 +570,7 @@ Français - Wilfried</source>
         <translation type="vanished">設定</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="825"/>
+        <location filename="../screens/HubScreen.qml" line="828"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>利用可能なシステムがありません。設定からメディアデータベースの更新を実行してください。</translation>
     </message>
@@ -703,17 +703,17 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3745"/>
+        <location filename="../app/Main.qml" line="3756"/>
         <source>Loading systems…</source>
         <translation>システムを読み込み中…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3752"/>
+        <location filename="../app/Main.qml" line="3763"/>
         <source>Loading favorites…</source>
         <translation>お気に入りを読み込み中…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3747"/>
+        <location filename="../app/Main.qml" line="3758"/>
         <source>Loading games…</source>
         <translation>ゲームを読み込み中…</translation>
     </message>
@@ -994,22 +994,22 @@ Français - Wilfried</source>
         <translation type="obsolete">キャンセル</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3749"/>
+        <location filename="../app/Main.qml" line="3760"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3754"/>
+        <location filename="../app/Main.qml" line="3765"/>
         <source>Loading recently played…</source>
         <translation>最近プレイしたゲームを読み込み中…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3756"/>
+        <location filename="../app/Main.qml" line="3767"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3758"/>
+        <location filename="../app/Main.qml" line="3769"/>
         <source>Loading…</source>
         <translation>読み込み中…</translation>
     </message>
@@ -1017,76 +1017,76 @@ Français - Wilfried</source>
 <context>
     <name>MainLayout</name>
     <message>
-        <location filename="../app/MainLayout.qml" line="789"/>
+        <location filename="../app/MainLayout.qml" line="802"/>
         <source>Writing failed</source>
         <translation>書き込み失敗</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="789"/>
+        <location filename="../app/MainLayout.qml" line="802"/>
         <source>Put a writable card near the reader</source>
         <translation>書き込み可能なカードをリーダーに近づけてください</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="824"/>
+        <location filename="../app/MainLayout.qml" line="837"/>
         <source>Update Zaparoo Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="825"/>
+        <location filename="../app/MainLayout.qml" line="838"/>
         <source>This frontend needs Zaparoo Core %1 or newer. You&apos;re running %2. Some features may not work until you update.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="321"/>
-        <location filename="../app/MainLayout.qml" line="826"/>
-        <location filename="../app/MainLayout.qml" line="1163"/>
+        <location filename="../app/MainLayout.qml" line="334"/>
+        <location filename="../app/MainLayout.qml" line="839"/>
+        <location filename="../app/MainLayout.qml" line="1176"/>
         <source>OK</source>
         <translation type="unfinished">決定</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="936"/>
+        <location filename="../app/MainLayout.qml" line="949"/>
         <source>Are you sure you want to exit?</source>
         <translation>本当に終了しますか？</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1086"/>
-        <location filename="../app/MainLayout.qml" line="1174"/>
+        <location filename="../app/MainLayout.qml" line="1099"/>
+        <location filename="../app/MainLayout.qml" line="1187"/>
         <source>Select</source>
         <translation>選択</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1090"/>
-        <location filename="../app/MainLayout.qml" line="1104"/>
-        <location filename="../app/MainLayout.qml" line="1119"/>
-        <location filename="../app/MainLayout.qml" line="1130"/>
-        <location filename="../app/MainLayout.qml" line="1156"/>
+        <location filename="../app/MainLayout.qml" line="1103"/>
+        <location filename="../app/MainLayout.qml" line="1117"/>
+        <location filename="../app/MainLayout.qml" line="1132"/>
+        <location filename="../app/MainLayout.qml" line="1143"/>
+        <location filename="../app/MainLayout.qml" line="1169"/>
         <source>Close</source>
         <translation>閉じる</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1097"/>
-        <location filename="../app/MainLayout.qml" line="1137"/>
-        <location filename="../app/MainLayout.qml" line="1178"/>
+        <location filename="../app/MainLayout.qml" line="1110"/>
+        <location filename="../app/MainLayout.qml" line="1150"/>
+        <location filename="../app/MainLayout.qml" line="1191"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1115"/>
+        <location filename="../app/MainLayout.qml" line="1128"/>
         <source>Done</source>
         <translation>完了</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1145"/>
+        <location filename="../app/MainLayout.qml" line="1158"/>
         <source>I understand</source>
         <translation>了解しました</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1185"/>
+        <location filename="../app/MainLayout.qml" line="1198"/>
         <source>Adjust</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1189"/>
+        <location filename="../app/MainLayout.qml" line="1202"/>
         <source>Save</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1095,89 +1095,89 @@ Français - Wilfried</source>
         <translation type="vanished">開始</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1411"/>
+        <location filename="../app/MainLayout.qml" line="1424"/>
         <source>Scroll</source>
         <translation>スクロール</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1310"/>
-        <location filename="../app/MainLayout.qml" line="1328"/>
-        <location filename="../app/MainLayout.qml" line="1460"/>
-        <location filename="../app/MainLayout.qml" line="1479"/>
+        <location filename="../app/MainLayout.qml" line="1323"/>
+        <location filename="../app/MainLayout.qml" line="1341"/>
+        <location filename="../app/MainLayout.qml" line="1473"/>
+        <location filename="../app/MainLayout.qml" line="1492"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1082"/>
-        <location filename="../app/MainLayout.qml" line="1170"/>
-        <location filename="../app/MainLayout.qml" line="1209"/>
-        <location filename="../app/MainLayout.qml" line="1246"/>
-        <location filename="../app/MainLayout.qml" line="1295"/>
-        <location filename="../app/MainLayout.qml" line="1351"/>
-        <location filename="../app/MainLayout.qml" line="1370"/>
-        <location filename="../app/MainLayout.qml" line="1443"/>
+        <location filename="../app/MainLayout.qml" line="1095"/>
+        <location filename="../app/MainLayout.qml" line="1183"/>
+        <location filename="../app/MainLayout.qml" line="1222"/>
+        <location filename="../app/MainLayout.qml" line="1259"/>
+        <location filename="../app/MainLayout.qml" line="1308"/>
+        <location filename="../app/MainLayout.qml" line="1364"/>
+        <location filename="../app/MainLayout.qml" line="1383"/>
+        <location filename="../app/MainLayout.qml" line="1456"/>
         <source>Move</source>
         <translation>移動</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="204"/>
+        <location filename="../app/MainLayout.qml" line="205"/>
         <source>Zaparoo Frontend</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="441"/>
-        <location filename="../app/MainLayout.qml" line="443"/>
+        <location filename="../app/MainLayout.qml" line="454"/>
+        <location filename="../app/MainLayout.qml" line="456"/>
         <source>Favorites</source>
         <translation type="unfinished">お気に入り</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="445"/>
+        <location filename="../app/MainLayout.qml" line="458"/>
         <source>Recently Played</source>
         <translation type="unfinished">最近プレイしたゲーム</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="805"/>
+        <location filename="../app/MainLayout.qml" line="818"/>
         <source>Quit and restart Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="806"/>
+        <location filename="../app/MainLayout.qml" line="819"/>
         <source>In order to apply this setting we need to restart the frontend.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="935"/>
+        <location filename="../app/MainLayout.qml" line="948"/>
         <source>Quit Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1213"/>
-        <location filename="../app/MainLayout.qml" line="1251"/>
-        <location filename="../app/MainLayout.qml" line="1300"/>
-        <location filename="../app/MainLayout.qml" line="1356"/>
-        <location filename="../app/MainLayout.qml" line="1448"/>
+        <location filename="../app/MainLayout.qml" line="1226"/>
+        <location filename="../app/MainLayout.qml" line="1264"/>
+        <location filename="../app/MainLayout.qml" line="1313"/>
+        <location filename="../app/MainLayout.qml" line="1369"/>
+        <location filename="../app/MainLayout.qml" line="1461"/>
         <source>Open</source>
         <translation>開く</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1223"/>
+        <location filename="../app/MainLayout.qml" line="1236"/>
         <source>Quit</source>
         <translation>終了</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1232"/>
-        <location filename="../app/MainLayout.qml" line="1257"/>
-        <location filename="../app/MainLayout.qml" line="1268"/>
-        <location filename="../app/MainLayout.qml" line="1284"/>
-        <location filename="../app/MainLayout.qml" line="1314"/>
-        <location filename="../app/MainLayout.qml" line="1332"/>
-        <location filename="../app/MainLayout.qml" line="1344"/>
-        <location filename="../app/MainLayout.qml" line="1360"/>
-        <location filename="../app/MainLayout.qml" line="1394"/>
-        <location filename="../app/MainLayout.qml" line="1415"/>
-        <location filename="../app/MainLayout.qml" line="1424"/>
-        <location filename="../app/MainLayout.qml" line="1464"/>
-        <location filename="../app/MainLayout.qml" line="1483"/>
+        <location filename="../app/MainLayout.qml" line="1245"/>
+        <location filename="../app/MainLayout.qml" line="1270"/>
+        <location filename="../app/MainLayout.qml" line="1281"/>
+        <location filename="../app/MainLayout.qml" line="1297"/>
+        <location filename="../app/MainLayout.qml" line="1327"/>
+        <location filename="../app/MainLayout.qml" line="1345"/>
+        <location filename="../app/MainLayout.qml" line="1357"/>
+        <location filename="../app/MainLayout.qml" line="1373"/>
+        <location filename="../app/MainLayout.qml" line="1407"/>
+        <location filename="../app/MainLayout.qml" line="1428"/>
+        <location filename="../app/MainLayout.qml" line="1437"/>
+        <location filename="../app/MainLayout.qml" line="1477"/>
+        <location filename="../app/MainLayout.qml" line="1496"/>
         <source>Back</source>
         <translation>戻る</translation>
     </message>
@@ -1186,29 +1186,29 @@ Français - Wilfried</source>
         <translation type="vanished">ページ</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1219"/>
-        <location filename="../app/MainLayout.qml" line="1254"/>
-        <location filename="../app/MainLayout.qml" line="1305"/>
-        <location filename="../app/MainLayout.qml" line="1453"/>
+        <location filename="../app/MainLayout.qml" line="1232"/>
+        <location filename="../app/MainLayout.qml" line="1267"/>
+        <location filename="../app/MainLayout.qml" line="1318"/>
+        <location filename="../app/MainLayout.qml" line="1466"/>
         <source>Options</source>
         <translation>オプション</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1126"/>
-        <location filename="../app/MainLayout.qml" line="1213"/>
-        <location filename="../app/MainLayout.qml" line="1264"/>
-        <location filename="../app/MainLayout.qml" line="1322"/>
-        <location filename="../app/MainLayout.qml" line="1471"/>
+        <location filename="../app/MainLayout.qml" line="1139"/>
+        <location filename="../app/MainLayout.qml" line="1226"/>
+        <location filename="../app/MainLayout.qml" line="1277"/>
+        <location filename="../app/MainLayout.qml" line="1335"/>
+        <location filename="../app/MainLayout.qml" line="1484"/>
         <source>Retry</source>
         <translation>再試行</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1379"/>
+        <location filename="../app/MainLayout.qml" line="1392"/>
         <source>Change</source>
         <translation>変更</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1385"/>
+        <location filename="../app/MainLayout.qml" line="1398"/>
         <source>Toggle</source>
         <translation>切り替え</translation>
     </message>
@@ -1303,7 +1303,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScreenStateOverlay.qml" line="68"/>
+        <location filename="../components/ScreenStateOverlay.qml" line="79"/>
         <source>Failed to load</source>
         <translation>読み込みに失敗しました</translation>
     </message>
@@ -1750,7 +1750,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1579"/>
+        <location filename="../screens/SettingsScreen.qml" line="1603"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1891,7 +1891,7 @@ Français - Wilfried</source>
         <translation>設定</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1567"/>
+        <location filename="../screens/SettingsScreen.qml" line="1585"/>
         <source>No settings available on this platform</source>
         <translation>このプラットフォームでは設定項目がありません</translation>
     </message>
@@ -1911,12 +1911,12 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="397"/>
+        <location filename="../screens/SystemsScreen.qml" line="402"/>
         <source>No systems in this category</source>
         <translation>このカテゴリにシステムはありません</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="398"/>
+        <location filename="../screens/SystemsScreen.qml" line="403"/>
         <source>Loading systems…</source>
         <translation>システムを読み込み中…</translation>
     </message>
@@ -1924,7 +1924,7 @@ Français - Wilfried</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="552"/>
+        <location filename="../components/Tile.qml" line="553"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>

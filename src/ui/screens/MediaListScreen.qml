@@ -724,6 +724,11 @@ Item {
         y: root._listLayout ? listCard.y : mediaGrid.y
         width: root._listLayout ? listCard.width : mediaGrid.width
         height: root._listLayout ? Math.max(0, root.height - listCard.y - root._listOverlayBottomMargin) : mediaGrid.height
+        // Content rect starts below the header, so recenter on the full
+        // screen (which matches `scene`, the global transition cue's new
+        // parent) rather than this rect's own smaller height — otherwise
+        // the loading cue jumps up when the global cue hands off here.
+        cueCenterY: root.height / 2 - y
         enabled: true
         loading: root._loading()
         errorMessage: root._errorMessage()

@@ -90,16 +90,23 @@ Item {
 
     // ── Bouncing logo ────────────────────────────────────────────────
     // Single Image element whose `x`/`y` are driven by a chained
-    // ParallelAnimation. PreserveAspectFit + smooth: false keeps the
-    // raster crisp at any window size; the start geometry mirrors the
-    // header logo so the activation looks like the logo dimming in
-    // place before walking off.
+    // ParallelAnimation. `logoSource` is already the header's own
+    // pre-sized ladder rung (item 9c — Main.qml picks it via
+    // Resources.logoUrl() from the same painted geometry passed to
+    // activate()), so sourceSize just pins the decode to that painted
+    // size instead of letting it float; width/height are fixed by
+    // activate() and only x/y animate, so the binding does not
+    // re-decode mid-bounce. The start geometry mirrors the header logo
+    // so the activation looks like the logo dimming in place before
+    // walking off.
     Image {
         id: ssLogo
 
         source: overlay.logoSource
         fillMode: Image.PreserveAspectFit
-        smooth: false
+        smooth: true
+        sourceSize.width: Sizing.px(width)
+        sourceSize.height: Sizing.px(height)
         cache: true
         visible: overlay._armed
     }

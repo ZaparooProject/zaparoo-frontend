@@ -135,18 +135,23 @@ Item {
 
                 // Logo width is capped at a screen-height-relative size so
                 // the brand mark stays a header element across 240p →
-                // 1080p without ballooning. sourceSize is pinned to the
-                // native pixel dimensions to stop Qt upscaling then
-                // downsampling and to keep the lines crisp; height is
-                // derived from width via the image's intrinsic aspect.
+                // 1080p without ballooning. Uses the same pre-sized ladder
+                // as HeaderBar (item 9d) so the decode is close to the
+                // painted size instead of always downsampling the 600px
+                // master; height is derived from width via the image's
+                // intrinsic aspect.
                 Image {
+                    id: aboutLogo
+
+                    readonly property real _paintedWidth: Math.min(parent.width, Sizing.pctH(35))
+
                     anchors.horizontalCenter: parent.horizontalCenter
-                    source: "qrc:/qt/qml/Zaparoo/App/resources/images/logo.png"
+                    source: Resources.logoUrl(aboutLogo._paintedWidth)
                     fillMode: Image.PreserveAspectFit
-                    sourceSize.width: 600
-                    sourceSize.height: 135
-                    width: Math.min(parent.width, Sizing.pctH(35))
+                    width: aboutLogo._paintedWidth
                     height: Sizing.px(width * 135 / 600)
+                    sourceSize.width: Sizing.px(width)
+                    sourceSize.height: Sizing.px(height)
                 }
 
                 Text {
@@ -291,15 +296,18 @@ Item {
         }
 
         // Top/bottom scroll chevrons — mirror the PagedGrid/BrowseList
-        // recipe (same SVG icons, `PreserveAspectFit` + `smooth: true`)
-        // but centered on the viewport in the card's chrome gap *above*
-        // and *below* the Flickable, not inside its visible band.
-        // Sitting outside the scrolled area means the chevrons never
-        // overlap moving content as the user scrolls.
+        // recipe (same SVG icons, `PreserveAspectFit` + `smooth: true` +
+        // `sourceSize` pinned to the painted size) but centered on the
+        // viewport in the card's chrome gap *above* and *below* the
+        // Flickable, not inside its visible band. Sitting outside the
+        // scrolled area means the chevrons never overlap moving content
+        // as the user scrolls.
         Image {
-            source: Resources.iconUrl("ScrollUp")
+            source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
             width: Sizing.pctH(3)
             height: width
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.bottom: flickable.top
             anchors.bottomMargin: Sizing.pctH(0.5)
             anchors.horizontalCenter: flickable.horizontalCenter
@@ -309,9 +317,11 @@ Item {
         }
 
         Image {
-            source: Resources.iconUrl("ScrollDown")
+            source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
             width: Sizing.pctH(3)
             height: width
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.top: flickable.bottom
             anchors.topMargin: Sizing.pctH(0.5)
             anchors.horizontalCenter: flickable.horizontalCenter

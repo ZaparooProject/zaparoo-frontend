@@ -207,8 +207,9 @@ QSize BakedIconAtlas::resolveSize(const Entry& entry, const QSize& requestedSize
     }
     // No sourceSize at all means "the SVG's natural size", which for a wide
     // logo is far larger than the baked raster and therefore routes back to
-    // the SVG path. No shipped call site does this; keeping the old answer
-    // means the atlas cannot change behavior if one ever does.
+    // the SVG path. Every shipped call site pins sourceSize (see
+    // docs/style.md -> "One rasterization, at the painted size"); this
+    // fallback only matters for a call site that forgets to.
     return {entry.baseWidth, entry.baseHeight};
 }
 

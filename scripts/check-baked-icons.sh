@@ -33,7 +33,7 @@ trap 'rm -f "$actual" "$expected"' EXIT
 
 (
     cd "$repo_root/resources"
-    find images/systems images/categories images/icons -name '*.svg' -type f -print0 |
+    find images/systems images/categories images/icons images/status -name '*.svg' -type f -print0 |
         sort -z | xargs -0 sha256sum | awk '{ print $2, $1 }'
 ) | sort >"$actual"
 

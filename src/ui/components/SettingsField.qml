@@ -14,10 +14,10 @@ import Zaparoo.Theme
 //   "navigate" — `›` chevron. Reserved for rows that open another
 //                screen (subpages, About / License).
 //
-// Surface is always `surfaceCard`; focus swaps the border to
-// `Theme.accent` (2px) and unfocused rows show `Theme.borderMid` (1px).
-// Same recipe as tile cards, modal buttons, and list-picker rows —
-// settings rows are no longer the visual outlier.
+// Rows are channels cut into the section card behind them, not buttons: no
+// fill or border at rest, and activating one never pushes the row in. This
+// is the same `LatchSurface` recessed-slot vocabulary `BrowseList` uses, so
+// the two lists cannot drift apart — see LatchSurface.qml.
 //
 // The component is purely presentational. The screen owns layout (Column
 // stacking + selection index) and value mutation.
@@ -30,7 +30,7 @@ Item {
     property bool checked: false
     property bool isFocused: false
     // Set false by SettingsScreen during a page switch so reused delegates
-    // do not animate the focus-border or toggle position when the new
+    // do not animate the focus latch or toggle position when the new
     // page's model data lands. Restored to true on the next event-loop
     // tick so ordinary user navigation still animates.
     property bool animateChanges: true
@@ -38,13 +38,13 @@ Item {
     // right ("In progress", "Paused", or "" when idle). The screen
     // owns the binding; the field treats it as a plain caption.
     property string actionStatus: ""
-    // Physical press cue, matching the tile vocabulary. The host increments
-    // this on accept; the focused row plays a one-shot lower-and-raise tap.
-    // Settings rows stay on screen, so a held face would look stuck. Toggle
-    // rows are exempt — the knob slide is their
-    // feedback — so they ignore the pulse below.
+    // Latch cue, matching the BrowseList vocabulary. The host increments
+    // this on accept; the focused row latches its rail and label inward
+    // then settles back, like a cursor engaging a slot. Toggle rows are
+    // exempt — the knob slide is their feedback — so they ignore it.
     property int activatePulse: 0
-    property bool _pressed: false
+    property int _latchActivatePulse: 0
+    property int _latchReleasePulse: 0
 
     signal hovered
     signal clicked
@@ -61,150 +61,155 @@ Item {
     opacity: enabled ? 1 : 0.4
     implicitHeight: Sizing.pctH(8)
 
-    // One-shot physical tap. Non-toggle rows only; focused row plays it.
+    // One-shot latch. Non-toggle rows only; focused row plays it.
     // `animateChanges` is false during a page switch (same gate the field's
-    // other animations use), so a reused delegate cannot tap as a new page
-    // mounts.
+    // other animations use), so a reused delegate cannot latch as a new
+    // page mounts. The release side is timed locally rather than driven by
+    // the screen: unlike a BrowseList row (which is released explicitly
+    // after a launch that keeps the frontend on the same screen, or snaps
+    // instantly when the selection moves off it), every settings accept
+    // keeps the row selected, so the row settles itself back out shortly
+    // after latching in.
     onActivatePulseChanged: {
         if (root.isFocused && root.control !== "toggle" && root.animateChanges) {
-            root._pressed = true;
-            if (Motion.enabled)
-                pressRelease.restart();
-            else
-                root._pressed = false;
+            root._latchActivatePulse++;
+            latchReleaseTimer.restart();
         }
     }
 
     Timer {
-        id: pressRelease
+        id: latchReleaseTimer
         interval: Motion.dur(Motion.pressMs)
         repeat: false
-        onTriggered: root._pressed = false
+        onTriggered: root._latchReleasePulse++
     }
 
-    PressableSurface {
-        id: surface
-
+    LatchSurface {
+        id: latch
+        objectName: "latchSurface"
         anchors.fill: parent
-        focused: root.isFocused
-        pressed: root._pressed
+        active: root.isFocused
+        activatePulse: root._latchActivatePulse
+        releasePulse: root._latchReleasePulse
+    }
 
-        Text {
-            id: labelText
+    Text {
+        id: labelText
 
-            anchors.left: parent.left
-            anchors.leftMargin: Sizing.pctW(2)
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.label
-            color: Theme.textPrimary
-            font.family: Theme.fontUi
-            font.pixelSize: Sizing.fontBody
-            renderType: Text.NativeRendering
+        anchors.left: parent.left
+        anchors.leftMargin: Sizing.pctW(2) + latch.latchOffset
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.label
+        color: Theme.textPrimary
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontBody
+        renderType: Text.NativeRendering
+    }
+
+    // Right-side current-value text for `control: "picker"`. Accept on
+    // a picker row opens the list-picker modal owned by `Main.qml`;
+    // left/right are no-ops (no inline cycling — see `SettingsScreen`).
+    //
+    // Anchors clamp between the label's right edge and the row's
+    // right padding so a long localized value (e.g. a translated
+    // language name) elides instead of overlapping `labelText`.
+    Text {
+        visible: root.control === "picker"
+        anchors.left: labelText.right
+        anchors.leftMargin: Sizing.pctW(2)
+        anchors.right: parent.right
+        anchors.rightMargin: Sizing.pctW(2)
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.value
+        color: Theme.textPrimary
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontBody
+        elide: Text.ElideRight
+        horizontalAlignment: Text.AlignRight
+        renderType: Text.NativeRendering
+    }
+
+    Item {
+        id: toggle
+
+        visible: root.control === "toggle"
+        anchors.right: parent.right
+        anchors.rightMargin: Sizing.pctW(2)
+        anchors.verticalCenter: parent.verticalCenter
+        // Compact-toggle proportion: width ≈ 1.85 × height keeps the
+        // handle's travel close to one diameter on either side without
+        // leaving the long rail of empty space the previous
+        // pctW(8) (~3.7× height on a 16:9 panel) painted.
+        height: Sizing.pctH(3.8)
+        width: Sizing.px(height * 1.85)
+        readonly property int _knobInset: Sizing.tier === "crt" || Sizing.tier === "240" ? Sizing.cardBorderWidth : 2 * Sizing.cardBorderWidth
+
+        Rectangle {
+            objectName: "settingsToggleTrack"
+            anchors.fill: parent
+            radius: Sizing.radiusSm
+            // Fill alone carries on/off state — no border. The row's
+            // recessed-slot highlight carries the focus indicator, and
+            // against the always-on card behind the toggle a static track
+            // border read as chrome-on-chrome.
+            color: root.checked ? Theme.accent : Theme.borderMid
         }
 
-        // Right-side current-value text for `control: "picker"`. Accept on
-        // a picker row opens the list-picker modal owned by `Main.qml`;
-        // left/right are no-ops (no inline cycling — see `SettingsScreen`).
-        //
-        // Anchors clamp between the label's right edge and the row's
-        // right padding so a long localized value (e.g. a translated
-        // language name) elides instead of overlapping `labelText`.
-        Text {
-            visible: root.control === "picker"
-            anchors.left: labelText.right
-            anchors.leftMargin: Sizing.pctW(2)
-            anchors.right: parent.right
-            anchors.rightMargin: Sizing.pctW(2)
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.value
-            color: Theme.textPrimary
-            font.family: Theme.fontUi
-            font.pixelSize: Sizing.fontBody
-            elide: Text.ElideRight
-            horizontalAlignment: Text.AlignRight
-            renderType: Text.NativeRendering
-        }
+        Rectangle {
+            objectName: "settingsToggleKnob"
+            width: toggle.height - 2 * toggle._knobInset
+            height: width
+            radius: Sizing.radiusSm
+            x: root.checked ? toggle.width - width - toggle._knobInset : toggle._knobInset
+            y: Sizing.center(toggle.height, height)
+            color: root.checked ? Theme.bgDeep : Theme.textPrimary
 
-        Item {
-            id: toggle
-
-            visible: root.control === "toggle"
-            anchors.right: parent.right
-            anchors.rightMargin: Sizing.pctW(2)
-            anchors.verticalCenter: parent.verticalCenter
-            // Compact-toggle proportion: width ≈ 1.85 × height keeps the
-            // handle's travel close to one diameter on either side without
-            // leaving the long rail of empty space the previous
-            // pctW(8) (~3.7× height on a 16:9 panel) painted.
-            height: Sizing.pctH(3.8)
-            width: Sizing.px(height * 1.85)
-            readonly property int _knobInset: Sizing.tier === "crt" || Sizing.tier === "240" ? Sizing.cardBorderWidth : 2 * Sizing.cardBorderWidth
-
-            Rectangle {
-                objectName: "settingsToggleTrack"
-                anchors.fill: parent
-                radius: Sizing.radiusSm
-                // Fill alone carries on/off state — no border. The row's
-                // outer surface carries the focus indicator, and against
-                // the always-on card behind the toggle a static track
-                // border read as chrome-on-chrome.
-                color: root.checked ? Theme.accent : Theme.borderMid
-            }
-
-            Rectangle {
-                objectName: "settingsToggleKnob"
-                width: toggle.height - 2 * toggle._knobInset
-                height: width
-                radius: Sizing.radiusSm
-                x: root.checked ? toggle.width - width - toggle._knobInset : toggle._knobInset
-                y: Sizing.center(toggle.height, height)
-                color: root.checked ? Theme.bgDeep : Theme.textPrimary
-
-                Behavior on x {
-                    enabled: Motion.enabled && root.animateChanges
-                    NumberAnimation {
-                        duration: Motion.dur(Motion.settleMs)
-                        easing.type: Easing.OutQuad
-                    }
+            Behavior on x {
+                enabled: Motion.enabled && root.animateChanges
+                NumberAnimation {
+                    duration: Motion.dur(Motion.settleMs)
+                    easing.type: Easing.OutQuad
                 }
             }
         }
+    }
 
-        // Right-side value for `control: "action"`. Carries either a
-        // transient run state ("In progress" / "Paused" / "Optimizing")
-        // or a persistent idle count ("100,000 indexed"). Styled to match
-        // the picker right-text recipe so idle counts read as values, not
-        // dimmed chrome. No chevron — chevron is reserved for navigation.
-        Text {
-            visible: root.control === "action" && root.actionStatus !== ""
-            anchors.left: labelText.right
-            anchors.leftMargin: Sizing.pctW(2)
-            anchors.right: parent.right
-            anchors.rightMargin: Sizing.pctW(2)
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.actionStatus
-            color: Theme.textPrimary
-            font.family: Theme.fontUi
-            font.pixelSize: Sizing.fontBody
-            elide: Text.ElideRight
-            horizontalAlignment: Text.AlignRight
-            renderType: Text.NativeRendering
-        }
+    // Right-side value for `control: "action"`. Carries either a
+    // transient run state ("In progress" / "Paused" / "Optimizing")
+    // or a persistent idle count ("100,000 indexed"). Styled to match
+    // the picker right-text recipe so idle counts read as values, not
+    // dimmed chrome. No chevron — chevron is reserved for navigation.
+    Text {
+        visible: root.control === "action" && root.actionStatus !== ""
+        anchors.left: labelText.right
+        anchors.leftMargin: Sizing.pctW(2)
+        anchors.right: parent.right
+        anchors.rightMargin: Sizing.pctW(2)
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.actionStatus
+        color: Theme.textPrimary
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontBody
+        elide: Text.ElideRight
+        horizontalAlignment: Text.AlignRight
+        renderType: Text.NativeRendering
+    }
 
-        // Right-side chevron for `control: "navigate"`. Means "this row
-        // opens another page" — used for About / License today and any
-        // future subpage entries.
-        Image {
-            visible: root.control === "navigate"
-            anchors.right: parent.right
-            anchors.rightMargin: Sizing.pctW(2)
-            anchors.verticalCenter: parent.verticalCenter
-            source: Resources.iconUrl("NavRight")
-            width: Sizing.pctH(3.5)
-            height: width
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-        }
+    // Right-side chevron for `control: "navigate"`. Means "this row
+    // opens another page" — used for About / License today and any
+    // future subpage entries.
+    Image {
+        visible: root.control === "navigate"
+        anchors.right: parent.right
+        anchors.rightMargin: Sizing.pctW(2)
+        anchors.verticalCenter: parent.verticalCenter
+        source: Resources.iconUrl("NavRight", Theme.textPrimary)
+        width: Sizing.pctH(3.5)
+        height: width
+        sourceSize.width: Sizing.px(width)
+        sourceSize.height: Sizing.px(height)
+        fillMode: Image.PreserveAspectFit
+        smooth: true
     }
 
     MouseArea {

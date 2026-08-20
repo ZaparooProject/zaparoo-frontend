@@ -35,6 +35,13 @@ Item {
 
     height: Sizing.headerHeight
 
+    // Painted width for the header logo (item 3b/9d). 600/135 is the
+    // master's own aspect ratio; Resources.logoUrl() snaps this up to the
+    // smallest pre-sized rung that covers it, so Qt's own sourceSize decode
+    // below only ever does a small final scale instead of bilinearly
+    // downscaling a 600px texture at paint time.
+    readonly property real _logoPaintedWidth: Sizing.px(Sizing.headerHeight * (600 / 135))
+
     Image {
         id: logo
 
@@ -47,7 +54,9 @@ Item {
         // element fills the full header height.
         fillMode: Image.PreserveAspectFit
         horizontalAlignment: Image.AlignLeft
-        source: "qrc:/qt/qml/Zaparoo/App/resources/images/logo.png"
+        source: Resources.logoUrl(header._logoPaintedWidth)
+        sourceSize.height: Sizing.px(height)
+        sourceSize.width: Sizing.px(height * (600 / 135))
     }
 
     Text {
@@ -134,28 +143,28 @@ Item {
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
             visible: header.statusIconsEnabled && Browse.SystemStatus.has_nfc
-            source: Resources.statusIconUrl("NFC")
+            source: Resources.statusIconUrl("NFC", Theme.textPrimary)
             name: "NFC"
         }
 
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
             visible: header.statusIconsEnabled && Browse.SystemStatus.has_wifi_internet
-            source: Resources.statusIconUrl("WiFi")
+            source: Resources.statusIconUrl("WiFi", Theme.textPrimary)
             name: "Wi-Fi"
         }
 
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
             visible: header.statusIconsEnabled && Browse.SystemStatus.has_lan_internet
-            source: Resources.statusIconUrl("WiredNetwork")
+            source: Resources.statusIconUrl("WiredNetwork", Theme.textPrimary)
             name: "LAN"
         }
 
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
             visible: header.statusIconsEnabled && Browse.SystemStatus.has_bluetooth
-            source: Resources.statusIconUrl("Bluetooth")
+            source: Resources.statusIconUrl("Bluetooth", Theme.textPrimary)
             name: "Bluetooth"
         }
 

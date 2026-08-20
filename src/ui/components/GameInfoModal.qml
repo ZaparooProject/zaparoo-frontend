@@ -171,9 +171,11 @@ Item {
                         }
 
                         Image {
-                            source: Resources.iconUrl("NavLeft")
+                            source: Resources.iconUrl("NavLeft", Theme.textPrimary)
                             width: Sizing.pctH(4)
                             height: width
+                            sourceSize.width: Sizing.px(width)
+                            sourceSize.height: Sizing.px(height)
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
                             fillMode: Image.PreserveAspectFit
@@ -182,9 +184,11 @@ Item {
                         }
 
                         Image {
-                            source: Resources.iconUrl("NavRight")
+                            source: Resources.iconUrl("NavRight", Theme.textPrimary)
                             width: Sizing.pctH(4)
                             height: width
+                            sourceSize.width: Sizing.px(width)
+                            sourceSize.height: Sizing.px(height)
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             fillMode: Image.PreserveAspectFit
@@ -272,9 +276,11 @@ Item {
             }
 
             Image {
-                source: Resources.iconUrl("ScrollUp")
+                source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
                 width: Sizing.pctH(3)
                 height: width
+                sourceSize.width: Sizing.px(width)
+                sourceSize.height: Sizing.px(height)
                 anchors.bottom: flick.top
                 anchors.bottomMargin: Sizing.pctH(0.5)
                 anchors.horizontalCenter: flick.horizontalCenter
@@ -284,9 +290,11 @@ Item {
             }
 
             Image {
-                source: Resources.iconUrl("ScrollDown")
+                source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
                 width: Sizing.pctH(3)
                 height: width
+                sourceSize.width: Sizing.px(width)
+                sourceSize.height: Sizing.px(height)
                 anchors.top: flick.bottom
                 anchors.topMargin: Sizing.pctH(0.5)
                 anchors.horizontalCenter: flick.horizontalCenter

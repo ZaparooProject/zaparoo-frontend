@@ -24,6 +24,7 @@ TestCase {
     function cleanup(): void {
         main.debugCrtSafeAreaOverlay = false;
         main.crtNativePath = false;
+        main.bitmapType = false;
         setResolution(1280, 720);
     }
 
@@ -115,6 +116,21 @@ TestCase {
         verify(Math.abs(scaled - baseline * 1.5) <= 1, "pctH scaling should track screen height proportionally");
     }
 
+    // Pure function of its argument -- no resolution harness needed. Mirrors
+    // snapCoverTier's "snap up to the smallest rung that covers px" contract
+    // for the header-logo PNG ladder (resources/images/logo/).
+    function test_snap_logo_width_rounds_up_to_ladder_rung(): void {
+        compare(Sizing.snapLogoWidth(1), 96);
+        compare(Sizing.snapLogoWidth(96), 96);
+        compare(Sizing.snapLogoWidth(97), 144);
+        compare(Sizing.snapLogoWidth(192), 192);
+        compare(Sizing.snapLogoWidth(193), 256);
+        compare(Sizing.snapLogoWidth(384), 384);
+        compare(Sizing.snapLogoWidth(385), 600);
+        compare(Sizing.snapLogoWidth(600), 600);
+        compare(Sizing.snapLogoWidth(9999), 600);
+    }
+
     function test_detail_cover_tier_capped_by_viewport_width(): void {
         // Pin the resolution through the Main harness first: the cover-box
         // math reads the singleton's live screen size for its paddings, so
@@ -164,7 +180,7 @@ TestCase {
                 "tier": "480",
                 "radiusMd": 3,
                 "radiusSm": 2,
-                "fonts": [22, 18, 16, 14, 12, 10],
+                "fonts": [22, 18, 17, 16, 14, 13],
                 "strokes": [1, 2, 3, 4]
             },
             {
@@ -173,7 +189,7 @@ TestCase {
                 "tier": "540",
                 "radiusMd": 4,
                 "radiusSm": 2,
-                "fonts": [24, 19, 17, 15, 13, 11],
+                "fonts": [24, 20, 18, 17, 15, 14],
                 "strokes": [1, 2, 3, 4]
             },
             {
@@ -309,7 +325,11 @@ TestCase {
     }
 
     function test_crt_fonts_and_declared_grid_shapes(): void {
+        // Real --crt launches always carry both flags (main.cpp's
+        // bitmapTypeEnabled formula is crtNativePathEnabled || ...), so the
+        // harness sets them together to mirror production wiring.
         main.crtNativePath = true;
+        main.bitmapType = true;
         setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
         compare(Sizing.tier, "crt");
         compare(Sizing.fontHero, Sizing.fontSize(4.0));

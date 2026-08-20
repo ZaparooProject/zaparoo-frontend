@@ -147,11 +147,12 @@ Item {
     readonly property int _topLabelGap: Sizing.pctH(0.4)
     readonly property int _topLabelTextSize: Sizing.fontSize(2)
     readonly property int _tileCornerRadius: root._surfaceProfile ? root._surfaceProfile.cardRadius : Sizing.radiusMd
-    // Width available to the bottom caption. A half-corner-radius inset on each
-    // side keeps glyphs clear of the rounded corners while giving the title a
-    // bit more room than the old full-radius inset. ScrollingCaption does its
-    // own measuring/eliding/marquee inside this width.
-    readonly property int _captionSideInset: Sizing.half(root._tileCornerRadius)
+    // Width available to the bottom caption. Matches the cover image's own
+    // left/right padding (`_padding`) rather than a smaller corner-radius
+    // inset, which used to sit inside the focus ring's inner edge and let
+    // glyphs overlap it. ScrollingCaption does its own measuring/eliding/
+    // marquee inside this width.
+    readonly property int _captionSideInset: root._padding
     readonly property int _captionTextMaxWidth: Math.max(0, root.width - 2 * root._captionSideInset)
 
     // Focused styling (ring + focused cover ramp) is withheld until the host
@@ -530,9 +531,9 @@ Item {
             width: Sizing.px(parent.width / 6)
             height: width
             // Tinted on the fly from theme tokens (fill -> accent, keyline ->
-            // bgBar dark outline) via the tinted-svg provider, like every other
+            // markerOutline rim) via the tinted-svg provider, like every other
             // icon. The source SVG is neutral grayscale; colors live in Theme.
-            source: Resources.coverUrl("icons/Heart", Theme.accent, Theme.accent, Theme.bgBar)
+            source: Resources.coverUrl("icons/Heart", Theme.accent, Theme.accent, Theme.markerOutline)
             sourceSize.width: Sizing.px(width)
             sourceSize.height: Sizing.px(height)
             fillMode: Image.PreserveAspectFit

@@ -62,7 +62,7 @@ constexpr int kMinCornerRadius = 1;
 constexpr int kMaxCornerRadius = 16;
 
 const QStringList kAssetDirs = {QStringLiteral("systems"), QStringLiteral("categories"),
-                                QStringLiteral("icons")};
+                                QStringLiteral("icons"), QStringLiteral("status")};
 
 struct Baked
 {

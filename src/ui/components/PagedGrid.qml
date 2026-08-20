@@ -277,7 +277,7 @@ Item {
     readonly property int scrollArrowSize: root._gridProfile ? root._gridProfile.scrollArrowSize : Math.min(gutterWidth, Sizing.pctH(4))
     readonly property int topInset: root._gridProfile ? root._gridProfile.topInset : Sizing.pctH(2)
     readonly property int bottomInset: root._gridProfile ? root._gridProfile.bottomInset : Sizing.pctH(2)
-    readonly property int cellSpacingX: root._gridProfile ? root._gridProfile.columnGap : Sizing.pctW(3)
+    readonly property int cellSpacingX: root._gridProfile ? root._gridProfile.columnGap : Sizing.pctW(2)
     readonly property int cellSpacingY: root._gridProfile ? root._gridProfile.rowGap : Sizing.pctH(4)
     readonly property bool _scrollIndicatorVisible: root.paginationTotalKnown ? root.totalPageCount > 1 : (root.pageCount > 1 || root.hasMorePages)
     readonly property int _activeGutterWidth: root._scrollIndicatorVisible ? root.gutterWidth : 0
@@ -929,9 +929,11 @@ Item {
 
         Image {
             id: upArrow
-            source: Resources.iconUrl("ScrollUp")
+            source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
             width: root.scrollArrowSize
             height: root.scrollArrowSize
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.top: parent.top
             anchors.horizontalCenter: parent.horizontalCenter
             fillMode: Image.PreserveAspectFit
@@ -949,9 +951,11 @@ Item {
 
         Image {
             id: downArrow
-            source: Resources.iconUrl("ScrollDown")
+            source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
             width: root.scrollArrowSize
             height: root.scrollArrowSize
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.bottom: parent.bottom
             anchors.horizontalCenter: parent.horizontalCenter
             fillMode: Image.PreserveAspectFit

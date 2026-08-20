@@ -175,13 +175,6 @@ Item {
             height: root.rowHeight
 
             readonly property bool selected: row.index === root.currentIndex
-            onSelectedChanged: {
-                if (!row.selected) {
-                    activateAnim.stop();
-                    releaseAnim.stop();
-                    row._latchProgress = 0.0;
-                }
-            }
             // Visual highlight is withheld until the host marks focus ready, so
             // the default row 0 never paints the accent before restore lands.
             // `selected` itself stays ungated so the detail-pane bindings below
@@ -190,52 +183,6 @@ Item {
             readonly property string _baseTitle: row.name !== "" ? row.name : row.fileStem
             // Horizontal space reserved on the right for the favorite heart.
             readonly property int _favoriteSlot: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) : 0
-            readonly property int _latchDistance: Sizing.focusRingWidth
-            readonly property int _latchOffset: Sizing.px(row._latchProgress * row._latchDistance)
-            property real _latchProgress: 0
-
-            // The list is one recessed card rather than a stack of buttons.
-            // Activation moves only the selected cursor rail and title inward,
-            // like a latch engaging in a slot. Rounded integer geometry keeps
-            // every animation frame crisp on the software renderer.
-            NumberAnimation {
-                id: activateAnim
-                target: row
-                property: "_latchProgress"
-                to: 1.0
-                duration: Motion.dur(Motion.pressMs)
-                easing.type: Easing.OutQuad
-            }
-
-            NumberAnimation {
-                id: releaseAnim
-                target: row
-                property: "_latchProgress"
-                to: 0.0
-                duration: Motion.dur(Motion.settleMs)
-                easing.type: Easing.OutQuad
-            }
-
-            Connections {
-                target: root
-                function onActivatePulseChanged(): void {
-                    if (row.selected)
-                        activateAnim.restart();
-                }
-                function onReleasePulseChanged(): void {
-                    if (row.selected) {
-                        activateAnim.stop();
-                        releaseAnim.restart();
-                    }
-                }
-                function onScreenSettlingChanged(): void {
-                    if (root.screenSettling) {
-                        activateAnim.stop();
-                        releaseAnim.stop();
-                        row._latchProgress = 0.0;
-                    }
-                }
-            }
 
             Binding {
                 target: root
@@ -253,51 +200,19 @@ Item {
                 restoreMode: Binding.RestoreNone
             }
 
-            Item {
-                width: parent.width
-                height: parent.height
-                visible: row._highlightVisible
-
-                Rectangle {
-                    anchors.fill: parent
-                    color: Theme.selectionSurface
-                    radius: root._selectionRadius
-                }
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: root._selectionRadius
-                    color: Theme.selectionSurface
-                }
-            }
-
-            // One opaque keyline along the bottom makes the active row read as
-            // a recessed channel cut into the containing list card, without
-            // shadows. It sits on the bottom rather than the top because the
-            // whole UI is lit low and from the front: a raised PressableSurface
-            // catches that light on its near face, so the near wall of a recess
-            // must fall into shade. `Theme.selectionShade` carries the tone —
-            // Qt.darker() is an HSV value multiply and would be a no-op on a
-            // near-black selection surface.
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: Sizing.cardBorderWidth
-                color: Theme.selectionShade
-                visible: row._highlightVisible
-            }
-
-            Rectangle {
-                x: row._latchOffset
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: root._selectionAccentWidth
-                color: Theme.accent
-                visible: row._highlightVisible
-                radius: Math.max(0, Sizing.px(width / 3))
+            // Recessed-slot highlight. See LatchSurface.qml for why the keyline
+            // sits on the bottom rather than the top (the whole UI is lit low
+            // and from the front, so a recess's near wall falls into shade).
+            LatchSurface {
+                id: latch
+                objectName: "latchSurface"
+                anchors.fill: parent
+                active: row._highlightVisible
+                activatePulse: root.activatePulse
+                releasePulse: root.releasePulse
+                screenSettling: root.screenSettling
+                radius: root._selectionRadius
+                railWidth: root._selectionAccentWidth
             }
 
             // Row title carrying the inline dim token suffix. ScrollingCaption
@@ -307,7 +222,7 @@ Item {
             // margin reserves the favorite-heart slot.
             ScrollingCaption {
                 anchors.left: parent.left
-                anchors.leftMargin: root._rowTextLeftPadding + row._latchOffset
+                anchors.leftMargin: root._rowTextLeftPadding + latch.latchOffset
                 anchors.right: parent.right
                 anchors.rightMargin: row._favoriteSlot + root._rowTextRightPadding
                 anchors.verticalCenter: parent.verticalCenter
@@ -322,11 +237,11 @@ Item {
 
             Image {
                 anchors.right: parent.right
-                anchors.rightMargin: Math.max(0, root._favoriteRightPadding - row._latchOffset)
+                anchors.rightMargin: Math.max(0, root._favoriteRightPadding - latch.latchOffset)
                 anchors.verticalCenter: parent.verticalCenter
                 width: Sizing.pctH(3.2)
                 height: width
-                source: Resources.coverUrl("icons/Heart", Theme.accent, Theme.accent, Theme.bgBar)
+                source: Resources.coverUrl("icons/Heart", Theme.accent, Theme.accent, Theme.markerOutline)
                 sourceSize.width: Sizing.px(width)
                 sourceSize.height: Sizing.px(height)
                 fillMode: Image.PreserveAspectFit
@@ -368,9 +283,11 @@ Item {
 
         Image {
             id: upArrow
-            source: Resources.iconUrl("ScrollUp")
+            source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
             width: root._scrollArrowSize
             height: root._scrollArrowSize
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.top: parent.top
             anchors.horizontalCenter: parent.horizontalCenter
             fillMode: Image.PreserveAspectFit
@@ -388,9 +305,11 @@ Item {
 
         Image {
             id: downArrow
-            source: Resources.iconUrl("ScrollDown")
+            source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
             width: root._scrollArrowSize
             height: root._scrollArrowSize
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.bottom: parent.bottom
             anchors.horizontalCenter: parent.horizontalCenter
             fillMode: Image.PreserveAspectFit

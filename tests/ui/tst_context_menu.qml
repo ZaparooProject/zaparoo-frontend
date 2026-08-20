@@ -101,4 +101,24 @@ TestCase {
         verify(!menu._canCutCorners);
         verify(!_corner("contextMenuCornerTl").visible);
     }
+
+    // Panel width tracks the longest entry rather than sitting on the old
+    // large fixed floor (24% of width), so a one-word menu no longer opens
+    // a panel sized for a much longer label.
+    function test_panel_width_tracks_longest_label(): void {
+        menu.entries = [{
+            "id": "one",
+            "label": "Go"
+        }];
+        const shortWidth = menu.panelWidth;
+        verify(shortWidth >= menu._minPanelWidth);
+        verify(shortWidth < Sizing.pctW(24), "short label must not hit the old fixed floor");
+
+        menu.entries = [{
+            "id": "one",
+            "label": "A Considerably Longer Menu Entry Label"
+        }];
+        const longWidth = menu.panelWidth;
+        verify(longWidth > shortWidth);
+    }
 }

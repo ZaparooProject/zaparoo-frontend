@@ -9,52 +9,52 @@
         <translation>परिचय / लाइसेंस</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="155"/>
+        <location filename="../screens/AboutScreen.qml" line="160"/>
         <source>Zaparoo Frontend</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="166"/>
+        <location filename="../screens/AboutScreen.qml" line="171"/>
         <source>Version %1 · %2 · %3</source>
         <translation>संस्करण %1 · %2 · %3</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="176"/>
+        <location filename="../screens/AboutScreen.qml" line="181"/>
         <source>Built %1</source>
         <translation>%1 को निर्मित</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="187"/>
+        <location filename="../screens/AboutScreen.qml" line="192"/>
         <source>Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.</source>
         <translation>कॉपीराइट 2026 Wizzo Pty Ltd और Zaparoo परियोजना के योगदानकर्ता।</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="198"/>
+        <location filename="../screens/AboutScreen.qml" line="203"/>
         <source>Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license.</source>
         <translation>स्रोत PolyForm Noncommercial License 1.0.0 के अंतर्गत उपलब्ध है। व्यक्तिगत, गैर-व्यावसायिक उपयोग के लिए निःशुल्क। व्यावसायिक उपयोग या पुनर्वितरण के लिए अलग लाइसेंस आवश्यक है।</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="209"/>
+        <location filename="../screens/AboutScreen.qml" line="214"/>
         <source>Commercial licensing: legal@zaparoo.org</source>
         <translation>व्यावसायिक लाइसेंसिंग: legal@zaparoo.org</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="220"/>
+        <location filename="../screens/AboutScreen.qml" line="225"/>
         <source>Project: https://zaparoo.org</source>
         <translation>परियोजना: https://zaparoo.org</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="230"/>
+        <location filename="../screens/AboutScreen.qml" line="235"/>
         <source>Created by</source>
         <translation>निर्माता</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="254"/>
+        <location filename="../screens/AboutScreen.qml" line="259"/>
         <source>Translations</source>
         <translation>अनुवाद</translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="267"/>
+        <location filename="../screens/AboutScreen.qml" line="272"/>
         <source>Italiano - Andrea Bogazzi
 Español - Carlos R.
 Euskara - devilschile2
@@ -62,7 +62,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/AboutScreen.qml" line="278"/>
+        <location filename="../screens/AboutScreen.qml" line="283"/>
         <source>Full license text in COPYING.</source>
         <translation>पूरा लाइसेंस पाठ COPYING में है।</translation>
     </message>
@@ -572,7 +572,7 @@ Français - Wilfried</source>
         <translation type="vanished">सेटिंग्स</translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="825"/>
+        <location filename="../screens/HubScreen.qml" line="828"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>कोई सिस्टम उपलब्ध नहीं है। सेटिंग्स से मीडिया डेटाबेस अपडेट चलाएँ।</translation>
     </message>
@@ -981,37 +981,37 @@ Français - Wilfried</source>
         <translation type="obsolete">रद्द करें</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3745"/>
+        <location filename="../app/Main.qml" line="3756"/>
         <source>Loading systems…</source>
         <translation>सिस्टम लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3747"/>
+        <location filename="../app/Main.qml" line="3758"/>
         <source>Loading games…</source>
         <translation>गेम लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3749"/>
+        <location filename="../app/Main.qml" line="3760"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3752"/>
+        <location filename="../app/Main.qml" line="3763"/>
         <source>Loading favorites…</source>
         <translation>पसंदीदा लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3754"/>
+        <location filename="../app/Main.qml" line="3765"/>
         <source>Loading recently played…</source>
         <translation>हाल ही में खेले गए लोड हो रहे हैं…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3756"/>
+        <location filename="../app/Main.qml" line="3767"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3758"/>
+        <location filename="../app/Main.qml" line="3769"/>
         <source>Loading…</source>
         <translation>लोड हो रहा है…</translation>
     </message>
@@ -1019,128 +1019,128 @@ Français - Wilfried</source>
 <context>
     <name>MainLayout</name>
     <message>
-        <location filename="../app/MainLayout.qml" line="789"/>
+        <location filename="../app/MainLayout.qml" line="802"/>
         <source>Writing failed</source>
         <translation>लिखना विफल हुआ</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="789"/>
+        <location filename="../app/MainLayout.qml" line="802"/>
         <source>Put a writable card near the reader</source>
         <translation>रीडर के पास लिखने योग्य कार्ड रखें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="204"/>
+        <location filename="../app/MainLayout.qml" line="205"/>
         <source>Zaparoo Frontend</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="441"/>
-        <location filename="../app/MainLayout.qml" line="443"/>
+        <location filename="../app/MainLayout.qml" line="454"/>
+        <location filename="../app/MainLayout.qml" line="456"/>
         <source>Favorites</source>
         <translation type="unfinished">पसंदीदा</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="445"/>
+        <location filename="../app/MainLayout.qml" line="458"/>
         <source>Recently Played</source>
         <translation type="unfinished">हाल ही में खेले गए</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="805"/>
+        <location filename="../app/MainLayout.qml" line="818"/>
         <source>Quit and restart Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="806"/>
+        <location filename="../app/MainLayout.qml" line="819"/>
         <source>In order to apply this setting we need to restart the frontend.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="824"/>
+        <location filename="../app/MainLayout.qml" line="837"/>
         <source>Update Zaparoo Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="825"/>
+        <location filename="../app/MainLayout.qml" line="838"/>
         <source>This frontend needs Zaparoo Core %1 or newer. You&apos;re running %2. Some features may not work until you update.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="321"/>
-        <location filename="../app/MainLayout.qml" line="826"/>
-        <location filename="../app/MainLayout.qml" line="1163"/>
+        <location filename="../app/MainLayout.qml" line="334"/>
+        <location filename="../app/MainLayout.qml" line="839"/>
+        <location filename="../app/MainLayout.qml" line="1176"/>
         <source>OK</source>
         <translation type="unfinished">ठीक है</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="935"/>
+        <location filename="../app/MainLayout.qml" line="948"/>
         <source>Quit Zaparoo Frontend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="936"/>
+        <location filename="../app/MainLayout.qml" line="949"/>
         <source>Are you sure you want to exit?</source>
         <translation>क्या आप वाकई बाहर निकलना चाहते हैं?</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1082"/>
-        <location filename="../app/MainLayout.qml" line="1170"/>
-        <location filename="../app/MainLayout.qml" line="1209"/>
-        <location filename="../app/MainLayout.qml" line="1246"/>
-        <location filename="../app/MainLayout.qml" line="1295"/>
-        <location filename="../app/MainLayout.qml" line="1351"/>
-        <location filename="../app/MainLayout.qml" line="1370"/>
-        <location filename="../app/MainLayout.qml" line="1443"/>
+        <location filename="../app/MainLayout.qml" line="1095"/>
+        <location filename="../app/MainLayout.qml" line="1183"/>
+        <location filename="../app/MainLayout.qml" line="1222"/>
+        <location filename="../app/MainLayout.qml" line="1259"/>
+        <location filename="../app/MainLayout.qml" line="1308"/>
+        <location filename="../app/MainLayout.qml" line="1364"/>
+        <location filename="../app/MainLayout.qml" line="1383"/>
+        <location filename="../app/MainLayout.qml" line="1456"/>
         <source>Move</source>
         <translation>स्थानांतरित करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1086"/>
-        <location filename="../app/MainLayout.qml" line="1174"/>
+        <location filename="../app/MainLayout.qml" line="1099"/>
+        <location filename="../app/MainLayout.qml" line="1187"/>
         <source>Select</source>
         <translation>चुनें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1090"/>
-        <location filename="../app/MainLayout.qml" line="1104"/>
-        <location filename="../app/MainLayout.qml" line="1119"/>
-        <location filename="../app/MainLayout.qml" line="1130"/>
-        <location filename="../app/MainLayout.qml" line="1156"/>
+        <location filename="../app/MainLayout.qml" line="1103"/>
+        <location filename="../app/MainLayout.qml" line="1117"/>
+        <location filename="../app/MainLayout.qml" line="1132"/>
+        <location filename="../app/MainLayout.qml" line="1143"/>
+        <location filename="../app/MainLayout.qml" line="1169"/>
         <source>Close</source>
         <translation>बंद करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1097"/>
-        <location filename="../app/MainLayout.qml" line="1137"/>
-        <location filename="../app/MainLayout.qml" line="1178"/>
+        <location filename="../app/MainLayout.qml" line="1110"/>
+        <location filename="../app/MainLayout.qml" line="1150"/>
+        <location filename="../app/MainLayout.qml" line="1191"/>
         <source>Cancel</source>
         <translation>रद्द करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1115"/>
+        <location filename="../app/MainLayout.qml" line="1128"/>
         <source>Done</source>
         <translation>पूरा</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1126"/>
-        <location filename="../app/MainLayout.qml" line="1213"/>
-        <location filename="../app/MainLayout.qml" line="1264"/>
-        <location filename="../app/MainLayout.qml" line="1322"/>
-        <location filename="../app/MainLayout.qml" line="1471"/>
+        <location filename="../app/MainLayout.qml" line="1139"/>
+        <location filename="../app/MainLayout.qml" line="1226"/>
+        <location filename="../app/MainLayout.qml" line="1277"/>
+        <location filename="../app/MainLayout.qml" line="1335"/>
+        <location filename="../app/MainLayout.qml" line="1484"/>
         <source>Retry</source>
         <translation>फिर से प्रयास करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1145"/>
+        <location filename="../app/MainLayout.qml" line="1158"/>
         <source>I understand</source>
         <translation>मैं समझ गया</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1185"/>
+        <location filename="../app/MainLayout.qml" line="1198"/>
         <source>Adjust</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1189"/>
+        <location filename="../app/MainLayout.qml" line="1202"/>
         <source>Save</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1149,41 +1149,41 @@ Français - Wilfried</source>
         <translation type="vanished">शुरू करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1213"/>
-        <location filename="../app/MainLayout.qml" line="1251"/>
-        <location filename="../app/MainLayout.qml" line="1300"/>
-        <location filename="../app/MainLayout.qml" line="1356"/>
-        <location filename="../app/MainLayout.qml" line="1448"/>
+        <location filename="../app/MainLayout.qml" line="1226"/>
+        <location filename="../app/MainLayout.qml" line="1264"/>
+        <location filename="../app/MainLayout.qml" line="1313"/>
+        <location filename="../app/MainLayout.qml" line="1369"/>
+        <location filename="../app/MainLayout.qml" line="1461"/>
         <source>Open</source>
         <translation>खोलें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1223"/>
+        <location filename="../app/MainLayout.qml" line="1236"/>
         <source>Quit</source>
         <translation>बंद करें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1232"/>
-        <location filename="../app/MainLayout.qml" line="1257"/>
-        <location filename="../app/MainLayout.qml" line="1268"/>
-        <location filename="../app/MainLayout.qml" line="1284"/>
-        <location filename="../app/MainLayout.qml" line="1314"/>
-        <location filename="../app/MainLayout.qml" line="1332"/>
-        <location filename="../app/MainLayout.qml" line="1344"/>
-        <location filename="../app/MainLayout.qml" line="1360"/>
-        <location filename="../app/MainLayout.qml" line="1394"/>
-        <location filename="../app/MainLayout.qml" line="1415"/>
-        <location filename="../app/MainLayout.qml" line="1424"/>
-        <location filename="../app/MainLayout.qml" line="1464"/>
-        <location filename="../app/MainLayout.qml" line="1483"/>
+        <location filename="../app/MainLayout.qml" line="1245"/>
+        <location filename="../app/MainLayout.qml" line="1270"/>
+        <location filename="../app/MainLayout.qml" line="1281"/>
+        <location filename="../app/MainLayout.qml" line="1297"/>
+        <location filename="../app/MainLayout.qml" line="1327"/>
+        <location filename="../app/MainLayout.qml" line="1345"/>
+        <location filename="../app/MainLayout.qml" line="1357"/>
+        <location filename="../app/MainLayout.qml" line="1373"/>
+        <location filename="../app/MainLayout.qml" line="1407"/>
+        <location filename="../app/MainLayout.qml" line="1428"/>
+        <location filename="../app/MainLayout.qml" line="1437"/>
+        <location filename="../app/MainLayout.qml" line="1477"/>
+        <location filename="../app/MainLayout.qml" line="1496"/>
         <source>Back</source>
         <translation>वापस</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1310"/>
-        <location filename="../app/MainLayout.qml" line="1328"/>
-        <location filename="../app/MainLayout.qml" line="1460"/>
-        <location filename="../app/MainLayout.qml" line="1479"/>
+        <location filename="../app/MainLayout.qml" line="1323"/>
+        <location filename="../app/MainLayout.qml" line="1341"/>
+        <location filename="../app/MainLayout.qml" line="1473"/>
+        <location filename="../app/MainLayout.qml" line="1492"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1192,25 +1192,25 @@ Français - Wilfried</source>
         <translation type="vanished">पृष्ठ</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1219"/>
-        <location filename="../app/MainLayout.qml" line="1254"/>
-        <location filename="../app/MainLayout.qml" line="1305"/>
-        <location filename="../app/MainLayout.qml" line="1453"/>
+        <location filename="../app/MainLayout.qml" line="1232"/>
+        <location filename="../app/MainLayout.qml" line="1267"/>
+        <location filename="../app/MainLayout.qml" line="1318"/>
+        <location filename="../app/MainLayout.qml" line="1466"/>
         <source>Options</source>
         <translation>विकल्प</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1379"/>
+        <location filename="../app/MainLayout.qml" line="1392"/>
         <source>Change</source>
         <translation>बदलें</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1385"/>
+        <location filename="../app/MainLayout.qml" line="1398"/>
         <source>Toggle</source>
         <translation>टॉगल</translation>
     </message>
     <message>
-        <location filename="../app/MainLayout.qml" line="1411"/>
+        <location filename="../app/MainLayout.qml" line="1424"/>
         <source>Scroll</source>
         <translation>स्क्रॉल</translation>
     </message>
@@ -1305,7 +1305,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScreenStateOverlay.qml" line="68"/>
+        <location filename="../components/ScreenStateOverlay.qml" line="79"/>
         <source>Failed to load</source>
         <translation>लोड करने में विफल</translation>
     </message>
@@ -1801,7 +1801,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1579"/>
+        <location filename="../screens/SettingsScreen.qml" line="1603"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1893,7 +1893,7 @@ Français - Wilfried</source>
         <translation>सेटिंग्स</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1567"/>
+        <location filename="../screens/SettingsScreen.qml" line="1585"/>
         <source>No settings available on this platform</source>
         <translation>इस प्लेटफ़ॉर्म पर कोई सेटिंग उपलब्ध नहीं है</translation>
     </message>
@@ -1913,12 +1913,12 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="397"/>
+        <location filename="../screens/SystemsScreen.qml" line="402"/>
         <source>No systems in this category</source>
         <translation>इस श्रेणी में कोई सिस्टम नहीं है</translation>
     </message>
     <message>
-        <location filename="../screens/SystemsScreen.qml" line="398"/>
+        <location filename="../screens/SystemsScreen.qml" line="403"/>
         <source>Loading systems…</source>
         <translation>सिस्टम लोड हो रहे हैं…</translation>
     </message>
@@ -1926,7 +1926,7 @@ Français - Wilfried</source>
 <context>
     <name>Tile</name>
     <message>
-        <location filename="../components/Tile.qml" line="552"/>
+        <location filename="../components/Tile.qml" line="553"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>

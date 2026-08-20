@@ -1407,6 +1407,20 @@ Item {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
 
+        // One card behind every section so the rows read as channels cut
+        // into something, matching the recessed-slot vocabulary each row
+        // itself uses (see SettingsField.qml / LatchSurface.qml) rather
+        // than floating loose on the screen background.
+        Rectangle {
+            width: form.width
+            height: form.height
+            visible: form.visible
+            color: Theme.surfaceCard
+            border.width: Sizing.cardBorderWidth
+            border.color: Theme.borderMid
+            radius: Sizing.radiusMd
+        }
+
         Column {
             id: form
 
@@ -1527,16 +1541,18 @@ Item {
     }
 
     // Top/bottom scroll chevrons — mirror the PagedGrid/BrowseList
-    // recipe (same SVG icons, `PreserveAspectFit` + `smooth: true`)
-    // but centered on the viewport in the chrome gap *above* and
-    // *below* the Flickable, not inside its visible band. Sitting
-    // outside the scrolled area means the chevrons never overlap
-    // moving content as the user scrolls. Visible only when content
-    // extends past the matching edge.
+    // recipe (same SVG icons, `PreserveAspectFit` + `smooth: true` +
+    // `sourceSize` pinned to the painted size) but centered on the
+    // viewport in the chrome gap *above* and *below* the Flickable, not
+    // inside its visible band. Sitting outside the scrolled area means
+    // the chevrons never overlap moving content as the user scrolls.
+    // Visible only when content extends past the matching edge.
     Image {
-        source: Resources.iconUrl("ScrollUp")
+        source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
         width: Sizing.pctH(3)
         height: width
+        sourceSize.width: Sizing.px(width)
+        sourceSize.height: Sizing.px(height)
         anchors.bottom: flickable.top
         anchors.bottomMargin: Sizing.pctH(0.5)
         anchors.horizontalCenter: flickable.horizontalCenter
@@ -1546,9 +1562,11 @@ Item {
     }
 
     Image {
-        source: Resources.iconUrl("ScrollDown")
+        source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
         width: Sizing.pctH(3)
         height: width
+        sourceSize.width: Sizing.px(width)
+        sourceSize.height: Sizing.px(height)
         anchors.top: flickable.bottom
         anchors.topMargin: Sizing.pctH(0.5)
         anchors.horizontalCenter: flickable.horizontalCenter
@@ -1573,6 +1591,12 @@ Item {
 
     ScreenStateOverlay {
         anchors.fill: parent
+        // Fills `settings` exactly, so this is the same point the default
+        // (`overlay.height / 2`) already resolves to — spelled out
+        // explicitly so all three loading-capable screens wire the cue
+        // anchor the same way rather than two doing it and one relying on
+        // a default that happens to match.
+        cueCenterY: settings.height / 2 - y
         enabled: settings.optimisticLoading
         loading: settings.optimisticLoading
         count: 0

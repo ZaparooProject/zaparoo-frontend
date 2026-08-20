@@ -60,6 +60,17 @@ QtObject {
         return isKnown(id) ? id : defaultId;
     }
 
+    // Whether a preset's background reads as the light end of its own
+    // primary/text pair — i.e. `up` (see palette()) is false. Exists for
+    // asset selection that a color role cannot express, such as picking
+    // between a light-wordmark and dark-wordmark header logo PNG. Computed
+    // independently of palette() so it stays out of the derived-role object
+    // and tst_color_schemes.qml's requiredRoles opacity loop.
+    function isLightSurface(id: string): bool {
+        const source = _sources[effectiveId(id)];
+        return _luma(Qt.color(source.primary)) > _luma(Qt.color(source.text));
+    }
+
     function palette(id: string): var {
         const source = _sources[effectiveId(id)];
         const primary = Qt.color(source.primary);
@@ -71,6 +82,12 @@ QtObject {
         // deepens a surface whichever direction the preset runs.
         const up = _luma(text) > _luma(primary);
         const ink = Qt.color(up ? "#000000" : "#ffffff");
+        // The two logo ramps and the marker outline anchor on these instead
+        // of on `primary`/`text` directly, so they order by luma rather than
+        // by authoring role and cannot invert when a preset swaps which of
+        // the two is the lighter one.
+        const lightPole = up ? text : primary;
+        const darkPole = up ? primary : text;
 
         // Neutral ladder: step the background toward the text, then give each
         // rung a slight accent cast so a warm accent yields warm surfaces
@@ -106,18 +123,32 @@ QtObject {
             "textLabel": _mix(primary, text, 0.62),
             "textVariant": variant,
             "accent": accent,
-            // Resting logo ramp is the neutral ladder. The focused ramp is the
-            // accent ramp, and its span is what reads as a specular highlight
-            // on tinted artwork: deep accent through accent to near-text.
-            "logoShadow": _mix(_mix(primary, text, 0.16), accent, 0.22),
-            "logoSecondary": _mix(_mix(primary, text, 0.45), accent, 0.10),
-            "logoPrimary": _mix(_mix(primary, text, 0.72), accent, 0.04),
-            // Mixing toward black compresses relative luminance far harder than
-            // mixing toward white, so a light preset has to travel further to
-            // reach the same perceived ramp span.
-            "logoFocusShadow": _mix(accent, ink, up ? 0.35 : 0.62),
+            // Both logo ramps run on the accent hue rather than the neutral
+            // primary/text axis. `lightPole`/`darkPole` order the two preset
+            // colors by luma rather than by authoring role, so `logoShadow`
+            // is always the darker end even on a light preset (where `text`
+            // is the dark color and `primary` is the light one) — the ramp
+            // can no longer run backwards the way a `primary`-anchored mix
+            // did. Resting keeps a strong accent weight throughout so an
+            // unfocused tile reads as tinted, not desaturated; the focused
+            // ramp's wider span is what turns an antialiased glyph boundary
+            // into a rim light. Every rung of the focus ramp is lighter than
+            // its resting counterpart — including the shadow rung — so a
+            // focused tile reads brighter as a whole, not just at its rim.
+            "logoShadow": _mix(accent, darkPole, 0.55),
+            "logoSecondary": _mix(accent, darkPole, 0.18),
+            "logoPrimary": _mix(accent, lightPole, 0.28),
+            "logoFocusShadow": _mix(accent, darkPole, 0.30),
             "logoFocusSecondary": accent,
-            "logoFocusPrimary": _mix(accent, text, 0.92),
+            "logoFocusPrimary": _mix(accent, lightPole, 0.85),
+            // Marker keyline (e.g. the favorite heart's outline): the pole
+            // opposite the accent's own luma, nudged toward the accent
+            // itself so it reads as "this marker's rim," not a flat
+            // black/white sticker outline, and never collapses onto
+            // `primary` the way nudging toward `primary` would on a preset
+            // where the chosen pole equals `primary` (light presets: `up`
+            // is false, so `lightPole` is exactly `primary`).
+            "markerOutline": _mix(_luma(accent) > 0.5 ? darkPole : lightPole, accent, 0.12),
             "errorHex": up ? "#ff4f91" : "#c2185b"
         };
     }

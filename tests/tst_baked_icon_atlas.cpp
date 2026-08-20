@@ -67,7 +67,7 @@ QColor rampShadow()
 QStringList bakedSourcePaths()
 {
     QStringList paths;
-    for (const auto* group : {"systems", "categories", "icons"})
+    for (const auto* group : {"systems", "categories", "icons", "status"})
     {
         const QString dir =
             QString::fromLatin1(kQrcRoot) + QStringLiteral("images/") + QString::fromLatin1(group);

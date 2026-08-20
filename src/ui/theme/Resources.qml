@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 pragma Singleton
 import QtQuick
+import Zaparoo.Theme
 
 // Centralizes the qrc layout for embedded resources so the rule
 // (`qrc:/qt/qml/Zaparoo/App/resources/...`) lives in exactly one place.
@@ -134,27 +135,49 @@ QtObject {
         return "image://tinted-svg/" + token + "/" + token + "/" + token + "/images/corners/cut-" + radius + "-" + corner;
     }
 
-    // Top-right HUD host-status icons (NFC/Wi-Fi/LAN/Bluetooth).
-    function statusIconUrl(name: string): url {
+    // Top-right HUD host-status icons (NFC/Wi-Fi/LAN/Bluetooth). Routed
+    // through the tinted-svg provider with a flat tint (all three slots the
+    // same color) instead of the raw qrc path -- every source SVG here is
+    // authored stroke/fill="#fff", and on the light preset `bgBar` resolves
+    // *lighter* than white, so a raw white icon was invisible. `color` is
+    // required, matching `iconUrl()` and every other tinted call in this file.
+    function statusIconUrl(name: string, color: var): url {
         if (name === "")
             return "";
 
-        return baseUrl + "images/status/" + name + ".svg";
+        const token = _colorToken(color);
+        return "image://tinted-svg/" + token + "/" + token + "/" + token + "/images/status/" + name + ".svg";
     }
 
     // General-purpose UI glyphs (folder, file, loading spinner, settings,
-    // nav arrows, D-pad, ...) under resources/images/icons/. Gamepad
-    // button glyphs (ButtonA/B/X/Y/L/R) live separately under
-    // resources/images/buttons/<layout>/ and ship as PNG so the
-    // antialiased button-face shading survives intact.
-    function iconUrl(name: string): url {
+    // nav arrows, D-pad, ...) under resources/images/icons/. Routed through
+    // the tinted-svg provider with a flat tint for the same reason as
+    // statusIconUrl() above -- these are also authored white-on-transparent.
+    // Gamepad button glyphs (ButtonA/B/X/Y/L/R) and the D-pad glyphs stay raw
+    // PNG: they are rasters with their own baked shading, not tintable SVGs.
+    function iconUrl(name: string, color: var): url {
         if (name === "")
             return "";
 
         if (name.startsWith("Button"))
             return baseUrl + "images/buttons/" + buttonLayout + "/" + name + ".png";
 
-        const ext = name.startsWith("Dpad") ? "png" : "svg";
-        return baseUrl + "images/icons/" + name + "." + ext;
+        if (name.startsWith("Dpad"))
+            return baseUrl + "images/icons/" + name + ".png";
+
+        const token = _colorToken(color);
+        return "image://tinted-svg/" + token + "/" + token + "/" + token + "/images/icons/" + name + ".svg";
+    }
+
+    // Header-logo asset ladder (resources/images/logo/logo-<variant>-<w>.png,
+    // item 9a). Snaps `paintedWidth` up to the smallest pre-sized rung that
+    // covers it and picks the light/dark variant from the active theme, so
+    // every call site (HeaderBar, AboutScreen, the screensaver's bouncing
+    // copy) decodes close to its own painted size instead of downscaling the
+    // 600px master at paint time.
+    function logoUrl(paintedWidth: real): url {
+        const rung = Sizing.snapLogoWidth(paintedWidth);
+        const variant = Theme.lightSurface ? "on-light" : "on-dark";
+        return baseUrl + "images/logo/logo-" + variant + "-" + rung + ".png";
     }
 }

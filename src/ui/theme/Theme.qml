@@ -8,10 +8,14 @@ import QtQuick
 // Never hardcode colors or font families inline — use these instead.
 QtObject {
     property bool crtNativePath: false
+    property bool bitmapType: false
     property string colorSchemeId: ColorSchemes.defaultId
 
     readonly property string effectiveColorSchemeId: ColorSchemes.effectiveId(colorSchemeId)
     readonly property var _palette: ColorSchemes.palette(colorSchemeId)
+    // Not a color role — a raster-asset selection flag for cases a color
+    // binding cannot express, such as HeaderBar's light/dark logo PNG ladder.
+    readonly property bool lightSurface: ColorSchemes.isLightSurface(colorSchemeId)
 
     // Semantic roles resolve through one complete preset. Components never
     // branch on scheme identity, so switching updates surfaces and tinted image
@@ -37,9 +41,10 @@ QtObject {
     readonly property color logoFocusPrimary: _palette.logoFocusPrimary
     readonly property color logoFocusSecondary: _palette.logoFocusSecondary
     readonly property color logoFocusShadow: _palette.logoFocusShadow
+    readonly property color markerOutline: _palette.markerOutline
     readonly property string errorHex: _palette.errorHex
     readonly property color error: errorHex
     // Fonts
-    readonly property string fontUi: crtNativePath ? "MxPlus HP 100LX 6x8" : "Noto Sans"
-    readonly property string fontMono: crtNativePath ? "MxPlus HP 100LX 6x8" : "monospace"
+    readonly property string fontUi: bitmapType ? "MxPlus HP 100LX 6x8" : "Noto Sans"
+    readonly property string fontMono: bitmapType ? "MxPlus HP 100LX 6x8" : "monospace"
 }
