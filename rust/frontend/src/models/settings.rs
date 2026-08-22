@@ -42,7 +42,7 @@
 //   * `current_system_logo_style` — READ + NOTIFY, persisted. Defaults to
 //     "tinted" so existing installs keep current behavior.
 //   * `available_color_schemes` / `current_color_scheme` — curated live color
-//     presets. Missing and unknown values normalize to "zaparoo-black"; the
+//     presets. Missing and unknown values normalize to "zaparoo-dark"; the
 //     setting is mirrored into state.toml and frontend.toml.
 //   * `available_button_layouts` — CONSTANT. Single-letter ids used to
 //     compose resources/images/buttons/<layout>/Button*.png. User-facing
@@ -131,25 +131,16 @@ const FAVORITES_GROUPINGS: &[&str] = &["none", "system"];
 const DEFAULT_FAVORITES_GROUPING: &str = "none";
 const SYSTEM_LOGO_STYLES: &[&str] = &["tinted", "color"];
 const DEFAULT_SYSTEM_LOGO_STYLE: &str = "tinted";
+// Kept in the same order as `ColorSchemes.ids` in
+// src/ui/theme/ColorSchemes.qml -- see that file's header comment for the
+// round-6 prune rationale (Zaparoo, phosphor, and console presets kept
+// unconditionally; near-duplicate editor/terminal families cut).
 const COLOR_SCHEMES: &[&str] = &[
-    "zaparoo-black",
-    "midnight-amber",
-    "zaparoo-white",
-    "catppuccin-mocha",
-    "catppuccin-macchiato",
-    "catppuccin-frappe",
-    "nord",
+    "zaparoo-dark",
+    "zaparoo-light",
+    "classic-purple",
     "dracula",
-    "gruvbox-dark",
-    "gruvbox-light",
-    "tokyo-night",
-    "rose-pine",
-    "kanagawa-wave",
-    "ayu-dark",
-    "nightfox",
-    "monokai",
-    "one-dark-pro",
-    "everforest-dark",
+    "nord",
     "synthwave-84",
     "amber-phosphor",
     "green-phosphor",
@@ -157,7 +148,7 @@ const COLOR_SCHEMES: &[&str] = &[
     "nes",
     "virtual-boy",
 ];
-const DEFAULT_COLOR_SCHEME: &str = "zaparoo-black";
+const DEFAULT_COLOR_SCHEME: &str = "zaparoo-dark";
 const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
 const DEFAULT_BUTTON_LAYOUT: &str = "a";
 // Screensaver idle-timeout choices. Values are seconds as ASCII
@@ -1217,10 +1208,24 @@ mod tests {
         let collected: Vec<String> = list.iter().map(String::from).collect();
         let expected: Vec<String> = COLOR_SCHEMES.iter().map(|s| (*s).to_string()).collect();
         assert_eq!(collected, expected);
-        assert_eq!(normalize_color_scheme("midnight-amber"), "midnight-amber");
-        assert_eq!(normalize_color_scheme("zaparoo-white"), "zaparoo-white");
+        assert_eq!(normalize_color_scheme("classic-purple"), "classic-purple");
+        assert_eq!(normalize_color_scheme("zaparoo-light"), "zaparoo-light");
         assert_eq!(normalize_color_scheme("removed"), DEFAULT_COLOR_SCHEME);
-        assert_eq!(normalize_color_scheme(""), "zaparoo-black");
+        assert_eq!(normalize_color_scheme(""), "zaparoo-dark");
+        // Round-6-pruned ids (still valid round-5 scheme names) must fall
+        // back to the default like any other unknown value.
+        assert_eq!(
+            normalize_color_scheme("midnight-amber"),
+            DEFAULT_COLOR_SCHEME
+        );
+        assert_eq!(
+            normalize_color_scheme("zaparoo-black"),
+            DEFAULT_COLOR_SCHEME
+        );
+        assert_eq!(
+            normalize_color_scheme("catppuccin-mocha"),
+            DEFAULT_COLOR_SCHEME
+        );
     }
 
     #[test]

@@ -49,13 +49,6 @@ Item {
     readonly property int _maxViewTopIndex: Math.max(0, itemCount - visibleRowCount)
     readonly property int _viewTopIndex: Math.max(0, Math.min(_maxViewTopIndex, currentIndex - _centerSlot))
     readonly property int _targetContentY: _viewTopIndex * rowStride
-    readonly property int _maxScrollTopIndex: Math.max(0, totalItems - visibleRowCount)
-    readonly property int _gutterWidth: root._grid ? root._grid.gutterWidth : Sizing.pctW(3)
-    readonly property int _gutterGap: root._list && root._list.scrollbarGap !== undefined ? root._list.scrollbarGap : (root._grid ? root._grid.gutterGap : Sizing.pctW(1.5))
-    readonly property int _scrollThumbWidth: root._grid ? root._grid.scrollThumbWidth : Sizing.pctW(1.2)
-    readonly property int _scrollThumbRightInset: root._grid ? root._grid.scrollThumbRightInset : 0
-    readonly property bool _scrollThumbRightAligned: root._grid && root._grid.scrollThumbRightAligned !== undefined ? root._grid.scrollThumbRightAligned : false
-    readonly property int _scrollArrowSize: root._grid ? root._grid.scrollArrowSize : Math.min(root._gutterWidth, Sizing.pctH(4))
     readonly property int _rowTextLeftPadding: root._list ? root._list.rowTextLeftPadding : Sizing.pctW(1.6)
     readonly property int _rowTextRightPadding: root._list ? root._list.rowTextRightPadding : Sizing.pctW(1.6)
     readonly property int _favoriteRightPadding: root._list ? root._list.favoriteRightPadding : Sizing.pctW(1.6)
@@ -146,7 +139,7 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: root.cardPaddingBottom
         anchors.right: parent.right
-        anchors.rightMargin: root.totalItems > root.visibleRowCount ? root._gutterWidth + root._gutterGap + root.cardPaddingRight : root.cardPaddingRight
+        anchors.rightMargin: root.cardPaddingRight
         model: root.model
         currentIndex: root.currentIndex
         boundsBehavior: Flickable.StopAtBounds
@@ -263,91 +256,6 @@ Item {
                         root.itemClicked(row.index);
                 }
                 onWheel: wheel => root._handleWheel(wheel)
-            }
-        }
-    }
-
-    // ── Left-half scroll indicator ────────────────────────────────────────
-    Item {
-        id: scrollGutter
-
-        anchors.right: parent.right
-        anchors.rightMargin: root.cardPaddingRight
-        anchors.top: parent.top
-        anchors.topMargin: root.cardPaddingTop
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.cardPaddingBottom
-        width: root._gutterWidth
-        visible: root.totalItems > root.visibleRowCount
-
-        Image {
-            id: upArrow
-            source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
-            width: root._scrollArrowSize
-            height: root._scrollArrowSize
-            sourceSize.width: Sizing.px(width)
-            sourceSize.height: Sizing.px(height)
-            anchors.top: parent.top
-            anchors.horizontalCenter: parent.horizontalCenter
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-            visible: root.currentIndex > 0
-
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton
-                cursorShape: Qt.PointingHandCursor
-                enabled: upArrow.visible
-                onClicked: root.pageWheelRequested(-1)
-            }
-        }
-
-        Image {
-            id: downArrow
-            source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
-            width: root._scrollArrowSize
-            height: root._scrollArrowSize
-            sourceSize.width: Sizing.px(width)
-            sourceSize.height: Sizing.px(height)
-            anchors.bottom: parent.bottom
-            anchors.horizontalCenter: parent.horizontalCenter
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-            visible: root.currentIndex < root.totalItems - 1
-
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton
-                cursorShape: Qt.PointingHandCursor
-                enabled: downArrow.visible
-                onClicked: root.pageWheelRequested(1)
-            }
-        }
-
-        Item {
-            id: scrollRegion
-            anchors.top: parent.top
-            anchors.topMargin: root._scrollArrowSize + Sizing.pctH(1)
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: root._scrollArrowSize + Sizing.pctH(1)
-            anchors.right: root._scrollThumbRightAligned ? parent.right : undefined
-            anchors.rightMargin: root._scrollThumbRightAligned ? root._scrollThumbRightInset : 0
-            anchors.horizontalCenter: root._scrollThumbRightAligned ? undefined : parent.horizontalCenter
-            width: root._scrollThumbWidth
-
-            readonly property int _minThumbHeight: Sizing.pctH(4)
-            readonly property int _thumbHeight: root.totalItems <= 0 ? 0 : Math.min(scrollRegion.height, Math.max(_minThumbHeight, Math.round(scrollRegion.height * root.visibleRowCount / root.totalItems)))
-            readonly property int _thumbY: root._maxScrollTopIndex <= 0 ? 0 : Sizing.px((root._viewTopIndex / root._maxScrollTopIndex) * (scrollRegion.height - _thumbHeight))
-
-            Rectangle {
-                id: scrollThumb
-                width: root._scrollThumbWidth
-                height: scrollRegion._thumbHeight
-                anchors.right: root._scrollThumbRightAligned ? parent.right : undefined
-                anchors.horizontalCenter: root._scrollThumbRightAligned ? undefined : parent.horizontalCenter
-                y: scrollRegion._thumbY
-                color: Theme.textPrimary
-                radius: Sizing.radiusSm
             }
         }
     }

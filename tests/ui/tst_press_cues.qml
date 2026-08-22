@@ -31,6 +31,7 @@ TestCase {
             property int releasePulse: 0
             property bool settling: false
             property bool focusReady: true
+            property bool held: false
 
             Tile {
                 anchors.fill: parent
@@ -225,6 +226,73 @@ TestCase {
         host.releasePulse++;
         compare(tile.cardPressed, false);
         tryCompare(surface, "faceOffset", 0, Motion.settleMs + 100);
+    }
+
+    // Held (Hub Options -> Move) is NOT pressed and touches nothing about
+    // the face/edge at all — see Tile.qml's `_heldOpacity`. The whole tile
+    // blinks completely out of existence and back via `opacity` on the
+    // tile's own root item (0/1, never animated — cascades to every
+    // child, taking cover art, caption, AND focus ring with it; opacity
+    // rather than `visible` because a `visible: <bound expression>`
+    // binding did not reliably reflect changes in testing on a related
+    // element, so opacity is used everywhere a hard binary cut is needed
+    // here). Motion is disabled for this test: with motion off, the tile
+    // shows normally (opacity 1) instead of blinking — freezing on
+    // "invisible" would hide the very thing a reduce-motion user needs to
+    // see, and there's no static "half blinked" state to freeze on the
+    // way a color cue would have one.
+    function test_tile_held_is_not_pressed(): void {
+        Motion.enabled = false;
+        const host = createTemporaryObject(tileHost, testCase);
+        verify(host !== null);
+        wait(1);
+
+        const tile = findChild(host, "tile");
+        const surface = findChild(host, "tileSurface");
+        verify(tile !== null);
+        verify(surface !== null);
+        compare(tile.cardPressed, false);
+        compare(surface.edgeColor, Theme.tileEdge);
+        compare(surface.faceOffset, 0);
+        compare(tile.opacity, 1);
+
+        host.held = true;
+        compare(tile.cardPressed, false, "held must not claim the pressed face gap");
+        compare(surface.faceOffset, 0, "held must not sink the face — that's pressed's job");
+        compare(surface.edgeColor, Theme.tileEdge, "held must not recolor the edge — the whole tile blinks instead");
+        compare(tile.opacity, 1, "with motion disabled the tile shows normally instead of blinking");
+
+        host.held = false;
+        compare(tile.opacity, 1, "releasing held leaves the tile fully visible");
+    }
+
+    // With motion ON, held is a hard on/off cut (a `Timer` toggling the
+    // tile's own `opacity` between exactly 0 and exactly 1, never an
+    // intermediate value) — see Tile.qml's `_heldBlinkOn`. The whole tile
+    // alternates between showing normally and being completely gone — no
+    // color, no tint, nothing painted at all; nothing else changes at the
+    // same time.
+    function test_tile_held_blinks_the_whole_tile_out_of_existence(): void {
+        const host = createTemporaryObject(tileHost, testCase);
+        verify(host !== null);
+        wait(1);
+
+        const tile = findChild(host, "tile");
+        const surface = findChild(host, "tileSurface");
+        verify(tile !== null);
+        verify(surface !== null);
+
+        host.held = true;
+        // Starts visible immediately (no fade-in to wait out).
+        compare(tile.opacity, 1);
+        // The face/edge never move or recolor at any point in the cycle —
+        // only the tile's own opacity toggles.
+        compare(surface.edgeColor, Theme.tileEdge);
+        compare(surface.faceOffset, 0);
+        // The timer snaps it off, then back on, on a hard cut — never
+        // anything between 0 and 1.
+        tryCompare(tile, "opacity", 0, 900);
+        tryCompare(tile, "opacity", 1, 900);
     }
 
     function test_list_activation_flashes_selected_row(): void {

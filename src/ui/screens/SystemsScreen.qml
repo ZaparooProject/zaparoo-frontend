@@ -222,20 +222,15 @@ Item {
         }
     }
 
-    // Top status strip — page counter (left), category title (center),
-    // total-systems badge (right). Replaces the standalone top label
-    // and the old bottom-of-grid PaginationStatus band so the screen's
-    // "where am I" context all sits at the top in one row.
+    // Top status strip — category title (center), plus list-layout-only
+    // chrome (item counter left, "N / M" position right). Grid layout is
+    // title-only here: the count and page cue both live in the footer
+    // instead (count badge left, PageIndicator right, alongside
+    // activeLabel below) so nothing about this strip changes when the
+    // grid's page count changes.
     //
     // The screen Item fills the whole window, so the strip clears the
     // MainLayout HeaderBar (Sizing.headerBottom) with a small gap.
-    //
-    // SystemsModel is non-paginated (every row loads eagerly on
-    // category switch) — the page counter still reads off
-    // systemsGrid.currentPage / pageCount because PagedGrid pages
-    // through whatever count it sees. The "%1 systems" badge is the
-    // filter-applied count for the current category, not the catalog
-    // total.
     TopStatusStrip {
         id: topStrip
         anchors.left: parent.left
@@ -246,9 +241,16 @@ Item {
         slotMargin: systems._statusProfile ? systems._statusProfile.slotMargin : Sizing.pctW(3)
         title: CategoryIds.displayName(Browse.SystemsModel.current_category)
         currentPage: systemsGrid.currentPage
-        totalPages: systems._footerProfile && systems._footerProfile.bottomStatusVisible ? 1 : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
-        totalText: Theme.crtNativePath ? "" : (Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "")
+        totalPages: Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
+        // CRT keeps this slot title-only in every layout (own design
+        // call, predates this change -- CRT's grid profile hides this
+        // whole strip via topStripVisible: false anyway, and its list
+        // profile deliberately omits the total-count slot); default
+        // theme now shows the count here only in list layout, since grid
+        // layout shows it in the footer instead.
+        totalText: !Theme.crtNativePath && systems._listLayout && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : ""
         rightTextOverride: !systems._listLayout || systemsGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(systemsGrid.currentIndex + 1).arg(Math.max(1, Browse.SystemsModel.count))
+        showPageCounter: systems._listLayout
         visible: !systems._gateHide && (!systems._statusProfile || systems._statusProfile.topStripVisible)
     }
 
@@ -334,10 +336,12 @@ Item {
         visible: !systems._gateHide && !systems._listLayout
     }
 
-    // Active system caption — single big line just under the grid.
-    // Same typography as the top strip's title slot so the two big
-    // captions read as a matched pair (top = category context, bottom
-    // = focused-tile selection).
+    // Footer row — active system caption (center, same typography as the
+    // top strip's title slot so the two big captions read as a matched
+    // pair), a total-systems count (left), and a page cue (right,
+    // PageIndicator — see that component's doc comment). All three slots
+    // are reserved unconditionally; only their contents toggle, so
+    // nothing here shifts or resizes when the grid's page count changes.
     ActiveLabel {
         id: activeLabel
         anchors.left: parent.left
@@ -345,12 +349,13 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
         height: systems._footerProfile ? systems._footerProfile.activeLabelHeight : Sizing.pctH(7)
+        sideInset: Sizing.px(width / 3)
         text: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_name_at(systemsGrid.currentIndex) : ""
         visible: !systems._gateHide && !systems._listLayout
     }
 
     Text {
-        visible: systems._footerProfile && systems._footerProfile.bottomStatusVisible && !systems._gateHide && !systems._listLayout && Browse.SystemsModel.count > 0
+        visible: !systems._gateHide && !systems._listLayout && Browse.SystemsModel.count > 0
         anchors.left: parent.left
         anchors.leftMargin: systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
@@ -366,21 +371,17 @@ Item {
         renderType: Text.NativeRendering
     }
 
-    Text {
-        visible: systems._footerProfile && systems._footerProfile.bottomStatusVisible && !systems._gateHide && !systems._listLayout && Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize) > 1
+    PageIndicator {
+        visible: !systems._gateHide && !systems._listLayout
         anchors.right: parent.right
         anchors.rightMargin: systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - (systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0)
-        height: Sizing.fontSection
-        elide: Text.ElideRight
-        horizontalAlignment: Text.AlignRight
-        verticalAlignment: Text.AlignVCenter
-        text: qsTr("%1 / %2").arg(systemsGrid.currentPage + 1).arg(Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize)))
-        font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSection
-        color: Theme.textPrimary
-        renderType: Text.NativeRendering
+        chevronSize: systems._gridProfile && systems._gridProfile.grid ? systems._gridProfile.grid.pageChevronSize : Sizing.pctH(4)
+        currentPage: systemsGrid.currentPage
+        totalPages: Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
+        hasPagesAbove: systemsGrid.hasPagesAbove
+        hasPagesBelow: systemsGrid.hasPagesBelow
+        onPageRequested: delta => systems._performPage(delta)
     }
 
     ScreenStateOverlay {

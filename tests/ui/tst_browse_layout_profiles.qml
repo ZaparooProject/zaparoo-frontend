@@ -54,8 +54,8 @@ TestCase {
         compare(main.systemsScreen.systemsGrid.layoutProfile.surface.cardRadius, 2);
         compare(main.systemsScreen.systemsGrid.layoutProfile.surface.rowRadius, 1);
         compare(main.systemsScreen.systemsGrid.leftInset, 4);
-        compare(main.systemsScreen.systemsGrid.gutterWidth, 8);
-        compare(main.systemsScreen.systemsGrid.scrollArrowSize, 8);
+        compare(main.systemsScreen.systemsGrid.rightInset, 4);
+        compare(main.systemsScreen.systemsGrid.layoutProfile.grid.pageChevronSize, 8);
     }
 
     function test_crt_list_uses_crt_header_and_profile(): void {
@@ -66,6 +66,5 @@ TestCase {
         compare(main.systemsScreen.listCard.layoutProfile.surface.cardRadius, 2);
         compare(main.systemsScreen.listCard.layoutProfile.surface.rowRadius, 1);
         compare(main.systemsScreen.listCard.layoutProfile.list.rowHeight, 12);
-        compare(main.systemsScreen.listCard.layoutProfile.list.scrollbarGap, 2);
     }
 }

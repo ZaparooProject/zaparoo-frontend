@@ -4,6 +4,8 @@
 
 static DIGITAL_OUTPUT_SIZE: std::sync::OnceLock<(u32, u32)> = std::sync::OnceLock::new();
 static EXPLICIT_REQUEST_APPLIED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+#[cfg(zaparoo_runtime = "mister")]
+static RESOURCE_LEASE: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new();
 
 /// Active digital output timing discovered before the framebuffer is reduced
 /// to the frontend's render size. Settings uses this to offer aspect-correct
@@ -423,6 +425,46 @@ fn vmode_result_timed_out(stdout: &[u8], stderr: &[u8]) -> bool {
     normalized_vmode_output(stdout, stderr).contains("failed!")
 }
 
+#[cfg(zaparoo_runtime = "mister")]
+fn acquire_resource_lease() {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+    use tracing::{info, warn};
+
+    if RESOURCE_LEASE.get().is_some() {
+        return;
+    }
+    if let Err(e) = std::fs::create_dir_all("/tmp/zaparoo") {
+        warn!("failed to create resource lease directory: {e}");
+        return;
+    }
+    let file = match std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open("/tmp/zaparoo/frontend.active.lock")
+    {
+        Ok(file) => file,
+        Err(e) => {
+            warn!("failed to open frontend resource lease: {e}");
+            return;
+        }
+    };
+    // SAFETY: file remains open in RESOURCE_LEASE for process lifetime.
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        warn!(
+            "failed to acquire frontend resource lease: {}",
+            std::io::Error::last_os_error()
+        );
+        return;
+    }
+    if RESOURCE_LEASE.set(file).is_ok() {
+        info!("acquired MiSTer frontend resource lease");
+    }
+}
+
 #[cfg(any(zaparoo_runtime = "mister", test))]
 fn core_service_start_command() -> std::process::Command {
     let mut command = std::process::Command::new("/usr/bin/taskset");
@@ -437,14 +479,13 @@ fn core_service_start_command() -> std::process::Command {
 }
 
 /// Fire-and-forget `zaparoo.sh -service start`. No-op on non-MiSTer builds.
-/// Core must not inherit the frontend's CPU-0-only affinity: Go runtime worker
-/// and audio threads created from that process would then remain pinned to the
-/// same core. `taskset` gives the service wrapper and every descendant both
-/// `MiSTer` CPUs while leaving frontend affinity unchanged.
+/// Core dynamically responds to the kernel-backed frontend resource lease, so
+/// launch order and service restarts do not determine CPU or IRQ topology.
 pub fn ensure_core_service_running() {
     #[cfg(zaparoo_runtime = "mister")]
     {
         use tracing::{info, warn};
+        acquire_resource_lease();
         info!("spawning core service wrapper with CPU affinity 0-1");
         if let Err(e) = core_service_start_command().spawn() {
             warn!("failed to start zaparoo.sh with taskset: {e}");

@@ -37,7 +37,12 @@ const HIDDEN_ROLE: i32 = 256 + 6;
 // Systems have no disambiguating tags; the role exists only so the shared
 // grid/list delegates (which require it for media rows) bind cleanly here.
 const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 7;
+// Every real row is a real system, never a structural placeholder; the role
+// exists only so PagedGrid's `isEmpty` delegate contract (round 6 follow-up
+// — see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
+const IS_EMPTY_ROLE: i32 = 256 + 8;
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct SystemInfo {
     pub id: String,
     pub name: String,
@@ -366,19 +371,21 @@ fn apply_state(mut model: Pin<&mut ffi::SystemsModel>, (data, err): (Option<Cata
             let show_hidden = with_persist_read(|s| s.settings.show_hidden);
             let region = system_region::current_region();
             let rows = rows_for_category(Some(&data), &cat, &hidden_ids, show_hidden, region);
-            let count = rows.len() as i32;
-            let ids: Vec<&str> = rows.iter().map(|s| s.id.as_str()).collect();
-            debug!(
-                category = %cat,
-                count,
-                ?ids,
-                "systems: apply_state filled rows for category",
-            );
-            model.as_mut().begin_reset_model();
-            model.as_mut().rust_mut().systems = rows;
-            model.as_mut().rust_mut().count = count;
-            model.as_mut().end_reset_model();
-            model.as_mut().count_changed();
+            if model.rust().systems != rows {
+                let count = rows.len() as i32;
+                let ids: Vec<&str> = rows.iter().map(|s| s.id.as_str()).collect();
+                debug!(
+                    category = %cat,
+                    count,
+                    ?ids,
+                    "systems: apply_state changed rows for category",
+                );
+                model.as_mut().begin_reset_model();
+                model.as_mut().rust_mut().systems = rows;
+                model.as_mut().rust_mut().count = count;
+                model.as_mut().end_reset_model();
+                model.as_mut().count_changed();
+            }
             // A fresh catalog arrival is the authoritative resolver
             // for `loading`: any worker spawned by an earlier
             // `set_category` has just been invalidated above and its
@@ -432,6 +439,7 @@ impl ffi::SystemsModel {
             FAVORITE_ROLE => QVariant::from(&0_i32),
             HIDDEN_ROLE => QVariant::from(&s.hidden),
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::default()),
+            IS_EMPTY_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -448,6 +456,7 @@ impl ffi::SystemsModel {
             DISAMBIGUATING_TAGS_ROLE,
             QByteArray::from("disambiguatingTags"),
         );
+        h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
         h
     }
 

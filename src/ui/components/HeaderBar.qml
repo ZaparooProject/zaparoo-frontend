@@ -6,17 +6,17 @@
 // singleton trips qmllint's "Member can be shadowed" check. Suppress
 // the compiler category file-wide until the schema grows the slot.
 // qmllint disable compiler
-// Top header bar — Zaparoo logo on the left, host status row + Core
-// status pill stacked on the right. Height is fixed at
-// `Sizing.headerHeight` so the pill's slot is reserved even when the
-// pill is idle and the logo can match the two stacked rows exactly.
+// Top header bar — Zaparoo logo on the left, host status row + Core/task
+// status line stacked on the right. Height is fixed at
+// `Sizing.headerHeight` so the status line's slot is reserved even when
+// it is idle and the logo can match the two stacked rows exactly.
 
 import QtQuick
 import Zaparoo.Browse as Browse
 import Zaparoo.Theme
 
 // Software-renderer safe: only Image, Row, Item, Text, and the
-// existing CoreStatusPill subtree. No transforms, no shaders.
+// existing StatusLine subtree. No transforms, no shaders.
 Item {
     id: header
 
@@ -29,7 +29,6 @@ Item {
     property var layoutProfile: null
     readonly property var _headerProfile: header.layoutProfile && header.layoutProfile.header ? header.layoutProfile.header : null
     property string browseTitle: ""
-    property string browseProgressText: ""
     property bool statusIconsEnabled: false
     property bool mediaActivityEnabled: false
 
@@ -57,25 +56,6 @@ Item {
         source: Resources.logoUrl(header._logoPaintedWidth)
         sourceSize.height: Sizing.px(height)
         sourceSize.width: Sizing.px(height * (600 / 135))
-    }
-
-    Text {
-        id: browseProgressLabel
-
-        visible: header.browseProgressText !== ""
-        anchors.left: logo.right
-        anchors.leftMargin: Sizing.pctW(1)
-        anchors.verticalCenter: logo.verticalCenter
-        width: Math.max(0, Math.floor(parent.width / 4))
-        height: Sizing.headerRowHeight
-        elide: Text.ElideRight
-        horizontalAlignment: Text.AlignLeft
-        verticalAlignment: Text.AlignVCenter
-        text: header.browseProgressText
-        font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSection
-        color: Theme.textPrimary
-        renderType: Text.NativeRendering
     }
 
     function _clockLocale(): var {
@@ -229,18 +209,21 @@ Item {
     }
 
     // Mutually-exclusive Core / indexing / scraper status surface. Sits
-    // on its own line directly under `topHud`, right-aligned to the
-    // same edge as the clock. The pill collapses to zero size when
-    // idle, but its slot stays reserved by the header's fixed height
-    // so the logo and the surrounding layout don't shift.
-    CoreStatusPill {
+    // on its own line directly under `topHud` (or on `parent.top`, HUD
+    // pushed to the bottom, on the CRT profile). Anchored from the
+    // logo's right edge to the header's own right margin so StatusLine
+    // knows its true elide budget -- its content is a right-aligned
+    // cluster within that span, not a stretched fill; see StatusLine.qml's
+    // doc comment. Collapses to zero height when idle, but its slot stays
+    // reserved by the header's fixed height so the logo and the
+    // surrounding layout don't shift.
+    StatusLine {
         anchors.top: header._headerProfile && header._headerProfile.statusPillPinnedTop ? parent.top : topHud.bottom
-        anchors.right: topHud.right
+        anchors.left: logo.right
+        anchors.leftMargin: Sizing.pctW(1)
+        anchors.right: parent.right
+        anchors.rightMargin: Sizing.headerSideMargin
         anchors.topMargin: header._headerProfile && header._headerProfile.statusPillPinnedTop ? 0 : Sizing.headerStackGap
         mediaActivityEnabled: header.mediaActivityEnabled
-        // Second HUD row has no clock/icons competing for width. Let status
-        // text use all space between logo and right edge instead of truncating
-        // every media state to the old fixed-width pill.
-        maximumWidth: Math.max(0, header.width - Sizing.headerSideMargin - (logo.x + logo.paintedWidth + Sizing.pctW(2)))
     }
 }

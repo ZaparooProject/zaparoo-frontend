@@ -85,8 +85,8 @@ raw cargo as the default path; the justfile carries the expected environment.
   "Software-renderer animation costs".
 - Do not hardcode pixel sizes or fixed element counts in UI. Use
   `Sizing.pctH()`, `Sizing.pctW()`, `Sizing.fontSize()`,
-  `Sizing.visibleCovers`, and `Sizing.cornerRadius` (for any rounded-square
-  surface — see `docs/style.md`). Any value that drives `x`/`y`/`width`/
+  `Sizing.visibleCovers`, and `Sizing.radiusMd`/`Sizing.radiusSm` (for any
+  rounded-square surface — see `docs/style.md`). Any value that drives `x`/`y`/`width`/
   `height`, border widths, margins, or font sizes must go through
   `Sizing.px()`, `Sizing.stroke()`, `Sizing.center()`, or `Sizing.half()`.
   The whole app must run cleanly at 240p; fractional geometry is a bug

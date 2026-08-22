@@ -70,7 +70,8 @@ TestCase {
                 "coverKey": "",
                 "favorite": 0,
                 "hidden": false,
-                "disambiguatingTags": ""
+                "disambiguatingTags": "",
+                "isEmpty": false
             });
         }
         tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);

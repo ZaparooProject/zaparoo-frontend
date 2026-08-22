@@ -113,13 +113,23 @@ TintLut makeTintLut(const QColor& highlight, const QColor& midtone, const QColor
         }
     }
 
-    const int tintAlpha = highlight.alpha();
+    // Mirrors the `tone` table's own singleTone branch above: the flat
+    // fill is the midtone, not the highlight. `flatPremul` used highlight
+    // here until this fix -- a leftover from before that branch was
+    // corrected, never updated when corner-mask alpha support was added
+    // to this table, so every genuinely flat SVG served from the atlas
+    // (the fast path this table backs) rendered pale near-white instead
+    // of its accent color while the same logo, requested oversized and
+    // falling back to `tintImage()`, correctly rendered in midtone. Safe
+    // for corner masks: `Resources.cornerCutUrl()` always passes the same
+    // token as highlight/midtone/shadow, so this is a no-op for them.
+    const int tintAlpha = midtone.alpha();
     for (int alpha = 0; alpha < 256; ++alpha)
     {
         const int effective = (alpha * tintAlpha) / 255;
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
         lut.flatPremul[static_cast<size_t>(alpha)] =
-            qPremultiply(qRgba(highlightR, highlightG, highlightB, effective));
+            qPremultiply(qRgba(midtoneR, midtoneG, midtoneB, effective));
     }
 
     return lut;

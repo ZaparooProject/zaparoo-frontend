@@ -55,6 +55,17 @@ Item {
     // bump this up; shell consumers with narrower content (e.g.
     // ListPickerModal) bring it down to their own measured content width.
     property int panelMaxWidth: Sizing.pctH(90)
+    // Shell content is opaque to Modal by default, so the shell branch below
+    // applies its own fixed 78%-of-viewport breathing-room ceiling on top of
+    // `panelMaxWidth` (QR/legal notice content can't be measured, so that
+    // ceiling is the real cap for them). A shell consumer that measures its
+    // own content precisely and hands the exact target through
+    // `panelMaxWidth` (ListPickerModal) needs that number honored like the
+    // four prebaked kinds do, not clamped a second time — round 6 follow-up:
+    // the color-scheme picker's widest rows still truncated post-measurement
+    // fix because 78% of the viewport was tighter than the picker's own
+    // computed width.
+    property bool contentSized: false
 
     // Content-driven width for the four prebaked kinds (title/body/buttons —
     // content Modal owns and can measure), mirroring ContextMenu.qml's
@@ -211,7 +222,7 @@ Item {
             // ceiling -- clamped first -- with the desired/floor width
             // applied beneath it, so a caller-supplied cap always wins even
             // when it is tighter than `_minPanelWidth`'s own default floor.
-            width: modal.kind === "shell" ? Sizing.px(Math.min(parent.width * 0.78, modal.panelMaxWidth)) : Sizing.px(Math.min(Math.min(parent.width * 0.92, modal.panelMaxWidth), Math.max(modal._minPanelWidth, modal._desiredPanelWidth)))
+            width: modal.kind === "shell" ? Sizing.px(Math.min(parent.width * (modal.contentSized ? 0.92 : 0.78), modal.panelMaxWidth)) : Sizing.px(Math.min(Math.min(parent.width * 0.92, modal.panelMaxWidth), Math.max(modal._minPanelWidth, modal._desiredPanelWidth)))
             height: contentColumn.height + Sizing.pctH(8)
             color: Theme.bgPanel
             radius: Sizing.radiusMd

@@ -66,6 +66,11 @@ hub/favorites.svg
 hub/settings.svg
 ```
 
+A custom Hub tile (a specific system, a folder, or arbitrary ZapScript — see
+`[[hub.items]]` in `frontend.toml`) can set its own `icon = "name"` and drop
+a matching `hub/name.png` here, the same way a built-in tile's id works
+above.
+
 ### Rendered as-is (no tinting)
 
 The bundled system logos default to tintable SVGs that match the active theme.
@@ -78,20 +83,20 @@ appear unchanged.
 
 ## Color scheme
 
-Choose a preset live under Settings → Display → Color scheme. There are 24
-built-in presets — the three original Zaparoo themes plus popular editor/
-terminal palettes (Catppuccin, Nord, Dracula, Gruvbox, Tokyo Night, Rosé
-Pine, and more) and a handful of retro/console-inspired ones — each shown
-with a 3-color swatch preview in the picker. Selection is stored as
-`[settings] color_scheme` in `frontend.toml`:
+Choose a preset live under Settings → Display → Color scheme. There are 11
+built-in presets — Zaparoo Dark, Zaparoo Light, and Classic Purple, plus a
+small set of popular editor/terminal palettes (Nord, Dracula, Synthwave '84)
+and retro/console-inspired ones (Amber Phosphor, Green Phosphor, Neo Geo,
+NES, Virtual Boy) — each shown with a 3-color swatch preview in the picker.
+Selection is stored as `[settings] color_scheme` in `frontend.toml`:
 
 ```toml
 [settings]
-color_scheme = "zaparoo-black" # or "catppuccin-mocha", "nord", "dracula", ...
+color_scheme = "zaparoo-dark" # or "nord", "dracula", "amber-phosphor", ...
 ```
 
 See `src/ui/theme/ColorSchemes.qml`'s `ids` list for every available id.
-Unknown values fall back to `zaparoo-black`. Presets recolor built-in tinted
+Unknown values fall back to `zaparoo-dark`. Presets recolor built-in tinted
 artwork; custom and full-color artwork remains unchanged.
 
 ## System display names

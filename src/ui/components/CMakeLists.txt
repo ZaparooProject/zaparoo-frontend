@@ -18,9 +18,9 @@ qt_add_qml_module(
         CardDivider.qml
         CommercialNoticeModal.qml
         ContextMenu.qml
-        CoreStatusPill.qml
         CrtCalibrationModal.qml
         DelayedLoadingIndicator.qml
+        EmptySlot.qml
         FocusedMediaDetailController.qml
         GameInfoModal.qml
         HeaderBar.qml
@@ -30,8 +30,11 @@ qt_add_qml_module(
         LogUploadModal.qml
         Modal.qml
         PagedGrid.qml
+        PageIndicator.qml
         PressableSurface.qml
+        ProgressTrack.qml
         QrCodeModal.qml
+        QrMatrix.qml
         RapidScrollIndicator.qml
         ScreensaverOverlay.qml
         ScreenStateOverlay.qml
@@ -40,6 +43,7 @@ qt_add_qml_module(
         SettingsField.qml
         SettingsSectionHeader.qml
         StatusIcon.qml
+        StatusLine.qml
         Tile.qml
         TileBadge.qml
         TileLoader.qml

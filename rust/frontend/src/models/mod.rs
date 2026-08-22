@@ -38,6 +38,7 @@ pub mod favorites_state;
 pub mod game_info;
 pub mod games;
 pub mod games_state;
+pub mod hub_layout;
 pub mod hub_state;
 pub mod image_overrides;
 pub mod input;
@@ -51,6 +52,7 @@ pub mod recents;
 pub mod recents_state;
 pub mod runtime;
 pub mod settings;
+pub mod status_events;
 pub mod system_launchers;
 pub mod system_status;
 pub mod systems;
@@ -63,7 +65,10 @@ use std::time::Duration;
 use tokio::runtime::{Handle, Runtime};
 use tracing::{error, warn};
 use zaparoo_core::{
-    config::save_hidden_browse_prefs, persist::PersistedState, platform_paths::config_file_path,
+    config::save_hidden_browse_prefs,
+    hub_layout::{save_hub_layout, HubLayout},
+    persist::PersistedState,
+    platform_paths::config_file_path,
     store::Store,
 };
 
@@ -81,12 +86,16 @@ static HANDLE: OnceLock<Handle> = OnceLock::new();
 static STORE: OnceLock<Arc<Store>> = OnceLock::new();
 #[derive(Debug, Clone, Default)]
 pub struct HiddenBrowsePrefs {
+    /// Retired from Hub use — see `zaparoo_core::config::SettingsConfig`'s
+    /// doc comment on this same field. Still live for the systems grid via
+    /// `hidden_system_ids` below.
     pub hidden_categories: Vec<String>,
     pub hidden_system_ids: Vec<String>,
 }
 
 static PERSIST_STATE: OnceLock<Arc<Mutex<PersistedState>>> = OnceLock::new();
 static HIDDEN_BROWSE_PREFS: OnceLock<Arc<Mutex<HiddenBrowsePrefs>>> = OnceLock::new();
+static HUB_LAYOUT: OnceLock<Arc<Mutex<HubLayout>>> = OnceLock::new();
 static INPUT_BINDINGS: OnceLock<HashMap<i32, String>> = OnceLock::new();
 static CORE_IS_LOCAL: OnceLock<bool> = OnceLock::new();
 
@@ -95,6 +104,7 @@ pub fn init_globals(
     store: Arc<Store>,
     persist_state: Arc<Mutex<PersistedState>>,
     hidden_browse_prefs: Arc<Mutex<HiddenBrowsePrefs>>,
+    hub_layout: Arc<Mutex<HubLayout>>,
     input_bindings: HashMap<i32, String>,
     core_is_local: bool,
 ) {
@@ -119,6 +129,9 @@ pub fn init_globals(
     HIDDEN_BROWSE_PREFS
         .set(hidden_browse_prefs)
         .unwrap_or_else(|_| panic!("HIDDEN_BROWSE_PREFS already initialized"));
+    HUB_LAYOUT
+        .set(hub_layout)
+        .unwrap_or_else(|_| panic!("HUB_LAYOUT already initialized"));
     INPUT_BINDINGS
         .set(input_bindings)
         .unwrap_or_else(|_| panic!("INPUT_BINDINGS already initialized"));
@@ -212,6 +225,56 @@ pub fn with_hidden_browse_prefs_mut<R>(f: impl FnOnce(&mut HiddenBrowsePrefs) ->
         action_error::report_action_error("setting", "");
     }
     result
+}
+
+fn hub_layout() -> Arc<Mutex<HubLayout>> {
+    HUB_LAYOUT
+        .get()
+        .expect("HUB_LAYOUT not initialized")
+        .clone()
+}
+
+pub fn with_hub_layout_read<R>(f: impl FnOnce(&HubLayout) -> R) -> R {
+    let shared = hub_layout();
+    let guard = shared
+        .lock()
+        .inspect_err(|e| error!("hub layout mutex poisoned: {e}"))
+        .expect("hub layout mutex poisoned");
+    f(&guard)
+}
+
+/// Mutate the Hub layout under a closure, then save. Same
+/// lock-mutate-save-through shape as `with_hidden_browse_prefs_mut`.
+pub fn with_hub_layout_mut<R>(f: impl FnOnce(&mut HubLayout) -> R) -> R {
+    let shared = hub_layout();
+    let mut guard = shared
+        .lock()
+        .inspect_err(|e| error!("hub layout mutex poisoned: {e}"))
+        .expect("hub layout mutex poisoned");
+    let result = f(&mut guard);
+    if let Err(e) = save_hub_layout(&config_file_path(), &guard) {
+        warn!("could not save hub layout: {e}");
+        action_error::report_action_error("setting", "");
+    }
+    result
+}
+
+/// Mutate the Hub layout without saving. For a Hub Move-mode session, where
+/// every intermediate d-pad press must stay purely in-memory — a real save
+/// is a read-parse-serialize-write-fsync-rename-fsync cycle against
+/// `frontend.toml`, which on `MiSTer` lands on the SD card, and doing that on
+/// every press is the sluggishness a move session exists to avoid. The
+/// caller (`HubLayoutRust`'s move-session qinvokables) commits the whole
+/// session with exactly one real save via `with_hub_layout_mut`, or
+/// discards it entirely by restoring the pre-session snapshot — either way
+/// the file is touched at most once per session, not once per press.
+pub fn with_hub_layout_mut_unsaved<R>(f: impl FnOnce(&mut HubLayout) -> R) -> R {
+    let shared = hub_layout();
+    let mut guard = shared
+        .lock()
+        .inspect_err(|e| error!("hub layout mutex poisoned: {e}"))
+        .expect("hub layout mutex poisoned");
+    f(&mut guard)
 }
 
 pub fn try_with_persist_read<R>(f: impl FnOnce(&PersistedState) -> R) -> Option<R> {

@@ -60,6 +60,11 @@ const HIDDEN_ROLE: i32 = 256 + 8;
 // display priority. Empty when nothing to disambiguate. Same shape and
 // rationale as the GamesModel role; the shared delegate splits on newlines.
 const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 9;
+// Every real row is a real favorite, never a structural placeholder; the
+// role exists only so PagedGrid's `isEmpty` delegate contract (round 6
+// follow-up — see PagedGrid.qml) is satisfied by direct QAbstractListModel
+// callers.
+const IS_EMPTY_ROLE: i32 = 256 + 10;
 
 // Page size for the initial load and every cursor follow-up. Core defaults
 // `maxResults` to 100 when the field is absent and validates it at 1000
@@ -580,13 +585,13 @@ impl ffi::FavoritesModel {
             FILE_STEM_ROLE => {
                 QVariant::from(&QString::from(file_stem_or_name(&entry.path, &entry.name)))
             }
-            HIDDEN_ROLE => QVariant::from(&false),
             // Sibling-diffed display string; precomputed in `disambig_displays`.
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::from(
                 self.disambig_displays
                     .get(index.row() as usize)
                     .map_or("", String::as_str),
             )),
+            HIDDEN_ROLE | IS_EMPTY_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -605,6 +610,7 @@ impl ffi::FavoritesModel {
             DISAMBIGUATING_TAGS_ROLE,
             QByteArray::from("disambiguatingTags"),
         );
+        h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
         h
     }
 

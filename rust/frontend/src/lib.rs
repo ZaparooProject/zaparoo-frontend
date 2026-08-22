@@ -49,6 +49,7 @@ use std::time::{Duration, Instant};
 use zaparoo_core::{
     client::Client,
     config::load_config,
+    hub_layout,
     logger::{debug_logging_enabled, install},
     persist, platform,
     platform_paths::{config_file_path, custom_dir, log_file_path, stderr_log_path},
@@ -468,6 +469,12 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
     }));
     startup_trace("rust:hidden browse prefs loaded");
 
+    // The Hub's persisted layout ("go all in" replacement for Hub
+    // hide/order — see hub_layout.rs) — same frontend.toml, own top-level
+    // parse, same reasoning as hidden_browse_prefs above.
+    let hub_layout = Arc::new(Mutex::new(hub_layout::load_hub_layout(&config_path)));
+    startup_trace("rust:hub layout loaded");
+
     // Register the customization root without scanning it. Hub and system
     // image scans run asynchronously after first paint; system display-name
     // overrides are already in the parsed config and need no filesystem work.
@@ -488,6 +495,7 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
         store,
         persist_state,
         hidden_browse_prefs,
+        hub_layout,
         config.key_to_action.clone(),
         core_is_local,
     );

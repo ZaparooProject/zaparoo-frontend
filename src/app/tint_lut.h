@@ -55,16 +55,22 @@ struct TintLut
     std::array<QRgb, 256> flatPremul{};
 };
 
-// Builds both tables. When `singleTone` is true every `tone` entry is the
-// highlight color, so the fast path and the ramp path are provably the same
-// result rather than merely similar.
+// Builds both tables. When `singleTone` is true every `tone` entry AND every
+// `flatPremul` entry is the midtone color -- the ramp's true center, full
+// chroma, the "accent hue" a flat logo should paint in rather than the
+// highlight rung's near-white rim-light tone. The two tables are provably the
+// same color as a result, just packaged differently (see below), so the fast
+// path and the ramp path can't drift apart the way `flatPremul` once did
+// before it was corrected to match `tone`'s own fill color.
 //
-// Alpha asymmetry, deliberate: `flatPremul` folds `highlight`'s own alpha into
+// Alpha asymmetry, deliberate: `flatPremul` folds `midtone`'s own alpha into
 // the output, so a translucent tint color works on the single-tone path. The
 // `tone` table carries no alpha at all — the caller supplies it per pixel — so
 // the multi-tone path ignores the tint colors' alpha. Every artwork caller
-// passes opaque colors; the ContextMenu scrim corner masks are single-tone and
-// rely on the alpha being honored.
+// passes opaque colors; the ContextMenu scrim corner masks are single-tone
+// and rely on the alpha being honored -- safe because that caller always
+// passes the same token as highlight/midtone/shadow, so "midtone's alpha" and
+// "highlight's alpha" are the same value for them either way.
 [[nodiscard]] TintLut makeTintLut(const QColor& highlight, const QColor& midtone,
                                   const QColor& shadow, bool singleTone);
 

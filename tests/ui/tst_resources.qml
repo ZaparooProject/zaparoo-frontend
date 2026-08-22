@@ -4,7 +4,6 @@
 
 import QtQuick
 import QtTest
-import Zaparoo.Browse as Browse
 import Zaparoo.Theme
 import Zaparoo.Ui
 
@@ -23,12 +22,6 @@ TestCase {
         HeaderBar {
             width: 960
         }
-    }
-
-    Component {
-        id: statusPillComponent
-
-        CoreStatusPill {}
     }
 
     Component {
@@ -140,116 +133,6 @@ TestCase {
         compare(header._clockDateValid(new Date(2020, 0, 1)), true);
     }
 
-    function test_status_pill_uses_available_header_width_cap(): void {
-        const pill = createTemporaryObject(statusPillComponent, testCase, {
-            "maximumWidth": 180
-        });
-        verify(pill !== null);
-        compare(pill._boundedWidth(250), 180);
-        pill.maximumWidth = 500;
-        compare(pill._boundedWidth(250), 250);
-        pill.maximumWidth = 0;
-        compare(pill._boundedWidth(250), 250);
-    }
-
-    function test_status_pill_reserves_readable_width_data(): list<var> {
-        return [
-            {
-                "tag": "crt-240p",
-                "width": 352,
-                "height": 240,
-                "crt": true
-            },
-            {
-                "tag": "480p",
-                "width": 640,
-                "height": 480,
-                "crt": false
-            },
-            {
-                "tag": "540p",
-                "width": 960,
-                "height": 540,
-                "crt": false
-            },
-            {
-                "tag": "720p",
-                "width": 1280,
-                "height": 720,
-                "crt": false
-            },
-            {
-                "tag": "1080p",
-                "width": 1920,
-                "height": 1080,
-                "crt": false
-            }
-        ];
-    }
-
-    function test_status_pill_reserves_readable_width(data: var): void {
-        const originalWidth = Sizing.screenWidth;
-        const originalHeight = Sizing.screenHeight;
-        const originalSizingCrt = Sizing.crtNativePath;
-        const originalThemeCrt = Theme.crtNativePath;
-        const originalLinkState = Browse.AppStatus.link_state;
-        const originalConnectionState = Browse.AppStatus.connection_state;
-        try {
-            Sizing.screenWidth = data.width;
-            Sizing.screenHeight = data.height;
-            Sizing.crtNativePath = data.crt;
-            Theme.crtNativePath = data.crt;
-            Browse.AppStatus.link_state = 1;
-            Browse.AppStatus.connection_state = 1;
-
-            const pill = createTemporaryObject(statusPillComponent, testCase, {
-                "maximumWidth": data.width
-            });
-            verify(pill !== null);
-            compare(pill._connectionLabel, "Connecting…");
-            compare(pill._isMediaActivity, false);
-            compare(pill._desiredWidth, Math.max(pill._minimumWidth, pill._naturalWidth));
-            verify(pill._desiredWidth >= pill._minimumWidth, "connection and media states need the same stable status-bar footprint: desired=" + pill._desiredWidth + " minimum=" + pill._minimumWidth);
-            verify(pill._naturalWidth - 2 * pill._textMargin - pill._spinnerReservedWidth >= pill._labelNaturalWidth + pill._textMeasureSlack, "content width must include measured glyphs and native-rendering slack");
-        } finally {
-            Sizing.screenWidth = originalWidth;
-            Sizing.screenHeight = originalHeight;
-            Sizing.crtNativePath = originalSizingCrt;
-            Theme.crtNativePath = originalThemeCrt;
-            Browse.AppStatus.link_state = originalLinkState;
-            Browse.AppStatus.connection_state = originalConnectionState;
-        }
-    }
-
-    function test_header_status_slot_fits_minimum_at_540p(): void {
-        const originalWidth = Sizing.screenWidth;
-        const originalHeight = Sizing.screenHeight;
-        const originalSizingCrt = Sizing.crtNativePath;
-        const originalThemeCrt = Theme.crtNativePath;
-        try {
-            Sizing.screenWidth = 960;
-            Sizing.screenHeight = 540;
-            Sizing.crtNativePath = false;
-            Theme.crtNativePath = false;
-
-            const header = createTemporaryObject(headerBarComponent, testCase, {
-                "width": 960
-            });
-            verify(header !== null);
-            const pill = findChild(header, "coreStatusPill");
-            verify(pill !== null);
-            tryVerify(function () {
-                return pill.maximumWidth > 0;
-            });
-            verify(pill.maximumWidth >= pill._minimumWidth, "header status slot must not cap the responsive minimum");
-        } finally {
-            Sizing.screenWidth = originalWidth;
-            Sizing.screenHeight = originalHeight;
-            Sizing.crtNativePath = originalSizingCrt;
-            Theme.crtNativePath = originalThemeCrt;
-        }
-    }
-
     function test_scrolling_caption_measures_painted_glyph_bounds(): void {
         const caption = createTemporaryObject(scrollingCaptionComponent, testCase);
         verify(caption !== null);
@@ -312,10 +195,10 @@ TestCase {
         compare(String(Resources.coverUrl("", "#ffffff", "#888888", "#000000")), "");
     }
 
-    // logoUrl is item 9d's shared rung/variant derivation for HeaderBar,
-    // AboutScreen and the screensaver's bouncing copy. `data.width` is a
-    // painted width; `data.rung` is the pre-sized ladder rung it must snap
-    // up to (Sizing.snapLogoWidth), and `data.variant` is the light/dark
+    // logoUrl is item 9d's shared rung/variant derivation for HeaderBar and
+    // AboutScreen, both of which sit on the theme's own surface. `data.width`
+    // is a painted width; `data.rung` is the pre-sized ladder rung it must
+    // snap up to (Sizing.snapLogoWidth), and `data.variant` is the light/dark
     // wordmark picked from Theme.lightSurface (itself derived from
     // Theme.colorSchemeId).
     function test_logo_url_snaps_rung_and_picks_variant_data(): list<var> {
@@ -323,79 +206,72 @@ TestCase {
             {
                 tag: "exact rung 96",
                 width: 96,
-                scheme: "zaparoo-black",
+                scheme: "zaparoo-dark",
                 rung: 96,
                 variant: "on-dark"
             },
             {
                 tag: "just over 96 snaps to 144",
                 width: 97,
-                scheme: "zaparoo-black",
+                scheme: "zaparoo-dark",
                 rung: 144,
                 variant: "on-dark"
             },
             {
                 tag: "exact rung 144",
                 width: 144,
-                scheme: "zaparoo-black",
+                scheme: "zaparoo-dark",
                 rung: 144,
                 variant: "on-dark"
             },
             {
                 tag: "just over 144 snaps to 192",
                 width: 145,
-                scheme: "zaparoo-black",
+                scheme: "zaparoo-dark",
                 rung: 192,
                 variant: "on-dark"
             },
             {
                 tag: "exact rung 256",
                 width: 256,
-                scheme: "zaparoo-black",
+                scheme: "zaparoo-dark",
                 rung: 256,
                 variant: "on-dark"
             },
             {
                 tag: "exact rung 384",
                 width: 384,
-                scheme: "zaparoo-black",
+                scheme: "zaparoo-dark",
                 rung: 384,
                 variant: "on-dark"
             },
             {
                 tag: "above largest sub-600 rung clamps to 600",
                 width: 500,
-                scheme: "zaparoo-black",
+                scheme: "zaparoo-dark",
                 rung: 600,
                 variant: "on-dark"
             },
             {
                 tag: "far above 600 still clamps to 600",
                 width: 1200,
-                scheme: "zaparoo-black",
+                scheme: "zaparoo-dark",
                 rung: 600,
                 variant: "on-dark"
             },
             {
                 tag: "light surface picks on-light variant",
                 width: 144,
-                scheme: "zaparoo-white",
+                scheme: "zaparoo-light",
                 rung: 144,
                 variant: "on-light"
             },
             {
                 tag: "dark accent preset still picks on-dark variant",
                 width: 144,
-                scheme: "midnight-amber",
+                scheme: "classic-purple",
                 rung: 144,
                 variant: "on-dark"
-            },
-            {
-                tag: "second light preset also picks on-light variant",
-                width: 144,
-                scheme: "gruvbox-light",
-                rung: 144,
-                variant: "on-light"
             }
         ];
     }
@@ -406,6 +282,40 @@ TestCase {
             Theme.colorSchemeId = data.scheme;
             const url = String(Resources.logoUrl(data.width));
             compare(url, "qrc:/qt/qml/Zaparoo/App/resources/images/logo/logo-" + data.variant + "-" + data.rung + ".png");
+        } finally {
+            Theme.colorSchemeId = originalScheme;
+        }
+    }
+
+    // Round 6 follow-up: screensaverLogoUrl() must always resolve the
+    // on-dark-surface variant, regardless of the active theme — the
+    // screensaver's backstop is unconditionally solid black
+    // (ScreensaverOverlay.qml), so following the theme the way logoUrl()
+    // does picks an "on-light" logo that disappears against it whenever a
+    // light preset is active.
+    function test_screensaver_logo_url_ignores_theme_and_always_picks_on_dark_data(): list<var> {
+        return [
+            {
+                tag: "dark preset",
+                scheme: "zaparoo-dark"
+            },
+            {
+                tag: "light preset",
+                scheme: "zaparoo-light"
+            },
+            {
+                tag: "dark-accent preset",
+                scheme: "classic-purple"
+            }
+        ];
+    }
+
+    function test_screensaver_logo_url_ignores_theme_and_always_picks_on_dark(data: var): void {
+        const originalScheme = Theme.colorSchemeId;
+        try {
+            Theme.colorSchemeId = data.scheme;
+            const url = String(Resources.screensaverLogoUrl(144));
+            compare(url, "qrc:/qt/qml/Zaparoo/App/resources/images/logo/logo-on-dark-144.png");
         } finally {
             Theme.colorSchemeId = originalScheme;
         }

@@ -48,6 +48,54 @@ QtObject {
 
     // Visible tile-row covers: fewer at very low resolution to avoid crowding.
     readonly property int visibleCovers: effectiveHeight < 300 ? 3 : 5
+
+    // Hub grid shape — a FIXED table keyed only on `tier`, deliberately NOT
+    // run through `_selectGridShape`'s adaptive viewport scorer the way
+    // Systems/Games are. See docs/plans/ui-geometry-refresh.md -> section 9
+    // ("Forward compatibility: Hub as a Wii/3DS-style menu"): a user-arranged
+    // Hub layout must not reflow when the window/display changes, only when
+    // the discrete `tier` itself changes — an adaptive fit would silently
+    // scramble hand-placed tiles on a display or CRT switch.
+    //
+    // `rows` (round 6 follow-up): the original "2 at every tier" carried
+    // over the old two-row design's *visual shape* unexamined, not what
+    // actually fits — checked against real content (5 categories + up to 5
+    // actions = 10 items today), `1080`/`720`/`540` at 5x2 already have zero
+    // headroom for one more item, and `480`/`crt`/`240` already overflow a
+    // single page. Hub tiles carry no embedded caption text (HubScreen's
+    // delegate is a bare `Tile{}`; the selected item's name only ever shows
+    // in `ActiveLabel` below the grid), so they don't need to hold
+    // Systems/Games' 160px minimum cell width — closer to the 72px floor
+    // Systems/Games themselves accept at the CRT tier. 3 rows clears that
+    // relaxed floor comfortably at `1080`/`720`/`540` (224/150/112px);
+    // `480`/`crt`/`240` stay at 2 rows (`crt`/`240`'s 3-row cell would be
+    // 49px, under even the CRT floor). Pagination (PagedGrid already pages
+    // for free) is the intended overflow path at every tier, not a
+    // fallback — see HubScreen.qml's `items` construction.
+    //
+    // Column count at `540`/`720`/`1080` (round follow-up): at 3 rows,
+    // `squareCells` clamps every tier's cell to the *height* fit, not the
+    // width fit — checked against each tier's canonical scene, 3 rows
+    // already bind the cell before columns even enter it (~106/143/212px at
+    // 540/720/1080), leaving the width fit well above that at 5 columns,
+    // i.e. real unused horizontal slack at every one of these three tiers,
+    // not just 540. 7 columns is the largest count whose width fit still
+    // clears the height-bound cell at all three (no shrink, or a ~2px
+    // rounding-noise shrink on a busy 720p page — nothing perceptible); 8
+    // columns drops the width fit under the height-bound cell at every
+    // tier (shrinks it), so 7 is the ceiling, not a per-tier judgment call.
+    // Rows stay at 3: unlike columns, rows have zero slack by construction
+    // — `heightFit(rows)` already divides the full vertical budget, so
+    // going to 4 rows shrinks the cell directly, which is exactly the
+    // "scaling them" this table exists to avoid. `480`/`crt`/`240` are
+    // unrelated tiers (2 rows, tighter budget) and keep their own counts.
+    readonly property var hubGridShape: ({
+            "columns": tier === "crt" || tier === "240" ? 3 : tier === "480" ? 4 : 7,
+            "rows": tier === "480" || tier === "crt" || tier === "240" ? 2 : 3
+        })
+    readonly property int hubGridColumns: hubGridShape.columns
+    readonly property int hubGridRows: hubGridShape.rows
+
     // Shared browse-grid bounds. Systems and games both solve the same
     // viewport-fit problem now, so the common limits live here and the
     // per-surface configs only override what is materially different.

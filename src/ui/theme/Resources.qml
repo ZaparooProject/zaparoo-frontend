@@ -172,12 +172,23 @@ QtObject {
     // Header-logo asset ladder (resources/images/logo/logo-<variant>-<w>.png,
     // item 9a). Snaps `paintedWidth` up to the smallest pre-sized rung that
     // covers it and picks the light/dark variant from the active theme, so
-    // every call site (HeaderBar, AboutScreen, the screensaver's bouncing
-    // copy) decodes close to its own painted size instead of downscaling the
-    // 600px master at paint time.
+    // every call site sitting on the theme's own surface (HeaderBar,
+    // AboutScreen) decodes close to its own painted size instead of
+    // downscaling the 600px master at paint time.
     function logoUrl(paintedWidth: real): url {
         const rung = Sizing.snapLogoWidth(paintedWidth);
         const variant = Theme.lightSurface ? "on-light" : "on-dark";
         return baseUrl + "images/logo/logo-" + variant + "-" + rung + ".png";
+    }
+
+    // Screensaver's bouncing copy (round 6 follow-up). `ScreensaverOverlay`'s
+    // backstop is unconditionally solid black regardless of the active theme
+    // (see its own header comment), so the logo must always be the
+    // on-dark-surface variant too -- `logoUrl()`'s theme-following pick
+    // selects "on-light" on a light preset, which is a logo colored for a
+    // light page and disappears against black.
+    function screensaverLogoUrl(paintedWidth: real): url {
+        const rung = Sizing.snapLogoWidth(paintedWidth);
+        return baseUrl + "images/logo/logo-on-dark-" + rung + ".png";
     }
 }

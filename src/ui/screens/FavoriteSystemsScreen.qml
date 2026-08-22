@@ -24,7 +24,6 @@ MediaListScreen {
     listViewId: "systemsList"
     tateListViewId: "systemsListTate"
     showTopStrip: true
-    showBottomStatusRow: false
     activeLabelAtBottom: false
     gridBottomMargin: Sizing.pctH(8) + Sizing.pctH(7)
     topStripTitleProvider: () => qsTr("Favorites")

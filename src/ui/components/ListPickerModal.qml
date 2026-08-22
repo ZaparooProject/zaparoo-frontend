@@ -69,15 +69,35 @@ Item {
     // docs/style.md -> "Content-driven modal width".
     readonly property int _rowHorizontalPadding: Sizing.pctW(2)
     readonly property int _contentHorizontalMargin: Sizing.pctW(4)
+    // `Math.max(advanceWidth, boundingRect.width)` plus one `Sizing.stroke(2)`
+    // of slack (the TopStatusStrip.qml `_titleMeasuredWidth` pattern) — the
+    // label paints with `renderType: Text.NativeRendering`, which lays out on
+    // integer, hinted per-glyph advances, while `advanceWidth()` alone
+    // returns QFontMetricsF's fractional, unhinted total; a long string can
+    // paint a few px wider than that alone measures, and a zero-slack fit
+    // then elides text that should have fit. See docs/style.md -> "Preset
+    // catalog" / picker sizing.
+    //
+    // `fontSize`/`fontFamily` are unused inside — `metrics`' own font.*
+    // bindings already keep it in sync — but taking them as explicit
+    // parameters, rather than letting only `metrics.font.*` carry the
+    // dependency, is what makes callers below re-evaluate on a font/tier
+    // change: `FontMetrics.advanceWidth()`/`boundingRect()` are Q_INVOKABLE
+    // method calls, and a property binding that only ever calls a method does
+    // not reliably re-run when a property read *inside* that method changes.
+    // Matches ContextMenu.qml's `_widestEntryLabelWidth(entries)`.
+    function _measureLabelWidth(metrics: FontMetrics, label: string, fontSize: int, fontFamily: string): int {
+        return Math.ceil(Math.max(metrics.advanceWidth(label), metrics.boundingRect(label).width)) + Sizing.stroke(2);
+    }
     readonly property int _widestEntryLabelWidth: {
         let widest = 0;
         for (let i = 0; i < modal.entries.length; ++i) {
             const label = modal.entries[i] && modal.entries[i].label !== undefined ? String(modal.entries[i].label) : "";
-            widest = Math.max(widest, Math.ceil(_rowLabelMetrics.advanceWidth(label)));
+            widest = Math.max(widest, modal._measureLabelWidth(_rowLabelMetrics, label, Sizing.fontBody, Theme.fontUi));
         }
         return widest;
     }
-    readonly property int _titleWidth: modal.title !== "" ? Math.ceil(_titleLabelMetrics.advanceWidth(modal.title)) : 0
+    readonly property int _titleWidth: modal.title !== "" ? modal._measureLabelWidth(_titleLabelMetrics, modal.title, Sizing.fontTitle, Theme.fontUi) : 0
     // Optional per-entry color-swatch preview (the color-scheme picker).
     // `entries[i].swatch` is a 3-color array or undefined; the picker is
     // homogeneous (either every entry carries one or none do), so checking
@@ -198,6 +218,7 @@ Item {
         kind: "shell"
         title: modal.title
         panelMaxWidth: Math.max(modal._minPanelWidth, modal._desiredPanelWidth)
+        contentSized: true
 
         Item {
             id: viewportSlot
@@ -256,7 +277,7 @@ Item {
                                 // docs/qml-gotchas.md, and ContextMenu.qml's
                                 // identical row-label construction.
                                 readonly property int _availableWidth: Math.max(0, parent.width - 2 * modal._rowHorizontalPadding)
-                                readonly property int _textWidth: Math.min(Math.ceil(_rowLabelMetrics.advanceWidth(row.modelData.label)), _availableWidth)
+                                readonly property int _textWidth: Math.min(modal._measureLabelWidth(_rowLabelMetrics, row.modelData.label, Sizing.fontBody, Theme.fontUi), _availableWidth)
 
                                 objectName: "listPickerRowLabelCentered"
                                 visible: !modal._hasSwatchPreview
@@ -279,7 +300,7 @@ Item {
                             // preview".
                             Text {
                                 readonly property int _availableWidth: Math.max(0, parent.width - 2 * modal._rowHorizontalPadding - modal._swatchBandWidth - modal._swatchLabelGap)
-                                readonly property int _textWidth: Math.min(Math.ceil(_rowLabelMetrics.advanceWidth(row.modelData.label)), _availableWidth)
+                                readonly property int _textWidth: Math.min(modal._measureLabelWidth(_rowLabelMetrics, row.modelData.label, Sizing.fontBody, Theme.fontUi), _availableWidth)
 
                                 objectName: "listPickerRowLabelSwatch"
                                 visible: modal._hasSwatchPreview
@@ -313,6 +334,16 @@ Item {
                                         height: modal._swatchBoxSize
                                         radius: Sizing.half(Sizing.radiusSm)
                                         color: modelData
+                                        // A near-black or near-white swatch can
+                                        // sit at the same contrast as the row's
+                                        // own surfaceCard face and disappear into
+                                        // it (item 1, round 6). `textLabel` is a
+                                        // mid neutral the semantic-tier
+                                        // guardrails already hold >=3:1 against
+                                        // bgDeep on every preset, so it separates
+                                        // either extreme from the card.
+                                        border.width: Sizing.cardBorderWidth
+                                        border.color: Theme.textLabel
                                     }
                                 }
                             }

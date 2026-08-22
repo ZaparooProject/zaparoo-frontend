@@ -67,6 +67,13 @@ pub struct MediaStatusRust {
     scrape_current_step: i32,
     scrape_total_steps: i32,
     scrape_current_step_display: QString,
+
+    scrape_current_system_id: QString,
+    scrape_current_system_name: QString,
+    scrape_current_processed: i32,
+    scrape_current_total: i32,
+    scrape_current_matched: i32,
+    scrape_current_skipped: i32,
 }
 
 #[cxx_qt::bridge]
@@ -109,6 +116,12 @@ pub mod ffi {
         #[qproperty(i32, scrape_current_step)]
         #[qproperty(i32, scrape_total_steps)]
         #[qproperty(QString, scrape_current_step_display)]
+        #[qproperty(QString, scrape_current_system_id)]
+        #[qproperty(QString, scrape_current_system_name)]
+        #[qproperty(i32, scrape_current_processed)]
+        #[qproperty(i32, scrape_current_total)]
+        #[qproperty(i32, scrape_current_matched)]
+        #[qproperty(i32, scrape_current_skipped)]
         type MediaStatus = super::MediaStatusRust;
 
         #[qinvokable]
@@ -181,6 +194,13 @@ struct Snapshot {
     scrape_current_step: i32,
     scrape_total_steps: i32,
     scrape_current_step_display: QString,
+
+    scrape_current_system_id: QString,
+    scrape_current_system_name: QString,
+    scrape_current_processed: i32,
+    scrape_current_total: i32,
+    scrape_current_matched: i32,
+    scrape_current_skipped: i32,
 }
 
 fn project(state: &MediaStatusState) -> Snapshot {
@@ -212,6 +232,12 @@ fn project(state: &MediaStatusState) -> Snapshot {
         scrape_current_step: state.scrape_current_step,
         scrape_total_steps: state.scrape_total_steps,
         scrape_current_step_display: QString::from(state.scrape_current_step_display.as_str()),
+        scrape_current_system_id: QString::from(state.scrape_current_system_id.as_str()),
+        scrape_current_system_name: QString::from(state.scrape_current_system_name.as_str()),
+        scrape_current_processed: state.scrape_current_processed,
+        scrape_current_total: state.scrape_current_total,
+        scrape_current_matched: state.scrape_current_matched,
+        scrape_current_skipped: state.scrape_current_skipped,
     }
 }
 
@@ -386,7 +412,8 @@ impl ffi::MediaStatus {
 
 #[allow(
     clippy::cognitive_complexity,
-    reason = "21 fields × diff-and-set is mechanical; folding it loses the per-field NOTIFY suppression"
+    clippy::too_many_lines,
+    reason = "27 fields × diff-and-set is mechanical; folding it loses the per-field NOTIFY suppression"
 )]
 fn apply(mut model: Pin<&mut ffi::MediaStatus>, s: Snapshot) {
     if model.seeded != s.seeded {
@@ -478,6 +505,36 @@ fn apply(mut model: Pin<&mut ffi::MediaStatus>, s: Snapshot) {
             .as_mut()
             .set_scrape_current_step_display(s.scrape_current_step_display);
     }
+    if model.scrape_current_system_id != s.scrape_current_system_id {
+        model
+            .as_mut()
+            .set_scrape_current_system_id(s.scrape_current_system_id);
+    }
+    if model.scrape_current_system_name != s.scrape_current_system_name {
+        model
+            .as_mut()
+            .set_scrape_current_system_name(s.scrape_current_system_name);
+    }
+    if model.scrape_current_processed != s.scrape_current_processed {
+        model
+            .as_mut()
+            .set_scrape_current_processed(s.scrape_current_processed);
+    }
+    if model.scrape_current_total != s.scrape_current_total {
+        model
+            .as_mut()
+            .set_scrape_current_total(s.scrape_current_total);
+    }
+    if model.scrape_current_matched != s.scrape_current_matched {
+        model
+            .as_mut()
+            .set_scrape_current_matched(s.scrape_current_matched);
+    }
+    if model.scrape_current_skipped != s.scrape_current_skipped {
+        model
+            .as_mut()
+            .set_scrape_current_skipped(s.scrape_current_skipped);
+    }
 }
 
 #[cfg(test)]
@@ -516,6 +573,12 @@ mod tests {
             scrape_current_step: 0,
             scrape_total_steps: 0,
             scrape_current_step_display: String::new(),
+            scrape_current_system_id: String::new(),
+            scrape_current_system_name: String::new(),
+            scrape_current_processed: 0,
+            scrape_current_total: 0,
+            scrape_current_matched: 0,
+            scrape_current_skipped: 0,
         };
         let snapshot = project(&state);
         assert!(snapshot.seeded);
@@ -548,6 +611,12 @@ mod tests {
             scrape_current_step: 2,
             scrape_total_steps: 5,
             scrape_current_step_display: "Super Nintendo".into(),
+            scrape_current_system_id: "SNES".into(),
+            scrape_current_system_name: "Super Nintendo Entertainment System".into(),
+            scrape_current_processed: 12,
+            scrape_current_total: 200,
+            scrape_current_matched: 10,
+            scrape_current_skipped: 2,
             ..MediaStatusState::default()
         };
         let snapshot = project(&state);
@@ -568,6 +637,14 @@ mod tests {
             snapshot.scrape_current_step_display,
             QString::from("Super Nintendo"),
         );
+        assert_eq!(
+            snapshot.scrape_current_system_name,
+            QString::from("Super Nintendo Entertainment System"),
+        );
+        assert_eq!(snapshot.scrape_current_processed, 12);
+        assert_eq!(snapshot.scrape_current_total, 200);
+        assert_eq!(snapshot.scrape_current_matched, 10);
+        assert_eq!(snapshot.scrape_current_skipped, 2);
     }
 
     #[test]

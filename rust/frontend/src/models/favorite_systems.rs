@@ -25,6 +25,10 @@ const FAVORITE_ROLE: i32 = 256 + 3;
 const FILE_STEM_ROLE: i32 = 256 + 4;
 const HIDDEN_ROLE: i32 = 256 + 5;
 const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 6;
+// Every real row is a real system, never a structural placeholder; the role
+// exists only so PagedGrid's `isEmpty` delegate contract (round 6 follow-up
+// — see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
+const IS_EMPTY_ROLE: i32 = 256 + 7;
 
 #[derive(Default)]
 pub struct FavoriteSystemsModelRust {
@@ -213,16 +217,20 @@ fn apply_state(
         let region = system_region::current_region();
         let rows = rows_for_catalog(Some(&data), &hidden_ids, show_hidden, region);
         let (media_counts, total_items) = favorite_media_counts(&data);
-        let count = i32::try_from(rows.len()).unwrap_or(i32::MAX);
-        model.as_mut().begin_reset_model();
-        {
-            let mut rust = model.as_mut().rust_mut();
-            rust.systems = rows;
-            rust.media_counts = media_counts;
-            rust.count = count;
+        if model.rust().systems != rows {
+            let count = i32::try_from(rows.len()).unwrap_or(i32::MAX);
+            model.as_mut().begin_reset_model();
+            {
+                let mut rust = model.as_mut().rust_mut();
+                rust.systems = rows;
+                rust.media_counts = media_counts;
+                rust.count = count;
+            }
+            model.as_mut().end_reset_model();
+            model.as_mut().count_changed();
+        } else {
+            model.as_mut().rust_mut().media_counts = media_counts;
         }
-        model.as_mut().end_reset_model();
-        model.as_mut().count_changed();
         if model.total_items != total_items {
             model.as_mut().set_total_items(total_items);
         }
@@ -265,6 +273,7 @@ impl ffi::FavoriteSystemsModel {
             FAVORITE_ROLE => QVariant::from(&0_i32),
             HIDDEN_ROLE => QVariant::from(&s.hidden),
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::default()),
+            IS_EMPTY_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -280,6 +289,7 @@ impl ffi::FavoriteSystemsModel {
             DISAMBIGUATING_TAGS_ROLE,
             QByteArray::from("disambiguatingTags"),
         );
+        h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
         h
     }
 

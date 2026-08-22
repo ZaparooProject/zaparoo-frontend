@@ -10,6 +10,7 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::fixtures;
+use crate::media_state::{self, Notifier};
 
 #[derive(Deserialize)]
 struct RpcRequest {
@@ -36,8 +37,11 @@ struct RpcError {
 }
 
 const FALLBACK_INTERNAL_ERROR: &str = r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"internal serialization error"}}"#;
+/// JSON-RPC error code for the mock's domain errors (cancel-with-nothing-
+/// running). Not one of the reserved `-326xx` codes; arbitrary but stable.
+const DOMAIN_ERROR_CODE: i32 = -32000;
 
-pub fn dispatch(text: &str) -> String {
+pub fn dispatch(text: &str, notifier: &Notifier) -> String {
     let req: RpcRequest = match serde_json::from_str(text) {
         Ok(r) => r,
         Err(e) => {
@@ -56,38 +60,60 @@ pub fn dispatch(text: &str) -> String {
 
     debug!(method = %req.method, "rpc");
 
-    let result = match req.method.as_str() {
-        "systems" => Some(fixtures::systems_response(&req.params)),
-        "launchers" => Some(fixtures::launchers_response()),
-        "settings" => Some(fixtures::settings_response()),
-        "settings.update" => Some(fixtures::settings_update_response(&req.params)),
-        "media.search" => Some(fixtures::media_search_response(&req.params)),
-        "media.browse" => Some(fixtures::media_browse_response(&req.params)),
-        "media.browse.index" => Some(fixtures::media_browse_index_response(&req.params)),
-        "media.meta" => Some(fixtures::media_meta_response(&req.params)),
-        "media.history" => Some(fixtures::media_history_response(&req.params)),
-        "media.history.latest" => Some(fixtures::media_history_latest_response()),
+    let outcome: Option<Result<Value, String>> = match req.method.as_str() {
+        "systems" => Some(Ok(fixtures::systems_response(&req.params))),
+        "launchers" => Some(Ok(fixtures::launchers_response())),
+        "settings" => Some(Ok(fixtures::settings_response())),
+        "settings.update" => Some(Ok(fixtures::settings_update_response(&req.params))),
+        "media.search" => Some(Ok(fixtures::media_search_response(&req.params))),
+        "media.browse" => Some(Ok(fixtures::media_browse_response(&req.params))),
+        "media.browse.index" => Some(Ok(fixtures::media_browse_index_response(&req.params))),
+        "media.meta" => Some(Ok(fixtures::media_meta_response(&req.params))),
+        "media.history" => Some(Ok(fixtures::media_history_response(&req.params))),
+        "media.history.latest" => Some(Ok(fixtures::media_history_latest_response())),
+        "media" => Some(Ok(media_state::media_response())),
+        "media.scrape.status" => Some(Ok(media_state::scrape_status_response())),
+        "media.generate" => Some(Ok(media_state::start_index(notifier))),
+        "media.generate.cancel" => Some(media_state::cancel_index(notifier)),
+        "media.scrape" => {
+            let force = req
+                .params
+                .get("force")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            Some(Ok(media_state::start_scrape(force, notifier)))
+        }
+        "media.scrape.cancel" => Some(media_state::cancel_scrape(notifier)),
         "run" => {
             let zap_script = req.params.get("text").and_then(Value::as_str).unwrap_or("");
             info!(%zap_script, "run");
             // Upstream returns null on success.
-            Some(Value::Null)
+            Some(Ok(Value::Null))
         }
         "readers.write" => {
             let zap_script = req.params.get("text").and_then(Value::as_str).unwrap_or("");
             info!(%zap_script, "readers.write");
-            Some(Value::Null)
+            Some(Ok(Value::Null))
         }
-        "version" => Some(fixtures::version_response()),
+        "version" => Some(Ok(fixtures::version_response())),
         _ => None,
     };
 
-    let response = match result {
-        Some(r) => RpcResponse {
+    let response = match outcome {
+        Some(Ok(r)) => RpcResponse {
             jsonrpc: "2.0",
             id: req.id.unwrap_or(Value::Null),
             result: Some(r),
             error: None,
+        },
+        Some(Err(message)) => RpcResponse {
+            jsonrpc: "2.0",
+            id: req.id.unwrap_or(Value::Null),
+            result: None,
+            error: Some(RpcError {
+                code: DOMAIN_ERROR_CODE,
+                message,
+            }),
         },
         None => RpcResponse {
             jsonrpc: "2.0",
@@ -117,7 +143,16 @@ mod tests {
 
     use serde_json::Value;
 
-    use super::dispatch;
+    use super::dispatch as dispatch_with_notifier;
+    use crate::media_state::Notifier;
+
+    // Every existing test below predates the notifier parameter and has
+    // no socket-pump task to receive pushed notifications — route them
+    // through a no-op `Notifier` so none of those call sites need to
+    // change.
+    fn dispatch(text: &str) -> String {
+        dispatch_with_notifier(text, &Notifier::noop())
+    }
 
     fn parse(text: &str) -> Value {
         serde_json::from_str(text).expect("dispatch output must be valid JSON")
@@ -468,5 +503,83 @@ mod tests {
         let entries = resp["result"]["entries"].as_array().expect("array");
         assert!(entries.is_empty());
         assert!(resp["result"].get("pagination").is_none());
+    }
+
+    // The media.generate/media.scrape sequence tests below rely on
+    // `media_state`'s single process-wide `Mutex<MediaState>`. That is
+    // only test-safe because `just test-rust` runs on `cargo nextest`,
+    // which gives every test its own process — a plain `cargo test`
+    // invocation would run these in one process and the shared state
+    // could race across tests. Mark new stateful tests `#[tokio::test]`
+    // (media.generate/media.scrape call `tokio::spawn`, which panics
+    // outside a runtime) and keep them independent of one another.
+
+    #[test]
+    fn media_returns_seed_response_shape() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media","params":{}}"#;
+        let resp = parse(&dispatch(req));
+        let database = resp["result"]["database"].as_object().expect("object");
+        for key in [
+            "exists",
+            "indexing",
+            "optimizing",
+            "paused",
+            "totalSteps",
+            "currentStep",
+            "currentStepDisplay",
+            "totalFiles",
+            "totalMedia",
+        ] {
+            assert!(database.contains_key(key), "missing {key}");
+        }
+        assert!(resp["result"]["active"]
+            .as_array()
+            .expect("array")
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn media_generate_starts_indexing() {
+        let notifier = Notifier::noop();
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.generate","params":{}}"#;
+        let resp = parse(&dispatch_with_notifier(req, &notifier));
+        assert!(resp["result"].is_null());
+        assert!(resp["error"].is_null());
+
+        let seed_req = r#"{"jsonrpc":"2.0","id":"2","method":"media","params":{}}"#;
+        let seed = parse(&dispatch_with_notifier(seed_req, &notifier));
+        assert_eq!(seed["result"]["database"]["indexing"], Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn media_generate_cancel_without_running_index_returns_domain_error() {
+        let notifier = Notifier::noop();
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.generate.cancel","params":{}}"#;
+        let resp = parse(&dispatch_with_notifier(req, &notifier));
+        assert!(resp["result"].is_null());
+        assert_eq!(resp["error"]["code"], -32000);
+    }
+
+    #[tokio::test]
+    async fn media_scrape_starts_scraping() {
+        let notifier = Notifier::noop();
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.scrape","params":{"force":false}}"#;
+        let resp = parse(&dispatch_with_notifier(req, &notifier));
+        assert!(resp["result"].is_null());
+        assert!(resp["error"].is_null());
+
+        let status_req = r#"{"jsonrpc":"2.0","id":"2","method":"media.scrape.status","params":{}}"#;
+        let status = parse(&dispatch_with_notifier(status_req, &notifier));
+        assert_eq!(status["result"]["scraping"], Value::Bool(true));
+        assert!(status["result"]["currentSystem"].is_object());
+    }
+
+    #[tokio::test]
+    async fn media_scrape_cancel_without_running_scrape_returns_domain_error() {
+        let notifier = Notifier::noop();
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.scrape.cancel","params":{}}"#;
+        let resp = parse(&dispatch_with_notifier(req, &notifier));
+        assert!(resp["result"].is_null());
+        assert_eq!(resp["error"]["code"], -32000);
     }
 }

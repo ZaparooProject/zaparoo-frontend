@@ -18,10 +18,12 @@ TestCase {
     ContextMenu {
         id: menu
         open: true
-        entries: [{
-            "id": "one",
-            "label": "One"
-        }]
+        entries: [
+            {
+                "id": "one",
+                "label": "One"
+            }
+        ]
     }
 
     function initTestCase(): void {
@@ -106,18 +108,22 @@ TestCase {
     // large fixed floor (24% of width), so a one-word menu no longer opens
     // a panel sized for a much longer label.
     function test_panel_width_tracks_longest_label(): void {
-        menu.entries = [{
-            "id": "one",
-            "label": "Go"
-        }];
+        menu.entries = [
+            {
+                "id": "one",
+                "label": "Go"
+            }
+        ];
         const shortWidth = menu.panelWidth;
         verify(shortWidth >= menu._minPanelWidth);
         verify(shortWidth < Sizing.pctW(24), "short label must not hit the old fixed floor");
 
-        menu.entries = [{
-            "id": "one",
-            "label": "A Considerably Longer Menu Entry Label"
-        }];
+        menu.entries = [
+            {
+                "id": "one",
+                "label": "A Considerably Longer Menu Entry Label"
+            }
+        ];
         const longWidth = menu.panelWidth;
         verify(longWidth > shortWidth);
     }

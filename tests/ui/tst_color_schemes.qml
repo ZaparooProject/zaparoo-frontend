@@ -10,7 +10,7 @@ TestCase {
     name: "ColorSchemes"
     when: windowShown
 
-    readonly property var requiredRoles: ["bgDeep", "bgPanel", "bgBar", "surfaceCard", "tileEdge", "controlEdge", "scrim", "borderSubtle", "borderMid", "textPrimary", "textLabel", "textVariant", "accent", "onAccent", "onAccentMuted", "logoPrimary", "logoSecondary", "logoShadow", "logoFocusPrimary", "logoFocusSecondary", "logoFocusShadow", "marker", "markerOutline", "errorHex"]
+    readonly property var requiredRoles: ["bgDeep", "bgPanel", "bgBar", "surfaceCard", "tileEdge", "controlEdge", "scrim", "borderSubtle", "borderMid", "textPrimary", "textLabel", "textVariant", "accent", "onAccent", "onAccentMuted", "logoPrimary", "logoSecondary", "logoShadow", "logoFocusPrimary", "logoFocusSecondary", "logoFocusShadow", "marker", "markerOutline", "errorHex", "qrLight", "qrDark"]
 
     function _linearChannel(value: real): real {
         return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
@@ -37,12 +37,17 @@ TestCase {
     }
 
     function test_catalog_ids_and_fallback(): void {
-        compare(ColorSchemes.defaultId, "zaparoo-black");
-        compare(ColorSchemes.ids.length, 24);
-        verify(ColorSchemes.isKnown("zaparoo-black"));
-        verify(ColorSchemes.isKnown("midnight-amber"));
-        verify(ColorSchemes.isKnown("zaparoo-white"));
-        verify(ColorSchemes.isKnown("catppuccin-mocha"));
+        compare(ColorSchemes.defaultId, "zaparoo-dark");
+        compare(ColorSchemes.ids.length, 11);
+        verify(ColorSchemes.isKnown("zaparoo-dark"));
+        verify(ColorSchemes.isKnown("classic-purple"));
+        verify(ColorSchemes.isKnown("zaparoo-light"));
+        verify(ColorSchemes.isKnown("dracula"));
+        // Round-5 ids pruned in round 6 must no longer resolve as known —
+        // this is the regression a stale isKnown() cache would miss.
+        verify(!ColorSchemes.isKnown("zaparoo-black"));
+        verify(!ColorSchemes.isKnown("midnight-amber"));
+        verify(!ColorSchemes.isKnown("catppuccin-mocha"));
         compare(ColorSchemes.effectiveId("missing"), ColorSchemes.defaultId);
     }
 
@@ -51,9 +56,9 @@ TestCase {
     // agree with each preset's own primary/text luma ordering, independent
     // of palette()'s internal `up` flag.
     function test_is_light_surface_matches_preset_luma(): void {
-        verify(!ColorSchemes.isLightSurface("zaparoo-black"));
-        verify(!ColorSchemes.isLightSurface("midnight-amber"));
-        verify(ColorSchemes.isLightSurface("zaparoo-white"));
+        verify(!ColorSchemes.isLightSurface("zaparoo-dark"));
+        verify(!ColorSchemes.isLightSurface("classic-purple"));
+        verify(ColorSchemes.isLightSurface("zaparoo-light"));
         compare(ColorSchemes.isLightSurface("missing"), ColorSchemes.isLightSurface(ColorSchemes.defaultId));
     }
 
@@ -90,11 +95,14 @@ TestCase {
 
     // `textPrimary`/`bgDeep` keeps the AAA 7.0:1 floor -- the primary
     // background is the highest-traffic surface. `textPrimary`/`surfaceCard`
-    // relaxes to AA 4.5:1 (round 5): several popular, real palettes
-    // (Dracula, Tokyo Night, Catppuccin Frappé, Everforest Dark, Gruvbox
-    // Dark, Synthwave '84) sit in the 4.5-7.0 band on their own card surface
-    // by design and would otherwise require altering their authored hex to
-    // ship. See docs/style.md -> "Preset catalog".
+    // relaxes to AA 4.5:1 (round 5): several real palettes admitted that
+    // round sat in the 4.5-7.0 band on their own card surface by design and
+    // would otherwise have required altering their authored hex to ship.
+    // Round 6 pruned every preset that actually needed the relaxed floor
+    // (every kept preset clears 7.3:1+) but the floor stays at 4.5 rather
+    // than reverting to 7.0 -- it is a legitimate AA guarantee on its own,
+    // and reverting would just have to relax again for the next real
+    // palette added. See docs/style.md -> "Preset catalog".
     function test_presets_keep_content_and_focus_legible(): void {
         for (let i = 0; i < ColorSchemes.ids.length; i++) {
             const id = ColorSchemes.ids[i];
@@ -125,7 +133,7 @@ TestCase {
     // luminance -- the perceptual dimension the ramp is actually built in
     // (see ColorSchemes.qml) -- so the floor doesn't have to vary by preset
     // the way a luminance-space floor would (light presets structurally have
-    // less lightness headroom above their own accent; `zaparoo-white`'s span
+    // less lightness headroom above their own accent; `zaparoo-light`'s span
     // in relative-luminance terms is 0.274, well under a luminance-space 0.45
     // floor, even though its OKLCh L span is comparable to the other two).
     function test_focus_ramp_spans_deep_accent_to_near_text(): void {
@@ -148,9 +156,9 @@ TestCase {
     // color space, not because of any deliberate desaturation here.
     // Shadow-rung floor stays 55%. Primary-rung floor relaxes 45% -> 33%
     // (round 5) -- sRGB's own gamut holds less chroma at high lightness
-    // regardless of color space, and several real, popular accents
-    // (Dracula's purple, Gruvbox's orange, Tokyo Night's blue) land in the
-    // 33-45% band at the light end without any hex change.
+    // regardless of color space, and two of the round-6 catalog's own kept
+    // accents still land in that band at the light end without any hex
+    // change: Dracula's purple (~39%) and Synthwave '84's pink (~38%).
     function test_focus_ramp_retains_accent_chroma(): void {
         for (let i = 0; i < ColorSchemes.ids.length; i++) {
             const id = ColorSchemes.ids[i];
@@ -227,22 +235,41 @@ TestCase {
     }
 
     function test_theme_switches_live_and_unknown_falls_back(): void {
-        Theme.colorSchemeId = "midnight-amber";
-        compare(Theme.effectiveColorSchemeId, "midnight-amber");
+        Theme.colorSchemeId = "classic-purple";
+        compare(Theme.effectiveColorSchemeId, "classic-purple");
         compare(Theme.accent, "#ffb347");
 
-        Theme.colorSchemeId = "zaparoo-white";
-        compare(Theme.effectiveColorSchemeId, "zaparoo-white");
+        Theme.colorSchemeId = "zaparoo-light";
+        compare(Theme.effectiveColorSchemeId, "zaparoo-light");
         compare(Theme.accent, "#0a63c9");
         compare(Theme.bgDeep, "#f2f3f5");
 
-        Theme.colorSchemeId = "zaparoo-black";
-        compare(Theme.effectiveColorSchemeId, "zaparoo-black");
+        Theme.colorSchemeId = "zaparoo-dark";
+        compare(Theme.effectiveColorSchemeId, "zaparoo-dark");
         compare(Theme.accent, "#168bff");
         compare(Theme.bgDeep, "#050608");
+
+        // A round-5 id that used to be valid must fall back like any other
+        // unknown value now that round 6 pruned it.
+        Theme.colorSchemeId = "midnight-amber";
+        compare(Theme.effectiveColorSchemeId, ColorSchemes.defaultId);
+        compare(Theme.accent, "#168bff");
 
         Theme.colorSchemeId = "removed-preset";
         compare(Theme.effectiveColorSchemeId, ColorSchemes.defaultId);
         compare(Theme.accent, "#168bff");
+    }
+
+    // Item 4 (round 6): QR quiet-zone/module rungs never invert regardless
+    // of whether the preset itself is dark or light, and stay scannable.
+    // 6.0 floor is comfortably under the measured 6.37-7.43:1 range across
+    // the round-6 catalog -- see docs/style.md -> "Themed QR codes".
+    function test_qr_rungs_stay_scannable(): void {
+        for (let i = 0; i < ColorSchemes.ids.length; i++) {
+            const id = ColorSchemes.ids[i];
+            const palette = ColorSchemes.palette(id);
+            verify(_relativeLuminance(palette.qrLight) > _relativeLuminance(palette.qrDark), id + " qrLight must be the lighter rung");
+            verify(_contrastRatio(palette.qrLight, palette.qrDark) >= 6.0, id + " QR rung contrast " + _contrastRatio(palette.qrLight, palette.qrDark));
+        }
     }
 }

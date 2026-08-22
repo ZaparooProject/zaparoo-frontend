@@ -26,11 +26,14 @@ import Zaparoo.Theme
 // Selection is `currentIndex` over the source model; (page, row, col)
 // are derived. Cells size themselves to the available container minus
 // reserved chrome — callers pass a model and delegate, the grid
-// handles layout. The right gutter renders a scroll indicator (up/down
-// arrows + free-floating thumb) sized and positioned from
-// `totalItemsOverride` (with `itemCount` fallback), so paginated
-// callers like `GamesScreen` get a thumb that reflects the dataset's
-// true total page count rather than the loaded slice.
+// handles layout, unconditionally centering the cell block against the
+// full inset-to-inset width. There is no in-grid scroll indicator —
+// grids are paged, not scrolled; the host screen's footer renders the
+// page cue (`PageIndicator.qml`) off `hasPagesAbove`/`hasPagesBelow`/
+// `currentPage`/`totalPageCount`, which stay derived from
+// `totalItemsOverride` (with `itemCount` fallback) exactly as before, so
+// a paginated caller like `GamesScreen` still reflects the dataset's
+// true total rather than just the loaded slice.
 //
 // Page changes are instant cuts (no fade, no slide). On Qt Quick's
 // Software adaptation the renderer cannot keep up with a per-frame
@@ -43,6 +46,15 @@ Item {
 
     required property var model
     required property Component delegate
+    // Optional. When set, a model row whose `isEmpty` role is true renders
+    // through this component instead of `delegate` — a genuinely blank,
+    // structural placeholder rather than a real delegate with nothing on
+    // it. `null` (every caller but the Hub) is byte-identical to today:
+    // `isEmpty` is still a required role every model must supply (see
+    // below), but with no `emptyDelegate` every row just renders through
+    // `delegate` regardless of its value. See EmptySlot.qml and
+    // HubScreen.qml's `_padToPageSize`.
+    property Component emptyDelegate: null
 
     property int currentIndex: 0
     // List layout keeps this grid as cursor/page authority while rendering a
@@ -119,6 +131,32 @@ Item {
     readonly property var _gridProfile: root.layoutProfile && root.layoutProfile.grid ? root.layoutProfile.grid : null
     readonly property var _surfaceProfile: root.layoutProfile && root.layoutProfile.surface ? root.layoutProfile.surface : null
     readonly property int _cardRadius: root._surfaceProfile ? root._surfaceProfile.cardRadius : Sizing.radiusMd
+
+    // When true, both `cellWidth` and `cellHeight` clamp to the smaller of
+    // the two independent per-axis fits, producing square cells regardless
+    // of which axis is the binding constraint — see `cellWidth`/`cellHeight`
+    // below. Opt-in: every existing caller defaults false and keeps
+    // dividing each axis independently, byte-identical to before (see
+    // docs/style.md -> "Tile aspect and grid blocks").
+    property bool squareCells: false
+    // Fixed vertical ceiling used for the height-fit half of `squareCells`,
+    // in place of the item's own `height` — needed by a caller (the Hub)
+    // that derives ITS `height` FROM the fitted cell size; fitting against
+    // `height` in that case would be circular (the fit output would be an
+    // input to itself). Every other existing caller already fixes `height`
+    // independently (anchors to a sibling), so -1 (the default) simply
+    // reproduces the item's own height and changes nothing. Unlike `height`,
+    // this is the RAW ceiling — `topInset`/`bottomInset` are subtracted from
+    // it internally, same as they are from `height`.
+    property int heightBudget: -1
+    // Index of a tile the host has picked up for a reorder (the Hub's
+    // Options -> Move). -1 (default, every other caller) means nothing is
+    // held. The held cell's Tile blinks a solid full-tile overlay on top
+    // of itself — see Tile.qml's `delegateHeld` — a single-cell change,
+    // not a grid-wide animation, matching CLAUDE.md's dirty-rect rule for
+    // the software renderer. The cell's geometry (position, z-order) is
+    // otherwise untouched — held does not lift, sink, or resize anything.
+    property int heldIndex: -1
 
     // Emitted when the user is sitting on the last loaded page after a
     // selection move. Models with more data fetch the next page in
@@ -258,43 +296,42 @@ Item {
     }
 
     // Reserved chrome around the cell area. Vertical insets provide equal
-    // breathing room around top and bottom rows. The scrollbar gutter
-    // (`gutterWidth`) is treated as part of the grid for edge-spacing
-    // purposes: it sits inboard of `rightInset` (which matches
-    // `leftInset` so the cells+gutter block has equal margin on each
-    // screen edge) with `gutterGap` of breathing room between the
-    // rightmost cell and the gutter. `gutterGap` is intentionally
-    // tighter than `cellSpacingX` — the scrollbar reads as chrome,
-    // not as another cell, so a full inter-cell gap looks like wasted
-    // space next to it. Single-page grids reserve no invisible gutter.
+    // breathing room around top and bottom rows; `leftInset`/`rightInset`
+    // do the same horizontally. There is no scrollbar gutter to reserve —
+    // grids are paged, not scrolled; the page cue lives in the host
+    // screen's footer (see PageIndicator.qml) and never affects this
+    // component's geometry.
     readonly property int leftInset: root._gridProfile ? root._gridProfile.leftInset : Sizing.pctW(3)
     readonly property int rightInset: root._gridProfile ? root._gridProfile.rightInset : Sizing.pctW(3)
-    readonly property int gutterWidth: root._gridProfile ? root._gridProfile.gutterWidth : Sizing.pctW(3)
-    readonly property int gutterGap: root._gridProfile ? root._gridProfile.gutterGap : Sizing.pctW(1.5)
-    readonly property int scrollThumbWidth: root._gridProfile ? root._gridProfile.scrollThumbWidth : Sizing.pctW(1.2)
-    readonly property int scrollThumbRightInset: root._gridProfile ? root._gridProfile.scrollThumbRightInset : 0
-    readonly property bool scrollThumbRightAligned: root._gridProfile && root._gridProfile.scrollThumbRightAligned !== undefined ? root._gridProfile.scrollThumbRightAligned : false
-    readonly property int scrollArrowSize: root._gridProfile ? root._gridProfile.scrollArrowSize : Math.min(gutterWidth, Sizing.pctH(4))
     readonly property int topInset: root._gridProfile ? root._gridProfile.topInset : Sizing.pctH(2)
     readonly property int bottomInset: root._gridProfile ? root._gridProfile.bottomInset : Sizing.pctH(2)
     readonly property int cellSpacingX: root._gridProfile ? root._gridProfile.columnGap : Sizing.pctW(2)
     readonly property int cellSpacingY: root._gridProfile ? root._gridProfile.rowGap : Sizing.pctH(4)
-    readonly property bool _scrollIndicatorVisible: root.paginationTotalKnown ? root.totalPageCount > 1 : (root.pageCount > 1 || root.hasMorePages)
-    readonly property int _activeGutterWidth: root._scrollIndicatorVisible ? root.gutterWidth : 0
-    readonly property int _activeGutterGap: root._scrollIndicatorVisible ? root.gutterGap : 0
     readonly property int _contentWidth: root.columns * root.cellWidth + (root.columns - 1) * root.cellSpacingX
     readonly property int _contentHeight: root.rows * root.cellHeight + (root.rows - 1) * root.cellSpacingY
+    // Cell block always centers against the full inset-to-inset width.
+    // With no gutter to reserve, `_availableWidth` already is that full
+    // width, so this is just ordinary centering — unlike before the
+    // gutter's removal, becoming/ceasing to be paginated can no longer
+    // shift or resize this block at all.
     readonly property int _cellBlockOffsetX: Math.max(0, Math.floor((root._availableWidth - root._contentWidth) / 2))
     readonly property int _cellBlockOffsetY: Math.max(0, Math.floor((root._availableHeight - root._contentHeight) / 2))
-    readonly property int _scrollGutterX: root._gridProfile && root._gridProfile.gutterFollowsContentWidth ? root.leftInset + root._cellBlockOffsetX + root._contentWidth + root._activeGutterGap : width - root.rightInset - root.gutterWidth
 
     // Computed cell dimensions — fill the available area, divided by
-    // columns × rows. Multi-page layouts reserve `gutterGap + gutterWidth` on
-    // the right; single-page layouts return that otherwise-empty space to cells.
-    readonly property int _availableWidth: Math.max(0, width - leftInset - rightInset - root._activeGutterGap - root._activeGutterWidth)
+    // columns × rows.
+    readonly property int _availableWidth: Math.max(0, width - leftInset - rightInset)
     readonly property int _availableHeight: Math.max(0, height - topInset - bottomInset)
-    readonly property int cellWidth: Math.max(0, Math.floor((root._availableWidth - (root.columns - 1) * root.cellSpacingX) / root.columns))
-    readonly property int cellHeight: Math.max(0, Math.floor((root._availableHeight - (root.rows - 1) * root.cellSpacingY) / root.rows))
+    // Per-axis fits. `_widthFit` always divides the item's own available
+    // width — every caller already sets `width` as a free-standing input
+    // (e.g. `width: parent.width`), so there is no circularity to avoid on
+    // that axis. `_heightFit` divides `heightBudget` when a caller supplies
+    // one (`squareCells`'s doc comment explains why); otherwise it divides
+    // the item's own available height, identical to before.
+    readonly property int _widthFit: Math.max(0, Math.floor((root._availableWidth - (root.columns - 1) * root.cellSpacingX) / root.columns))
+    readonly property int _heightFit: Math.max(0, Math.floor((root._heightFitAvailable - (root.rows - 1) * root.cellSpacingY) / root.rows))
+    readonly property int _heightFitAvailable: Math.max(0, (root.heightBudget >= 0 ? root.heightBudget : height) - topInset - bottomInset)
+    readonly property int cellWidth: root.squareCells ? Math.min(root._widthFit, root._heightFit) : root._widthFit
+    readonly property int cellHeight: root.squareCells ? Math.min(root._widthFit, root._heightFit) : root._heightFit
 
     function setCurrentIndexImmediate(idx: int): void {
         root.currentIndex = idx;
@@ -717,6 +754,10 @@ Item {
                 // Newline-joined disambiguating-tag tokens (empty for models
                 // without variants). Every Browse model exposes this role.
                 required property string disambiguatingTags
+                // Structural placeholder, not a real item — see
+                // `root.emptyDelegate` above. Every model supplies this
+                // (default `false` for models that never have one).
+                required property bool isEmpty
 
                 readonly property int cellPage: Math.floor(index / root.pageSize)
                 readonly property int cellLocal: index % root.pageSize
@@ -792,10 +833,20 @@ Item {
                 // gate. The only selection-dependent work here is the
                 // focused placeholder ring below; it stays limited to
                 // the current page by the parent visibility gate.
+                //
+                // That "paints opaque on top" assumption is specific to
+                // `delegate` — an `emptyDelegate` (`EmptySlot.qml`) is
+                // deliberately NOT opaque (a genuinely blank slot, not a
+                // card with nothing on it), so this skeleton would stay
+                // permanently visible underneath it instead of being
+                // covered for free. `isEmpty` rows skip it outright: there
+                // is nothing to incubate for a structural placeholder.
                 PressableSurface {
                     id: placeholderCard
 
+                    objectName: "pagedGridPlaceholderCard-" + cellItem.index
                     anchors.fill: parent
+                    visible: !cellItem.isEmpty
                     radius: root._cardRadius
                     faceColor: Theme.surfaceCard
                     edgeColor: Theme.tileEdge
@@ -804,6 +855,14 @@ Item {
                     // placeholder stays raised until a real activation occurs.
                     // qmllint disable missing-property
                     pressed: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.cardPressed : false
+                    // Same tracking for the held blink (Hub Options -> Move,
+                    // see Tile.qml's `_heldOpacity`): the "paints opaque on
+                    // top" contract above only holds while the loaded Tile
+                    // actually stays opaque. Without this, the Tile blinking
+                    // to nothing left this skeleton (a blank card with no
+                    // art or name) showing through underneath instead of the
+                    // whole cell going with it.
+                    opacity: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.opacity : 1
                     // qmllint enable missing-property
 
                     // Standalone selected-cell ring for skeleton/rapid mode.
@@ -837,7 +896,13 @@ Item {
                     id: tileLoader
 
                     anchors.fill: parent
-                    sourceComponent: root.delegate
+                    // A structural placeholder row (see `root.emptyDelegate`
+                    // above) resolves to that component instead of the
+                    // normal per-item delegate. `root.emptyDelegate === null`
+                    // (every caller but the Hub) falls straight through to
+                    // `root.delegate` regardless of `isEmpty` — unchanged
+                    // behavior for every existing PagedGrid caller.
+                    sourceComponent: cellItem.isEmpty && root.emptyDelegate ? root.emptyDelegate : root.delegate
                     // Bound delegate materialisation to the retention
                     // window. Cells outside +/-5 pages keep their
                     // cellItem (Repeater contract - it owns one item
@@ -869,6 +934,7 @@ Item {
                     settling: root.screenSettling
                     focusReady: root.focusReady
                     loadFocusedCover: root.eagerFocusedCovers || cellItem.isSelected
+                    held: cellItem.index === root.heldIndex
                     // Mirrors the `asynchronous` rule above, for the same
                     // reason: only the current page's tints are worth spending
                     // GUI-thread time on. Off-page retained delegates keep
@@ -902,109 +968,6 @@ Item {
 
                     onWheel: wheel => root._handleWheel(wheel)
                 }
-            }
-        }
-    }
-
-    // ── Right-gutter scroll indicator ────────────────────────────────────
-    // Up arrow at the top, down arrow at the bottom, free-floating thumb
-    // in between. No painted track — the indicator is just the arrows
-    // and the thumb. Hidden when the dataset fits on a single page.
-    // The thumb snaps to each page position with no glide animation:
-    // scrolling is a hot path (cover prefetch + data load run on the same
-    // frames), so an animated thumb would repaint while the system is
-    // already busy.
-    // Sits after the cell `track` in the visual tree so the indicator
-    // paints above the cells at the right edge.
-    Item {
-        id: scrollGutter
-
-        x: root._scrollGutterX
-        anchors.top: parent.top
-        anchors.topMargin: root.topInset
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.bottomInset
-        width: root.gutterWidth
-        visible: root._scrollIndicatorVisible
-
-        Image {
-            id: upArrow
-            source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
-            width: root.scrollArrowSize
-            height: root.scrollArrowSize
-            sourceSize.width: Sizing.px(width)
-            sourceSize.height: Sizing.px(height)
-            anchors.top: parent.top
-            anchors.horizontalCenter: parent.horizontalCenter
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-            visible: root.hasPagesAbove
-
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton
-                cursorShape: Qt.PointingHandCursor
-                enabled: upArrow.visible
-                onClicked: root.pageWheelRequested(-1)
-            }
-        }
-
-        Image {
-            id: downArrow
-            source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
-            width: root.scrollArrowSize
-            height: root.scrollArrowSize
-            sourceSize.width: Sizing.px(width)
-            sourceSize.height: Sizing.px(height)
-            anchors.bottom: parent.bottom
-            anchors.horizontalCenter: parent.horizontalCenter
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-            visible: root.hasPagesBelow
-
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton
-                cursorShape: Qt.PointingHandCursor
-                enabled: downArrow.visible
-                onClicked: root.pageWheelRequested(1)
-            }
-        }
-
-        // Geometry-only Item between the arrows; nothing paints.
-        // `scrollThumb` derives its size and position from this region's
-        // height and the grid's `totalPageCount` / `currentPage`.
-        Item {
-            id: scrollRegion
-            anchors.top: parent.top
-            anchors.topMargin: root.scrollArrowSize + Sizing.pctH(1)
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: root.scrollArrowSize + Sizing.pctH(1)
-            anchors.right: root.scrollThumbRightAligned ? parent.right : undefined
-            anchors.rightMargin: root.scrollThumbRightAligned ? root.scrollThumbRightInset : 0
-            anchors.horizontalCenter: root.scrollThumbRightAligned ? undefined : parent.horizontalCenter
-            width: root.scrollThumbWidth
-
-            // Standard paginated-scrollbar formulas (cf. Qt
-            // `ScrollBar.size`/`position`, GTK `Gtk.Scrollbar`, Apple
-            // HIG): thumb length = trackLen * (visible / total) with one
-            // page visible at a time, position = (page / (total - 1)) *
-            // remaining range. Floor on thumb height keeps it visible
-            // when `totalPageCount` is large.
-            readonly property int _minThumbHeight: Sizing.pctH(4)
-            readonly property int _thumbHeight: Math.max(_minThumbHeight, Math.round(scrollRegion.height / root.totalPageCount))
-            readonly property int _thumbY: root.totalPageCount <= 1 ? 0 : Sizing.px((root.currentPage / (root.totalPageCount - 1)) * (scrollRegion.height - _thumbHeight))
-
-            Rectangle {
-                id: scrollThumb
-                visible: root.paginationTotalKnown
-                width: root.scrollThumbWidth
-                height: scrollRegion._thumbHeight
-                anchors.right: root.scrollThumbRightAligned ? parent.right : undefined
-                anchors.horizontalCenter: root.scrollThumbRightAligned ? undefined : parent.horizontalCenter
-                y: scrollRegion._thumbY
-                color: Theme.textPrimary
-                radius: Sizing.radiusSm
             }
         }
     }

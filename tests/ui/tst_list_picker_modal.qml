@@ -36,6 +36,16 @@ TestCase {
         title: "Pick one"
     }
 
+    // Standalone probe matching production's `_rowLabelMetrics` font exactly
+    // — `_rowLabelMetrics` itself is a bare `id`, lexically scoped to
+    // ListPickerModal.qml and not reachable as `picker._rowLabelMetrics`
+    // from this file.
+    FontMetrics {
+        id: probeMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontBody
+    }
+
     SignalSpy {
         id: acceptedSpy
         target: picker
@@ -315,6 +325,76 @@ TestCase {
             const box = findChild(row, "listPickerRowSwatch-" + i);
             verify(box !== null, "swatch box " + i + " must exist");
             compare(box.color.toString(), expected[i].toString());
+            // Round 6, item 1: a near-black or near-white swatch can sit at
+            // the same contrast as the row's own surfaceCard face and
+            // disappear into it. Every box carries a textLabel border.
+            compare(box.border.color.toString(), Theme.textLabel.toString());
+            verify(box.border.width > 0);
+        }
+    }
+
+    // Round 6, item 2: the panel/row width formula must carry deliberate
+    // slack over the raw measured advance width. `Text.NativeRendering`
+    // lays out on integer, hinted per-glyph advances, which can paint a
+    // few px wider than `FontMetrics.advanceWidth()`'s fractional,
+    // unhinted total; a zero-slack fit then elided text that should have
+    // fit. Verified structurally (the formula includes the slack term)
+    // rather than by forcing an actual hinting mismatch, which isn't
+    // reproducible deterministically in a headless test environment.
+    function test_measure_label_width_carries_hinting_slack(): void {
+        const label = "A moderately long label for measuring";
+        const raw = Math.ceil(Math.max(probeMetrics.advanceWidth(label), probeMetrics.boundingRect(label).width));
+        const measured = picker._measureLabelWidth(probeMetrics, label, Sizing.fontBody, Theme.fontUi);
+        compare(measured, raw + Sizing.stroke(2));
+    }
+
+    // The panel sizes around the widest entry via the same slack-carrying
+    // measurement — a panel sized to exactly the raw advance width was the
+    // other half of the zero-slack bug (item 2): even with per-row slack,
+    // a panel with none of its own would still clip the widest label.
+    function test_widest_entry_label_width_uses_the_same_slack(): void {
+        picker.entries = [
+            {
+                id: "id-0",
+                label: "Short"
+            },
+            {
+                id: "id-1",
+                label: "A rather longer picker entry label"
+            }
+        ];
+        const expected = picker._measureLabelWidth(probeMetrics, "A rather longer picker entry label", Sizing.fontBody, Theme.fontUi);
+        compare(picker._widestEntryLabelWidth, expected);
+    }
+
+    // Round 6 follow-up: the item-2 measurement fix wasn't sufficient on
+    // its own. Modal.qml's shell-mode branch applies its own 78%-of-viewport
+    // breathing-room ceiling on top of whatever `panelMaxWidth` a caller
+    // supplies — fine for the QR/legal shells whose content Modal can't
+    // measure, but it was still clipping the picker's own precisely
+    // measured width whenever the swatch band pushed that past 78% of a
+    // small screen. `contentSized: true` swaps that ceiling for the same
+    // 92% the four prebaked kinds use.
+    function test_content_sized_panel_is_not_clamped_by_shell_breathing_room(): void {
+        const labels = ["Zaparoo Dark", "Zaparoo Light", "Classic Purple", "Dracula", "Nord", "Synthwave '84", "Amber Phosphor", "Green Phosphor", "Neo Geo", "NES", "Virtual Boy"];
+        picker.entries = labels.map((label, i) => ({
+                    id: "id-" + i,
+                    label: label,
+                    swatch: [Qt.rgba(0.1, 0, 0, 1), Qt.rgba(0, 0.1, 0, 1), Qt.rgba(0, 0, 0.1, 1)]
+                }));
+        picker.open = true;
+
+        const expectedWidth = Sizing.px(Math.min(testCase.width * 0.92, Math.max(picker._minPanelWidth, picker._desiredPanelWidth)));
+        const panel = findChild(picker, "modalPanel");
+        verify(panel !== null);
+        compare(panel.width, expectedWidth);
+
+        for (let i = 0; i < labels.length; ++i) {
+            const row = findChild(picker, "listPickerRow-" + i);
+            verify(row !== null, "row " + i + " must exist");
+            const swatchLabel = findChild(row, "listPickerRowLabelSwatch");
+            verify(swatchLabel !== null);
+            verify(!swatchLabel.truncated, "label '" + labels[i] + "' must not elide when the panel is content-sized");
         }
     }
 }

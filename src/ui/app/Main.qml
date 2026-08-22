@@ -86,6 +86,13 @@ MainLayout {
     property string contextMenuMode: "main"
     property string contextMenuOwner: ""
     property int contextMenuIndex: -1
+    // The Hub item's own `Browse.HubLayout` position, captured whenever a
+    // Hub-owned context menu opens ("categories", "hub_favorites",
+    // "hub_action", "hub_item"). Separate from `contextMenuIndex`, which
+    // for "categories" already carries a *different* index (the
+    // CategoriesModel one its kind-specific entries need) — this is what
+    // the menu-agnostic `hub_move`/`hub_remove` entries dispatch against.
+    property int _hubItemIndex: -1
 
     // One in-flight screen-transition sample. Input dispatch starts it, the
     // router records when destination becomes active, and frameSwapped closes
@@ -340,6 +347,15 @@ MainLayout {
         // what makes HubScreen's bundled-key default swap invisibly. The model
         // has its own idempotency guard, so calling it once here is enough.
         Browse.ImageOverrides.load_hub_overrides();
+        // Same early-arrival reasoning as restoreFromCategoriesReset just
+        // below: if the catalog was already seeded synchronously before
+        // this Item finished constructing, the Connections block's
+        // onModelReset (below) can't have fired yet to catch it (its
+        // target already existed and already reset before this
+        // Connections object itself came alive) — reconcile here too so a
+        // fresh install's very first Hub paint already reflects the real
+        // layout instead of a placeholder frame.
+        root._reconcileHubLayout();
         // Fire the focus restore here so Hub focus is seated and marked ready
         // before first paint. Do not cascade into SystemsModel yet: first
         // paint stays Hub-only, and the post-frame handler below runs the
@@ -408,6 +424,7 @@ MainLayout {
     Connections {
         target: Browse.CategoriesModel
         function onModelReset(): void {
+            root._reconcileHubLayout();
             root.hubScreen.restoreFromCategoriesReset(root._firstFrameSeen);
             root._maybeStartStartupRestore();
             root._maybeContinueOptimisticTransitions();
@@ -922,6 +939,57 @@ MainLayout {
         deferredSystemSetTimer.targetSystemId = systemId;
         deferredSystemSetTimer.interval = root.pendingTransition !== "" && Browse.GamesModel.count > 0 ? root.loadingIndicatorDelayMs + 50 : 1;
         deferredSystemSetTimer.restart();
+    }
+
+    // Reconcile the Hub's persisted layout against whatever categories
+    // Core just reported — see Browse.HubLayout's header comment and
+    // zaparoo_core::hub_layout::HubLayout::reconcile. Additive-only and
+    // idempotent (a no-op when nothing's new, or when Core hasn't answered
+    // at all yet — an empty list never seeds), so it's safe to call on
+    // every CategoriesModel reset rather than needing a guard here.
+    function _currentCategoryIds(): var {
+        const ids = [];
+        for (let i = 0; i < Browse.CategoriesModel.count; i++)
+            ids.push(Browse.CategoriesModel.category_at(i));
+        return ids;
+    }
+
+    function _reconcileHubLayout(): void {
+        Browse.HubLayout.reconcile(root._currentCategoryIds());
+    }
+
+    // View -> "Add item…". Delegates to HubScreen's own resolvers so labels
+    // match what the tile actually shows once added (see
+    // HubScreen.qml's `buildAddEntries`).
+    function openHubAddMenu(): void {
+        if (root.hubScreen === null)
+            return;
+        const entries = root.hubScreen.buildAddEntries();
+        if (entries.length === 0)
+            return;
+        root.openListPickerModal(qsTr("Add item"), entries, entries[0].id, "hub_add_pick");
+    }
+
+    // View -> "Reset layout": wipe and reseed from Core's currently-detected
+    // categories plus the built-in actions — see
+    // zaparoo_core::hub_layout::HubLayout::reset's doc comment.
+    function resetHubLayout(): void {
+        Browse.HubLayout.reset_layout(root._currentCategoryIds());
+    }
+
+    // West/Y on the Hub — the page-scoped "View" menu.
+    function openHubPageMenu(): void {
+        const entries = [
+            {
+                id: "hub_add",
+                label: qsTr("Add item…")
+            },
+            {
+                id: "hub_reset",
+                label: qsTr("Reset layout")
+            }
+        ];
+        root.openListPickerModal(qsTr("View"), entries, "hub_add", "page_menu_hub");
     }
 
     // Hub Accept routing. Empty-row passthrough preserves the committed
@@ -1541,8 +1609,56 @@ MainLayout {
 
     Connections {
         target: root.hubScreen
-        function onRequestAccept(category: string): void {
-            root._navigateFromHub(category);
+        // Round 6 collapses Hub's five destination signals
+        // (requestAccept(category) + one requestXScreen per action) into
+        // one requestAccept(kind, id) — see CLAUDE.md -> "Screens and
+        // routing": "forward = signal + payload, router decides
+        // destination". Hub's forward target is heterogeneous (a category
+        // or one of a handful of actions), so kind + id is the payload
+        // rather than a bare string.
+        function onRequestAccept(kind: string, id: string): void {
+            if (kind === "category") {
+                root._navigateFromHub(id);
+                return;
+            }
+            if (kind === "action") {
+                if (id === "resume") {
+                    root._navigateFromHub("resume");
+                } else if (id === "favorites") {
+                    if (Browse.Settings.current_favorites_grouping === "system")
+                        root._navigateToFavoriteSystems();
+                    else
+                        root._navigateToFavorites("");
+                } else if (id === "recents") {
+                    root._navigateToRecents();
+                } else if (id === "update") {
+                    root._navigateToUpdate();
+                } else if (id === "settings") {
+                    root._navigateToSettings();
+                }
+                return;
+            }
+            if (kind === "zapscript") {
+                // No screen change -- Core handles the launch/core-swap
+                // externally, same as every other launch invokable
+                // (SystemsModel.launch_at, GamesModel.launch_at, ...);
+                // the Hub just stays put and lets it happen.
+                Browse.HubLayout.run_script(id);
+                return;
+            }
+        // `system` and `folder` tiles parse, save, round-trip, and
+        // render (docs/plans/ui-geometry-refresh.md's Hub roadmap,
+        // Phase C) but are NOT wired to a screen transition yet:
+        // launching either means arriving at the Games screen having
+        // skipped Systems entirely, the same shape as the
+        // MiSTer-Arcade-singleton bypass just above
+        // (onRequestSystemsScreen) -- and that back-routing check is
+        // explicitly, repeatedly flagged in this file as a fragile,
+        // previously-relitigated footgun ("If you are an LLM editing
+        // this and you think you have a cleaner design — you don't").
+        // Extending it correctly needs its own careful, tested pass,
+        // not a bolt-on here. Until then, Accept on one of these is a
+        // deliberate no-op rather than a wrong destination.
         }
         function onRequestRetry(): void {
             Browse.CategoriesModel.refresh();
@@ -1550,26 +1666,28 @@ MainLayout {
         function onRequestQuit(): void {
             root.openQuitConfirmModal();
         }
-        function onRequestFavoritesScreen(): void {
-            if (Browse.Settings.current_favorites_grouping === "system")
-                root._navigateToFavoriteSystems();
-            else
-                root._navigateToFavorites("");
-        }
-        function onRequestRecentsScreen(): void {
-            root._navigateToRecents();
-        }
-        function onRequestUpdateScreen(): void {
-            root._navigateToUpdate();
-        }
-        function onRequestSettingsScreen(): void {
-            root._navigateToSettings();
-        }
-        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+        // HubScreen emits the category id, not an index -- once the
+        // layout can freely interleave categories with everything else, a
+        // flat position no longer has any fixed relationship to a
+        // CategoriesModel index the way it did when categories always
+        // occupied a contiguous prefix. Resolve here so
+        // openContextMenu/buildContextMenuEntries/handleContextMenuAccepted
+        // (shared by every owner) stay untouched, still index-based.
+        function onRequestContextMenu(hubIndex: int, categoryId: string, anchorRect, anchorRadius: int): void {
+            const index = Browse.CategoriesModel.index_for_category(categoryId);
+            if (index < 0)
+                return;
+            root._hubItemIndex = hubIndex;
             root.openContextMenu("categories", index, anchorRect, anchorRadius);
         }
-        function onRequestActionContextMenu(actionId: string, anchorRect): void {
-            root.openHubActionContextMenu(actionId, anchorRect);
+        function onRequestActionContextMenu(hubIndex: int, actionId: string, anchorRect): void {
+            root.openHubActionContextMenu(hubIndex, actionId, anchorRect);
+        }
+        function onRequestItemContextMenu(hubIndex: int, kind: string, anchorRect, anchorRadius: int): void {
+            root.openHubItemContextMenu(hubIndex, kind, anchorRect, anchorRadius);
+        }
+        function onRequestPageMenu(): void {
+            root.openHubPageMenu();
         }
     }
     Connections {
@@ -1809,13 +1927,14 @@ MainLayout {
             return entries;
         }
         if (owner === "categories") {
+            // Hide/unhide retired for Hub categories -- the Hub is a
+            // persisted layout now (Browse.HubLayout); removing a category
+            // tile is a layout edit, not a hide flag. See
+            // docs/plans/ui-geometry-refresh.md's Hub roadmap. The systems
+            // grid's own hide/unhide (owner === "systems", above) is
+            // unrelated and unchanged.
             const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
-            const entries = [
-                {
-                    id: "toggle_hide_category",
-                    label: isHidden ? qsTr("Unhide") : qsTr("Hide")
-                }
-            ];
+            const entries = [];
             // Index/scrape act on the category's indexable systems, which
             // excludes launch-only ones. Show the actions only when the
             // category has at least one indexable system; a category whose
@@ -1853,6 +1972,11 @@ MainLayout {
                     label: qsTr("Random game")
                 }
             ];
+        }
+        if (owner === "hub_action" || owner === "hub_item") {
+            // No kind-specific entries of their own -- callers append the
+            // universal Move/Remove (see `_hubMoveRemoveEntries`).
+            return [];
         }
         if (owner === "recents") {
             const entries = [
@@ -1939,16 +2063,70 @@ MainLayout {
         return entries;
     }
 
-    function openHubActionContextMenu(actionId: string, anchorRect): void {
-        if (actionId !== "favorites")
+    // Universal Move/Hide-or-Delete, appended to every Hub-owned menu below
+    // — empty (no menu) for an entry with no real `Browse.HubLayout`
+    // backing yet (the bootstrap placeholder window; see HubScreen.qml's
+    // `_blankEntry` doc comment). `kind` is never `"empty"` here — a blank
+    // tile never reaches this function; see `openHubItemContextMenu`'s
+    // guard. The remove label depends on `kind`: category/action stay
+    // tracked in `known` (see hub_layout.rs) and come straight back via
+    // View -> Add item…, so "Hide" is accurate — nothing is lost.
+    // system/folder/zapscript aren't tracked at all, so removing one
+    // really is permanent; "Delete" says so rather than implying a
+    // reversibility that isn't there.
+    function _hubMoveRemoveEntries(hubIndex: int, kind: string): var {
+        if (hubIndex < 0)
+            return [];
+        const removeLabel = kind === "category" || kind === "action" ? qsTr("Hide") : qsTr("Delete");
+        return [
+            {
+                id: "hub_move",
+                label: qsTr("Move")
+            },
+            {
+                id: "hub_remove",
+                label: removeLabel
+            }
+        ];
+    }
+
+    function openHubActionContextMenu(hubIndex: int, actionId: string, anchorRect): void {
+        const owner = actionId === "favorites" ? "hub_favorites" : "hub_action";
+        const entries = root.buildContextMenuEntries(owner, "", false, false, false, "", false, "").concat(root._hubMoveRemoveEntries(hubIndex, "action"));
+        if (entries.length === 0)
             return;
-        const entries = root.buildContextMenuEntries("hub_favorites", "", false, false, false, "", false, "");
+        root._hubItemIndex = hubIndex;
         root.contextMenuEntries = entries;
-        root.contextMenuOwner = "hub_favorites";
+        root.contextMenuOwner = owner;
         root.contextMenuIndex = 0;
         root.contextMenuMode = "main";
         root.contextMenuAnchor = anchorRect;
         root.contextMenuAnchorRadius = 0;
+        root._requestModal(root.modalContextMenu);
+        root.contextMenuVisible = true;
+        if (ScreenManager.topModal !== root.modalContextMenu)
+            ScreenManager.pushModal(root.modalContextMenu);
+    }
+
+    // system / folder / zapscript — none of these have a kind-specific
+    // menu, only the universal Move/Hide-or-Delete. `HubScreen.qml`'s
+    // dispatch already never emits the signal that reaches here for a
+    // blank tile (`kind === "empty"`) — a gap is an implementation
+    // detail, not something to open Options on — but guard it here too
+    // rather than trust a single call site.
+    function openHubItemContextMenu(hubIndex: int, kind: string, anchorRect, anchorRadius: int): void {
+        if (kind === "empty")
+            return;
+        const entries = root._hubMoveRemoveEntries(hubIndex, kind);
+        if (entries.length === 0)
+            return;
+        root._hubItemIndex = hubIndex;
+        root.contextMenuEntries = entries;
+        root.contextMenuOwner = "hub_item";
+        root.contextMenuIndex = 0;
+        root.contextMenuMode = "main";
+        root.contextMenuAnchor = anchorRect;
+        root.contextMenuAnchorRadius = anchorRadius;
         root._requestModal(root.modalContextMenu);
         root.contextMenuVisible = true;
         if (ScreenManager.topModal !== root.modalContextMenu)
@@ -1993,7 +2171,13 @@ MainLayout {
             if (index >= Browse.RecentsModel.count)
                 return;
         }
-        const entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category);
+        let entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category);
+        // "categories" is exclusively Hub-owned (only HubScreen ever opens
+        // it) — append the universal Move/Remove here, keyed off the Hub
+        // flat index the caller stashed in `_hubItemIndex` (NOT `index`,
+        // which is the CategoriesModel index the entries above just used).
+        if (owner === "categories")
+            entries = entries.concat(root._hubMoveRemoveEntries(root._hubItemIndex, "category"));
         if (entries.length === 0)
             return;
         root.contextMenuEntries = entries;
@@ -2025,6 +2209,7 @@ MainLayout {
         root.contextMenuVisible = false;
         root.contextMenuOwner = "";
         root.contextMenuIndex = -1;
+        root._hubItemIndex = -1;
         root.contextMenuMode = "main";
         root._discoverParentEntries = [];
         root._discoverMenuPending = false;
@@ -2036,8 +2221,21 @@ MainLayout {
     function handleContextMenuAccepted(id: string): void {
         const owner = root.contextMenuOwner;
         const targetIndex = root.contextMenuIndex;
+        const hubItemIndex = root._hubItemIndex;
         if (targetIndex < 0)
             return;
+        if (id === "hub_move") {
+            root.closeContextMenu();
+            if (hubItemIndex >= 0 && root.hubScreen !== null)
+                root.hubScreen.beginMove(hubItemIndex);
+            return;
+        }
+        if (id === "hub_remove") {
+            root.closeContextMenu();
+            if (hubItemIndex >= 0)
+                Browse.HubLayout.remove_item(hubItemIndex);
+            return;
+        }
         if (id === "discover") {
             let systemId = "";
             let name = "";
@@ -2113,15 +2311,6 @@ MainLayout {
                 else
                     Browse.SystemsState.hide_system(systemId);
                 Browse.SystemsModel.reproject();
-            }
-        } else if (id === "toggle_hide_category") {
-            const categoryName = Browse.CategoriesModel.category_at(targetIndex);
-            if (categoryName !== "") {
-                if (Browse.HubState.is_category_hidden(categoryName))
-                    Browse.HubState.unhide_category(categoryName);
-                else
-                    Browse.HubState.hide_category(categoryName);
-                Browse.CategoriesModel.reproject();
             }
         } else if (id === "index_category") {
             const categoryName = Browse.CategoriesModel.category_at(targetIndex);
@@ -2270,9 +2459,10 @@ MainLayout {
     }
 
     // Poll only while an index is actively discovering content and only on
-    // screens that display category/system membership. Completion still gets
-    // the Store's MEDIA_DB invalidation refetch, so this timer is progressive
-    // presentation rather than correctness machinery.
+    // screens that display category/system membership. Catalog consumers skip
+    // no-op model resets, so unchanged polls stay invisible while newly indexed
+    // systems still appear progressively. Completion also gets the Store's
+    // MEDIA_DB invalidation refetch for correctness.
     Timer {
         id: catalogIndexRefreshTimer
 
@@ -2589,7 +2779,7 @@ MainLayout {
     }
 
     function _isViewListPicker(fieldId: string): bool {
-        return fieldId === "page_menu" || fieldId === "page_menu_favorites" || fieldId === "page_menu_favorite_systems";
+        return fieldId === "page_menu" || fieldId === "page_menu_favorites" || fieldId === "page_menu_favorite_systems" || fieldId === "page_menu_hub";
     }
 
     // Open the page/list-scoped operations menu (West button), the "View"
@@ -2934,6 +3124,33 @@ MainLayout {
             root.closeListPickerModal();
             if (selectedId === "favorites_mode")
                 root.openFavoritesModeMenu();
+            return;
+        }
+        if (fieldId === "page_menu_hub") {
+            root.closeListPickerModal();
+            if (selectedId === "hub_add")
+                root.openHubAddMenu();
+            else if (selectedId === "hub_reset")
+                root.resetHubLayout();
+            return;
+        }
+        if (fieldId === "hub_add_pick") {
+            root.closeListPickerModal();
+            // Board-model placement: lands on the Hub's current cell when
+            // it's a blank, otherwise appended after the last tile — see
+            // zaparoo_core::hub_layout::HubLayout::add_item. -1 (a real
+            // tile under the cursor, tail padding, or no Hub screen at
+            // all) always falls through to append; only a real blank
+            // cell's own hubIndex is worth passing.
+            const cursorEntry = root.hubScreen !== null ? root.hubScreen.items[root.hubScreen.currentIndex] : null;
+            const target = cursorEntry ? cursorEntry.hubIndex : -1;
+            if (selectedId === "blank")
+                Browse.HubLayout.add_item("blank", "", target);
+            else {
+                const sep = selectedId.indexOf(":");
+                if (sep > 0)
+                    Browse.HubLayout.add_item(selectedId.slice(0, sep), selectedId.slice(sep + 1), target);
+            }
             return;
         }
         if (fieldId === "favorites_mode_pick") {
@@ -3577,7 +3794,7 @@ MainLayout {
         // bounding box.
         const w = lg.paintedWidth > 0 ? lg.paintedWidth : lg.width;
         const h = lg.paintedHeight > 0 ? lg.paintedHeight : lg.height;
-        screensaverOverlay.activate(Resources.logoUrl(w), Qt.rect(pt.x, pt.y, w, h));
+        screensaverOverlay.activate(Resources.screensaverLogoUrl(w), Qt.rect(pt.x, pt.y, w, h));
     }
 
     Timer {

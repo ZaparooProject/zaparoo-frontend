@@ -458,9 +458,6 @@ ApplicationWindow {
             return qsTr("Recently Played");
         return "";
     }
-    readonly property string browseHeaderProgressText: {
-        return "";
-    }
 
     signal cancelCardWriteRequested
     signal closeQrCodeRequested
@@ -587,12 +584,13 @@ ApplicationWindow {
                 color: Theme.bgDeep
             }
 
-            // ── Top header (logo + status row + status pill) ───────────────────────────
+            // ── Top header (logo + status row + status line) ───────────────────────────
 
             // Single component owning the brand mark, host status icons +
-            // clock, and Core status pill. Height is fixed (Sizing.headerHeight)
-            // so the pill's slot stays reserved when idle and the logo always
-            // matches the stacked rows. Screens clear `Sizing.headerBottom`.
+            // clock, and the Core/task status line. Height is fixed
+            // (Sizing.headerHeight) so the status line's slot stays reserved
+            // when idle and the logo always matches the stacked rows.
+            // Screens clear `Sizing.headerBottom`.
             HeaderBar {
                 id: headerBar
 
@@ -602,7 +600,6 @@ ApplicationWindow {
                 anchors.topMargin: Sizing.headerTopMargin
                 layoutProfile: root._browseViewProfile
                 browseTitle: root.browseHeaderTitle
-                browseProgressText: root.browseHeaderProgressText
                 statusIconsEnabled: root._statusIconsEnabled
                 mediaActivityEnabled: root._headerMediaActivityEnabled
                 z: 200
@@ -1228,20 +1225,50 @@ ApplicationWindow {
                     if ((!root.bootComplete && !root.coreIndependentStartupVisible) || root.startupRestoreCurtainVisible)
                         return [];
                     if (root.activeScreen === root.screenHub) {
+                        // Mid-reorder (Options -> Move armed): D-pad
+                        // repositions the held tile, Accept places it,
+                        // Cancel reverts — nothing else is live (see
+                        // HubScreen.qml's `_handleMoveAction`).
+                        if (root.hubScreen !== null && root.hubScreen.moveArmed)
+                            return [
+                                {
+                                    button: "Dpad",
+                                    label: qsTr("Reposition")
+                                },
+                                {
+                                    button: "ButtonA",
+                                    label: qsTr("Place")
+                                },
+                                {
+                                    button: "ButtonB",
+                                    label: qsTr("Cancel")
+                                }
+                            ];
                         // Hub always has the actions row (Recently Played /
                         // Settings), so Move/Open/Quit applies even when the
                         // categories row is empty (0 systems indexed) — the
                         // help bar must reflect that the actions row is
                         // navigable, otherwise the user reads "Quit only"
-                        // and misses the Settings tile entirely. Category
-                        // Real category tiles and Favorites action tile expose
-                        // Options; placeholders and other actions do not.
-                        const categoryErrorFocused = root.hubScreen !== null && root.hubScreen.currentRow === 0 && (Browse.CategoriesModel.error_message ?? "") !== "";
-                        const categoryOptionsAvailable = root.hubScreen !== null && root.hubScreen.currentRow === 0 && !categoryErrorFocused && Browse.CategoriesModel.count > 0;
-                        const favoritesOptionsAvailable = root.hubScreen !== null && root.hubScreen.currentRow === 1 && root.hubScreen.actionEntries[root.hubScreen.currentIndex]?.id === "favorites";
+                        // and misses the Settings tile entirely. Options
+                        // (Move/Hide-or-Delete, plus category- or
+                        // Favorites-specific entries) is available on any
+                        // tile with a real `Browse.HubLayout` backing —
+                        // placeholders and any `kind === "empty"` entry
+                        // (a real persisted blank, or the trailing empty
+                        // slot — see HubScreen.qml's `_blankEntry`) do not.
+                        // A blank is an implementation detail, not
+                        // something the user picks up and moves on its own.
+                        const hubEntry = root.hubScreen !== null ? root.hubScreen.items[root.hubScreen.currentIndex] : null;
+                        const onCategoryTile = hubEntry != null && hubEntry.kind === "category";
+                        const categoryErrorFocused = onCategoryTile && (Browse.CategoriesModel.error_message ?? "") !== "";
+                        const hubOptionsAvailable = hubEntry != null && hubEntry.kind !== "empty" && !categoryErrorFocused && hubEntry.hubIndex >= 0;
+                        // D-pad moves; L/R shoulders page-jump, shown only
+                        // when there's a second page to jump to — same
+                        // "Move" fold Systems already uses.
+                        const hubPages = root.hubScreen !== null ? root.hubScreen.pageCount : 1;
                         let row = [
                             {
-                                button: "Dpad",
+                                buttons: hubPages > 1 ? ["ButtonL", "ButtonR", "Dpad"] : ["Dpad"],
                                 label: qsTr("Move")
                             },
                             {
@@ -1249,11 +1276,15 @@ ApplicationWindow {
                                 label: categoryErrorFocused ? qsTr("Retry") : qsTr("Open")
                             }
                         ];
-                        if (categoryOptionsAvailable || favoritesOptionsAvailable)
+                        if (hubOptionsAvailable)
                             row.push({
                                 button: "ButtonX",
                                 label: qsTr("Options")
                             });
+                        row.push({
+                            button: "ButtonY",
+                            label: qsTr("View")
+                        });
                         row.push({
                             button: "ButtonB",
                             label: qsTr("Quit")
@@ -1527,8 +1558,10 @@ ApplicationWindow {
                     // centering here has no dependency on the bar's own
                     // border (it never had a bottom border of its own; see
                     // the two full-bleed fill/keyline Rectangles above),
-                    // this is purely a feel adjustment.
-                    y: Sizing.center(parent.height, height) + Sizing.pctH(0.4)
+                    // this is purely a feel adjustment. Trimmed 0.4 -> 0.3
+                    // (round 6, item 5), then 0.3 -> 0.2 (round 6 follow-up)
+                    // — still read a pixel too far down at 1080p/720p.
+                    y: Sizing.center(parent.height, height) + Sizing.pctH(0.2)
                     spacing: Sizing.pctW(2)
 
                     Repeater {

@@ -761,30 +761,18 @@ Item {
         return qsTr("Tinted");
     }
 
-    // A lookup table rather than an if-chain now that the catalog has grown
-    // past a handful of presets (round 5). Every label is still a literal
-    // qsTr() call so lupdate can harvest it -- a computed/templated string
-    // would not be translator-visible.
+    // A lookup table rather than an if-chain — round 6 pruned the catalog
+    // back down to 11, but the table form still keeps every label a literal
+    // qsTr() call so lupdate can harvest it (a computed/templated string
+    // would not be translator-visible), and it stays one edit for a future
+    // preset add/remove.
     function _colorSchemeDisplay(value: string): string {
         const names = {
-            "zaparoo-black": qsTr("Zaparoo Black"),
-            "midnight-amber": qsTr("Midnight Amber"),
-            "zaparoo-white": qsTr("Zaparoo White"),
-            "catppuccin-mocha": qsTr("Catppuccin Mocha"),
-            "catppuccin-macchiato": qsTr("Catppuccin Macchiato"),
-            "catppuccin-frappe": qsTr("Catppuccin Frappé"),
-            "nord": qsTr("Nord"),
+            "zaparoo-dark": qsTr("Zaparoo Dark"),
+            "zaparoo-light": qsTr("Zaparoo Light"),
+            "classic-purple": qsTr("Classic Purple"),
             "dracula": qsTr("Dracula"),
-            "gruvbox-dark": qsTr("Gruvbox Dark"),
-            "gruvbox-light": qsTr("Gruvbox Light"),
-            "tokyo-night": qsTr("Tokyo Night"),
-            "rose-pine": qsTr("Rosé Pine"),
-            "kanagawa-wave": qsTr("Kanagawa Wave"),
-            "ayu-dark": qsTr("Ayu Dark"),
-            "nightfox": qsTr("Nightfox"),
-            "monokai": qsTr("Monokai"),
-            "one-dark-pro": qsTr("One Dark Pro"),
-            "everforest-dark": qsTr("Everforest Dark"),
+            "nord": qsTr("Nord"),
             "synthwave-84": qsTr("Synthwave '84"),
             "amber-phosphor": qsTr("Amber Phosphor"),
             "green-phosphor": qsTr("Green Phosphor"),
@@ -792,7 +780,7 @@ Item {
             "nes": qsTr("NES"),
             "virtual-boy": qsTr("Virtual Boy")
         };
-        return names[value] !== undefined ? names[value] : names["zaparoo-black"];
+        return names[value] !== undefined ? names[value] : names["zaparoo-dark"];
     }
 
     function _buttonLayoutDisplay(value: string): string {
@@ -1502,10 +1490,14 @@ Item {
                     SettingsSectionHeader {
                         id: header
                         visible: row.isHeader
+                        // No cardPadding margin here (unlike every other
+                        // row) — the header's own filled band spans the
+                        // card edge-to-edge; contentInset makes up the
+                        // difference for the label alone. See
+                        // SettingsSectionHeader.qml.
                         anchors.left: parent.left
-                        anchors.leftMargin: flickable.cardPadding
                         anchors.right: parent.right
-                        anchors.rightMargin: flickable.cardPadding
+                        contentInset: flickable.cardPadding
                         label: row.modelData.label
                     }
 

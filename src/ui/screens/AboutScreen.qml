@@ -295,8 +295,8 @@ Item {
             }
         }
 
-        // Top/bottom scroll chevrons — mirror the PagedGrid/BrowseList
-        // recipe (same SVG icons, `PreserveAspectFit` + `smooth: true` +
+        // Top/bottom scroll chevrons — mirror the PageIndicator recipe
+        // (same SVG icons, `PreserveAspectFit` + `smooth: true` +
         // `sourceSize` pinned to the painted size) but centered on the
         // viewport in the card's chrome gap *above* and *below* the
         // Flickable, not inside its visible band. Sitting outside the

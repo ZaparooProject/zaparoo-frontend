@@ -25,8 +25,9 @@ src/app/main.cpp
     │     │
     │     ├── src/models/  [Zaparoo.Browse QML module via cxx-qt 0.8]
     │     │     AppStatus, CategoriesModel, SystemsModel, GamesModel,
-    │     │     AppState, HubState, SystemsState, GamesState, Input, Runtime,
-    │     │     BrowseModel. All registered via build.rs QmlModule.
+    │     │     AppState, HubState, HubLayout, SystemsState, GamesState,
+    │     │     Input, Runtime, BrowseModel. All registered via build.rs
+    │     │     QmlModule.
     │     │
     │
     ├── rust/zaparoo-core/  [non-Qt Rust crate]
@@ -38,6 +39,7 @@ src/app/main.cpp
     │     input_actions.rs    — action names + Qt key-code mapping
     │     persist.rs          — write-through persisted UI state
     │     config.rs           — TOML config (frontend.toml)
+    │     hub_layout.rs       — Hub's persisted [[hub.items]] layout schema
     │     logger.rs           — tracing-subscriber: stderr + JSONL file sinks
     │     runtime.rs          — Runtime enum: what device the frontend runs on
     │     platform.rs         — Platform enum: what Zaparoo Core is running on
@@ -206,7 +208,7 @@ Persisted state is split across Rust-backed QML singletons:
 | Singleton | Stored fields | Owner |
 |---|---|---|
 | `Browse.AppState` | `active_screen` | cross-screen route |
-| `Browse.HubState` | `category` | hub-screen row selection |
+| `Browse.HubState` | `category`, `selected_item`, `selected_row`/`selected_action` (legacy fallback) | hub-screen grid selection |
 | `Browse.SystemsState` | `system_id` | systems-screen grid selection |
 | `Browse.GamesState` | `system_id`, `game_path` | games-screen grid selection |
 
@@ -241,10 +243,27 @@ screen-specific hooks where the data model or navigation semantics differ.
 
 #### Screen flow
 
-- **Hub** (`HubScreen.qml`) — two centered rows: category tiles plus action
-  tiles for Favorites, Recently Played, optional Update, and Settings.
-  Left/Right cycles within the focused row and writes `HubState`. Accept
-  emits the matching forward/action signal; Escape emits `requestQuit`.
+- **Hub** (`HubScreen.qml`) — one uniform paged grid rendering
+  `Browse.HubLayout`'s persisted `[[hub.items]]` layout in the user's own
+  order (see `docs/plans/ui-geometry-refresh.md` -> section 9 and its "Hub
+  roadmap" addendum for the full design). A tile is a category, a built-in
+  action, a specific system, a folder, or arbitrary ZapScript; the layout
+  records intent, `HubScreen.qml` resolves each kind against live state
+  (Core confirms the category, Resume needs Recents, Update needs the
+  build flag + internet) at render time. Square cells (`PagedGrid.
+  squareCells`); the grid's shape is a fixed per-tier table
+  (`Sizing.hubGridColumns/Rows`), never fitted to the viewport the way
+  Systems/Games are. `PagedGrid` pages once content overflows a page — the
+  normal case here, not an edge case. The last page's trailing remainder
+  (or a user-placed `blank` entry) renders as a genuinely blank,
+  focusable-but-inert `EmptySlot` (via `PagedGrid.emptyDelegate`) rather
+  than a `Tile` with nothing on it. Directional moves write `HubState`.
+  Accept emits `requestAccept(kind, id)` — `kind` is `"category"` /
+  `"action"` / `"system"` / `"folder"` / `"zapscript"`, the router switches
+  on it (only `"category"`/`"action"`/`"zapscript"` are wired to a
+  destination today — see the plan doc); Escape emits `requestQuit`. No
+  edit mode — Move/Hide/Add reuse the Options (North/X, item-scoped) and
+  View (West/Y, page-scoped) menus every other screen already has.
 - **Update** (`zaparoo-update` package `qml/UpdateScreen.qml`) — crate-owned update screen
   with a Rust-driven progress value surfaced through `Zaparoo.Update.Native`.
   Accept is a no-op for now; Escape emits `requestHubScreen`.

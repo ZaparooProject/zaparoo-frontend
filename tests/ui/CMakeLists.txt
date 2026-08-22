@@ -24,6 +24,8 @@ set(_TST_UI_QML_FILES
     tst_sizing.qml
     tst_persistence.qml
     tst_paged_grid.qml
+    tst_footer_chrome.qml
+    tst_status_line.qml
     tst_pressable_surface.qml
     tst_context_menu.qml
     tst_modal.qml
@@ -36,6 +38,7 @@ set(_TST_UI_QML_FILES
     tst_list_picker_modal.qml
     tst_letter_jump_modal.qml
     tst_settings_field_control.qml
+    tst_settings_section_header.qml
     tst_motion.qml
     tst_deferred_action.qml
     tst_tile_cover_sync.qml

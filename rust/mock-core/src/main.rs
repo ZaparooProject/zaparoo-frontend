@@ -9,12 +9,16 @@
 // override point at this address; production frontend.toml still
 // defaults to 7497.
 
+mod events;
 mod fixtures;
 mod handler;
+mod media_state;
 
 use futures_util::{SinkExt, StreamExt};
+use media_state::Notifier;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -55,20 +59,46 @@ async fn serve(
     info!(%peer, "client connected");
 
     let (mut tx, mut rx) = ws.split();
-    while let Some(msg) = rx.next().await {
-        match msg? {
-            Message::Text(text) => {
-                let response = handler::dispatch(&text);
-                tx.send(Message::Text(response.into())).await?;
+
+    // Pushed notifications (media.generate/media.scrape sequence steps,
+    // and — behind MOCK_CORE_EVENTS — the scripted transient events) and
+    // ordinary RPC replies both funnel through this one channel so a
+    // single task owns `tx`. `dispatch` gets a `Notifier` clone per
+    // connection; the background sequence tasks it spawns keep their own
+    // clone for the lifetime of their run.
+    let (notify_tx, mut notify_rx) = mpsc::unbounded_channel();
+    let notifier = Notifier::new(notify_tx);
+
+    if events::events_enabled() {
+        tokio::spawn(events::run(notifier.clone()));
+    }
+
+    loop {
+        tokio::select! {
+            msg = rx.next() => {
+                let Some(msg) = msg else {
+                    info!(%peer, "client disconnected");
+                    break;
+                };
+                match msg? {
+                    Message::Text(text) => {
+                        let response = handler::dispatch(&text, &notifier);
+                        tx.send(Message::Text(response.into())).await?;
+                    }
+                    Message::Ping(data) => {
+                        tx.send(Message::Pong(data)).await?;
+                    }
+                    Message::Close(_) => {
+                        info!(%peer, "client disconnected");
+                        break;
+                    }
+                    _ => {}
+                }
             }
-            Message::Ping(data) => {
-                tx.send(Message::Pong(data)).await?;
+            Some(notification) = notify_rx.recv() => {
+                let text = serde_json::to_string(&notification).unwrap_or_default();
+                tx.send(Message::Text(text.into())).await?;
             }
-            Message::Close(_) => {
-                info!(%peer, "client disconnected");
-                break;
-            }
-            _ => {}
         }
     }
     Ok(())

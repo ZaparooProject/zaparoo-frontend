@@ -29,6 +29,19 @@ QtObject {
     // `settleMs` — settle/release legs and the toggle-knob slide.
     readonly property int pressMs: 80
     readonly property int settleMs: 110
+    // How long `ProgressTrack`'s leading cell holds each on/off state of
+    // its blink (~2 Hz full cycle). This is a hard cut, not a fade — a
+    // Timer flips a bool every `pulseMs` and `color` reads it directly,
+    // no ColorAnimation or Behavior involved, the same instant-swap idiom
+    // `SelectionBar`'s inverse-video flash already uses. It is the one
+    // exception to "no persistent motion": a background task's progress
+    // cue in header chrome, never over content, gated on `enabled` and on
+    // the task actually running — the same small-dirty-rect page-dot/
+    // focus-ring-blink exemption CLAUDE.md already carves out, just
+    // continuous instead of one-shot because there is no natural "done"
+    // edge mid-task. See ProgressTrack.qml's doc comment and
+    // docs/style.md -> "Header status line" for the write-up.
+    readonly property int pulseMs: 250
 
     // Collapse all durations to 0 under reduce-motion so Behaviors that
     // use dur() resolve instantly without per-call branching.

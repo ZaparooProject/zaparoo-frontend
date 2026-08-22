@@ -32,6 +32,7 @@ TestCase {
     property string _originalHubCategory: ""
     property int _originalHubSelectedRow: 0
     property string _originalHubSelectedAction: ""
+    property string _originalHubSelectedItem: ""
     property int _actionErrorCallbackCount: 0
     property int _actionErrorDeliveredCount: 0
 
@@ -63,6 +64,7 @@ TestCase {
         testCase._originalHubCategory = Browse.HubState.category ?? "";
         testCase._originalHubSelectedRow = Browse.HubState.selected_row ?? 0;
         testCase._originalHubSelectedAction = Browse.HubState.selected_action ?? "";
+        testCase._originalHubSelectedItem = Browse.HubState.selected_item ?? "";
     }
 
     function init(): void {
@@ -102,8 +104,8 @@ TestCase {
         main.gamesScreen.lastNavigationInputAt = 0;
         main._firstRunIndexStarted = false;
         tryCompare(main, "transitionCueVisible", false);
-        // Hub focus is two rows now (categories + actions); reset both
-        // axes so a prior test's row-jump doesn't leak into the next.
+        // Hub focus is one flat grid now (categories then actions, no gap);
+        // reset it so a prior test's cursor jump doesn't leak into the next.
         main.hubScreen._focusArmed = false;
         main.hubScreen.resetFocus();
         // Cancel any in-flight dpad-repeat timer left over from a prior
@@ -138,6 +140,7 @@ TestCase {
         Browse.HubState.category = testCase._originalHubCategory;
         Browse.HubState.selected_row = testCase._originalHubSelectedRow;
         Browse.HubState.selected_action = testCase._originalHubSelectedAction;
+        Browse.HubState.selected_item = testCase._originalHubSelectedItem;
     }
 
     function test_media_screen_requests_sync_cover_size(): void {
@@ -182,8 +185,10 @@ TestCase {
     function test_initial_state_is_hub(): void {
         compare(main.activeScreen, main.screenHub);
         compare(main.hubScreen.visible, true);
-        compare(main.hubScreen.currentRow, 1, "Cold optimistic Hub should start on Resume");
-        compare(main.hubScreen.currentIndex, 0, "Resume is the first optimistic action");
+        const entry = main.hubScreen.items[main.hubScreen.currentIndex];
+        verify(entry !== undefined, "Cold optimistic Hub must land on a valid selection");
+        compare(entry.kind, "action");
+        compare(entry.id, "resume", "Cold optimistic Hub should start on Resume");
         compare(main.systemsScreen.visible, false);
         compare(main.gamesScreen.visible, false);
     }
@@ -338,8 +343,9 @@ TestCase {
     // systems loading transition and preserves the visible category
     // name instead of treating the row as empty.
     function test_enter_on_optimistic_hub_category_starts_systems_transition(): void {
-        main.hubScreen.currentRow = 0;
-        main.hubScreen.currentIndex = 0;
+        // Bootstrap order seeds Resume first (index 0), then the
+        // placeholder categories — see HubScreen.qml's `items`.
+        main.hubScreen.currentIndex = main.hubScreen._itemIndexForId("category", "Arcade");
         main.handleKey(Qt.Key_Return);
         compare(main.pendingTransition, "systems");
         compare(Browse.HubState.category, "Arcade");
@@ -361,13 +367,11 @@ TestCase {
         // wait behind the startup transition cue on slower test runs.
         const originalCatalogLoaded = Browse.CategoriesModel.loaded;
         Browse.CategoriesModel.loaded = true;
-        // qmllint disable compiler
         // Focus Update only when the build and current network state expose
         // it; otherwise Settings is the production empty-catalog fallback.
         const expectedAction = main.hubScreen._emptyCatalogFallbackAction;
-        main.hubScreen._focusAction(main.hubScreen._actionIndexForId(expectedAction));
-        compare(main.hubScreen.actionEntries[main.hubScreen.currentIndex].id, expectedAction);
-        // qmllint enable compiler
+        main.hubScreen.currentIndex = main.hubScreen._actionIndexForId(expectedAction);
+        compare(main.hubScreen.items[main.hubScreen.currentIndex].id, expectedAction);
         main.handleKey(Qt.Key_Return);
         compare(main.activeScreen, expectedAction === "update" ? main.screenUpdate : main.screenSettings);
         Browse.CategoriesModel.loaded = originalCatalogLoaded;
@@ -393,7 +397,6 @@ TestCase {
 
     function test_hub_favorites_action_uses_favorite_systems_mode(): void {
         Browse.Settings.set_favorites_grouping("system");
-        main.hubScreen.currentRow = 1;
         main.hubScreen.currentIndex = main.hubScreen._actionIndexForId("favorites");
         main.handleKey(Qt.Key_Return);
         compare(main.pendingTransition, "favorite_systems");
@@ -401,7 +404,6 @@ TestCase {
 
     function test_hub_favorites_action_uses_all_favorites_mode(): void {
         Browse.Settings.set_favorites_grouping("none");
-        main.hubScreen.currentRow = 1;
         main.hubScreen.currentIndex = main.hubScreen._actionIndexForId("favorites");
         main.handleKey(Qt.Key_Return);
         compare(main.pendingTransition, "favorites");
@@ -525,45 +527,218 @@ TestCase {
         compare(main.settingNeedsRestartModalVisible, false);
     }
 
-    // Cross-row mapping. The test harness has no live CategoriesModel
-    // so we can't drive the full handleAction("down") flow with real
-    // categories — instead we unit-test the pure arithmetic helper
-    // that owns the math. The shape verifies centered row mapping and
-    // a couple of degenerate cases.
-    function test_cross_row_4_over_2_down(): void {
-        const map = main.hubScreen._mapCrossRow;
-        compare(map(0, 4, 2), 0, "Down from top[0] (a) → bottom[0] (e)");
-        compare(map(1, 4, 2), 0, "Down from top[1] (b) → bottom[0] (e)");
-        compare(map(2, 4, 2), 1, "Down from top[2] (c) → bottom[1] (f)");
-        compare(map(3, 4, 2), 1, "Down from top[3] (d) → bottom[1] (f)");
+    // Tail-of-list padding (round 6 follow-up) replaces round <=5's
+    // hand-rolled "visually nearest cell" cross-row mapping (_mapCrossRow)
+    // AND round 6's original per-block row-padding (_padToColumns, which
+    // padded categories to a row boundary so actions always started
+    // fresh) — see HubScreen.qml's header comment for why grouping-padding
+    // was dropped. The flat grid's Up/Down is column-preserving regardless
+    // (see PagedGrid.moveSelection). _padToPageSize is the pure half of
+    // what fills out the *last page*: given an arbitrary list and a page
+    // size, it pads with isEmpty:true entries up to the next full page, so
+    // a page's trailing remainder renders as deliberate empty slots (see
+    // EmptySlot.qml) instead of a wasted mid-page gap or blank background.
+    function test_pad_to_page_size_fills_partial_page_with_empty_entries(): void {
+        const pad = main.hubScreen._padToPageSize;
+        const list = [
+            {
+                kind: "category",
+                id: "a"
+            },
+            {
+                kind: "category",
+                id: "b"
+            },
+            {
+                kind: "category",
+                id: "c"
+            }
+        ];
+        const padded = pad(list, 5, 0);
+        compare(padded.length, 5, "3 real entries pad to a full page of 5");
+        compare(padded[3].kind, "empty");
+        compare(padded[3].id, "");
+        compare(padded[3].isEmpty, true);
+        compare(padded[4].kind, "empty");
+        compare(padded[4].isEmpty, true);
     }
 
-    function test_cross_row_4_over_2_up(): void {
-        const map = main.hubScreen._mapCrossRow;
-        compare(map(0, 2, 4), 1, "Up from bottom[0] (e) → top[1] (b)");
-        compare(map(1, 2, 4), 2, "Up from bottom[1] (f) → top[2] (c)");
+    function test_pad_to_page_size_is_noop_on_exact_multiple(): void {
+        const pad = main.hubScreen._padToPageSize;
+        const list = [
+            {
+                kind: "category",
+                id: "a"
+            },
+            {
+                kind: "category",
+                id: "b"
+            }
+        ];
+        const padded = pad(list, 2, 0);
+        compare(padded, list, "an already-full page must not be padded");
     }
 
-    // 4-over-3 — the offset is 0.5,
-    // so Math.round's half-toward-+∞ rounds the boundary cells right.
-    function test_cross_row_4_over_3(): void {
-        const map = main.hubScreen._mapCrossRow;
-        compare(map(0, 4, 3), 0);
-        compare(map(1, 4, 3), 1);
-        compare(map(2, 4, 3), 2);
-        compare(map(3, 4, 3), 2, "Rightmost top clamps onto rightmost bottom");
+    // Round 2: an empty list now pads up to one full page instead of
+    // staying empty -- a seeded layout the user has emptied out entirely
+    // (every tile removed, trailing blanks trimmed by Rust) is a real,
+    // navigable empty Hub, not a broken zero-height grid; the padded page
+    // is what lets the cursor land somewhere and reach View -> Add item….
+    function test_pad_to_page_size_pads_an_empty_list_to_one_full_page(): void {
+        const pad = main.hubScreen._padToPageSize;
+        const padded = pad([], 5, 0);
+        compare(padded.length, 5);
+        compare(padded[0].isEmpty, true);
+        compare(padded[4].isEmpty, true);
     }
 
-    function test_cross_row_equal_counts_is_identity(): void {
-        const map = main.hubScreen._mapCrossRow;
-        compare(map(0, 3, 3), 0);
-        compare(map(1, 3, 3), 1);
-        compare(map(2, 3, 3), 2);
+    // `minPages` is a FLOOR on the total page count, not an increment on
+    // top of the natural page count (round 3 fix -- the original increment
+    // design kept receding a page further every time real content grew to
+    // reach a new Move target, producing unbounded page growth; see
+    // HubScreen.qml's `beginMove` doc comment). A floor already satisfied
+    // by the natural page count must be a strict no-op.
+    function test_pad_to_page_size_min_pages_is_a_floor_not_an_increment(): void {
+        const pad = main.hubScreen._padToPageSize;
+        const list = [
+            {
+                kind: "category",
+                id: "a"
+            },
+            {
+                kind: "category",
+                id: "b"
+            }
+        ];
+        // Already fills exactly 1 page at this size -- a floor of 1 must
+        // change nothing.
+        compare(pad(list, 2, 1), list, "a floor already satisfied must not pad further");
+        // A floor of 2/3 pages pads up to (and only to) that many pages.
+        compare(pad(list, 2, 2).length, 4);
+        compare(pad(list, 2, 3).length, 6);
+        // The floor applies to an empty list too, winning over the natural
+        // single-page default.
+        compare(pad([], 5, 2).length, 10);
     }
 
-    function test_cross_row_empty_destination_returns_zero(): void {
-        const map = main.hubScreen._mapCrossRow;
-        compare(map(2, 4, 0), 0, "Degenerate destCount=0 returns 0 — caller guards the no-op");
+    // Round 3 regression: `_syncGridModel` used to call `hubGridModel.
+    // clear()` on any length change, which drops the model to ZERO rows
+    // for an instant before repopulating it -- PagedGrid's
+    // `onItemCountChanged` reads that as "model shed rows" and clamps
+    // `currentIndex` to 0. Since arming Move itself changes `items`'
+    // padding target, this fired on every single `beginMove` call, before
+    // the first press even landed, resetting the held tracking to
+    // whichever tile happened to be at slot 0 regardless of what was
+    // actually focused. `beginMove` itself needs a real
+    // `Browse.HubLayout` entry (`hubIndex >= 0`) this suite deliberately
+    // never seeds -- seeding it here would permanently flip
+    // `is_unseeded()` to false for the rest of this test binary's run
+    // (there is no un-seed invokable), silently breaking every other
+    // bootstrap-branch test depending on file/function execution order.
+    // Toggling `moveArmed`/`_moveArmedTotalPages` directly reproduces the
+    // exact same length-change path `items` takes during a real session
+    // without needing that seed.
+    function test_grid_model_sync_survives_a_length_change_without_resetting_current_index(): void {
+        const hub = main.hubScreen;
+        // Comfortably away from slot 0 -- the bootstrap window always has
+        // at least 5 placeholder categories, so this is a real category
+        // tile regardless of live Resume/Update visibility state.
+        hub.currentIndex = 3;
+        hub.moveArmed = true;
+        hub._moveArmedTotalPages = 2;
+        compare(hub.currentIndex, 3, "arming (a length change) must not reset the cursor to slot 0");
+        hub.moveArmed = false;
+        hub._moveArmedTotalPages = 0;
+        compare(hub.currentIndex, 3, "disarming (a shrink) must not move an in-bounds cursor");
+    }
+
+    // Round 3: a held tile must never wrap around the grid's edges (Up at
+    // page 0's top row, Down at the last page's bottom row) even though
+    // ordinary navigation's closed loop does exactly that on purpose --
+    // see HubScreen.qml's `_wouldWrapVertically`/`_wouldWrapPage` doc
+    // comments. Pure geometry, so exercised directly without needing a
+    // seeded Browse.HubLayout (see the note above).
+    function test_would_wrap_vertically_blocks_only_the_true_top_and_bottom_edges(): void {
+        const hub = main.hubScreen;
+        hub.moveArmed = true;
+        hub._moveArmedTotalPages = 2;
+        const columns = Sizing.hubGridColumns;
+        const rows = Sizing.hubGridRows;
+        const pageSize = columns * rows;
+
+        hub.currentIndex = 0;
+        compare(hub._wouldWrapVertically(-1), true, "Up at page 0 row 0 must be blocked");
+        if (rows > 1)
+            compare(hub._wouldWrapVertically(1), false, "Down off row 0 must not be blocked when there's another row below");
+
+        // Page 0's last row is NOT the true bottom edge -- there's a
+        // second (reserve) page below it, so Down must cross onto it.
+        hub.currentIndex = (rows - 1) * columns;
+        compare(hub._wouldWrapVertically(1), false, "Down at the bottom of a non-last page must cross to the next page");
+
+        // Page 1 (the last page)'s last row IS the true bottom edge.
+        hub.currentIndex = pageSize + (rows - 1) * columns;
+        compare(hub._wouldWrapVertically(1), true, "Down at the last page's bottom row must be blocked");
+        compare(hub._wouldWrapVertically(-1), false, "Up off the last row must not be blocked when it isn't page 0's top row");
+
+        hub.moveArmed = false;
+        hub._moveArmedTotalPages = 0;
+    }
+
+    // Round 4: same guard, horizontal axis -- Left at column 0 (or Right at
+    // the last column) must not wrap within the row onto a synthetic
+    // padding cell and drag the held tile to the opposite edge. See
+    // HubScreen.qml's `_wouldWrapColumn` doc comment.
+    function test_would_wrap_column_blocks_only_the_true_left_and_right_edges(): void {
+        const hub = main.hubScreen;
+        hub.moveArmed = true;
+        hub._moveArmedTotalPages = 2;
+        const columns = Sizing.hubGridColumns;
+
+        hub.currentIndex = 0;
+        compare(hub._wouldWrapColumn(-1), true, "Left at column 0 must be blocked");
+        if (columns > 1)
+            compare(hub._wouldWrapColumn(1), false, "Right off column 0 must not be blocked when there's another column beyond it");
+
+        hub.currentIndex = columns - 1;
+        compare(hub._wouldWrapColumn(1), true, "Right at the last column must be blocked");
+        compare(hub._wouldWrapColumn(-1), false, "Left off the last column must not be blocked when it isn't column 0");
+
+        hub.moveArmed = false;
+        hub._moveArmedTotalPages = 0;
+    }
+
+    function test_would_wrap_page_blocks_only_the_first_and_last_page(): void {
+        const hub = main.hubScreen;
+        hub.moveArmed = true;
+        hub._moveArmedTotalPages = 2;
+        const pageSize = Sizing.hubGridColumns * Sizing.hubGridRows;
+
+        hub.currentIndex = 0;
+        compare(hub._wouldWrapPage(-1), true, "page_prev on the first page must be blocked");
+        compare(hub._wouldWrapPage(1), false, "page_next off the first page must not be blocked");
+
+        hub.currentIndex = pageSize;
+        compare(hub._wouldWrapPage(1), true, "page_next on the last page must be blocked");
+        compare(hub._wouldWrapPage(-1), false, "page_prev off the last page must not be blocked");
+
+        hub.moveArmed = false;
+        hub._moveArmedTotalPages = 0;
+    }
+
+    // Replaces round <=5's saved-index round-trip tests (_crossSavedIndex,
+    // _crossRow) — that machinery existed only because the two rows had
+    // different lengths and a centered visual map couldn't always return
+    // Up/Down to the originating tile. With one uniform grid both rows are
+    // the same width, so a round trip is simply "same column, other row";
+    // PagedGrid.moveSelection already guarantees this, with no saved state.
+    function test_up_down_round_trip_preserves_column(): void {
+        main.hubScreen.currentIndex = 2;
+        main.handleKey(Qt.Key_Down);
+        const afterDown = main.hubScreen.currentIndex;
+        verify(afterDown !== 2, "Down must actually move focus onto the other row");
+        main.handleKey(Qt.Key_Up);
+        compare(main.hubScreen.currentIndex, 2, "Down then Up must return to the exact same tile");
     }
 
     // _preferOverride is the pure half of the Hub override resolution: given
@@ -596,134 +771,187 @@ TestCase {
         }
     }
 
+    // _resolveZapScriptEntry's cover-key priority: an explicit icon
+    // override always wins, even over a linked game's own art -- the user
+    // asked for that icon specifically.
+    function test_resolve_zapscript_entry_prefers_icon_override(): void {
+        const entry = main.hubScreen._resolveZapScriptEntry("**launch.random:NES", "", "Dice", "NES", "/media/fat/games/NES/game.nes");
+        compare(entry.coverKey, main.hubScreen._hubCoverKey("Dice", "icons/File"));
+    }
+
+    // system+path together identify a LINKED GAME (the "add this game to
+    // the Hub" case) -- cover art must resolve through the same Core
+    // media lookup a Games-grid row uses, not a generic icon. The test
+    // path is deliberately never cached, so the real lookup's first-call
+    // contract (kick a fetch, answer "icons/Loading" in the meantime) is
+    // what proves the REAL lookup fired rather than falling through to
+    // the system-logo-only branch.
+    function test_resolve_zapscript_entry_looks_up_real_cover_for_a_linked_game(): void {
+        const entry = main.hubScreen._resolveZapScriptEntry("/media/fat/games/NES/_test_probe_never_cached.nes", "", "", "NES", "/media/fat/games/NES/_test_probe_never_cached.nes");
+        compare(entry.coverKey, "icons/Loading", "an uncached linked-game path must kick a real Core lookup, not fall back to a generic/system icon");
+    }
+
+    // `system` alone (no `path`) is a softer hint for a script with no
+    // single game to fetch art for (e.g. "launch a random game in this
+    // system") -- falls back to that system's logo, no Core lookup.
+    function test_resolve_zapscript_entry_falls_back_to_system_logo_without_a_path(): void {
+        const entry = main.hubScreen._resolveZapScriptEntry("**launch.random:NES", "", "", "NES", "");
+        compare(entry.coverKey, Browse.HubLayout.resolve_system_cover_key("NES"));
+    }
+
+    function test_resolve_zapscript_entry_generic_icon_with_no_hints(): void {
+        const entry = main.hubScreen._resolveZapScriptEntry("**launch.random:NES", "", "", "", "");
+        compare(entry.coverKey, "icons/File");
+    }
+
+    function test_resolve_zapscript_entry_name_falls_back_to_script_text(): void {
+        const entry = main.hubScreen._resolveZapScriptEntry("**launch.random:NES", "", "", "", "");
+        compare(entry.name, "**launch.random:NES");
+        const named = main.hubScreen._resolveZapScriptEntry("**launch.random:NES", "Random NES", "", "", "");
+        compare(named.name, "Random NES");
+    }
+
+    function test_resolve_zapscript_entry_empty_script_is_skipped(): void {
+        verify(main.hubScreen._resolveZapScriptEntry("", "", "", "", "") === null);
+    }
+
+    // system-kind tiles resolve name/cover through Browse.HubLayout's
+    // id-only lookups, independent of any live category row -- see that
+    // singleton's resolve_system_name/resolve_system_cover_key.
+    function test_resolve_system_entry_uses_overrides_when_set(): void {
+        const overridden = main.hubScreen._resolveSystemEntry("NES", "My NES", "Cartridge");
+        compare(overridden.name, "My NES");
+        compare(overridden.coverKey, main.hubScreen._hubCoverKey("Cartridge", "icons/File"));
+        const bare = main.hubScreen._resolveSystemEntry("NES", "", "");
+        compare(bare.name, Browse.HubLayout.resolve_system_name("NES"));
+        compare(bare.coverKey, Browse.HubLayout.resolve_system_cover_key("NES"));
+    }
+
+    function test_resolve_system_entry_empty_id_is_skipped(): void {
+        verify(main.hubScreen._resolveSystemEntry("", "", "") === null);
+    }
+
+    // Folders are addressed by path (GamesState.path_stack's own scheme);
+    // the display name falls back to the path's final segment.
+    function test_resolve_folder_entry_name_falls_back_to_final_path_segment(): void {
+        const entry = main.hubScreen._resolveFolderEntry("/media/fat/games/SNES/Homebrew", "", "");
+        compare(entry.name, "Homebrew");
+        compare(entry.path, "/media/fat/games/SNES/Homebrew");
+        const named = main.hubScreen._resolveFolderEntry("/media/fat/games/SNES/Homebrew", "My Folder", "");
+        compare(named.name, "My Folder");
+    }
+
+    function test_resolve_folder_entry_empty_path_is_skipped(): void {
+        verify(main.hubScreen._resolveFolderEntry("", "", "") === null);
+    }
+
     // The same invariant one level up, on what the Hub actually renders. A
     // resolver regression that only bites a subset of ids would slip past the
     // direct test above; an empty coverKey here is a guaranteed blank tile.
+    // Robust to whichever state Browse.HubLayout happens to be in (bootstrap
+    // placeholders or a real seeded layout) -- every real (non-"empty",
+    // i.e. non-padding) entry must carry a cover key either way.
     function test_hub_entries_all_carry_a_cover_key(): void {
-        const entries = main.hubScreen.visibleCategoryEntries.concat(main.hubScreen.actionEntries);
-        verify(entries.length > 0, "the Hub always has placeholder categories and actions");
+        const entries = main.hubScreen.items.filter(entry => entry.kind !== "empty");
+        verify(entries.length > 0, "the Hub always has at least categories and actions");
         for (let i = 0; i < entries.length; ++i)
             verify(entries[i].coverKey !== "", "empty coverKey on Hub entry " + entries[i].id);
     }
 
-    // Up on the top row wraps onto the bottom row (the two rows form a
-    // closed loop). Test harness has no live categories, so we start
-    // at top[0] and just verify currentRow flipped — the destination
-    // index is verified by the _mapCrossRow tests above.
+    // Up on the top row wraps to the grid's LAST row, same column (the
+    // grid's rows form a closed loop — see PagedGrid.moveSelection). With
+    // grouping-padding dropped, that last row is whatever real item or
+    // trailing empty slot (`_padToPageSize`) sits there — not necessarily
+    // an action — so this asserts the actual mechanical guarantee (column
+    // preserved, wraps to `rows - 1`) rather than assuming content shape.
     function test_up_on_top_row_wraps_to_bottom_row(): void {
-        main.hubScreen.currentRow = 0;
         main.hubScreen.currentIndex = 0;
         main.handleKey(Qt.Key_Up);
-        compare(main.hubScreen.currentRow, 1, "Up from top should wrap to bottom row");
+        const expected = (Sizing.hubGridRows - 1) * Sizing.hubGridColumns;
+        compare(main.hubScreen.currentIndex, expected, "Up from column 0's top row must wrap to the same column on the last row");
     }
 
-    // Bottom row wraps left/right. During optimistic boot the Hub has
-    // four placeholder categories and four actions (Resume still
-    // visible until history proves otherwise), so Down from top[0]
-    // lands at bottom[0].
+    // Right/Left wrap within whatever row the first action tile sits on —
+    // true regardless of where that is now that the layout can freely
+    // interleave any kind (no more fixed category/action block boundary;
+    // `_firstItemIndexOfKind` searches for wherever it actually landed —
+    // the bootstrap order seeds Resume before every placeholder category,
+    // so that's index 0 in this harness, but the test doesn't assume that).
+    // The row's last slot may be a real tile or a trailing `_padToPageSize`
+    // empty slot depending on how many entries are visible; either way it's
+    // `rowStart + columns - 1` (clamped to `items.length - 1`), same math
+    // PagedGrid.moveSelection itself uses for a within-row wrap.
     function test_bottom_row_right_wraps_to_first(): void {
-        main.hubScreen.currentRow = 0;
-        main.hubScreen.currentIndex = 0;
-        main.handleKey(Qt.Key_Down);
-        compare(main.hubScreen.currentRow, 1);
-        main.hubScreen.currentIndex = main.hubScreen.actionEntries.length - 1;
+        const firstActionIndex = main.hubScreen._firstItemIndexOfKind("action");
+        verify(firstActionIndex >= 0, "test bug: the Hub always has at least one action tile");
+        const columns = Sizing.hubGridColumns;
+        const rowStart = Math.floor(firstActionIndex / columns) * columns;
+        const rowEnd = Math.min(main.hubScreen.items.length - 1, rowStart + columns - 1);
+        main.hubScreen.currentIndex = rowEnd;
         main.handleKey(Qt.Key_Right);
-        compare(main.hubScreen.currentIndex, 0, "Right at last bottom-row index wraps to first");
+        compare(main.hubScreen.currentIndex, rowStart, "Right at the actions row's last column wraps to its first");
     }
 
     function test_bottom_row_left_wraps_to_last(): void {
-        main.hubScreen.currentRow = 0;
-        main.hubScreen.currentIndex = 0;
-        main.handleKey(Qt.Key_Down);
-        compare(main.hubScreen.currentRow, 1);
-        main.hubScreen.currentIndex = 0;
+        const firstActionIndex = main.hubScreen._firstItemIndexOfKind("action");
+        verify(firstActionIndex >= 0, "test bug: the Hub always has at least one action tile");
+        const columns = Sizing.hubGridColumns;
+        const rowStart = Math.floor(firstActionIndex / columns) * columns;
+        const rowEnd = Math.min(main.hubScreen.items.length - 1, rowStart + columns - 1);
+        main.hubScreen.currentIndex = rowStart;
         main.handleKey(Qt.Key_Left);
-        compare(main.hubScreen.currentIndex, main.hubScreen.actionEntries.length - 1, "Left at first bottom-row index wraps to last");
+        compare(main.hubScreen.currentIndex, rowEnd, "Left at the actions row's first column wraps to its last");
     }
 
-    // Cross-row round-trip. With unequal row counts, the centered
-    // visual-nearest map can't always return Up/Down to the tile a
-    // previous cross originated from. The fix is `_crossSavedIndex`:
-    // each cross saves the source-row index, the next cross restores
-    // it, any horizontal input on the destination row invalidates it.
-
-    // After Down from top[0], the saved index must hold 0 so the next
-    // Up can return there. `_mapCrossRow(0, topCount=0, bottomCount)`
-    // chooses the centered action-row landing.
-    function test_cross_row_arms_saved_source_index(): void {
-        main.hubScreen.currentRow = 0;
-        main.hubScreen.currentIndex = 0;
-        main.handleKey(Qt.Key_Down);
-        compare(main.hubScreen.currentRow, 1);
-        compare(main.hubScreen._crossSavedIndex, 0, "Down from top[0] must save 0 for the round-trip back");
+    // page_prev/page_next (L/R shoulder) were entirely unhandled on the Hub
+    // before this round — every other paged screen supports them, and
+    // Hub paging is now the normal case once grouping-padding is gone (see
+    // HubScreen.qml's header comment). This harness's real content (5
+    // placeholder categories + built-in actions) fits in a single page at
+    // the 720 tier, so pageBy() itself returns false (exhaustively covered
+    // for every wrap/clamp case in tst_paged_grid.qml already) — this test
+    // locks in that the new branches exist and are a safe no-op rather
+    // than an unhandled action or a crash.
+    function test_page_prev_and_page_next_are_wired_and_safe_on_a_single_page(): void {
+        const hub = main.hubScreen;
+        hub.currentIndex = 2;
+        const before = Browse.HubState.selected_item;
+        main.handleKey(Qt.Key_PageUp);
+        compare(hub.currentIndex, 2, "page_prev on a single-page Hub must not move the cursor");
+        compare(Browse.HubState.selected_item, before, "a no-op page turn must not commit new HubState");
+        main.handleKey(Qt.Key_PageDown);
+        compare(hub.currentIndex, 2, "page_next on a single-page Hub must not move the cursor");
+        compare(Browse.HubState.selected_item, before, "a no-op page turn must not commit new HubState");
     }
 
-    // Horizontal input on the destination row clears the saved index
-    // — the user has now committed to navigating within the new row,
-    // so the next cross should fall back to the centered visual map.
-    function test_cross_row_horizontal_input_clears_saved_index(): void {
-        main.hubScreen.currentRow = 0;
-        main.hubScreen.currentIndex = 0;
-        main.handleKey(Qt.Key_Down);
-        compare(main.hubScreen._crossSavedIndex, 0);
-        main.handleKey(Qt.Key_Left);
-        compare(main.hubScreen._crossSavedIndex, -1, "Left on the destination row must invalidate the round-trip");
+    // Round 6 follow-up: header->grid, grid->activeLabel, and
+    // activeLabel->help-bar must all be the same gap. Previously the grid
+    // and activeLabel were centered as one block with a fixed pctH(3) gap
+    // between them, which only made the two OUTER gaps equal to each other
+    // (a side effect of centering) — never to the fixed inner one.
+    function test_hub_vertical_gaps_are_equal(): void {
+        const hub = main.hubScreen;
+        const headerToGrid = hub._blockY - Sizing.headerBottom;
+        const gridToLabel = hub._verticalGap;
+        const labelBottom = hub._blockY + hub._gridHeight + hub._verticalGap + hub._activeLabelHeight;
+        const helpBarTop = hub.height - Sizing.pctH(6);
+        const labelToHelpBar = helpBarTop - labelBottom;
+        // Allow a 2px rounding tolerance -- the gap is one rounded
+        // division across the band, not three independently distributed
+        // pixel remainders (docs/style.md's "Grid cell rounding" accepts
+        // the same class of small asymmetry elsewhere).
+        verify(Math.abs(headerToGrid - gridToLabel) <= 2, "header->grid (" + headerToGrid + ") and grid->label (" + gridToLabel + ") gaps must match");
+        verify(Math.abs(gridToLabel - labelToHelpBar) <= 2, "grid->label (" + gridToLabel + ") and label->help-bar (" + labelToHelpBar + ") gaps must match");
     }
 
-    // Mouse focus is a deliberate landing on a specific tile, same
-    // intent as a horizontal arrow press — clear the saved index so a
-    // later Up doesn't snap back to a row the user already left.
-    function test_cross_row_mouse_focus_clears_saved_index(): void {
-        main.hubScreen.currentRow = 0;
-        main.hubScreen.currentIndex = 0;
-        main.handleKey(Qt.Key_Down);
-        compare(main.hubScreen._crossSavedIndex, 0);
-        main.hubScreen._focusAction(0);
-        compare(main.hubScreen._crossSavedIndex, -1, "Mouse focus on an action tile must invalidate the round-trip");
-    }
-
-    // Restore path: when `_crossSavedIndex` is armed and within the
-    // destination row's bounds, `_crossRow` uses it directly instead
-    // of the centered visual map. The test harness has no live
-    // categories, so we drive `_crossRow` synthetically with a
-    // pretend top index whose visual map would land somewhere
-    // unrelated, then verify the restore won.
-    function test_cross_row_uses_saved_index_over_visual_map(): void {
-        main.hubScreen.currentRow = 0;
-        main.hubScreen.currentIndex = 7;
-        main.hubScreen._crossSavedIndex = 1;
-        const moved = main.hubScreen._crossRow();
-        verify(moved, "_crossRow with non-empty destination must move");
-        compare(main.hubScreen.currentRow, 1, "Cross flips to the other row");
-        compare(main.hubScreen.currentIndex, 1, "Saved index 1 wins over the visual map");
-        compare(main.hubScreen._crossSavedIndex, 7, "After the cross, the saved index points back to the source");
-    }
-
-    // Saved index that points past the destination row's count is
-    // ignored — the destination layout may have changed since we
-    // crossed away. Falls back to the visual map.
-    function test_cross_row_out_of_range_saved_index_falls_back(): void {
-        main.hubScreen.currentRow = 0;
-        main.hubScreen.currentIndex = 0;
-        main.hubScreen._crossSavedIndex = 99;
-        const moved = main.hubScreen._crossRow();
-        verify(moved);
-        compare(main.hubScreen.currentRow, 1);
-        // The out-of-range saved index (99) must be ignored; focus falls
-        // back to a valid centered action-row index rather than the bogus
-        // value.
-        verify(main.hubScreen.currentIndex >= 0 && main.hubScreen.currentIndex < main.hubScreen.actionEntries.length, "Out-of-range saved index falls back to the visual map");
-    }
-
-    // resetFocus is the test-harness reset and the cold-launch state.
-    // It must clear the round-trip arm so a prior test's saved index
-    // can't leak into the next case.
-    function test_reset_focus_clears_saved_index(): void {
-        main.hubScreen._crossSavedIndex = 2;
+    // resetFocus is the test-harness reset and the cold-launch state — it
+    // must always land on Resume regardless of where focus was before.
+    function test_reset_focus_seats_on_resume(): void {
+        main.hubScreen.currentIndex = 2;
         main.hubScreen.resetFocus();
-        compare(main.hubScreen.currentRow, 1);
-        compare(main.hubScreen.currentIndex, 0);
-        compare(main.hubScreen._crossSavedIndex, -1);
+        const entry = main.hubScreen.items[main.hubScreen.currentIndex];
+        compare(entry.kind, "action");
+        compare(entry.id, "resume");
     }
 
     // Hold-to-repeat (dpad). The repeat state machine is driven by
@@ -895,28 +1123,23 @@ TestCase {
     // Category index/scrape are gated on the category having at least one
     // indexable (non-launch-only) system. The test Core is empty, so
     // SystemsModel.system_ids_for_category returns nothing and the gate must
-    // omit the dead actions, leaving only Hide/Unhide. The positive branch
-    // (a mixed or fully-launchable category) is covered at the data layer by
-    // the Rust `indexable_system_ids` tests, which the empty test model can't
-    // exercise here.
+    // omit the dead actions — categories have no Hide/Unhide entry any more
+    // (the Hub is a persisted layout now, Browse.HubLayout; removing a
+    // category tile is a layout edit — see docs/plans/ui-geometry-refresh.md's
+    // Hub roadmap), so a category with nothing indexable has NO entries at
+    // all. The positive branch (a mixed or fully-launchable category) is
+    // covered at the data layer by the Rust `indexable_system_ids` tests,
+    // which the empty test model can't exercise here.
     function test_context_menu_categories_empty_category_omits_index_scrape(): void {
         // Empty category short-circuits the gate (category !== "").
         const entries = main.buildContextMenuEntries("categories", "", false, false, false, "", false, "");
-        compare(_idsOf(entries), ["toggle_hide_category"], "Empty category has no indexable systems, so index/scrape are omitted");
+        compare(_idsOf(entries), [], "Empty category has no indexable systems and no hide entry, so the menu is empty");
     }
 
     function test_context_menu_categories_no_indexable_systems_omits_index_scrape(): void {
         // Non-empty category whose model yields no indexable systems.
         const entries = main.buildContextMenuEntries("categories", "", false, false, false, "", false, "Other");
-        compare(_idsOf(entries), ["toggle_hide_category"], "A category with no indexable systems must not show index/scrape");
-    }
-
-    function test_context_menu_categories_hidden_label_toggles(): void {
-        const hideEntries = main.buildContextMenuEntries("categories", "", false, false, false, "", false, "Other");
-        const unhideEntries = main.buildContextMenuEntries("categories", "", false, false, false, "", true, "Other");
-        compare(hideEntries[0].id, "toggle_hide_category");
-        compare(unhideEntries[0].id, "toggle_hide_category");
-        verify(hideEntries[0].label !== unhideEntries[0].label, "Hide/Unhide label flips on isHidden");
+        compare(_idsOf(entries), [], "A category with no indexable systems and no hide entry has an empty menu");
     }
 
     function test_context_menu_games_directory_returns_empty(): void {

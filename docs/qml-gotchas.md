@@ -245,6 +245,39 @@ scale forced its pixmap to be bilinear-filtered on every rendered frame,
 compounding across focus moves. That is the pattern being banned; the
 one-shot transients above do not share that cost profile.
 
+### The one continuous exception: ProgressTrack's leading-cell blink
+
+`ProgressTrack.qml` (the header status line's segmented progress bar,
+replacing `CoreStatusPill`'s old 4-dot spinner) blinks whichever cell sits
+at the fill's leading edge (or the marching cell in indeterminate mode) for
+as long as a background task is active. This is not one-shot, and it is
+deliberately the only cue in the app that isn't:
+
+| Cue | Why it still qualifies |
+|---|---|
+| `ProgressTrack` leading-cell blink (`Motion.pulseMs` ≈ 2 Hz, loops while active) | Header chrome only — never painted over a grid or list. Dirty rect is one small `Sizing.radiusSm` cell. Gated on the task actually running and not paused (`running: root._pulsing`, itself `root.active && !root.paused && Motion.enabled`), so it is inert whenever nothing is happening. Stops outright under Reduce Motion rather than collapsing to a 0 ms loop, matching `Tile.qml`'s `interval: Motion.dur(650)` double-gating precedent (`Motion.dur()` on the duration *and* `Motion.enabled` in `running`) |
+
+It is a genuine blink, not a fade: a plain `Timer` flips a bool
+(`root._blinkOn`) every `Motion.pulseMs`, and the cell's `color` reads that
+bool straight through — `cell._isPulseCell ? (root._blinkOn ? Theme.accent :
+Theme.borderSubtle) : ...`. No `ColorAnimation`, no `Behavior on color`,
+nothing interpolated. Each tick is a single solid-color repaint of one cell,
+the same instant-swap idiom `SelectionBar`'s inverse-video flash already
+uses for its own one-shot cue (`PropertyAction`, not an animated transition)
+— this just repeats it on a timer instead of firing once.
+
+The distinction from the one-shot cues above is why it needs its own
+exemption argument rather than sliding under the same table: those cues
+fire once at a state-change moment and return to a static scene; this one
+repeats for as long as its task does. It still fits the cost model this
+whole section is built on — small dirty rect, cheap per-pixel content (a
+solid-fill `Rectangle`, no interpolation to compute), never composited over
+busy content — so the "persistent motion" ban is about *scale and
+location* (a scale/fade over many delegates or a busy grid), not about
+repetition. A single small cell blinking in otherwise-static header chrome
+was never the expensive case the rule exists to prevent. See
+`docs/style.md` → "Header status line" for the full design writeup.
+
 ### Motion tokens and the reduce-motion convention
 
 All animation durations in QML go through the `Motion` singleton in
@@ -281,9 +314,14 @@ Token summary (`Motion.qml`):
 |---|---|---|
 | `pressMs` | 80 | Physical press or row inverse-blink cue |
 | `settleMs` | 110 | Release leg; toggle-knob slide |
+| `pulseMs` | 250 | `ProgressTrack` leading-cell blink, on/off hold time (~2 Hz full cycle) |
 
-Both durations sit just above MiSTer's frame-budget floor (~3 frames at
-~30fps); see the comments in `Motion.qml` before lowering them.
+`pressMs`/`settleMs` sit just above MiSTer's frame-budget floor (~3 frames at
+~30fps); see the comments in `Motion.qml` before lowering them. `pulseMs`
+isn't bound by that floor the same way — it's a hard on/off cut, not
+tracked positional motion — its value comes from matching a deliberately
+snappy, "still alive" cadence instead; see the exception writeup above before
+changing it.
 
 Pulse counter pattern (how hosts trigger tile cues without coupling to
 animation internals): the host increments the `activatePulse` int property

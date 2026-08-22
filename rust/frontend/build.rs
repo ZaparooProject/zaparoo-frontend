@@ -19,6 +19,7 @@ const MODEL_FILES: &[&str] = &[
     "src/models/app_state.rs",
     "src/models/build_info.rs",
     "src/models/app_status.rs",
+    "src/models/hub_layout.rs",
     "src/models/hub_state.rs",
     "src/models/image_overrides.rs",
     "src/models/systems_state.rs",
@@ -34,6 +35,7 @@ const MODEL_FILES: &[&str] = &[
     "src/models/recents_state.rs",
     "src/models/runtime.rs",
     "src/models/settings.rs",
+    "src/models/status_events.rs",
     "src/models/system_launchers.rs",
     "src/models/system_status.rs",
 ];

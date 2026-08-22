@@ -48,6 +48,10 @@ QtObject {
     readonly property color markerOutline: _palette.markerOutline
     readonly property string errorHex: _palette.errorHex
     readonly property color error: errorHex
+    // QR quiet-zone (light) and module (dark) colors — see ColorSchemes.qml
+    // -> palette()'s comment and docs/style.md -> "Themed QR codes".
+    readonly property color qrLight: _palette.qrLight
+    readonly property color qrDark: _palette.qrDark
     // Fonts
     readonly property string fontUi: bitmapType ? "MxPlus HP 100LX 6x8" : "Noto Sans"
     readonly property string fontMono: bitmapType ? "MxPlus HP 100LX 6x8" : "monospace"

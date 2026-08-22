@@ -103,6 +103,9 @@ Item {
     // inactive (off-screen). Used to raise a held face before the screen is
     // shown again.
     readonly property bool delegateSettling: parent.settling ?? false
+    // True while the host has picked this tile up for a reorder (the Hub's
+    // Options -> Move). Defaults false for hosts that do not wire it.
+    readonly property bool delegateHeld: parent.held ?? false
     // `focusReady` gates whether this tile renders its focused styling at all
     // (ring + focused cover ramp). The host leaves it false until the screen's
     // focus index is finalized
@@ -230,8 +233,57 @@ Item {
     // involved.
     property bool _pressed: false
     // Public read for PagedGrid's placeholder surface, which sits behind the
-    // asynchronously loaded Tile and must leave the same top gap while pressed.
+    // asynchronously loaded Tile and must leave the same top gap while
+    // pressed. Held does not touch this — see `delegateHeld`'s doc comment;
+    // held blinks the whole tile out of existence, not a face/edge change,
+    // so it must not claim the pressed face gap.
     readonly property bool cardPressed: root._pressed
+
+    // Held cue (Options -> Move) — and ONLY this: the WHOLE tile blinks
+    // completely out of existence and back — no color, no tint, not even
+    // the background color; genuinely nothing painted there for that
+    // instant, including the focus ring, then the tile returns exactly as
+    // it was. Nothing else changes: no lift, no face/edge recolor, no
+    // other animation. A hard on/off cut at ~0.77 Hz, well under the 3 Hz
+    // WCAG flash-safety threshold, and well within the "small area"
+    // exception even covering the whole tile (one Hub tile is a small
+    // fraction of the screen) — rate and area are the safety factors, not
+    // the transition style.
+    //
+    // Implemented as `root.opacity` toggling between exactly 0 and exactly
+    // 1, never animated (no `Behavior`) — opacity cascades to every child,
+    // so this alone takes the cover art, caption, AND focus ring with it,
+    // with no second mechanism needed. Deliberately `opacity`, not
+    // `visible`: a `visible: <bound expression>` binding on a plain
+    // Rectangle did not reliably reflect changes in testing (root cause
+    // not identified — smelled like a Qt Quick Compiler quirk specific to
+    // `visible` bindings; an otherwise identical `opacity` binding on the
+    // same item updated correctly), so `opacity` is used everywhere a hard
+    // binary visibility cut is needed here. 0/1 with no interpolation is
+    // the same hard cut either way — nothing paints at 0, fully opaque at
+    // 1, never anything between.
+    //
+    // `Motion.enabled: false` shows the tile normally (opacity 1) instead
+    // of blinking — freezing on "invisible" would hide the very thing a
+    // reduce-motion user needs to see, and there is no static middle state
+    // for a disappear/reappear cue the way a color has a restable "on"
+    // value. The screen-level move-mode indicator (MainLayout's help bar)
+    // and the fact that the cursor tracks the held tile exactly are what
+    // carry the meaning for reduce-motion users instead.
+    property bool _heldBlinkOn: true
+    readonly property real _heldOpacity: {
+        if (!root.delegateHeld || !Motion.enabled)
+            return 1;
+        return root._heldBlinkOn ? 1 : 0;
+    }
+    opacity: root._heldOpacity
+    Timer {
+        interval: Motion.dur(650)
+        running: root.delegateHeld && Motion.enabled
+        repeat: true
+        onTriggered: root._heldBlinkOn = !root._heldBlinkOn
+    }
+    onDelegateHeldChanged: root._heldBlinkOn = true
 
     // Ignore construction-time pulse resolution. `_mounted` flips one event
     // loop after completion, once delegate bindings have settled, so only a

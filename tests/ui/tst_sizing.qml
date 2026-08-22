@@ -245,13 +245,7 @@ TestCase {
     // resolution tier, including "crt" which the semantic-tier table above
     // doesn't exercise.
     function test_radius_ladder_stays_within_baked_corner_mask_range(): void {
-        const resolutions = [
-            [320, 240],
-            [640, 480],
-            [960, 540],
-            [1280, 720],
-            [1920, 1080]
-        ];
+        const resolutions = [[320, 240], [640, 480], [960, 540], [1280, 720], [1920, 1080]];
         for (const [w, h] of resolutions) {
             setResolution(w, h);
             verify(Sizing.radiusMd >= 1 && Sizing.radiusMd <= 16, "radiusMd out of baked corner mask range at " + w + "x" + h);
@@ -316,6 +310,61 @@ TestCase {
         }
     }
 
+    // Hub grid shape (round 6, item 7; row count corrected in the round 6
+    // follow-up — see Sizing.qml's `hubGridShape` comment) — a fixed
+    // per-tier table, unlike systemsGridShape/gamesGridShape above.
+    // Verifies both the table's values AND the property that actually
+    // matters for a hand-arranged Hub layout: it must NOT move with
+    // viewport width the way the adaptive browse-grid shapes do.
+    function test_hub_grid_shape_is_fixed_per_tier_not_viewport(): void {
+        const cases = [
+            {
+                "w": 320,
+                "h": 240,
+                "columns": 3,
+                "rows": 2
+            },
+            {
+                "w": 640,
+                "h": 480,
+                "columns": 4,
+                "rows": 2
+            },
+            {
+                "w": 960,
+                "h": 540,
+                "columns": 7,
+                "rows": 3
+            },
+            {
+                "w": 1280,
+                "h": 720,
+                "columns": 7,
+                "rows": 3
+            },
+            {
+                "w": 1920,
+                "h": 1080,
+                "columns": 7,
+                "rows": 3
+            }
+        ];
+        for (const entry of cases) {
+            setResolution(entry.w, entry.h);
+            compare(Sizing.hubGridColumns, entry.columns, entry.w + "x" + entry.h);
+            compare(Sizing.hubGridRows, entry.rows, entry.w + "x" + entry.h);
+        }
+
+        // Same tier ("720"), two very different widths -- columns must not
+        // move. systemsGridColumns/gamesGridColumns are explicitly allowed
+        // to differ here; hubGridColumns must not, by design.
+        setResolution(1280, 720);
+        const narrowColumns = Sizing.hubGridColumns;
+        setResolution(3000, 720);
+        compare(Sizing.hubGridColumns, narrowColumns, "hub grid shape must not fit to viewport width");
+        compare(Sizing.tier, "720");
+    }
+
     function test_nonstandard_scene_uses_adaptive_grid_scorer(): void {
         setResolution(1000, 600);
         const shape = Sizing.gamesGridShape(1000, 405);
@@ -340,6 +389,8 @@ TestCase {
         compare(Sizing.fontSmall, Sizing.fontSize(2.2));
         compare(Sizing.systemsGridColumns, 3);
         compare(Sizing.systemsGridRows, 3);
+        compare(Sizing.hubGridColumns, 3);
+        compare(Sizing.hubGridRows, 2);
         compare(Sizing.swapPercentageAxes, false);
         compare(Sizing.screenHeight, crtSafeHeight(240));
         const declaredGames = Sizing._declaredGridShape("games");

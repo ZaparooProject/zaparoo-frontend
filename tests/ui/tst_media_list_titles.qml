@@ -60,7 +60,8 @@ TestCase {
             "coverKey": "",
             "favorite": 0,
             "hidden": false,
-            "disambiguatingTags": ""
+            "disambiguatingTags": "",
+            "isEmpty": false
         });
         mediaModel.append({
             "name": "D (Disc 2)",
@@ -68,7 +69,8 @@ TestCase {
             "coverKey": "",
             "favorite": 0,
             "hidden": false,
-            "disambiguatingTags": ""
+            "disambiguatingTags": "",
+            "isEmpty": false
         });
         mediaModel.append({
             "name": "Friendly Alias",
@@ -76,7 +78,8 @@ TestCase {
             "coverKey": "",
             "favorite": 0,
             "hidden": false,
-            "disambiguatingTags": ""
+            "disambiguatingTags": "",
+            "isEmpty": false
         });
         tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
         screen.mediaGrid.setCurrentIndexImmediate(0);
@@ -137,7 +140,8 @@ TestCase {
             "coverKey": "",
             "favorite": 0,
             "hidden": false,
-            "disambiguatingTags": "US"
+            "disambiguatingTags": "US",
+            "isEmpty": false
         });
         const idx = mediaModel.count - 1;
         tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);

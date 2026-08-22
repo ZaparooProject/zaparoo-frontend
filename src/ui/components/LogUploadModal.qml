@@ -131,65 +131,12 @@ Item {
                 visible: modal.phase === modal._stateSuccess
                 height: visible ? qrHolder.height + urlText.height + Sizing.pctH(2) : 0
 
-                readonly property int matrixSize: Browse.QrCode.size
-                readonly property int quietZone: 4
-                readonly property int maxQrPixels: Math.min(Sizing.pctW(38), Sizing.pctH(54))
-                readonly property int moduleSize: matrixSize > 0 ? Math.max(1, Math.floor(maxQrPixels / (matrixSize + quietZone * 2))) : 1
-                readonly property int qrPixels: moduleSize * (matrixSize + quietZone * 2)
-
-                Rectangle {
+                QrMatrix {
                     id: qrHolder
 
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
-                    width: successBlock.qrPixels
-                    height: successBlock.qrPixels
-                    color: "white"
-                    border.width: Sizing.stroke(successBlock.moduleSize * 0.18)
-                    border.color: Theme.borderSubtle
-
-                    Item {
-                        id: matrix
-
-                        x: Sizing.center(parent.width, width)
-                        y: Sizing.center(parent.height, height)
-                        width: successBlock.moduleSize * successBlock.matrixSize
-                        height: successBlock.moduleSize * successBlock.matrixSize
-                        visible: successBlock.matrixSize > 0
-
-                        Repeater {
-                            model: successBlock.matrixSize
-
-                            delegate: Item {
-                                id: rowDelegate
-
-                                required property int index
-
-                                readonly property int row: index
-                                readonly property string bits: Browse.QrCode.row_at(row)
-
-                                x: 0
-                                y: row * successBlock.moduleSize
-                                width: matrix.width
-                                height: successBlock.moduleSize
-
-                                Repeater {
-                                    model: successBlock.matrixSize
-
-                                    delegate: Rectangle {
-                                        required property int index
-
-                                        x: index * successBlock.moduleSize
-                                        y: 0
-                                        width: successBlock.moduleSize
-                                        height: successBlock.moduleSize
-                                        color: "black"
-                                        visible: rowDelegate.bits.charAt(index) === "1"
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    maxQrPixels: Math.min(Sizing.pctW(38), Sizing.pctH(54))
                 }
 
                 Text {

@@ -119,7 +119,6 @@ Item {
     // stricter ready-only gate.
     property bool pageMenuEnabledWhenEmpty: false
     property bool showTopStrip: true
-    property bool showBottomStatusRow: false
     property bool activeLabelAtBottom: false
     property bool suppressSelectionPersist: false
     property int gridBottomMargin: Sizing.pctH(15)
@@ -138,14 +137,18 @@ Item {
     // matching SystemsScreen.
     property bool gridShowCaption: true
     property bool pageLoadingVisible: false
+    // Footer left-corner count text (e.g. "%1 files"). Empty (the
+    // default -- Favorites/Recents leave it unset) simply leaves that
+    // slot blank; there is no visibility gate to wire up. The right
+    // corner is the built-in PageIndicator below, driven directly off
+    // `mediaGrid`'s own page state -- no per-screen text override needed.
     property string bottomStatusLeftText: ""
-    property string bottomStatusRightText: ""
     property int gridTotalItemsOverride: -1
     property bool gridHasMorePages: false
     property bool gridLoadingMore: false
     // False for cursor-based queries that cannot know their final page until
-    // the cursor is exhausted. Hides growing denominators/scroll thumbs while
-    // retaining current-page text and directional arrows.
+    // the cursor is exhausted. Hides a growing denominator while retaining
+    // current-page text and the chevrons.
     property bool paginationTotalKnown: true
     readonly property bool _listRapidLineMove: root._listLayout && (root.detailRapidScrollAction === "up" || root.detailRapidScrollAction === "down")
     readonly property bool _showRapidScrollIndicator: root.detailRapidIndicatorActive && !root._listRapidLineMove
@@ -512,8 +515,15 @@ Item {
         currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : mediaGrid.currentPage
         totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize))
         pageTotalKnown: root.paginationTotalKnown
-        totalText: typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root._listLayout ? "" : (root._count() > 0 ? qsTr("%1 entries").arg(root._count()) : ""))
+        // Grid layout is title-only here regardless of what a provider
+        // computes -- the count and page cue both live in the footer
+        // instead (see the ActiveLabel/PageIndicator row below), so
+        // nothing about this strip changes when the grid's page count
+        // changes. List layout keeps each screen's own provider (or the
+        // generic fallback) exactly as before.
+        totalText: !root._listLayout ? "" : (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root._count() > 0 ? qsTr("%1 entries").arg(root._count()) : ""))
         rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : (!root.paginationTotalKnown || !root._listLayout || mediaGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(mediaGrid.currentIndex + 1).arg(Math.max(1, root._count())))
+        showPageCounter: root._listLayout
     }
 
     BrowseListDetailView {
@@ -621,6 +631,12 @@ Item {
         onPageWheelRequested: delta => root.handleAction(delta > 0 ? "page_next" : "page_prev")
     }
 
+    // Footer row — active item caption (center), an optional count
+    // (left, screen-supplied text), and a page cue (right,
+    // PageIndicator driven directly off `mediaGrid`'s own page state —
+    // see that component's doc comment). All three slots are reserved
+    // unconditionally; only their contents toggle, so nothing here
+    // shifts or resizes when the grid's page count changes.
     ActiveLabel {
         id: activeLabel
         visible: !root._gateHide && !root._listLayout && root.renderGridLayout
@@ -630,6 +646,7 @@ Item {
         anchors.bottom: root.activeLabelAtBottom ? parent.bottom : undefined
         anchors.bottomMargin: root.activeLabelAtBottom ? root.activeLabelBottomMargin : 0
         height: root.activeLabelHeight
+        sideInset: Sizing.px(width / 3)
         text: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
         // Full (untrimmed) disambiguation tokens for the focused item, shown as a
         // dim suffix. Uses an explicit provider when given, else the model's
@@ -639,7 +656,7 @@ Item {
 
     Text {
         id: bottomTotalText
-        visible: root.showBottomStatusRow && !root._gateHide && !root._listLayout && root.bottomStatusLeftText !== ""
+        visible: !root._gateHide && !root._listLayout && root.bottomStatusLeftText !== ""
         anchors.left: parent.left
         anchors.leftMargin: root.bottomStatusLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
@@ -655,21 +672,18 @@ Item {
         renderType: Text.NativeRendering
     }
 
-    Text {
-        visible: root.showBottomStatusRow && !root._gateHide && !root._listLayout && root.bottomStatusRightText !== ""
+    PageIndicator {
+        visible: !root._gateHide && !root._listLayout && root.renderGridLayout
         anchors.right: parent.right
         anchors.rightMargin: root.bottomStatusRightMargin
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - root.bottomStatusRightMargin
-        height: Sizing.fontSection
-        elide: Text.ElideRight
-        horizontalAlignment: Text.AlignRight
-        verticalAlignment: Text.AlignVCenter
-        text: root.bottomStatusRightText
-        font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSection
-        color: Theme.textPrimary
-        renderType: Text.NativeRendering
+        chevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
+        currentPage: mediaGrid.currentPage
+        totalPages: mediaGrid.totalPageCount
+        pageTotalKnown: mediaGrid.paginationTotalKnown
+        hasPagesAbove: mediaGrid.hasPagesAbove
+        hasPagesBelow: mediaGrid.hasPagesBelow
+        onPageRequested: delta => root._performPage(delta)
     }
 
     LoadingIndicator {

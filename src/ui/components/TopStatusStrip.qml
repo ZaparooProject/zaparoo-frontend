@@ -29,6 +29,12 @@ Item {
     property bool pageTotalKnown: true
     property string totalText: "" // formatted; empty hides the slot
     property string rightTextOverride: "" // formatted; non-empty replaces page text
+    // Grid-layout screens now show paging through the footer's
+    // PageIndicator instead (see HubScreen/SystemsScreen/MediaListScreen)
+    // -- this strip becomes title-only for them. List layouts still use
+    // this slot for their own "N / M" cue. Default true keeps every
+    // existing (list-layout) caller byte-identical.
+    property bool showPageCounter: true
     readonly property string pageText: status.rightTextOverride !== "" ? status.rightTextOverride : (status.pageTotalKnown ? qsTr("Page %1 / %2").arg(status.currentPage + 1).arg(status.totalPages) : qsTr("Page %1").arg(status.currentPage + 1))
     property int slotMargin: Sizing.pctW(3)
     readonly property int _slotWidth: Sizing.px(status.width / 3)
@@ -36,18 +42,21 @@ Item {
     readonly property int _titleMeasuredWidth: Math.ceil(Math.max(titleMetrics.advanceWidth, titleMetrics.boundingRect.width) + status._textMeasureSlack)
     readonly property int _titleTextWidth: Math.min(status._slotWidth, status._titleMeasuredWidth)
 
-    // Page counter and total badge sit on the same baseline as the
-    // title's lower edge — bottom-aligned to the strip — so the trio
-    // reads as a single line of header text rather than three loose
-    // chips. Counter/total drop one step in font size so the title
-    // stays the visual anchor.
+    // Page counter and total badge sit on the title's own text baseline —
+    // not just its box's bottom edge, which the title's `height:
+    // Sizing.fontHero` pins independently of the side texts' own implicit
+    // height, so a bottom-edge anchor left the visible glyph baselines
+    // offset by the descent difference between the two font sizes (round
+    // 6, item 9). `anchors.baseline` is what "matching the bottom of the
+    // screen title" actually means. Counter/total drop one step in font
+    // size so the title stays the visual anchor.
     Text {
         id: totalBadge
 
         visible: status.totalText !== ""
         anchors.left: parent.left
         anchors.leftMargin: status.slotMargin
-        anchors.bottom: titleText.bottom
+        anchors.baseline: titleText.baseline
         width: status._slotWidth - status.slotMargin
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
@@ -87,10 +96,10 @@ Item {
     Text {
         id: pageCounter
 
-        visible: status.rightTextOverride !== "" || !status.pageTotalKnown || status.totalPages > 1
+        visible: status.showPageCounter && (status.rightTextOverride !== "" || !status.pageTotalKnown || status.totalPages > 1)
         anchors.right: parent.right
         anchors.rightMargin: status.slotMargin
-        anchors.bottom: titleText.bottom
+        anchors.baseline: titleText.baseline
         width: status._slotWidth - status.slotMargin
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight

@@ -39,12 +39,24 @@ pub struct PersistedState {
 pub struct HubState {
     pub category: String,
     /// Which Hub row had focus on the last persisted move. 0 = top
-    /// (categories), 1 = bottom (action tiles).
+    /// (categories), 1 = bottom (action tiles). Superseded by
+    /// `selected_item` (round 6) as the authoritative restore source, but
+    /// kept — with `selected_action` below — as the fallback a state.toml
+    /// written by an older build restores from, since `#[serde(default)]`
+    /// on this struct means `selected_item` simply reads empty on such a
+    /// file rather than failing to deserialize.
     pub selected_row: u32,
     /// The bottom-row action tile that last had focus. One of
     /// `"favorites"`, `"recents"`, `"update"` or `"settings"`.
     /// Empty defaults to the leftmost action when restored.
     pub selected_action: String,
+    /// The Hub item that last had focus, as `"<kind>:<id>"` — `kind` is
+    /// `"category"` or `"action"`, `id` is the category id or action id.
+    /// Authoritative when non-empty (round 6, item 7); see HubScreen.qml's
+    /// `restoreFromCategoriesReset`. Empty on any state.toml predating this
+    /// field, which is exactly the fallback-to-`selected_row`/
+    /// `selected_action` case above.
+    pub selected_item: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -227,7 +239,7 @@ fn default_system_logo_style() -> String {
 }
 
 fn default_color_scheme() -> String {
-    "zaparoo-black".into()
+    "zaparoo-dark".into()
 }
 
 fn default_button_layout() -> String {
@@ -356,6 +368,7 @@ mod tests {
                 category: "Console".into(),
                 selected_row: 1,
                 selected_action: "settings".into(),
+                selected_item: "action:settings".into(),
             },
             systems: SystemsState {
                 system_id: "NES".into(),
@@ -383,7 +396,7 @@ mod tests {
                 browse_layout: "list".into(),
                 favorites_grouping: "system".into(),
                 system_logo_style: "color".into(),
-                color_scheme: "midnight-amber".into(),
+                color_scheme: "classic-purple".into(),
                 button_layout: "b".into(),
                 mouse_enabled: false,
                 reduce_motion: true,
@@ -423,7 +436,7 @@ resolution = "1920x1080"
         let state = load_from(&path);
         assert!(!state.settings.show_hidden);
         assert_eq!(state.settings.favorites_grouping, "none");
-        assert_eq!(state.settings.color_scheme, "zaparoo-black");
+        assert_eq!(state.settings.color_scheme, "zaparoo-dark");
         assert_eq!(state.favorite_systems, FavoriteSystemsState::default());
         // reduce_motion absent from an older state file defaults to false.
         assert!(!state.settings.reduce_motion);
@@ -461,6 +474,7 @@ resolution = "1920x1080"
                                 category: format!("cat-{i}-{j}"),
                                 selected_row: 0,
                                 selected_action: String::new(),
+                                selected_item: String::new(),
                             },
                             systems: SystemsState {
                                 system_id: format!("sys-{i}-{j}"),
@@ -508,6 +522,37 @@ resolution = "1920x1080"
         assert_eq!(state.settings, SettingsState::default());
     }
 
+    // Round 6, item 7: a state.toml written by a build predating
+    // `selected_item` still loads, with the field defaulting empty and the
+    // legacy fields intact — this is exactly the shape
+    // HubScreen.qml's `restoreFromCategoriesReset` falls back on.
+    #[test]
+    fn hub_state_without_selected_item_falls_back_to_legacy_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        std::fs::write(
+            &path,
+            "[hub]\ncategory = \"Arcade\"\nselected_row = 1\nselected_action = \"favorites\"\n",
+        )
+        .expect("write");
+        let state = load_from(&path);
+        assert_eq!(state.hub.category, "Arcade");
+        assert_eq!(state.hub.selected_row, 1);
+        assert_eq!(state.hub.selected_action, "favorites");
+        assert_eq!(state.hub.selected_item, "");
+    }
+
+    #[test]
+    fn hub_state_round_trips_selected_item() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let mut state = PersistedState::default();
+        state.hub.selected_item = "action:resume".into();
+        save_to(&path, &state);
+        let loaded = load_from(&path);
+        assert_eq!(loaded.hub.selected_item, "action:resume");
+    }
+
     #[test]
     fn missing_settings_fields_default_to_current_behavior() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -518,7 +563,7 @@ resolution = "1920x1080"
         assert_eq!(state.settings.language, "");
         assert_eq!(state.settings.clock_format, "auto");
         assert_eq!(state.settings.browse_layout, "grid");
-        assert_eq!(state.settings.color_scheme, "zaparoo-black");
+        assert_eq!(state.settings.color_scheme, "zaparoo-dark");
         assert_eq!(state.settings.button_layout, "a");
         assert!(state.settings.mouse_enabled);
         assert!(!state.settings.debug_logging);

@@ -63,4 +63,10 @@ Loader {
     // icons with no wiring. Hosts that can put many tiles in one binding pass
     // (PagedGrid) narrow it themselves.
     property bool coverSynchronous: true
+    // True while the host has picked this tile up for a reorder (the Hub's
+    // Options -> Move). Tile.qml reads it via `parent.held` — the
+    // deliberate visual OPPOSITE of pressed (face stays put, edge
+    // recolors to `Theme.marker` and slow-pulses), for as long as the
+    // move is armed. Default false is a no-op for every host but the Hub.
+    property bool held: false
 }

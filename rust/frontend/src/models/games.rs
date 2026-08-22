@@ -87,6 +87,10 @@ const HIDDEN_ROLE: i32 = 256 + 11;
 // keeps the QVariant simple and is robust under MiSTer's AOT QML; the
 // delegate splits on newlines.
 const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 12;
+// Every real row is a real entry, never a structural placeholder; the role
+// exists only so PagedGrid's `isEmpty` delegate contract (round 6 follow-up
+// — see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
+const IS_EMPTY_ROLE: i32 = 256 + 13;
 
 // Image types that Core's `media.image` endpoint can serve (per the API
 // docs). The carousel tail is filtered to this set so left/right never
@@ -624,7 +628,6 @@ impl ffi::GamesModel {
             FILE_STEM_ROLE => {
                 QVariant::from(&QString::from(file_stem_or_name(&entry.path, &entry.name)))
             }
-            HIDDEN_ROLE => QVariant::from(&false),
             // Sibling-diffed display string (common-affix trimmed against
             // same-named neighbors); precomputed in `disambig_displays`.
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::from(
@@ -632,6 +635,7 @@ impl ffi::GamesModel {
                     .get(index.row() as usize)
                     .map_or("", String::as_str),
             )),
+            HIDDEN_ROLE | IS_EMPTY_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -653,6 +657,7 @@ impl ffi::GamesModel {
             DISAMBIGUATING_TAGS_ROLE,
             QByteArray::from("disambiguatingTags"),
         );
+        h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
         h
     }
 

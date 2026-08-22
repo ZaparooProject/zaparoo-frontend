@@ -23,48 +23,42 @@ import QtQuick
 // `errorHex` is a semantic constant — deriving it from the accent would make an
 // amber preset signal danger in amber.
 QtObject {
-    readonly property string defaultId: "zaparoo-black"
-    readonly property var ids: ["zaparoo-black", "midnight-amber", "zaparoo-white", "catppuccin-mocha", "catppuccin-macchiato", "catppuccin-frappe", "nord", "dracula", "gruvbox-dark", "gruvbox-light", "tokyo-night", "rose-pine", "kanagawa-wave", "ayu-dark", "nightfox", "monokai", "one-dark-pro", "everforest-dark", "synthwave-84", "amber-phosphor", "green-phosphor", "neo-geo", "nes", "virtual-boy"]
+    readonly property string defaultId: "zaparoo-dark"
+    readonly property var ids: ["zaparoo-dark", "zaparoo-light", "classic-purple", "dracula", "nord", "synthwave-84", "amber-phosphor", "green-phosphor", "neo-geo", "nes", "virtual-boy"]
 
-    // `zaparoo-white`'s accent is a darkened brand blue: #168bff only reaches
+    // `zaparoo-light`'s accent is a darkened brand blue: #168bff only reaches
     // 2.97:1 against a near-white page, just under the 3.0 floor the preset
     // guardrails enforce.
     //
-    // The presets from `catppuccin-mocha` on are real, unmodified hex triads
-    // pulled from popular editor/terminal themes and documented retro/console
-    // palettes (round 5) -- see docs/style.md -> "Preset catalog" for sourcing
-    // and the two guardrail floors relaxed to admit them without touching a
-    // single hex.
+    // Round 6 pruned the round-5 catalog from 24 presets to 11: Zaparoo,
+    // phosphor, and console presets are kept unconditionally, and every
+    // other family that read as a near-duplicate of one of these (three
+    // Catppuccin variants next to Dracula; Tokyo Night/One Dark
+    // Pro/Nightfox/Kanagawa all in the same blue-on-slate register as Nord;
+    // Rose Pine and Everforest with no console/phosphor counterpart to
+    // differentiate from) was cut rather than kept for its own sake. See
+    // docs/style.md -> "Preset catalog" for the full accounting, including
+    // why Gruvbox Light didn't survive even though it cleared every
+    // guardrail: its accent must sit dark to clear `_clampAccent`'s 4.5:1
+    // floor on a light page, which reads as a heavy brown next to near-black
+    // body text -- a property of light presets with warm accents, not a
+    // tuning miss. Zaparoo Light's cool blue carries the light-preset slot
+    // instead.
     readonly property var _sources: ({
-            "zaparoo-black": {
+            "zaparoo-dark": {
                 "primary": "#050608",
                 "accent": "#168bff",
                 "text": "#f7f7f5"
             },
-            "midnight-amber": {
+            "classic-purple": {
                 "primary": "#0f0f23",
                 "accent": "#ffb347",
                 "text": "#ffffff"
             },
-            "zaparoo-white": {
+            "zaparoo-light": {
                 "primary": "#f2f3f5",
                 "accent": "#0a63c9",
                 "text": "#101418"
-            },
-            "catppuccin-mocha": {
-                "primary": "#1e1e2e",
-                "accent": "#cba6f7",
-                "text": "#cdd6f4"
-            },
-            "catppuccin-macchiato": {
-                "primary": "#24273a",
-                "accent": "#c6a0f6",
-                "text": "#cad3f5"
-            },
-            "catppuccin-frappe": {
-                "primary": "#303446",
-                "accent": "#ca9ee6",
-                "text": "#c6d0f5"
             },
             "nord": {
                 "primary": "#2e3440",
@@ -75,56 +69,6 @@ QtObject {
                 "primary": "#282a36",
                 "accent": "#bd93f9",
                 "text": "#f8f8f2"
-            },
-            "gruvbox-dark": {
-                "primary": "#282828",
-                "accent": "#fe8019",
-                "text": "#ebdbb2"
-            },
-            "gruvbox-light": {
-                "primary": "#fbf1c7",
-                "accent": "#af3a03",
-                "text": "#3c3836"
-            },
-            "tokyo-night": {
-                "primary": "#1a1b26",
-                "accent": "#7aa2f7",
-                "text": "#c0caf5"
-            },
-            "rose-pine": {
-                "primary": "#191724",
-                "accent": "#c4a7e7",
-                "text": "#e0def4"
-            },
-            "kanagawa-wave": {
-                "primary": "#1f1f28",
-                "accent": "#7e9cd8",
-                "text": "#dcd7ba"
-            },
-            "ayu-dark": {
-                "primary": "#0b0e14",
-                "accent": "#e6b450",
-                "text": "#bfbdb6"
-            },
-            "nightfox": {
-                "primary": "#192330",
-                "accent": "#719cd6",
-                "text": "#cdcecf"
-            },
-            "monokai": {
-                "primary": "#272822",
-                "accent": "#a6e22e",
-                "text": "#f8f8f2"
-            },
-            "one-dark-pro": {
-                "primary": "#282c34",
-                "accent": "#61afef",
-                "text": "#dcdfe4"
-            },
-            "everforest-dark": {
-                "primary": "#2d353b",
-                "accent": "#a7c080",
-                "text": "#d3c6aa"
             },
             "synthwave-84": {
                 "primary": "#262335",
@@ -519,7 +463,18 @@ QtObject {
             // marker itself so it reads as "this marker's rim," not a flat
             // black/white sticker outline.
             "markerOutline": _mix(_luma(marker) > 0.5 ? darkPole : lightPole, marker, 0.12),
-            "errorHex": up ? "#ff4f91" : "#c2185b"
+            "errorHex": up ? "#ff4f91" : "#c2185b",
+            // QR quiet-zone/module colors (round 6, item 4 — see
+            // docs/style.md -> "Themed QR codes"). `qrLight` stays the light
+            // rung and `qrDark` stays the dark rung regardless of whether
+            // the preset itself is light or dark: inverted QR is out of
+            // spec and scans unreliably, and this is the primary path for
+            // writing a token from a phone. Both ride the accent's own
+            // OKLCh hue so the code still reads as themed — a faint tint on
+            // the quiet zone, accent-hued ink — while measuring >=6.0:1
+            // against each other on every preset (test_qr_rungs_stay_scannable).
+            "qrLight": _gamutFit(0.965, Math.min(accentLch.C, 0.022), accentLch.h),
+            "qrDark": _gamutFit(Math.min(accentLch.L, 0.45), accentLch.C, accentLch.h)
         };
     }
 }

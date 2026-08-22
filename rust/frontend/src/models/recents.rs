@@ -62,6 +62,11 @@ const HIDDEN_ROLE: i32 = 256 + 8;
 // History entries carry no tags; the role exists only so the shared
 // grid/list delegates (which require it for media rows) bind cleanly here.
 const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 9;
+// Every real row is a real history entry, never a structural placeholder;
+// the role exists only so PagedGrid's `isEmpty` delegate contract (round 6
+// follow-up — see PagedGrid.qml) is satisfied by direct QAbstractListModel
+// callers.
+const IS_EMPTY_ROLE: i32 = 256 + 10;
 
 // Page size for the initial load and every cursor follow-up. Core caps
 // `limit` at 100; history rows are tiny (one tile + one caption per row)
@@ -528,8 +533,8 @@ impl ffi::RecentsModel {
                 &entry.media_path,
                 &entry.media_name,
             ))),
-            HIDDEN_ROLE => QVariant::from(&false),
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::default()),
+            HIDDEN_ROLE | IS_EMPTY_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -548,6 +553,7 @@ impl ffi::RecentsModel {
             DISAMBIGUATING_TAGS_ROLE,
             QByteArray::from("disambiguatingTags"),
         );
+        h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
         h
     }
 

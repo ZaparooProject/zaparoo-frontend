@@ -36,7 +36,7 @@ multiplies and are no-ops on pure black — the catalog mixes channels explicitl
 instead, and components must too.
 
 `markerOutline` (below) does not mix toward `primary`/`text` directly — that
-axis is what silently ran backwards on the `zaparoo-white` preset. It mixes
+axis is what silently ran backwards on the `zaparoo-light` preset. It mixes
 toward `lightPole`/`darkPole` instead, the same two colors ordered by luma
 (`up ? text : primary` / `up ? primary : text`), so the outline is always the
 pole opposite the marker's own luma regardless of which of `primary`/`text`
@@ -89,48 +89,76 @@ safe to seed from an arbitrary hex rather than only the curated ones, ahead of
 any future custom-palette config surface.
 
 `Theme.qml` exposes the derived roles to components. Never branch on scheme ID in
-a component or hardcode a preset color outside the catalog. `zaparoo-black` is
+a component or hardcode a preset color outside the catalog. `zaparoo-dark` is
 fallback for missing, unknown, or removed IDs.
 
 ### Preset catalog
 
-24 presets ship: the three original Zaparoo themes, plus 21 real, unmodified
-hex triads pulled from popular editor/terminal palettes (Catppuccin, Nord,
-Dracula, Gruvbox, Tokyo Night, Rosé Pine, Kanagawa, Ayu, Nightfox, Monokai,
-One Dark Pro, Everforest Dark, Synthwave '84) and documented retro/console
-references (amber/green CRT phosphor, Neo Geo, NES, Virtual Boy). None of
-these are invented colors — every triad is `primary`/`accent`/`text` picked
-from that theme's own published palette.
+11 presets ship: **Zaparoo Dark**, **Zaparoo Light**, and **Classic Purple**
+(the three original Zaparoo themes, renamed from `zaparoo-black` /
+`zaparoo-white` / `midnight-amber` in round 6 so the id describes the
+preset rather than an implementation detail), plus **Nord**, **Dracula**,
+and **Synthwave '84** from the editor/terminal world, and **Amber
+Phosphor**, **Green Phosphor**, **Neo Geo**, **NES**, and **Virtual Boy**
+from documented retro/console references. None of these are invented
+colors — every triad is `primary`/`accent`/`text` picked from that theme's
+own published palette.
 
-Two guardrail floors relax from their round-4 values to admit these without
-altering a single hex, since the originals were tuned only against the three
-shipped presets:
+**Round 5 shipped 24 presets; round 6 pruned to these 11.** Zaparoo,
+phosphor, and console presets are kept unconditionally — they're the
+identity and the differentiated end of the catalog. Everything else was
+judged against them: a preset survives only if it reads as visibly distinct
+from something already kept, not merely different in name. Cut as
+near-duplicates of a kept preset: `catppuccin-mocha`/`-macchiato`/`-frappe`
+(next to Dracula — same dark-purple-on-slate register), `tokyo-night`,
+`one-dark-pro`, `nightfox`, and `kanagawa-wave` (all blue-accent-on-slate,
+next to Nord), `monokai` and `gruvbox-dark` (no console/phosphor counterpart
+distinct enough to earn a slot), `rose-pine` and `everforest-dark` (same
+reasoning), and `ayu-dark`. `gruvbox-light` cleared every guardrail but was
+cut anyway: on a light page the accent must sit dark to clear
+`_clampAccent`'s 4.5:1 floor, so its selected row lands on `#af3a03` — cream
+text at 5.4:1, technically passing but reading as a heavy brown next to
+near-black body text. That tension is structural to light presets with warm
+accents, not a tuning miss that a different hex would fix; Zaparoo Light's
+cool blue (`#0a63c9`, 5.19:1) carries the light-preset slot instead.
+
+Two guardrail floors were relaxed in round 5, kept relaxed in round 6:
 
 - `textPrimary`/`surfaceCard` contrast: AAA 7.0:1 → AA 4.5:1.
   `textPrimary`/`bgDeep` stays at 7.0 — the primary background is the
   highest-traffic surface and keeps the stricter floor; only the *card*
-  surface (mixed partway toward text/accent) relaxes.
+  surface (mixed partway toward text/accent) relaxes. No preset in the
+  round-6 catalog actually needs the relaxed floor any more (the lowest
+  measured is 7.4:1) — every one that did was pruned — but 4.5:1 is a
+  legitimate AA guarantee in its own right, so the floor stays rather than
+  reverting to 7.0 only to relax again for the next real palette added.
 - The focus ramp's *primary*-rung chroma-retention floor: 45% of the
   accent's own OKLCh chroma → 33%. The *shadow*-rung floor stays 55% — sRGB's
   own gamut holds less chroma at high lightness regardless of color space,
   which is why the light end needed the lower floor and the dark end didn't.
+  Dracula's purple (~39%) and Synthwave '84's pink (~38%) both still rely on
+  this relaxation.
 
 A handful of well-known palettes — Solarized (both variants), Catppuccin
-Latte, Everforest Light, Rosé Pine Moon/Dawn, Night Owl — still don't clear
-the catalog even with those two relaxed. Each fails a *different*, deeper
-guardrail (`_clampAccent`'s 4.5:1 floor, which would silently mutate their
-authored accent away from the real hex; the `textLabel`/`bgDeep` 3:1 floor;
-or `tileEdge` failing to read as more saturated than the card) that round 4
-built as a real legibility guarantee, not a number tuned to three presets —
-so they're left out rather than loosened further. Revisit only deliberately.
+Latte, Everforest Light, Rosé Pine Moon/Dawn, Night Owl — don't clear the
+catalog even with those two relaxed, independent of the round-6 prune. Each
+fails a *different*, deeper guardrail (`_clampAccent`'s 4.5:1 floor, which
+would silently mutate their authored accent away from the real hex; the
+`textLabel`/`bgDeep` 3:1 floor; or `tileEdge` failing to read as more
+saturated than the card) that round 4 built as a real legibility guarantee,
+not a number tuned to a handful of presets — so they're left out rather than
+loosened further. Revisit only deliberately.
 
-Adding a preset touches: `ColorSchemes.qml`'s `ids` and `_sources`;
-`rust/frontend/src/models/settings.rs`'s `COLOR_SCHEMES` (same order); and
-`SettingsScreen.qml`'s `_colorSchemeDisplay` lookup table (a literal
-`qsTr()` call per id so `lupdate` can harvest it). `tst_color_schemes.qml`'s
-guardrail tests already iterate `ColorSchemes.ids`, so a new preset gets the
-full suite for free except the id-count and named-id assertions, which need
-their literals bumped.
+Adding or removing a preset touches: `ColorSchemes.qml`'s `ids` and
+`_sources`; `rust/frontend/src/models/settings.rs`'s `COLOR_SCHEMES` (same
+order) and its default-fallback test; `SettingsScreen.qml`'s
+`_colorSchemeDisplay` lookup table (a literal `qsTr()` call per id so
+`lupdate` can harvest it); and, for a rename specifically, every
+`rust/zaparoo-core/src/{config,persist}.rs` test fixture that hardcodes the
+old id as an example value (not validated against the catalog, but kept in
+sync for clarity). `tst_color_schemes.qml`'s guardrail tests already iterate
+`ColorSchemes.ids`, so a catalog change gets the full suite for free except
+the id-count and named-id assertions, which need their literals updated.
 
 Selection applies live and persists as `[settings] color_scheme` in
 `frontend.toml` plus `state.toml`. Tinted image URLs naturally change with
@@ -214,7 +242,7 @@ backgrounds must not weaken art, caption, or focus contrast.
 
 Tile bodies, browse cards, detail panes, and About body use `radiusMd`.
 Settings rows, modal buttons, menu/picker rows, nested list selection,
-scrollbar thumbs, toggle tracks/handles, and rapid-scroll chrome use `radiusSm`.
+toggle tracks/handles, and rapid-scroll chrome use `radiusSm`.
 See "Toggle rows" below for the track/knob color rule. Handle insets preserve
 integer centering.
 
@@ -277,27 +305,56 @@ the language collapsing into one idiom.
 
 One rule, both row registers: **the track alone carries on/off + row-register
 state, at maximum contrast against the row's own current background; the
-knob is always a constant neutral (`Theme.surfaceCard`)**:
+knob fill always matches that same background (a hole punched through the
+track), with a border in the track's own "on" color for that register**:
 
-| | On | Off | Knob |
-|---|---|---|---|
-| Unselected row | `Theme.accent` | `Theme.borderMid` | `Theme.surfaceCard` |
-| Selected row | `Theme.onAccent` | `Theme.onAccentMuted` | `Theme.surfaceCard` |
+| | On track | Off track | Knob fill | Knob border |
+|---|---|---|---|---|
+| Unselected row | `Theme.accent` | `Theme.borderMid` | `Theme.surfaceCard` | `Theme.accent` |
+| Selected row | `Theme.onAccent` | `Theme.onAccentMuted` | `Theme.accent` | `Theme.onAccent` |
 
 Before this rule, the track and the knob branched on row-selection
 independently of each other, so which element carried state flipped
 depending on whether the row was selected — that inconsistency, not the
 switch metaphor, was what read as broken. Round 4 fixed the track/knob
-inconsistency but had the knob mirror the row's own current background (so
-it read as "a hole punched through the track"); round 5 found that on a
-selected row that background is solid `Theme.accent`, which made the knob
-visually merge into the row itself on lower-chroma presets (Nord, Ayu,
-Kanagawa). The knob is now always `Theme.surfaceCard`, in both registers —
-giving up the literal "hole reveals the true background" metaphor for a knob
-that's never ambiguous. Knob position and travel are unchanged and stay the
+inconsistency by having the knob fill mirror the row's own current
+background — but on a selected row that background is solid `Theme.accent`,
+the same color the knob fill uses, so the knob visually merged into the row
+itself on lower-chroma presets (Nord, Ayu, Kanagawa). Round 5 kept the
+fill rule (it is still correct by construction — the knob fill is never
+anything but the row's own two possible backgrounds) and added the border:
+the track's own "on" color for that register, which the semantic-tier
+guardrail tests already guarantee clears the fill by a wide margin
+(`test_on_accent_clears_body_text_contrast` for the selected case;
+`test_accent_against_bg_deep_clears_body_text_contrast` as a proxy for the
+unselected case) — so the knob keeps a visible silhouette on every preset
+with no new color derivation needed. Knob position and travel stay the
 primary on/off cue in every state; the off/unselected knob-vs-track contrast
 is deliberately low (`borderMid`/`surfaceCard` are both subtle near-card
-neutrals), which is fine because position, not color, carries that state.
+neutrals) — position, not fill color, carries that state, and the border is
+what keeps the knob's own silhouette legible regardless.
+
+### Settings section headers
+
+`SettingsSectionHeader.qml` splits the Settings form into bands (e.g.
+"Analog video"). Round 5 shipped it as a bigger, bolder label
+(`Sizing.fontSection`, `Font.DemiBold`, `Theme.textPrimary`) — a treatment
+that silently stops working in bitmap mode: `Sizing.fontSize()` quantizes
+`fontSection` and `fontBody` to the same 8/16px there, and `Theme.fontUi`'s
+bitmap face ("MxPlus HP 100LX 6x8") has a single weight, so `Font.DemiBold`
+is a no-op. At `--crt` or embedded 240p the header was pixel-identical to a
+field label. Size and weight simply aren't available as signals at that
+tier, so round 6 made the break structural instead: a full-card-width
+`Rectangle` filled `Theme.borderMid`, with the label unchanged and inset by
+`contentInset + Sizing.pctW(2)` (the screen drops its usual card-padding
+margin on this one row so the band can reach the card's own edges — see
+`SettingsScreen.qml`'s mount comment). `borderMid` measures 1.6-2.3:1 off
+`surfaceCard` across the catalog (an unmistakable block on every preset) and
+`textPrimary` reads 4.1-7.7:1 on it — both a rectangle and a color step, so
+the break renders identically at 1080p and at 240p. The band stays off
+`Theme.accent`, which `SettingsField.qml` reserves for "this row is an
+action" (see "Toggle rows" above and the action-row label rule below it) —
+reusing it for a header would blur that meaning.
 
 ### Pressable front edge
 
@@ -342,6 +399,7 @@ Non-interactive text may sit directly on `Theme.bgDeep`:
 - Settings section headers
 - global Loading cue
 - ActiveLabel selected name
+- header status line (see "Header status line" below)
 
 Use `Theme.textPrimary` for primary content and `Theme.textLabel` for metadata.
 Use Body or larger unless space has an explicitly documented specialist role.
@@ -358,6 +416,98 @@ Toggle track/thumb use `height / 2` or `width / 2`. Pills are distinct from
 rounded squares and remain borderless; outer Settings row carries focus. See
 "Toggle rows" above for the track/knob fill rule, which differs between an
 unselected and a selected row.
+
+## Header status line
+
+The header's second row shows Core connection problems and background-task
+progress (indexing / optimizing / scraping) as plain text plus a segmented
+progress track — never a pill. It replaced `CoreStatusPill`'s stadium-shaped
+card: a bordered, half-height-radius surface is the toggle-track family's
+shape (see "Pills" above), not a status readout's, and squeezing a label,
+counts, and a spinner into one intrinsically-sized chip is what forced
+abbreviated CRT-only wording ("Idx…", "Scr…").
+
+`StatusLine.qml`'s content is a right-aligned pair, not a full-width
+stretch: a shrink-wrapping primary-text label (`elide: Text.ElideRight`,
+width capped to its own measured content so it hugs the track instead of
+leaving a gap), then a fixed-width `ProgressTrack` as the rightmost element,
+flush against the header's own right margin. A short message just sits
+closer to the right edge — idle space moves to the left of the pair,
+between it and the logo, rather than opening a gap in the middle of the
+message the way a full-width stretch would. No card fill, no border, no
+radius — this is the same "plain text on background" treatment
+TopStatusStrip and the global Loading cue already use (above). The row is
+reserved by the header's own fixed height (`Sizing.headerHeight`) whether or
+not the line has anything to show, matching every other fixed-slot
+discipline in this file; the line itself still collapses to zero height
+when idle.
+
+There is deliberately no trailing count next to the track. Two things were
+tried and both cut: a step ratio ("3 / 10", redundant with what the track
+already shows visually) and, after that, an absolute running total
+("18 files" / "1250 scraped") — a real number the track can't express, but
+still not worth the layout cost it added. A fixed worst-case reservation
+for it ("999999 scraped") left a visibly blank void next to the track
+whenever the actual count was short or absent (every optimize/vacuum
+phase); sizing it to live content instead fixed the void but reintroduced
+the exact kind of shifting anchor point the fixed-slot rules elsewhere in
+this file exist to prevent. The bar alone conveys progress, the same as the
+mobile app.
+
+Label and detail join with a plain colon (`"Indexing: %1"`), not a
+mid-dot — the bitmap CRT font renders `·` as a genuine pixel glyph (it's
+not a missing-glyph problem), but at 6×8 a single centered dot is one or
+two lit pixels, easy to miss at a glance, and not a character anyone types
+by hand. This is deliberately a different join than the em dash used
+elsewhere on the same line (`"Core error — %1"`, `"… paused — game
+running"`, `"Scrape failed — %1"`): the em dash marks a *reason* clause
+(why something stopped), the colon marks a *live detail* of an ongoing
+action. Don't conflate the two when adding a new state.
+
+One slot, resolved in priority order: a Core connection problem; an active
+background task (including why it's paused — "game running"); a terminal
+message held ~6 s after a task ends (a scrape failure lands here too, not as
+its own tier, since Core only reports `state: "failed"` on that same
+terminal frame); a transient event (card scan, playtime warning, inbox
+message) dropped rather than queued while a higher tier owns the line; or
+nothing.
+
+### Progress track
+
+`ProgressTrack.qml` is a row of discrete cells, not a continuous bar.
+Determinate progress (indexing/scraping systems) fills cells up to the
+fraction complete; indeterminate progress (optimize/vacuum, or before Core
+has reported a total) marches one lit cell along the track instead. Either
+way, exactly one cell — the fill's leading edge, or the marching cell —
+blinks on and off at `Motion.pulseMs` (~2 Hz), pausing along with the task
+it represents.
+
+**Blinks, does not fade.** A `Timer` flips a bool every `pulseMs`; the
+cell's `color` reads it straight through with no `ColorAnimation` and no
+`Behavior on color` in between — every tick is a hard cut between
+`Theme.accent` and its dim color, never an interpolated crossfade. A
+breathing/throbbing pulse was tried and rejected: the spec is a blink, on
+then off, the same instant-swap register `SelectionBar`'s inverse-video
+flash already uses (a `PropertyAction`, not an animated transition) — this
+component just repeats that swap on a timer instead of firing it once.
+
+Discrete cells are a structural choice, not a stylistic one: a continuous
+fill's right edge lands on a fractional pixel as the fraction changes,
+which softens under any 240p rendering — the same class of bug "Integer-
+pixel drawing" below exists to rule out everywhere else. Cell width and gap
+are chosen as integers first, so the track's total width is always a
+whole-pixel sum regardless of fill fraction, mirroring how `PageIndicator`
+reserves its width unconditionally in the footer.
+
+The blink is the one exception to the no-persistent-motion rule (see
+`docs/qml-gotchas.md` → "Sanctioned one-shot transient cues"): it is header
+chrome, never painted over content; its dirty rect is a single small cell;
+it only runs while a task is genuinely active and not paused; and it stops
+outright under Reduce Motion rather than collapsing to a 0 ms loop. This is
+the same small-dirty-rect exemption CLAUDE.md already grants a page-dot
+pulse or focus-ring blink — just continuous instead of one-shot, because a
+background task has no natural per-frame "done" edge the way a press/release
+cue does.
 
 ## Colors
 
@@ -413,8 +563,8 @@ full-color brand mark, not a single-hue tinted glyph. `HeaderBar.qml`
 instead selects between two pre-rendered PNG variants under
 `resources/images/logo/logo-<variant>-<w>.png`:
 
-- `on-dark-<w>` — light wordmark, for `zaparoo-black` / `midnight-amber`.
-- `on-light-<w>` — dark wordmark, for `zaparoo-white`.
+- `on-dark-<w>` — light wordmark, for `zaparoo-dark` / `classic-purple`.
+- `on-light-<w>` — dark wordmark, for `zaparoo-light`.
 
 `Theme.lightSurface` (`ColorSchemes.isLightSurface(id)`) picks the variant.
 It is deliberately not a palette role — it's excluded from `requiredRoles`
@@ -547,11 +697,18 @@ body (capped at a 45-character line so a long paragraph wraps instead of
 forcing a wide panel), and the summed button label widths, clamped between a
 degenerate-case floor (`_minPanelWidth`) and `panelMaxWidth` (which itself
 clamps against 92% of the viewport). `kind: "shell"` content is an opaque
-caller-supplied `Item` Modal can't measure, so it keeps the old
-percentage-of-viewport sizing (`min(78% of viewport, panelMaxWidth)`); a shell
-consumer with narrow, measurable content — `ListPickerModal` measures its own
-entry labels the same way ContextMenu does — overrides `panelMaxWidth` itself
-rather than Modal trying to reach into arbitrary content.
+caller-supplied `Item` Modal can't measure, so by default it keeps the old
+percentage-of-viewport sizing (`min(78% of viewport, panelMaxWidth)`) — the
+real ceiling for the QR/legal-notice shells, which just bump `panelMaxWidth`
+itself and rely on that 78% breathing-room cap. A shell consumer that
+measures its own content precisely — `ListPickerModal` measures its own entry
+labels the same way ContextMenu does, and hands the exact target width
+through `panelMaxWidth` — sets `contentSized: true` so that number is honored
+against the same 92% ceiling the four prebaked kinds use, instead of being
+clamped a second time by the 78% cap meant for content Modal can't see. (Round
+6 follow-up: the picker's swatch band routinely pushes its measured width
+past 78% of a small screen, so leaving the 78% cap unconditional still
+truncated rows even after the label-measurement fix below.)
 
 ### Picker swatch preview
 
@@ -574,7 +731,54 @@ the swatch band + a label gap only when swatches are present, so the panel
 still sizes to content per the content-driven-width pattern above.
 `ColorSchemes.previewColors()` is independent of the active
 `Theme.colorSchemeId` (it's a pure function of the requested id), and is
-computed once per entry when the picker opens rather than per-delegate.
+computed once per entry when the picker opens rather than per-delegate. Each
+swatch box carries a `Theme.textLabel` border (round 6) — a near-black or
+near-white swatch previously sat at the same contrast as the row's own
+`surfaceCard` face and disappeared into it; `textLabel` is a mid neutral the
+semantic-tier guardrails already hold >=3:1 against `bgDeep` on every
+preset, so it separates either extreme from the card.
+
+Content-driven width measurement (this section and [ContextMenu
+chrome](#contextmenu-chrome) below) carries deliberate slack over the raw
+`FontMetrics.advanceWidth()` figure — `Math.ceil(Math.max(advanceWidth,
+boundingRect.width)) + Sizing.stroke(2)`. Labels paint with
+`renderType: Text.NativeRendering`, which lays out on integer, hinted
+per-glyph advances; `advanceWidth()` alone is `QFontMetricsF`'s fractional,
+unhinted total, and a long label can paint a few px wider than that alone
+measures. A panel sized to the bare `advanceWidth()` figure — round 5's
+`ListPickerModal` bug — could then elide text that should have fit, with
+most of the screen still empty. `ContextMenu.qml` already carried this
+slack (`+ 2 * Sizing.stroke(2)` in its own `_desiredPanelWidth`);
+`ListPickerModal.qml` didn't, despite the header comment saying it mirrors
+that file's pattern.
+
+### Themed QR codes
+
+`QrCodeModal.qml` (write-to-token) and `LogUploadModal.qml` (log upload
+success) both render the single shared `Browse.QrCode` matrix — a Rust
+`qrcode`-crate result exposed as one bit-string row at a time, drawn as
+nested `Repeater`s of `Rectangle`s rather than a raster image. Both used to
+carry a near-verbatim copy of that matrix with hardcoded `"white"`/`"black"`
+fills; round 6 extracts the shared render into `QrMatrix.qml` and themes the
+two fills as `Theme.qrLight` (quiet zone + background) and `Theme.qrDark`
+(modules).
+
+`qrLight` stays the light rung and `qrDark` stays the dark rung on every
+preset, regardless of whether the preset itself is light or dark — inverted
+QR is out of spec and scans unreliably on a phone camera, the primary use
+of this component. Both ride the accent's own OKLCh hue instead, so the
+code still reads as themed (a faint tint on the quiet zone, accent-hued
+ink) without ever inverting:
+
+```qml
+"qrLight": _gamutFit(0.965, Math.min(accentLch.C, 0.022), accentLch.h),
+"qrDark":  _gamutFit(Math.min(accentLch.L, 0.45), accentLch.C, accentLch.h)
+```
+
+Measured contrast between the two rungs ranges 6.37:1 (Green Phosphor) to
+7.43:1 (Synthwave '84) across the catalog; `test_qr_rungs_stay_scannable`
+asserts >=6.0:1 and that `qrLight` is always the lighter rung. The frame
+border stays `Theme.borderSubtle`, unthemed.
 
 ## ContextMenu chrome
 
@@ -608,16 +812,93 @@ radii on either axis.
 
 ## Tile aspect and grid blocks
 
-Hub rows remain square. Systems and media grids use Sizing-declared common
-resolution shapes with adaptive fallback for nonstandard desktop/TATE scenes.
-PagedGrid floors uniform cell dimensions, then centers cells-plus-gutters block;
-odd remainders may differ by one pixel only.
+Hub tiles are square: `PagedGrid.squareCells` clamps `cellWidth`/`cellHeight`
+to the smaller of the two independent per-axis fits, fit against both axes of
+the Hub's own reserved band. This is a `PagedGrid`-level, opt-in property
+(default `false`, byte-identical for every other caller) rather than a
+Hub-only calculation, because a naive width-only fit — capped by a constant
+hand-tuned for one specific row count — silently stopped being square the
+moment the row count varied by tier (round 6 follow-up; see `Sizing.qml`'s
+`hubGridShape` comment). The Hub also sets `heightBudget` (a fixed ceiling
+distinct from the grid's own `height`, since `height` is itself derived FROM
+the fitted cell size — fitting against `height` would be circular). Systems
+and media grids use Sizing-declared common resolution shapes with adaptive
+fallback for nonstandard desktop/TATE scenes, and leave `squareCells` at its
+default. PagedGrid floors uniform cell dimensions, then centers the
+cells-plus-insets block against the full inset-to-inset width; odd remainders
+may differ by one pixel only.
 
 Default-theme grid gaps (`crt` keeps its own raw pixel values, unaffected):
 `systemsGrid`/`gamesGrid` `columnGap` is `pctW(2)` and `gamesGrid` `rowGap` is
 `pctH(3)` (matching `systemsGrid`'s own `rowGap`), both set in
 `BrowseLayouts.qml`. `PagedGrid.qml`'s `cellSpacingX` fallback (used when no
 layout profile supplies `columnGap`) mirrors the same `pctW(2)`.
+
+### No scrollbars — grids are paged, not scrolled
+
+`PagedGrid` has no in-grid scroll indicator of any kind — no gutter, no
+proportional thumb. It never did have a scroll-position concept to represent
+(it pages, it doesn't scroll); a right-side gutter conditionally reserved
+whenever the dataset happened to be multi-page was the wrong metaphor, and
+worse, it made the cell block visibly shift and shrink the instant a
+single-page grid became multi-page (arming Hub Options → Move always reserves
+a second page, so this fired on every single arm). `_availableWidth` is
+simply `width - leftInset - rightInset` — nothing subtracts space for a
+gutter, so a grid's geometry is identical regardless of page count.
+
+The "where am I" cue lives in the host screen's **footer** instead — a fixed,
+unconditionally-reserved three-slot row, one-third width apiece (same
+discipline `TopStatusStrip` already used for its own three slots):
+
+| slot | content |
+|---|---|
+| left | an optional count badge ("%1 systems", "%1 files") |
+| center | `ActiveLabel` — the focused item's name |
+| right | `PageIndicator` — up/down chevrons (`ScrollUp`/`ScrollDown`, the
+same glyphs the old gutter used) plus "N / M" |
+
+All three slots exist whether or not their content does — only the content
+toggles (a chevron's own `visible`, the count text's presence). See
+`PageIndicator.qml`'s doc comment for why each chevron is anchored off a
+fixed chain rather than a `Row`: hiding one must not shift the "N / M" text
+next to it, for the same reason the grid itself must not shift. `TopStatusStrip`
+becomes title-only in grid layout (`showPageCounter: false`, and the caller
+stops feeding `totalText`) — list layouts (Settings-style vertical lists,
+`BrowseList`) are unaffected; they already used a fixed chevron-band reserved
+by margin, unrelated to this and never carried the bug.
+
+`ActiveLabel.sideInset` (default `pctW(3)`, byte-identical for every caller
+that doesn't set it) is what keeps a long focused name from eliding under
+the footer's corner slots — grid-layout hosts bind it to that same
+one-third slot width.
+
+### Empty slots
+
+A grid row that is a deliberate structural placeholder (not a real item with
+nothing on it) renders through `PagedGrid.emptyDelegate` — a small
+`EmptySlot.qml` component — instead of the normal per-item delegate. The
+model row's `isEmpty` role selects it; `emptyDelegate: null` (the default,
+every caller but the Hub) makes `isEmpty` a no-op, so this is opt-in per
+caller. `PagedGrid`'s own card-shaped skeleton placeholder (normally painted
+behind every cell while its Tile incubates, on the assumption the Tile will
+end up fully opaque on top) is skipped entirely for `isEmpty` rows — an
+empty slot is not opaque, so that assumption doesn't hold, and the skeleton
+would otherwise stay visible underneath it permanently.
+
+An empty slot paints nothing at rest — genuinely blank, not a recessed or
+filled variant — and shows an accent focus ring when the cursor lands on it,
+so it still reads as "here" even though there's nothing else to see. Unlike
+Tile's ring (two filled rounded rects, an opaque accent rect with the center
+punched back to `Theme.surfaceCard` — chosen to dodge Qt software AA's
+visible corner-stepping on thin rounded borders, QTBUG-123210), an empty
+slot's ring is a real hollow `border`: there is no card face behind it to
+punch back to, so nothing can be painted in the center without risking
+occluding whatever's actually behind the grid if that's ever not a flat
+color. The corner-AA softness this reintroduces is accepted here — the ring
+is only visible while the cursor rests on a gap, far less prominent than
+Tile's ubiquitous one. The Hub uses this for the trailing remainder of its
+last page (`HubScreen.qml`'s `_padToPageSize`); the cursor can move onto one
+like any other cell, and it is inert on Accept.
 
 ## Consistency rules
 

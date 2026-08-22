@@ -2,16 +2,27 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// `Browse.HubState` — persisted state owned by the hub screen. Holds
-// the row the user last had focus on (top categories vs bottom action
-// tiles), the category they were on inside the top row, and the bottom
-// row action they were on. Schema version is checked independently from
-// other screens on load (see `zaparoo_core::persist`).
+// `Browse.HubState` — persisted NAVIGATION state owned by the hub screen.
+// Holds the category the router should seed SystemsModel from, the
+// last-focused Hub item as `"<kind>:<id>"` (`selected_item`, the round-6
+// authoritative restore source), and `selected_row`/`selected_action` as a
+// fallback for a state.toml written before `selected_item` existed. All
+// four persist through `persist_hub` into `state.toml` (tmpfs on MiSTer,
+// wiped every reboot) — per-launch focus, not a durable preference. Schema
+// version is checked independently from other screens on load (see
+// `zaparoo_core::persist`).
+//
+// Hub hide/order is NOT here. An earlier round built a generalized
+// hide/order surface on this singleton (`hide_item`/`unhide_item`/
+// `is_item_hidden`/`item_order_index`, alongside the older
+// `hide_category`/`unhide_category`/`is_category_hidden`); a later
+// discussion replaced that model outright — "we discard all of the hub
+// hide and unhide... we just do this once" — with the Hub's persisted
+// `[[hub.items]]` layout (`Browse.HubLayout`, `zaparoo_core::hub_layout`).
+// The systems grid's hide/unhide (`Browse.SystemsState`) is unrelated and
+// untouched; only the Hub-specific surface was retired.
 
-use crate::models::{
-    with_hidden_browse_prefs_mut, with_hidden_browse_prefs_read, with_persist_mut,
-    with_persist_read,
-};
+use crate::models::{with_persist_mut, with_persist_read};
 use cxx_qt::{CxxQtType, Initialize};
 use cxx_qt_lib::QString;
 use std::pin::Pin;
@@ -22,6 +33,7 @@ pub struct HubStateRust {
     category: QString,
     selected_row: u32,
     selected_action: QString,
+    selected_item: QString,
 }
 
 #[cxx_qt::bridge]
@@ -39,6 +51,7 @@ pub mod ffi {
         #[qproperty(QString, category, READ, WRITE = set_category, NOTIFY)]
         #[qproperty(u32, selected_row, READ, WRITE = set_selected_row, NOTIFY)]
         #[qproperty(QString, selected_action, READ, WRITE = set_selected_action, NOTIFY)]
+        #[qproperty(QString, selected_item, READ, WRITE = set_selected_item, NOTIFY)]
         type HubState = super::HubStateRust;
 
         #[qinvokable]
@@ -50,17 +63,8 @@ pub mod ffi {
         #[qinvokable]
         fn set_selected_action(self: Pin<&mut HubState>, value: QString);
 
-        /// Add `name` to the persisted hidden-categories set. No-op if already there.
         #[qinvokable]
-        fn hide_category(self: Pin<&mut HubState>, name: &QString);
-
-        /// Remove `name` from the persisted hidden-categories set.
-        #[qinvokable]
-        fn unhide_category(self: Pin<&mut HubState>, name: &QString);
-
-        /// Returns true when `name` is in the persisted hidden-categories set.
-        #[qinvokable]
-        fn is_category_hidden(self: &HubState, name: &QString) -> bool;
+        fn set_selected_item(self: Pin<&mut HubState>, value: QString);
     }
 
     impl cxx_qt::Initialize for HubState {}
@@ -74,6 +78,7 @@ impl Initialize for ffi::HubState {
         self.as_mut().rust_mut().category = QString::from(snapshot.category.as_str());
         self.as_mut().rust_mut().selected_row = snapshot.selected_row;
         self.as_mut().rust_mut().selected_action = QString::from(snapshot.selected_action.as_str());
+        self.as_mut().rust_mut().selected_item = QString::from(snapshot.selected_item.as_str());
         crate::startup_trace(format!(
             "rust:model HubState init end dur_ms={}",
             started.elapsed().as_millis()
@@ -111,26 +116,14 @@ impl ffi::HubState {
         persist_hub(|h| h.selected_action = value_str);
     }
 
-    fn hide_category(self: Pin<&mut Self>, name: &QString) {
-        let name_str = name.to_string();
-        if name_str.is_empty() {
+    fn set_selected_item(mut self: Pin<&mut Self>, value: QString) {
+        if self.selected_item == value {
             return;
         }
-        with_hidden_browse_prefs_mut(|p| {
-            if !p.hidden_categories.contains(&name_str) {
-                p.hidden_categories.push(name_str);
-            }
-        });
-    }
-
-    fn unhide_category(self: Pin<&mut Self>, name: &QString) {
-        let name_str = name.to_string();
-        with_hidden_browse_prefs_mut(|p| p.hidden_categories.retain(|x| x != &name_str));
-    }
-
-    fn is_category_hidden(&self, name: &QString) -> bool {
-        let name_str = name.to_string();
-        with_hidden_browse_prefs_read(|p| p.hidden_categories.contains(&name_str))
+        let value_str = value.to_string();
+        self.as_mut().rust_mut().selected_item = value;
+        self.as_mut().selected_item_changed();
+        persist_hub(|h| h.selected_item = value_str);
     }
 }
 

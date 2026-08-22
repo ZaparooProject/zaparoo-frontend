@@ -35,6 +35,7 @@ TestCase {
         modal.confirmYesLabel = "Yes";
         modal.confirmNoLabel = "No";
         modal.panelMaxWidth = Sizing.pctH(90);
+        modal.contentSized = false;
     }
 
     function _panelWidth(): int {
@@ -93,14 +94,28 @@ TestCase {
     }
 
     // Shell content is opaque to Modal (an arbitrary caller-supplied Item),
-    // so it keeps the old percentage-of-viewport sizing rather than trying
-    // to measure it — this is the one kind the content-driven formula does
-    // not apply to.
+    // so by default it keeps the old percentage-of-viewport sizing rather
+    // than trying to measure it — this is the one kind the content-driven
+    // formula does not apply to. A shell caller that measures its own
+    // content can opt out via `contentSized` (see below).
     function test_shell_kind_keeps_percentage_sizing(): void {
         modal.kind = "shell";
         modal.title = "";
         modal.panelMaxWidth = Sizing.pctH(90);
         const width = _panelWidth();
         compare(width, Sizing.px(Math.min(testCase.width * 0.78, Sizing.pctH(90))));
+    }
+
+    // A shell caller that measures its own content precisely (ListPickerModal)
+    // sets `contentSized: true` so its computed `panelMaxWidth` is honored like
+    // the four prebaked kinds, up to the same 92% ceiling those use, instead of
+    // being clamped a second time by the opaque-content 78% breathing-room cap.
+    function test_content_sized_shell_uses_wider_ceiling(): void {
+        modal.kind = "shell";
+        modal.title = "";
+        modal.contentSized = true;
+        modal.panelMaxWidth = Sizing.pctH(90);
+        const width = _panelWidth();
+        compare(width, Sizing.px(Math.min(testCase.width * 0.92, Sizing.pctH(90))));
     }
 }

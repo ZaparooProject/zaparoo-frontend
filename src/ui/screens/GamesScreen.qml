@@ -150,8 +150,12 @@ MediaListScreen {
         return idx >= 0 ? Browse.SystemsModel.system_name_at(idx) : sid;
     }
     topStripCurrentPageProvider: () => Math.floor(games.gamesGrid.currentIndex / games._browsePageSize)
-    topStripTotalPagesProvider: () => games._footerProfile && games._footerProfile.bottomStatusVisible ? 1 : Math.max(1, Math.ceil((Browse.GamesModel.total_dirs + Browse.GamesModel.total_files) / games._browsePageSize))
-    topStripTotalTextProvider: () => games._listLayout || (games._footerProfile && games._footerProfile.bottomStatusVisible) ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : "")
+    topStripTotalPagesProvider: () => Math.max(1, Math.ceil((Browse.GamesModel.total_dirs + Browse.GamesModel.total_files) / games._browsePageSize))
+    // Grid layout no longer shows this at the top -- the footer's count
+    // badge (bottomStatusLeftText below) and PageIndicator own that cue
+    // now, so this only matters for list layout, which never shows a
+    // count here anyway (see MediaListScreen's own list/grid split).
+    topStripTotalTextProvider: () => games._listLayout ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : "")
     topStripRightTextProvider: () => {
         if (!games._listLayout)
             return "";
@@ -197,13 +201,14 @@ MediaListScreen {
     activeLabelAtBottom: true
     activeLabelBottomMargin: games._footerProfile ? games._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
     activeLabelHeight: games._footerProfile ? games._footerProfile.activeLabelHeight : Sizing.pctH(7)
-    showBottomStatusRow: games._footerProfile ? games._footerProfile.bottomStatusVisible : false
     bottomStatusLeftMargin: games._footerProfile ? games._footerProfile.bottomStatusLeftMargin : 0
     bottomStatusRightMargin: games._footerProfile ? games._footerProfile.bottomStatusRightMargin : 0
-    bottomStatusLeftText: games._footerProfile && games._footerProfile.bottomStatusVisible && Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : ""
-    bottomStatusRightText: games._footerProfile && games._footerProfile.bottomStatusVisible && Math.ceil((Browse.GamesModel.total_dirs + Browse.GamesModel.total_files) / games._browsePageSize) > 1 ? qsTr("%1 / %2").arg(Math.floor(games.gamesGrid.currentIndex / games._browsePageSize) + 1).arg(Math.max(1, Math.ceil((Browse.GamesModel.total_dirs + Browse.GamesModel.total_files) / games._browsePageSize))) : ""
+    // Footer's count badge -- always shown now (the conditional used to
+    // gate this to CRT only; the footer row is the layout everywhere
+    // now, so the count moves here unconditionally for every theme).
+    bottomStatusLeftText: Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : ""
     pageLoadingVisible: !games._listLayout && Browse.GamesModel.loading_more && games.gamesGrid.hasPendingTarget
-    pageLoadingLeftMargin: games._footerProfile && games._footerProfile.bottomStatusVisible && games.bottomStatusLeftText !== "" ? Sizing.px(games.width / 3) : games.gamesGrid.leftInset
+    pageLoadingLeftMargin: games.bottomStatusLeftText !== "" ? Sizing.px(games.width / 3) : games.gamesGrid.leftInset
 
     Binding {
         target: Browse.GamesModel
