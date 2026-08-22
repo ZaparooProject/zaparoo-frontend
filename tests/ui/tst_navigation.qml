@@ -352,6 +352,85 @@ TestCase {
         compare(main.activeScreen, main.screenHub, "Optimistic route stays under the loading cue until catalog readiness is authoritative");
     }
 
+    // A Hub `system` shortcut's Accept path (Main.qml's onRequestAccept ->
+    // _navigateFromSystems) -- was a deliberate no-op before this round;
+    // now it must establish both state singletons and start the Games
+    // transition, same as accepting the system from the Systems screen
+    // itself would. Only the SYNCHRONOUS part of the transition is
+    // observable here: _ensureSystem's deferred completion needs Core to
+    // resolve GamesModel.loading, which this harness (no live Core) never
+    // does — the same reason no existing test drives a Systems->Games
+    // transition to completion either.
+    //
+    // `add_target_item` mutates the real (test-isolated) HubLayout
+    // singleton, which flips `is_unseeded()` false for the rest of the
+    // process the moment `items` goes non-empty — every other test relies
+    // on the bootstrap-placeholder branch staying active, so the
+    // try/finally here is load-bearing, not defensive style: a skipped
+    // cleanup (e.g. a failed assertion aborting the function) corrupts
+    // every later test's Hub content, not just this one.
+    function test_hub_system_shortcut_accept_navigates_to_games(): void {
+        verify(Browse.HubLayout.add_target_item("system", "NES", "", "", "", "", ""));
+        const idx = main.hubScreen._itemIndexForId("system", "NES");
+        const hubIndex = idx >= 0 ? main.hubScreen.items[idx].hubIndex : -1;
+        try {
+            verify(idx >= 0, "the shortcut must resolve into the Hub's items list");
+            main.hubScreen.currentIndex = idx;
+            main.handleKey(Qt.Key_Return);
+            compare(Browse.SystemsState.system_id, "NES");
+            compare(Browse.GamesState.system_id, "NES");
+            compare(main.pendingTransition, "games");
+        } finally {
+            if (hubIndex >= 0)
+                Browse.HubLayout.remove_item(hubIndex);
+        }
+    }
+
+    // A Hub `folder` shortcut's Accept path (_navigateFromHubFolder) --
+    // must establish the shortcut's owning system BEFORE pushing the
+    // folder's own path, since GamesState.push_level appends onto
+    // whatever level system_id already established. The push itself runs
+    // inside _ensureSystem's deferred callback (see the previous test's
+    // comment for why this harness can't observe it completing), so only
+    // the synchronous state-establishment half is asserted here.
+    function test_hub_folder_shortcut_accept_navigates_to_games(): void {
+        const path = "/media/fat/games/SNES/Homebrew";
+        verify(Browse.HubLayout.add_target_item("folder", "", path, "", "", "", "SNES"));
+        const idx = main.hubScreen._itemIndexForId("folder", path);
+        const hubIndex = idx >= 0 ? main.hubScreen.items[idx].hubIndex : -1;
+        try {
+            verify(idx >= 0, "the shortcut must resolve into the Hub's items list");
+            compare(main.hubScreen.items[idx].system, "SNES", "the resolver must carry the system hint through to Accept");
+            main.hubScreen.currentIndex = idx;
+            main.handleKey(Qt.Key_Return);
+            compare(Browse.SystemsState.system_id, "SNES");
+            compare(Browse.GamesState.system_id, "SNES");
+            compare(main.pendingTransition, "games");
+        } finally {
+            if (hubIndex >= 0)
+                Browse.HubLayout.remove_item(hubIndex);
+        }
+    }
+
+    // A folder shortcut with no stored system (a malformed/pre-feature
+    // layout entry) must not attempt to load an empty system id.
+    function test_hub_folder_shortcut_with_no_system_does_not_navigate(): void {
+        const path = "/media/fat/games/SNES/Homebrew";
+        verify(Browse.HubLayout.add_target_item("folder", "", path, "", "", "", ""));
+        const idx = main.hubScreen._itemIndexForId("folder", path);
+        const hubIndex = idx >= 0 ? main.hubScreen.items[idx].hubIndex : -1;
+        try {
+            verify(idx >= 0);
+            main.hubScreen.currentIndex = idx;
+            main.handleKey(Qt.Key_Return);
+            compare(main.pendingTransition, "", "no system to establish means no navigation");
+            compare(main.activeScreen, main.screenHub);
+        } finally {
+            if (hubIndex >= 0)
+                Browse.HubLayout.remove_item(hubIndex);
+        }
+    }
+
     // Down on hub moves focus between the categories row and the
     // actions row (Favorites / Recently Played / optional Update /
     // Settings); it must never flip off-screen to systems. Accept is
@@ -387,12 +466,20 @@ TestCase {
         compare(main.favoritesScreen.paginationTotalKnown, false);
         compare(main.favoritesScreen.favoritesGrid.paginationTotalKnown, false);
         verify(main.favoritesScreen.topStrip.pageText.indexOf("/") < 0);
+        // Grid layout's actual page cue is the top strip's PageIndicator
+        // (`pageIndicatorMode`), not the plain-text `pageText` above --
+        // that only backs list layout. Confirm the cue really is up here
+        // on the default (non-CRT) theme this harness runs under.
+        verify(main.favoritesScreen.topStrip.pageIndicatorMode);
+        compare(main.favoritesScreen.topStrip.pageTotalKnown, false);
     }
 
     function test_recents_uses_unbounded_page_chrome(): void {
         compare(main.recentsScreen.paginationTotalKnown, false);
         compare(main.recentsScreen.recentsGrid.paginationTotalKnown, false);
         verify(main.recentsScreen.topStrip.pageText.indexOf("/") < 0);
+        verify(main.recentsScreen.topStrip.pageIndicatorMode);
+        compare(main.recentsScreen.topStrip.pageTotalKnown, false);
     }
 
     function test_hub_favorites_action_uses_favorite_systems_mode(): void {
@@ -726,12 +813,45 @@ TestCase {
         hub._moveArmedTotalPages = 0;
     }
 
+    // `armMoveForHubIndex` is the seek-then-arm helper View -> Add item…
+    // uses (Main.qml's `hub_add_pick` handler) so a freshly placed tile
+    // (which the cursor is never already resting on) can be positioned
+    // immediately rather than left wherever add_item's append/target rule
+    // happened to put it: find the flat (padded) index for a given
+    // hubIndex, seat the cursor there, then hand off to `beginMove`.
+    //
+    // This harness never calls `Browse.HubLayout.reconcile(...)`, so the
+    // Hub stays in its bootstrap-placeholder window for the whole suite
+    // (every entry's `hubIndex` is -1 — see `items`' bootstrap branch
+    // above) and there is no real hubIndex>=0 entry available here to
+    // exercise the successful seek. Only the rejection paths are covered
+    // at this level; the successful seek + arm is exercised end to end by
+    // `just run-dev` (View -> Add item…, see docs/plans -- the plan this
+    // round shipped under).
+    function test_arm_move_for_hub_index_ignores_an_unresolvable_index(): void {
+        const hub = main.hubScreen;
+        hub.currentIndex = 0;
+        hub.armMoveForHubIndex(999999);
+        compare(hub.currentIndex, 0, "an unresolvable hubIndex must not move the cursor at all");
+        compare(hub.moveArmed, false);
+
+        hub.currentIndex = 0;
+        hub.armMoveForHubIndex(-1);
+        compare(hub.currentIndex, 0, "a negative hubIndex must be rejected the same way beginMove already rejects it");
+    }
+
     // Replaces round <=5's saved-index round-trip tests (_crossSavedIndex,
     // _crossRow) — that machinery existed only because the two rows had
     // different lengths and a centered visual map couldn't always return
-    // Up/Down to the originating tile. With one uniform grid both rows are
-    // the same width, so a round trip is simply "same column, other row";
-    // PagedGrid.moveSelection already guarantees this, with no saved state.
+    // Up/Down to the originating tile. `_nearestVerticalCandidate`
+    // (PagedGrid.qml) doesn't structurally guarantee a round trip the way
+    // a strict same-column walk would -- it picks whichever real tile
+    // scores best from wherever the cursor actually lands, which need not
+    // be the tile that sent it there -- but for this harness's densely
+    // packed row-major content the nearest tile below is directly below,
+    // so the round trip holds in practice. Kept as a regression pin on
+    // that property for the harness's actual layout, not a claim that the
+    // algorithm guarantees it in general.
     function test_up_down_round_trip_preserves_column(): void {
         main.hubScreen.currentIndex = 2;
         main.handleKey(Qt.Key_Down);
@@ -858,17 +978,68 @@ TestCase {
             verify(entries[i].coverKey !== "", "empty coverKey on Hub entry " + entries[i].id);
     }
 
-    // Up on the top row wraps to the grid's LAST row, same column (the
-    // grid's rows form a closed loop — see PagedGrid.moveSelection). With
-    // grouping-padding dropped, that last row is whatever real item or
-    // trailing empty slot (`_padToPageSize`) sits there — not necessarily
-    // an action — so this asserts the actual mechanical guarantee (column
-    // preserved, wraps to `rows - 1`) rather than assuming content shape.
+    // Mirrors PagedGrid._nearestVerticalCandidate exactly (`skipEmptyCells`,
+    // which the Hub arms outside a Move session): a whole-board
+    // nearest-candidate search, not a same-column walk -- see
+    // PagedGrid.qml's own doc comment for the Android FocusFinder-derived
+    // 13:1 weighting this reproduces. Two passes: real tiles strictly in
+    // `dRow`'s direction first; if none, every real tile scored as if the
+    // press wrapped around the far edge. Returns `startIndex` only when it
+    // is the sole real tile on the whole board.
+    function _expectedNearestVerticalCandidate(items: var, fromIndex: int, columns: int, rows: int, dRow: int): int {
+        const pageSize = columns * rows;
+        const totalRows = Math.ceil(items.length / pageSize) * rows;
+        const srcLocal = fromIndex % pageSize;
+        const srcRow = Math.floor(srcLocal / columns);
+        const srcCol = srcLocal % columns;
+        const srcVirtualRow = Math.floor(fromIndex / pageSize) * rows + srcRow;
+
+        function bestOf(wrap: bool): int {
+            let best = -1;
+            let bestScore = Infinity;
+            for (let idx = 0; idx < items.length; idx++) {
+                if (idx === fromIndex || !items[idx] || items[idx].kind === "empty")
+                    continue;
+                const local = idx % pageSize;
+                const row = Math.floor(local / columns);
+                const col = local % columns;
+                const virtualRow = Math.floor(idx / pageSize) * rows + row;
+                let major;
+                if (!wrap) {
+                    if (dRow > 0 ? virtualRow <= srcVirtualRow : virtualRow >= srcVirtualRow)
+                        continue;
+                    major = dRow > 0 ? virtualRow - srcVirtualRow : srcVirtualRow - virtualRow;
+                } else {
+                    major = dRow > 0 ? virtualRow + (totalRows - srcVirtualRow) : srcVirtualRow + (totalRows - virtualRow);
+                }
+                const minor = Math.abs(col - srcCol);
+                const score = 13 * major * major + minor * minor;
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = idx;
+                }
+            }
+            return best;
+        }
+        const direct = bestOf(false);
+        if (direct >= 0)
+            return direct;
+        const wrapped = bestOf(true);
+        return wrapped >= 0 ? wrapped : fromIndex;
+    }
+
+    // Up from the top-left cell has nothing above it, so this always
+    // exercises the wrap pass — the closed-loop board wraps around to
+    // whichever real tile is nearest the bottom edge, weighted toward
+    // staying column-aligned rather than necessarily landing in column 0.
+    // Asserts against that same whole-board search instead of assuming
+    // content shape.
     function test_up_on_top_row_wraps_to_bottom_row(): void {
         main.hubScreen.currentIndex = 0;
+        const expected = testCase._expectedNearestVerticalCandidate(main.hubScreen.items, 0, Sizing.hubGridColumns, Sizing.hubGridRows, -1);
         main.handleKey(Qt.Key_Up);
-        const expected = (Sizing.hubGridRows - 1) * Sizing.hubGridColumns;
-        compare(main.hubScreen.currentIndex, expected, "Up from column 0's top row must wrap to the same column on the last row");
+        compare(main.hubScreen.currentIndex, expected, "Up from the top-left cell must wrap to the nearest real tile at the far edge");
+        verify(main.hubScreen.items[main.hubScreen.currentIndex].kind !== "empty", "landed cell must be a real tile, not a blank");
     }
 
     // Right/Left wrap within whatever row the first action tile sits on —
@@ -1107,17 +1278,18 @@ TestCase {
 
     function test_context_menu_systems_owner_includes_media_actions(): void {
         const entries = main.buildContextMenuEntries("systems", "", false, false, false, "", false);
-        compare(_idsOf(entries), ["launch_system", "launch_random_system", "index_system", "scrape_system", "toggle_hide_system"], "Systems context menu includes random and maintenance actions");
+        compare(_idsOf(entries), ["launch_system", "launch_random_system", "index_system", "scrape_system", "toggle_hide_system", "add_to_hub"], "Systems context menu includes random, maintenance, and the Hub shortcut action");
         verify(entries[0].label.length > 0, "Launch core label is set (not asserted in English for translation)");
         verify(entries[1].label.length > 0, "Random game label is set");
         verify(entries[2].label.length > 0, "Update media database label is set");
         verify(entries[3].label.length > 0, "Scrape metadata label is set");
         verify(entries[4].label.length > 0, "Hide label is set");
+        verify(entries[5].label.length > 0, "Add to Hub label is set");
     }
 
     function test_context_menu_systems_has_nfc_does_not_add_entries(): void {
         const entries = main.buildContextMenuEntries("systems", "", false, true, false, "", false);
-        compare(_idsOf(entries), ["launch_system", "launch_random_system", "index_system", "scrape_system", "toggle_hide_system"], "has_nfc must not affect the systems menu");
+        compare(_idsOf(entries), ["launch_system", "launch_random_system", "index_system", "scrape_system", "toggle_hide_system", "add_to_hub"], "has_nfc must not affect the systems menu");
     }
 
     // Category index/scrape are gated on the category having at least one
@@ -1142,8 +1314,19 @@ TestCase {
         compare(_idsOf(entries), [], "A category with no indexable systems and no hide entry has an empty menu");
     }
 
-    function test_context_menu_games_directory_returns_empty(): void {
-        compare(main.buildContextMenuEntries("games", "directory", false, true, false, ""), [], "Folder tiles have no context menu, even with reader attached");
+    // A plain (non-media-capable) folder now offers a menu with exactly
+    // one entry -- "Add to Hub" -- instead of no menu at all. Every
+    // media-scoped action (favorite/NFC/QR/launch) stays gated on
+    // mediaCapable exactly as before.
+    function test_context_menu_games_directory_offers_add_to_hub_only(): void {
+        const entries = main.buildContextMenuEntries("games", "directory", false, true, false, "");
+        compare(_idsOf(entries), ["add_to_hub"], "A plain folder's only entry is the Hub shortcut action");
+    }
+
+    // Favorites never gets a folder-shortcut entry — a favorite is already
+    // a saved shortcut of its own kind.
+    function test_context_menu_favorites_directory_returns_empty(): void {
+        compare(main.buildContextMenuEntries("favorites", "directory", false, true, false, ""), [], "Favorites rows never offer Add to Hub");
     }
 
     function test_context_menu_games_root_returns_empty(): void {
@@ -1152,12 +1335,12 @@ TestCase {
 
     function test_context_menu_games_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, false, false, "");
-        compare(_idsOf(entries), ["toggle_favorite", "qr_code", "launch_game"], "Write to NFC token must be hidden when no reader is reported");
+        compare(_idsOf(entries), ["toggle_favorite", "qr_code", "launch_game", "add_to_hub"], "Write to NFC token must be hidden when no reader is reported");
     }
 
     function test_context_menu_games_with_reader_includes_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, true, false, "");
-        compare(_idsOf(entries), ["toggle_favorite", "write_card", "qr_code", "launch_game"]);
+        compare(_idsOf(entries), ["toggle_favorite", "write_card", "qr_code", "launch_game", "add_to_hub"]);
     }
 
     function test_context_menu_favorites_matches_games_media_entries(): void {
@@ -1238,7 +1421,27 @@ TestCase {
         verify(ids.indexOf("jump_letter") !== -1, "Go to entry present");
         verify(ids.indexOf("launch_random") !== -1, "Random entry present");
         verify(ids.indexOf("games_filter") !== -1, "Show entry present");
+        verify(ids.indexOf("back_to_hub") !== -1, "Back to Hub entry present");
         main.closeListPickerModal();
+    }
+
+    // "Back to Hub" is unconditional -- present and functional on the
+    // Games View menu regardless of how the screen was reached, not just
+    // for shortcut-entered sessions.
+    function test_games_page_menu_back_to_hub_navigates_to_hub(): void {
+        main.activeScreen = main.screenGames;
+        main.openPageMenu();
+        main.listPickerAccepted("page_menu", "back_to_hub");
+        tryCompare(main, "listPickerModalVisible", false);
+        compare(main.activeScreen, main.screenHub);
+    }
+
+    function test_favorites_page_menu_back_to_hub_navigates_to_hub(): void {
+        main.activeScreen = main.screenFavorites;
+        main.openFavoritesPageMenu();
+        main.listPickerAccepted("page_menu_favorites", "back_to_hub");
+        tryCompare(main, "listPickerModalVisible", false);
+        compare(main.activeScreen, main.screenHub);
     }
 
     function test_page_menu_action_toggles_only_view_pickers(): void {
@@ -1431,7 +1634,7 @@ TestCase {
         main.openFavoritesPageMenu();
         tryCompare(main, "listPickerModalVisible", true);
         const ids = main.listPickerEntries.map(e => e.id);
-        compare(ids, ["favorites_sort", "favorites_mode", "launch_random_favorite"], "View order is Sort, Group by, Random");
+        compare(ids, ["favorites_sort", "favorites_mode", "launch_random_favorite", "back_to_hub"], "View order is Sort, Group by, Random, Back to Hub");
         main.closeListPickerModal();
     }
 

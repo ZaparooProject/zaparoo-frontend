@@ -217,7 +217,9 @@ fn apply_state(
         let region = system_region::current_region();
         let rows = rows_for_catalog(Some(&data), &hidden_ids, show_hidden, region);
         let (media_counts, total_items) = favorite_media_counts(&data);
-        if model.rust().systems != rows {
+        if model.rust().systems == rows {
+            model.as_mut().rust_mut().media_counts = media_counts;
+        } else {
             let count = i32::try_from(rows.len()).unwrap_or(i32::MAX);
             model.as_mut().begin_reset_model();
             {
@@ -228,8 +230,6 @@ fn apply_state(
             }
             model.as_mut().end_reset_model();
             model.as_mut().count_changed();
-        } else {
-            model.as_mut().rust_mut().media_counts = media_counts;
         }
         if model.total_items != total_items {
             model.as_mut().set_total_items(total_items);

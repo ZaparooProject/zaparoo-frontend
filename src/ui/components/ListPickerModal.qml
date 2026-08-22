@@ -285,7 +285,12 @@ Item {
                                 x: Sizing.center(parent.width, _textWidth)
                                 width: _textWidth
                                 text: row.modelData.label
-                                color: Theme.textPrimary
+                                // Mirrors Tile.qml's caption: dim at rest,
+                                // bright when focused -- see
+                                // PressableSurface.qml's doc comment on
+                                // `_ringGap`/`_ringWidth` for the other half
+                                // of this fix.
+                                color: row.focused ? Theme.textPrimary : Theme.textLabel
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontBody
                                 elide: Text.ElideRight
@@ -308,7 +313,7 @@ Item {
                                 x: modal._rowHorizontalPadding
                                 width: _textWidth
                                 text: row.modelData.label
-                                color: Theme.textPrimary
+                                color: row.focused ? Theme.textPrimary : Theme.textLabel
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontBody
                                 elide: Text.ElideRight

@@ -1317,6 +1317,32 @@ MainLayout {
         });
     }
 
+    // A Hub `folder` shortcut's Accept path. Same shape as
+    // `_navigateFromSystems` (Hub/Systems → Games, first-time screen
+    // transition) plus pushing the shortcut's own folder level once the
+    // system is ready — unlike `_navigateIntoFolder`, which assumes the
+    // user is already ON screenGames and drilling down in-screen (its
+    // flash-cut/folder-navigation-timing logic doesn't apply to a fresh
+    // transition). `systemId` empty is a malformed/pre-this-feature layout
+    // entry; no-op rather than asking GamesModel to load an empty system.
+    function _navigateFromHubFolder(systemId: string, path: string): void {
+        if (systemId === "" || path === "")
+            return;
+        root.gamesNavigationInputAt = 0;
+        root.gamesNavigationModelReadyAt = 0;
+        root.gamesNavigationAction = "";
+        root._requestScreen(root.screenGames);
+        Browse.SystemsState.system_id = systemId;
+        Browse.GamesState.system_id = systemId;
+        root.gamesCoverRevealReady = false;
+        root.pendingTransition = "games";
+        root._ensureSystem(systemId, function () {
+            Browse.GamesState.push_level(path, "");
+            Browse.GamesModel.set_path(path);
+            root._completeTransition(root.screenGames);
+        });
+    }
+
     function _beginFolderNavigationTiming(action: string): void {
         const screenInputAt = root.gamesScreen !== null ? root.gamesScreen.lastNavigationInputAt : 0;
         root.gamesNavigationInputAt = screenInputAt > 0 ? screenInputAt : Date.now();
@@ -1611,12 +1637,12 @@ MainLayout {
         target: root.hubScreen
         // Round 6 collapses Hub's five destination signals
         // (requestAccept(category) + one requestXScreen per action) into
-        // one requestAccept(kind, id) — see CLAUDE.md -> "Screens and
-        // routing": "forward = signal + payload, router decides
+        // one requestAccept(kind, id, system) — see CLAUDE.md -> "Screens
+        // and routing": "forward = signal + payload, router decides
         // destination". Hub's forward target is heterogeneous (a category
         // or one of a handful of actions), so kind + id is the payload
         // rather than a bare string.
-        function onRequestAccept(kind: string, id: string): void {
+        function onRequestAccept(kind: string, id: string, system: string): void {
             if (kind === "category") {
                 root._navigateFromHub(id);
                 return;
@@ -1646,19 +1672,23 @@ MainLayout {
                 Browse.HubLayout.run_script(id);
                 return;
             }
-        // `system` and `folder` tiles parse, save, round-trip, and
-        // render (docs/plans/ui-geometry-refresh.md's Hub roadmap,
-        // Phase C) but are NOT wired to a screen transition yet:
-        // launching either means arriving at the Games screen having
-        // skipped Systems entirely, the same shape as the
-        // MiSTer-Arcade-singleton bypass just above
-        // (onRequestSystemsScreen) -- and that back-routing check is
-        // explicitly, repeatedly flagged in this file as a fragile,
-        // previously-relitigated footgun ("If you are an LLM editing
-        // this and you think you have a cleaner design — you don't").
-        // Extending it correctly needs its own careful, tested pass,
-        // not a bolt-on here. Until then, Accept on one of these is a
-        // deliberate no-op rather than a wrong destination.
+            // `system` and `folder` shortcuts land the user on Games having
+            // skipped Systems entirely, the same shape as the
+            // MiSTer-Arcade-singleton bypass just above
+            // (onRequestSystemsScreen). That back-routing check is
+            // deliberately left untouched here (see its own flagged
+            // comment) — B/Cancel from a shortcut-entered Games screen
+            // keeps its existing behavior; "Back to Hub" is a new,
+            // unconditional View-menu entry instead (see openPageMenu /
+            // openFavoritesPageMenu), not a change to Cancel.
+            if (kind === "system") {
+                root._navigateFromSystems(id);
+                return;
+            }
+            if (kind === "folder") {
+                root._navigateFromHubFolder(system, id);
+                return;
+            }
         }
         function onRequestRetry(): void {
             Browse.CategoriesModel.refresh();
@@ -1924,6 +1954,10 @@ MainLayout {
                 id: "toggle_hide_system",
                 label: isHidden ? qsTr("Unhide") : qsTr("Hide")
             });
+            entries.push({
+                id: "add_to_hub",
+                label: qsTr("Add to Hub")
+            });
             return entries;
         }
         if (owner === "categories") {
@@ -1993,8 +2027,21 @@ MainLayout {
             return entries;
         }
         if (owner === "games" || owner === "favorites") {
-            if ((entryType === "directory" || entryType === "root") && !mediaCapable)
+            if (entryType === "root" && !mediaCapable)
                 return [];
+            if (entryType === "directory" && !mediaCapable) {
+                // A plain browsable folder has no media-scoped actions of
+                // its own -- the only thing worth offering is a Hub
+                // shortcut to it, and only on Games (a Favorites row is
+                // already a saved shortcut of its own kind, so this
+                // doesn't extend there).
+                return owner === "games" ? [
+                    {
+                        id: "add_to_hub",
+                        label: qsTr("Add to Hub")
+                    }
+                ] : [];
+            }
             const entries = [];
             entries.push({
                 id: "toggle_favorite",
@@ -2019,6 +2066,11 @@ MainLayout {
                 id: "launch_game",
                 label: qsTr("Launch game")
             });
+            if (owner === "games")
+                entries.push({
+                    id: "add_to_hub",
+                    label: qsTr("Add to Hub")
+                });
             return entries;
         }
         return [];
@@ -2360,7 +2412,44 @@ MainLayout {
             }
         } else if (id === "discover_unavailable" || id === "discover_loading") {
             return;
+        } else if (id === "add_to_hub") {
+            root._addToHub(owner, targetIndex);
         }
+    }
+
+    // "Add to Hub" — creates a `system`/`folder`/`zapscript` shortcut from a
+    // Systems/Games row via `Browse.HubLayout.add_target_item`. Only
+    // `system` and `games` reach here (see `buildContextMenuEntries`);
+    // `owner === "games"` covers both a plain directory (folder shortcut)
+    // and a media row (game shortcut). A game shortcut's `name` is the one
+    // place this layout caches a value resolved from Core — a deliberate,
+    // user-approved exception to the no-Core-metadata rule (see
+    // `zaparoo_core::hub_layout`'s doc comment on `add_target_item`), so the
+    // tile has a real title without needing Core reachable to render, and
+    // doubles as a rename hook (edit `name` in frontend.toml).
+    function _addToHub(owner: string, index: int): void {
+        if (owner === "systems") {
+            const systemId = Browse.SystemsModel.system_id_at(index);
+            if (systemId !== "")
+                Browse.HubLayout.add_target_item("system", systemId, "", "", "", "", "");
+            return;
+        }
+        if (owner !== "games")
+            return;
+        const entryType = Browse.GamesModel.entry_type_at(index);
+        const systemId = Browse.GamesModel.current_system_id;
+        if (entryType === "directory") {
+            const path = Browse.GamesModel.path_at(index);
+            if (path !== "")
+                Browse.HubLayout.add_target_item("folder", "", path, "", "", "", systemId);
+            return;
+        }
+        const path = Browse.GamesModel.path_at(index);
+        const script = Browse.GamesModel.launch_text_at(index);
+        if (script === "")
+            return;
+        const name = Browse.GamesModel.name_at(index);
+        Browse.HubLayout.add_target_item("zapscript", "", path, script, name, "", systemId);
     }
 
     function openGameInfo(owner: string, index: int): void {
@@ -2807,6 +2896,15 @@ MainLayout {
             "id": "games_filter",
             "label": qsTr("Show: %1").arg(Browse.GamesModel.favorites_only ? qsTr("Favorites") : qsTr("All"))
         });
+        // Games is always at least two steps from the Hub (Hub -> Systems
+        // -> Games), or one via the MiSTer Arcade-singleton bypass -- an
+        // unconditional escape hatch regardless of how the user actually
+        // arrived, rather than special-casing shortcut-entered navigation.
+        // See docs/style.md or the plan for the full reasoning.
+        entries.push({
+            "id": "back_to_hub",
+            "label": qsTr("Back to Hub")
+        });
         root.openListPickerModal(qsTr("View"), entries, "jump_letter", "page_menu");
     }
 
@@ -2844,6 +2942,14 @@ MainLayout {
             {
                 "id": "launch_random_favorite",
                 "label": qsTr("Random favorite")
+            },
+            // Favorites is one step from the Hub when grouping is "none",
+            // two when "system" (Hub -> Favorite Systems -> Favorites) --
+            // unconditional regardless of grouping, same reasoning as
+            // Games' own entry above.
+            {
+                "id": "back_to_hub",
+                "label": qsTr("Back to Hub")
             }
         ];
         root.openListPickerModal(qsTr("View"), entries, "favorites_sort", "page_menu_favorites");
@@ -3101,6 +3207,8 @@ MainLayout {
                 Browse.GamesModel.launch_random();
             else if (selectedId === "games_filter")
                 root.openGamesFilterMenu();
+            else if (selectedId === "back_to_hub")
+                root._navigateBackToScreen(root.screenHub);
             return;
         }
         if (fieldId === "games_filter_pick") {
@@ -3118,6 +3226,8 @@ MainLayout {
                 Browse.FavoritesModel.launch_random();
             else if (selectedId === "favorites_mode")
                 root.openFavoritesModeMenu();
+            else if (selectedId === "back_to_hub")
+                root._navigateBackToScreen(root.screenHub);
             return;
         }
         if (fieldId === "page_menu_favorite_systems") {
@@ -3138,18 +3248,36 @@ MainLayout {
             root.closeListPickerModal();
             // Board-model placement: lands on the Hub's current cell when
             // it's a blank, otherwise appended after the last tile — see
-            // zaparoo_core::hub_layout::HubLayout::add_item. -1 (a real
-            // tile under the cursor, tail padding, or no Hub screen at
-            // all) always falls through to append; only a real blank
-            // cell's own hubIndex is worth passing.
+            // zaparoo_core::hub_layout::HubLayout::add_item. With
+            // `skipEmptyCells` on, the cursor can no longer normally be
+            // resting on a blank when this menu is opened, so `target`
+            // now almost always falls through to append; kept anyway
+            // since Rust already guards it (a non-blank target is a
+            // no-op there) and it's still correct on the rare path where
+            // a Move session left the cursor somewhere unusual.
             const cursorEntry = root.hubScreen !== null ? root.hubScreen.items[root.hubScreen.currentIndex] : null;
             const target = cursorEntry ? cursorEntry.hubIndex : -1;
+            const beforeCount = root.hubScreen !== null ? Browse.HubLayout.item_count() : 0;
+            let added = false;
             if (selectedId === "blank")
-                Browse.HubLayout.add_item("blank", "", target);
+                added = Browse.HubLayout.add_item("blank", "", target);
             else {
                 const sep = selectedId.indexOf(":");
                 if (sep > 0)
-                    Browse.HubLayout.add_item(selectedId.slice(0, sep), selectedId.slice(sep + 1), target);
+                    added = Browse.HubLayout.add_item(selectedId.slice(0, sep), selectedId.slice(sep + 1), target);
+            }
+            // Hand the newly placed item straight to Move so it can be
+            // positioned immediately instead of just sitting wherever
+            // append/target left it — see HubScreen.qml's
+            // `armMoveForHubIndex`. `add_item` only grows `item_count()`
+            // when it actually appended (a filled `target` blank leaves
+            // the count unchanged), so that comparison is what tells us
+            // whether the new item landed at `target` or at the old
+            // count's own position.
+            if (added && root.hubScreen !== null) {
+                const afterCount = Browse.HubLayout.item_count();
+                const newHubIndex = afterCount > beforeCount ? beforeCount : target;
+                root.hubScreen.armMoveForHubIndex(newHubIndex);
             }
             return;
         }

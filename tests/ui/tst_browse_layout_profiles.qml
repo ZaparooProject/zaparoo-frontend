@@ -58,6 +58,27 @@ TestCase {
         compare(main.systemsScreen.systemsGrid.layoutProfile.grid.pageChevronSize, 8);
     }
 
+    // Non-CRT hosts the count badge and page cue on the top strip's title
+    // line (`pageIndicatorMode`); CRT's top strip is hidden entirely
+    // (`status.topStripVisible: false`), so it keeps them in the footer
+    // instead, unchanged from before this round --
+    // `footer.pageCueInFooter` is the profile flag both screens key off
+    // (BrowseLayouts.qml). Asserts the profile-derived flags directly
+    // rather than final `.visible` (which also folds in this harness's
+    // own loading-gate state, unrelated to what's under test here).
+    function test_default_grid_shows_page_cue_at_top_crt_shows_it_in_footer(): void {
+        compare(main.systemsScreen._pageCueInFooter, false);
+        compare(main.systemsScreen.topStrip.pageIndicatorMode, true);
+        const footerCount = findChild(main.systemsScreen, "systemsFooterCount");
+        const footerIndicator = findChild(main.systemsScreen, "systemsFooterPageIndicator");
+        verify(footerCount !== null);
+        verify(footerIndicator !== null);
+
+        main.crtNativePath = true;
+        compare(main.systemsScreen._pageCueInFooter, true);
+        compare(main.systemsScreen.topStrip.pageIndicatorMode, false);
+    }
+
     function test_crt_list_uses_crt_header_and_profile(): void {
         main.crtNativePath = true;
         Browse.Settings.current_browse_layout = "list";

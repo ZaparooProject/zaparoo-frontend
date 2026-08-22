@@ -257,11 +257,44 @@ synchronized during press/rapid-render states.
 `PressableSurface.qml` — modal buttons, ContextMenu/ListPickerModal rows —
 draws the identical two-rect construction when `focused`, inset inside the
 face rather than outset (the root `Item` clips). This is what gives a focused
-modal button the same visual weight as a focused tile instead of the older
-thin `border.color`/`border.width` swap, which had the same QTBUG-123210
+modal button the same visual *construction* as a focused tile instead of the
+older thin `border.color`/`border.width` swap, which had the same QTBUG-123210
 stepping problem at any real thickness. The face's own `border` (`borderMid`,
 `cardBorderWidth`) no longer changes with focus — the ring is additive, not a
 replacement for the resting border.
+
+Ring *thickness* is not shared with `Tile`, though — `PressableSurface`
+derives its own `_ringGap`/`_ringWidth` from `Sizing.cardBorderWidth`, the
+same token that already draws the row's own resting border. Two earlier
+versions got this wrong in opposite directions: a screen-relative percentage
+(matching `Tile`'s own tokens) ate ~38% of a menu/picker row's short face
+height on top of its existing static border and press edge — three
+concentric frames reading as clutter instead of one clear "this is focused"
+cue. Rescaling that same percentage to the row's OWN height instead floored
+to exactly 1px at every real resolution tier — no heavier than the row's
+resting border, so focus read as barely more prominent than idle chrome.
+Deriving from `cardBorderWidth` fixes both by construction: `_ringGap:
+cardBorderWidth`, `_ringWidth: cardBorderWidth * 2` — the band is always
+exactly double the resting border's weight, and both scale together off the
+same token, so they can't drift out of relative proportion at some
+resolution neither was tested at. The resting border itself stays untouched
+(still additive, per above), and the ring construction (two stacked filled
+rects, `Theme.accent`) is unchanged — this is a thickness-derivation fix
+only.
+
+Thickness alone was still not the whole fix. `Tile`'s own focus cue is not
+ring-only: the caption dims to `Theme.textLabel` at rest and brightens to
+`Theme.textPrimary` when focused, and bundled artwork/logos swap
+`logoPrimary` → `logoFocusPrimary` the same way. `PressableSurface` callers
+(`ContextMenu`, `ListPickerModal`, `Modal`'s confirm buttons,
+`LetterJumpModal`'s letter cells) never picked up that half — their label
+text sat at `Theme.textPrimary` unconditionally, so every unfocused row
+already looked fully lit and the ring was the only signal carrying focus at
+all. Each of those now dims/brightens its own label the same way `Tile`
+does, so two independent signals reinforce each other. Rows with only one
+possible focus target (`focused: true`, no other row to contrast against —
+`LogUploadModal`, `CommercialNoticeModal`) are left alone; there's nothing
+for dimming to distinguish there.
 
 Tiles use a physical front edge inside their existing cell footprint. Activation
 lowers artwork, caption, badges, and ring together without scaling cover art.
@@ -846,31 +879,40 @@ a second page, so this fired on every single arm). `_availableWidth` is
 simply `width - leftInset - rightInset` — nothing subtracts space for a
 gutter, so a grid's geometry is identical regardless of page count.
 
-The "where am I" cue lives in the host screen's **footer** instead — a fixed,
-unconditionally-reserved three-slot row, one-third width apiece (same
-discipline `TopStatusStrip` already used for its own three slots):
+The "where am I" cue is a count badge plus `PageIndicator` (up/down chevrons —
+`ScrollUp`/`ScrollDown`, the same glyphs the old gutter used — plus "N / M").
+The "N / M" text (and the "N" it falls back to when the total isn't known
+yet) only paints once there's actually somewhere else to page to —
+`PageIndicator._hasMultiplePages` — since a single page never needs a "1 / 1"
+readout next to two chevrons that are also both hidden; the reserved width
+doesn't change either way, so this never causes the shift the paragraph below
+is about. It sits alongside `TopStatusStrip`'s title, baseline-aligned to it
+(`TopStatusStrip.pageIndicatorMode`), on every theme except CRT — CRT hides
+that strip entirely (`status.topStripVisible: false`) and keeps the same cue
+in the host screen's **footer** instead, alongside `ActiveLabel`
+(`footer.pageCueInFooter` in `BrowseLayouts.qml` is the profile flag both
+placements key off). Wherever it lives, the badge and `PageIndicator` are
+unconditionally reserved — only their content toggles (a chevron's own
+`visible`, the count text's presence) — so a single-page grid becoming
+multi-page (arming Hub Options → Move always reserves a second page) never
+shifts anything.
 
-| slot | content |
-|---|---|
-| left | an optional count badge ("%1 systems", "%1 files") |
-| center | `ActiveLabel` — the focused item's name |
-| right | `PageIndicator` — up/down chevrons (`ScrollUp`/`ScrollDown`, the
-same glyphs the old gutter used) plus "N / M" |
-
-All three slots exist whether or not their content does — only the content
-toggles (a chevron's own `visible`, the count text's presence). See
-`PageIndicator.qml`'s doc comment for why each chevron is anchored off a
-fixed chain rather than a `Row`: hiding one must not shift the "N / M" text
-next to it, for the same reason the grid itself must not shift. `TopStatusStrip`
-becomes title-only in grid layout (`showPageCounter: false`, and the caller
-stops feeding `totalText`) — list layouts (Settings-style vertical lists,
-`BrowseList`) are unaffected; they already used a fixed chevron-band reserved
-by margin, unrelated to this and never carried the bug.
-
-`ActiveLabel.sideInset` (default `pctW(3)`, byte-identical for every caller
-that doesn't set it) is what keeps a long focused name from eliding under
-the footer's corner slots — grid-layout hosts bind it to that same
-one-third slot width.
+Two placements exist because putting the cue at the top, next to a title
+that's already there, was tried first (pre-round-5) and reads better once a
+footer that's ALSO carrying the focused item's own title has room to spare —
+`ActiveLabel.sideInset` reverts to its own default (`pctW(3)`) instead of a
+`width/3` corner reservation whenever the footer isn't hosting the count/page
+slots, roughly doubling the room a long focused title gets before eliding.
+CRT's footer is the one place that still needs the full three-slot arrangement,
+since CRT has nowhere else to put it. See `PageIndicator.qml`'s doc comment for
+why each chevron is anchored off a fixed chain rather than a `Row` (hiding one
+must not shift the "N / M" text next to it) and for `chevronSpacing`, a
+tighter gap between the two chevrons than between the pair and the text —
+Gestalt proximity: the chevrons are one control, the text is a separate
+readout, and the glyphs' own baked-in side bearing already makes an *equal*
+gap read backwards. List layouts (Settings-style vertical lists, `BrowseList`)
+are unaffected by any of this; they use a fixed chevron-band reserved by
+margin, unrelated to paged grids entirely.
 
 ### Empty slots
 
@@ -885,20 +927,36 @@ end up fully opaque on top) is skipped entirely for `isEmpty` rows — an
 empty slot is not opaque, so that assumption doesn't hold, and the skeleton
 would otherwise stay visible underneath it permanently.
 
-An empty slot paints nothing at rest — genuinely blank, not a recessed or
-filled variant — and shows an accent focus ring when the cursor lands on it,
-so it still reads as "here" even though there's nothing else to see. Unlike
-Tile's ring (two filled rounded rects, an opaque accent rect with the center
-punched back to `Theme.surfaceCard` — chosen to dodge Qt software AA's
-visible corner-stepping on thin rounded borders, QTBUG-123210), an empty
-slot's ring is a real hollow `border`: there is no card face behind it to
-punch back to, so nothing can be painted in the center without risking
-occluding whatever's actually behind the grid if that's ever not a flat
-color. The corner-AA softness this reintroduces is accepted here — the ring
-is only visible while the cursor rests on a gap, far less prominent than
-Tile's ubiquitous one. The Hub uses this for the trailing remainder of its
-last page (`HubScreen.qml`'s `_padToPageSize`); the cursor can move onto one
-like any other cell, and it is inert on Accept.
+An empty slot paints nothing, ever — not even a focus ring. Normal browsing
+cannot land the cursor on one at all: `PagedGrid.skipEmptyCells` (which the
+Hub sets to `!moveArmed`) makes every cursor path — `moveSelection`, `pageBy`,
+and the per-cell mouse hover/click — treat an `isEmpty` row as unreachable.
+Left/Right still step past a blank within the same row, same as before; Up/Down
+instead run a nearest-candidate search across every real tile on the whole
+board — a same-column-only walk tunnels past nearby content on a freely
+arranged Hub layout, landing on a distant aligned tile instead of a much
+closer one a column over. See `PagedGrid.qml`'s `_nearestVerticalCandidate`
+doc comment for the weighting (borrowed from Android's `FocusFinder`, the
+algorithm behind d-pad navigation on Android TV). The one place a blank IS
+still a legitimate destination is a Move session (Hub Options → Move), which
+needs to target one — or the reserve page `beginMove` pads in — to place a
+held tile there; Move disarms `skipEmptyCells` for exactly that reason, and
+the held tile swaps into the cell within the same synchronous call, so no
+frame ever actually paints `EmptySlot` under the cursor either way.
+
+This wasn't always the rule. An earlier version let the cursor rest on a gap
+and drew an accent ring around it so it still read as "here." It didn't work:
+every other focused thing in the app is a solid card with a ring wrapped
+around it, and a ring drawn over a face-less `Item` has nothing to wrap —
+it read as a stray rectangle floating on the background, not a cursor. WAI-ARIA's
+own guidance points the same way (disabled/inert things are normally not
+focusable at all), and the nearest real-world analogue — iOS 18's home-screen
+gaps — only accepts a drop while you're actively rearranging, exactly the
+Move-only rule here. Landing on a blank had exactly one other job: aiming
+View → Add item… at that specific gap. Add now arms Move on the newly placed
+item instead, so the "put it exactly where I want" affordance survives
+without needing the cursor to ever rest on empty space outside a Move
+session.
 
 ## Consistency rules
 

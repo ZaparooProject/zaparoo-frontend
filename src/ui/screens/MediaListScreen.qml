@@ -165,6 +165,13 @@ Item {
     readonly property var _activeViewProfile: root._listLayout ? root._listLayoutProfile : root._gridLayoutProfile
     readonly property var _statusProfile: root._activeViewProfile && root._activeViewProfile.status ? root._activeViewProfile.status : null
     readonly property var _footerProfile: root._gridLayoutProfile && root._gridLayoutProfile.footer ? root._gridLayoutProfile.footer : null
+    // CRT keeps the count + page cue in the footer (its top strip is
+    // hidden entirely, `status.topStripVisible: false`); every other
+    // theme hosts it up on the title line instead, alongside the count
+    // badge -- see TopStatusStrip.qml's `pageIndicatorMode` and
+    // BrowseLayouts.qml's `footer.pageCueInFooter`.
+    readonly property bool _pageCueInFooter: !!(root._footerProfile && root._footerProfile.pageCueInFooter)
+    readonly property bool _showGridPageCue: !root._listLayout && root.renderGridLayout && !root._pageCueInFooter
     readonly property bool _crtListStrip: Theme.crtNativePath && root._listLayout
     readonly property int _listOverlayBottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.overlayBottomMargin : Sizing.pctH(15)
     // Hide list/grid content as soon as the model enters Loading, but
@@ -515,15 +522,25 @@ Item {
         currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : mediaGrid.currentPage
         totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize))
         pageTotalKnown: root.paginationTotalKnown
-        // Grid layout is title-only here regardless of what a provider
-        // computes -- the count and page cue both live in the footer
-        // instead (see the ActiveLabel/PageIndicator row below), so
-        // nothing about this strip changes when the grid's page count
-        // changes. List layout keeps each screen's own provider (or the
-        // generic fallback) exactly as before.
-        totalText: !root._listLayout ? "" : (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root._count() > 0 ? qsTr("%1 entries").arg(root._count()) : ""))
+        // List layout keeps each screen's own provider (or the generic
+        // fallback) exactly as before. Grid layout shows the same count
+        // here too now, UNLESS the theme keeps it in the footer instead
+        // (`_pageCueInFooter` -- CRT, whose top strip is hidden entirely
+        // anyway).
+        // Generic fallback must guard on `paginationTotalKnown` same as
+        // `rightTextOverride` below does -- `_count()` is rows-loaded-so-far
+        // for a cursor-paginated model (Recents/Favorites), not a stable
+        // total, and would otherwise grow visibly as the user scrolls.
+        // Screens with a real total (Games/Favorite Systems) supply their
+        // own `topStripTotalTextProvider` and never reach this branch.
+        totalText: (root._listLayout || root._showGridPageCue) ? (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root.paginationTotalKnown && root._count() > 0 ? qsTr("%1 entries").arg(root._count()) : "")) : ""
         rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : (!root.paginationTotalKnown || !root._listLayout || mediaGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(mediaGrid.currentIndex + 1).arg(Math.max(1, root._count())))
-        showPageCounter: root._listLayout
+        showPageCounter: root._listLayout || root._showGridPageCue
+        pageIndicatorMode: root._showGridPageCue
+        pageIndicatorChevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
+        hasPagesAbove: mediaGrid.hasPagesAbove
+        hasPagesBelow: mediaGrid.hasPagesBelow
+        onPageRequested: delta => root._performPage(delta)
     }
 
     BrowseListDetailView {
@@ -631,12 +648,13 @@ Item {
         onPageWheelRequested: delta => root.handleAction(delta > 0 ? "page_next" : "page_prev")
     }
 
-    // Footer row — active item caption (center), an optional count
-    // (left, screen-supplied text), and a page cue (right,
-    // PageIndicator driven directly off `mediaGrid`'s own page state —
-    // see that component's doc comment). All three slots are reserved
-    // unconditionally; only their contents toggle, so nothing here
-    // shifts or resizes when the grid's page count changes.
+    // Footer row — active item caption. The count badge and page cue sit
+    // up on the top strip now instead (`_showGridPageCue` above) except on
+    // CRT, whose top strip is hidden entirely -- CRT keeps them down here,
+    // `_pageCueInFooter`. Everywhere else this is a title-only row, so
+    // `sideInset` reverts to ActiveLabel's own default margin instead of
+    // yielding a third of the width to corner slots that are empty here
+    // now.
     ActiveLabel {
         id: activeLabel
         visible: !root._gateHide && !root._listLayout && root.renderGridLayout
@@ -646,7 +664,7 @@ Item {
         anchors.bottom: root.activeLabelAtBottom ? parent.bottom : undefined
         anchors.bottomMargin: root.activeLabelAtBottom ? root.activeLabelBottomMargin : 0
         height: root.activeLabelHeight
-        sideInset: Sizing.px(width / 3)
+        sideInset: root._pageCueInFooter ? Sizing.px(width / 3) : Sizing.pctW(3)
         text: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
         // Full (untrimmed) disambiguation tokens for the focused item, shown as a
         // dim suffix. Uses an explicit provider when given, else the model's
@@ -656,7 +674,7 @@ Item {
 
     Text {
         id: bottomTotalText
-        visible: !root._gateHide && !root._listLayout && root.bottomStatusLeftText !== ""
+        visible: !root._gateHide && !root._listLayout && root._pageCueInFooter && root.bottomStatusLeftText !== ""
         anchors.left: parent.left
         anchors.leftMargin: root.bottomStatusLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
@@ -673,7 +691,9 @@ Item {
     }
 
     PageIndicator {
-        visible: !root._gateHide && !root._listLayout && root.renderGridLayout
+        id: footerPageIndicator
+        objectName: "mediaListFooterPageIndicator"
+        visible: !root._gateHide && !root._listLayout && root.renderGridLayout && root._pageCueInFooter
         anchors.right: parent.right
         anchors.rightMargin: root.bottomStatusRightMargin
         anchors.verticalCenter: activeLabel.verticalCenter

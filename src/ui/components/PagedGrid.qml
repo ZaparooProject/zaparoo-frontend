@@ -55,6 +55,18 @@ Item {
     // `delegate` regardless of its value. See EmptySlot.qml and
     // HubScreen.qml's `_padToPageSize`.
     property Component emptyDelegate: null
+    // When true, every cursor path (`moveSelection`, `pageBy`, and the
+    // per-cell MouseArea) treats `isEmpty` rows as unreachable rather than
+    // an ordinary cell -- the cursor steps past them as if they weren't
+    // there instead of landing on them. `false` (default, every caller but
+    // the Hub outside a Move session) is byte-identical to before: those
+    // models hardcode `isEmpty` to `false` on every row anyway, so this
+    // property is a no-op for them regardless of its value. The Hub binds
+    // it to `!moveArmed` -- Move must still be able to target a blank (or
+    // the reserve page `beginMove` pads in), which is why this is a
+    // property the host toggles rather than a permanent behavior. See
+    // EmptySlot.qml and docs/style.md -> "Empty slots".
+    property bool skipEmptyCells: false
 
     property int currentIndex: 0
     // List layout keeps this grid as cursor/page authority while rendering a
@@ -379,7 +391,71 @@ Item {
     // on a partial last page it clamps to the last existing item.
     // Returns true if the index changed synchronously, false if a
     // pending-jump was stashed or the dataset is single-page.
+    // Reads the `isEmpty` role for an arbitrary flat index. Goes through
+    // the Repeater's own delegate (`itemAt`) rather than querying
+    // `root.model` directly so this works uniformly whether the model is a
+    // QML ListModel (the Hub) or a Rust-backed model (every other caller,
+    // which never sets `isEmpty` true) without needing model-type-specific
+    // access. The Repeater's `cellItem` delegate is created synchronously
+    // (see the `asynchronous` note on the Loader below, which is scoped to
+    // the *TileLoader*, not this outer delegate), so `itemAt` never returns
+    // null for a valid index.
+    function _isEmptyAt(index: int): bool {
+        if (index < 0 || index >= root.itemCount)
+            return false;
+        const cell = itemRepeater.itemAt(index);
+        return cell ? cell.isEmpty : false;
+    }
+
+    // First non-`isEmpty` cell on `page`, scanning row-major from `fromLocal`
+    // (a page-local index) and wrapping within the page's own filled span.
+    // -1 if the page has no non-empty cell at all (a fully-blank page, e.g.
+    // Move's reserve page or an entirely-emptied Hub). Used by `pageBy`'s
+    // skip-empty pass below.
+    function _firstNonEmptyOnPage(page: int, fromLocal: int): int {
+        const pageStart = page * root.pageSize;
+        const itemsOnPage = Math.min(root.pageSize, root.itemCount - pageStart);
+        if (itemsOnPage <= 0)
+            return -1;
+        for (let step = 0; step < itemsOnPage; step++) {
+            const local = (fromLocal + step) % itemsOnPage;
+            const idx = pageStart + local;
+            if (!root._isEmptyAt(idx))
+                return idx;
+        }
+        return -1;
+    }
+
+    // Turn the page by `delta`, skipping over any page whose landing slot
+    // (and, failing that, whose entire span) is `isEmpty` -- see
+    // `skipEmptyCells` above. Bounded by `pageCount` steps: a direction with
+    // no reachable non-empty page anywhere settles back on the starting
+    // index rather than looping. Any mid-scan failure of the underlying
+    // step (`_pageByStep` returning false -- a pending fetch stash, or
+    // genuinely nowhere left to go) also settles back to the start; this
+    // is deliberately conservative rather than landing partway, since a
+    // stash means the destination isn't even loaded yet.
     function pageBy(delta: int): bool {
+        if (!root.skipEmptyCells)
+            return root._pageByStep(delta);
+
+        const startIndex = root.currentIndex;
+        for (let steps = 0; steps < root.pageCount; steps++) {
+            if (!root._pageByStep(delta))
+                break;
+            const found = root._firstNonEmptyOnPage(root.currentPage, root.currentIndex - root.currentPage * root.pageSize);
+            if (found < 0)
+                continue; // whole page is blank -- keep paging the same direction
+            if (found !== root.currentIndex)
+                root.currentIndex = found;
+            return true;
+        }
+        if (root.currentIndex !== startIndex)
+            root.currentIndex = startIndex;
+        return false;
+    }
+
+    function _pageByStep(delta: int): bool {
         if (root.itemCount <= 0 || delta === 0)
             return false;
         let targetPage;
@@ -557,7 +633,122 @@ Item {
     // - Landing on a hole on a partial target page (column doesn't
     //   exist there): clamp to the last existing item on the target
     //   page so the user always moves rather than sticking on a hole.
+    //
+    // When `skipEmptyCells` is set: horizontal presses still step the SAME
+    // way `_moveSelectionStep` always has, just repeated until a non-empty
+    // cell turns up -- Left/Right staying within the source row is a real,
+    // separate invariant (Move's `_wouldWrapColumn` depends on it), not
+    // part of what this property changes. Vertical presses do NOT reuse
+    // that "same column, repeated step" approach: on a freely-arranged
+    // board (the Hub, the only caller) a column can be empty for several
+    // rows in a row while a real tile sits one column over, and marching
+    // straight down that empty column -- even wrapping through pages --
+    // tunnels past it. `_nearestVerticalCandidate` below searches every
+    // real tile on the board instead. See its own doc comment.
     function moveSelection(dCol: int, dRow: int): bool {
+        if (!root.skipEmptyCells)
+            return root._moveSelectionStep(dCol, dRow);
+
+        if (dRow !== 0) {
+            const candidate = root._nearestVerticalCandidate(dRow, root.currentIndex);
+            if (candidate < 0)
+                return false;
+            root._clearPendingTarget();
+            root.currentIndex = candidate;
+            return true;
+        }
+
+        // Horizontal: same-row skip, bounded repeat of the ordinary step --
+        // see the doc comment above for why this one is unchanged.
+        const startIndex = root.currentIndex;
+        for (let steps = 0; steps < root.itemCount; steps++) {
+            if (!root._moveSelectionStep(dCol, dRow))
+                break;
+            if (root.currentIndex !== startIndex && !root._isEmptyAt(root.currentIndex))
+                return true;
+        }
+        if (root.currentIndex !== startIndex)
+            root.currentIndex = startIndex;
+        return false;
+    }
+
+    // Finds the best real (non-`isEmpty`) tile in the vertical direction
+    // `dRow` from `fromIndex`, searching the WHOLE board rather than a
+    // single column -- see `moveSelection`'s doc comment for why the
+    // column-only approach tunnels past nearby content on a freely
+    // arranged Hub layout. Pages stack vertically (this file's own header
+    // comment), so every cell's position collapses to one flat
+    // `virtualRow = page * rows + row` axis plus `column`; distance is
+    // then scored in plain grid units exactly the way Android's
+    // `FocusFinder` -- the algorithm behind d-pad navigation on Android TV
+    // since 2007 -- scores pixel rects: `13 * majorAxisDistance² +
+    // minorAxisDistance²`. The 13:1 ratio is that same shipped, tuned
+    // constant, reused rather than re-derived: it strongly prefers staying
+    // column-aligned (a tile 1 row further but perfectly aligned beats one
+    // 1 column off), while still being willing to drift a column or two
+    // rather than travel several rows past nearer content. Grid units
+    // (not pixels) are correct here specifically because the Hub always
+    // uses `squareCells: true`, so a row step and a column step already
+    // cover equal physical distance.
+    //
+    // Two passes:
+    // 1. Only tiles strictly in the pressed direction. Cheapest, most
+    //    common case -- most presses have something below/above.
+    // 2. Nothing there at all: wrap. Every remaining real tile is scored
+    //    as if the press had continued past the edge and come back
+    //    around (mirrors the horizontal skip's own wrap and the
+    //    confirmed Move-page wrap), so the winner is whichever tile is
+    //    closest to the far edge, still column-weighted the same way.
+    // Returns -1 (moveSelection settles back to the start, unmoved) only
+    // when `fromIndex` is the sole real tile on the entire board.
+    function _nearestVerticalCandidate(dRow: int, fromIndex: int): int {
+        const totalRows = root.totalPageCount * root.rows;
+        const srcLocal = fromIndex % root.pageSize;
+        const srcRow = Math.floor(srcLocal / root.columns);
+        const srcCol = srcLocal % root.columns;
+        const srcVirtualRow = Math.floor(fromIndex / root.pageSize) * root.rows + srcRow;
+
+        let best = -1;
+        let bestScore = Infinity;
+        for (let idx = 0; idx < root.itemCount; idx++) {
+            if (idx === fromIndex || root._isEmptyAt(idx))
+                continue;
+            const local = idx % root.pageSize;
+            const row = Math.floor(local / root.columns);
+            const col = local % root.columns;
+            const virtualRow = Math.floor(idx / root.pageSize) * root.rows + row;
+            if (dRow > 0 ? virtualRow <= srcVirtualRow : virtualRow >= srcVirtualRow)
+                continue;
+            const major = dRow > 0 ? virtualRow - srcVirtualRow : srcVirtualRow - virtualRow;
+            const minor = Math.abs(col - srcCol);
+            const score = 13 * major * major + minor * minor;
+            if (score < bestScore) {
+                bestScore = score;
+                best = idx;
+            }
+        }
+        if (best >= 0)
+            return best;
+
+        for (let idx = 0; idx < root.itemCount; idx++) {
+            if (idx === fromIndex || root._isEmptyAt(idx))
+                continue;
+            const local = idx % root.pageSize;
+            const row = Math.floor(local / root.columns);
+            const col = local % root.columns;
+            const virtualRow = Math.floor(idx / root.pageSize) * root.rows + row;
+            const major = dRow > 0 ? virtualRow + (totalRows - srcVirtualRow) : srcVirtualRow + (totalRows - virtualRow);
+            const minor = Math.abs(col - srcCol);
+            const score = 13 * major * major + minor * minor;
+            if (score < bestScore) {
+                bestScore = score;
+                best = idx;
+            }
+        }
+        return best;
+    }
+
+    function _moveSelectionStep(dCol: int, dRow: int): bool {
         if (root.itemCount <= 0)
             return false;
 
@@ -952,12 +1143,19 @@ Item {
                     enabled: cellItem.visible
 
                     onEntered: {
+                        // Mirrors the directional skip above: with
+                        // `skipEmptyCells` set, a blank is not a landing
+                        // spot for the mouse either.
+                        if (root.skipEmptyCells && cellItem.isEmpty)
+                            return;
                         if (root.currentIndex !== cellItem.index)
                             root.currentIndex = cellItem.index;
                         root.itemHovered(cellItem.index);
                     }
 
                     onClicked: mouse => {
+                        if (root.skipEmptyCells && cellItem.isEmpty)
+                            return;
                         if (root.currentIndex !== cellItem.index)
                             root.currentIndex = cellItem.index;
                         if (mouse.button === Qt.RightButton)

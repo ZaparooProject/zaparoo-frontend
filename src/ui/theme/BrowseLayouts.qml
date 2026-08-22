@@ -37,6 +37,7 @@ QtObject {
                         "pageChevronSize": "min(pctW:3,pctH:4)"
                     },
                     "footer": {
+                        "pageCueInFooter": false,
                         "activeLabelHeight": "pctH:7",
                         "activeLabelBottomMargin": "pctH:8",
                         "bottomStatusLeftMargin": "pctW:3",
@@ -213,6 +214,7 @@ QtObject {
                         "pageChevronSize": "min(pctW:3,pctH:4)"
                     },
                     "footer": {
+                        "pageCueInFooter": false,
                         "activeLabelHeight": "pctH:7",
                         "activeLabelBottomMargin": "pctH:8",
                         "bottomStatusLeftMargin": "pctW:3",
@@ -391,6 +393,7 @@ QtObject {
                         "pageChevronSize": 8
                     },
                     "footer": {
+                        "pageCueInFooter": true,
                         "activeLabelHeight": 8,
                         "activeLabelBottomMargin": "pctH:6",
                         "bottomStatusLeftMargin": 4,
@@ -568,6 +571,7 @@ QtObject {
                         "pageChevronSize": 8
                     },
                     "footer": {
+                        "pageCueInFooter": true,
                         "activeLabelHeight": 8,
                         "activeLabelBottomMargin": "pctH:6",
                         "bottomStatusLeftMargin": 4,

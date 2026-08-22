@@ -29,12 +29,23 @@ Item {
     property bool pageTotalKnown: true
     property string totalText: "" // formatted; empty hides the slot
     property string rightTextOverride: "" // formatted; non-empty replaces page text
-    // Grid-layout screens now show paging through the footer's
-    // PageIndicator instead (see HubScreen/SystemsScreen/MediaListScreen)
-    // -- this strip becomes title-only for them. List layouts still use
-    // this slot for their own "N / M" cue. Default true keeps every
-    // existing (list-layout) caller byte-identical.
+    // List layouts show paging as plain "Page N / M" text here (unaffected
+    // by any of this -- they have their own separate chevron-band scroll
+    // chrome elsewhere). Grid layout's cue lives in the footer on CRT
+    // (`footer.pageCueInFooter`, BrowseLayouts.qml) but up here, alongside
+    // the count badge, on every other theme -- see `pageIndicatorMode`.
+    // Default true keeps every existing (list-layout) caller byte-identical.
     property bool showPageCounter: true
+    // True mounts a `PageIndicator` (chevrons + "N / M") in the right slot
+    // instead of the plain page-count Text -- the grid-layout page cue,
+    // relocated here from the footer. False (default, every list-layout
+    // caller) keeps this slot exactly as it always was. See
+    // SystemsScreen.qml / MediaListScreen.qml for the callers.
+    property bool pageIndicatorMode: false
+    property bool hasPagesAbove: false
+    property bool hasPagesBelow: false
+    property int pageIndicatorChevronSize: Sizing.pctH(4)
+    signal pageRequested(int delta)
     readonly property string pageText: status.rightTextOverride !== "" ? status.rightTextOverride : (status.pageTotalKnown ? qsTr("Page %1 / %2").arg(status.currentPage + 1).arg(status.totalPages) : qsTr("Page %1").arg(status.currentPage + 1))
     property int slotMargin: Sizing.pctW(3)
     readonly property int _slotWidth: Sizing.px(status.width / 3)
@@ -96,7 +107,7 @@ Item {
     Text {
         id: pageCounter
 
-        visible: status.showPageCounter && (status.rightTextOverride !== "" || !status.pageTotalKnown || status.totalPages > 1)
+        visible: !status.pageIndicatorMode && status.showPageCounter && (status.rightTextOverride !== "" || !status.pageTotalKnown || status.totalPages > 1)
         anchors.right: parent.right
         anchors.rightMargin: status.slotMargin
         anchors.baseline: titleText.baseline
@@ -108,5 +119,28 @@ Item {
         font.pixelSize: Sizing.fontSection
         color: Theme.textPrimary
         renderType: Text.NativeRendering
+    }
+
+    // Grid layout's relocated page cue -- see `pageIndicatorMode` above.
+    // Baseline-aligned the same way `pageCounter` is, but `PageIndicator`
+    // is a plain Item (icons + text, not one Text), so it has no `baseline`
+    // anchor line of its own to bind to directly; `y` is computed instead
+    // from `titleText`'s real baseline position and this component's own
+    // exposed `textBaselineOffset` (the same font as `pageCounter`, so the
+    // two line up exactly).
+    PageIndicator {
+        id: pageIndicatorRight
+
+        visible: status.pageIndicatorMode && status.showPageCounter
+        anchors.right: parent.right
+        anchors.rightMargin: status.slotMargin
+        y: titleText.y + titleText.baselineOffset - pageIndicatorRight.textBaselineOffset
+        chevronSize: status.pageIndicatorChevronSize
+        currentPage: status.currentPage
+        totalPages: status.totalPages
+        pageTotalKnown: status.pageTotalKnown
+        hasPagesAbove: status.hasPagesAbove
+        hasPagesBelow: status.hasPagesBelow
+        onPageRequested: delta => status.pageRequested(delta)
     }
 }

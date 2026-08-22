@@ -30,6 +30,7 @@ Item {
     property alias systemsGrid: systemsGrid
     property alias listCard: listCard
     property alias activeLabel: activeLabel
+    property alias topStrip: topStrip
     property bool transitioning: false
     // True while Hub→Systems routing is preparing this destination, before
     // the delayed loading cue becomes visible. Used only to suspend hidden
@@ -69,6 +70,13 @@ Item {
     readonly property var _viewProfile: BrowseLayouts.themeProfile(systems._browseThemeId, systems._viewId)
     readonly property var _statusProfile: systems._viewProfile && systems._viewProfile.status ? systems._viewProfile.status : null
     readonly property var _footerProfile: systems._gridProfile && systems._gridProfile.footer ? systems._gridProfile.footer : null
+    // CRT keeps the count + page cue in the footer (its top strip is
+    // hidden entirely, `status.topStripVisible: false`); every other
+    // theme hosts it up on the title line instead, alongside the count
+    // badge -- see TopStatusStrip.qml's `pageIndicatorMode` and
+    // BrowseLayouts.qml's `footer.pageCueInFooter`.
+    readonly property bool _pageCueInFooter: !!(systems._footerProfile && systems._footerProfile.pageCueInFooter)
+    readonly property bool _showGridPageCue: !systems._listLayout && !systems._pageCueInFooter
     readonly property var _listProfile: systems._viewProfile && systems._viewProfile.list ? systems._viewProfile.list : null
     readonly property int _listOverlayBottomMargin: systems._listProfile ? systems._listProfile.overlayBottomMargin : Sizing.pctH(15)
     readonly property var _gridShape: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight)
@@ -222,12 +230,12 @@ Item {
         }
     }
 
-    // Top status strip — category title (center), plus list-layout-only
-    // chrome (item counter left, "N / M" position right). Grid layout is
-    // title-only here: the count and page cue both live in the footer
-    // instead (count badge left, PageIndicator right, alongside
-    // activeLabel below) so nothing about this strip changes when the
-    // grid's page count changes.
+    // Top status strip — category title (center). List layout shows its
+    // own item counter (left) and "N / M" position (right), unaffected by
+    // any of this. Grid layout hosts the count badge (left) and the
+    // chevron page cue (right, `pageIndicatorMode`) here too, UNLESS the
+    // theme keeps them in the footer instead (`_pageCueInFooter` -- CRT,
+    // whose top strip is hidden entirely anyway).
     //
     // The screen Item fills the whole window, so the strip clears the
     // MainLayout HeaderBar (Sizing.headerBottom) with a small gap.
@@ -242,15 +250,18 @@ Item {
         title: CategoryIds.displayName(Browse.SystemsModel.current_category)
         currentPage: systemsGrid.currentPage
         totalPages: Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
-        // CRT keeps this slot title-only in every layout (own design
-        // call, predates this change -- CRT's grid profile hides this
-        // whole strip via topStripVisible: false anyway, and its list
-        // profile deliberately omits the total-count slot); default
-        // theme now shows the count here only in list layout, since grid
-        // layout shows it in the footer instead.
-        totalText: !Theme.crtNativePath && systems._listLayout && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : ""
+        totalText: {
+            if (systems._listLayout)
+                return !Theme.crtNativePath && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "";
+            return systems._showGridPageCue && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "";
+        }
         rightTextOverride: !systems._listLayout || systemsGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(systemsGrid.currentIndex + 1).arg(Math.max(1, Browse.SystemsModel.count))
-        showPageCounter: systems._listLayout
+        showPageCounter: systems._listLayout || systems._showGridPageCue
+        pageIndicatorMode: systems._showGridPageCue
+        pageIndicatorChevronSize: systems._gridProfile && systems._gridProfile.grid ? systems._gridProfile.grid.pageChevronSize : Sizing.pctH(4)
+        hasPagesAbove: systemsGrid.hasPagesAbove
+        hasPagesBelow: systemsGrid.hasPagesBelow
+        onPageRequested: delta => systems._performPage(delta)
         visible: !systems._gateHide && (!systems._statusProfile || systems._statusProfile.topStripVisible)
     }
 
@@ -336,12 +347,14 @@ Item {
         visible: !systems._gateHide && !systems._listLayout
     }
 
-    // Footer row — active system caption (center, same typography as the
-    // top strip's title slot so the two big captions read as a matched
-    // pair), a total-systems count (left), and a page cue (right,
-    // PageIndicator — see that component's doc comment). All three slots
-    // are reserved unconditionally; only their contents toggle, so
-    // nothing here shifts or resizes when the grid's page count changes.
+    // Footer row — active system caption, same typography as the top
+    // strip's title slot so the two big captions read as a matched pair.
+    // The count badge and page cue sit up on the top strip now instead
+    // (`_showGridPageCue` above) except on CRT, whose top strip is hidden
+    // entirely -- CRT keeps them down here, `_pageCueInFooter`. Everywhere
+    // else this is a title-only row, so `sideInset` reverts to
+    // ActiveLabel's own default margin instead of yielding a third of the
+    // width to corner slots that are empty here now.
     ActiveLabel {
         id: activeLabel
         anchors.left: parent.left
@@ -349,13 +362,15 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
         height: systems._footerProfile ? systems._footerProfile.activeLabelHeight : Sizing.pctH(7)
-        sideInset: Sizing.px(width / 3)
+        sideInset: systems._pageCueInFooter ? Sizing.px(width / 3) : Sizing.pctW(3)
         text: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_name_at(systemsGrid.currentIndex) : ""
         visible: !systems._gateHide && !systems._listLayout
     }
 
     Text {
-        visible: !systems._gateHide && !systems._listLayout && Browse.SystemsModel.count > 0
+        id: footerCount
+        objectName: "systemsFooterCount"
+        visible: !systems._gateHide && !systems._listLayout && systems._pageCueInFooter && Browse.SystemsModel.count > 0
         anchors.left: parent.left
         anchors.leftMargin: systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
@@ -372,7 +387,9 @@ Item {
     }
 
     PageIndicator {
-        visible: !systems._gateHide && !systems._listLayout
+        id: footerPageIndicator
+        objectName: "systemsFooterPageIndicator"
+        visible: !systems._gateHide && !systems._listLayout && systems._pageCueInFooter
         anchors.right: parent.right
         anchors.rightMargin: systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter

@@ -31,6 +31,19 @@
 // `Browse.HubLayout.revision` (even unused) picks up the NOTIFY and
 // re-evaluates, which is what picks up whatever `item_*_at` now returns.
 
+// `add_target_item`'s qinvokable takes one arg per HubItem field (mirrors
+// the struct shape directly, same reasoning as media_image_cache.rs's
+// `spawn_fetch_driver`) -- the #[cxx_qt::bridge] macro doesn't accept a
+// per-item #[allow] on an extern "RustQt" fn signature (only cxx_name,
+// rust_name, qinvokable, cxx_final, cxx_override, cxx_virtual, cxx_pure,
+// auto_wrap, doc, cfg are permitted there), and clippy attributes the
+// generated extern "C" wrapper's violation back to the macro call site, so
+// the allow has to live at file scope instead.
+#![allow(
+    clippy::too_many_arguments,
+    reason = "add_target_item takes one arg per HubItem field; #[cxx_qt::bridge] rejects a per-item allow"
+)]
+
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
 use crate::models::action_error::report_action_error;
 use crate::models::{
@@ -256,6 +269,33 @@ pub mod ffi {
         /// bumps `revision` on success; returns whether it added anything.
         #[qinvokable]
         fn add_item(self: Pin<&mut HubLayout>, kind: &QString, id: &QString, target: i32) -> bool;
+
+        /// Append a fully-specified `system`/`folder`/`zapscript` shortcut
+        /// created from a browse screen's "Add to Hub" context-menu action —
+        /// `kind` one of those three; `id` (system id), `path` (folder
+        /// path/game path), `script` (game launch text), `name` (optional
+        /// display override — the ONE place this layout caches a value
+        /// resolved from Core, a deliberate exception for a game shortcut's
+        /// title so it doesn't need Core reachable just to render, and
+        /// doubles as a rename hook), `icon`, and `system` (cover-art/
+        /// re-entry hint) used per-kind — see
+        /// `zaparoo_core::hub_layout::HubItem`'s doc comment. Always
+        /// appends after the last real tile; see
+        /// `zaparoo_core::hub_layout::HubLayout::add_target_item` for why
+        /// there's no `target` cell the way `add_item` has one. Persists
+        /// and bumps `revision` on success; returns whether it added
+        /// anything (only `false` for an invalid `kind`).
+        #[qinvokable]
+        fn add_target_item(
+            self: Pin<&mut HubLayout>,
+            kind: &QString,
+            id: &QString,
+            path: &QString,
+            script: &QString,
+            name: &QString,
+            icon: &QString,
+            system: &QString,
+        ) -> bool;
 
         /// Wipe the layout and reseed from Core's currently-detected
         /// category ids plus the built-in actions — the Hub's View ->
@@ -544,6 +584,34 @@ impl ffi::HubLayout {
         // reach, so `add_item` always falls through to its append path.
         let target = usize::try_from(target).unwrap_or(usize::MAX);
         let added = with_hub_layout_mut(|layout| layout.add_item(&kind, &id, target));
+        if added {
+            let next = self.revision.wrapping_add(1);
+            self.as_mut().rust_mut().revision = next;
+            self.as_mut().revision_changed();
+        }
+        added
+    }
+
+    fn add_target_item(
+        mut self: Pin<&mut Self>,
+        kind: &QString,
+        id: &QString,
+        path: &QString,
+        script: &QString,
+        name: &QString,
+        icon: &QString,
+        system: &QString,
+    ) -> bool {
+        let kind = kind.to_string();
+        let id = id.to_string();
+        let path = path.to_string();
+        let script = script.to_string();
+        let name = name.to_string();
+        let icon = icon.to_string();
+        let system = system.to_string();
+        let added = with_hub_layout_mut(|layout| {
+            layout.add_target_item(&kind, &id, &path, &script, &name, &icon, &system)
+        });
         if added {
             let next = self.revision.wrapping_add(1);
             self.as_mut().rust_mut().revision = next;

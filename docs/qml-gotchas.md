@@ -217,6 +217,25 @@ only after diagnosing DPR and ensuring the destination scene is
 genuinely static — and then use `Item.grabToImage()` rather than a
 translucent overlay.
 
+### PagedGrid's skip-empty scan is a bounded JS loop, not a repaint cost
+
+`PagedGrid.skipEmptyCells` (the Hub outside a Move session — see
+docs/style.md → "Empty slots") makes `moveSelection`/`pageBy` repeat their
+normal single step until they land on a non-`isEmpty` cell, instead of
+stopping after one. Each intermediate step DOES reassign `currentIndex`
+(it's the same single-step function the non-skipping path calls once), but
+the whole scan — every candidate cell it rejects along the way — runs
+synchronously inside one JS function call, entirely against plain model data
+(`itemAt(index).isEmpty`), before control returns to the event loop. Qt
+Quick's Software adaptation only actually repaints on the next frame sync,
+so those intermediate `currentIndex` values never get a paint of their own —
+the visible result is the same single repaint an ordinary one-step move
+already causes, just landing on a different final cell. The loop is bounded
+by `itemCount` (or `pageCount` for `pageBy`) iterations, which only matters
+for a pathological all-empty grid (an emptied Hub); the Hub's real content
+resolves in one or two steps almost always, since the whole point is "the
+next real tile," not a long walk.
+
 ### Sanctioned one-shot transient cues
 
 The rule above bans **persistent** motion that runs every frame while content

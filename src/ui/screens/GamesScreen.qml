@@ -86,7 +86,12 @@ MediaListScreen {
     gridViewId: games._gridViewId
     listViewId: games._listViewId
     tateListViewId: games._tateListViewId
-    contextMenuEnabledAt: index => Browse.GamesModel.is_media_capable_at(index)
+    // A plain (non-media-capable) directory still gets a menu now -- just
+    // "Add to Hub", see Main.qml's `buildContextMenuEntries`. The
+    // top-level "root" pseudo-entry (".."/scope root, not a real
+    // browsable folder) is deliberately excluded -- only a genuine
+    // `directory` row qualifies.
+    contextMenuEnabledAt: index => Browse.GamesModel.is_media_capable_at(index) || Browse.GamesModel.entry_type_at(index) === "directory"
     retryAction: () => {
         if (games._atFolderLevel()) {
             const stack = Browse.GamesState.path_stack;
@@ -151,10 +156,11 @@ MediaListScreen {
     }
     topStripCurrentPageProvider: () => Math.floor(games.gamesGrid.currentIndex / games._browsePageSize)
     topStripTotalPagesProvider: () => Math.max(1, Math.ceil((Browse.GamesModel.total_dirs + Browse.GamesModel.total_files) / games._browsePageSize))
-    // Grid layout no longer shows this at the top -- the footer's count
-    // badge (bottomStatusLeftText below) and PageIndicator own that cue
-    // now, so this only matters for list layout, which never shows a
-    // count here anyway (see MediaListScreen's own list/grid split).
+    // Shown at the top on every theme except CRT (whose top strip is
+    // hidden entirely and keeps this in the footer instead --
+    // `_pageCueInFooter`/`bottomStatusLeftText` below). List layout has
+    // its own separate top-strip chrome and never reads this provider for
+    // list layout's own reasons (see MediaListScreen's list/grid split).
     topStripTotalTextProvider: () => games._listLayout ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : "")
     topStripRightTextProvider: () => {
         if (!games._listLayout)
@@ -203,12 +209,19 @@ MediaListScreen {
     activeLabelHeight: games._footerProfile ? games._footerProfile.activeLabelHeight : Sizing.pctH(7)
     bottomStatusLeftMargin: games._footerProfile ? games._footerProfile.bottomStatusLeftMargin : 0
     bottomStatusRightMargin: games._footerProfile ? games._footerProfile.bottomStatusRightMargin : 0
-    // Footer's count badge -- always shown now (the conditional used to
-    // gate this to CRT only; the footer row is the layout everywhere
-    // now, so the count moves here unconditionally for every theme).
+    // Footer's own count badge, only actually shown on CRT
+    // (`_pageCueInFooter`, MediaListScreen.qml) -- every other theme shows
+    // the count via `topStripTotalTextProvider` above instead. Computed
+    // unconditionally regardless of which slot is visible; cheap and
+    // keeps this binding simple.
     bottomStatusLeftText: Browse.GamesModel.total_files > 0 ? qsTr("%1 files").arg(Browse.GamesModel.total_files) : ""
     pageLoadingVisible: !games._listLayout && Browse.GamesModel.loading_more && games.gamesGrid.hasPendingTarget
-    pageLoadingLeftMargin: games.bottomStatusLeftText !== "" ? Sizing.px(games.width / 3) : games.gamesGrid.leftInset
+    // Only reserve the badge's width/3 when the footer is actually
+    // showing it (CRT, `_pageCueInFooter`) -- on every other theme the
+    // badge lives up in the top strip instead, so the footer's own count
+    // slot is empty and indenting the loading cue for it would leave a
+    // stray gap.
+    pageLoadingLeftMargin: games._pageCueInFooter && games.bottomStatusLeftText !== "" ? Sizing.px(games.width / 3) : games.gamesGrid.leftInset
 
     Binding {
         target: Browse.GamesModel

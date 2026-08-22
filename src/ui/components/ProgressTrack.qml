@@ -62,7 +62,11 @@ Item {
     property int currentStep: 0
     property int totalSteps: 0
     property int cellCount: Theme.crtNativePath ? 8 : 12
-    property int cellHeight: Math.max(Sizing.pctH(1.6), Sizing.stroke(6))
+    // Matches `Sizing.fontSmall` -- the same token StatusLine.qml's label
+    // uses for `font.pixelSize` -- so the track reads as the same visual
+    // weight as the text sitting next to it instead of a noticeably
+    // shorter strip underneath it.
+    property int cellHeight: Sizing.fontSmall
     property int cellGap: Sizing.pctW(0.3)
 
     readonly property int cellWidth: Math.max(Sizing.stroke(2), Sizing.px(root.cellHeight * 1.6))

@@ -1222,7 +1222,17 @@ ApplicationWindow {
                                 label: qsTr("Save")
                             }
                         ];
-                    if ((!root.bootComplete && !root.coreIndependentStartupVisible) || root.startupRestoreCurtainVisible)
+                    // The Hub's optimistic pre-connect paint (see
+                    // MainLayout's `optimisticHubVisible`) renders real
+                    // tiles with a fully-computed help bar below — Options/
+                    // View availability doesn't depend on Core being
+                    // connected, so falling through to the Hub branch below
+                    // one frame earlier than `bootComplete` is exposing an
+                    // existing computation, not inventing new logic. Without
+                    // this carve-out the optimistic Hub painted with zero
+                    // button hints, which was the biggest "looks unfinished"
+                    // cue on cold start.
+                    if ((!root.bootComplete && !root.coreIndependentStartupVisible && !root.optimisticHubVisible) || root.startupRestoreCurtainVisible)
                         return [];
                     if (root.activeScreen === root.screenHub) {
                         // Mid-reorder (Options -> Move armed): D-pad

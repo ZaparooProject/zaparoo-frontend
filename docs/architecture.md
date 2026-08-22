@@ -254,16 +254,25 @@ screen-specific hooks where the data model or navigation semantics differ.
   squareCells`); the grid's shape is a fixed per-tier table
   (`Sizing.hubGridColumns/Rows`), never fitted to the viewport the way
   Systems/Games are. `PagedGrid` pages once content overflows a page — the
-  normal case here, not an edge case. The last page's trailing remainder
-  (or a user-placed `blank` entry) renders as a genuinely blank,
-  focusable-but-inert `EmptySlot` (via `PagedGrid.emptyDelegate`) rather
-  than a `Tile` with nothing on it. Directional moves write `HubState`.
-  Accept emits `requestAccept(kind, id)` — `kind` is `"category"` /
+  normal case here, not an edge case. The cursor skips empty cells outside
+  a Move session (`PagedGrid.skipEmptyCells`); the last page's trailing
+  remainder (or a user-placed `blank` entry) renders as a genuinely blank,
+  unfocusable `EmptySlot` (via `PagedGrid.emptyDelegate`) rather than a
+  `Tile` with nothing on it. Directional moves write `HubState`. Accept
+  emits `requestAccept(kind, id, system)` — `kind` is `"category"` /
   `"action"` / `"system"` / `"folder"` / `"zapscript"`, the router switches
-  on it (only `"category"`/`"action"`/`"zapscript"` are wired to a
-  destination today — see the plan doc); Escape emits `requestQuit`. No
-  edit mode — Move/Hide/Add reuse the Options (North/X, item-scoped) and
-  View (West/Y, page-scoped) menus every other screen already has.
+  on it; every kind is wired to a destination. `system`/`folder`/
+  `zapscript` shortcuts are user-created via "Add to Hub" on a Systems/
+  Games context menu (`Main.qml`'s `_addToHub`,
+  `Browse.HubLayout.add_target_item`) — see that qinvokable's doc comment
+  for the one deliberate exception to the "don't persist Core metadata"
+  rule (CLAUDE.md -> "Never"): a game shortcut's display name IS cached in
+  `frontend.toml`, since a `zapscript` entry has no live system/category
+  row to re-resolve it from at render time the way a `system`/`folder`
+  shortcut does, and the cache doubles as a rename hook. Escape emits
+  `requestQuit`. No edit mode — Move/Hide/Add reuse the Options (North/X,
+  item-scoped) and View (West/Y, page-scoped) menus every other screen
+  already has.
 - **Update** (`zaparoo-update` package `qml/UpdateScreen.qml`) — crate-owned update screen
   with a Rust-driven progress value surfaced through `Zaparoo.Update.Native`.
   Accept is a no-op for now; Escape emits `requestHubScreen`.

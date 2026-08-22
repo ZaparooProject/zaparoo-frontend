@@ -148,7 +148,11 @@ Item {
     readonly property bool _hasTopLabel: root.delegateTopLabel !== ""
     readonly property int _topLabelHeight: Sizing.pctH(4.2)
     readonly property int _topLabelGap: Sizing.pctH(0.4)
-    readonly property int _topLabelTextSize: Sizing.fontSize(2)
+    // Same ladder token the bottom caption uses (`_captionTextSize`) so the
+    // two labels read as the same visual weight -- this used to be the raw
+    // geometry helper `Sizing.fontSize(2)`, an off-ladder "seventh text
+    // role" docs/style.md's type-ladder section explicitly warns against.
+    readonly property int _topLabelTextSize: Sizing.fontSmall
     readonly property int _tileCornerRadius: root._surfaceProfile ? root._surfaceProfile.cardRadius : Sizing.radiusMd
     // Width available to the bottom caption. Matches the cover image's own
     // left/right padding (`_padding`) rather than a smaller corner-radius
@@ -428,7 +432,14 @@ Item {
         Text {
             objectName: "tileTopLabel"
             x: Sizing.center(parent.width, width)
-            y: root._padding + Sizing.center(root._topLabelHeight, height)
+            // Flush at the top edge, mirroring the bottom caption's flush-
+            // bottom placement (`y: parent.height - _captionHeight`) --
+            // this used to add `_padding` on top of the centering, which
+            // put roughly double the margin above the glyphs here versus
+            // below the bottom caption's. The reserved band height
+            // (`_topLabelHeight`) is unchanged; only where the text sits
+            // within it moves.
+            y: Sizing.center(root._topLabelHeight, height)
             width: Math.min(root._captionTextMaxWidth, Sizing.px(topLabelMetrics.advanceWidth))
             height: Sizing.px(implicitHeight)
             visible: root._hasTopLabel

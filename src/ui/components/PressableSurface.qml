@@ -27,11 +27,24 @@ Item {
 
     readonly property real faceOffset: face.y
     readonly property int visibleEdgeHeight: root.pressed ? 0 : Math.min(root.edgeHeight, root.height)
-    // Ring inset and width reuse the same tokens Tile.qml's focus ring uses
-    // (see the ring construction below), so a modal button and a grid tile
-    // read as the same weight of "this is focused."
-    readonly property int _ringGap: Sizing.focusBorderWidth
-    readonly property int _ringWidth: Sizing.focusRingWidth
+    // Ring inset and width were first tried as a percentage of this
+    // surface's own `height` (fixing an earlier screen-relative version
+    // that ate ~38% of a short row's height -- see git history), but that
+    // independent percentage floored to exactly 1px at every resolution
+    // tier for a menu-row-sized surface, which is thinner than the row's
+    // OWN resting `border.width` (`face`'s `Sizing.cardBorderWidth`,
+    // itself 1-2px) -- a focus ring that's no heavier than the idle chrome
+    // reads as barely focused at all. Deriving from `cardBorderWidth`
+    // instead fixes that by construction: the ring band is always exactly
+    // double the resting border's weight, and both scale together off the
+    // same token, so they can't drift out of relative proportion again at
+    // some resolution neither was tested at. See docs/style.md -> "Tile
+    // focus ring" and PressableSurface's face `Text` color split below for
+    // the other half of this fix -- brightening the focused row's own
+    // content, the way Tile.qml's caption/logo already do, matters at
+    // least as much as the ring itself.
+    readonly property int _ringGap: Sizing.cardBorderWidth
+    readonly property int _ringWidth: Sizing.cardBorderWidth * 2
 
     clip: true
 

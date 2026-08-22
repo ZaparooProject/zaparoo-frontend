@@ -323,7 +323,11 @@ Item {
                         x: Sizing.center(parent.width, _textWidth)
                         width: _textWidth
                         text: row.modelData.label
-                        color: Theme.textPrimary
+                        // Mirrors Tile.qml's caption: dim at rest, bright
+                        // when focused. The ring alone is not the whole
+                        // focus cue -- see PressableSurface.qml's doc
+                        // comment on `_ringGap`/`_ringWidth`.
+                        color: row.focused ? Theme.textPrimary : Theme.textLabel
                         font.family: Theme.fontUi
                         font.pixelSize: Sizing.fontCaption
                         elide: Text.ElideRight

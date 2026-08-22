@@ -72,6 +72,30 @@ TestCase {
         compare(indicator.width, bothHidden, "showing only one chevron must not change the reserved width either");
     }
 
+    // A "1 / 1" or bare "1" readout next to two chevrons that are also
+    // both hidden says nothing a user needs -- see PageIndicator.qml's
+    // `_hasMultiplePages` doc comment. Covers both the known-total case
+    // (totalPages stays 1) and the unknown-total case (a cursor list with
+    // nothing above or below to fetch), since both mean "only one page."
+    function test_page_text_hides_when_there_is_only_one_page(): void {
+        const text = findChild(indicator, "pageIndicatorText");
+        verify(text !== null);
+
+        indicator.pageTotalKnown = true;
+        indicator.totalPages = 1;
+        indicator.hasPagesAbove = false;
+        indicator.hasPagesBelow = false;
+        compare(text.visible, false, "known single-page total must hide the readout");
+
+        indicator.pageTotalKnown = false;
+        indicator.hasPagesAbove = false;
+        indicator.hasPagesBelow = false;
+        compare(text.visible, false, "an unknown total with nothing to page to must also hide the readout");
+
+        indicator.hasPagesBelow = true;
+        compare(text.visible, true, "the moment there's another page to reach, the readout must reappear");
+    }
+
     function test_known_total_shows_denominator(): void {
         indicator.pageTotalKnown = true;
         indicator.currentPage = 1;
@@ -102,10 +126,18 @@ TestCase {
     function test_down_chevron_click_requests_next_page(): void {
         indicator.hasPagesAbove = true;
         indicator.hasPagesBelow = true;
-        const downX = indicator.chevronSize + indicator.itemSpacing + Sizing.half(indicator.chevronSize);
+        const downX = indicator.chevronSize + indicator.chevronSpacing + Sizing.half(indicator.chevronSize);
         mouseClick(indicator, downX, Sizing.half(indicator.chevronSize), Qt.LeftButton);
         compare(pageRequestedSpy.count, 1);
         compare(pageRequestedSpy.signalArguments[0][0], 1);
+    }
+
+    // The chevron pair must read as one control: the anchor gap between
+    // them is strictly tighter than the gap the pair keeps from the
+    // trailing "N / M" text. See PageIndicator.qml's doc comment on
+    // `chevronSpacing` for the glyph-bearing measurement behind this.
+    function test_chevron_pair_spacing_is_tighter_than_text_spacing(): void {
+        verify(indicator.chevronSpacing < indicator.itemSpacing);
     }
 
     ActiveLabel {

@@ -60,8 +60,8 @@ import Zaparoo.Browse as Browse
 // screen already uses -- Options (North/X, item-scoped) and View (West/Y,
 // page-scoped) -- not built in this pass; see the plan's Phase D.
 //
-// Pure input dispatcher: emits one of `requestAccept(kind, id)` (forward;
-// the router decides destination -- see CLAUDE.md -> "Screens and
+// Pure input dispatcher: emits one of `requestAccept(kind, id, system)`
+// (forward; the router decides destination -- see CLAUDE.md -> "Screens and
 // routing"), `requestRetry`, or `requestQuit`.
 //
 // All cross-screen orchestration (model fills, deferred set_category,
@@ -179,7 +179,11 @@ Item {
     property bool _restoreDone: false
     readonly property bool _focusReady: hub._focusArmed || hub._restoreDone
 
-    signal requestAccept(kind: string, id: string)
+    // `system` is only ever populated for `kind === "folder"` -- a folder
+    // shortcut's re-entry needs its owning system id to establish
+    // GamesState's path stack before pushing the folder's own path (see
+    // Main.qml's router). Every other kind passes "".
+    signal requestAccept(kind: string, id: string, system: string)
     signal requestRetry
     signal requestQuit
     // Emitted when the user opens the options menu on a category tile.
@@ -339,13 +343,17 @@ Item {
     // identity -- see GamesState.path_stack). Falls back to the path's
     // final segment as the display name, same as GamesScreen's own
     // `_folderNameForPath`.
-    function _resolveFolderEntry(path: string, nameOverride: string, iconOverride: string): var {
+    function _resolveFolderEntry(path: string, nameOverride: string, iconOverride: string, system: string): var {
         if (path === "")
             return null;
         return {
             kind: "folder",
             id: path,
             path: path,
+            // The owning system id, carried through to Accept (see
+            // `requestAccept`'s doc comment) so the router can re-establish
+            // GamesState's system before pushing this folder's path.
+            system: system,
             name: nameOverride !== "" ? nameOverride : hub._folderNameForPath(path),
             coverKey: iconOverride !== "" ? hub._hubCoverKey(iconOverride, "icons/Folder") : hub._hubCoverKey(path, "icons/Folder"),
             favorite: 0,
@@ -442,7 +450,7 @@ Item {
         else if (kind === "system")
             entry = hub._resolveSystemEntry(id, name, icon);
         else if (kind === "folder")
-            entry = hub._resolveFolderEntry(path, name, icon);
+            entry = hub._resolveFolderEntry(path, name, icon, system);
         else if (kind === "zapscript")
             entry = hub._resolveZapScriptEntry(script, name, icon, system, path);
         if (entry)
@@ -882,25 +890,25 @@ Item {
             // by localized placeholder labels. Accept the stable category
             // id, not the display name, so persisted HubState and router
             // comparisons remain locale-independent.
-            hub.requestAccept("category", entry.id);
+            hub.requestAccept("category", entry.id, "");
             return;
         }
         if (entry.kind === "action") {
             if (entry.enabled === false)
                 return;
-            hub.requestAccept("action", entry.id);
+            hub.requestAccept("action", entry.id, "");
             return;
         }
         if (entry.kind === "system") {
-            hub.requestAccept("system", entry.id);
+            hub.requestAccept("system", entry.id, "");
             return;
         }
         if (entry.kind === "folder") {
-            hub.requestAccept("folder", entry.path);
+            hub.requestAccept("folder", entry.path, entry.system);
             return;
         }
         if (entry.kind === "zapscript") {
-            hub.requestAccept("zapscript", entry.script);
+            hub.requestAccept("zapscript", entry.script, "");
         }
     }
 
@@ -954,6 +962,36 @@ Item {
         hub._moveStartFlat = hub.currentIndex;
         hub._moveArmedTotalPages = Math.max(1, Math.ceil(Browse.HubLayout.item_count() / hub._pageSize)) + 1;
         hub.moveArmed = true;
+    }
+
+    // View -> Add item… arms Move on whatever it just placed, instead of
+    // relying on the cursor already resting on the target cell the way
+    // `beginMove` above assumes (Options always opens on the tile it
+    // moves). With `skipEmptyCells` on outside a Move session, the cursor
+    // can no longer normally be parked on a blank -- entering empty space
+    // only ever happens while carrying something, so Add now hands the
+    // user something to carry rather than silently placing it wherever
+    // Rust's own append/target rule happened to land it. See
+    // Main.qml's `hub_add_pick` handler for the caller.
+    //
+    // Seating the cursor here is a raw jump, not a `moveSelection` step,
+    // so it skips the commit-on-navigate pairing every directional press
+    // gets in `handleAction` -- `_commitCurrent()` here is what keeps
+    // `HubState.selected_item` pointing at the newly added tile rather
+    // than wherever the cursor was before the View menu opened. That
+    // matters because a Move session itself is in-memory only (see
+    // `beginMove`'s doc comment): if MiSTer kills the process mid-Move,
+    // only this committed selection survives, not the tile's held
+    // position.
+    function armMoveForHubIndex(hubIndex: int): void {
+        if (hubIndex < 0)
+            return;
+        const flat = hub.items.findIndex(entry => entry && entry.hubIndex === hubIndex);
+        if (flat < 0)
+            return;
+        hub.currentIndex = flat;
+        hub._commitCurrent();
+        hub.beginMove(hubIndex);
     }
 
     function _clearMoveState(): void {
@@ -1130,6 +1168,24 @@ Item {
         for (let i = 0; i < count; i++) {
             const kind = Browse.HubLayout.available_kind_at(i);
             const id = Browse.HubLayout.available_id_at(i);
+            // Resume is a special case among the resolvers this loop
+            // otherwise defers to: _resolveActionEntry deliberately returns
+            // the last-played GAME's name (so the live tile matches what it
+            // will show once added), which reads as unrecognizable as "the
+            // Resume slot" in a bare list of menu rows -- and returns null
+            // entirely while no history is currently resumable, which would
+            // silently drop Resume from this picker even though it's still
+            // a valid, re-addable slot. Bypass the resolver here and always
+            // offer the literal "Resume" label (same source string
+            // _resolveActionEntry itself falls back to, so no new
+            // translatable text).
+            if (kind === "action" && id === "resume") {
+                entries.push({
+                    id: "action:resume",
+                    label: qsTr("Resume")
+                });
+                continue;
+            }
             const resolved = kind === "category" ? hub._resolveCategoryEntry(id) : kind === "action" ? hub._resolveActionEntry(id) : null;
             if (!resolved)
                 continue;
@@ -1258,6 +1314,11 @@ Item {
         columnsOverride: Sizing.hubGridColumns
         rowsOverride: Sizing.hubGridRows
         heldIndex: hub.moveArmed ? hub.currentIndex : -1
+        // Normal browsing steps over blanks as if they weren't there; a
+        // Move session must still be able to target one (or the reserve
+        // page `beginMove` pads in) -- that's the whole mechanic. See
+        // PagedGrid.qml's `skipEmptyCells` doc comment.
+        skipEmptyCells: !hub.moveArmed
 
         activatePulse: hub.activatePulse
         screenSettling: !hub.visible

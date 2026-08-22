@@ -274,6 +274,191 @@ TestCase {
         height: 100
     }
 
+    // Fixture for `skipEmptyCells` coverage: 3 columns x 2 rows, 2 pages
+    // (12 cells). Deliberately laid out so every skip scenario the
+    // production Hub relies on has a cell to exercise it against:
+    //   page 0        page 1
+    //   real-a . real-b   .   real-c   .
+    //     .     .    .    real-d  .    .
+    // - col 0 has real-a (page0) and real-d (page1): a Down/Up skip must
+    //   cross the page boundary to find the other one.
+    // - col 2 has ONLY real-b (page0): every other cell in that column,
+    //   on both pages, is empty -- Down/Up from real-b must cycle the
+    //   whole column, find nothing else, and settle back exactly on
+    //   real-b having moved nowhere.
+    // - row 0 of page 0 has real-a AND real-b: a Right skip within a
+    //   single row, no page crossing.
+    ListModel {
+        id: skipEmptyModel
+        ListElement {
+            name: "real-a"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: false
+        }
+        ListElement {
+            name: "skip-1"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+        ListElement {
+            name: "real-b"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: false
+        }
+        ListElement {
+            name: "skip-3"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-4"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-5"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-6"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+        ListElement {
+            name: "real-c"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: false
+        }
+        ListElement {
+            name: "skip-8"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+        ListElement {
+            name: "real-d"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: false
+        }
+        ListElement {
+            name: "skip-10"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-11"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+    }
+
+    PagedGrid {
+        id: skipEmptyProbe
+        model: skipEmptyModel
+        delegate: emptyAwareRealDelegate
+        emptyDelegate: emptyAwareEmptyDelegate
+        columnsOverride: 3
+        rowsOverride: 2
+        width: 300
+        height: 200
+    }
+
+    SignalSpy {
+        id: skipEmptyHoveredSpy
+        target: skipEmptyProbe
+        signalName: "itemHovered"
+    }
+
+    // Dedicated fixture for the genuine "nothing else on the whole board"
+    // edge case: `_nearestVerticalCandidate` searches every real tile, not
+    // just a column, so a single stray real cell one column over is no
+    // longer a dead end (see `skipEmptyModel` above) -- this needs a board
+    // with truly only one real tile anywhere to exercise the "settle back,
+    // report no movement" path.
+    ListModel {
+        id: singleRealCellModel
+        ListElement {
+            name: "only-real"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: false
+        }
+        ListElement {
+            name: "skip-a"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-b"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-c"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            isEmpty: true
+        }
+    }
+
+    PagedGrid {
+        id: singleRealCellProbe
+        model: singleRealCellModel
+        delegate: emptyAwareRealDelegate
+        emptyDelegate: emptyAwareEmptyDelegate
+        skipEmptyCells: true
+        columnsOverride: 2
+        rowsOverride: 2
+        width: 200
+        height: 200
+    }
+
     PagedGrid {
         id: geometryProbe
         model: model
@@ -378,6 +563,9 @@ TestCase {
         fillModel(0);
         grid.setCurrentIndexImmediate(0);
         loadMoreSpy.clear();
+        skipEmptyProbe.skipEmptyCells = false;
+        skipEmptyProbe.setCurrentIndexImmediate(0);
+        skipEmptyHoveredSpy.clear();
     }
 
     function test_suspended_delegates_track_model_without_materializing(): void {
@@ -1378,12 +1566,96 @@ TestCase {
     }
 
     function test_isEmpty_row_remains_reachable_by_navigation(): void {
-        // isEmpty is a delegate-selection signal only — PagedGrid's own
-        // navigation math has no concept of it, so the padded row at index
-        // 2 is an ordinary, fully reachable cell (matching the user-facing
-        // requirement that the cursor can still land on an empty slot).
+        // `skipEmptyCells` defaults false -- every caller but the Hub, and
+        // the Hub itself during a Move session. With it off, isEmpty is a
+        // delegate-selection signal only: PagedGrid's own navigation math
+        // has no concept of it, so the padded row at index 2 is an
+        // ordinary, fully reachable cell.
+        compare(emptyAwareProbe.skipEmptyCells, false);
         emptyAwareProbe.setCurrentIndexImmediate(1);
         verify(emptyAwareProbe.moveSelection(1, 0));
         compare(emptyAwareProbe.currentIndex, 2);
+    }
+
+    // Right from real-a (row 0, col 0) must skip the empty cell at col 1
+    // and land on real-b at col 2 -- a single-row skip, no page crossing.
+    function test_skip_empty_cells_skips_within_a_row(): void {
+        skipEmptyProbe.skipEmptyCells = true;
+        verify(skipEmptyProbe.moveSelection(1, 0));
+        compare(skipEmptyProbe.currentIndex, 2);
+    }
+
+    // Down from real-a (vr0, col0) must cross the page boundary and land
+    // on real-c (vr2, col1) -- NOT real-d (vr3, col0), even though real-d
+    // sits in the exact same column. This is the actual bug fix: real-c is
+    // 2 virtual rows away but 1 column off (score 13*2²+1²=53); real-d is
+    // perfectly aligned but 3 rows away (score 13*3²+0²=117). A search
+    // that only ever walked straight down column 0 would tunnel past
+    // real-c entirely and land on the farther, merely-aligned real-d --
+    // exactly the "cursor sails past something nearby" bug this fixes.
+    function test_skip_empty_cells_prefers_the_nearer_off_column_tile(): void {
+        skipEmptyProbe.skipEmptyCells = true;
+        verify(skipEmptyProbe.moveSelection(0, 1));
+        compare(skipEmptyProbe.currentIndex, 7);
+    }
+
+    // `pageBy` has its own skip pass (land on the target page's preserved
+    // slot, then scan forward for the first real cell on that page) --
+    // distinct code path from moveSelection's nearest-candidate search,
+    // so it needs its own coverage. Page-forward from real-a (page 0)
+    // lands on page 1's slot 0 (skip-6, empty) and must advance to real-c.
+    function test_skip_empty_cells_pageBy_lands_on_first_real_cell(): void {
+        skipEmptyProbe.skipEmptyCells = true;
+        verify(skipEmptyProbe.pageBy(1));
+        compare(skipEmptyProbe.currentIndex, 7);
+    }
+
+    // Down from real-d (vr3, col0), the bottommost real tile on the whole
+    // board, has nothing below it at all -- the wrap pass takes over,
+    // scoring every remaining real tile as if the press had continued past
+    // the bottom edge and come back around to the top. real-a (vr0, col0)
+    // and real-b (vr0, col2) both wrap to the same distance (1), but
+    // real-a's column alignment wins the tie: 13*1²+0² = 13 vs
+    // 13*1²+2² = 17.
+    function test_skip_empty_cells_wraps_to_the_nearest_candidate_at_the_far_edge(): void {
+        skipEmptyProbe.skipEmptyCells = true;
+        skipEmptyProbe.setCurrentIndexImmediate(9);
+        verify(skipEmptyProbe.moveSelection(0, 1));
+        compare(skipEmptyProbe.currentIndex, 0);
+    }
+
+    // A single real tile anywhere on the whole board (not just a single
+    // column) has nothing to search for in either the direct or the wrap
+    // pass, so Down must settle back exactly where it started and report
+    // no movement.
+    function test_skip_empty_cells_with_no_reachable_cell_does_not_move(): void {
+        singleRealCellProbe.setCurrentIndexImmediate(0);
+        verify(!singleRealCellProbe.moveSelection(0, 1));
+        compare(singleRealCellProbe.currentIndex, 0);
+        verify(!singleRealCellProbe.moveSelection(0, -1));
+        compare(singleRealCellProbe.currentIndex, 0);
+    }
+
+    // Mirrors the directional skip: with `skipEmptyCells` set, the mouse
+    // must not be able to park the cursor on a blank either (PagedGrid's
+    // per-cell MouseArea has no isEmpty guard at all on the non-skipping
+    // path, so hover/click always worked there before this).
+    function test_skip_empty_cells_ignores_hover_and_click_on_empty_cells(): void {
+        skipEmptyProbe.skipEmptyCells = true;
+        // Read the empty cell's on-screen rect by landing on it directly
+        // (bypassing moveSelection's own skip), then return to real-a
+        // before simulating the pointer.
+        skipEmptyProbe.setCurrentIndexImmediate(1);
+        const emptyRect = skipEmptyProbe.currentCellRectIn(skipEmptyProbe);
+        skipEmptyProbe.setCurrentIndexImmediate(0);
+        const cx = emptyRect.x + emptyRect.width / 2;
+        const cy = emptyRect.y + emptyRect.height / 2;
+
+        mouseMove(skipEmptyProbe, cx, cy);
+        compare(skipEmptyProbe.currentIndex, 0, "hovering an empty cell must not move the cursor when skipEmptyCells is set");
+        compare(skipEmptyHoveredSpy.count, 0);
+
+        mouseClick(skipEmptyProbe, cx, cy);
+        compare(skipEmptyProbe.currentIndex, 0, "clicking an empty cell must not move the cursor either");
     }
 }

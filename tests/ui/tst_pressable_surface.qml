@@ -37,6 +37,17 @@ TestCase {
         signalName: "pointerClicked"
     }
 
+    // Dedicated fixture for the ring-proportion test below: a tall surface
+    // (roughly tile-sized) to compare against `surface`'s short,
+    // menu-row-sized 48px. Kept separate from `surface` rather than
+    // mutating its geometry so this test can't leak state into any other
+    // test in this file.
+    PressableSurface {
+        id: tallSurface
+        width: 200
+        height: 480
+    }
+
     function _linearChannel(value: real): real {
         return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
     }
@@ -128,6 +139,28 @@ TestCase {
         verify(inner.width < outer.width);
         verify(inner.height < outer.height);
         verify(_contrastRatio(outer.color, surface.faceColor) >= 3.0);
+    }
+
+    // The ring's weight is derived from the row's own resting border
+    // (`Sizing.cardBorderWidth`), not an independent percentage of the
+    // surface's height -- see PressableSurface.qml's doc comment. Two
+    // earlier versions got this wrong in opposite directions: a
+    // screen-relative percentage ate ~38% of a short row's height; a
+    // surface-height-relative one floored to exactly 1px at every real
+    // menu-row height, no heavier than the resting border it's meant to
+    // stand out from. Deriving from `cardBorderWidth` fixes both: the ring
+    // band is always exactly double the resting border's weight, by
+    // construction, regardless of resolution or which PressableSurface
+    // caller this is (`tallSurface` and `surface` -- a modal-button/menu-row
+    // height and a tile-scale height -- read identically here on purpose,
+    // since every real PressableSurface caller is a short row or button;
+    // Tile.qml draws its own, separate ring rather than using this one).
+    function test_focus_ring_is_derived_from_the_resting_border_weight(): void {
+        compare(surface._ringGap, Sizing.cardBorderWidth);
+        compare(surface._ringWidth, Sizing.cardBorderWidth * 2);
+        verify(surface._ringWidth > Sizing.cardBorderWidth, "the focused ring must always be heavier than the row's own resting border");
+        compare(tallSurface._ringGap, surface._ringGap, "ring weight tracks the shared cardBorderWidth token, not this surface's own height");
+        compare(tallSurface._ringWidth, surface._ringWidth);
     }
 
     function test_default_geometry_uses_small_radius_and_opaque_edge(): void {

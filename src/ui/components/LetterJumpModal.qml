@@ -256,7 +256,10 @@ Item {
                             Text {
                                 x: Sizing.center(parent.width, width)
                                 text: cell.modelData.label
-                                color: Theme.textPrimary
+                                // Mirrors Tile.qml's caption: dim at rest,
+                                // bright when focused -- see
+                                // PressableSurface.qml's doc comment.
+                                color: cell.focused ? Theme.textPrimary : Theme.textLabel
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontSize(3.4)
                                 renderType: Text.NativeRendering

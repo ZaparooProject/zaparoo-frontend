@@ -375,6 +375,57 @@ impl HubLayout {
         true
     }
 
+    /// Append a fully-specified `system`/`folder`/`zapscript` shortcut
+    /// created from a browse screen's "Add to Hub" context-menu action.
+    /// Unlike `add_item`, these kinds are never tracked in `known` (see the
+    /// struct doc comment — they're always user-authored, never
+    /// auto-discovered), so there is no key to validate against here.
+    /// Always appends after the last real tile — the same "lands at the
+    /// end, like an app just installed" placement `reconcile` uses for a
+    /// newly detected category — since a context menu on Systems/Games has
+    /// no meaningful Hub cursor cell to target the way the Hub's own "Add
+    /// item…" does. Returns `false` only for a `kind` this isn't valid for.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one field per HubItem column, mirrors the struct shape directly"
+    )]
+    pub fn add_target_item(
+        &mut self,
+        kind: &str,
+        id: &str,
+        path: &str,
+        script: &str,
+        name: &str,
+        icon: &str,
+        system: &str,
+    ) -> bool {
+        let kind_enum = HubItemKind::from_str(kind);
+        if !matches!(
+            kind_enum,
+            HubItemKind::System | HubItemKind::Folder | HubItemKind::ZapScript
+        ) {
+            return false;
+        }
+        self.items.push(HubItem {
+            kind_raw: kind.to_string(),
+            id: id.to_string(),
+            path: path.to_string(),
+            script: script.to_string(),
+            name: name.to_string(),
+            icon: icon.to_string(),
+            system: system.to_string(),
+        });
+        // No trim call here, unlike `add_item`'s own non-blank append
+        // branch: a straight `push` always lands the new entry at the true
+        // end, so any blank that was previously trailing is now interior
+        // (ahead of what we just added) rather than trailing — nothing for
+        // `trim_trailing_blanks` to find. That also means a pre-existing
+        // trailing blank isn't silently swallowed by this call: it's left
+        // exactly where it was, same as the rest of this file's "nothing
+        // you didn't touch moves" board-model discipline.
+        true
+    }
+
     /// Re-seed the layout from scratch — "Reset layout" in the View menu.
     /// Drops every existing item and `known` entry (folders, `ZapScript`
     /// tiles, and blanks included, none of which `known` tracks in the
@@ -931,6 +982,96 @@ type = "blank"
             2
         );
         assert!(layout.known.is_empty());
+    }
+
+    #[test]
+    fn add_target_item_appends_a_system_shortcut() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        let before_len = layout.items.len();
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", ""));
+        assert_eq!(layout.items.len(), before_len + 1);
+        let added = layout.items.last().unwrap();
+        assert_eq!(added.kind(), HubItemKind::System);
+        assert_eq!(added.id, "NES");
+    }
+
+    #[test]
+    fn add_target_item_appends_a_folder_shortcut_with_system_hint() {
+        let mut layout = HubLayout::default();
+        assert!(layout.add_target_item(
+            "folder",
+            "",
+            "/media/fat/games/SNES/Homebrew",
+            "",
+            "",
+            "",
+            "SNES"
+        ));
+        let added = layout.items.last().unwrap();
+        assert_eq!(added.kind(), HubItemKind::Folder);
+        assert_eq!(added.path, "/media/fat/games/SNES/Homebrew");
+        assert_eq!(added.system, "SNES");
+    }
+
+    #[test]
+    fn add_target_item_appends_a_game_shortcut_with_cached_name() {
+        let mut layout = HubLayout::default();
+        assert!(layout.add_target_item(
+            "zapscript",
+            "",
+            "/media/fat/games/NES/Zelda.nes",
+            "/media/fat/games/NES/Zelda.nes",
+            "The Legend of Zelda",
+            "",
+            "NES"
+        ));
+        let added = layout.items.last().unwrap();
+        assert_eq!(added.kind(), HubItemKind::ZapScript);
+        assert_eq!(added.script, "/media/fat/games/NES/Zelda.nes");
+        assert_eq!(added.name, "The Legend of Zelda");
+        assert_eq!(added.system, "NES");
+    }
+
+    #[test]
+    fn add_target_item_rejects_a_kind_it_is_not_valid_for() {
+        let mut layout = HubLayout::default();
+        assert!(!layout.add_target_item("category", "Arcade", "", "", "", "", ""));
+        assert!(!layout.add_target_item("action", "resume", "", "", "", "", ""));
+        assert!(!layout.add_target_item("blank", "", "", "", "", "", ""));
+        assert!(layout.items.is_empty());
+    }
+
+    #[test]
+    fn add_target_item_never_consults_known() {
+        // system/folder/zapscript are never tracked in `known` -- a target
+        // shortcut must succeed against a layout that has never seen this
+        // id before, unlike `add_item`'s category/action path.
+        let mut layout = HubLayout::default();
+        assert!(layout.known.is_empty());
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", ""));
+        assert!(
+            layout.known.is_empty(),
+            "target shortcuts must not touch known"
+        );
+    }
+
+    #[test]
+    fn add_target_item_appends_after_a_preexisting_trailing_blank_without_touching_it() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        layout.items.push(HubItem {
+            kind_raw: "blank".to_string(),
+            ..HubItem::default()
+        });
+        let blank_index = layout.items.len() - 1;
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", ""));
+        assert_eq!(
+            layout.items[blank_index].kind(),
+            HubItemKind::Blank,
+            "a straight append lands after the blank, not into it -- the blank must be left alone"
+        );
+        assert_eq!(layout.items.last().unwrap().kind(), HubItemKind::System);
     }
 
     #[test]

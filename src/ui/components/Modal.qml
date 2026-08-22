@@ -363,6 +363,7 @@ Item {
                         spacing: confirmSlot._gap
 
                         PressableSurface {
+                            id: noButton
                             width: confirmSlot._pillWidth
                             height: Sizing.pctH(7)
                             focused: !modal._focusYes
@@ -379,12 +380,16 @@ Item {
                                 text: modal.confirmNoLabel
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontBody
-                                color: Theme.textPrimary
+                                // Mirrors Tile.qml's caption: dim at rest,
+                                // bright when focused -- see
+                                // PressableSurface.qml's doc comment.
+                                color: noButton.focused ? Theme.textPrimary : Theme.textLabel
                                 renderType: Text.NativeRendering
                             }
                         }
 
                         PressableSurface {
+                            id: yesButton
                             width: confirmSlot._pillWidth
                             height: Sizing.pctH(7)
                             focused: modal._focusYes
@@ -401,7 +406,7 @@ Item {
                                 text: modal.confirmYesLabel
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontBody
-                                color: Theme.textPrimary
+                                color: yesButton.focused ? Theme.textPrimary : Theme.textLabel
                                 renderType: Text.NativeRendering
                             }
                         }
