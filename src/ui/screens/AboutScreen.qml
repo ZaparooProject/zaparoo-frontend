@@ -124,15 +124,16 @@ Item {
                 width: parent.width
                 spacing: Sizing.pctH(2)
 
-                // Leading spacer — keeps the logo clear of the top
-                // scroll chevron when the page overflows, and gives
-                // the cut-off edge a breath of whitespace instead of
-                // clipping the logo mid-stroke.
-                Item {
-                    width: body.width
-                    height: Sizing.pctH(2)
-                }
-
+                // No leading spacer -- `flickable`'s own `topMargin`
+                // (pctH(4), above) already reserves the full chevron band
+                // (pctH(3) glyph + pctH(0.5) margin) above the scrollable
+                // content, so a spacer here only doubled that whitespace.
+                // Round 8 added `pctH(2)` of spacer plus the Column's own
+                // `pctH(2)` gap before the logo, stacking to `pctH(8)` of
+                // total top inset against `pctW(3)` of side inset --
+                // visibly unbalanced. Round 9 removed both spacers,
+                // leaving `pctH(4)`, the actual minimum the chevrons need.
+                //
                 // Logo width is capped at a screen-height-relative size so
                 // the brand mark stays a header element across 240p →
                 // 1080p without ballooning. Uses the same pre-sized ladder
@@ -246,7 +247,7 @@ Item {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     horizontalAlignment: Text.AlignHCenter
-                    text: "Andrea Bogazzi\nBossRighteous\nTim Wilsie\nWizzo"
+                    text: "Andrea Bogazzi\nBossRighteous\nCarlos R.\ndevilschile2\nGiancarlo Erra\nJosé Manuel Barroso Galindo\nPeter Brittain\nTim Wilsie\nWilfried Jeanniard\nWizzo"
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
                     font.pixelSize: Sizing.fontBody
@@ -286,12 +287,6 @@ Item {
                     font.pixelSize: Sizing.fontCaption
                     renderType: Text.NativeRendering
                 }
-
-                // Trailing spacer — symmetric with the leading spacer.
-                Item {
-                    width: body.width
-                    height: Sizing.pctH(2)
-                }
             }
         }
 
@@ -301,9 +296,14 @@ Item {
         // viewport in the card's chrome gap *above* and *below* the
         // Flickable, not inside its visible band. Sitting outside the
         // scrolled area means the chevrons never overlap moving content
-        // as the user scrolls.
+        // as the user scrolls. Round 9: dims (Theme.textLabel) rather than
+        // hides when the page doesn't overflow in that direction, matching
+        // PageIndicator.qml's treatment. Round 10: both also hide entirely
+        // when the page doesn't overflow at all (`!contentOverflows`) — a
+        // short page shows neither chevron rather than two permanently
+        // dim arrows.
         Image {
-            source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
+            source: Resources.iconUrl("ScrollUp", about._hasContentAbove ? Theme.textPrimary : Theme.textLabel)
             width: Sizing.pctH(3)
             height: width
             sourceSize.width: Sizing.px(width)
@@ -313,11 +313,11 @@ Item {
             anchors.horizontalCenter: flickable.horizontalCenter
             fillMode: Image.PreserveAspectFit
             smooth: true
-            visible: about._hasContentAbove
+            visible: about.contentOverflows
         }
 
         Image {
-            source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
+            source: Resources.iconUrl("ScrollDown", about._hasContentBelow ? Theme.textPrimary : Theme.textLabel)
             width: Sizing.pctH(3)
             height: width
             sourceSize.width: Sizing.px(width)
@@ -327,7 +327,7 @@ Item {
             anchors.horizontalCenter: flickable.horizontalCenter
             fillMode: Image.PreserveAspectFit
             smooth: true
-            visible: about._hasContentBelow
+            visible: about.contentOverflows
         }
     }
 }

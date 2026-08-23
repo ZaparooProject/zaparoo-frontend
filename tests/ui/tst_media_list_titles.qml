@@ -24,7 +24,7 @@ TestCase {
     property string _originalBrowseLayout: "grid"
 
     Component.onCompleted: {
-        _originalBrowseLayout = Browse.Settings.current_browse_layout;
+        _originalBrowseLayout = Browse.Settings.current_games_browse_layout;
         Sizing.screenWidth = testCase.width;
         Sizing.screenHeight = testCase.height;
     }
@@ -52,7 +52,7 @@ TestCase {
     function init(): void {
         Sizing.screenWidth = testCase.width;
         Sizing.screenHeight = testCase.height;
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_games_browse_layout = "grid";
         mediaModel.clear();
         mediaModel.append({
             "name": "D (Disc 1)",
@@ -86,7 +86,7 @@ TestCase {
     }
 
     function cleanup(): void {
-        Browse.Settings.current_browse_layout = _originalBrowseLayout;
+        Browse.Settings.current_games_browse_layout = _originalBrowseLayout;
     }
 
     function displayTitleAt(index: int): string {
@@ -110,12 +110,12 @@ TestCase {
     }
 
     function assertGridAndListTitle(index: int, expected: string): void {
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_games_browse_layout = "grid";
         screen.mediaGrid.setCurrentIndexImmediate(index);
         tryCompare(screen.activeLabel, "text", expected);
         tryVerify(() => hasVisibleText(screen.mediaGrid, expected), 1000, "grid title should render " + expected);
 
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_games_browse_layout = "list";
         screen.mediaGrid.setCurrentIndexImmediate(index);
         tryCompare(screen.listCard, "visible", true);
         tryVerify(() => hasVisibleText(screen.listCard, expected), 1000, "list title should render " + expected);
@@ -146,12 +146,12 @@ TestCase {
         const idx = mediaModel.count - 1;
         tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
 
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_games_browse_layout = "grid";
         screen.mediaGrid.setCurrentIndexImmediate(idx);
         tryVerify(() => hasVisibleText(screen.mediaGrid, "Sonic CD"), 1000, "grid name should render");
         tryVerify(() => hasVisibleText(screen.mediaGrid, "US"), 1000, "grid token should render inline");
 
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_games_browse_layout = "list";
         screen.mediaGrid.setCurrentIndexImmediate(idx);
         tryCompare(screen.listCard, "visible", true);
         tryVerify(() => hasVisibleText(screen.listCard, "Sonic CD"), 1000, "list name should render");

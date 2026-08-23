@@ -81,16 +81,21 @@ list.
 
 ## Punctuation
 
-- **Em dash marks a reason clause** (why something stopped): `Core error
-  — %1`, `Indexing paused — game running`.
-- **Colon marks a live detail** of an ongoing action: `Indexing: %1`,
-  `Sort: %1`.
-  Don't conflate the two — see `docs/style.md` → "Header status line" for
-  the full reasoning.
+- **No em dashes (—) in any user-visible string.** A colon covers both a
+  reason clause (why something stopped: `Core error: %1`, `Indexing
+  paused: game running`) and a live detail of an ongoing action
+  (`Indexing: %1`, `Sort: %1`) — one joiner, not two, and it renders
+  cleanly at the 6×8 bitmap tier where a dash and a hyphen are already
+  close to indistinguishable. Round 8 shipped the reason-clause/live-detail
+  split as a dedicated em dash vs. colon rule; round 9 collapsed it back to
+  a single rule rather than carry the distinction on a character that
+  can't render at every tier. See `docs/style.md` → "Header status line"
+  for the surviving reasoning about *when* each half of a status line
+  changes, independent of which punctuation joins it.
 - No trailing periods on labels, headings, or menu entries. Body/prose
   sentences (error messages, About text) do end with periods.
 - Use an ASCII hyphen only inside a prose sentence, never as a list
-  separator or in place of an em dash.
+  separator and never as a stand-in for the banned em dash.
 
 ## Terminology glossary
 
@@ -106,6 +111,7 @@ One term per concept, matching the vocabulary Zaparoo's own docs
 | **Hub** | home, main menu | The frontend's root screen |
 | **Core** | server, backend | The Zaparoo Core service this frontend talks to — never used for an FPGA/emulator core, which is a **launcher** |
 | **media database** | library, index (as a noun) | The scanned catalog of games; "Update media database" is always spelled out, never bare "Update" |
+| **App** | phone, mobile app | The companion Zaparoo App used to scan a QR code and write a token |
 | **Automatic** | Auto | The default/no-preference picker choice, spelled out everywhere it appears (resolution, language, region, clock, artwork) |
 
 `Update` (bare, capitalized, as a Hub tile) is reserved for the app/
@@ -117,8 +123,8 @@ always the full phrase above.
 Menu and settings-row labels should read comfortably at the 240p tier
 (see `docs/style.md` → "Resolution tiers"). `ContextMenu.panelWidth`
 tracks the single widest entry in the open menu, so one long label widens
-the whole panel. Treat anything near the length of `Discover arcade
-alternate versions` as a signal to either shorten the label or move the
+the whole panel. Treat anything near the length of `Show original
+filenames` as a signal to either shorten the label or move the
 explanation into a Settings description line (see `docs/style.md` →
 "Settings section headers" and this file's checklist below) rather than
 lengthening a menu row further.

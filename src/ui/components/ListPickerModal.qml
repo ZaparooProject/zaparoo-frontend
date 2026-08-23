@@ -78,15 +78,21 @@ Item {
     // then elides text that should have fit. See docs/style.md -> "Preset
     // catalog" / picker sizing.
     //
-    // `fontSize`/`fontFamily` are unused inside — `metrics`' own font.*
-    // bindings already keep it in sync — but taking them as explicit
-    // parameters, rather than letting only `metrics.font.*` carry the
-    // dependency, is what makes callers below re-evaluate on a font/tier
-    // change: `FontMetrics.advanceWidth()`/`boundingRect()` are Q_INVOKABLE
-    // method calls, and a property binding that only ever calls a method does
-    // not reliably re-run when a property read *inside* that method changes.
-    // Matches ContextMenu.qml's `_widestEntryLabelWidth(entries)`.
-    function _measureLabelWidth(metrics: FontMetrics, label: string, fontSize: int, fontFamily: string): int {
+    // `fontSize`/`fontFamily`/`fontWeight` are unused inside — `metrics`'
+    // own font.* bindings already keep it in sync — but taking them as
+    // explicit parameters, rather than letting only `metrics.font.*` carry
+    // the dependency, is what makes callers below re-evaluate on a
+    // font/tier/weight change: `FontMetrics.advanceWidth()`/
+    // `boundingRect()` are Q_INVOKABLE method calls, and a property binding
+    // that only ever calls a method does not reliably re-run when a
+    // property read *inside* that method changes. `fontWeight` was added
+    // in round 9 — a selected row's `bar.contentWeight` flips Normal ->
+    // Medium (round 8's inverse-video weight step), and without it as a
+    // captured parameter a row's own `_textWidth` stayed at its
+    // Normal-weight measurement while the Text repainted bold, eliding a
+    // label that had actually fit. Matches ContextMenu.qml's
+    // `_widestEntryLabelWidth(entries)`.
+    function _measureLabelWidth(metrics: FontMetrics, label: string, fontSize: int, fontFamily: string, fontWeight: int): int {
         return Math.ceil(Math.max(metrics.advanceWidth(label), metrics.boundingRect(label).width)) + Sizing.stroke(2);
     }
     // Measured at the selected row's weight (Font.Medium — see
@@ -99,11 +105,11 @@ Item {
         let widest = 0;
         for (let i = 0; i < modal.entries.length; ++i) {
             const label = modal.entries[i] && modal.entries[i].label !== undefined ? String(modal.entries[i].label) : "";
-            widest = Math.max(widest, modal._measureLabelWidth(_panelWidthLabelMetrics, label, Sizing.fontBody, Theme.fontUi));
+            widest = Math.max(widest, modal._measureLabelWidth(_panelWidthLabelMetrics, label, Sizing.fontBody, Theme.fontUi, Font.Medium));
         }
         return widest;
     }
-    readonly property int _titleWidth: modal.title !== "" ? modal._measureLabelWidth(_titleLabelMetrics, modal.title, Sizing.fontTitle, Theme.fontUi) : 0
+    readonly property int _titleWidth: modal.title !== "" ? modal._measureLabelWidth(_titleLabelMetrics, modal.title, Sizing.fontTitle, Theme.fontUi, Font.Normal) : 0
     // Optional per-entry color-swatch preview (the color-scheme picker).
     // `entries[i].swatch` is a 3-color array or undefined; the picker is
     // homogeneous (either every entry carries one or none do), so checking
@@ -298,8 +304,34 @@ Item {
                             // `_panelWidthLabelMetrics` above for why panel
                             // sizing measures at a separate, fixed weight
                             // instead.
-                            FontMetrics {
+                            //
+                            // `TextMetrics` with its own `text:` binding,
+                            // not a `FontMetrics` fed through
+                            // `_measureLabelWidth`'s `metrics.advanceWidth(label)`
+                            // method-call form (round 9's ContextMenu.qml
+                            // fix uses the identical construction, for the
+                            // identical reason). `advanceWidth`/
+                            // `boundingRect` are Q_INVOKABLE methods on
+                            // `FontMetrics`; a caller passing `fontWeight`
+                            // as an explicit-but-otherwise-unused parameter
+                            // to make its own binding "depend on" the
+                            // weight does not reliably work under the AOT
+                            // QML compiler here -- an argument that is
+                            // never read inside the callee's body is a
+                            // strong candidate for the compiler to treat as
+                            // dead and drop the dependency it would
+                            // otherwise establish, so a row's `_textWidth`
+                            // stayed pinned to its stale weight's
+                            // measurement across a selection change. On
+                            // `TextMetrics`, `advanceWidth`/`boundingRect`
+                            // are genuine properties that recompute
+                            // whenever `text`/`font.*` change, so reading
+                            // them from `_textWidth` below is an ordinary,
+                            // reliable property dependency.
+                            TextMetrics {
                                 id: rowLabelMetrics
+                                objectName: "listPickerRowLabelMetrics"
+                                text: row.modelData.label
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontBody
                                 font.weight: bar.contentWeight
@@ -329,7 +361,7 @@ Item {
                                 // docs/qml-gotchas.md, and ContextMenu.qml's
                                 // identical row-label construction.
                                 readonly property int _availableWidth: Math.max(0, parent.width - 2 * modal._rowHorizontalPadding)
-                                readonly property int _textWidth: Math.min(modal._measureLabelWidth(rowLabelMetrics, row.modelData.label, Sizing.fontBody, Theme.fontUi), _availableWidth)
+                                readonly property int _textWidth: Math.min(Math.ceil(Math.max(rowLabelMetrics.advanceWidth, rowLabelMetrics.boundingRect.width)) + Sizing.stroke(2), _availableWidth)
 
                                 objectName: "listPickerRowLabelCentered"
                                 visible: !modal._hasSwatchPreview
@@ -356,7 +388,7 @@ Item {
                             // preview".
                             Text {
                                 readonly property int _availableWidth: Math.max(0, parent.width - 2 * modal._rowHorizontalPadding - modal._swatchBandWidth - modal._swatchLabelGap)
-                                readonly property int _textWidth: Math.min(modal._measureLabelWidth(rowLabelMetrics, row.modelData.label, Sizing.fontBody, Theme.fontUi), _availableWidth)
+                                readonly property int _textWidth: Math.min(Math.ceil(Math.max(rowLabelMetrics.advanceWidth, rowLabelMetrics.boundingRect.width)) + Sizing.stroke(2), _availableWidth)
 
                                 objectName: "listPickerRowLabelSwatch"
                                 visible: modal._hasSwatchPreview

@@ -32,6 +32,15 @@ use tracing::warn;
 use zaparoo_core::media_types::{MediaIndexParams, MediaScrapeParams};
 use zaparoo_core::store::MediaStatusState;
 
+// Round 10: scraper choice for `ScrapeSetupModal.qml`, sourced from the
+// `scrapers` RPC -- never called anywhere in the frontend before this,
+// since every other scrape call site hardcodes `"gamelist.xml"`. This is
+// a one-shot fetch (`refresh_scrapers`), not part of the continuous
+// `MediaStatusState` watch channel every other field above projects from,
+// so it's applied directly from a `qt_thread().queue(...)` closure the
+// same way `GameInfo.load()` applies its own async result -- see that
+// file's `load()` for the identical shape.
+
 #[allow(
     clippy::struct_excessive_bools,
     reason = "wire-faithful flags; one bool per Core status field exposed to QML"
@@ -74,6 +83,10 @@ pub struct MediaStatusRust {
     scrape_current_total: i32,
     scrape_current_matched: i32,
     scrape_current_skipped: i32,
+
+    scraper_ids: QStringList,
+    scraper_names: QStringList,
+    scrapers_loading: bool,
 }
 
 #[cxx_qt::bridge]
@@ -122,6 +135,9 @@ pub mod ffi {
         #[qproperty(i32, scrape_current_total)]
         #[qproperty(i32, scrape_current_matched)]
         #[qproperty(i32, scrape_current_skipped)]
+        #[qproperty(QStringList, scraper_ids)]
+        #[qproperty(QStringList, scraper_names)]
+        #[qproperty(bool, scrapers_loading)]
         type MediaStatus = super::MediaStatusRust;
 
         #[qinvokable]
@@ -151,6 +167,20 @@ pub mod ffi {
 
         #[qinvokable]
         fn cancel_scrape(self: Pin<&mut MediaStatus>);
+
+        /// One-shot fetch of the `scrapers` RPC into `scraper_ids`/
+        /// `scraper_names`. Called by ScrapeSetupModal.qml on open.
+        #[qinvokable]
+        fn refresh_scrapers(self: Pin<&mut MediaStatus>);
+
+        /// Start a scrape with a caller-chosen scraper id, replacing the
+        /// hardcoded "gamelist.xml" every other scrape call site still
+        /// uses. Always runs against every system the scraper supports
+        /// (empty `systems`) -- per-system/per-category scoping is
+        /// already covered by `start_scrape_for_system`/
+        /// `start_scrape_for_systems`, which stay on "gamelist.xml".
+        #[qinvokable]
+        fn start_scrape_with_scraper(self: Pin<&mut MediaStatus>, scraper_id: QString, force: bool);
     }
 
     impl cxx_qt::Threading for MediaStatus {}
@@ -405,6 +435,61 @@ impl ffi::MediaStatus {
             if let Err(e) = resource.cancel_scrape().await {
                 warn!("media_status: cancel_scrape failed: {}", e.message);
                 report_action_error("media_cancel", "");
+            }
+        });
+    }
+
+    fn refresh_scrapers(mut self: Pin<&mut Self>) {
+        self.as_mut().set_scrapers_loading(true);
+        let qt_thread = self.qt_thread();
+        let client = crate::models::global_store().client();
+        crate::models::global_handle().spawn(async move {
+            let result = client.scrapers().await;
+            let _ = qt_thread.queue(move |mut model| {
+                model.as_mut().set_scrapers_loading(false);
+                match result {
+                    Ok(result) => {
+                        let mut ids = QStringList::default();
+                        let mut names = QStringList::default();
+                        for scraper in &result.scrapers {
+                            ids.append(QString::from(scraper.id.as_str()));
+                            names.append(QString::from(scraper.name.as_str()));
+                        }
+                        model.as_mut().set_scraper_ids(ids);
+                        model.as_mut().set_scraper_names(names);
+                    }
+                    Err(e) => {
+                        warn!("media_status: refresh_scrapers failed: {}", e.message);
+                        report_action_error("media_scrapers", "");
+                    }
+                }
+            });
+        });
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn start_scrape_with_scraper(self: Pin<&mut Self>, scraper_id: QString, force: bool) {
+        let scraper_id: String = scraper_id.into();
+        if scraper_id.is_empty() {
+            warn!("media_status: start_scrape_with_scraper ignored empty scraper_id");
+            return;
+        }
+        let resource = crate::models::global_store().media_status();
+        crate::models::global_handle().spawn(async move {
+            let params = MediaScrapeParams {
+                scraper_id,
+                systems: Vec::new(),
+                force,
+            };
+            if let Err(e) = resource.start_scrape(params).await {
+                warn!(
+                    "media_status: start_scrape_with_scraper failed: {}",
+                    e.message
+                );
+                report_action_error("media_scrape", "");
             }
         });
     }

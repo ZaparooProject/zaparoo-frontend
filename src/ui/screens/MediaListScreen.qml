@@ -120,6 +120,13 @@ Item {
     property string detailRapidScrollAction: ""
     property bool pauseCoverRequestsDuringRapid: true
     property bool forceListLayout: false
+    // Round 10: which of Settings' two independent layout preferences
+    // this screen follows. "games" (default) covers Games/Favorites/
+    // Recents; FavoriteSystemsScreen sets "systems" -- it's structurally
+    // a MediaListScreen but semantically a systems screen (MainLayout.qml
+    // groups it with Systems for the same reason). See `_listLayout`
+    // below.
+    property string layoutScope: "games"
     property bool renderGridLayout: true
     // Opt-in: allow the West-button page menu while the list is empty.
     // Default false so screens whose menu cannot empty the list keep the
@@ -163,7 +170,7 @@ Item {
     property var _rapidSnapshotResult: null
     property bool _rapidSnapshotReady: false
     property int _rapidSnapshotGeneration: 0
-    readonly property bool _listLayout: root.forceListLayout || Browse.Settings.current_browse_layout === "list"
+    readonly property bool _listLayout: root.forceListLayout || (root.layoutScope === "systems" ? Browse.Settings.current_systems_browse_layout : Browse.Settings.current_games_browse_layout) === "list"
     readonly property bool _tateListLayout: root._listLayout && Browse.Settings.current_orientation !== "horizontal"
     readonly property string _activeListViewId: root._tateListLayout ? root.tateListViewId : root.listViewId
     readonly property string _browseThemeId: BrowseLayouts.currentThemeId
@@ -735,14 +742,36 @@ Item {
     // Frozen rapid-navigation presentation. The live grid is hidden while this
     // is visible, so the dim Image blends once against an opaque black backing
     // rather than compositing over moving delegates on every repeat tick.
+    //
+    // Sink is the FULL grid rect, matching `prepareRapidSnapshot()`'s grab
+    // (`Qt.size(mediaGrid.width, mediaGrid.height)`) exactly, and
+    // `fillMode: Image.Pad` paints the grabbed pixmap at its own natural
+    // size with no resampling -- a true 1:1 overlay. Round 8 sized this
+    // Item to the smaller *content* rect (`_contentWidth` x the cell
+    // block's own height) and relied on `sourceClipRect` to crop the
+    // full-rect grab down to it, with `fillMode: Image.Stretch` filling
+    // whatever `sourceClipRect` returned into that smaller box.
+    // `sourceClipRect` is a `QQuickPixmap` region hint that is not
+    // reliably honored for `image://itemgrabber/…` provider URLs -- when
+    // dropped, `Stretch` squeezed the entire full-size grab (narrower by
+    // `leftInset + rightInset`, shorter by `topInset + bottomInset`) into
+    // the smaller box, with `smooth: false` nearest-neighbour on top --
+    // exactly the "ugly, scaled smaller" artifact. The crop origin also
+    // assumed cells start at `(leftInset, topInset)`, ignoring
+    // `_cellBlockOffsetX`/`_cellBlockOffsetY` (PagedGrid.qml), the
+    // centering offset applied whenever the cell block is smaller than the
+    // available area -- so even a correctly-honored clip would have been
+    // shifted. Showing the whole full-rect grab at 1:1 sidesteps both: no
+    // scaling path exists to fail, and the offset is already baked into
+    // where the grab itself painted the cells.
     Item {
         id: rapidSnapshot
         objectName: "rapidScrollSnapshot"
         visible: root._rapidSnapshotVisible
-        x: mediaGrid.x + mediaGrid.leftInset
-        y: mediaGrid.y + mediaGrid.topInset
-        width: mediaGrid._contentWidth
-        height: mediaGrid.rows * mediaGrid.cellHeight + Math.max(0, mediaGrid.rows - 1) * mediaGrid.cellSpacingY
+        x: mediaGrid.x
+        y: mediaGrid.y
+        width: mediaGrid.width
+        height: mediaGrid.height
         clip: true
         z: 19
 
@@ -755,8 +784,7 @@ Item {
             objectName: "rapidScrollSnapshotImage"
             anchors.fill: parent
             source: root._rapidSnapshotResult ? root._rapidSnapshotResult.url : ""
-            sourceClipRect: Qt.rect(mediaGrid.leftInset, mediaGrid.topInset, rapidSnapshot.width, rapidSnapshot.height)
-            fillMode: Image.Stretch
+            fillMode: Image.Pad
             smooth: false
             opacity: 0.28
         }

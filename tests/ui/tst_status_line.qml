@@ -205,7 +205,7 @@ TestCase {
             "mediaActivityEnabled": true
         });
         verify(line !== null);
-        compare(line._label, "Core error — boom");
+        compare(line._label, "Core error: boom");
     }
 
     function test_indexing_shows_track(): void {
@@ -239,7 +239,7 @@ TestCase {
             "mediaActivityEnabled": true
         });
         verify(line !== null);
-        compare(line._label, "Indexing paused — game running");
+        compare(line._label, "Indexing paused: game running");
 
         const track = findChild(line, "statusLineTrack");
         verify(track !== null);
@@ -328,7 +328,7 @@ TestCase {
             "mediaActivityEnabled": true
         });
         verify(line !== null);
-        compare(line._label, "Scraping paused — game running");
+        compare(line._label, "Scraping paused: game running");
     }
 
     // The track is the rightmost element and a short label shrink-wraps
@@ -386,8 +386,13 @@ TestCase {
         compare(line._terminalMessage, "", "starting a task must not itself produce a terminal message");
         Browse.MediaStatus.indexing = false;
 
-        compare(line._terminalMessage, "Indexed 5432 files");
-        compare(line._label, "Indexed 5432 files");
+        // Round 9: counts are locale-grouped via Format.count() (see
+        // Format.qml), so the expected string tracks whatever the test
+        // runner's own locale produces rather than assuming a fixed
+        // separator -- this stays correct across locales/CI environments.
+        const expected = "Indexed " + Format.count(5432) + " files";
+        compare(line._terminalMessage, expected);
+        compare(line._label, expected);
     }
 
     function test_terminal_message_clears_after_its_dwell(): void {
@@ -419,7 +424,7 @@ TestCase {
         Browse.MediaStatus.scraping = true;
         Browse.MediaStatus.scraping = false;
 
-        compare(line._terminalMessage, "Scrape failed — disk full");
+        compare(line._terminalMessage, "Scrape failed: disk full");
     }
 
     function test_new_task_clears_a_pending_terminal_message(): void {

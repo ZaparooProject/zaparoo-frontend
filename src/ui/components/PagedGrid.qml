@@ -228,7 +228,26 @@ Item {
     // the user can actually navigate to right now, not a paginated
     // model's reported total.
     readonly property bool hasPagesAbove: currentPage > 0
-    readonly property bool hasPagesBelow: currentPage < pageCount - 1 || (!root.paginationTotalKnown && root.hasMorePages)
+    // A model that says it has more rows coming has a page below,
+    // whether or not the total is known -- the old `!paginationTotalKnown
+    // &&` term meant a *known*-total paginated model (Games: fetched
+    // exactly `pageSize` rows on first load, `paginationTotalKnown: true`,
+    // `hasMorePages: true`) reported `hasPagesBelow: false` on entry:
+    // `pageCount` is `floor(itemCount / pageSize) === 1` (only the loaded
+    // rows count), so `currentPage(0) < pageCount(1) - 1` is false, and the
+    // known-total branch of the old OR term never even looked at
+    // `hasMorePages`. The chevrons and "N / M" readout (both gated on this
+    // flag -- see PageIndicator.qml's `_hasMultiplePages`) then stayed
+    // hidden until the first d-pad move triggered `loadMoreRequested` and
+    // grew `itemCount` past a second page. The count itself was always
+    // right (it reads the model's own authoritative total, not this flag);
+    // only this visibility predicate under-reported it. `totalPageCount`
+    // (below) is the more semantically direct comparison here -- and
+    // `pageBy()` already wraps against it, so today's chevrons under-report
+    // what the shoulder buttons can actually do -- but switching this flag
+    // to it changes behavior for every paginated caller in one step; kept
+    // to the minimal, already-safe `pageCount` fix for this round.
+    readonly property bool hasPagesBelow: currentPage < pageCount - 1 || root.hasMorePages
 
     // Caller-supplied total item count, used by the scroll thumb so its
     // size and position reflect the full dataset rather than the loaded

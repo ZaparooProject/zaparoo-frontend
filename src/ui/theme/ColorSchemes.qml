@@ -24,7 +24,13 @@ import QtQuick
 // amber preset signal danger in amber.
 QtObject {
     readonly property string defaultId: "zaparoo-dark"
-    readonly property var ids: ["zaparoo-dark", "zaparoo-light", "classic-purple", "dracula", "nord", "synthwave-84", "amber-phosphor", "green-phosphor", "neo-geo", "nes", "virtual-boy", "gruvbox", "everforest", "solarized-dark", "rose-pine", "oxocarbon", "flexoki-paper", "solarized-light", "game-boy"]
+    // Round 10: reordered into family blocks -- Zaparoo identity pinned
+    // first, then retro/console, then editor/terminal, then light --
+    // alphabetical by display name within each block. Previously plain
+    // addition-history order (each round's new presets appended at the
+    // end), which read as random rather than deliberate. See
+    // docs/style.md -> "Preset catalog" for the full history.
+    readonly property var ids: ["zaparoo-dark", "zaparoo-light", "classic-purple", "amber-phosphor", "game-boy", "green-phosphor", "neo-geo", "nes", "virtual-boy", "dracula", "everforest", "gruvbox", "nord", "oxocarbon", "rose-pine", "solarized-dark", "synthwave-84", "flexoki-paper", "solarized-light"]
 
     // `zaparoo-light`'s accent is a darkened brand blue: #168bff only reaches
     // 2.97:1 against a near-white page, just under the 3.0 floor the preset

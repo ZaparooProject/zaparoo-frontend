@@ -294,7 +294,7 @@ Item {
             // `hub/resume` override still wins over either via
             // `_hubCoverKey`.
             const resumeCoverFallback = hub.resumeModelEnabled ? Browse.RecentsModel.resume_cover_key : "icons/PlayOutline";
-            return hub._actionEntry("resume", hub._hubCoverKey("resume", resumeCoverFallback), resumeName.length > 0 ? resumeName : qsTr("Resume"), hub.resumeKnownUnavailable, qsTr("No recent games"));
+            return hub._actionEntry("resume", hub._hubCoverKey("resume", resumeCoverFallback), resumeName.length > 0 ? qsTr("Resume: %1").arg(resumeName) : qsTr("Resume"), hub.resumeKnownUnavailable, qsTr("No recent games"));
         }
         if (id === "favorites")
             return hub._actionEntry("favorites", hub._hubCoverKey("favorites", "icons/HeartOutline"), qsTr("Favorites"));

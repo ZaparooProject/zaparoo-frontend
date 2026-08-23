@@ -112,6 +112,7 @@ ApplicationWindow {
     property bool listPickerModalRequested: false
     property bool letterJumpModalRequested: false
     property bool crtCalibrationModalRequested: false
+    property bool scrapeSetupModalRequested: false
 
     function _startupTrace(): void {
         if (!root._startupTraceActive)
@@ -315,6 +316,7 @@ ApplicationWindow {
     property var listPickerModal: listPickerModalLoader.item
     property var letterJumpModal: letterJumpModalLoader.item
     property var crtCalibrationModal: crtCalibrationModalLoader.item
+    property var scrapeSetupModal: scrapeSetupModalLoader.item
     property alias headerBar: headerBar
     property alias screensaverOverlay: screensaverOverlay
     // Exposed so Main.qml binds Sizing.screenWidth/Height to the
@@ -335,6 +337,7 @@ ApplicationWindow {
     property bool randomFailedModalVisible: false
     property bool gameInfoModalVisible: false
     property bool logUploadModalVisible: false
+    property bool scrapeSetupModalVisible: false
     property bool quitConfirmModalVisible: false
     property bool listPickerModalVisible: false
     property bool settingNeedsRestartModalVisible: false
@@ -421,14 +424,32 @@ ApplicationWindow {
     readonly property string recentsScreenState: root.activeScreen !== root.screenRecents ? "" : ((Browse.RecentsModel.loading || root.catalogStillBooting) ? "loading" : ((Browse.RecentsModel.error_message ?? "") !== "" ? "error" : (Browse.RecentsModel.count === 0 ? "empty" : "ready")))
     readonly property string displayOrientation: Browse.Settings.current_orientation
     readonly property bool _sceneRotated: root.displayOrientation === "cw" || root.displayOrientation === "ccw"
-    readonly property bool _browseListLayout: Browse.Settings.current_browse_layout === "list"
-    readonly property bool _browseTateListLayout: root._browseListLayout && root.displayOrientation !== "horizontal"
+    // Round 10: split into per-family properties -- Systems/FavoriteSystems
+    // follow the systems layout preference, Games/Favorites/Recents follow
+    // the games one. `_browseViewId` below already branches on screen
+    // family for exactly this reason; only the boolean it reads needed to
+    // stop being shared.
+    readonly property bool _systemsBrowseListLayout: Browse.Settings.current_systems_browse_layout === "list"
+    readonly property bool _gamesBrowseListLayout: Browse.Settings.current_games_browse_layout === "list"
+    readonly property bool _systemsBrowseTateListLayout: root._systemsBrowseListLayout && root.displayOrientation !== "horizontal"
+    readonly property bool _gamesBrowseTateListLayout: root._gamesBrowseListLayout && root.displayOrientation !== "horizontal"
     readonly property string _browseViewId: {
         if (root.activeScreen === root.screenSystems || root.activeScreen === root.screenFavoriteSystems)
-            return root._browseListLayout ? (root._browseTateListLayout ? "systemsListTate" : "systemsList") : "systemsGrid";
+            return root._systemsBrowseListLayout ? (root._systemsBrowseTateListLayout ? "systemsListTate" : "systemsList") : "systemsGrid";
         if (root.activeScreen === root.screenGames || root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents)
-            return root._browseListLayout ? (root._browseTateListLayout ? "gamesListTate" : "gamesList") : "gamesGrid";
+            return root._gamesBrowseListLayout ? (root._gamesBrowseTateListLayout ? "gamesListTate" : "gamesList") : "gamesGrid";
         return "gamesGrid";
+    }
+    // Whichever of the two layout preferences the CURRENT active screen's
+    // family follows -- for callers like `browseHeaderTitle` below that
+    // need "is the active screen in list layout" without re-deriving
+    // `_browseViewId`'s own family branch.
+    readonly property bool _activeBrowseListLayout: {
+        if (root.activeScreen === root.screenSystems || root.activeScreen === root.screenFavoriteSystems)
+            return root._systemsBrowseListLayout;
+        if (root.activeScreen === root.screenGames || root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents)
+            return root._gamesBrowseListLayout;
+        return false;
     }
     readonly property string _browseThemeId: BrowseLayouts.currentThemeId
     readonly property var _browseViewProfile: BrowseLayouts.themeProfile(root._browseThemeId, root._browseViewId)
@@ -444,7 +465,7 @@ ApplicationWindow {
     readonly property string browseHeaderTitle: {
         if (!root.crtNativePath)
             return "";
-        if (Browse.Settings.current_browse_layout === "list")
+        if (root._activeBrowseListLayout)
             return "";
         if (root.activeScreen === root.screenSystems)
             return CategoryIds.displayName(Browse.SystemsModel.current_category);
@@ -466,6 +487,12 @@ ApplicationWindow {
     signal actionErrorAccepted
     signal closeRandomFailedRequested
     signal closeLogUploadRequested
+    signal closeScrapeSetupRequested
+    // Bubbled from ScrapeSetupModal's own scraper-picker row -- Main.qml
+    // owns opening the shared ListPickerModal (the modal itself can't
+    // instantiate a second top-level modal directly; see the Loader
+    // pattern every other modal-with-nested-picker interaction uses).
+    signal requestScraperPicker
     signal closeQuitConfirmRequested
     signal quitConfirmAccepted
     signal listPickerAccepted(string fieldId, string selectedId)
@@ -790,6 +817,16 @@ ApplicationWindow {
             Loader {
                 id: cardWriteModalLoader
                 anchors.fill: parent
+                // Round 10: every modal Loader here needs an explicit z
+                // above HeaderBar's 200 -- `z` only resolves among
+                // siblings, and each modal's own root Item declares a
+                // z (300, or 310 for commercialNotice) that only applies
+                // INSIDE its own Loader, never reaching `scene`'s actual
+                // stacking context where it sits alongside HeaderBar.
+                // Without this, a modal tall enough to reach into the
+                // header band (GameInfoModal was the only one that did)
+                // paints BEHIND the logo instead of in front of it.
+                z: 300
                 active: root.cardWriteModalRequested
                 sourceComponent: Component {
                     Modal {
@@ -807,6 +844,7 @@ ApplicationWindow {
             Loader {
                 id: settingNeedsRestartModalLoader
                 anchors.fill: parent
+                z: 300
                 active: root.settingNeedsRestartModalRequested
                 sourceComponent: Component {
                     Modal {
@@ -826,6 +864,7 @@ ApplicationWindow {
             Loader {
                 id: coreVersionModalLoader
                 anchors.fill: parent
+                z: 300
                 active: root.coreVersionModalRequested
                 sourceComponent: Component {
                     Modal {
@@ -842,6 +881,7 @@ ApplicationWindow {
             Loader {
                 id: actionErrorModalLoader
                 anchors.fill: parent
+                z: 300
                 active: root.actionErrorModalRequested
                 sourceComponent: Component {
                     Modal {
@@ -858,6 +898,7 @@ ApplicationWindow {
             Loader {
                 id: contextMenuLoader
                 anchors.fill: parent
+                z: 300
                 active: root.contextMenuRequested
                 sourceComponent: Component {
                     ContextMenu {
@@ -875,6 +916,7 @@ ApplicationWindow {
             Loader {
                 id: qrCodeModalLoader
                 anchors.fill: parent
+                z: 300
                 active: root.qrCodeModalRequested
                 sourceComponent: Component {
                     QrCodeModal {
@@ -887,6 +929,7 @@ ApplicationWindow {
             Loader {
                 id: gameInfoModalLoader
                 anchors.fill: parent
+                z: 300
                 active: root.gameInfoModalRequested
                 sourceComponent: Component {
                     GameInfoModal {
@@ -900,10 +943,13 @@ ApplicationWindow {
             // Commercial-use notice. Sits above every other modal (z: 310) so
             // it always paints first on a fresh install. Once the user acks,
             // `Browse.Notice.commercial_ack` flips to true on disk and the
-            // modal stays closed for the rest of this install.
+            // modal stays closed for the rest of this install. The Loader
+            // itself (not just CommercialNoticeModal's own internal z)
+            // needs to carry this -- see cardWriteModalLoader's comment.
             Loader {
                 id: commercialNoticeModalLoader
                 anchors.fill: parent
+                z: 310
                 active: root.commercialNoticeModalRequested
                 sourceComponent: Component {
                     CommercialNoticeModal {
@@ -920,12 +966,33 @@ ApplicationWindow {
             Loader {
                 id: logUploadModalLoader
                 anchors.fill: parent
+                z: 300
                 active: root.logUploadModalRequested
                 sourceComponent: Component {
                     LogUploadModal {
                         anchors.fill: parent
                         open: root.logUploadModalVisible
                         onCloseRequested: root.closeLogUploadRequested()
+                    }
+                }
+            }
+
+            // Scrape setup modal (round 10). Pushed by Main.qml when the
+            // user triggers the "Scrape metadata" action in Settings while
+            // idle. Scraper choice + re-scrape toggle + Start, replacing
+            // the hardcoded "gamelist.xml" every other scrape call site
+            // still uses.
+            Loader {
+                id: scrapeSetupModalLoader
+                anchors.fill: parent
+                z: 300
+                active: root.scrapeSetupModalRequested
+                sourceComponent: Component {
+                    ScrapeSetupModal {
+                        anchors.fill: parent
+                        open: root.scrapeSetupModalVisible
+                        onCloseRequested: root.closeScrapeSetupRequested()
+                        onRequestScraperPicker: root.requestScraperPicker()
                     }
                 }
             }
@@ -937,6 +1004,7 @@ ApplicationWindow {
             Loader {
                 id: quitConfirmModalLoader
                 anchors.fill: parent
+                z: 300
                 active: root.quitConfirmModalRequested
                 sourceComponent: Component {
                     Modal {
@@ -958,6 +1026,7 @@ ApplicationWindow {
             Loader {
                 id: listPickerModalLoader
                 anchors.fill: parent
+                z: 300
                 active: root.listPickerModalRequested
                 sourceComponent: Component {
                     ListPickerModal {
@@ -977,6 +1046,7 @@ ApplicationWindow {
             Loader {
                 id: letterJumpModalLoader
                 anchors.fill: parent
+                z: 300
                 active: root.letterJumpModalRequested
                 sourceComponent: Component {
                     LetterJumpModal {

@@ -161,4 +161,52 @@ TestCase {
         verify(!firstBar.active);
         verify(secondBar.active);
     }
+
+    // Round 9: `_textWidth` reads `rowLabelMetrics.advanceWidth`/
+    // `.boundingRect` as *properties* of a `TextMetrics` bound to
+    // `font.weight: bar.contentWeight` -- not a `FontMetrics` fed through
+    // a Q_INVOKABLE `advanceWidth(text)` call, the round-8 shape that let
+    // a selected row's label repaint bold while its own centering box
+    // stayed pinned to the stale Font.Normal measurement (see
+    // ListPickerModal.qml's identical fix and its own regression test for
+    // why the "pass it as an unused parameter" alternative doesn't
+    // reliably work under this project's AOT-compiled QML). Confirms the
+    // label's own width tracks a fresh measurement in both directions,
+    // not just whichever weight was current when the row was built.
+    function test_selected_row_label_width_never_goes_stale(): void {
+        menu.entries = [
+            {
+                "id": "one",
+                "label": "One"
+            },
+            {
+                "id": "two",
+                "label": "A Considerably Longer Menu Entry Label"
+            }
+        ];
+        menu.currentIndex = 0;
+
+        const row = findChild(menu, "contextMenuRow-1");
+        verify(row !== null);
+        const label = findChild(row, "contextMenuRowLabel");
+        verify(label !== null);
+        const metrics = findChild(row, "contextMenuRowLabelMetrics");
+        verify(metrics !== null);
+
+        function expectedWidth() {
+            const available = Math.max(0, row.width - 2 * menu.horizontalPadding);
+            return Math.min(Math.ceil(Math.max(metrics.advanceWidth, metrics.boundingRect.width)) + Sizing.stroke(2), available);
+        }
+
+        compare(metrics.font.weight, Font.Normal, "unselected row must measure at Font.Normal");
+        compare(label.width, expectedWidth(), "resting width must match a fresh measurement");
+
+        menu.currentIndex = 1;
+        compare(metrics.font.weight, Font.Medium, "selecting the row must flip its metrics to Font.Medium");
+        compare(label.width, expectedWidth(), "selected width must match a fresh measurement, not the stale resting one");
+
+        menu.currentIndex = 0;
+        compare(metrics.font.weight, Font.Normal, "deselecting the row must flip its metrics back to Font.Normal");
+        compare(label.width, expectedWidth(), "width after deselecting must match a fresh measurement too");
+    }
 }

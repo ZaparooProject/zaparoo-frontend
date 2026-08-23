@@ -969,6 +969,26 @@ TestCase {
         compare(grid.hasPagesBelow, false);
     }
 
+    // Round 9: a *known*-total paginated model (Games) fetches exactly one
+    // page's worth of rows on its first load -- `itemCount === pageSize`,
+    // `paginationTotalKnown: true`, `hasMorePages: true`. The old formula's
+    // known-total branch never looked at `hasMorePages` at all
+    // (`currentPage(0) < pageCount(1) - 1` is false, and the OR term was
+    // gated `!paginationTotalKnown &&`), so `hasPagesBelow` read false and
+    // the footer's chevrons/"N / M" readout (PageIndicator._hasMultiplePages)
+    // stayed hidden on entry despite the model plainly having more rows --
+    // only the first d-pad move (which grows `itemCount` past a second
+    // page) made them appear. A model reporting more rows must always
+    // register as "a page below," known total or not.
+    function test_has_pages_below_true_for_known_total_on_first_full_page(): void {
+        fillModel(grid.pageSize);
+        grid.hasMorePages = true;
+        grid.paginationTotalKnown = true;
+        compare(grid.pageCount, 1, "exactly one page's worth loaded so far");
+        compare(grid.currentPage, 0);
+        compare(grid.hasPagesBelow, true, "hasMorePages must register even on a known-total model's first page");
+    }
+
     function test_unbounded_pages_keep_down_arrow_at_loaded_edge(): void {
         fillModel(24);
         grid.paginationTotalKnown = false;

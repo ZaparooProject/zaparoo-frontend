@@ -231,17 +231,26 @@ TestCase {
         compare(JSON.stringify(main.helpEntries), before);
     }
 
-    function test_games_rapid_scroll_snapshot_crops_to_cell_area(): void {
+    // Round 9: the snapshot Item now covers the FULL grid rect (matching
+    // `prepareRapidSnapshot()`'s own full-rect `grabToImage` call) instead
+    // of the smaller content rect it used to crop down to via
+    // `sourceClipRect` -- a `QQuickPixmap` region hint that is not
+    // reliably honored for `image://itemgrabber/…` provider URLs, and
+    // whose absence let `fillMode: Image.Stretch` visibly downscale the
+    // whole grab into the smaller box. `fillMode: Image.Pad` now paints
+    // the grabbed pixmap at 1:1 with no scaling path at all, so there is
+    // no `sourceClipRect` left to assert on.
+    function test_games_rapid_scroll_snapshot_covers_full_grid_at_1to1(): void {
         const snapshot = findChild(main.gamesScreen, "rapidScrollSnapshot");
         const snapshotImage = findChild(main.gamesScreen, "rapidScrollSnapshotImage");
         verify(snapshot !== null);
         verify(snapshotImage !== null);
-        compare(snapshot.x, main.gamesScreen.gamesGrid.x + main.gamesScreen.gamesGrid.leftInset);
-        compare(snapshot.y, main.gamesScreen.gamesGrid.y + main.gamesScreen.gamesGrid.topInset);
-        compare(snapshot.width, main.gamesScreen.gamesGrid._contentWidth);
-        compare(snapshot.height, main.gamesScreen.gamesGrid.rows * main.gamesScreen.gamesGrid.cellHeight + Math.max(0, main.gamesScreen.gamesGrid.rows - 1) * main.gamesScreen.gamesGrid.cellSpacingY);
-        compare(snapshotImage.sourceClipRect.x, main.gamesScreen.gamesGrid.leftInset);
-        compare(snapshotImage.sourceClipRect.y, main.gamesScreen.gamesGrid.topInset);
+        compare(snapshot.x, main.gamesScreen.gamesGrid.x);
+        compare(snapshot.y, main.gamesScreen.gamesGrid.y);
+        compare(snapshot.width, main.gamesScreen.gamesGrid.width);
+        compare(snapshot.height, main.gamesScreen.gamesGrid.height);
+        compare(snapshotImage.fillMode, Image.Pad);
+        compare(snapshotImage.smooth, false);
         compare(snapshotImage.opacity, 0.28);
     }
 
@@ -1301,6 +1310,25 @@ TestCase {
         compare(main.rapidNavigationActive, false);
     }
 
+    // Round 10: a held direction consumed by a modal (e.g. GameInfoModal's
+    // own scroll) must NOT arm rapid-nav tracking on the screen behind it
+    // -- that state drives the Games/Favorites/Recents rapid-scroll
+    // ghost-snapshot regardless of modal state, so arming it while a
+    // modal owns input popped the background grid's freeze-frame in and
+    // out on every repeat tick. See `_handleRepeatAction`'s doc comment.
+    function test_repeat_tick_does_not_arm_rapid_navigation_while_modal_owns_input(): void {
+        ScreenManager.pushModal("test_modal");
+        try {
+            main._armRepeat("down", Qt.Key_Down);
+            main._handleRepeatAction();
+            compare(main.rapidNavigationActive, false, "a modal-owned held direction must not arm the background screen's rapid-scroll state");
+            compare(main.rapidNavigationIndicatorActive, false);
+        } finally {
+            main._stopRepeat();
+            ScreenManager.popModal();
+        }
+    }
+
     // Duplicate-input guard. The Keys.onPressed handler collapses a
     // second delivery of the same key while the guard window is open
     // (controller / input-stack double send). The decision is a pure
@@ -1405,6 +1433,35 @@ TestCase {
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "", false, "");
         compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code"]);
+    }
+
+    // Round 10: "Discover alt. versions" only appears when the row's own
+    // system is the literal MiSTer Arcade/MRA system -- the backend
+    // (alternate_versions.rs) matches `system_id == "Arcade"` exactly, not
+    // Core's broader 32-system "Arcade" category, so showing the entry on
+    // e.g. a CPS2 or NAOMI game would always return "No alternates found."
+    function test_context_menu_games_discover_only_on_arcade_system(): void {
+        const arcade = main.buildContextMenuEntries("games", "media", true, false, false, "Arcade");
+        verify(_idsOf(arcade).includes("discover"), "Arcade games must offer Discover alt. versions");
+
+        const nonArcade = main.buildContextMenuEntries("games", "media", true, false, false, "CPS2");
+        verify(!_idsOf(nonArcade).includes("discover"), "A CPS2 game (Arcade-category, not the Arcade system) must not offer Discover alt. versions");
+    }
+
+    function test_context_menu_favorites_discover_only_on_arcade_system(): void {
+        const arcade = main.buildContextMenuEntries("favorites", "", true, false, true, "Arcade", false, "");
+        verify(_idsOf(arcade).includes("discover"));
+
+        const nonArcade = main.buildContextMenuEntries("favorites", "", true, false, true, "SNES", false, "");
+        verify(!_idsOf(nonArcade).includes("discover"));
+    }
+
+    function test_context_menu_recents_discover_only_on_arcade_system(): void {
+        const arcade = main.buildContextMenuEntries("recents", "", false, false, false, "Arcade", false, "");
+        verify(_idsOf(arcade).includes("discover"));
+
+        const nonArcade = main.buildContextMenuEntries("recents", "", false, false, false, "NES", false, "");
+        verify(!_idsOf(nonArcade).includes("discover"));
     }
 
     function test_context_menu_favorite_systems_offers_scoped_random(): void {

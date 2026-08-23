@@ -27,6 +27,32 @@ Item {
 
     readonly property real faceOffset: face.y
     readonly property int visibleEdgeHeight: root.pressed ? 0 : Math.min(root.edgeHeight, root.height)
+    // Press-progress driver, animated instead of `edge.height`/`face.y`
+    // directly (see the two Behaviors below, now on this property alone).
+    // `root.height` is 0 at construction, before the cell's real layout
+    // pass lands -- with the old per-geometry Behaviors, `edge.height`'s
+    // own binding (`Math.min(root.edgeHeight + root.radius, root.height)`)
+    // captured that 0 and then animated 0 -> full when the real height
+    // arrived a moment later, because the Behavior can't distinguish a
+    // layout change from an actual press. On a loaded MiSTer boot the
+    // render loop can stall long enough to stretch that nominal
+    // `Motion.settleMs` settle across roughly a second of wall clock --
+    // every Hub tile's bottom edge (this surface's front face) painted
+    // missing for that whole span. Animating `_pressT` (a pure 0..1
+    // scalar with no geometry read inside its own binding) instead means
+    // a layout pass is always instant, and only `root.pressed` flipping
+    // still animates.
+    property real _pressT: root.pressed ? 1 : 0
+    readonly property int _edgeBand: Math.min(root.edgeHeight + root.radius, root.height)
+    readonly property int _pressDepth: Math.min(root.edgeHeight, root.height)
+
+    Behavior on _pressT {
+        enabled: Motion.enabled
+        NumberAnimation {
+            duration: Motion.dur(root.pressed ? Motion.pressMs : Motion.settleMs)
+            easing.type: Easing.OutQuad
+        }
+    }
     // Ring inset and width were first tried as a percentage of this
     // surface's own `height` (fixing an earlier screen-relative version
     // that ate ~38% of a short row's height -- see git history), but that
@@ -48,26 +74,48 @@ Item {
 
     clip: true
 
-    Rectangle {
-        id: edge
+    // A clipping wrapper, not a resized Rectangle -- see `edge` below for
+    // why. This Item is the thing that actually shrinks as `_pressT`
+    // increases; the Rectangle inside it never does.
+    Item {
+        id: edgeClip
 
-        objectName: "pressableEdge"
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: root.pressed ? 0 : Math.min(root.edgeHeight + root.radius, root.height)
-        color: root.edgeColor
-        topLeftRadius: 0
-        topRightRadius: 0
-        bottomLeftRadius: root.radius
-        bottomRightRadius: root.radius
+        // Driven off `root._pressT`, not `root.pressed` directly -- see
+        // that property's doc comment. Settles to the identical values
+        // this used to compute inline (0 pressed, `_edgeBand` at rest).
+        height: Sizing.px((1 - root._pressT) * root._edgeBand)
+        clip: true
 
-        Behavior on height {
-            enabled: Motion.enabled
-            NumberAnimation {
-                duration: Motion.dur(root.pressed ? Motion.pressMs : Motion.settleMs)
-                easing.type: Easing.OutQuad
-            }
+        // Round 10: height is a CONSTANT (`_edgeBand`), never `_pressT`-
+        // driven. The old version put `(1 - root._pressT) * root._edgeBand`
+        // directly on this Rectangle's own `height`, which shrank the
+        // radiused rect itself across the press animation -- Qt clamps
+        // `bottomLeftRadius`/`bottomRightRadius` to `height / 2` once
+        // `height` drops below `2 * radius`, so for most of the animation
+        // this rectangle's corners were less round than `face`'s (whose
+        // radius is evaluated against a height that never changes), and
+        // only matched up again at the very last frame (`edgeClip.height`
+        // reaching 0). Anchoring a full-height, full-radius Rectangle to
+        // `edgeClip`'s bottom and clipping the shrinking container instead
+        // means the corners never move, never resize, and are never
+        // reclamped -- only the flat, unrounded top of the strip (already
+        // hidden under `face`'s own curve at rest) gets clipped away.
+        Rectangle {
+            id: edge
+
+            objectName: "pressableEdge"
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: root._edgeBand
+            color: root.edgeColor
+            topLeftRadius: 0
+            topRightRadius: 0
+            bottomLeftRadius: root.radius
+            bottomRightRadius: root.radius
         }
     }
 
@@ -76,21 +124,16 @@ Item {
 
         objectName: "pressableFace"
         x: 0
-        y: root.pressed ? Math.min(root.edgeHeight, root.height) : 0
+        // Driven off `root._pressT` -- see that property's doc comment.
+        // Settles to the identical values this used to compute inline
+        // (`_pressDepth` pressed, 0 at rest).
+        y: Sizing.px(root._pressT * root._pressDepth)
         width: root.width
-        height: Math.max(0, root.height - Math.min(root.edgeHeight, root.height))
+        height: Math.max(0, root.height - root._pressDepth)
         color: root.faceColor
         radius: root.radius
         border.color: Theme.borderMid
         border.width: Sizing.cardBorderWidth
-
-        Behavior on y {
-            enabled: Motion.enabled
-            NumberAnimation {
-                duration: Motion.dur(root.pressed ? Motion.pressMs : Motion.settleMs)
-                easing.type: Easing.OutQuad
-            }
-        }
 
         // Focus ring — two stacked *filled* rounded rectangles rather than a
         // thicker border: thin rounded borders are tessellated without

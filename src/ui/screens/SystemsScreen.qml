@@ -60,7 +60,7 @@ Item {
     // before restore points `currentIndex` at the saved system on a cold start.
     property bool _restoreDone: false
     readonly property bool _focusReady: systems._focusArmed || systems._restoreDone
-    readonly property bool _listLayout: Browse.Settings.current_browse_layout === "list"
+    readonly property bool _listLayout: Browse.Settings.current_systems_browse_layout === "list"
     readonly property bool _crtGridLayout: Theme.crtNativePath && !systems._listLayout
     readonly property bool _crtListStrip: Theme.crtNativePath && systems._listLayout
     readonly property bool _tateListLayout: systems._listLayout && Browse.Settings.current_orientation !== "horizontal"

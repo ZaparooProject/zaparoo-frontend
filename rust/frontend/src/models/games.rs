@@ -2358,11 +2358,18 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32, requests_enabled: bool) ->
             cache.enqueue_with_media_id(k.clone(), entry.media_id, page_size);
         }
     }
+    // `!requests_enabled` (covers paused for a bulk/jump append) is
+    // deliberately NOT folded in here — that means "haven't asked yet,"
+    // not "confirmed absent." Folding it in used to show the chip
+    // placeholder for every game while paused, including ones that do
+    // have art, instead of staying blank like an in-flight fetch. Only a
+    // genuine negative memo, soft-no-image, or Core's own `has_cover:
+    // false` earns the chip; see `cover_key_for_with`'s doc comment.
     cover_key_for_with(
         entry,
         media_key.as_ref(),
         effective_cached,
-        negative || soft_no_image || no_cover || !requests_enabled,
+        negative || soft_no_image || no_cover,
     )
 }
 
@@ -2603,23 +2610,28 @@ fn apply_favorite_tags(
 /// without spinning up the global cover cache and its tokio runtime.
 ///
 /// `icons/Loading` is the in-flight cue: an entry that has a media key
-/// but no cached bytes and no negative memo is one we're actively
-/// fetching (or about to). Tile.qml's cover Image renders that
-/// hourglass at full size until the cache update broadcast lands and
-/// `dataChanged(COVER_KEY_ROLE)` flips this to either `media-image/...`
-/// (success) or `icons/File` (negative memo).
+/// but no cached bytes and isn't confirmed absent is one we're actively
+/// fetching, about to fetch, or simply paused on (bulk/jump append in
+/// flight) -- all three render the same blank placeholder. Tile.qml's
+/// cover Image renders that hourglass at full size until the cache
+/// update broadcast lands and `dataChanged(COVER_KEY_ROLE)` flips this to
+/// either `media-image/...` (success) or `icons/File` (confirmed
+/// absent). `confirmed_absent` must only be true for a real negative
+/// memo, soft-no-image, or Core's own `has_cover: false` -- never for
+/// "requests are merely paused right now," which looks identical to an
+/// in-flight fetch to the user and must stay blank, not show the chip.
 fn cover_key_for_with(
     entry: &BrowseEntry,
     key: Option<&MediaKey>,
     cached: bool,
-    unavailable: bool,
+    confirmed_absent: bool,
 ) -> String {
     if !is_media_capable_entry(entry) && entry.is_folder() {
         return "icons/Folder".to_string();
     }
     match key {
         Some(k) if cached => MediaImageCache::image_key_for(k),
-        Some(_) if !unavailable => "icons/Loading".to_string(),
+        Some(_) if !confirmed_absent => "icons/Loading".to_string(),
         _ => "icons/File".to_string(),
     }
 }
@@ -4152,6 +4164,28 @@ mod tests {
         assert_eq!(
             cover_key_for_with(&entry, Some(&key), false, false),
             "icons/Loading"
+        );
+    }
+
+    // Round 10: a paused fetch (bulk/jump append in flight,
+    // `cover_requests_paused`) is "haven't asked yet," not "confirmed
+    // absent" -- `cover_key_for` must never fold `!requests_enabled` into
+    // `confirmed_absent` the way it used to, or every game (including
+    // ones with real art) flashes the file-icon chip for the whole pause
+    // window instead of staying blank like an in-flight fetch. This test
+    // pins the shape `cover_key_for` must produce for that case: a media
+    // key, nothing cached yet, not confirmed absent -> blank, not the
+    // chip. Same assertion as the plain in-flight case above by
+    // construction, since paused and in-flight both resolve to
+    // `confirmed_absent: false` post-fix.
+    #[test]
+    fn cover_key_for_paused_with_cover_stays_loading_not_file_icon() {
+        let entry = media("smb", "/p/smb", "NES");
+        let key = media_key_for(&entry).expect("media has key");
+        assert_eq!(
+            cover_key_for_with(&entry, Some(&key), false, false),
+            "icons/Loading",
+            "paused-but-not-confirmed-absent must render blank, never the chip"
         );
     }
 

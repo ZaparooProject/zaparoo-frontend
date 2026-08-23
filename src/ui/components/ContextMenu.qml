@@ -110,13 +110,22 @@ Item {
             console.warn("ContextMenu: " + menu.entries.length + " entries exceeds the " + menu._maxRecommendedEntries + "-entry cap in docs/content-style.md — consolidate this menu");
     }
 
+    // `Math.max(advanceWidth, boundingRect.width)` plus `Sizing.stroke(2)`
+    // hinting slack — the same corrected idiom
+    // `ListPickerModal._measureLabelWidth` uses. `Text.NativeRendering`
+    // lays out on integer, hinted per-glyph advances, which can paint a
+    // few px wider than `advanceWidth()` alone's fractional, unhinted
+    // total; a zero-slack fit then elided text that should have fit.
+    // `panelWidthMetrics`'s own weight is fixed (Font.Medium), so unlike
+    // `rowLabelMetrics` below there is no live-weight dependency to lose by
+    // calling these as methods here.
     function _widestEntryLabelWidth(source: var): int {
         let widest = 0;
         if (source === null || source === undefined)
             return widest;
         for (let i = 0; i < source.length; ++i) {
             const label = source[i] && source[i].label !== undefined ? String(source[i].label) : "";
-            widest = Math.max(widest, Math.ceil(panelWidthMetrics.advanceWidth(label)));
+            widest = Math.max(widest, Math.ceil(Math.max(panelWidthMetrics.advanceWidth(label), panelWidthMetrics.boundingRect(label).width)) + Sizing.stroke(2));
         }
         return widest;
     }
@@ -359,8 +368,23 @@ Item {
                     // `panelWidthMetrics` instead would either drift
                     // resting rows off true center or, worse, elide a
                     // selected row's own label against a too-narrow box.
-                    FontMetrics {
+                    //
+                    // `TextMetrics` (not `FontMetrics` + a Q_INVOKABLE
+                    // `advanceWidth(text)` call), and its own `text:`
+                    // binding, deliberately — `advanceWidth`/`boundingRect`
+                    // as *properties* here genuinely re-evaluate when
+                    // `font.weight: bar.contentWeight` changes; a property
+                    // binding that only ever calls a method does not
+                    // reliably re-run when a property read *inside* that
+                    // method changes. Round 8 shipped the method-call form:
+                    // a selected row repainted at Font.Medium while
+                    // `_textWidth` stayed pinned to its Font.Normal
+                    // measurement, eliding a label that fit. Matches
+                    // ScrollingCaption.qml's `nameMetrics`/`tagsMetrics`.
+                    TextMetrics {
                         id: rowLabelMetrics
+                        objectName: "contextMenuRowLabelMetrics"
+                        text: row.modelData.label
                         font.family: Theme.fontUi
                         font.pixelSize: Sizing.fontCaption
                         font.weight: bar.contentWeight
@@ -385,8 +409,17 @@ Item {
                         // under the software renderer. See "Integer-pixel
                         // rules" in docs/qml-gotchas.md.
                         readonly property int _availableWidth: Math.max(0, parent.width - 2 * menu.horizontalPadding)
-                        readonly property int _textWidth: Math.min(Math.ceil(rowLabelMetrics.advanceWidth(row.modelData.label)), _availableWidth)
+                        // Union of advance and painted bounds, plus
+                        // `Sizing.stroke(2)` hinting slack — the same
+                        // corrected idiom `ListPickerModal._measureLabelWidth`
+                        // uses. `Text.NativeRendering` lays out on integer,
+                        // hinted per-glyph advances, which can paint a few
+                        // px wider than `advanceWidth` alone reports; a
+                        // zero-slack fit then elided text that should have
+                        // fit.
+                        readonly property int _textWidth: Math.min(Math.ceil(Math.max(rowLabelMetrics.advanceWidth, rowLabelMetrics.boundingRect.width)) + Sizing.stroke(2), _availableWidth)
 
+                        objectName: "contextMenuRowLabel"
                         anchors.verticalCenter: parent.verticalCenter
                         x: Sizing.center(parent.width, _textWidth)
                         width: _textWidth

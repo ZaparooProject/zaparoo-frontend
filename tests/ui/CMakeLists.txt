@@ -42,6 +42,8 @@ set(_TST_UI_QML_FILES
     tst_motion.qml
     tst_deferred_action.qml
     tst_tile_cover_sync.qml
+    tst_game_info_modal.qml
+    tst_scrape_setup_modal.qml
 )
 set(_TST_UI_LINK_LIBRARIES
     Zaparoo::CompileOptions

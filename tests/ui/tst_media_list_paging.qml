@@ -23,7 +23,7 @@ TestCase {
     property string _originalBrowseLayout: "grid"
 
     Component.onCompleted: {
-        _originalBrowseLayout = Browse.Settings.current_browse_layout;
+        _originalBrowseLayout = Browse.Settings.current_games_browse_layout;
         Sizing.screenWidth = testCase.width;
         Sizing.screenHeight = testCase.height;
     }
@@ -57,7 +57,7 @@ TestCase {
     function init(): void {
         Sizing.screenWidth = testCase.width;
         Sizing.screenHeight = testCase.height;
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_games_browse_layout = "grid";
         screen.optimisticLoading = false;
         mediaModel.clear();
         // Enough rows that a single page step in either direction stays
@@ -79,7 +79,7 @@ TestCase {
     }
 
     function cleanup(): void {
-        Browse.Settings.current_browse_layout = _originalBrowseLayout;
+        Browse.Settings.current_games_browse_layout = _originalBrowseLayout;
         screen.optimisticLoading = false;
     }
 
@@ -88,7 +88,7 @@ TestCase {
     // Asserting equivalence (not a hardcoded page size) keeps the test
     // honest if the page metric ever changes.
     function test_list_left_right_page_like_page_prev_next(): void {
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_games_browse_layout = "list";
         screen.mediaGrid.setCurrentIndexImmediate(0);
 
         screen.handleAction("page_next");
@@ -125,7 +125,7 @@ TestCase {
     // Grid layout must keep Left/Right as one-column selection moves;
     // the list paging fallback is gated on _listLayout.
     function test_grid_left_right_still_move_one_column(): void {
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_games_browse_layout = "grid";
         screen.mediaGrid.setCurrentIndexImmediate(0);
 
         screen.handleAction("right");
@@ -137,7 +137,7 @@ TestCase {
     // The paging fallback shares page_prev / page_next's ready-state
     // guard: an empty list must not page.
     function test_list_left_right_do_nothing_when_empty(): void {
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_games_browse_layout = "list";
         mediaModel.clear();
         tryCompare(screen.mediaGrid, "itemCount", 0);
         const before = screen.mediaGrid.currentIndex;
@@ -152,7 +152,7 @@ TestCase {
     // held to the same guard so the paths cannot drift apart. Start from
     // a paged-forward index so a wrap back to row 0 cannot fake a pass.
     function test_list_left_right_do_nothing_while_loading(): void {
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_games_browse_layout = "list";
         screen.mediaGrid.setCurrentIndexImmediate(0);
         screen.handleAction("page_next");
         const before = screen.mediaGrid.currentIndex;

@@ -58,11 +58,11 @@ Item {
         sourceSize.width: Sizing.px(height * (600 / 135))
     }
 
+    // Format.locale() (Format.qml, same directory/module) lifts this
+    // resolution to one shared copy -- round 9's number-grouping work
+    // needed the identical language-setting-over-host-locale logic.
     function _clockLocale(): var {
-        const language = Browse.Settings.current_language;
-        if (language === "" || language === "auto")
-            return Qt.locale();
-        return Qt.locale(language);
+        return Format.locale();
     }
 
     function _clockUses12Hour(): bool {

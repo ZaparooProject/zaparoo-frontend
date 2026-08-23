@@ -142,8 +142,17 @@ pub struct SettingsState {
     pub clock_format: String,
     #[serde(default = "default_orientation")]
     pub orientation: String,
+    // Round 10: split into `systems_browse_layout`/`games_browse_layout`
+    // below. Kept (not removed) purely so an existing user's pre-round-10
+    // `state.toml` still deserializes and its value can seed both new
+    // fields once -- see `migrate_browse_layout`. No longer written by
+    // any setter; a fresh install never populates it.
     #[serde(default = "default_browse_layout")]
     pub browse_layout: String,
+    #[serde(default = "default_browse_layout")]
+    pub systems_browse_layout: String,
+    #[serde(default = "default_browse_layout")]
+    pub games_browse_layout: String,
     #[serde(default = "default_favorites_grouping")]
     pub favorites_grouping: String,
     #[serde(default = "default_system_logo_style")]
@@ -156,8 +165,6 @@ pub struct SettingsState {
     pub mouse_enabled: bool,
     #[serde(default)]
     pub reduce_motion: bool,
-    #[serde(default)]
-    pub discover_arcade_alternate_versions: bool,
     #[serde(default)]
     pub debug_logging: bool,
     #[serde(default = "default_screensaver_timeout")]
@@ -200,13 +207,14 @@ impl Default for SettingsState {
             clock_format: default_clock_format(),
             orientation: default_orientation(),
             browse_layout: default_browse_layout(),
+            systems_browse_layout: default_browse_layout(),
+            games_browse_layout: default_browse_layout(),
             favorites_grouping: default_favorites_grouping(),
             system_logo_style: default_system_logo_style(),
             color_scheme: default_color_scheme(),
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
             reduce_motion: false,
-            discover_arcade_alternate_versions: false,
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
@@ -284,12 +292,38 @@ fn load_from(path: &Path) -> PersistedState {
         return PersistedState::default();
     };
     match toml::from_str(&src) {
-        Ok(s) => s,
+        Ok(s) => migrate_browse_layout(s),
         Err(e) => {
             warn!("persist state parse error in {}: {e}", path.display());
             PersistedState::default()
         }
     }
+}
+
+/// One-time migration: an existing `state.toml` from before round 10 has
+/// only the single `browse_layout` field, which the new
+/// `systems_browse_layout`/`games_browse_layout` fields default away from
+/// (both to `default_browse_layout()`, same as the legacy field's own
+/// default). If the legacy field carries a real, non-default choice
+/// (i.e. "list") while both new fields are still sitting at their
+/// compiled default, seed both from it -- otherwise an existing user who
+/// picked list view would silently reset to grid on upgrade. Only fires
+/// once in practice: the first save after this runs writes real values
+/// into both new fields, so `systems_browse_layout`/`games_browse_layout`
+/// stop being "both still at default" on every later load. The
+/// `frontend.toml` side of this same migration lives in
+/// `config::settings_config_from_raw`.
+fn migrate_browse_layout(mut state: PersistedState) -> PersistedState {
+    let default = default_browse_layout();
+    if state.settings.systems_browse_layout == default
+        && state.settings.games_browse_layout == default
+        && state.settings.browse_layout != default
+    {
+        let legacy = state.settings.browse_layout.clone();
+        state.settings.systems_browse_layout.clone_from(&legacy);
+        state.settings.games_browse_layout = legacy;
+    }
+    state
 }
 
 fn save_to(path: &Path, state: &PersistedState) {
@@ -405,13 +439,14 @@ mod tests {
                 clock_format: "24h".into(),
                 orientation: "cw".into(),
                 browse_layout: "list".into(),
+                systems_browse_layout: "list".into(),
+                games_browse_layout: "grid".into(),
                 favorites_grouping: "system".into(),
                 system_logo_style: "color".into(),
                 color_scheme: "classic-purple".into(),
                 button_layout: "b".into(),
                 mouse_enabled: false,
                 reduce_motion: true,
-                discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),
@@ -454,6 +489,55 @@ resolution = "1920x1080"
         // entered_from_hub absent from an older state file defaults to
         // false — the ordinary Systems-entered back-routing behaviour.
         assert!(!state.games.entered_from_hub);
+    }
+
+    // Round 10: a pre-round-10 state file only ever has the single
+    // `browse_layout` key. A user who had picked list view must not
+    // silently reset to grid on upgrade -- both new fields seed from it.
+    #[test]
+    fn pre_round_10_browse_layout_seeds_both_new_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let on_disk = r#"[settings]
+browse_layout = "list"
+"#;
+        std::fs::write(&path, on_disk).expect("write");
+        let state = load_from(&path);
+        assert_eq!(state.settings.systems_browse_layout, "list");
+        assert_eq!(state.settings.games_browse_layout, "list");
+    }
+
+    // A state file already carrying the new fields (post-migration, or a
+    // user who genuinely wants different layouts per screen) must never
+    // have the legacy field overwrite them.
+    #[test]
+    fn migration_never_overwrites_already_set_new_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let on_disk = r#"[settings]
+browse_layout = "list"
+systems_browse_layout = "grid"
+games_browse_layout = "list"
+"#;
+        std::fs::write(&path, on_disk).expect("write");
+        let state = load_from(&path);
+        assert_eq!(state.settings.systems_browse_layout, "grid");
+        assert_eq!(state.settings.games_browse_layout, "list");
+    }
+
+    // A fresh install (no legacy key at all) must not migrate anything --
+    // both new fields simply take their own compiled default.
+    #[test]
+    fn no_legacy_browse_layout_leaves_new_fields_at_default() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let on_disk = r#"[settings]
+resolution = "1920x1080"
+"#;
+        std::fs::write(&path, on_disk).expect("write");
+        let state = load_from(&path);
+        assert_eq!(state.settings.systems_browse_layout, "grid");
+        assert_eq!(state.settings.games_browse_layout, "grid");
     }
 
     #[test]

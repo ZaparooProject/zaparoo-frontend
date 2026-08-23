@@ -112,7 +112,7 @@ Item {
             Text {
                 width: parent.width
                 visible: modal.phase === modal._stateUploading || modal.phase === modal._stateIdle
-                text: qsTr("Uploading log file — this may take a moment.")
+                text: qsTr("Uploading log file. This may take a moment.")
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontBody
                 color: Theme.textPrimary

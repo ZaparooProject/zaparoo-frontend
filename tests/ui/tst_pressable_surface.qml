@@ -48,6 +48,22 @@ TestCase {
         height: 480
     }
 
+    // Dedicated fixture for the `_pressT` sweep test below. Directly
+    // assigning `_pressT` (needed to sample the mid-press 0.5 point, which
+    // `pressed`'s boolean toggle can't reach) permanently destroys its
+    // declarative binding to `root.pressed` -- imperatively setting a
+    // property with a binding replaces the binding with a static value in
+    // QML. Doing that to the shared `surface` fixture left `_pressT`
+    // stuck at whatever this test set it to last, so every later test in
+    // this file that flips `surface.pressed` silently stopped moving
+    // `face`/`edge` at all. Kept on its own instance so the hack can't
+    // leak into any other test.
+    PressableSurface {
+        id: sweepSurface
+        width: 200
+        height: 48
+    }
+
     function _linearChannel(value: real): real {
         return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
     }
@@ -196,5 +212,27 @@ TestCase {
         compare(edge.bottomLeftRadius, surface.radius);
         compare(edge.bottomRightRadius, surface.radius);
         compare(edge.height, surface.edgeHeight + surface.radius);
+    }
+
+    // Round 10: `edge`'s own height must never change across the press
+    // animation -- only the clipping wrapper around it does. A resized,
+    // radiused Rectangle gets its bottom corners reclamped by Qt toward
+    // square as height drops below `2 * radius`, which is exactly the
+    // "square corners mid-press, round again on the last frame" bug this
+    // fixes. See PressableSurface.qml's `edgeClip` doc comment.
+    function test_edge_height_is_constant_through_the_press_animation(): void {
+        const edge = findChild(sweepSurface, "pressableEdge");
+        verify(edge !== null);
+        const restHeight = edge.height;
+        compare(restHeight, sweepSurface.edgeHeight + sweepSurface.radius);
+
+        sweepSurface._pressT = 0.5;
+        compare(edge.height, restHeight, "edge must not reclamp its radius mid-press");
+
+        sweepSurface._pressT = 1;
+        compare(edge.height, restHeight, "edge must stay full height even fully pressed -- the wrapper clips it, not the rectangle itself");
+
+        sweepSurface._pressT = 0;
+        compare(edge.height, restHeight);
     }
 }

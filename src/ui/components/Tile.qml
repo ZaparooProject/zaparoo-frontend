@@ -147,19 +147,30 @@ Item {
     // captioned browse tile can. Off by default — every other caller
     // (Systems, Games, Recents, Favorites) is unaffected.
     property bool compactPadding: false
+    // Ring geometry, declared ahead of `_padding` so the padding can be
+    // derived from it rather than merely checked against it — an earlier
+    // version of this file computed `_padding` independently and only
+    // *claimed* in a comment that it cleared the ring; it didn't (see git
+    // history around round 8's `compactPadding` and docs/style.md's "Tile
+    // focus ring" note). The ring's own inner edge, in the tile's local
+    // coordinate space, sits at `_outlineGap + _outlineWidth` in from each
+    // side.
+    readonly property int _outlineGap: Sizing.pctH(0.4)
+    readonly property int _outlineWidth: Sizing.focusRingWidth
+    readonly property int _ringInnerEdge: root._outlineGap + root._outlineWidth
     // Equal cover padding on top, left, and right — the bottom is
     // owned by the caption strip in caption mode and matches `_padding`
     // visually in non-caption mode. pctH(2) is enough to read as
-    // deliberate breathing room without giving back much cover area;
-    // pctH(1) under `compactPadding` still clears the focus ring's own
-    // inset (`_outlineGap`, pctH(0.4) below) with room to spare — the
-    // ring anchors to the tile's full bounds independently of this
-    // padding, so tightening it can't make art touch or overlap the ring.
+    // deliberate breathing room without giving back much cover area.
+    // `compactPadding` derives its inset from `_ringInnerEdge` plus a
+    // fixed pctH(0.4) clearance, instead of an independent pctH(1) that
+    // used to land exactly on the ring's inner edge with a zero-pixel
+    // gap at every tier — art touched the ring by construction, not by
+    // rounding. Deriving from the ring means a future change to either
+    // ring token can't silently close the gap again.
     // Below the cover sits the caption flush against the card's
     // bottom edge, separated from the cover by `_captionGap`.
-    readonly property int _padding: Sizing.pctH(compactPadding ? 1 : 2)
-    readonly property int _outlineGap: Sizing.pctH(0.4)
-    readonly property int _outlineWidth: Sizing.focusRingWidth
+    readonly property int _padding: root.compactPadding ? root._ringInnerEdge + Sizing.pctH(0.4) : Sizing.pctH(2)
     readonly property int _captionHeight: Sizing.pctH(5.5)
     readonly property int _captionGap: Sizing.pctH(0.4)
     readonly property int _captionTextSize: Sizing.fontSmall
@@ -400,9 +411,10 @@ Item {
         // on `_focusedSelection` so only the focused tile in the focused
         // section lights up — keeps multiple tile sections on screen from
         // competing for the eye. Drawn after the card so the border sits on
-        // top; the icon padding (`_padding = pctH(3)`) is far larger than
-        // the inset (`_outlineGap = pctH(0.4)`), so the ring never overlaps
-        // content.
+        // top. `_padding` is derived from the ring's own geometry
+        // (`_ringInnerEdge = _outlineGap + _outlineWidth`, plus clearance
+        // under `compactPadding`, or a flat pctH(2) otherwise), so content
+        // can never overlap the ring regardless of which tokens change.
         // Focus ring drawn as two stacked *filled* rounded rectangles — an
         // outer accent pill and an inner surfaceCard mask that punches the
         // centre back, leaving a uniform outline. Equivalent to the older

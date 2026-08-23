@@ -405,7 +405,7 @@ async fn run_scrape_sequence(generation: u64, force: bool, notifier: Notifier) {
                 s.scraping = false;
                 s.scrape_done = true;
                 "failed".clone_into(&mut s.scrape_state);
-                "Simulated scraper failure (rescrape existing was on) — exercises the failure UI"
+                "Simulated scraper failure (rescrape existing was on): exercises the failure UI"
                     .clone_into(&mut s.scrape_error);
                 true
             });

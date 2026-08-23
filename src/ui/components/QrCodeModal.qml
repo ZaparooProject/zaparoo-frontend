@@ -20,7 +20,7 @@ Item {
 
         open: root.open
         kind: "shell"
-        title: qsTr("Write with phone")
+        title: qsTr("Write with App")
         panelMaxWidth: Sizing.pctH(105)
 
         Column {
@@ -40,7 +40,7 @@ Item {
 
                 x: Sizing.center(parent.width, width)
                 width: Math.min(parent.width, Sizing.px(instructionsMetrics.advanceWidth))
-                text: qsTr("Scan this code with your phone to write this game to a Zaparoo token.")
+                text: qsTr("Scan this code with the Zaparoo App to write this game to a Zaparoo token.")
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontCaption
                 color: Theme.textPrimary

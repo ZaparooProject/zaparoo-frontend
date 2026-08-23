@@ -19,6 +19,9 @@ MediaListScreen {
 
     mediaModel: Browse.FavoriteSystemsModel
     mediaState: Browse.FavoriteSystemsState
+    // Structurally a MediaListScreen but semantically a systems screen —
+    // follows the Systems layout preference, not the Games one.
+    layoutScope: "systems"
     screenTitle: qsTr("Favorites")
     gridViewId: "systemsGrid"
     listViewId: "systemsList"

@@ -71,7 +71,7 @@ Item {
         if (link === root._linkConnecting)
             return qsTr("Connecting…");
         if (conn === root._connError) {
-            return Browse.AppStatus.last_error !== "" ? qsTr("Core error — %1").arg(Browse.AppStatus.last_error) : qsTr("Core error");
+            return Browse.AppStatus.last_error !== "" ? qsTr("Core error: %1").arg(Browse.AppStatus.last_error) : qsTr("Core error");
         }
         return "";
     }
@@ -85,7 +85,7 @@ Item {
             return "";
         if (Browse.MediaStatus.indexing) {
             if (Browse.MediaStatus.paused)
-                return qsTr("Indexing paused — game running");
+                return qsTr("Indexing paused: game running");
             // Core doesn't populate current_step_display until it has
             // actually picked a system/step to report -- most visible
             // right at the start of a run. A bare "Indexing: " with
@@ -97,7 +97,7 @@ Item {
             return Browse.MediaStatus.current_step_display !== "" ? qsTr("Optimizing database: %1").arg(Browse.MediaStatus.current_step_display) : qsTr("Optimizing database…");
         // Scraping is the only remaining `_taskActive` branch.
         if (Browse.MediaStatus.scrape_paused)
-            return qsTr("Scraping paused — game running");
+            return qsTr("Scraping paused: game running");
         return Browse.MediaStatus.scrape_current_step_display !== "" ? qsTr("Scraping: %1").arg(Browse.MediaStatus.scrape_current_step_display) : qsTr("Scraping…");
     }
     readonly property bool _taskPaused: Browse.MediaStatus.indexing ? Browse.MediaStatus.paused : Browse.MediaStatus.scrape_paused
@@ -140,7 +140,7 @@ Item {
             root._terminalMessage = "";
             terminalMessageTimer.stop();
         } else if (root._indexWasBusy && !root._indexBusy) {
-            root._terminalMessage = Browse.MediaStatus.total_files > 0 ? qsTr("Indexed %1 files").arg(Browse.MediaStatus.total_files) : qsTr("Indexing complete");
+            root._terminalMessage = Browse.MediaStatus.total_files > 0 ? qsTr("Indexed %1 files").arg(Format.count(Browse.MediaStatus.total_files)) : qsTr("Indexing complete");
             terminalMessageTimer.restart();
         }
         root._indexWasBusy = root._indexBusy;
@@ -151,7 +151,7 @@ Item {
             root._terminalMessage = "";
             terminalMessageTimer.stop();
         } else if (root._scrapeWasBusy && !root._scrapeBusy) {
-            root._terminalMessage = Browse.MediaStatus.scrape_state === "failed" ? qsTr("Scrape failed — %1").arg(Browse.MediaStatus.scrape_error) : qsTr("Scraped %1 of %2").arg(Browse.MediaStatus.scrape_matched).arg(Browse.MediaStatus.scrape_total);
+            root._terminalMessage = Browse.MediaStatus.scrape_state === "failed" ? qsTr("Scrape failed: %1").arg(Browse.MediaStatus.scrape_error) : qsTr("Scraped %1 of %2").arg(Format.count(Browse.MediaStatus.scrape_matched)).arg(Format.count(Browse.MediaStatus.scrape_total));
             terminalMessageTimer.restart();
         }
         root._scrapeWasBusy = root._scrapeBusy;

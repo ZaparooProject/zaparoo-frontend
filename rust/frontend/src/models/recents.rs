@@ -1162,13 +1162,13 @@ fn cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
             cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
         }
     }
-    cover_key_for_with(
-        entry,
-        media_key.as_ref(),
-        cached,
-        negative,
-        soft_no_image || !requests_enabled,
-    )
+    // `!requests_enabled` (paused for a bulk/jump append) is deliberately
+    // NOT folded into `soft_no_image` here -- see games.rs's
+    // `cover_key_for` for the round-10 rationale: "paused" means "haven't
+    // asked yet," not "confirmed absent," and must stay blank
+    // (`icons/Loading`) rather than falling back to the system-logo
+    // placeholder the way a real soft-no-image memo does.
+    cover_key_for_with(entry, media_key.as_ref(), cached, negative, soft_no_image)
 }
 
 /// Resolve the Hub Resume tile's own cover key. Mirrors `cover_key_for`'s
@@ -1190,13 +1190,9 @@ fn resume_cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> St
             cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
         }
     }
-    resume_cover_key_for_with(
-        entry,
-        media_key.as_ref(),
-        cached,
-        negative,
-        soft_no_image || !requests_enabled,
-    )
+    // Same round-10 fix as `cover_key_for` above: paused is not confirmed
+    // absent.
+    resume_cover_key_for_with(entry, media_key.as_ref(), cached, negative, soft_no_image)
 }
 
 /// Pure helper for `resume_cover_key_for`, mirroring `cover_key_for_with`'s
@@ -2148,6 +2144,22 @@ mod tests {
         );
     }
 
+    // Round 10: paused must produce the same `soft_no_image: false` shape
+    // as the plain in-flight case -- `resume_cover_key_for` must never
+    // fold `!requests_enabled` into `soft_no_image`, or a paused Resume
+    // tile with real art falls back to the glyph for the whole pause
+    // window instead of staying blank.
+    #[test]
+    fn resume_cover_key_paused_stays_loading_not_glyph() {
+        let e = entry("smb", "/p/smb", "NES", "NES");
+        let key = media_key_for(&e).expect("media has key");
+        assert_eq!(
+            resume_cover_key_for_with(&e, Some(&key), false, false, false),
+            "icons/Loading",
+            "paused-but-not-soft-missed must render blank, never the glyph fallback"
+        );
+    }
+
     #[test]
     fn cover_key_uses_loading_icon_when_in_flight() {
         let e = entry("smb", "/p/smb", "NES", "NES");
@@ -2157,6 +2169,19 @@ mod tests {
         assert_eq!(
             cover_key_for_with(&e, Some(&key), false, false, false),
             "icons/Loading"
+        );
+    }
+
+    // Round 10: same fix as the Resume-tile variant above, for the plain
+    // recents-row cover path.
+    #[test]
+    fn cover_key_paused_stays_loading_not_system_fallback() {
+        let e = entry("smb", "/p/smb", "NES", "NES");
+        let key = media_key_for(&e).expect("media has key");
+        assert_eq!(
+            cover_key_for_with(&e, Some(&key), false, false, false),
+            "icons/Loading",
+            "paused-but-not-soft-missed must render blank, never the system fallback"
         );
     }
 

@@ -103,9 +103,24 @@ Item {
         font.pixelSize: Sizing.fontSection
     }
 
+    // Round 9: an unavailable direction dims to `Theme.textLabel` instead
+    // of vanishing, matching this app's "colour is the only hierarchy
+    // signal that survives the bitmap tier" rule (see docs/style.md's
+    // Settings hint-band note for the same reasoning applied to text). A
+    // static colour swap costs nothing extra to paint under software
+    // rendering, unlike an `opacity < 1` node — see CLAUDE.md's
+    // animation-cost rules, which apply to any translucent node, not
+    // just animated ones. Round 10: both chevrons now also hide entirely
+    // (not just dim) when there's only one page total — two permanently
+    // dim arrows pointing at nothing to page to said nothing useful,
+    // same reasoning `pageCountText`'s own `_hasMultiplePages` gate
+    // below already applies to the "N / M" text. `visible: false` here
+    // only stops painting; the anchors are position-based, not
+    // size-based-on-visibility, so the unconditionally-reserved width
+    // above is unaffected either way.
     Image {
         id: upChevron
-        source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
+        source: Resources.iconUrl("ScrollUp", root.hasPagesAbove ? Theme.textPrimary : Theme.textLabel)
         width: root.chevronSize
         height: root.chevronSize
         sourceSize.width: Sizing.px(width)
@@ -114,20 +129,20 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         fillMode: Image.PreserveAspectFit
         smooth: true
-        visible: root.hasPagesAbove
+        visible: root._hasMultiplePages
 
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton
             cursorShape: Qt.PointingHandCursor
-            enabled: upChevron.visible
+            enabled: root.hasPagesAbove
             onClicked: root.pageRequested(-1)
         }
     }
 
     Image {
         id: downChevron
-        source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
+        source: Resources.iconUrl("ScrollDown", root.hasPagesBelow ? Theme.textPrimary : Theme.textLabel)
         width: root.chevronSize
         height: root.chevronSize
         sourceSize.width: Sizing.px(width)
@@ -137,13 +152,13 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         fillMode: Image.PreserveAspectFit
         smooth: true
-        visible: root.hasPagesBelow
+        visible: root._hasMultiplePages
 
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton
             cursorShape: Qt.PointingHandCursor
-            enabled: downChevron.visible
+            enabled: root.hasPagesBelow
             onClicked: root.pageRequested(1)
         }
     }

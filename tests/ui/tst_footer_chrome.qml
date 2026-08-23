@@ -72,6 +72,29 @@ TestCase {
         compare(indicator.width, bothHidden, "showing only one chevron must not change the reserved width either");
     }
 
+    // Round 10: the chevrons themselves must hide entirely (not just dim)
+    // on a single page -- two permanently-dim arrows pointing at nothing
+    // to page to said nothing useful. Same `_hasMultiplePages` gate the
+    // page-count text already used before this round.
+    function test_chevrons_hide_entirely_on_a_single_page(): void {
+        indicator.pageTotalKnown = true;
+        indicator.totalPages = 1;
+        indicator.hasPagesAbove = false;
+        indicator.hasPagesBelow = false;
+        // Neither chevron accepts a click when hidden -- mouseClick at
+        // the up-chevron's position must not request a page.
+        mouseClick(indicator, Sizing.half(indicator.chevronSize), Sizing.half(indicator.chevronSize), Qt.LeftButton);
+        compare(pageRequestedSpy.count, 0, "a hidden, single-page chevron must not be clickable");
+
+        indicator.hasPagesBelow = true;
+        mouseClick(indicator, Sizing.half(indicator.chevronSize), Sizing.half(indicator.chevronSize), Qt.LeftButton);
+        compare(pageRequestedSpy.count, 0, "the up chevron must stay hidden and unclickable when only \"below\" has more pages");
+
+        const downX = indicator.chevronSize + indicator.chevronSpacing + Sizing.half(indicator.chevronSize);
+        mouseClick(indicator, downX, Sizing.half(indicator.chevronSize), Qt.LeftButton);
+        compare(pageRequestedSpy.count, 1, "the down chevron must become visible and clickable once there is another page");
+    }
+
     // A "1 / 1" or bare "1" readout next to two chevrons that are also
     // both hidden says nothing a user needs -- see PageIndicator.qml's
     // `_hasMultiplePages` doc comment. Covers both the known-total case

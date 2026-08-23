@@ -96,16 +96,39 @@ Item {
         activatePulse: root._barActivatePulse
     }
 
+    // Fixed at the selected row's weight (Font.Medium — SelectionBar's
+    // contentWeight), never the resting Font.Normal, so `labelText.width`
+    // below is selection-independent. Round 8's inverse-video weight step
+    // made `labelText` render bold when focused with no width of its own;
+    // the picker-value Text (below) is anchor-clamped to `labelText.right`,
+    // so the label growing bold on selection shrank the value's own
+    // available width and elided it, then un-elided it again on blur. The
+    // resting weight is narrower or equal, so a row can never overflow
+    // this box once selected regardless of `root.label`. Same fixed-slot
+    // reasoning as `ContextMenu.qml`'s `panelWidthMetrics`.
+    TextMetrics {
+        id: labelMetrics
+        text: root.label
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontBody
+        font.weight: Font.Medium
+    }
+
     // Action rows center their label instead of left-aligning it — the
     // one row kind that does, per docs/style.md's "Inverse-video rows"
     // note. Centered via item position (`x`), never
     // `anchors.horizontalCenter` + `AlignHCenter` — see
     // docs/qml-gotchas.md's "Integer-pixel rules". `labelText.width` is
-    // its own unconstrained `implicitWidth` in both branches (neither
-    // sets an explicit `width` or a right anchor), so `Sizing.center()`
-    // measures real content width either way.
+    // fixed to `labelMetrics` above (Math.max(advance, boundingRect) plus
+    // `Sizing.stroke(2)` hinting slack, the same idiom
+    // `ListPickerModal._measureLabelWidth` uses) rather than its own
+    // unconstrained `implicitWidth`, so `Sizing.center()` and the
+    // picker-value's left anchor both measure a width that can't change
+    // with focus.
     Text {
         id: labelText
+
+        readonly property int _width: Math.ceil(Math.max(labelMetrics.advanceWidth, labelMetrics.boundingRect.width)) + Sizing.stroke(2)
 
         x: root._isAction ? Sizing.center(parent.width, labelText.width) : Sizing.pctW(2)
         anchors.top: parent.top
@@ -115,6 +138,7 @@ Item {
         // anchor to `labelText.verticalCenter`, not
         // `parent.verticalCenter`, so they track this same line.
         anchors.topMargin: root._hasActionStatus ? Sizing.pctH(1) : Sizing.center(root._singleLineHeight, labelText.height)
+        width: labelText._width
         text: root.label
         // Action rows tint their label accent (unselected) / onAccent
         // (selected) instead of getting a chevron — the "Erase All Content
@@ -123,6 +147,7 @@ Item {
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontBody
         font.weight: bar.contentWeight
+        elide: Text.ElideRight
         renderType: Text.NativeRendering
     }
 

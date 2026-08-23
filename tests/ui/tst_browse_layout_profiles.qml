@@ -30,7 +30,7 @@ TestCase {
     property string _originalBrowseLayout: "grid"
 
     Component.onCompleted: {
-        _originalBrowseLayout = Browse.Settings.current_browse_layout;
+        _originalBrowseLayout = Browse.Settings.current_systems_browse_layout;
     }
 
     function init(): void {
@@ -38,17 +38,17 @@ TestCase {
         main.systemsScreenRequested = true;
         main.activeScreen = main.screenSystems;
         main.crtNativePath = false;
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_systems_browse_layout = "grid";
     }
 
     function cleanup(): void {
         main.crtNativePath = false;
-        Browse.Settings.current_browse_layout = _originalBrowseLayout;
+        Browse.Settings.current_systems_browse_layout = _originalBrowseLayout;
     }
 
     function test_crt_grid_uses_crt_tile_profile(): void {
         main.crtNativePath = true;
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_systems_browse_layout = "grid";
 
         compare(main.headerBar.layoutProfile.header.titleInHeader, true);
         compare(main.systemsScreen.systemsGrid.layoutProfile.surface.cardRadius, 2);
@@ -81,7 +81,7 @@ TestCase {
 
     function test_crt_list_uses_crt_header_and_profile(): void {
         main.crtNativePath = true;
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_systems_browse_layout = "list";
 
         compare(main.headerBar.layoutProfile.header.titleInHeader, true);
         compare(main.systemsScreen.listCard.layoutProfile.surface.cardRadius, 2);

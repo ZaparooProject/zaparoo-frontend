@@ -49,6 +49,7 @@ MainLayout {
     readonly property string modalLetterJump: "letter_jump"
     readonly property string modalSettingNeedsRestart: "restart_confirm"
     readonly property string modalCrtCalibration: "crt_calibration"
+    readonly property string modalScrapeSetup: "scrape_setup"
 
     // One-shot session flag: an authoritative empty catalog starts one
     // background index at most once per frontend process. Browsing remains
@@ -163,7 +164,7 @@ MainLayout {
     readonly property var _gamesGridShape: Sizing.gamesGridShape(root._gamesGridViewportWidth, root._gamesGridViewportHeight)
     readonly property int _gamesGridColumns: root._gamesGridShape.columns
     readonly property int _gamesGridRows: root._gamesGridShape.rows
-    readonly property int _gamesPageSize: Browse.Settings.current_browse_layout === "list" ? root._gamesListFetchSize : root._gamesGridColumns * root._gamesGridRows
+    readonly property int _gamesPageSize: Browse.Settings.current_games_browse_layout === "list" ? root._gamesListFetchSize : root._gamesGridColumns * root._gamesGridRows
     on_GamesPageSizeChanged: {
         if (root.gamesScreenRequested || root.activeScreen === root.screenGames)
             root._syncGamesModelLayout();
@@ -316,6 +317,8 @@ MainLayout {
             root.settingNeedsRestartModalRequested = true;
         else if (modal === root.modalCrtCalibration)
             root.crtCalibrationModalRequested = true;
+        else if (modal === root.modalScrapeSetup)
+            root.scrapeSetupModalRequested = true;
     }
 
     Component.onCompleted: {
@@ -1888,6 +1891,8 @@ MainLayout {
         function onRequestAccept(actionId: string): void {
             if (actionId === "uploadLog")
                 root.openLogUploadModal();
+            else if (actionId === "runScraper")
+                root.openScrapeSetupModal();
             else if (actionId === "aboutLicense")
                 root._navigateToAbout();
             else if (actionId === "crtEnable" || actionId === "crtDisable")
@@ -2173,9 +2178,14 @@ MainLayout {
                 });
             entries.push({
                 id: "qr_code",
-                label: qsTr("Write with phone")
+                label: qsTr("Write with App")
             });
-            if (Browse.Settings.current_discover_arcade_alternate_versions)
+            // Discover alt. versions only ever works for the literal
+            // MiSTer Arcade/MRA system -- alternate_versions.rs matches
+            // `system_id == "Arcade"` exactly, not the 32-system "Arcade"
+            // category Core reports. See docs/style.md or the round-10
+            // plan for the full reasoning.
+            if (systemId === CategoryIds.arcadeId)
                 entries.push({
                     id: "discover",
                     label: qsTr("Discover alt. versions")
@@ -2223,14 +2233,15 @@ MainLayout {
                 });
             entries.push({
                 id: "qr_code",
-                label: qsTr("Write with phone")
+                label: qsTr("Write with App")
             });
-            if (Browse.Settings.current_discover_arcade_alternate_versions) {
+            // See the "recents" branch above for why this is gated on the
+            // literal Arcade system rather than shown unconditionally.
+            if (systemId === CategoryIds.arcadeId)
                 entries.push({
                     id: "discover",
                     label: qsTr("Discover alt. versions")
                 });
-            }
             if (owner === "games")
                 entries.push({
                     id: "add_to_hub",
@@ -2375,11 +2386,13 @@ MainLayout {
             entryType = Browse.GamesModel.entry_type_at(index);
             mediaCapable = Browse.GamesModel.is_media_capable_at(index);
             isFavorite = Browse.GamesModel.is_favorite_at(index);
+            systemId = Browse.GamesModel.system_id_at(index);
         } else if (owner === "favorites") {
             if (index >= Browse.FavoritesModel.count)
                 return;
             mediaCapable = true;
             isFavorite = Browse.FavoritesModel.is_favorite_at(index);
+            systemId = Browse.FavoritesModel.system_id_at(index);
         } else if (owner === "favorite_systems") {
             if (index >= Browse.FavoriteSystemsModel.count)
                 return;
@@ -2387,6 +2400,7 @@ MainLayout {
         } else if (owner === "recents") {
             if (index >= Browse.RecentsModel.count)
                 return;
+            systemId = Browse.RecentsModel.system_id_at(index);
         }
         let entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category);
         // "categories" is exclusively Hub-owned (only HubScreen ever opens
@@ -2895,6 +2909,9 @@ MainLayout {
         } else if (kind === "media_scrape") {
             title = qsTr("Metadata scrape failed");
             body = qsTr("Could not start metadata scraping. Check Zaparoo Core and try again.");
+        } else if (kind === "media_scrapers") {
+            title = qsTr("Scraper list unavailable");
+            body = qsTr("Could not load the list of scrapers. Check Zaparoo Core and try again.");
         } else if (kind === "media_cancel") {
             title = qsTr("Cancel failed");
             body = qsTr("Could not cancel the media operation. Check Zaparoo Core and try again.");
@@ -2974,6 +2991,50 @@ MainLayout {
         if (ScreenManager.topModal === root.modalLogUpload)
             ScreenManager.popModal();
     }
+
+    // Scrape setup modal lifecycle (round 10). Triggered from the
+    // Settings "Scrape metadata" action when idle; the modal fetches the
+    // scraper list on open via `Browse.MediaStatus.refresh_scrapers()`
+    // and owns its own scraper-choice/re-scrape-toggle state until Start.
+    function openScrapeSetupModal(): void {
+        Browse.MediaStatus.refresh_scrapers();
+        root._requestModal(root.modalScrapeSetup);
+        root.scrapeSetupModalVisible = true;
+        if (ScreenManager.topModal !== root.modalScrapeSetup)
+            ScreenManager.pushModal(root.modalScrapeSetup);
+    }
+
+    function closeScrapeSetupModal(): void {
+        root.scrapeSetupModalVisible = false;
+        if (ScreenManager.topModal === root.modalScrapeSetup)
+            ScreenManager.popModal();
+    }
+
+    onCloseScrapeSetupRequested: root.closeScrapeSetupModal()
+
+    // Nested picker for the scraper-choice row inside ScrapeSetupModal —
+    // stacks a second modal on top (ScreenManager.pushModal appends, so
+    // the picker becomes topModal and correctly receives input while the
+    // setup modal stays mounted underneath it). The picker's own accept
+    // writes back to `scrapeSetupModal.selectedScraperId` directly (see
+    // the `fieldId === "scraperChoice"` branch in `onListPickerAccepted`)
+    // rather than a Browse.Settings setter, since the choice isn't
+    // persisted until Start is pressed.
+    function openScraperChoicePicker(): void {
+        if (root.scrapeSetupModal === null)
+            return;
+        const ids = Browse.MediaStatus.scraper_ids;
+        const names = Browse.MediaStatus.scraper_names;
+        const entries = [];
+        for (let i = 0; i < ids.length; i++)
+            entries.push({
+                id: ids[i],
+                label: names[i] !== undefined && names[i] !== "" ? names[i] : ids[i]
+            });
+        root.openListPickerModal(qsTr("Scraper"), entries, root.scrapeSetupModal.selectedScraperId, "scraperChoice");
+    }
+
+    onRequestScraperPicker: root.openScraperChoicePicker()
 
     function handleLogUploadError(): void {
         // LogUpload state 3 is terminal failure; full detail is already logged
@@ -3501,6 +3562,18 @@ MainLayout {
             root.beginSystemLauncherUpdate(fieldId.slice("system_launcher:".length), selectedId);
             return;
         }
+        // Round 10: nested picker opened by ScrapeSetupModal itself
+        // (see its own `requestScraperPicker` signal below) -- writes
+        // straight back to the modal's own local `selectedScraperId`
+        // rather than a Browse.Settings setter, since the choice isn't
+        // persisted until "Start" is pressed. Only pops the picker; the
+        // scrape setup modal underneath stays open.
+        if (fieldId === "scraperChoice") {
+            root.closeListPickerModal();
+            if (root.scrapeSetupModal !== null)
+                root.scrapeSetupModal.selectedScraperId = selectedId;
+            return;
+        }
         if (fieldId === "resolution") {
             root.closeListPickerModal();
             if (selectedId !== Browse.Settings.current_resolution)
@@ -3519,8 +3592,10 @@ MainLayout {
             Browse.Settings.set_region(selectedId);
             Browse.SystemsModel.reproject();
             Browse.CategoriesModel.reproject();
-        } else if (fieldId === "browseLayout")
-            Browse.Settings.set_browse_layout(selectedId);
+        } else if (fieldId === "systemsLayout")
+            Browse.Settings.set_systems_browse_layout(selectedId);
+        else if (fieldId === "gamesLayout")
+            Browse.Settings.set_games_browse_layout(selectedId);
         else if (fieldId === "systemLogoStyle")
             Browse.Settings.set_system_logo_style(selectedId);
         else if (fieldId === "colorScheme")
@@ -3781,6 +3856,9 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalLogUpload) {
                 if (root.logUploadModal !== null)
                     root.logUploadModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalScrapeSetup) {
+                if (root.scrapeSetupModal !== null)
+                    root.scrapeSetupModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalQuitConfirm) {
                 if (root.quitConfirmModal !== null)
                     root.quitConfirmModal.handleAction(action);
@@ -4172,7 +4250,23 @@ MainLayout {
     }
 
     function _handleRepeatAction(): void {
-        root._noteRapidNavigationAction(root._heldAction, true);
+        // Round 10: only arm rapid-nav tracking when the active root
+        // screen actually owns the held direction. `handleAction`'s
+        // single-press path already skips this while a modal is open (it
+        // returns before ever reaching its own call to
+        // `_noteRapidNavigationAction`) -- this repeat-tick path used to
+        // call it unconditionally, which meant holding up/down inside a
+        // modal (e.g. GameInfoModal's own scroll) still armed
+        // `rapidNavigationActive` every tick. That property drives the
+        // Games/Favorites/FavoriteSystems/Recents screen's rapid-scroll
+        // ghost-snapshot regardless of whether a modal currently covers
+        // it (see MediaListScreen.qml's `_gateHide`, which has no
+        // `ScreenManager.hasModal` term), so the still-visible-behind-
+        // the-scrim grid popped its freeze-frame in and out on every
+        // repeat tick -- the reported "background visibly re-lays-out"
+        // while scrolling the details dialog.
+        if (!ScreenManager.hasModal)
+            root._noteRapidNavigationAction(root._heldAction, true);
         root.handleAction(root._heldAction);
     }
 

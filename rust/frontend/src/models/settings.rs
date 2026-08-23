@@ -30,10 +30,16 @@
 //     the QML scene wrapper while also mirrored into frontend.toml so
 //     MiSTer survives `/tmp` resets.
 //   * `available_browse_layouts` — CONSTANT. The browsing layout picker
-//     choices. "grid" is the existing layout; "list" is the detailed list
-//     placeholder until the new browsing screen is built.
-//   * `current_browse_layout` — READ + NOTIFY, persisted. Defaults to
-//     "grid" so existing installs keep current behavior.
+//     choices, shared by both scoped properties below. "grid" is the
+//     existing layout; "list" is the detailed list.
+//   * `current_systems_browse_layout` / `current_games_browse_layout` —
+//     READ + NOTIFY, persisted, each defaulting to "grid". Round 10 split
+//     the single `current_browse_layout` into these two so Systems and
+//     Games can run different layouts; FavoriteSystemsScreen follows the
+//     systems value, Favorites/Recents follow the games value (see
+//     MediaListScreen.qml's `layoutScope`). A pre-round-10 install's
+//     single `browse_layout` seeds both once — see persist.rs's
+//     `migrate_browse_layout` and config.rs's `settings_config_from_raw`.
 //   * `current_favorites_grouping` — READ + NOTIFY, persisted. "none"
 //     preserves the flat list; "system" groups favorites by system. A string
 //     leaves room for additional grouping dimensions without a schema change.
@@ -133,28 +139,28 @@ const SYSTEM_LOGO_STYLES: &[&str] = &["tinted", "color"];
 const DEFAULT_SYSTEM_LOGO_STYLE: &str = "tinted";
 // Kept in the same order as `ColorSchemes.ids` in
 // src/ui/theme/ColorSchemes.qml -- see that file's header comment for the
-// round-6 prune (24 presets to 11) and round-7 regrowth (11 to 19)
-// rationale.
+// round-6 prune (24 presets to 11), round-7 regrowth (11 to 19), and
+// round-10 reorder into family blocks.
 const COLOR_SCHEMES: &[&str] = &[
     "zaparoo-dark",
     "zaparoo-light",
     "classic-purple",
-    "dracula",
-    "nord",
-    "synthwave-84",
     "amber-phosphor",
+    "game-boy",
     "green-phosphor",
     "neo-geo",
     "nes",
     "virtual-boy",
-    "gruvbox",
+    "dracula",
     "everforest",
-    "solarized-dark",
-    "rose-pine",
+    "gruvbox",
+    "nord",
     "oxocarbon",
+    "rose-pine",
+    "solarized-dark",
+    "synthwave-84",
     "flexoki-paper",
     "solarized-light",
-    "game-boy",
 ];
 const DEFAULT_COLOR_SCHEME: &str = "zaparoo-dark";
 const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
@@ -206,7 +212,8 @@ pub struct SettingsRust {
     available_orientations: QStringList,
     current_orientation: QString,
     available_browse_layouts: QStringList,
-    current_browse_layout: QString,
+    current_systems_browse_layout: QString,
+    current_games_browse_layout: QString,
     current_favorites_grouping: QString,
     available_system_logo_styles: QStringList,
     current_system_logo_style: QString,
@@ -216,7 +223,6 @@ pub struct SettingsRust {
     current_button_layout: QString,
     current_mouse_enabled: bool,
     current_reduce_motion: bool,
-    current_discover_arcade_alternate_versions: bool,
     current_debug_logging: bool,
     current_show_hidden: bool,
     current_show_original_filenames: bool,
@@ -254,7 +260,8 @@ pub mod ffi {
         #[qproperty(QStringList, available_orientations, READ, CONSTANT)]
         #[qproperty(QString, current_orientation, READ, WRITE = set_orientation, NOTIFY)]
         #[qproperty(QStringList, available_browse_layouts, READ, CONSTANT)]
-        #[qproperty(QString, current_browse_layout, READ, WRITE = set_browse_layout, NOTIFY)]
+        #[qproperty(QString, current_systems_browse_layout, READ, WRITE = set_systems_browse_layout, NOTIFY)]
+        #[qproperty(QString, current_games_browse_layout, READ, WRITE = set_games_browse_layout, NOTIFY)]
         #[qproperty(QString, current_favorites_grouping, READ, WRITE = set_favorites_grouping, NOTIFY)]
         #[qproperty(QStringList, available_system_logo_styles, READ, CONSTANT)]
         #[qproperty(QString, current_system_logo_style, READ, WRITE = set_system_logo_style, NOTIFY)]
@@ -264,7 +271,6 @@ pub mod ffi {
         #[qproperty(QString, current_button_layout, READ, WRITE = set_button_layout, NOTIFY)]
         #[qproperty(bool, current_mouse_enabled, READ, WRITE = set_mouse_enabled, NOTIFY)]
         #[qproperty(bool, current_reduce_motion, READ, WRITE = set_reduce_motion, NOTIFY)]
-        #[qproperty(bool, current_discover_arcade_alternate_versions, READ, WRITE = set_discover_arcade_alternate_versions, NOTIFY)]
         #[qproperty(bool, current_debug_logging, READ, WRITE = set_debug_logging, NOTIFY)]
         #[qproperty(bool, current_show_hidden, READ, WRITE = set_show_hidden, NOTIFY)]
         #[qproperty(bool, current_show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
@@ -301,7 +307,10 @@ pub mod ffi {
         fn set_orientation(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
-        fn set_browse_layout(self: Pin<&mut Settings>, value: QString);
+        fn set_systems_browse_layout(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_games_browse_layout(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_favorites_grouping(self: Pin<&mut Settings>, value: QString);
@@ -320,9 +329,6 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_reduce_motion(self: Pin<&mut Settings>, value: bool);
-
-        #[qinvokable]
-        fn set_discover_arcade_alternate_versions(self: Pin<&mut Settings>, value: bool);
 
         #[qinvokable]
         fn set_debug_logging(self: Pin<&mut Settings>, value: bool);
@@ -380,8 +386,10 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().available_orientations = orientations();
         self.as_mut().rust_mut().current_orientation = QString::from(merged.orientation.as_str());
         self.as_mut().rust_mut().available_browse_layouts = browse_layouts();
-        self.as_mut().rust_mut().current_browse_layout =
-            QString::from(merged.browse_layout.as_str());
+        self.as_mut().rust_mut().current_systems_browse_layout =
+            QString::from(merged.systems_browse_layout.as_str());
+        self.as_mut().rust_mut().current_games_browse_layout =
+            QString::from(merged.games_browse_layout.as_str());
         self.as_mut().rust_mut().current_favorites_grouping =
             QString::from(merged.favorites_grouping.as_str());
         self.as_mut().rust_mut().available_system_logo_styles = system_logo_styles();
@@ -394,9 +402,6 @@ impl Initialize for ffi::Settings {
             QString::from(merged.button_layout.as_str());
         self.as_mut().rust_mut().current_mouse_enabled = merged.mouse_enabled;
         self.as_mut().rust_mut().current_reduce_motion = merged.reduce_motion;
-        self.as_mut()
-            .rust_mut()
-            .current_discover_arcade_alternate_versions = merged.discover_arcade_alternate_versions;
         self.as_mut().rust_mut().current_debug_logging = merged.debug_logging;
         self.as_mut().rust_mut().current_show_hidden = merged.show_hidden;
         self.as_mut().rust_mut().current_show_original_filenames = merged.show_original_filenames;
@@ -526,15 +531,30 @@ impl ffi::Settings {
         clippy::needless_pass_by_value,
         reason = "cxx-qt qinvokable signature requires QString by value"
     )]
-    fn set_browse_layout(mut self: Pin<&mut Self>, value: QString) {
+    fn set_systems_browse_layout(mut self: Pin<&mut Self>, value: QString) {
         let value_str = normalize_browse_layout(&value.to_string()).to_string();
-        if self.current_browse_layout.to_string() == value_str {
+        if self.current_systems_browse_layout.to_string() == value_str {
             return;
         }
-        let snapshot = persist_settings(|s| s.browse_layout.clone_from(&value_str));
+        let snapshot = persist_settings(|s| s.systems_browse_layout.clone_from(&value_str));
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
-        self.as_mut().rust_mut().current_browse_layout = QString::from(value_str.as_str());
-        self.as_mut().current_browse_layout_changed();
+        self.as_mut().rust_mut().current_systems_browse_layout = QString::from(value_str.as_str());
+        self.as_mut().current_systems_browse_layout_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_games_browse_layout(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_browse_layout(&value.to_string()).to_string();
+        if self.current_games_browse_layout.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.games_browse_layout.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_games_browse_layout = QString::from(value_str.as_str());
+        self.as_mut().current_games_browse_layout_changed();
     }
 
     #[allow(
@@ -615,19 +635,6 @@ impl ffi::Settings {
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
         self.as_mut().rust_mut().current_reduce_motion = value;
         self.as_mut().current_reduce_motion_changed();
-    }
-
-    fn set_discover_arcade_alternate_versions(mut self: Pin<&mut Self>, value: bool) {
-        if self.current_discover_arcade_alternate_versions == value {
-            return;
-        }
-        let snapshot = persist_settings(|s| s.discover_arcade_alternate_versions = value);
-        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
-        self.as_mut()
-            .rust_mut()
-            .current_discover_arcade_alternate_versions = value;
-        self.as_mut()
-            .current_discover_arcade_alternate_versions_changed();
     }
 
     fn set_debug_logging(mut self: Pin<&mut Self>, value: bool) {
@@ -739,13 +746,13 @@ fn save_settings_to_config(
             language: settings.language.as_str(),
             orientation: settings.orientation.as_str(),
             clock_format: settings.clock_format.as_str(),
-            browse_layout: settings.browse_layout.as_str(),
+            systems_browse_layout: settings.systems_browse_layout.as_str(),
+            games_browse_layout: settings.games_browse_layout.as_str(),
             system_logo_style: settings.system_logo_style.as_str(),
             color_scheme: settings.color_scheme.as_str(),
             button_layout: settings.button_layout.as_str(),
             mouse_enabled: settings.mouse_enabled,
             reduce_motion: settings.reduce_motion,
-            discover_arcade_alternate_versions: settings.discover_arcade_alternate_versions,
             debug_logging: settings.debug_logging,
             screensaver_timeout: settings.screensaver_timeout.as_str(),
             media_image_type: settings.media_image_type.as_str(),
@@ -844,12 +851,27 @@ fn merge_settings(
                 .unwrap_or(snapshot.clock_format.as_str()),
         )
         .to_string(),
-        browse_layout: normalize_browse_layout(
+        // Vestigial -- no reader or writer touches this anymore (see
+        // persist.rs's `browse_layout` field doc comment). Carried
+        // through unchanged rather than normalized/dropped so the
+        // struct's `PartialEq` derive doesn't manufacture a spurious
+        // "changed" result against an on-disk snapshot that still has
+        // the legacy value from before round 10.
+        browse_layout: snapshot.browse_layout.clone(),
+        systems_browse_layout: normalize_browse_layout(
             config
                 .settings
-                .browse_layout
+                .systems_browse_layout
                 .as_deref()
-                .unwrap_or(snapshot.browse_layout.as_str()),
+                .unwrap_or(snapshot.systems_browse_layout.as_str()),
+        )
+        .to_string(),
+        games_browse_layout: normalize_browse_layout(
+            config
+                .settings
+                .games_browse_layout
+                .as_deref()
+                .unwrap_or(snapshot.games_browse_layout.as_str()),
         )
         .to_string(),
         favorites_grouping: normalize_favorites_grouping(
@@ -892,10 +914,6 @@ fn merge_settings(
             .settings
             .reduce_motion
             .unwrap_or(snapshot.reduce_motion),
-        discover_arcade_alternate_versions: config
-            .settings
-            .discover_arcade_alternate_versions
-            .unwrap_or(snapshot.discover_arcade_alternate_versions),
         // Config wins so frontend.toml is the durable source of truth on
         // MiSTer (state.toml lives on tmpfs).
         debug_logging: config.debug_logging,
@@ -1240,6 +1258,31 @@ mod tests {
         };
         let result = super::save_settings_to_config(dir.path(), &settings);
         assert!(result.is_err());
+    }
+
+    // Round 10: Systems and Games must resolve independently through the
+    // merge -- a config override on one must never leak onto the other,
+    // and each falls back to its own snapshot value when config is silent.
+    #[test]
+    fn merge_resolves_systems_and_games_browse_layout_independently() {
+        let snapshot = zaparoo_core::persist::SettingsState {
+            systems_browse_layout: "list".into(),
+            games_browse_layout: "grid".into(),
+            ..zaparoo_core::persist::SettingsState::default()
+        };
+        let config = zaparoo_core::config::Config {
+            settings: zaparoo_core::config::SettingsConfig {
+                games_browse_layout: Some("list".into()),
+                ..zaparoo_core::config::SettingsConfig::default()
+            },
+            ..zaparoo_core::config::Config::default()
+        };
+        let merged = super::merge_settings(&snapshot, &config, false, None, None);
+        // Systems has no config override -> falls back to the snapshot.
+        assert_eq!(merged.systems_browse_layout, "list");
+        // Games has a config override -> config wins over the snapshot's
+        // "grid", proving the two fields aren't cross-wired.
+        assert_eq!(merged.games_browse_layout, "list");
     }
 
     #[test]

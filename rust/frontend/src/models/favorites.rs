@@ -1091,13 +1091,13 @@ fn cover_key_for(entry: &MediaItem, requests_enabled: bool) -> String {
             cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
         }
     }
-    cover_key_for_with(
-        entry,
-        media_key.as_ref(),
-        cached,
-        negative,
-        soft_no_image || !requests_enabled,
-    )
+    // `!requests_enabled` (paused for a bulk/jump append) is deliberately
+    // NOT folded into `soft_no_image` here -- see games.rs's
+    // `cover_key_for` for the round-10 rationale: "paused" means "haven't
+    // asked yet," not "confirmed absent," and must stay blank
+    // (`icons/Loading`) rather than falling back to the system-logo
+    // placeholder the way a real soft-no-image memo does.
+    cover_key_for_with(entry, media_key.as_ref(), cached, negative, soft_no_image)
 }
 
 fn emit_cover_key_range(mut model: Pin<&mut ffi::FavoritesModel>, first_row: i32, count: i32) {
@@ -1788,6 +1788,23 @@ mod tests {
         assert_eq!(
             cover_key_for_with(&entry, Some(&key), false, false, false),
             "icons/Loading"
+        );
+    }
+
+    // Round 10: a paused fetch must produce the same `soft_no_image:
+    // false` shape as the plain pending case above -- `cover_key_for`
+    // must never fold `!requests_enabled` into `soft_no_image` the way it
+    // used to, or a paused favorite with real art falls back to the
+    // system-logo placeholder for the whole pause window instead of
+    // staying blank.
+    #[test]
+    fn paused_favorite_cover_stays_loading_not_system_fallback() {
+        let entry = favorite_entry();
+        let key = MediaKey::new("SNES", "/games/favorite.rom");
+        assert_eq!(
+            cover_key_for_with(&entry, Some(&key), false, false, false),
+            "icons/Loading",
+            "paused-but-not-soft-missed must render blank, never the system fallback"
         );
     }
 

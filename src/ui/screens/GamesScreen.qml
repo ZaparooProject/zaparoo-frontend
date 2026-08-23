@@ -161,7 +161,7 @@ MediaListScreen {
     // `_pageCueInFooter`/`bottomStatusLeftText` below). List layout has
     // its own separate top-strip chrome and never reads this provider for
     // list layout's own reasons (see MediaListScreen's list/grid split).
-    topStripTotalTextProvider: () => games._listLayout ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 games").arg(Browse.GamesModel.total_files) : "")
+    topStripTotalTextProvider: () => games._listLayout ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 games").arg(Format.count(Browse.GamesModel.total_files)) : "")
     topStripRightTextProvider: () => {
         if (!games._listLayout)
             return "";
@@ -214,7 +214,7 @@ MediaListScreen {
     // the count via `topStripTotalTextProvider` above instead. Computed
     // unconditionally regardless of which slot is visible; cheap and
     // keeps this binding simple.
-    bottomStatusLeftText: Browse.GamesModel.total_files > 0 ? qsTr("%1 games").arg(Browse.GamesModel.total_files) : ""
+    bottomStatusLeftText: Browse.GamesModel.total_files > 0 ? qsTr("%1 games").arg(Format.count(Browse.GamesModel.total_files)) : ""
     pageLoadingVisible: !games._listLayout && Browse.GamesModel.loading_more && games.gamesGrid.hasPendingTarget
     // Only reserve the badge's width/3 when the footer is actually
     // showing it (CRT, `_pageCueInFooter`) -- on every other theme the

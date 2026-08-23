@@ -57,14 +57,18 @@ pub struct Config {
 pub struct SettingsConfig {
     pub orientation: Option<String>,
     pub clock_format: Option<String>,
-    pub browse_layout: Option<String>,
+    // Round 10: split into per-screen fields below.
+    // `settings_config_from_raw` already folds the legacy `browse_layout`
+    // key into both as a fallback, so this consumed struct no longer
+    // exposes the single field at all.
+    pub systems_browse_layout: Option<String>,
+    pub games_browse_layout: Option<String>,
     pub favorites_sort: Option<String>,
     pub system_logo_style: Option<String>,
     pub color_scheme: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
     pub reduce_motion: Option<bool>,
-    pub discover_arcade_alternate_versions: Option<bool>,
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
     pub favorites_grouping: Option<String>,
@@ -97,13 +101,13 @@ pub struct SettingsMirror<'a> {
     pub language: &'a str,
     pub orientation: &'a str,
     pub clock_format: &'a str,
-    pub browse_layout: &'a str,
+    pub systems_browse_layout: &'a str,
+    pub games_browse_layout: &'a str,
     pub system_logo_style: &'a str,
     pub color_scheme: &'a str,
     pub button_layout: &'a str,
     pub mouse_enabled: bool,
     pub reduce_motion: bool,
-    pub discover_arcade_alternate_versions: bool,
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
     pub media_image_type: &'a str,
@@ -190,14 +194,19 @@ struct RawInput {
 struct RawSettings {
     orientation: Option<String>,
     clock_format: Option<String>,
+    // Round 10: pre-round-10 config files only have this key. Kept for
+    // parse compatibility; `settings_config_from_raw` folds it into both
+    // new fields below as a fallback, mirroring `favorites_grouped`'s
+    // legacy-bool-to-string migration just above `favorites_grouping`.
     browse_layout: Option<String>,
+    systems_browse_layout: Option<String>,
+    games_browse_layout: Option<String>,
     favorites_sort: Option<String>,
     system_logo_style: Option<String>,
     color_scheme: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
     reduce_motion: Option<bool>,
-    discover_arcade_alternate_versions: Option<bool>,
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
     favorites_grouping: Option<String>,
@@ -324,14 +333,20 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
     SettingsConfig {
         orientation: trim_opt(raw.orientation),
         clock_format: trim_opt(raw.clock_format),
-        browse_layout: trim_opt(raw.browse_layout),
+        // Round 10: prefer the new per-screen key; fall back to the
+        // legacy single key for an existing user's config file. Same
+        // `.or_else` shape `favorites_grouping` uses for its own
+        // legacy-bool migration below.
+        systems_browse_layout: trim_opt(raw.systems_browse_layout)
+            .or_else(|| trim_opt(raw.browse_layout.clone())),
+        games_browse_layout: trim_opt(raw.games_browse_layout)
+            .or_else(|| trim_opt(raw.browse_layout)),
         favorites_sort: trim_opt(raw.favorites_sort),
         system_logo_style: trim_opt(raw.system_logo_style),
         color_scheme: trim_opt(raw.color_scheme),
         button_layout: trim_opt(raw.button_layout),
         mouse_enabled: raw.mouse_enabled,
         reduce_motion: raw.reduce_motion,
-        discover_arcade_alternate_versions: raw.discover_arcade_alternate_versions,
         screensaver_timeout: trim_opt(raw.screensaver_timeout),
         media_image_type: trim_opt(raw.media_image_type),
         favorites_grouping: trim_opt(raw.favorites_grouping).or_else(|| {
@@ -472,7 +487,21 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     let settings = section_mut(&mut doc, "settings", path)?;
     set_str(settings, "orientation", mirror.orientation.trim());
     set_str(settings, "clock_format", mirror.clock_format.trim());
-    set_str(settings, "browse_layout", mirror.browse_layout.trim());
+    // Round 10: retire the legacy single key the same way
+    // `favorites_grouped` was retired below, in favor of the two
+    // per-screen keys -- a fresh write never leaves a stale
+    // `browse_layout` behind for a future load to second-guess.
+    settings.remove("browse_layout");
+    set_str(
+        settings,
+        "systems_browse_layout",
+        mirror.systems_browse_layout.trim(),
+    );
+    set_str(
+        settings,
+        "games_browse_layout",
+        mirror.games_browse_layout.trim(),
+    );
     set_str(
         settings,
         "system_logo_style",
@@ -482,11 +511,6 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     set_str(settings, "button_layout", mirror.button_layout.trim());
     set_bool(settings, "mouse_enabled", mirror.mouse_enabled);
     set_bool(settings, "reduce_motion", mirror.reduce_motion);
-    set_bool(
-        settings,
-        "discover_arcade_alternate_versions",
-        mirror.discover_arcade_alternate_versions,
-    );
     set_str(
         settings,
         "screensaver_timeout",
@@ -731,13 +755,13 @@ mod tests {
             language: "en",
             orientation: "horizontal",
             clock_format: "auto",
-            browse_layout: "grid",
+            systems_browse_layout: "grid",
+            games_browse_layout: "grid",
             system_logo_style: "tinted",
             color_scheme: "zaparoo-dark",
             button_layout: "a",
             mouse_enabled: true,
             reduce_motion: false,
-            discover_arcade_alternate_versions: false,
             debug_logging: false,
             screensaver_timeout: "60",
             media_image_type: "auto",
@@ -818,12 +842,12 @@ mod tests {
         assert_eq!(cfg.language, "");
         assert_eq!(cfg.settings.orientation, None);
         assert_eq!(cfg.settings.clock_format, None);
-        assert_eq!(cfg.settings.browse_layout, None);
+        assert_eq!(cfg.settings.systems_browse_layout, None);
+        assert_eq!(cfg.settings.games_browse_layout, None);
         assert_eq!(cfg.settings.favorites_sort, None);
         assert_eq!(cfg.settings.favorites_grouping, None);
         assert_eq!(cfg.settings.button_layout, None);
         assert_eq!(cfg.settings.mouse_enabled, None);
-        assert_eq!(cfg.settings.discover_arcade_alternate_versions, None);
         assert!(cfg.settings.hidden_categories.is_empty());
         assert!(cfg.settings.hidden_system_ids.is_empty());
         assert_eq!(cfg.settings.region, None);
@@ -1187,7 +1211,10 @@ mod tests {
         assert!(cfg.debug_logging);
         assert_eq!(cfg.settings.orientation.as_deref(), Some("cw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("12h"));
-        assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
+        // Round 10: a legacy `browse_layout` key (no new per-screen keys
+        // present) folds into both.
+        assert_eq!(cfg.settings.systems_browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.games_browse_layout.as_deref(), Some("list"));
         assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("color"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("c"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
@@ -1257,13 +1284,13 @@ mod tests {
                 language: "it_IT",
                 orientation: "cw",
                 clock_format: "24h",
-                browse_layout: "list",
+                systems_browse_layout: "list",
+                games_browse_layout: "grid",
                 system_logo_style: "color",
                 color_scheme: "classic-purple",
                 button_layout: "b",
                 mouse_enabled: false,
                 reduce_motion: true,
-                discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "300",
                 media_image_type: "auto",
@@ -1284,13 +1311,13 @@ mod tests {
         assert!(cfg.video_explicit);
         assert_eq!(cfg.settings.orientation.as_deref(), Some("cw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("24h"));
-        assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.systems_browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.games_browse_layout.as_deref(), Some("grid"));
         assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("color"));
         assert_eq!(cfg.settings.color_scheme.as_deref(), Some("classic-purple"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
         assert_eq!(cfg.settings.reduce_motion, Some(true));
-        assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
         assert_eq!(cfg.settings.show_hidden, Some(true));
@@ -1315,13 +1342,13 @@ mod tests {
                 language: "en",
                 orientation: "horizontal",
                 clock_format: "auto",
-                browse_layout: "grid",
+                systems_browse_layout: "grid",
+                games_browse_layout: "grid",
                 system_logo_style: "tinted",
                 color_scheme: "zaparoo-dark",
                 button_layout: "a",
                 mouse_enabled: true,
                 reduce_motion: false,
-                discover_arcade_alternate_versions: false,
                 debug_logging: false,
                 screensaver_timeout: "60",
                 media_image_type: "auto",
@@ -1344,13 +1371,13 @@ mod tests {
         assert_eq!(cfg.video_height, 720);
         assert_eq!(cfg.settings.orientation.as_deref(), Some("horizontal"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("auto"));
-        assert_eq!(cfg.settings.browse_layout.as_deref(), Some("grid"));
+        assert_eq!(cfg.settings.systems_browse_layout.as_deref(), Some("grid"));
+        assert_eq!(cfg.settings.games_browse_layout.as_deref(), Some("grid"));
         assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("tinted"));
         assert_eq!(cfg.settings.color_scheme.as_deref(), Some("zaparoo-dark"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("a"));
         assert_eq!(cfg.settings.mouse_enabled, Some(true));
         assert_eq!(cfg.settings.reduce_motion, Some(false));
-        assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(false));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("60"));
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
         assert_eq!(cfg.settings.hidden_categories, vec!["Arcade"]);
@@ -1366,13 +1393,13 @@ mod tests {
             language: "",
             orientation: "ccw",
             clock_format: "12h",
-            browse_layout: "list",
+            systems_browse_layout: "list",
+            games_browse_layout: "list",
             system_logo_style: "color",
             color_scheme: "classic-purple",
             button_layout: "c",
             mouse_enabled: false,
             reduce_motion: false,
-            discover_arcade_alternate_versions: true,
             debug_logging: true,
             screensaver_timeout: "off",
             media_image_type: "auto",
@@ -1391,11 +1418,15 @@ mod tests {
         assert!(written.contains("language = \"auto\""));
         assert!(written.contains("orientation = \"ccw\""));
         assert!(written.contains("clock_format = \"12h\""));
-        assert!(written.contains("browse_layout = \"list\""));
+        assert!(
+            !written.contains("\nbrowse_layout ="),
+            "legacy single key must be retired on write, not just left stale"
+        );
+        assert!(written.contains("systems_browse_layout = \"list\""));
+        assert!(written.contains("games_browse_layout = \"list\""));
         assert!(written.contains("system_logo_style = \"color\""));
         assert!(written.contains("button_layout = \"c\""));
         assert!(written.contains("mouse_enabled = false"));
-        assert!(written.contains("discover_arcade_alternate_versions = true"));
         assert!(written.contains("screensaver_timeout = \"off\""));
         assert!(written.contains("debug = true"));
         let cfg = load_config(f.path());
@@ -1403,12 +1434,12 @@ mod tests {
         assert!(!cfg.video_explicit);
         assert_eq!(cfg.settings.orientation.as_deref(), Some("ccw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("12h"));
-        assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.systems_browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.games_browse_layout.as_deref(), Some("list"));
         assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("color"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("c"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
         assert_eq!(cfg.settings.reduce_motion, Some(false));
-        assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("off"));
         assert_eq!(cfg.settings.crt_video_standard.as_deref(), Some("ntsc"));
         assert_eq!(cfg.settings.crt_h_offset, Some(8));

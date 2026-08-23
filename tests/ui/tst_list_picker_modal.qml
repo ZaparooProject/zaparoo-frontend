@@ -371,7 +371,7 @@ TestCase {
     function test_measure_label_width_carries_hinting_slack(): void {
         const label = "A moderately long label for measuring";
         const raw = Math.ceil(Math.max(probeMetrics.advanceWidth(label), probeMetrics.boundingRect(label).width));
-        const measured = picker._measureLabelWidth(probeMetrics, label, Sizing.fontBody, Theme.fontUi);
+        const measured = picker._measureLabelWidth(probeMetrics, label, Sizing.fontBody, Theme.fontUi, Font.Medium);
         compare(measured, raw + Sizing.stroke(2));
     }
 
@@ -390,8 +390,71 @@ TestCase {
                 label: "A rather longer picker entry label"
             }
         ];
-        const expected = picker._measureLabelWidth(probeMetrics, "A rather longer picker entry label", Sizing.fontBody, Theme.fontUi);
+        const expected = picker._measureLabelWidth(probeMetrics, "A rather longer picker entry label", Sizing.fontBody, Theme.fontUi, Font.Medium);
         compare(picker._widestEntryLabelWidth, expected);
+    }
+
+    // Round 9: a row's own `_textWidth` binding used to call
+    // `modal._measureLabelWidth(rowLabelMetrics, ...)` against a
+    // `FontMetrics` fed `bar.contentWeight` as an explicit-but-unused
+    // parameter, on the theory that merely reading a property to pass as
+    // an argument establishes a binding dependency on it. It doesn't
+    // reliably, under this project's AOT-compiled QML: `advanceWidth()`/
+    // `boundingRect()` are Q_INVOKABLE calls, the callee never reads the
+    // `fontWeight` parameter, and the compiler can treat an unread
+    // argument as dead and drop the dependency computing it would
+    // otherwise establish -- `_textWidth` stayed pinned to whichever
+    // weight was current when the binding last ran, going stale the
+    // moment selection moved onto or off of the row (confirmed by first
+    // writing this test against that code and watching it fail). The fix
+    // (matching ContextMenu.qml's identical row-label construction) moved
+    // `rowLabelMetrics` to a `TextMetrics` with its own `text:`/`font.weight:`
+    // bindings, reading `advanceWidth`/`boundingRect` as genuine
+    // *properties* from `_textWidth` -- a real property read, which QML's
+    // ordinary binding-dependency tracking does pick up reliably.
+    //
+    // The test harness (tst_main.cpp) never registers the app's bundled
+    // NotoSans.ttf via QFontDatabase, so asserting a specific pixel delta
+    // between Font.Normal and Font.Medium would be flaky by environment
+    // (font substitution), not by the fix. What IS environment-independent:
+    // `label.width` must never drift from a fresh measurement computed the
+    // same way `_textWidth` itself computes it, in either selection state.
+    function test_selected_row_label_width_never_goes_stale(): void {
+        picker.entries = [
+            {
+                id: "id-0",
+                label: "Short"
+            },
+            {
+                id: "id-1",
+                label: "A rather longer picker entry label that needs the full row"
+            }
+        ];
+        picker.open = true;
+        picker.currentIndex = 0;
+
+        const row = findChild(picker, "listPickerRow-1");
+        verify(row !== null);
+        const label = findChild(row, "listPickerRowLabelCentered");
+        verify(label !== null);
+        const metrics = findChild(row, "listPickerRowLabelMetrics");
+        verify(metrics !== null);
+
+        function expectedWidth() {
+            const available = Math.max(0, row.width - 2 * picker._rowHorizontalPadding);
+            return Math.min(Math.ceil(Math.max(metrics.advanceWidth, metrics.boundingRect.width)) + Sizing.stroke(2), available);
+        }
+
+        compare(metrics.font.weight, Font.Normal, "unselected row must measure at Font.Normal");
+        compare(label.width, expectedWidth(), "resting width must match a fresh measurement");
+
+        picker.currentIndex = 1;
+        compare(metrics.font.weight, Font.Medium, "selecting the row must flip its metrics to Font.Medium");
+        compare(label.width, expectedWidth(), "selected width must match a fresh measurement, not the stale resting one");
+
+        picker.currentIndex = 0;
+        compare(metrics.font.weight, Font.Normal, "deselecting the row must flip its metrics back to Font.Normal");
+        compare(label.width, expectedWidth(), "width after deselecting must match a fresh measurement too");
     }
 
     // Round 6 follow-up: the item-2 measurement fix wasn't sufficient on
@@ -403,7 +466,7 @@ TestCase {
     // small screen. `contentSized: true` swaps that ceiling for the same
     // 92% the four prebaked kinds use.
     function test_content_sized_panel_is_not_clamped_by_shell_breathing_room(): void {
-        const labels = ["Zaparoo Dark", "Zaparoo Light", "Classic Purple", "Dracula", "Nord", "Synthwave '84", "Amber Phosphor", "Green Phosphor", "Neo Geo", "NES", "Virtual Boy"];
+        const labels = ["Zaparoo Dark", "Zaparoo Light", "Classic Purple", "Amber Phosphor", "Game Boy", "Green Phosphor", "Neo Geo", "NES", "Virtual Boy", "Dracula", "Everforest"];
         picker.entries = labels.map((label, i) => ({
                     id: "id-" + i,
                     label: label,

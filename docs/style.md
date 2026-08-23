@@ -204,6 +204,14 @@ sync for clarity). `tst_color_schemes.qml`'s guardrail tests already iterate
 the id-count and named-id/hardcoded-hex assertions, which need their
 literals updated.
 
+**Round 10 reordered the catalog** from plain addition-history order (each
+round's new presets appended at the end, which read as random rather than
+deliberate on the picker) into family blocks: the three Zaparoo/identity
+presets first, then the six retro/console presets, then the eight editor/
+terminal presets, then the two light presets — alphabetical by display
+name within each block. No id was added, removed, or renamed; this is a
+pure reorder of `ColorSchemes.ids` and `COLOR_SCHEMES`.
+
 Selection applies live and persists as `[settings] color_scheme` in
 `frontend.toml` plus `state.toml`. Tinted image URLs naturally change with
 palette roles; custom and full-color artwork remains unchanged.
@@ -704,11 +712,16 @@ Label and detail join with a plain colon (`"Indexing: %1"`), not a
 mid-dot — the bitmap CRT font renders `·` as a genuine pixel glyph (it's
 not a missing-glyph problem), but at 6×8 a single centered dot is one or
 two lit pixels, easy to miss at a glance, and not a character anyone types
-by hand. This is deliberately a different join than the em dash used
-elsewhere on the same line (`"Core error — %1"`, `"… paused — game
-running"`, `"Scrape failed — %1"`): the em dash marks a *reason* clause
-(why something stopped), the colon marks a *live detail* of an ongoing
-action. Don't conflate the two when adding a new state.
+by hand. Round 8 gave the *reason*-clause states on this same line
+(`"Core error — %1"`, `"… paused — game running"`, `"Scrape failed —
+%1"`) a separate em dash join, distinct from the colon a *live detail*
+state uses. Round 9 dropped the em dash from every user-visible string —
+see `docs/content-style.md` → "Punctuation" — so all four now join with
+the same colon (`"Core error: %1"`, `"Indexing paused: game running"`,
+`"Scraping paused: game running"`, `"Scrape failed: %1"`). The words
+already carry the reason-vs-detail distinction ("error", "paused",
+"failed" vs. a bare progress readout), so nothing is lost by collapsing
+the two joins into one.
 
 One slot, resolved in priority order: a Core connection problem; an active
 background task (including why it's paused — "game running"); a terminal
@@ -934,7 +947,14 @@ the focus ring's inner edge instead of running under it.
 | Button slot | `pctH(7)` |
 
 Panel has no border. Prefer extending `Modal.qml` shell over bespoke chrome.
-GameInfo uses same panel radius. QrCodeModal remains shell-based QR content.
+QrCodeModal and round-10's `ScrapeSetupModal` (scraper choice + re-scrape
+toggle + Start, three `SettingsField` rows in a shell `Column`) are
+shell-based content. GameInfo stays bespoke — its near-full-height,
+scrolling panel doesn't fit the shell's content-driven sizing — but uses
+the same panel radius, and round 10 gave its internal chrome
+`SettingsSectionHeader`-band dividers (header, cover card, description)
+instead of bare `Column` spacing, borrowing the Settings vocabulary rather
+than inventing new bespoke chrome for those breaks.
 
 Panel width is content-driven for the four prebaked kinds
 (`action_error`/`transient`/`confirm`/the toggle), mirroring [ContextMenu
@@ -1102,10 +1122,13 @@ specific to any one screen. Hub tiles and Settings' own root category grid
 same physical object as the Hub's — see above) are both full-bleed
 icon/cover tiles with no caption band competing for space, so round 8 gave
 them an opt-in `compactPadding` property (same opt-in shape as
-`squareCells`) that halves the inset to `Sizing.pctH(1)`. The focus ring's
-own inset (`_outlineGap`, `Sizing.pctH(0.4)`) stays well clear either way
-— it anchors to the tile's full bounds independently of `_padding`, so
-tightening the art padding can never make art touch or overlap the ring.
+`squareCells`) that tightens the inset. Round 8 shipped this as an
+independent `Sizing.pctH(1)`, which landed exactly on the focus ring's own
+inner edge (`_outlineGap + _outlineWidth`, both also `Sizing.pctH`-derived)
+at every resolution tier — art touched the ring by construction, not
+rounding. Round 9 derives `_padding` from the ring's own geometry instead
+(`_ringInnerEdge + Sizing.pctH(0.4)` under `compactPadding`), so a future
+change to either ring token can't silently close the gap again.
 Systems tiles are a separate, viewport-fitted grid and stay on the default
 padding; only Hub and Settings' category grid opt in.
 
@@ -1134,18 +1157,34 @@ The "where am I" cue is a count badge plus `PageIndicator` (up/down chevrons —
 The "N / M" text (and the "N" it falls back to when the total isn't known
 yet) only paints once there's actually somewhere else to page to —
 `PageIndicator._hasMultiplePages` — since a single page never needs a "1 / 1"
-readout next to two chevrons that are also both hidden; the reserved width
-doesn't change either way, so this never causes the shift the paragraph below
-is about. It sits alongside `TopStatusStrip`'s title, baseline-aligned to it
-(`TopStatusStrip.pageIndicatorMode`), on every theme except CRT — CRT hides
-that strip entirely (`status.topStripVisible: false`) and keeps the same cue
-in the host screen's **footer** instead, alongside `ActiveLabel`
-(`footer.pageCueInFooter` in `BrowseLayouts.qml` is the profile flag both
-placements key off). Wherever it lives, the badge and `PageIndicator` are
-unconditionally reserved — only their content toggles (a chevron's own
-`visible`, the count text's presence) — so a single-page grid becoming
-multi-page (arming Hub Options → Move always reserves a second page) never
-shifts anything.
+readout. Round 9 changed the chevrons' own no-direction state from hidden to
+dimmed (`Theme.textLabel` instead of `Theme.textPrimary`) so a bare glance
+could tell "there is scroll chrome here" even mid-grid, and only the
+still-live direction reads as actionable — a colour swap, not an opacity
+one: a translucent node would repaint everything it overlaps on every frame
+under software rendering (see CLAUDE.md's animation-cost rules), while a
+static colour costs nothing extra. Round 10 added the missing case: when
+there's only **one** page total, both chevrons hide entirely
+(`_hasMultiplePages`, the same gate the "N / M" text already used) rather
+than painting two permanently-dim arrows that will never do anything —
+dimming is for "this direction specifically has nothing," not for "nothing
+here scrolls at all." It sits alongside `TopStatusStrip`'s title,
+baseline-aligned to it (`TopStatusStrip.pageIndicatorMode`), on every theme
+except CRT — CRT hides that strip entirely (`status.topStripVisible: false`)
+and keeps the same cue in the host screen's **footer** instead, alongside
+`ActiveLabel` (`footer.pageCueInFooter` in `BrowseLayouts.qml` is the
+profile flag both placements key off). Wherever it lives, the badge and
+`PageIndicator` are unconditionally reserved — only the count text's and
+each chevron pair's presence, and each chevron's own colour, toggle — so a
+single-page grid becoming multi-page (arming Hub Options → Move always
+reserves a second page) never shifts anything. `SettingsScreen.qml`,
+`AboutScreen.qml`, and `GameInfoModal.qml`'s own scroll chevrons (each
+already sitting in a fixed chrome band reserved regardless of content) got
+the same dim-plus-hide-on-single-page treatment for one consistent rule;
+`ListPickerModal.qml`'s chevrons already satisfied it by construction —
+its `_hasContentAbove`/`_hasContentBelow` are both false whenever the list
+isn't scrollable at all, so a short list already shows neither arrow with
+no round-10 change needed.
 
 Two placements exist because putting the cue at the top, next to a title
 that's already there, was tried first (pre-round-5) and reads better once a
