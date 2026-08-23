@@ -94,44 +94,76 @@ fallback for missing, unknown, or removed IDs.
 
 ### Preset catalog
 
-11 presets ship: **Zaparoo Dark**, **Zaparoo Light**, and **Classic Purple**
-(the three original Zaparoo themes, renamed from `zaparoo-black` /
+19 presets ship. **Zaparoo Dark**, **Zaparoo Light**, and **Classic Purple**
+are the three original Zaparoo themes (renamed from `zaparoo-black` /
 `zaparoo-white` / `midnight-amber` in round 6 so the id describes the
-preset rather than an implementation detail), plus **Nord**, **Dracula**,
-and **Synthwave '84** from the editor/terminal world, and **Amber
-Phosphor**, **Green Phosphor**, **Neo Geo**, **NES**, and **Virtual Boy**
-from documented retro/console references. None of these are invented
-colors — every triad is `primary`/`accent`/`text` picked from that theme's
-own published palette.
+preset rather than an implementation detail; Classic Purple's triad was
+further retuned in round 7 — see below). **Nord**, **Dracula**, **Synthwave
+'84**, **Gruvbox**, **Everforest**, **Solarized Dark**, **Rosé Pine**, and
+**Oxocarbon** cover the editor/terminal world. **Amber Phosphor**, **Green
+Phosphor**, **Neo Geo**, **NES**, **Virtual Boy**, and **Game Boy** are
+documented retro/console references. **Flexoki Paper** and **Solarized
+Light** join Zaparoo Light as the light-register options. None of these are
+invented colors — every triad is `primary`/`accent`/`text` picked from that
+theme's own published palette, with two exceptions where a real value was
+deepened to clear a guardrail: Game Boy's background sits below the real
+DMG value so text/bg clears 7.0:1, and its text uses the real DMG palette's
+lightest tone (`#9bbc0f`) rather than its second-lightest, which additionally
+lets it clear `textPrimary`/`borderMid`'s 4.0:1 floor; Everforest's
+background sits a few steps below its own published `bg_dim` "hard" tone
+(`#1e2326`) for the same `textPrimary`/`borderMid` reason — `#1e2326` itself
+falls just short at 3.98:1.
 
-**Round 5 shipped 24 presets; round 6 pruned to these 11.** Zaparoo,
-phosphor, and console presets are kept unconditionally — they're the
-identity and the differentiated end of the catalog. Everything else was
-judged against them: a preset survives only if it reads as visibly distinct
-from something already kept, not merely different in name. Cut as
-near-duplicates of a kept preset: `catppuccin-mocha`/`-macchiato`/`-frappe`
+**Round 5 shipped 24 presets; round 6 pruned to 11; round 7 grew back to
+19.** Round 6 kept Zaparoo, phosphor, and console presets unconditionally as
+the identity and differentiated end of the catalog, and cut everything else
+that read as a near-duplicate of one of them: `catppuccin-mocha`/`-macchiato`/`-frappe`
 (next to Dracula — same dark-purple-on-slate register), `tokyo-night`,
 `one-dark-pro`, `nightfox`, and `kanagawa-wave` (all blue-accent-on-slate,
 next to Nord), `monokai` and `gruvbox-dark` (no console/phosphor counterpart
-distinct enough to earn a slot), `rose-pine` and `everforest-dark` (same
-reasoning), and `ayu-dark`. `gruvbox-light` cleared every guardrail but was
-cut anyway: on a light page the accent must sit dark to clear
-`_clampAccent`'s 4.5:1 floor, so its selected row lands on `#af3a03` — cream
-text at 5.4:1, technically passing but reading as a heavy brown next to
-near-black body text. That tension is structural to light presets with warm
-accents, not a tuning miss that a different hex would fix; Zaparoo Light's
-cool blue (`#0a63c9`, 5.19:1) carries the light-preset slot instead.
+distinct enough to earn a slot at the time), `rose-pine` and
+`everforest-dark` (same reasoning), and `ayu-dark`.
 
-Two guardrail floors were relaxed in round 5, kept relaxed in round 6:
+Round 7's problem was the opposite: the round-6 survivors fixed redundancy
+but left several presets reading as near-duplicates of *each other*
+(Classic Purple/Dracula/Nord/Synthwave '84 are all "dark bg + one accent,"
+and Neo Geo/NES/Amber Phosphor cluster the same way), with no room for a
+preset whose *background register* differs rather than just its accent hue.
+Round 7 re-added Gruvbox and Everforest (this time judging them as
+distinct — Gruvbox's neutral warm-grey background and Everforest's
+blue-green slate are backgrounds nothing else in the catalog covers, not
+just new accent hues on the same near-black canvas Neo Geo/NES/Amber
+Phosphor already occupy), added Solarized Dark (deep teal-black, its own
+register) and Rosé Pine (purple-black bg, but a rose-pink accent rather
+than Dracula's violet), added Oxocarbon (true neutral near-black + electric
+cyan, a modern/SaaS register with no precedent in the catalog), and added
+Game Boy as a third retro-console preset. Two accent-hue near-collisions
+were accepted rather than treated as automatic disqualifiers, matching how
+the existing catalog already tolerates Classic Purple/Amber
+Phosphor/Neo Geo sharing the amber-orange family: Oxocarbon's cyan sits
+close to Solarized Dark's, and Gruvbox's orange sits between the
+NES/Virtual Boy red-oranges and the Classic Purple/Amber Phosphor/Neo Geo
+amber-oranges. In both cases the background register (not the accent hue)
+is what earns the slot, so a nearby accent hue on a genuinely different
+background was judged as distinct rather than redundant.
+
+`gruvbox-light` cleared every guardrail in round 6 but was cut anyway: on a
+light page the accent must sit dark to clear `_clampAccent`'s 4.5:1 floor,
+so its selected row lands on `#af3a03` — cream text at 5.4:1, technically
+passing but reading as a heavy brown next to near-black body text. That
+tension is structural to light presets with warm accents, not a tuning miss
+that a different hex would fix, and round 7 didn't find a fix for it either
+— Gruvbox Light still doesn't ship. Zaparoo Light's cool blue (`#0a63c9`,
+5.19:1) carried the light-preset slot alone through round 6.
+
+Two guardrail floors were relaxed in round 5, kept relaxed since:
 
 - `textPrimary`/`surfaceCard` contrast: AAA 7.0:1 → AA 4.5:1.
   `textPrimary`/`bgDeep` stays at 7.0 — the primary background is the
   highest-traffic surface and keeps the stricter floor; only the *card*
-  surface (mixed partway toward text/accent) relaxes. No preset in the
-  round-6 catalog actually needs the relaxed floor any more (the lowest
-  measured is 7.4:1) — every one that did was pruned — but 4.5:1 is a
-  legitimate AA guarantee in its own right, so the floor stays rather than
-  reverting to 7.0 only to relax again for the next real palette added.
+  surface (mixed partway toward text/accent) relaxes. This is a legitimate
+  AA guarantee in its own right, not a number tuned to a handful of
+  presets.
 - The focus ramp's *primary*-rung chroma-retention floor: 45% of the
   accent's own OKLCh chroma → 33%. The *shadow*-rung floor stays 55% — sRGB's
   own gamut holds less chroma at high lightness regardless of color space,
@@ -139,15 +171,26 @@ Two guardrail floors were relaxed in round 5, kept relaxed in round 6:
   Dracula's purple (~39%) and Synthwave '84's pink (~38%) both still rely on
   this relaxation.
 
-A handful of well-known palettes — Solarized (both variants), Catppuccin
-Latte, Everforest Light, Rosé Pine Moon/Dawn, Night Owl — don't clear the
-catalog even with those two relaxed, independent of the round-6 prune. Each
-fails a *different*, deeper guardrail (`_clampAccent`'s 4.5:1 floor, which
-would silently mutate their authored accent away from the real hex; the
-`textLabel`/`bgDeep` 3:1 floor; or `tileEdge` failing to read as more
-saturated than the card) that round 4 built as a real legibility guarantee,
-not a number tuned to a handful of presets — so they're left out rather than
-loosened further. Revisit only deliberately.
+Round 6 documented Solarized (both variants), Catppuccin Latte, Everforest
+Light, Rosé Pine Moon/Dawn, and Night Owl as unable to clear the catalog
+even with those two floors relaxed. Round 7 revisited that list and found
+the real blocker for several of them wasn't the palette itself but which of
+the theme's *own* published colors was picked for `text`: Solarized's
+default body text (`#93a1a1` dark-on-dark, `#586e75` light-on-light) is
+deliberately soft for reduced eye strain, and that softness is exactly what
+fails `textPrimary`/`bgDeep`'s 7.0:1 floor. Substituting Solarized's own
+higher-contrast tone — `base2`/`base02` on the dark variant, `base01` on the
+light variant, both still colors Solarized itself publishes, not invented
+ones — clears every guardrail with room to spare (12.3:1 and 12.1:1
+respectively). The same substitution (a theme's own darker ink in place of
+its default body text) is what unlocked Flexoki Paper. Catppuccin Latte,
+Everforest Light, Rosé Pine Moon/Dawn, and Night Owl were not revisited in
+round 7 and remain out — each fails a *different*, deeper guardrail
+(`_clampAccent`'s 4.5:1 floor, which would silently mutate the authored
+accent away from its real hex; the `textLabel`/`bgDeep` 3:1 floor; or
+`tileEdge` failing to read as more saturated than the card) that would need
+its own justified substitution to fix, not just a swapped text tone.
+Revisit only deliberately.
 
 Adding or removing a preset touches: `ColorSchemes.qml`'s `ids` and
 `_sources`; `rust/frontend/src/models/settings.rs`'s `COLOR_SCHEMES` (same
@@ -158,7 +201,8 @@ order) and its default-fallback test; `SettingsScreen.qml`'s
 old id as an example value (not validated against the catalog, but kept in
 sync for clarity). `tst_color_schemes.qml`'s guardrail tests already iterate
 `ColorSchemes.ids`, so a catalog change gets the full suite for free except
-the id-count and named-id assertions, which need their literals updated.
+the id-count and named-id/hardcoded-hex assertions, which need their
+literals updated.
 
 Selection applies live and persists as `[settings] color_scheme` in
 `frontend.toml` plus `state.toml`. Tinted image URLs naturally change with
@@ -183,15 +227,33 @@ Everything in the frontend is drawn with one of two visual treatments, and
 which one a component gets follows from what the component *is*, not from
 where it happens to live on screen.
 
-- **Objects get physical treatment.** Tiles, buttons, `ContextMenu` rows, and
-  `ListPickerModal` rows are things you pick up and press — a raised plate on
-  `PressableSurface`, a chromatic front edge, an accent focus ring, a
-  press-down on activation. See "Pressable front edge" below.
-- **Lines of text get typographic treatment.** `BrowseList` rows and
-  `SettingsField` rows are read, not handled — no fill or border at rest, and
-  selection is inverse video: the row's own `SelectionBar` swaps foreground
-  and background rather than lifting off the page. See "Inverse-video rows"
-  below.
+- **Grids and commitments get physical treatment.** Tiles (`Tile`,
+  `PagedGrid` placeholder cards), `LetterJumpModal`'s A–Z keypad cells, and
+  standalone commitment buttons (`Modal`'s OK / Cancel / No / Yes) are things
+  you pick up and press — a raised plate on `PressableSurface`, a chromatic
+  front edge, an accent focus ring, a press-down on activation. See
+  "Pressable front edge" below.
+- **Vertical option lists get typographic treatment.** `BrowseList` rows,
+  `SettingsField` rows, `ContextMenu` rows, and `ListPickerModal` rows are all
+  the same interaction — scan a list, pick one — and are read, not handled: no
+  fill or border at rest, and selection is inverse video, the row's own
+  `SelectionBar` swapping foreground and background rather than lifting off
+  the page. See "Inverse-video rows" below.
+
+An earlier version of this split ran the other way: `ContextMenu` and
+`ListPickerModal` rows were raised buttons on the reasoning that "a menu entry
+*is* a button." That put a `SettingsField` row and the `ListPickerModal` row it
+opens — literally the same choice, continued — in opposite registers, and cost
+real legibility doing it. At 240p, a `ContextMenu` row (`Sizing.pctH(6)` = 14px)
+has 2px of `pressEdgeHeight` plus a 3px border/ring band on each side, leaving
+6px of clear face for an 8px bitmap glyph — the label painted *on* the focus
+ring rather than inside it, on the app's smallest interactive text. A solid
+accent-filled row is also a stronger low-resolution focus cue than a 1px ring
+plus a 2px edge. Reclassifying them lost nothing from the app's physical
+identity: tiles carry that identity (on screen essentially always, taking the
+press-in on every launch), not menu rows next to them — and flat rows next to
+a bright anchored tile make the tile read more like the object it is, not
+less.
 
 Both idioms come from the same constraint: this is software rendering on
 hardware that cannot composite. A raised button is what depth looks like when
@@ -254,52 +316,98 @@ borders under Qt software rendering (QTBUG-123210). Ring thickness is
 `Sizing.focusRingWidth`; Tile and PagedGrid placeholder geometry stay
 synchronized during press/rapid-render states.
 
-`PressableSurface.qml` — modal buttons, ContextMenu/ListPickerModal rows —
-draws the identical two-rect construction when `focused`, inset inside the
-face rather than outset (the root `Item` clips). This is what gives a focused
-modal button the same visual *construction* as a focused tile instead of the
-older thin `border.color`/`border.width` swap, which had the same QTBUG-123210
-stepping problem at any real thickness. The face's own `border` (`borderMid`,
-`cardBorderWidth`) no longer changes with focus — the ring is additive, not a
-replacement for the resting border.
+`PressableSurface.qml` — `Modal`'s confirm buttons and `LetterJumpModal`'s
+letter cells — draws the identical two-rect construction when `focused`,
+inset inside the face rather than outset (the root `Item` clips). This is
+what gives a focused modal button the same visual *construction* as a
+focused tile instead of the older thin `border.color`/`border.width` swap,
+which had the same QTBUG-123210 stepping problem at any real thickness. The
+face's own `border` (`borderMid`, `cardBorderWidth`) no longer changes with
+focus — the ring is additive, not a replacement for the resting border.
 
 Ring *thickness* is not shared with `Tile`, though — `PressableSurface`
 derives its own `_ringGap`/`_ringWidth` from `Sizing.cardBorderWidth`, the
 same token that already draws the row's own resting border. Two earlier
 versions got this wrong in opposite directions: a screen-relative percentage
-(matching `Tile`'s own tokens) ate ~38% of a menu/picker row's short face
+(matching `Tile`'s own tokens) ate ~38% of a short pressable row's face
 height on top of its existing static border and press edge — three
 concentric frames reading as clutter instead of one clear "this is focused"
-cue. Rescaling that same percentage to the row's OWN height instead floored
-to exactly 1px at every real resolution tier — no heavier than the row's
-resting border, so focus read as barely more prominent than idle chrome.
-Deriving from `cardBorderWidth` fixes both by construction: `_ringGap:
-cardBorderWidth`, `_ringWidth: cardBorderWidth * 2` — the band is always
-exactly double the resting border's weight, and both scale together off the
-same token, so they can't drift out of relative proportion at some
-resolution neither was tested at. The resting border itself stays untouched
-(still additive, per above), and the ring construction (two stacked filled
-rects, `Theme.accent`) is unchanged — this is a thickness-derivation fix
-only.
+cue. (This history predates `ContextMenu`/`ListPickerModal` moving off
+`PressableSurface` entirely — see "Two registers" above — but the fix still
+governs every remaining `PressableSurface` caller.) Rescaling that same
+percentage to the row's OWN height instead floored to exactly 1px at every
+real resolution tier — no heavier than the row's resting border, so focus
+read as barely more prominent than idle chrome. Deriving from
+`cardBorderWidth` fixes both by construction: `_ringGap: cardBorderWidth`,
+`_ringWidth: cardBorderWidth * 2` — the band is always exactly double the
+resting border's weight, and both scale together off the same token, so they
+can't drift out of relative proportion at some resolution neither was tested
+at. The resting border itself stays untouched (still additive, per above),
+and the ring construction (two stacked filled rects, `Theme.accent`) is
+unchanged — this is a thickness-derivation fix only.
 
 Thickness alone was still not the whole fix. `Tile`'s own focus cue is not
 ring-only: the caption dims to `Theme.textLabel` at rest and brightens to
 `Theme.textPrimary` when focused, and bundled artwork/logos swap
 `logoPrimary` → `logoFocusPrimary` the same way. `PressableSurface` callers
-(`ContextMenu`, `ListPickerModal`, `Modal`'s confirm buttons,
-`LetterJumpModal`'s letter cells) never picked up that half — their label
-text sat at `Theme.textPrimary` unconditionally, so every unfocused row
-already looked fully lit and the ring was the only signal carrying focus at
-all. Each of those now dims/brightens its own label the same way `Tile`
-does, so two independent signals reinforce each other. Rows with only one
-possible focus target (`focused: true`, no other row to contrast against —
-`LogUploadModal`, `CommercialNoticeModal`) are left alone; there's nothing
-for dimming to distinguish there.
+(`Modal`'s confirm buttons, `LetterJumpModal`'s letter cells) never picked up
+that half — their label text sat at `Theme.textPrimary` unconditionally, so
+every unfocused row already looked fully lit and the ring was the only signal
+carrying focus at all. Each of those now dims/brightens its own label the
+same way `Tile` does, so two independent signals reinforce each other. Rows
+with only one possible focus target (`focused: true`, no other row to
+contrast against — `LogUploadModal`, `CommercialNoticeModal`) are left alone;
+there's nothing for dimming to distinguish there.
 
 Tiles use a physical front edge inside their existing cell footprint. Activation
-lowers artwork, caption, badges, and ring together without scaling cover art.
+lowers artwork, caption, and ring together without scaling cover art.
 
-### Inverse-video rows (browse lists and Settings rows)
+### Hidden and disabled tiles — muted material, worded reason, never a badge
+
+A tile that isn't in its normal, fully-live state — a user-hidden game or
+system, or a Hub tile whose live precondition isn't currently met (Resume
+with no history, Update with no internet, a category Core hasn't confirmed)
+— never disappears and never dims via opacity. Two cues, neither a floating
+badge:
+
+- **Muted front edge** — the glanceable cue, visible on every affected tile
+  at once, focused or not. `Tile.qml`'s `edgeColor` swaps from `Theme.tileEdge`
+  to `Theme.borderMid` (the same neutral "resting card edge" role
+  `PressableSurface`'s own static border already uses) whenever
+  `delegateHidden || delegateDisabled`. No new palette engineering — reusing
+  an existing neutral role is the point.
+- **Worded reason** — the detail cue, surfaced through text the screen
+  already shows rather than an overlay drawn on top of the tile. Captioned
+  tiles (`showCaption: true` — Games/Favorites/Recents) fold it into the
+  same dim suffix slot disambiguating tags already use (`ScrollingCaption`'s
+  `tags`, e.g. "Cave Story · Hidden"). Non-captioned tiles (Hub, Systems) have
+  no per-tile text to fold into, so it surfaces through the screen's
+  `ActiveLabel` (also a `tags` suffix) while that tile is focused instead.
+
+This replaces an earlier "Hidden" corner-pill component (`TileBadge`, since
+removed) and a considered opacity-based "disabled" treatment. Both were
+rejected for the same reason: a raw alpha multiplier has no contrast floor.
+Measured against this app's own derived `zaparoo-dark` palette, icon+label at
+40% opacity landed at 2.1:1 resting / 3.6:1 focused contrast against the tile
+face — both fail WCAG AA text contrast (4.5:1), and the resting case fails
+even the 3:1 floor for non-text UI components. Every other semantic color in
+this app (`accent`, `onAccent`, `marker`) is explicitly OKLCh-walked to
+guarantee a minimum ratio; an opacity trick was the one state cue that
+wasn't. Icon/label color for a hidden or disabled tile stays locked to the
+tile's normal resting tier permanently (focused or not) instead — the exact
+color every tile's unfocused state already ships, so it inherits that
+state's already-passing contrast for free, with no new number to get wrong.
+
+A badge was also the wrong shape for the job on its own terms, independent of
+contrast: UX writing on disabled-state design consistently flags that a
+disabled control giving no reason why is a discoverability failure ("users
+wonder why it is not available"), and badge-design guidance separately
+warns against overlay pills as clutter when they compete with the content
+they're stuck on. Reusing an existing screen surface for the reason (rather
+than adding a new overlay) avoids both: it's read, not scanned for, and nothing
+new is drawn on top of the artwork.
+
+### Inverse-video rows (browse lists, Settings rows, menus, and pickers)
 
 Browse lists and Settings rows are both one containing card with flat rows;
 never turn every row into a separate raised button. The selected row fills
@@ -311,6 +419,16 @@ above). The favorite heart flips to `Theme.onAccent` too rather than
 `Theme.marker` — `marker` is tuned for legibility against `surfaceCard`, not
 against a solid `accent` fill. Nothing moves: no rail, no inset, no push-in. A
 text row is not a button, so it doesn't get a button's depth cue.
+
+`ContextMenu` and `ListPickerModal` rows follow the identical recipe against
+their own `bgPanel` host instead of a `surfaceCard`: the same `SelectionBar`,
+the same accent-fill-plus-`onAccent` swap, no separate row card nested inside
+the panel. The color-scheme picker's swatch-preview border is the one row
+element with a per-register color: it sits at `Theme.textLabel` at rest (a
+mid neutral guaranteed ≥3:1 against `bgDeep` on every preset, so it separates
+a near-black or near-white swatch from the row) and flips to
+`bar.contentColor` on the selected row, the same fix the favorite heart uses
+against a solid `accent` fill.
 
 Activation is a one-shot inverse blink: the bar and its content hard-swap
 colors for `Motion.pressMs`, then swap back, rather than a crossfade. This is
@@ -329,10 +447,16 @@ forwards its host's `activatePulse`/`releasePulse`/`screenSettling`.
 hold the flash open past `Motion.pressMs`. Settings rows using
 `control: "toggle"` are exempt from the flash: the knob slide is their own
 activation cue. See "Toggle rows" below for how the track/knob colors work on
-a selected row. `ContextMenu` and `ListPickerModal` rows stay on
-`PressableSurface` below — a menu entry *is* a button and a press-in is
-correct there; keeping both registers visible in the same app is what stops
-the language collapsing into one idiom.
+a selected row. `ContextMenu` and `ListPickerModal` bind only `activatePulse`
+— they close on accept rather than settling back into an idle list, so there
+is no held-flash case to cut short and no `screenSettling` transition to
+forward.
+
+The physical register still stays visible in the same app — tiles carry it on
+every launch, `Modal`'s confirm buttons and `LetterJumpModal`'s keypad carry
+it inside modals — so this isn't the language collapsing into one idiom, just
+narrowing physical treatment to things that are genuinely objects rather than
+list choices. See "Two registers" above.
 
 #### Toggle rows
 
@@ -391,9 +515,10 @@ reusing it for a header would blur that meaning.
 
 ### Pressable front edge
 
-Grid tiles, buttons, ContextMenu rows, and picker rows use `PressableSurface.qml`.
-Its focus ring is the tile ring's construction reused — see "Tile focus ring"
-above.
+Grid tiles, modal buttons, and `LetterJumpModal`'s letter cells use
+`PressableSurface.qml`. Its focus ring is the tile ring's construction
+reused — see "Tile focus ring" above. `ContextMenu` and `ListPickerModal` rows
+do not — see "Two registers" above for why they moved to `SelectionBar`.
 
 **Front edge is not a shadow.** It is opaque physical material. Grid tiles use
 `Theme.tileEdge` against `bgDeep`; controls use `Theme.controlEdge`, one step
@@ -765,11 +890,14 @@ still sizes to content per the content-driven-width pattern above.
 `ColorSchemes.previewColors()` is independent of the active
 `Theme.colorSchemeId` (it's a pure function of the requested id), and is
 computed once per entry when the picker opens rather than per-delegate. Each
-swatch box carries a `Theme.textLabel` border (round 6) — a near-black or
-near-white swatch previously sat at the same contrast as the row's own
-`surfaceCard` face and disappeared into it; `textLabel` is a mid neutral the
-semantic-tier guardrails already hold >=3:1 against `bgDeep` on every
-preset, so it separates either extreme from the card.
+swatch box carries a `Theme.textLabel` border at rest (round 6) — a near-black
+or near-white swatch previously sat at the same contrast as the row's own
+resting background and disappeared into it; `textLabel` is a mid neutral the
+semantic-tier guardrails already hold >=3:1 against `bgDeep` on every preset,
+so it separates either extreme from the row. On a selected row the border
+flips to `bar.contentColor` (`Theme.onAccent`) instead, the same fix the
+favorite heart uses against a solid `accent` fill — see "Inverse-video rows"
+above.
 
 Content-driven width measurement (this section and [ContextMenu
 chrome](#contextmenu-chrome) below) carries deliberate slack over the raw
@@ -815,8 +943,10 @@ border stays `Theme.borderSubtle`, unthemed.
 
 ## ContextMenu chrome
 
-Panel uses `bgPanel` + `radiusMd`, no border. Rows use PressableSurface +
-`radiusSm`. Panel vertical padding is independent from radius.
+Panel uses `bgPanel` + `radiusMd`, no border. Rows are inverse-video —
+`SelectionBar` + `radiusSm` directly against the panel fill, no nested row
+surface — see "Two registers" and "Inverse-video rows" above. Panel vertical
+padding is independent from radius.
 
 Row labels center the `Text` item itself (`Sizing.center(parent.width,
 _textWidth)`), per the integer-pixel rule below — never
@@ -961,7 +1091,8 @@ session.
 ## Consistency rules
 
 - Rounded square chooses `radiusMd` or `radiusSm`; pill chooses half-height.
-- Pressable non-browse control uses PressableSurface.
+- Grid content and standalone commitment buttons use `PressableSurface`;
+  vertical option lists (browse, Settings, menus, pickers) use `SelectionBar`.
 - Focus uses `Theme.accent`.
 - Ordinary text chooses six-role ladder.
 - Geometry routes through `Sizing.px()`, `center()`, `half()`, or `stroke()`.

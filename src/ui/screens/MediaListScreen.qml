@@ -74,6 +74,13 @@ Item {
     // Optional per-row label above cover art. Used only by mixed-system flat
     // views (Favorites/Recents); Games leaves it null.
     property var gridTileTopLabelProvider: null
+    // Detail pane's "System" row (list layout) reuses the grid's own
+    // per-index system-name lookup -- Recents/Favorites need only wire
+    // `gridTileTopLabelProvider` once to get both. A screen wanting a
+    // different value here than the grid label can still override it
+    // explicitly. Games leaves both null, so it gets no System row --
+    // correct, since it's already scoped to one system.
+    property var detailSystemNameProvider: root.gridTileTopLabelProvider
     property string gridViewId: "gamesGrid"
     property string listViewId: "gamesList"
     property string tateListViewId: "gamesListTate"
@@ -262,8 +269,20 @@ Item {
         return root.mediaModel !== null ? (root.mediaModel.current_detail_image_key ?? "") : "";
     }
 
+    // Prepends a "System" row ahead of the model's own tag rows when a
+    // `detailSystemNameProvider` is wired (Recents/Favorites) -- composed
+    // here in QML, not in Rust, so it survives states where the model's own
+    // `current_detail_tags` blanks out entirely (metadata miss/error): the
+    // system name is locally known and doesn't depend on that fetch.
     function _detailTags(): string {
-        return root.mediaModel !== null ? (root.mediaModel.current_detail_tags ?? "") : "";
+        const base = root.mediaModel !== null ? (root.mediaModel.current_detail_tags ?? "") : "";
+        if (typeof root.detailSystemNameProvider !== "function")
+            return base;
+        const sys = root.detailSystemNameProvider(mediaGrid.currentIndex) ?? "";
+        if (sys === "")
+            return base;
+        const row = "System\t" + sys;
+        return base !== "" ? row + "\n" + base : row;
     }
 
     function _detailLoading(): bool {

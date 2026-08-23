@@ -1105,8 +1105,11 @@ ApplicationWindow {
                 // Label vocabulary is deliberately minimal: D-pad is always
                 // "Move"; A is "Open" for both drill-downs and launches (the
                 // tile and screen title carry the specific identity, so the
-                // verb doesn't need to repeat that); B is "Back" except on
-                // the Hub root, where it's "Quit". Sentence case throughout.
+                // verb doesn't need to repeat that); B is "Back" on every
+                // screen with one to go back to. The Hub root has none — B
+                // is unbound there, and Quit lives in the View menu instead
+                // (see HubScreen.qml's routing comment). Sentence case
+                // throughout.
                 readonly property var helpEntries: {
                     if (root.contextMenuVisible)
                         return [
@@ -1255,11 +1258,12 @@ ApplicationWindow {
                                 }
                             ];
                         // Hub always has the actions row (Recently Played /
-                        // Settings), so Move/Open/Quit applies even when the
+                        // Settings), so Move/Open applies even when the
                         // categories row is empty (0 systems indexed) — the
                         // help bar must reflect that the actions row is
-                        // navigable, otherwise the user reads "Quit only"
-                        // and misses the Settings tile entirely. Options
+                        // navigable, otherwise the user reads "nothing to
+                        // move to" and misses the Settings tile entirely.
+                        // Options
                         // (Move/Hide-or-Delete, plus category- or
                         // Favorites-specific entries) is available on any
                         // tile with a real `Browse.HubLayout` backing —
@@ -1294,10 +1298,6 @@ ApplicationWindow {
                         row.push({
                             button: "ButtonY",
                             label: qsTr("View")
-                        });
-                        row.push({
-                            button: "ButtonB",
-                            label: qsTr("Quit")
                         });
                         return row;
                     }

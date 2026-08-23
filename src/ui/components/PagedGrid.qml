@@ -942,6 +942,13 @@ Item {
                 required property string coverKey
                 required property int favorite
                 required property bool hidden
+                // True while a tile's live precondition isn't currently met
+                // (Hub only today). Deliberately NOT `required` like
+                // `hidden` above -- no other Browse model exposes a
+                // "disabled" role, so a model without it just leaves this
+                // at its own default instead of failing to construct the
+                // delegate.
+                property bool disabled: false
                 // Newline-joined disambiguating-tag tokens (empty for models
                 // without variants). Every Browse model exposes this role.
                 required property string disambiguatingTags
@@ -1119,6 +1126,7 @@ Item {
                     topLabel: cellItem.topLabel
                     favorite: cellItem.favorite
                     hidden: cellItem.hidden
+                    disabled: cellItem.disabled
                     disambiguatingTags: cellItem.disambiguatingTags
                     activatePulse: root.activatePulse
                     releasePulse: root.releasePulse

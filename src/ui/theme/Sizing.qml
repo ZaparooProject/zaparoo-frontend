@@ -96,6 +96,26 @@ QtObject {
     readonly property int hubGridColumns: hubGridShape.columns
     readonly property int hubGridRows: hubGridShape.rows
 
+    // Hub tile cell size — the resolved pixel size PagedGrid.squareCells fits
+    // hubGridColumns x hubGridRows into, given the Hub's own reserved
+    // vertical band (header + the label strip below the grid + minimum gap
+    // allowance). A pure function of screenWidth/screenHeight/tier: every
+    // screen fills the whole window, so this needs no HubScreen instance to
+    // compute. Settings' own category grid reads this directly
+    // (SettingsScreen.qml) instead of fitting against its own (smaller)
+    // column count, so its tiles read as the same physical object as the
+    // Hub's rather than an independently-sized one -- see docs/style.md
+    // "Tile aspect and grid blocks". Keep in sync with PagedGrid.qml's
+    // squareCells fit (`_widthFit`/`_heightFit`/`cellWidth`) and
+    // HubScreen.qml's own band math (`_activeLabelHeight`/`_verticalBand`/
+    // `_gridHeightBudget`) if either changes -- this duplicates both rather
+    // than reading a live HubScreen property so the value is available even
+    // when HubScreen isn't the active screen.
+    readonly property int _hubGridHeightBudget: Math.max(0, screenHeight - headerBottom - pctH(6) - pctH(7) - 3 * pctH(2))
+    readonly property int _hubGridWidthFit: Math.max(0, Math.floor((screenWidth - 2 * pctW(3) - (hubGridColumns - 1) * pctW(2)) / hubGridColumns))
+    readonly property int _hubGridHeightFit: Math.max(0, Math.floor((_hubGridHeightBudget - 2 * pctH(2) - (hubGridRows - 1) * pctH(4)) / hubGridRows))
+    readonly property int hubTileSize: Math.min(_hubGridWidthFit, _hubGridHeightFit)
+
     // Shared browse-grid bounds. Systems and games both solve the same
     // viewport-fit problem now, so the common limits live here and the
     // per-surface configs only override what is materially different.

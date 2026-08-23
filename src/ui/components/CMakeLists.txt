@@ -45,7 +45,6 @@ qt_add_qml_module(
         StatusIcon.qml
         StatusLine.qml
         Tile.qml
-        TileBadge.qml
         TileLoader.qml
         TopStatusStrip.qml
 )

@@ -1074,6 +1074,22 @@ TestCase {
         compare(main.hubScreen.currentIndex, rowEnd, "Left at the actions row's first column wraps to its last");
     }
 
+    // Resume (and every action/category) used to be null-returned from
+    // `hub.items` while unavailable, which shifted every later tile's flat
+    // index and could strand the restored cursor — see this round's plan
+    // ("Tile state consolidation"). It's now always present; only its
+    // `disabled` flag changes. This harness has no live Core connection, so
+    // `resumeKnownUnavailable` can't be driven true here (it requires
+    // `connection_state === 2`) — this test locks in the structural half:
+    // Resume is never absent, and always carries a boolean `disabled`.
+    function test_resume_tile_is_always_present_never_null_returned(): void {
+        const items = main.hubScreen.items;
+        const resumeIdx = items.findIndex(e => e.kind === "action" && e.id === "resume");
+        verify(resumeIdx >= 0, "Resume must always be present in hub.items, never null-returned");
+        compare(typeof items[resumeIdx].disabled, "boolean", "Resume entry must carry a disabled flag");
+        compare(typeof items[resumeIdx].stateReason, "string", "Resume entry must carry a stateReason string");
+    }
+
     // page_prev/page_next (L/R shoulder) were entirely unhandled on the Hub
     // before this round — every other paged screen supports them, and
     // Hub paging is now the normal case once grouping-padding is gone (see
@@ -1442,6 +1458,41 @@ TestCase {
         main.listPickerAccepted("page_menu_favorites", "back_to_hub");
         tryCompare(main, "listPickerModalVisible", false);
         compare(main.activeScreen, main.screenHub);
+    }
+
+    // Quit moved off B/Cancel onto the Hub's View menu, alongside a
+    // shortcut straight to Settings & Utilities for users who don't want
+    // it on the tile grid — see this round's plan.
+    function test_hub_page_menu_settings_entry_navigates_to_settings(): void {
+        const originalCatalogLoaded = Browse.CategoriesModel.loaded;
+        Browse.CategoriesModel.loaded = true;
+        main.activeScreen = main.screenHub;
+        main.openHubPageMenu();
+        main.listPickerAccepted("page_menu_hub", "hub_settings");
+        tryCompare(main, "listPickerModalVisible", false);
+        compare(main.activeScreen, main.screenSettings);
+        Browse.CategoriesModel.loaded = originalCatalogLoaded;
+        main._goto(main.screenHub);
+    }
+
+    function test_hub_page_menu_quit_entry_opens_quit_confirm_modal(): void {
+        main.activeScreen = main.screenHub;
+        compare(main.quitConfirmModalVisible, false);
+        main.openHubPageMenu();
+        main.listPickerAccepted("page_menu_hub", "hub_quit");
+        tryCompare(main, "listPickerModalVisible", false);
+        compare(main.quitConfirmModalVisible, true);
+        main.closeQuitConfirmModal();
+    }
+
+    // Cancel/B is unbound on the Hub root now — Quit lives in the View menu
+    // instead of on Cancel, so a stray Escape/B press must not do anything.
+    function test_hub_cancel_is_a_no_op_when_not_moving(): void {
+        main.activeScreen = main.screenHub;
+        compare(main.quitConfirmModalVisible, false);
+        main.hubScreen.handleAction("cancel");
+        compare(main.quitConfirmModalVisible, false, "cancel must not open the quit-confirm modal");
+        compare(main.activeScreen, main.screenHub, "cancel must not navigate away from the Hub root");
     }
 
     function test_page_menu_action_toggles_only_view_pickers(): void {

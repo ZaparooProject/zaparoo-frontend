@@ -167,7 +167,10 @@ TestCase {
         const cover = findChild(host, "tileCoverBase");
         verify(label !== null);
         verify(cover !== null);
-        compare(label.text, "Super Nintendo");
+        // The top label is a ScrollingCaption (see Tile.qml's "Recently
+        // Played grid tile — top label parity" fix), so its displayed
+        // string is the `name` property, not `text`.
+        compare(label.name, "Super Nintendo");
         verify(cover.y >= label.y + label.height, "cover must start below system label");
     }
 
@@ -181,7 +184,7 @@ TestCase {
         const plainLabel = findChild(plainHost, "tileTopLabel");
         const plainCover = findChild(plainHost, "tileCoverBase");
         const labelledCover = findChild(labelledHost, "tileCoverBase");
-        compare(plainLabel.text, "");
+        compare(plainLabel.name, "");
         verify(plainCover.y < labelledCover.y, "empty labels must not reserve top space");
     }
 

@@ -21,13 +21,26 @@ QtObject {
     // Duration buckets (milliseconds). The practical floor here is the frame
     // budget, not perception: on MiSTer's software renderer (~30fps) motion the
     // eye tracks needs ~3 frames (~100ms) to read as smooth rather than a
-    // two-frame jump. So `settleMs` (tracked motion) stays above that floor,
-    // while `pressMs` can sit a little under it because it reads as a punchy
-    // tactile snap, not tracked motion. Don't drop these much further or the
-    // cues turn choppy on hardware.
-    // `pressMs`  — push-in feedback on accept/activate.
+    // two-frame jump. So `settleMs` (tracked motion) stays above that floor.
+    // `pressMs` doesn't need to: besides being the press-in/flash duration, it
+    // is also `DeferredAction`'s hold time — how long every Accept across the
+    // app (tiles, browse-list rows, Settings rows, menu/picker rows) blocks
+    // the actual dispatch so the cue gets at least one rendered frame before
+    // a forward navigation can cover it (see DeferredAction.qml). That hold
+    // is pure added input latency, and 80ms sat well past where added latency
+    // reads as lag rather than "instant" — competitive-controller research
+    // puts ~20ms as already noticeable, UI-perception writing puts ~50ms as
+    // the point haptic feedback stops feeling immediate, and one well-known
+    // animation guideline calls out high-frequency keyboard/d-pad-driven
+    // actions specifically as the case NOT to gate behind a fixed animation
+    // tax, since the cost compounds over hundreds of repeated presses. 34ms
+    // is the actual constraint instead: one frame at this app's slowest
+    // real target (MiSTer, ~30fps → 33.3ms), rounded up. Don't drop it
+    // below that or the flash can lose its one guaranteed frame on the
+    // worst-case hardware; there's no perceptual reason to keep it higher.
+    // `pressMs`  — push-in feedback on accept/activate; DeferredAction's hold.
     // `settleMs` — settle/release legs and the toggle-knob slide.
-    readonly property int pressMs: 80
+    readonly property int pressMs: 34
     readonly property int settleMs: 110
     // How long `ProgressTrack`'s leading cell holds each on/off state of
     // its blink (~2 Hz full cycle). This is a hard cut, not a fade — a

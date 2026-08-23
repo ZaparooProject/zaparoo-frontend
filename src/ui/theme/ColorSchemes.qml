@@ -24,26 +24,47 @@ import QtQuick
 // amber preset signal danger in amber.
 QtObject {
     readonly property string defaultId: "zaparoo-dark"
-    readonly property var ids: ["zaparoo-dark", "zaparoo-light", "classic-purple", "dracula", "nord", "synthwave-84", "amber-phosphor", "green-phosphor", "neo-geo", "nes", "virtual-boy"]
+    readonly property var ids: ["zaparoo-dark", "zaparoo-light", "classic-purple", "dracula", "nord", "synthwave-84", "amber-phosphor", "green-phosphor", "neo-geo", "nes", "virtual-boy", "gruvbox", "everforest", "solarized-dark", "rose-pine", "oxocarbon", "flexoki-paper", "solarized-light", "game-boy"]
 
     // `zaparoo-light`'s accent is a darkened brand blue: #168bff only reaches
     // 2.97:1 against a near-white page, just under the 3.0 floor the preset
     // guardrails enforce.
     //
     // Round 6 pruned the round-5 catalog from 24 presets to 11: Zaparoo,
-    // phosphor, and console presets are kept unconditionally, and every
+    // phosphor, and console presets were kept unconditionally, and every
     // other family that read as a near-duplicate of one of these (three
     // Catppuccin variants next to Dracula; Tokyo Night/One Dark
     // Pro/Nightfox/Kanagawa all in the same blue-on-slate register as Nord;
     // Rose Pine and Everforest with no console/phosphor counterpart to
-    // differentiate from) was cut rather than kept for its own sake. See
-    // docs/style.md -> "Preset catalog" for the full accounting, including
-    // why Gruvbox Light didn't survive even though it cleared every
-    // guardrail: its accent must sit dark to clear `_clampAccent`'s 4.5:1
-    // floor on a light page, which reads as a heavy brown next to near-black
-    // body text -- a property of light presets with warm accents, not a
-    // tuning miss. Zaparoo Light's cool blue carries the light-preset slot
-    // instead.
+    // differentiate from) was cut rather than kept for its own sake.
+    //
+    // Round 7 grew the catalog back to 19: the round-6 prune fixed
+    // redundancy but left the survivors too samey (several near-duplicate
+    // "dark bg + one accent" presets) and didn't leave room for a preset
+    // whose background register itself differs, not just its accent hue.
+    // Eight presets were added back or introduced fresh -- Gruvbox,
+    // Everforest, Solarized Dark, Rose Pine, and Oxocarbon (each picked for
+    // a background register nothing else in the catalog covers: neutral
+    // warm-grey, blue-green slate, deep teal-black, purple-black with a
+    // rose rather than violet accent, and true neutral near-black,
+    // respectively), Flexoki Paper and Solarized Light (a second and third
+    // light preset, now that darkening a theme's own ink color -- rather
+    // than using its softer default text tone -- was found to clear every
+    // guardrail Gruvbox Light couldn't), and Game Boy (a third
+    // retro-console preset, its DMG green deepened slightly off the real
+    // hardware value to clear the text/bg contrast floor). Classic Purple's
+    // triad was also retuned in round 7: its original blue-purple
+    // background against its orange accent was a near-complementary
+    // pairing that read as a clash rather than a preset in its own right;
+    // the background was warmed toward the accent's hue instead. See
+    // docs/style.md -> "Preset catalog" for the full round-6 and round-7
+    // accounting, including why Gruvbox Light specifically still doesn't
+    // survive even though this round's substitution technique fixed the
+    // other light presets: its accent must sit dark to clear
+    // `_clampAccent`'s 4.5:1 floor on a light page, which reads as a heavy
+    // brown next to near-black body text regardless of which ink is
+    // chosen -- a property of that specific accent hue on a light page, not
+    // a tuning miss.
     readonly property var _sources: ({
             "zaparoo-dark": {
                 "primary": "#050608",
@@ -51,9 +72,9 @@ QtObject {
                 "text": "#f7f7f5"
             },
             "classic-purple": {
-                "primary": "#0f0f23",
-                "accent": "#ffb347",
-                "text": "#ffffff"
+                "primary": "#120e26",
+                "accent": "#ffbc4d",
+                "text": "#f2eeff"
             },
             "zaparoo-light": {
                 "primary": "#f2f3f5",
@@ -99,6 +120,46 @@ QtObject {
                 "primary": "#100000",
                 "accent": "#ff2020",
                 "text": "#ff8080"
+            },
+            "gruvbox": {
+                "primary": "#282828",
+                "accent": "#fe8019",
+                "text": "#ebdbb2"
+            },
+            "everforest": {
+                "primary": "#1b2228",
+                "accent": "#a7c080",
+                "text": "#d3c6aa"
+            },
+            "solarized-dark": {
+                "primary": "#002b36",
+                "accent": "#2aa198",
+                "text": "#eee8d5"
+            },
+            "rose-pine": {
+                "primary": "#191724",
+                "accent": "#eb6f92",
+                "text": "#e0def4"
+            },
+            "oxocarbon": {
+                "primary": "#161616",
+                "accent": "#3ddbd9",
+                "text": "#f2f4f8"
+            },
+            "flexoki-paper": {
+                "primary": "#fffcf0",
+                "accent": "#af3029",
+                "text": "#100f0f"
+            },
+            "solarized-light": {
+                "primary": "#fdf6e3",
+                "accent": "#268bd2",
+                "text": "#073642"
+            },
+            "game-boy": {
+                "primary": "#041004",
+                "accent": "#b4d420",
+                "text": "#9bbc0f"
             }
         })
 
@@ -302,8 +363,8 @@ QtObject {
     // lightness further in the same direction (holding its chroma and hue —
     // so a preset with a tinted background/text keeps that identity) until it
     // clears 4.5:1. This is `SelectionBar.contentColor` (previously a flat
-    // `Theme.bgDeep`), `TileBadge`'s label/fill, and the favorite heart's
-    // on-accent fill.
+    // `Theme.bgDeep`) and the favorite heart's on-accent fill (the variant
+    // drawn over a selected `SelectionBar` row).
     function _onAccentFor(accent: color, primary: color, text: color): color {
         const primaryContrast = _contrastRatio(primary, accent);
         const textContrast = _contrastRatio(text, accent);

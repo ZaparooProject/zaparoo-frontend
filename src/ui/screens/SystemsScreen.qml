@@ -364,6 +364,12 @@ Item {
         height: systems._footerProfile ? systems._footerProfile.activeLabelHeight : Sizing.pctH(7)
         sideInset: systems._pageCueInFooter ? Sizing.px(width / 3) : Sizing.pctW(3)
         text: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_name_at(systemsGrid.currentIndex) : ""
+        // Worded reason for the muted front edge (Tile.qml's `edgeColor`)
+        // on a hidden system tile -- Systems tiles carry no per-tile
+        // caption to fold this into (showCaption: false), so it surfaces
+        // here instead, only while that tile is focused. Mirrors
+        // HubScreen.qml's equivalent `tags` binding for disabled tiles.
+        tags: systemsGrid.itemCount > 0 && Browse.SystemsModel.is_hidden_at(systemsGrid.currentIndex) ? qsTr("Hidden") : ""
         visible: !systems._gateHide && !systems._listLayout
     }
 

@@ -105,6 +105,61 @@ TestCase {
         }
     }
 
+    Component {
+        id: contextMenuHost
+
+        Item {
+            width: 420
+            height: 240
+
+            ContextMenu {
+                id: menu
+
+                objectName: "contextMenu"
+                anchors.fill: parent
+                open: true
+                anchorRect: Qt.rect(10, 10, 40, 40)
+                entries: [
+                    {
+                        "id": "one",
+                        "label": "One"
+                    },
+                    {
+                        "id": "two",
+                        "label": "Two"
+                    }
+                ]
+            }
+        }
+    }
+
+    Component {
+        id: listPickerHost
+
+        Item {
+            width: 420
+            height: 240
+
+            ListPickerModal {
+                id: picker
+
+                objectName: "listPicker"
+                anchors.fill: parent
+                open: true
+                entries: [
+                    {
+                        "id": "one",
+                        "label": "One"
+                    },
+                    {
+                        "id": "two",
+                        "label": "Two"
+                    }
+                ]
+            }
+        }
+    }
+
     function _linearChannel(value: real): real {
         return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
     }
@@ -399,5 +454,45 @@ TestCase {
         field.activatePulse++;
         wait(Motion.pressMs + 100);
         compare(bar.flashing, false);
+    }
+
+    // ContextMenu rows moved from PressableSurface to SelectionBar — see
+    // docs/style.md -> "Two registers". Accept plays the same inverse-video
+    // flash BrowseList/SettingsField rows do, not a push-in.
+    function test_context_menu_activation_flashes_selected_row(): void {
+        const host = createTemporaryObject(contextMenuHost, testCase);
+        verify(host !== null);
+        wait(1);
+
+        const firstRow = findChild(host, "contextMenuRow-0");
+        verify(firstRow !== null);
+        const bar = findChild(firstRow, "contextMenuSelectionBar");
+        verify(bar !== null);
+        compare(bar.active, true);
+        compare(bar.flashing, false);
+
+        const menu = findChild(host, "contextMenu");
+        menu.handleAction("accept");
+        compare(bar.flashing, true);
+        tryCompare(bar, "flashing", false, Motion.pressMs + 100);
+    }
+
+    // Same move for ListPickerModal rows — see the ContextMenu test above.
+    function test_list_picker_activation_flashes_selected_row(): void {
+        const host = createTemporaryObject(listPickerHost, testCase);
+        verify(host !== null);
+        wait(1);
+
+        const firstRow = findChild(host, "listPickerRow-0");
+        verify(firstRow !== null);
+        const bar = findChild(firstRow, "listPickerSelectionBar");
+        verify(bar !== null);
+        compare(bar.active, true);
+        compare(bar.flashing, false);
+
+        const picker = findChild(host, "listPicker");
+        picker.handleAction("accept");
+        compare(bar.flashing, true);
+        tryCompare(bar, "flashing", false, Motion.pressMs + 100);
     }
 }

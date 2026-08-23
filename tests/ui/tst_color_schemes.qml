@@ -38,7 +38,7 @@ TestCase {
 
     function test_catalog_ids_and_fallback(): void {
         compare(ColorSchemes.defaultId, "zaparoo-dark");
-        compare(ColorSchemes.ids.length, 11);
+        compare(ColorSchemes.ids.length, 19);
         verify(ColorSchemes.isKnown("zaparoo-dark"));
         verify(ColorSchemes.isKnown("classic-purple"));
         verify(ColorSchemes.isKnown("zaparoo-light"));
@@ -234,10 +234,31 @@ TestCase {
         }
     }
 
+    // ContextMenu and ListPickerModal rows moved from PressableSurface to the
+    // same inverse-video SelectionBar as browse/settings rows (round 7 --
+    // see docs/style.md -> "Two registers"), painting a resting row's label
+    // in `textPrimary` directly against `bgPanel` rather than a nested
+    // `surfaceCard`. Nothing previously guarded `bgPanel` contrast at all --
+    // it only existed as a background fill, never a surface body text sat
+    // on directly. `bgPanel` is derived the same way `bgDeep` is (barely
+    // mixed away from the raw authored `primary` -- see the `panel`/`bgDeep`
+    // derivations above), so it's held to the same 7.0 AAA floor rather than
+    // `surfaceCard`'s lighter-touch 4.5, matching how close a background it
+    // actually is. A selected row's `onAccent`-on-`accent` pairing is already
+    // covered by the guardrail below, independent of whatever sits behind
+    // the panel.
+    function test_text_primary_against_bg_panel_clears_body_text_contrast(): void {
+        for (let i = 0; i < ColorSchemes.ids.length; i++) {
+            const id = ColorSchemes.ids[i];
+            const palette = ColorSchemes.palette(id);
+            verify(_contrastRatio(palette.textPrimary, palette.bgPanel) >= 7.0, id + " textPrimary/bgPanel must clear body-text contrast for menu/picker rows at rest");
+        }
+    }
+
     function test_theme_switches_live_and_unknown_falls_back(): void {
         Theme.colorSchemeId = "classic-purple";
         compare(Theme.effectiveColorSchemeId, "classic-purple");
-        compare(Theme.accent, "#ffb347");
+        compare(Theme.accent, "#ffbc4d");
 
         Theme.colorSchemeId = "zaparoo-light";
         compare(Theme.effectiveColorSchemeId, "zaparoo-light");

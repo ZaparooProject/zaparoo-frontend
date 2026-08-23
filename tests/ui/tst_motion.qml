@@ -35,8 +35,12 @@ TestCase {
     }
 
     function test_token_sanity(): void {
-        // Tokens must be in the expected design ranges.
-        verify(Motion.pressMs >= 80 && Motion.pressMs <= 120, "pressMs should be 80-120ms");
+        // Tokens must be in the expected design ranges. `pressMs` doubles as
+        // `DeferredAction`'s hold time (see Motion.qml's comment) — its floor
+        // is one rendered frame at MiSTer's ~30fps (33.3ms), not a
+        // perceptual-smoothness floor like `settleMs`'s, so its valid range
+        // is deliberately much tighter and much lower.
+        verify(Motion.pressMs >= 34 && Motion.pressMs <= 50, "pressMs should be 34-50ms");
         verify(Motion.settleMs >= 100 && Motion.settleMs <= 200, "settleMs should be 100-200ms");
     }
 

@@ -133,8 +133,8 @@ const SYSTEM_LOGO_STYLES: &[&str] = &["tinted", "color"];
 const DEFAULT_SYSTEM_LOGO_STYLE: &str = "tinted";
 // Kept in the same order as `ColorSchemes.ids` in
 // src/ui/theme/ColorSchemes.qml -- see that file's header comment for the
-// round-6 prune rationale (Zaparoo, phosphor, and console presets kept
-// unconditionally; near-duplicate editor/terminal families cut).
+// round-6 prune (24 presets to 11) and round-7 regrowth (11 to 19)
+// rationale.
 const COLOR_SCHEMES: &[&str] = &[
     "zaparoo-dark",
     "zaparoo-light",
@@ -147,6 +147,14 @@ const COLOR_SCHEMES: &[&str] = &[
     "neo-geo",
     "nes",
     "virtual-boy",
+    "gruvbox",
+    "everforest",
+    "solarized-dark",
+    "rose-pine",
+    "oxocarbon",
+    "flexoki-paper",
+    "solarized-light",
+    "game-boy",
 ];
 const DEFAULT_COLOR_SCHEME: &str = "zaparoo-dark";
 const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];

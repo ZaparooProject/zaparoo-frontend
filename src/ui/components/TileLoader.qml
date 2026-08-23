@@ -23,6 +23,13 @@ Loader {
     property string topLabel: ""
     property int favorite: 0
     property bool hidden: false
+    // True while the tile's live precondition isn't currently met (Hub
+    // only today — Resume with no history, Update with no internet, a
+    // category Core hasn't confirmed). Tile.qml reads it via
+    // `parent.disabled` to mute the front edge; Accept is gated
+    // separately by the host, same as `hidden`. Default false is a no-op
+    // for every host but the Hub.
+    property bool disabled: false
     // Newline-joined disambiguating-tag tokens (region, disc, rev, ...).
     // Default empty so hosts that don't wire it render no variant badges.
     property string disambiguatingTags: ""

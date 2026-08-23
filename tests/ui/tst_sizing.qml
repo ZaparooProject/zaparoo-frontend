@@ -365,6 +365,31 @@ TestCase {
         compare(Sizing.tier, "720");
     }
 
+    // Sizing.hubTileSize duplicates HubScreen's own squareCells fit
+    // (Sizing.qml's own doc comment) so Settings can read the Hub's
+    // resolved tile size without a HubScreen instance. Cross-check it
+    // against the real thing at a few tiers so the two formulas can't
+    // silently drift apart, plus a hand-computed check at one tier for an
+    // independent sanity bound.
+    function test_hub_tile_size_matches_real_grid_and_hand_math(): void {
+        const cases = [
+            [320, 240],
+            [640, 480],
+            [1280, 720],
+            [1920, 1080]
+        ];
+        for (const [w, h] of cases) {
+            setResolution(w, h);
+            compare(Sizing.hubTileSize, main.hubScreen._gridCellWidth, w + "x" + h);
+        }
+
+        setResolution(1920, 1080);
+        const heightBudget = Sizing.screenHeight - Sizing.headerBottom - Sizing.pctH(6) - Sizing.pctH(7) - 3 * Sizing.pctH(2);
+        const widthFit = Math.floor((Sizing.screenWidth - 2 * Sizing.pctW(3) - (Sizing.hubGridColumns - 1) * Sizing.pctW(2)) / Sizing.hubGridColumns);
+        const heightFit = Math.floor((heightBudget - 2 * Sizing.pctH(2) - (Sizing.hubGridRows - 1) * Sizing.pctH(4)) / Sizing.hubGridRows);
+        compare(Sizing.hubTileSize, Math.min(widthFit, heightFit));
+    }
+
     function test_nonstandard_scene_uses_adaptive_grid_scorer(): void {
         setResolution(1000, 600);
         const shape = Sizing.gamesGridShape(1000, 405);

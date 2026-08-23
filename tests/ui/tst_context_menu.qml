@@ -127,4 +127,38 @@ TestCase {
         const longWidth = menu.panelWidth;
         verify(longWidth > shortWidth);
     }
+
+    // Round 7: rows moved from PressableSurface to the same inverse-video
+    // SelectionBar as browse/settings rows -- see docs/style.md -> "Two
+    // registers". The focused row's bar is active and its label reads
+    // `onAccent`; every other row stays flat with a plain `textPrimary`
+    // label.
+    function test_selected_row_uses_inverse_video(): void {
+        menu.entries = [
+            {
+                "id": "one",
+                "label": "One"
+            },
+            {
+                "id": "two",
+                "label": "Two"
+            }
+        ];
+        menu.currentIndex = 0;
+
+        const firstRow = findChild(menu, "contextMenuRow-0");
+        const secondRow = findChild(menu, "contextMenuRow-1");
+        verify(firstRow !== null);
+        verify(secondRow !== null);
+        const firstBar = findChild(firstRow, "contextMenuSelectionBar");
+        const secondBar = findChild(secondRow, "contextMenuSelectionBar");
+        verify(firstBar !== null);
+        verify(secondBar !== null);
+        verify(firstBar.active);
+        verify(!secondBar.active);
+
+        menu.currentIndex = 1;
+        verify(!firstBar.active);
+        verify(secondBar.active);
+    }
 }

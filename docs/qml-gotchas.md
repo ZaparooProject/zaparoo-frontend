@@ -248,8 +248,8 @@ Sanctioned patterns and why they are safe:
 
 | Cue | Cost analysis |
 |---|---|
-| Tile physical press on activate or launch (~80 ms, held) | One opaque face translates down by `Sizing.pressEdgeHeight`; dirty rect = one tile; no cover-art resampling. The host screen's `settling` flag raises the face off-screen. One shared cue covers forward navigation and game launch |
-| List/settings row inverse-blink on activate or launch (~80 ms, self-clearing) | Only the selected row's `SelectionBar` swaps fill and content color for `Motion.pressMs`, then swaps back — 2 repaints total, nothing moves; background and neighboring rows remain static |
+| Tile physical press on activate or launch (`Motion.pressMs`, held) | One opaque face translates down by `Sizing.pressEdgeHeight`; dirty rect = one tile; no cover-art resampling. The host screen's `settling` flag raises the face off-screen. One shared cue covers forward navigation and game launch |
+| List/settings row inverse-blink on activate or launch (`Motion.pressMs`, self-clearing) | Only the selected row's `SelectionBar` swaps fill and content color for `Motion.pressMs`, then swaps back — 2 repaints total, nothing moves; background and neighboring rows remain static |
 | Settings toggle-knob slide (x, ~110 ms) | One tiny Rectangle handle; 1 pctW |
 
 The shared constraint: the source scene must be static or near-static during
@@ -331,16 +331,26 @@ Token summary (`Motion.qml`):
 
 | Token | Value | Use |
 |---|---|---|
-| `pressMs` | 80 | Physical press or row inverse-blink cue |
+| `pressMs` | 34 | Physical press or row inverse-blink cue; also `DeferredAction`'s hold time (see below) |
 | `settleMs` | 110 | Release leg; toggle-knob slide |
 | `pulseMs` | 250 | `ProgressTrack` leading-cell blink, on/off hold time (~2 Hz full cycle) |
 
-`pressMs`/`settleMs` sit just above MiSTer's frame-budget floor (~3 frames at
-~30fps); see the comments in `Motion.qml` before lowering them. `pulseMs`
-isn't bound by that floor the same way — it's a hard on/off cut, not
-tracked positional motion — its value comes from matching a deliberately
-snappy, "still alive" cadence instead; see the exception writeup above before
-changing it.
+`settleMs` sits just above MiSTer's frame-budget floor (~3 frames at ~30fps)
+so tracked (positional) motion reads as smooth rather than a two-frame jump;
+see the comments in `Motion.qml` before lowering it. `pressMs` is bound by a
+different, smaller floor: it doubles as `DeferredAction`'s hold time (every
+Accept across the app blocks the actual dispatch by `pressMs` so the flash/
+push-in gets at least one rendered frame before a forward navigation can
+cover it), and that hold is pure added input latency, not tracked motion —
+so its floor is one frame at the slowest real target (MiSTer, ~30fps →
+33.3ms, rounded up to 34), not the ~3-frame smoothness floor `settleMs`
+needs. Don't drop `pressMs` below that one-frame floor or the cue can lose
+its guaranteed frame on the worst-case hardware; there's no perceptual
+reason to raise it back toward `settleMs` — see `Motion.qml`'s own comment
+for the research behind this. `pulseMs` isn't bound by either floor — it's a
+hard on/off cut, not tracked positional motion — its value comes from
+matching a deliberately snappy, "still alive" cadence instead; see the
+exception writeup above before changing it.
 
 Pulse counter pattern (how hosts trigger tile cues without coupling to
 animation internals): the host increments the `activatePulse` int property

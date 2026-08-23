@@ -62,7 +62,10 @@ import Zaparoo.Browse as Browse
 //
 // Pure input dispatcher: emits one of `requestAccept(kind, id, system)`
 // (forward; the router decides destination -- see CLAUDE.md -> "Screens and
-// routing"), `requestRetry`, or `requestQuit`.
+// routing") or `requestRetry`. Cancel is a deliberate no-op on the Hub root
+// (there is no "back" from the top of the screen stack) except while a Move
+// is armed, where it's intercepted by `_handleMoveAction`/`_cancelMove`;
+// Quit lives in the View menu instead (Main.qml's `openHubPageMenu`).
 //
 // All cross-screen orchestration (model fills, deferred set_category,
 // cover prefetch, transition overlay, screen flip) lives in Main.qml.
@@ -159,6 +162,11 @@ Item {
     // scoped to this file, so a test can't reach `pagedGrid.height`
     // directly to verify the equal-gap vertical layout below.
     readonly property alias _gridHeight: pagedGrid.height
+    // Test-only: cross-checks Sizing.hubTileSize (which duplicates this
+    // grid's squareCells fit so Settings can read it without a HubScreen
+    // instance) against the real resolved value, so the two can't silently
+    // drift apart.
+    readonly property alias _gridCellWidth: pagedGrid.cellWidth
     // False on the first-paint path so Hub can draw a static Resume tile
     // without touching RecentsModel. MainLayout flips this after the
     // first frame, then Resume can hide/update from Core history.
@@ -185,7 +193,6 @@ Item {
     // Main.qml's router). Every other kind passes "".
     signal requestAccept(kind: string, id: string, system: string)
     signal requestRetry
-    signal requestQuit
     // Emitted when the user opens the options menu on a category tile.
     // `anchorRect` is the tile's bounding rect mapped to hub coordinates,
     // used by the context menu to position itself. `anchorRadius` is the
@@ -253,30 +260,42 @@ Item {
     // singleton's header comment — it already filters out the reserved
     // `collection` kind and anything this build doesn't recognise, so every
     // kind reaching here is one of the five below). Each returns a
-    // PagedGrid-ready row (`name`/`coverKey`/`favorite`/`hidden`/
-    // `disambiguatingTags`/`isEmpty`, Hub's own `kind`+`id`), or `null` to
-    // skip the tile entirely for now — still round-trips on save (Rust
-    // owns persistence), just isn't rendered this frame.
+    // PagedGrid-ready row (`name`/`coverKey`/`favorite`/`hidden`/`disabled`/
+    // `stateReason`/`disambiguatingTags`/`isEmpty`, Hub's own `kind`+`id`),
+    // or `null` to skip the tile entirely for now — still round-trips on
+    // save (Rust owns persistence), just isn't rendered this frame. `null`
+    // is reserved for STRUCTURAL absence only (a compile-time feature this
+    // build lacks, an id this build doesn't recognise) — anything whose
+    // availability can change at runtime (still loading, currently
+    // unconfirmed, no internet right now) always returns a real entry with
+    // `disabled` set instead, so the tile's presence and position in the
+    // grid never depend on live data — only its enabled/disabled look does.
+    // See this round's plan ("Tile state consolidation") for why: letting
+    // tiles pop in and out as Core/Recents/SystemStatus answer was both a
+    // layout-shift bug and, because `restoreFromCategoriesReset` looks up
+    // the persisted focus by scanning this same array, the "focus goes
+    // missing on boot" bug.
 
-    // Resume is visible by default while Core history is unknown; hidden
-    // only after Recents proves there is nothing resumable. Always uses the
-    // play icon so startup never waits on a game cover for the Hub's
-    // primary action. Update needs the build flag AND live internet.
+    // Resume is always present; `disabled` is the same boolean that used to
+    // gate its existence (definitively no resumable game, per confirmed
+    // Core history) — see `resumeKnownUnavailable`. Update is present
+    // whenever this build has the feature at all (a compile-time constant,
+    // genuinely structural); `disabled` there tracks live internet
+    // reachability instead of gating existence, so a Wi-Fi toggle mid-session
+    // never adds or removes the tile, only its look.
     function _resolveActionEntry(id: string): var {
         if (id === "resume") {
-            if (!hub.resumeActionVisible)
-                return null;
             const resumeName = hub.resumeModelEnabled ? Browse.RecentsModel.resume_name : "";
-            return hub._actionEntry("resume", hub._hubCoverKey("resume", "icons/PlayOutline"), resumeName.length > 0 ? resumeName : qsTr("Resume"));
+            return hub._actionEntry("resume", hub._hubCoverKey("resume", "icons/PlayOutline"), resumeName.length > 0 ? resumeName : qsTr("Resume"), hub.resumeKnownUnavailable, qsTr("No recent games"));
         }
         if (id === "favorites")
             return hub._actionEntry("favorites", hub._hubCoverKey("favorites", "icons/HeartOutline"), qsTr("Favorites"));
         if (id === "recents")
             return hub._actionEntry("recents", hub._hubCoverKey("recents", "icons/History"), qsTr("Recently Played"));
         if (id === "update") {
-            if (!(Browse.BuildInfo.update_enabled && hub._internetAvailable))
+            if (!Browse.BuildInfo.update_enabled)
                 return null;
-            return hub._actionEntry("update", hub._hubCoverKey("update", "icons/RefreshCw"), qsTr("Update"));
+            return hub._actionEntry("update", hub._hubCoverKey("update", "icons/RefreshCw"), qsTr("Update"), !hub._internetAvailable, qsTr("No internet connection"));
         }
         if (id === "settings")
             return hub._actionEntry("settings", hub._hubCoverKey("settings", "icons/Tools"), qsTr("Settings & Utilities"));
@@ -285,7 +304,7 @@ Item {
         return null;
     }
 
-    function _actionEntry(id: string, coverKey: string, text: string): var {
+    function _actionEntry(id: string, coverKey: string, text: string, disabled: bool, stateReason: string): var {
         return {
             kind: "action",
             id: id,
@@ -294,20 +313,21 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
-            enabled: true,
+            disabled: disabled ?? false,
+            stateReason: stateReason ?? "",
             isEmpty: false
         };
     }
 
-    // A category currently unreported by Core (mid-scan, all its systems
-    // went unindexed, etc) stays in the persisted layout -- reconciliation
-    // is add-only, never remove (see hub_layout.rs) -- just isn't rendered
-    // while Core doesn't confirm it. `loaded` gates the check so a category
-    // isn't wrongly dropped before Core has answered at all this launch.
+    // A category Core hasn't (yet, or ever) confirmed stays in the
+    // persisted layout -- reconciliation is add-only, never remove (see
+    // hub_layout.rs) -- and always renders; `disabled` tracks whether Core
+    // currently lists it, rather than gating existence. `loaded` gates the
+    // check so a category isn't wrongly marked disabled before Core has
+    // answered at all this launch.
     function _resolveCategoryEntry(id: string): var {
         const canonicalId = CategoryIds.canonicalize(id);
-        if (Browse.CategoriesModel.loaded && Browse.CategoriesModel.index_for_category(canonicalId) < 0)
-            return null;
+        const unconfirmed = Browse.CategoriesModel.loaded && Browse.CategoriesModel.index_for_category(canonicalId) < 0;
         return {
             kind: "category",
             id: canonicalId,
@@ -316,6 +336,8 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            disabled: unconfirmed,
+            stateReason: unconfirmed ? qsTr("Not available") : "",
             isEmpty: false
         };
     }
@@ -335,6 +357,8 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            disabled: false,
+            stateReason: "",
             isEmpty: false
         };
     }
@@ -359,6 +383,8 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            disabled: false,
+            stateReason: "",
             isEmpty: false
         };
     }
@@ -398,6 +424,8 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            disabled: false,
+            stateReason: "",
             isEmpty: false
         };
     }
@@ -422,6 +450,8 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            disabled: false,
+            stateReason: "",
             isEmpty: true,
             hubIndex: hubIndex ?? -1
         };
@@ -539,6 +569,8 @@ Item {
                     favorite: 0,
                     hidden: false,
                     disambiguatingTags: "",
+                    disabled: false,
+                    stateReason: "",
                     isEmpty: false,
                     // Bootstrap-window placeholder, not a real
                     // Browse.HubLayout row yet -- see `_blankEntry`'s
@@ -607,6 +639,8 @@ Item {
                 hubGridModel.setProperty(i, "favorite", entry.favorite);
             if (row.hidden !== entry.hidden)
                 hubGridModel.setProperty(i, "hidden", entry.hidden);
+            if (row.disabled !== (entry.disabled === true))
+                hubGridModel.setProperty(i, "disabled", entry.disabled === true);
             if (row.disambiguatingTags !== entry.disambiguatingTags)
                 hubGridModel.setProperty(i, "disambiguatingTags", entry.disambiguatingTags);
             if (row.isEmpty !== entry.isEmpty)
@@ -620,6 +654,7 @@ Item {
                     coverKey: entry.coverKey,
                     favorite: entry.favorite,
                     hidden: entry.hidden,
+                    disabled: entry.disabled === true,
                     disambiguatingTags: entry.disambiguatingTags,
                     isEmpty: entry.isEmpty
                 });
@@ -882,6 +917,11 @@ Item {
         if (!entry || entry.kind === "empty")
             return;
         if (entry.kind === "category") {
+            // Unconfirmed/absent is a quiet no-op, same as a disabled
+            // action below -- distinct from a genuine Core error, which
+            // still offers Retry.
+            if (entry.disabled === true)
+                return;
             if ((Browse.CategoriesModel.error_message ?? "") !== "") {
                 hub.requestRetry();
                 return;
@@ -894,7 +934,7 @@ Item {
             return;
         }
         if (entry.kind === "action") {
-            if (entry.enabled === false)
+            if (entry.disabled === true)
                 return;
             hub.requestAccept("action", entry.id, "");
             return;
@@ -1228,8 +1268,6 @@ Item {
                 hub._commitCurrent();
         } else if (action === "accept") {
             hub._activateCurrent();
-        } else if (action === "cancel") {
-            hub.requestQuit();
         } else if (action === "context_menu") {
             const entry = hub.items[hub.currentIndex];
             if (!entry)
@@ -1404,6 +1442,15 @@ Item {
             // an undefined access doesn't surface as a TypeError in the log.
             const entry = hub.items[hub.currentIndex];
             return entry && entry.kind !== "empty" ? entry.name : "";
+        }
+        // Worded reason for a disabled tile -- the detail cue, next to the
+        // muted front edge's glanceable one (Tile.qml's `edgeColor`). Hub
+        // tiles carry no per-tile caption to fold this into the way
+        // Games/Favorites/Recents do (see Tile.qml's caption `tags`), so it
+        // surfaces here instead, only while that tile is focused.
+        tags: {
+            const entry = hub.items[hub.currentIndex];
+            return entry && entry.disabled === true ? (entry.stateReason ?? "") : "";
         }
         // Hidden while a categories error is showing AND the current tile
         // is a category, so the error text can show alone instead of a

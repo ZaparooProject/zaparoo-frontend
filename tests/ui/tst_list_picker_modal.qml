@@ -326,10 +326,32 @@ TestCase {
             verify(box !== null, "swatch box " + i + " must exist");
             compare(box.color.toString(), expected[i].toString());
             // Round 6, item 1: a near-black or near-white swatch can sit at
-            // the same contrast as the row's own surfaceCard face and
-            // disappear into it. Every box carries a textLabel border.
+            // the same contrast as the row's own resting background and
+            // disappear into it. Every box carries a textLabel border at
+            // rest -- this row (index 1) isn't the selected one.
             compare(box.border.color.toString(), Theme.textLabel.toString());
             verify(box.border.width > 0);
+        }
+    }
+
+    // Round 7: rows moved to the same inverse-video SelectionBar as
+    // browse/settings rows (see docs/style.md -> "Two registers"), so a
+    // selected row's swatch now sits on a solid `accent` fill instead of the
+    // row's resting background -- `textLabel` isn't guaranteed to separate
+    // there, so the border flips to `onAccent` the same way the favorite
+    // heart does against a selected BrowseList row.
+    function test_selected_row_swatch_border_flips_to_on_accent(): void {
+        picker.entries = _swatchEntries(2);
+        picker.open = true;
+        picker.currentIndex = 0;
+
+        const row = findChild(picker, "listPickerRow-0");
+        verify(row !== null);
+
+        for (let i = 0; i < 3; ++i) {
+            const box = findChild(row, "listPickerRowSwatch-" + i);
+            verify(box !== null, "swatch box " + i + " must exist");
+            compare(box.border.color.toString(), Theme.onAccent.toString());
         }
     }
 

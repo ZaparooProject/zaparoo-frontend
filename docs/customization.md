@@ -83,12 +83,14 @@ appear unchanged.
 
 ## Color scheme
 
-Choose a preset live under Settings → Display → Color scheme. There are 11
-built-in presets — Zaparoo Dark, Zaparoo Light, and Classic Purple, plus a
-small set of popular editor/terminal palettes (Nord, Dracula, Synthwave '84)
-and retro/console-inspired ones (Amber Phosphor, Green Phosphor, Neo Geo,
-NES, Virtual Boy) — each shown with a 3-color swatch preview in the picker.
-Selection is stored as `[settings] color_scheme` in `frontend.toml`:
+Choose a preset live under Settings → Display → Color scheme. There are 19
+built-in presets — Zaparoo Dark, Zaparoo Light, and Classic Purple, plus
+popular editor/terminal palettes (Nord, Dracula, Synthwave '84, Gruvbox,
+Everforest, Solarized Dark, Rosé Pine, Oxocarbon), a couple of light-register
+alternatives (Flexoki Paper, Solarized Light), and retro/console-inspired
+ones (Amber Phosphor, Green Phosphor, Neo Geo, NES, Virtual Boy, Game Boy) —
+each shown with a 3-color swatch preview in the picker. Selection is stored
+as `[settings] color_scheme` in `frontend.toml`:
 
 ```toml
 [settings]

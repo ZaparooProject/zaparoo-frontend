@@ -82,6 +82,13 @@ Item {
     // qmllint disable missing-property compiler
     readonly property bool delegateHidden: parent.hidden === true
     // qmllint disable missing-property compiler
+    // Hub-only today (Games/Systems/Favorites/Recents hosts never set this):
+    // true while the tile's live precondition isn't currently met (Resume
+    // with no history, Update with no internet, a category Core hasn't
+    // confirmed). Never means the tile is absent -- see HubScreen.qml's
+    // resolvers -- only that it reads muted and Accept no-ops on it.
+    readonly property bool delegateDisabled: parent.disabled === true
+    // qmllint disable missing-property compiler
     // Sibling-diffed disambiguating-tag display string (region, disc, rev, ...).
     // Empty for items with no variants. Rendered as a dim inline suffix after
     // the name in the bottom caption (see ScrollingCaption), identically on the
@@ -146,13 +153,18 @@ Item {
     readonly property int _captionTextSize: Sizing.fontSmall
     readonly property int _captionTextWeight: Font.Normal
     readonly property bool _hasTopLabel: root.delegateTopLabel !== ""
-    readonly property int _topLabelHeight: Sizing.pctH(4.2)
-    readonly property int _topLabelGap: Sizing.pctH(0.4)
+    // Matches `_captionHeight`/`_captionGap` exactly -- the top label is a
+    // `ScrollingCaption` too (see below), and a reserved band the same size
+    // as the bottom caption's is what makes the two read as visually
+    // identical rather than just similarly-behaved.
+    readonly property int _topLabelHeight: root._captionHeight
+    readonly property int _topLabelGap: root._captionGap
     // Same ladder token the bottom caption uses (`_captionTextSize`) so the
     // two labels read as the same visual weight -- this used to be the raw
     // geometry helper `Sizing.fontSize(2)`, an off-ladder "seventh text
     // role" docs/style.md's type-ladder section explicitly warns against.
     readonly property int _topLabelTextSize: Sizing.fontSmall
+    readonly property int _topLabelTextWeight: Font.Medium
     readonly property int _tileCornerRadius: root._surfaceProfile ? root._surfaceProfile.cardRadius : Sizing.radiusMd
     // Width available to the bottom caption. Matches the cover image's own
     // left/right padding (`_padding`) rather than a smaller corner-radius
@@ -356,7 +368,16 @@ Item {
         objectName: "tileSurface"
         anchors.fill: parent
         radius: root._tileCornerRadius
-        edgeColor: Theme.tileEdge
+        // A hidden or disabled tile's front edge goes neutral instead of
+        // the normal accent-tinted `tileEdge` -- the same "resting card
+        // edge" role PressableSurface's own static border already uses, so
+        // this needs no new palette engineering. It's the glanceable cue,
+        // visible on every affected tile at once regardless of focus; see
+        // `caption`'s `tags` binding below and `ActiveLabel` on the owning
+        // screen for the worded reason. Deliberately not opacity -- see
+        // docs/plans (this round's plan) for the measured contrast numbers
+        // that ruled an alpha-based cue out.
+        edgeColor: (root.delegateHidden || root.delegateDisabled) ? Theme.borderMid : Theme.tileEdge
         pressed: root._pressed
 
         // Focus outline ring. Drawn *inside* the card edge so the ring
@@ -420,37 +441,28 @@ Item {
         //
         // `_focusCoverActive` suppresses coverBase when the focused ramp is on top,
         // preventing the two opaque layers from stacking their alpha on hidden tiles.
-        TextMetrics {
-            id: topLabelMetrics
-
-            font.family: Theme.fontUi
-            font.pixelSize: root._topLabelTextSize
-            font.weight: Font.Medium
-            text: root.delegateTopLabel
-        }
-
-        Text {
+        // Top label (mixed-system media views only -- the system name above
+        // the cover). `ScrollingCaption`, identically to the bottom caption
+        // below: full-width, union-of-advance-and-bounds measurement (not
+        // shrink-to-fit `advanceWidth` alone, which understated overflow
+        // for hinted glyphs and elided harder than it needed to), and the
+        // same overflow marquee on focus the bottom caption already has --
+        // this used to be a bespoke Text that never scrolled and truncated
+        // hard on anything longer than a couple of words. y is flush at the
+        // top edge, mirroring the bottom caption's flush-bottom placement.
+        ScrollingCaption {
             objectName: "tileTopLabel"
-            x: Sizing.center(parent.width, width)
-            // Flush at the top edge, mirroring the bottom caption's flush-
-            // bottom placement (`y: parent.height - _captionHeight`) --
-            // this used to add `_padding` on top of the centering, which
-            // put roughly double the margin above the glyphs here versus
-            // below the bottom caption's. The reserved band height
-            // (`_topLabelHeight`) is unchanged; only where the text sits
-            // within it moves.
+            x: root._captionSideInset
             y: Sizing.center(root._topLabelHeight, height)
-            width: Math.min(root._captionTextMaxWidth, Sizing.px(topLabelMetrics.advanceWidth))
-            height: Sizing.px(implicitHeight)
+            width: root._captionTextMaxWidth
+            height: root._topLabelHeight
             visible: root._hasTopLabel
-            text: root.delegateTopLabel
-            elide: Text.ElideRight
-            horizontalAlignment: Text.AlignLeft
-            font.family: Theme.fontUi
-            font.pixelSize: root._topLabelTextSize
-            font.weight: Font.Medium
-            color: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
-            renderType: Text.NativeRendering
+            centerContent: true
+            focused: root._focusedSelection
+            name: root.delegateTopLabel
+            fontPixelSize: root._topLabelTextSize
+            fontWeight: root._topLabelTextWeight
+            nameColor: root._focusedSelection ? Theme.textPrimary : Theme.textLabel
         }
 
         Image {
@@ -487,10 +499,13 @@ Item {
             asynchronous: !root._isTinted || !root.delegateCoverSynchronous
             // Real media covers get one brief reveal after decode. Tinted system,
             // category, and action artwork remains instant. Keeping this multiplier
-            // separate prevents focus-ramp swaps and hidden-state dimming from
-            // accidentally becoming opacity animations.
+            // separate prevents focus-ramp swaps from accidentally becoming
+            // opacity animations. Hidden/disabled tiles render art at full
+            // opacity -- the front edge (tileSurface.edgeColor) and the
+            // caption/ActiveLabel reason carry that signal instead; see
+            // this round's plan for why an opacity-based dim was dropped.
             property real revealOpacity: root._coverIsRealArt ? 0 : 1
-            opacity: (coverBase.status === Image.Ready && !root._focusCoverActive) ? coverBase.revealOpacity * (root.delegateHidden ? 0.4 : 1.0) : 0
+            opacity: (coverBase.status === Image.Ready && !root._focusCoverActive) ? coverBase.revealOpacity : 0
 
             NumberAnimation {
                 id: coverRevealAnimation
@@ -518,7 +533,7 @@ Item {
 
             anchors {
                 top: parent.top
-                topMargin: root._padding + (root._hasTopLabel ? root._topLabelHeight + root._topLabelGap : 0)
+                topMargin: root._hasTopLabel ? root._topLabelHeight + root._topLabelGap : root._padding
                 bottom: parent.bottom
                 // In caption mode the cover sits above the bottom caption strip with
                 // only `_captionGap` of breathing room. The caption is flush against
@@ -573,11 +588,11 @@ Item {
             smooth: true
             asynchronous: !root._isTinted || !root.delegateCoverSynchronous
             visible: root._focusedSelection && root._isTinted
-            opacity: coverFocus.status === Image.Ready ? (root.delegateHidden ? 0.4 : 1.0) : 0
+            opacity: coverFocus.status === Image.Ready ? 1.0 : 0
 
             anchors {
                 top: parent.top
-                topMargin: root._padding + (root._hasTopLabel ? root._topLabelHeight + root._topLabelGap : 0)
+                topMargin: root._hasTopLabel ? root._topLabelHeight + root._topLabelGap : root._padding
                 bottom: parent.bottom
                 bottomMargin: root.showCaption ? root._captionHeight + root._captionGap : root._padding
                 horizontalCenter: parent.horizontalCenter
@@ -607,18 +622,6 @@ Item {
             visible: root.delegateFavorite
         }
 
-        // User-hidden state badge. It stays fully opaque over dimmed art
-        // so hidden tiles remain visually distinct when Show hidden items
-        // is enabled.
-        TileBadge {
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.rightMargin: Sizing.px(parent.width / 12)
-            anchors.topMargin: Sizing.px(parent.width / 12)
-            label: qsTr("Hidden")
-            visible: root.delegateHidden
-        }
-
         // Non-caption procedural fallback. Sits at the same geometry as the
         // cover and appears only when the icon fails to load (Image.Error), not
         // while it is decoding — the slot stays blank until the icon pops in so
@@ -646,7 +649,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             renderType: Text.NativeRendering
-            opacity: root._fallbackVisible ? (root.delegateHidden ? 0.4 : 1.0) : 0
+            opacity: root._fallbackVisible ? 1.0 : 0
             clip: true
         }
 
@@ -674,7 +677,10 @@ Item {
             centerContent: true
             focused: root._focusedSelection
             name: root.delegateName
-            tags: root.delegateDisambiguatingTags
+            // Folds the "Hidden" state into the same dim suffix slot
+            // disambiguating tags already use, rather than a separate
+            // badge -- see this round's plan ("Tile state consolidation").
+            tags: root.delegateHidden ? (root.delegateDisambiguatingTags !== "" ? root.delegateDisambiguatingTags + " · " + qsTr("Hidden") : qsTr("Hidden")) : root.delegateDisambiguatingTags
             fontPixelSize: root._captionTextSize
             fontWeight: root._captionTextWeight
             nameColor: root._focusedSelection ? Theme.textPrimary : Theme.textLabel

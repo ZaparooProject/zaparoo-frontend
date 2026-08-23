@@ -38,7 +38,7 @@ Item {
     property string initialId: ""
     property int currentIndex: 0
 
-    property bool _pressed: false
+    property int _activatePulse: 0
     property string _pendingId: ""
 
     signal accepted(string id)
@@ -124,7 +124,6 @@ Item {
             return;
         }
         modal._applyInitialIndex();
-        modal._pressed = false;
         modal._pendingId = "";
     }
 
@@ -135,6 +134,16 @@ Item {
     onEntriesChanged: {
         if (modal.open)
             modal._applyInitialIndex();
+        // Any entries change -- open or not -- destroys and recreates every
+        // row's Repeater delegate (new array reference). Each new row's
+        // SelectionBar binds `activatePulse` to this counter at
+        // construction; a stale nonzero value left over from a previous
+        // accept is itself a 0 -> N change to that fresh binding, and
+        // replays the flash on whichever row starts focused with no real
+        // activation behind it. Resetting unconditionally (not just while
+        // open) matches SelectionBar's own declared default, so every fresh
+        // bind is a no-op until a real accept happens.
+        modal._activatePulse = 0;
     }
 
     function _applyInitialIndex(): void {
@@ -185,7 +194,7 @@ Item {
 
     function _commitAccept(id: string): void {
         modal._pendingId = id;
-        modal._pressed = true;
+        modal._activatePulse++;
         acceptCommit.arm();
     }
 
@@ -194,7 +203,6 @@ Item {
         onDeferred: {
             const id = modal._pendingId;
             modal._pendingId = "";
-            modal._pressed = false;
             modal.accepted(id);
         }
     }
@@ -249,21 +257,43 @@ Item {
                     Repeater {
                         model: modal.entries
 
-                        PressableSurface {
+                        Item {
                             id: row
 
                             required property int index
                             required property var modelData
 
+                            readonly property bool focused: row.index === modal.currentIndex
+
                             objectName: "listPickerRow-" + row.index
                             width: rowColumn.width
                             height: modal._rowHeight
-                            focused: row.index === modal.currentIndex
-                            pressed: modal._pressed && row.modelData.id === modal._pendingId
-                            pointerAcceptedButtons: Qt.LeftButton
-                            pointerHoverEnabled: true
-                            onPointerEntered: modal.currentIndex = row.index
-                            onPointerClicked: modal._commitAccept(row.modelData.id)
+
+                            // Inverse-video row -- see SelectionBar.qml and
+                            // docs/style.md -> "Two registers". Picking a
+                            // value from this list is the same interaction
+                            // as a SettingsField row; both read the same way
+                            // now instead of flipping registers mid-task.
+                            SelectionBar {
+                                id: bar
+                                objectName: "listPickerSelectionBar"
+                                anchors.fill: parent
+                                active: row.focused
+                                activatePulse: modal._activatePulse
+                                radius: Sizing.radiusSm
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton
+                                cursorShape: Qt.PointingHandCursor
+                                onEntered: modal.currentIndex = row.index
+                                onClicked: {
+                                    modal.currentIndex = row.index;
+                                    modal._commitAccept(row.modelData.id);
+                                }
+                            }
 
                             // Plain centered label — every picker except the
                             // color-scheme one (below). Untouched by the
@@ -285,12 +315,10 @@ Item {
                                 x: Sizing.center(parent.width, _textWidth)
                                 width: _textWidth
                                 text: row.modelData.label
-                                // Mirrors Tile.qml's caption: dim at rest,
-                                // bright when focused -- see
-                                // PressableSurface.qml's doc comment on
-                                // `_ringGap`/`_ringWidth` for the other half
-                                // of this fix.
-                                color: row.focused ? Theme.textPrimary : Theme.textLabel
+                                // Inverse video on selection, matching
+                                // SettingsField/BrowseList -- see
+                                // SelectionBar.qml.
+                                color: bar.active ? bar.contentColor : Theme.textPrimary
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontBody
                                 elide: Text.ElideRight
@@ -313,7 +341,7 @@ Item {
                                 x: modal._rowHorizontalPadding
                                 width: _textWidth
                                 text: row.modelData.label
-                                color: row.focused ? Theme.textPrimary : Theme.textLabel
+                                color: bar.active ? bar.contentColor : Theme.textPrimary
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontBody
                                 elide: Text.ElideRight
@@ -341,14 +369,22 @@ Item {
                                         color: modelData
                                         // A near-black or near-white swatch can
                                         // sit at the same contrast as the row's
-                                        // own surfaceCard face and disappear into
+                                        // resting background and disappear into
                                         // it (item 1, round 6). `textLabel` is a
                                         // mid neutral the semantic-tier
                                         // guardrails already hold >=3:1 against
                                         // bgDeep on every preset, so it separates
-                                        // either extreme from the card.
+                                        // either extreme from the row at rest.
+                                        // On a selected row the swatch sits on a
+                                        // solid `accent` fill instead, where
+                                        // `textLabel` isn't guaranteed to
+                                        // separate -- flip to `onAccent`
+                                        // (`bar.contentColor`) there, the same
+                                        // fix the favorite heart uses against
+                                        // SelectionBar (see docs/style.md ->
+                                        // "Inverse-video rows").
                                         border.width: Sizing.cardBorderWidth
-                                        border.color: Theme.textLabel
+                                        border.color: bar.active ? bar.contentColor : Theme.textLabel
                                     }
                                 }
                             }

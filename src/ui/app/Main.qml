@@ -977,7 +977,12 @@ MainLayout {
         Browse.HubLayout.reset_layout(root._currentCategoryIds());
     }
 
-    // West/Y on the Hub — the page-scoped "View" menu.
+    // West/Y on the Hub — the page-scoped "View" menu. Settings & Utilities
+    // and Quit live here (second-last / last) rather than on a dedicated
+    // button: Quit used to be bound to Cancel/B, which risked a stray
+    // Escape/B press quitting the app from the Hub root; both are one-off
+    // navigational shortcuts, not layout-editing actions like the two
+    // entries above them, but View is the Hub's only page-scoped menu.
     function openHubPageMenu(): void {
         const entries = [
             {
@@ -987,6 +992,14 @@ MainLayout {
             {
                 id: "hub_reset",
                 label: qsTr("Reset layout")
+            },
+            {
+                id: "hub_settings",
+                label: qsTr("Settings & Utilities")
+            },
+            {
+                id: "hub_quit",
+                label: qsTr("Quit")
             }
         ];
         root.openListPickerModal(qsTr("View"), entries, "hub_add", "page_menu_hub");
@@ -1692,9 +1705,6 @@ MainLayout {
         }
         function onRequestRetry(): void {
             Browse.CategoriesModel.refresh();
-        }
-        function onRequestQuit(): void {
-            root.openQuitConfirmModal();
         }
         // HubScreen emits the category id, not an index -- once the
         // layout can freely interleave categories with everything else, a
@@ -3242,6 +3252,10 @@ MainLayout {
                 root.openHubAddMenu();
             else if (selectedId === "hub_reset")
                 root.resetHubLayout();
+            else if (selectedId === "hub_settings")
+                root._navigateToSettings();
+            else if (selectedId === "hub_quit")
+                root.openQuitConfirmModal();
             return;
         }
         if (fieldId === "hub_add_pick") {

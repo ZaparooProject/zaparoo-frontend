@@ -163,6 +163,8 @@ Item {
     }
 
     function _localizedTagLabel(label: string): var {
+        if (label === "System")
+            return root._tagLabel(qsTr("System"), qsTr("Sys", "Short metadata label for System; keep 2-4 characters if possible"));
         if (label === "Year")
             return root._tagLabel(qsTr("Year"), qsTr("Yr", "Short metadata label for Year; keep 2-4 characters if possible"));
         if (label === "Genre")

@@ -502,8 +502,9 @@ Item {
     // `rootGridRows` rows (six categories -> 3x2) instead of a hardcoded count.
     // This is chrome with a known small item set, not content that should
     // reflow with screen width; the cell geometry below is already
-    // sizing-driven (pctW/pctH with a maxCellSize cap), so the cells shrink to
-    // fit any screen while the layout stays a deliberate balanced grid.
+    // sizing-driven (pctW/pctH, capped at the Hub's own resolved tile size),
+    // so the cells shrink to fit any screen while the layout stays a
+    // deliberate balanced grid.
     readonly property int rootGridColumns: Math.ceil(settings.categoryFields.length / settings.rootGridRows)
 
     function _moveRootGrid(dx: int, dy: int): void {
@@ -778,7 +779,15 @@ Item {
             "green-phosphor": qsTr("Green Phosphor"),
             "neo-geo": qsTr("Neo Geo"),
             "nes": qsTr("NES"),
-            "virtual-boy": qsTr("Virtual Boy")
+            "virtual-boy": qsTr("Virtual Boy"),
+            "gruvbox": qsTr("Gruvbox"),
+            "everforest": qsTr("Everforest"),
+            "solarized-dark": qsTr("Solarized Dark"),
+            "rose-pine": qsTr("Rosé Pine"),
+            "oxocarbon": qsTr("Oxocarbon"),
+            "flexoki-paper": qsTr("Flexoki Paper"),
+            "solarized-light": qsTr("Solarized Light"),
+            "game-boy": qsTr("Game Boy")
         };
         return names[value] !== undefined ? names[value] : names["zaparoo-dark"];
     }
@@ -1331,10 +1340,16 @@ Item {
         readonly property int bottomInset: Sizing.pctH(2)
         readonly property int cellSpacingX: Sizing.pctW(3)
         readonly property int cellSpacingY: Sizing.pctH(4)
-        readonly property int maxCellSize: Sizing.pctH(22)
         readonly property int _availableWidth: Math.max(0, width - leftInset - rightInset)
         readonly property int _availableHeight: Math.max(0, height - topInset - bottomInset)
-        readonly property int cellSize: Math.max(0, Math.min(maxCellSize, Math.floor((_availableWidth - (columns - 1) * cellSpacingX) / columns), Math.floor((_availableHeight - (rows - 1) * cellSpacingY) / rows)))
+        // Matches the Hub's own resolved tile size (Sizing.hubTileSize) so
+        // Settings tiles read as the same physical object as the Hub's,
+        // rather than an independently-sized one -- see docs/style.md "Tile
+        // aspect and grid blocks". Settings' own width/height fit stays as a
+        // safety ceiling underneath it (CRT/TATE bands smaller than what the
+        // Hub's 7-column fit assumes), not as the primary size the way the
+        // old `maxCellSize: Sizing.pctH(22)` cap was.
+        readonly property int cellSize: Math.max(0, Math.min(Sizing.hubTileSize, Math.floor((_availableWidth - (columns - 1) * cellSpacingX) / columns), Math.floor((_availableHeight - (rows - 1) * cellSpacingY) / rows)))
         readonly property int visibleColumns: Math.max(1, Math.min(columns, settings.fieldCount))
         readonly property int visibleRows: Math.min(rows, Math.max(1, Math.ceil(settings.fieldCount / columns)))
         readonly property int contentWidth: visibleColumns * cellSize + (visibleColumns - 1) * cellSpacingX

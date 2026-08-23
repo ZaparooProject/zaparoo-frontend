@@ -106,6 +106,24 @@ Item {
     // wall clock, right-anchored so badges can appear and disappear
     // without nudging the clock away from the edge. Clock width is
     // measured from the widest sample for the selected 12h/24h format.
+    //
+    // Icons and the clock both center on the row's plain geometric middle
+    // (`anchors.verticalCenter: parent.verticalCenter`). This looks like it
+    // should be wrong — Text's AlignVCenter centers the font's full
+    // ascent+descent line box within `height`, not just the rendered ink,
+    // and digits/colon carry no descender, so naively the glyphs should sit
+    // measurably above true center. Measured directly on the actual
+    // rendered clock text (`TextMetrics.tightBoundingRect` — the real ink
+    // extent, not `FontMetrics.ascent`/`descent`, which are whole-font
+    // metrics sized for glyphs like accented capitals that digits never
+    // use and overstate how tall a digit glyph actually renders) the two
+    // centers are 0.64px apart at a 24px row height — under 3% of the row,
+    // and below what `Sizing.px()`'s rounding preserves at most tiers. A
+    // previous attempt "fixed" this using ascent/descent instead of the
+    // measured ink extent, which put the correction almost 4px in the same
+    // direction — a clearly *wrong*, much-too-large shift — and was
+    // reverted. Do not reintroduce a metrics-based correction here without
+    // re-measuring `tightBoundingRect` on the actual rendered text first.
     Row {
         id: topHud
 

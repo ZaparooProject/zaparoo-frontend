@@ -37,7 +37,7 @@ Item {
     property int currentIndex: 0
     property int bottomUnsafeHeight: Sizing.pctH(6) + Sizing.pctH(2)
 
-    property bool _pressed: false
+    property int _activatePulse: 0
     property string _pendingId: ""
 
     signal accepted(string id)
@@ -77,8 +77,16 @@ Item {
     onOpenChanged: {
         if (open) {
             currentIndex = 0;
-            menu._pressed = false;
             menu._pendingId = "";
+            // A fresh open destroys and recreates every row's Repeater
+            // delegate (new `entries` array reference). Each new row's
+            // SelectionBar binds `activatePulse` to this counter at
+            // construction; if it were left at a stale nonzero value from a
+            // previous open's accept, that bind is itself a 0 -> N change
+            // and replays the flash on whichever row starts focused, with
+            // no real activation behind it. Resetting to 0 here matches
+            // SelectionBar's own declared default, so the bind is a no-op.
+            menu._activatePulse = 0;
         }
     }
 
@@ -120,11 +128,11 @@ Item {
             menu.closeRequested();
     }
 
-    // Play the push-in cue on the focused row, then emit accepted(id)
-    // deferred so the animation completes before the caller acts.
+    // Play the inverse-video activation flash on the focused row, then emit
+    // accepted(id) deferred so the flash completes before the caller acts.
     function _commitAccept(id: string): void {
         menu._pendingId = id;
-        menu._pressed = true;
+        menu._activatePulse++;
         acceptCommit.arm();
     }
 
@@ -133,7 +141,6 @@ Item {
         onDeferred: {
             const id = menu._pendingId;
             menu._pendingId = "";
-            menu._pressed = false;
             if (id !== "")
                 menu.accepted(id);
         }
@@ -295,20 +302,42 @@ Item {
             Repeater {
                 model: menu.entries
 
-                PressableSurface {
+                Item {
                     id: row
 
                     required property int index
                     required property var modelData
 
+                    readonly property bool focused: index === menu.currentIndex
+
+                    objectName: "contextMenuRow-" + row.index
                     width: parent.width
                     height: menu.rowHeight
-                    focused: index === menu.currentIndex
-                    pressed: menu._pressed && row.modelData.id === menu._pendingId
-                    pointerAcceptedButtons: Qt.LeftButton
-                    pointerHoverEnabled: true
-                    onPointerEntered: menu.currentIndex = row.index
-                    onPointerClicked: menu._commitAccept(row.modelData.id)
+
+                    // Inverse-video row -- see SelectionBar.qml and
+                    // docs/style.md -> "Two registers". A menu entry is a
+                    // choice from a vertical list, not an object to press;
+                    // the accent bar carries focus on its own.
+                    SelectionBar {
+                        id: bar
+                        objectName: "contextMenuSelectionBar"
+                        anchors.fill: parent
+                        active: row.focused
+                        activatePulse: menu._activatePulse
+                        radius: Sizing.radiusSm
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton
+                        cursorShape: Qt.PointingHandCursor
+                        onEntered: menu.currentIndex = row.index
+                        onClicked: {
+                            menu.currentIndex = row.index;
+                            menu._commitAccept(row.modelData.id);
+                        }
+                    }
 
                     Text {
                         // Centered as a box sized to this row's own measured
@@ -323,11 +352,9 @@ Item {
                         x: Sizing.center(parent.width, _textWidth)
                         width: _textWidth
                         text: row.modelData.label
-                        // Mirrors Tile.qml's caption: dim at rest, bright
-                        // when focused. The ring alone is not the whole
-                        // focus cue -- see PressableSurface.qml's doc
-                        // comment on `_ringGap`/`_ringWidth`.
-                        color: row.focused ? Theme.textPrimary : Theme.textLabel
+                        // Inverse video on selection, matching
+                        // SettingsField/BrowseList -- see SelectionBar.qml.
+                        color: bar.active ? bar.contentColor : Theme.textPrimary
                         font.family: Theme.fontUi
                         font.pixelSize: Sizing.fontCaption
                         elide: Text.ElideRight
