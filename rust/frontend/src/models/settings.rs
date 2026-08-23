@@ -76,7 +76,7 @@
 
 use crate::models::action_error::report_action_error;
 use crate::models::{with_persist_mut, with_persist_read};
-use cxx_qt::{CxxQtType, Initialize};
+use cxx_qt::{CxxQtType, Initialize, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use std::pin::Pin;
 use tracing::warn;
@@ -226,6 +226,9 @@ pub struct SettingsRust {
     current_media_image_type: QString,
     available_regions: QStringList,
     current_region: QString,
+    /// Flips once, never resets — see `output_resolution_stale`'s
+    /// qproperty doc comment.
+    output_resolution_stale: bool,
 }
 
 #[cxx_qt::bridge]
@@ -271,6 +274,18 @@ pub mod ffi {
         #[qproperty(QString, current_media_image_type, READ, WRITE = set_media_image_type, NOTIFY)]
         #[qproperty(QStringList, available_regions, READ, CONSTANT)]
         #[qproperty(QString, current_region, READ, WRITE = set_region, NOTIFY)]
+        // No WRITE — Rust-owned, QML-observed only. `false` for the whole
+        // session until a background poll (see
+        // `mister_runtime::watch_for_output_change`) confirms the live
+        // output timing genuinely changed from what this process resolved
+        // at boot (e.g. a TV that was off at launch came on later). Flips
+        // to `true` exactly once and never resets; `Main.qml` watches for
+        // the change and restarts the process, which re-runs the full
+        // verified boot-time probe. `Main.qml`'s own "needs restart"
+        // confirm modal (language/resolution/CRT standard) is a separate,
+        // user-initiated flow and stays untouched — this is the frontend
+        // correcting its own wrong guess, not a setting to approve.
+        #[qproperty(bool, output_resolution_stale, READ, NOTIFY)]
         type Settings = super::SettingsRust;
 
         #[qinvokable]
@@ -328,6 +343,7 @@ pub mod ffi {
         fn set_region(self: Pin<&mut Settings>, value: QString);
     }
 
+    impl cxx_qt::Threading for Settings {}
     impl cxx_qt::Initialize for Settings {}
 }
 
@@ -392,11 +408,34 @@ impl Initialize for ffi::Settings {
             QString::from(merged.media_image_type.as_str());
         self.as_mut().rust_mut().available_regions = regions();
         self.as_mut().rust_mut().current_region = QString::from(merged.region.as_str());
+        // Explicit runtime guard, not just the async fn's own internal
+        // cfg gate: keeps a desktop build from ever spawning this task at
+        // all, regardless of what `watch_for_output_change`'s body does
+        // off `MiSTer`.
+        if is_mister {
+            let qt_thread = self.qt_thread();
+            crate::models::global_handle().spawn(async move {
+                crate::mister_runtime::watch_for_output_change().await;
+                let _ = qt_thread.queue(mark_output_resolution_stale);
+            });
+        }
         crate::startup_trace(format!(
             "rust:model Settings init end dur_ms={}",
             started.elapsed().as_millis()
         ));
     }
+}
+
+/// Qt-thread callback queued once `watch_for_output_change` confirms a
+/// real, stable output-timing change. Idempotent (the watcher only ever
+/// resolves once and this only ever sets `true`), matching every other
+/// setter's guard-then-set-then-notify shape.
+fn mark_output_resolution_stale(mut model: Pin<&mut ffi::Settings>) {
+    if model.output_resolution_stale {
+        return;
+    }
+    model.as_mut().rust_mut().output_resolution_stale = true;
+    model.as_mut().output_resolution_stale_changed();
 }
 
 impl ffi::Settings {

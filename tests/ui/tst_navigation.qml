@@ -102,6 +102,11 @@ TestCase {
         main.gamesNavigationModelReadyAt = 0;
         main.gamesNavigationAction = "";
         main.gamesScreen.lastNavigationInputAt = 0;
+        // A Hub `system`/`folder` shortcut test sets this and doesn't
+        // press Back to clear it, so a later test asserting the ordinary
+        // Games -> Systems back-route would otherwise inherit a leaked
+        // `true` and route to Hub instead.
+        Browse.GamesState.entered_from_hub = false;
         main._firstRunIndexStarted = false;
         tryCompare(main, "transitionCueVisible", false);
         // Hub focus is one flat grid now (categories then actions, no gap);
@@ -380,6 +385,7 @@ TestCase {
             compare(Browse.SystemsState.system_id, "NES");
             compare(Browse.GamesState.system_id, "NES");
             compare(main.pendingTransition, "games");
+            compare(Browse.GamesState.entered_from_hub, true, "a Hub shortcut must persist the back-to-Hub breadcrumb");
         } finally {
             if (hubIndex >= 0)
                 Browse.HubLayout.remove_item(hubIndex);
@@ -406,6 +412,7 @@ TestCase {
             compare(Browse.SystemsState.system_id, "SNES");
             compare(Browse.GamesState.system_id, "SNES");
             compare(main.pendingTransition, "games");
+            compare(Browse.GamesState.entered_from_hub, true, "a Hub shortcut must persist the back-to-Hub breadcrumb");
         } finally {
             if (hubIndex >= 0)
                 Browse.HubLayout.remove_item(hubIndex);
@@ -538,6 +545,23 @@ TestCase {
         tryCompare(main, "transitionCueVisible", false);
     }
 
+    // A Games screen entered via a Hub `system`/`folder` shortcut (see
+    // test_hub_system_shortcut_accept_navigates_to_games above) sets
+    // GamesState.entered_from_hub, which onRequestSystemsScreen must
+    // honour: Back returns to Hub, not Systems — a screen the user never
+    // visited on this path — and the breadcrumb clears once consumed, so
+    // a later unrelated system entry (see the previous test) starts
+    // clean.
+    function test_escape_on_hub_entered_games_returns_to_hub(): void {
+        main.activeScreen = main.screenGames;
+        Browse.GamesState.entered_from_hub = true;
+        main.handleKey(Qt.Key_Escape);
+        compare(main.pendingTransition, "");
+        compare(main.activeScreen, main.screenHub);
+        compare(Browse.GamesState.entered_from_hub, false, "the breadcrumb must clear once consumed by a Back navigation");
+        tryCompare(main, "transitionCueVisible", false);
+    }
+
     // Escape on systems goes straight back to Hub; Hub has no model fill to wait on.
     function test_escape_on_systems_returns_to_hub(): void {
         main.activeScreen = main.screenSystems;
@@ -590,7 +614,7 @@ TestCase {
         main.handleAction("right");
         compare(main.settingsScreen.currentIndex, 1);
         main.handleAction("accept");
-        compare(main.settingsScreen.currentPage, main.settingsScreen.pageBrowsing);
+        compare(main.settingsScreen.currentPage, main.settingsScreen.pageLibraryData);
         main.handleAction("cancel");
         compare(main.settingsScreen.currentPage, main.settingsScreen.pageRoot);
         main.handleAction("cancel");
@@ -1090,6 +1114,20 @@ TestCase {
         compare(typeof items[resumeIdx].stateReason, "string", "Resume entry must carry a stateReason string");
     }
 
+    // Round 8: the Resume tile prefers Browse.RecentsModel.resume_cover_key
+    // (a real resolved cover -- see recents.rs's resume_cover_key_for) once
+    // the model is live, falling back to the static glyph before first
+    // frame -- mirrors _resolveActionEntry's own gating rather than
+    // asserting one hardcoded resumeModelEnabled state, since exactly when
+    // that flips true isn't what this test is checking.
+    function test_resume_tile_cover_key_prefers_resolved_cover_once_live(): void {
+        const items = main.hubScreen.items;
+        const resumeIdx = items.findIndex(e => e.kind === "action" && e.id === "resume");
+        verify(resumeIdx >= 0);
+        const expected = main.hubScreen.resumeModelEnabled ? Browse.RecentsModel.resume_cover_key : "icons/PlayOutline";
+        compare(items[resumeIdx].coverKey, expected);
+    }
+
     // page_prev/page_next (L/R shoulder) were entirely unhandled on the Hub
     // before this round — every other paged screen supports them, and
     // Hub paging is now the normal case once grouping-padding is gone (see
@@ -1294,18 +1332,18 @@ TestCase {
 
     function test_context_menu_systems_owner_includes_media_actions(): void {
         const entries = main.buildContextMenuEntries("systems", "", false, false, false, "", false);
-        compare(_idsOf(entries), ["launch_system", "launch_random_system", "index_system", "scrape_system", "toggle_hide_system", "add_to_hub"], "Systems context menu includes random, maintenance, and the Hub shortcut action");
-        verify(entries[0].label.length > 0, "Launch core label is set (not asserted in English for translation)");
+        compare(_idsOf(entries), ["launch_system", "launch_random_system", "add_to_hub", "toggle_hide_system", "index_system", "scrape_system"], "Systems context menu is ordered primary/frequent/organizational/maintenance per docs/content-style.md");
+        verify(entries[0].label.length > 0, "Launch system label is set (not asserted in English for translation)");
         verify(entries[1].label.length > 0, "Random game label is set");
-        verify(entries[2].label.length > 0, "Update media database label is set");
-        verify(entries[3].label.length > 0, "Scrape metadata label is set");
-        verify(entries[4].label.length > 0, "Hide label is set");
-        verify(entries[5].label.length > 0, "Add to Hub label is set");
+        verify(entries[2].label.length > 0, "Add to Hub label is set");
+        verify(entries[3].label.length > 0, "Hide label is set");
+        verify(entries[4].label.length > 0, "Update media database label is set");
+        verify(entries[5].label.length > 0, "Scrape metadata label is set");
     }
 
     function test_context_menu_systems_has_nfc_does_not_add_entries(): void {
         const entries = main.buildContextMenuEntries("systems", "", false, true, false, "", false);
-        compare(_idsOf(entries), ["launch_system", "launch_random_system", "index_system", "scrape_system", "toggle_hide_system", "add_to_hub"], "has_nfc must not affect the systems menu");
+        compare(_idsOf(entries), ["launch_system", "launch_random_system", "add_to_hub", "toggle_hide_system", "index_system", "scrape_system"], "has_nfc must not affect the systems menu");
     }
 
     // Category index/scrape are gated on the category having at least one
@@ -1351,22 +1389,22 @@ TestCase {
 
     function test_context_menu_games_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, false, false, "");
-        compare(_idsOf(entries), ["toggle_favorite", "qr_code", "launch_game", "add_to_hub"], "Write to NFC token must be hidden when no reader is reported");
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub"], "Write to NFC token must be hidden when no reader is reported");
     }
 
     function test_context_menu_games_with_reader_includes_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, true, false, "");
-        compare(_idsOf(entries), ["toggle_favorite", "write_card", "qr_code", "launch_game", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub"]);
     }
 
     function test_context_menu_favorites_matches_games_media_entries(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, true, true, "", false, "");
-        compare(_idsOf(entries), ["toggle_favorite", "write_card", "qr_code", "launch_game"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code"]);
     }
 
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "", false, "");
-        compare(_idsOf(entries), ["toggle_favorite", "qr_code", "launch_game"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code"]);
     }
 
     function test_context_menu_favorite_systems_offers_scoped_random(): void {
@@ -1380,19 +1418,27 @@ TestCase {
         verify(entries[0].label.length > 0);
     }
 
-    function test_context_menu_recents_omits_more_info(): void {
+    // Recents offers Details, write-token/QR, and Add to Hub like Games —
+    // but never a favorite-toggle, since Core's media.history carries no
+    // tags (see the doc comment on RecentsModel in recents.rs).
+    function test_context_menu_recents_includes_details_and_hub_shortcut(): void {
         const entries = main.buildContextMenuEntries("recents", "", false, false, false, "", false, "");
-        compare(_idsOf(entries), ["launch_game"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "qr_code", "add_to_hub"]);
+    }
+
+    function test_context_menu_recents_with_reader_includes_write_card(): void {
+        const entries = main.buildContextMenuEntries("recents", "", false, true, false, "", false, "");
+        compare(_idsOf(entries), ["launch_game", "more_info", "write_card", "qr_code", "add_to_hub"]);
     }
 
     function test_context_menu_games_favorite_label_toggles(): void {
         const addEntries = main.buildContextMenuEntries("games", "media", true, false, false, "");
         const removeEntries = main.buildContextMenuEntries("games", "media", true, false, true, "");
-        compare(addEntries[0].id, "toggle_favorite");
-        compare(removeEntries[0].id, "toggle_favorite");
-        verify(addEntries[0].label.length > 0);
-        verify(removeEntries[0].label.length > 0);
-        verify(addEntries[0].label !== removeEntries[0].label);
+        compare(addEntries[2].id, "toggle_favorite");
+        compare(removeEntries[2].id, "toggle_favorite");
+        verify(addEntries[2].label.length > 0);
+        verify(removeEntries[2].label.length > 0);
+        verify(addEntries[2].label !== removeEntries[2].label);
     }
 
     function test_context_menu_unknown_owner_returns_empty(): void {
@@ -1461,8 +1507,8 @@ TestCase {
     }
 
     // Quit moved off B/Cancel onto the Hub's View menu, alongside a
-    // shortcut straight to Settings & Utilities for users who don't want
-    // it on the tile grid — see this round's plan.
+    // shortcut straight to Settings for users who don't want it on the
+    // tile grid — see this round's plan.
     function test_hub_page_menu_settings_entry_navigates_to_settings(): void {
         const originalCatalogLoaded = Browse.CategoriesModel.loaded;
         Browse.CategoriesModel.loaded = true;

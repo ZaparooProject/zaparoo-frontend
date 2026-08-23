@@ -60,6 +60,28 @@ pub fn custom_dir() -> PathBuf {
     }
 }
 
+/// Frontend-owned cache directory — currently just the Hub/Resume
+/// cold-boot cover manifest (a path list, not image bytes; see
+/// `media_image_cache.rs`'s "Memory only — never disk" module doc, which
+/// stays true of the bytes themselves). On `MiSTer` this is a sibling of
+/// Core's own `cache/thumbs/` inside Core's existing cache root
+/// (`config.CacheDir` in the Core repo) — confirmed safe from Core's own
+/// cleanup, which only ever touches `cache/thumbs/*` and a handful of
+/// named `.gob`/`.json` files, and already excluded from Core's
+/// backup/sync policy (`cache/` is regenerable, never collected). Returned
+/// even when it does not exist on disk — callers create it on first
+/// write, same convention as `custom_dir`.
+pub fn cache_dir() -> PathBuf {
+    if runtime::current().is_mister() {
+        PathBuf::from("/media/fat/zaparoo/cache/frontend")
+    } else {
+        dirs_next::cache_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("zaparoo")
+            .join("frontend")
+    }
+}
+
 pub fn state_file_path() -> PathBuf {
     // ZAPAROO_STATE_FILE lets tests (and ad-hoc runs) redirect state
     // persistence away from the real user path. Checked first so the
@@ -87,7 +109,9 @@ mod tests {
         reason = "tests should fail-fast on unexpected errors"
     )]
 
-    use super::{config_file_path, custom_dir, log_file_path, state_file_path, stderr_log_path};
+    use super::{
+        cache_dir, config_file_path, custom_dir, log_file_path, state_file_path, stderr_log_path,
+    };
     use crate::runtime;
 
     #[test]
@@ -168,6 +192,19 @@ mod tests {
             );
             // Sibling of frontend.toml, like state.toml.
             assert_eq!(dir.parent(), config_file_path().parent());
+        }
+    }
+
+    #[test]
+    fn cache_dir_resolves_per_runtime() {
+        let dir = cache_dir();
+        if runtime::current().is_mister() {
+            assert_eq!(dir.to_str(), Some("/media/fat/zaparoo/cache/frontend"));
+        } else {
+            assert!(
+                dir.ends_with("zaparoo/frontend"),
+                "cache dir did not end with zaparoo/frontend: {dir:?}"
+            );
         }
     }
 

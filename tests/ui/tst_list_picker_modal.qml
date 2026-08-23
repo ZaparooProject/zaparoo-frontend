@@ -36,14 +36,19 @@ TestCase {
         title: "Pick one"
     }
 
-    // Standalone probe matching production's `_rowLabelMetrics` font exactly
-    // — `_rowLabelMetrics` itself is a bare `id`, lexically scoped to
-    // ListPickerModal.qml and not reachable as `picker._rowLabelMetrics`
-    // from this file.
+    // Standalone probe matching production's `_panelWidthLabelMetrics`
+    // font exactly (the metrics `_widestEntryLabelWidth` measures panel
+    // sizing against, fixed at Font.Medium since round 8 — see
+    // ListPickerModal.qml's own doc comment on that FontMetrics for why
+    // panel-width sizing measures at the selected weight rather than the
+    // resting one) — that `id` is a bare identifier, lexically scoped to
+    // ListPickerModal.qml and not reachable as
+    // `picker._panelWidthLabelMetrics` from this file.
     FontMetrics {
         id: probeMetrics
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontBody
+        font.weight: Font.Medium
     }
 
     SignalSpy {

@@ -443,15 +443,15 @@ TestCase {
         });
         verify(line !== null);
 
-        Browse.StatusEvents.kind = "token_scanned";
-        Browse.StatusEvents.detail = "Super Mario World";
+        Browse.StatusEvents.kind = "playtime_warning";
+        Browse.StatusEvents.detail = "4m58s";
         Browse.StatusEvents.sequence = Browse.StatusEvents.sequence + 1;
-        compare(line._label, "Card scanned — Super Mario World");
+        compare(line._label, "Playtime limit in 4m58s");
 
         Browse.MediaStatus.indexing = true;
-        Browse.StatusEvents.detail = "A Link to the Past";
+        Browse.StatusEvents.detail = "10s";
         Browse.StatusEvents.sequence = Browse.StatusEvents.sequence + 1;
-        verify(line._label !== "Card scanned — A Link to the Past", "an event must be dropped, not queued, while a task owns the line");
+        verify(line._label !== "Playtime limit in 10s", "an event must be dropped, not queued, while a task owns the line");
         compare(line._showTrack, true);
     }
 

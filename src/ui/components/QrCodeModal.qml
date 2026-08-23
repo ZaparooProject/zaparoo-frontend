@@ -20,7 +20,7 @@ Item {
 
         open: root.open
         kind: "shell"
-        title: qsTr("Write with QR code")
+        title: qsTr("Write with phone")
         panelMaxWidth: Sizing.pctH(105)
 
         Column {

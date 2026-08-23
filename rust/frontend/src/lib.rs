@@ -4,6 +4,7 @@
 
 #[macro_use]
 mod bind;
+mod hub_cover_manifest;
 pub mod image_overrides;
 mod media_image_cache;
 mod media_meta_cache;
@@ -500,6 +501,12 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
         core_is_local,
     );
     startup_trace("rust:model globals initialized");
+
+    // Seed the Hub/Resume cold-boot cover manifest before Qt/QML starts —
+    // see hub_cover_manifest.rs's module doc. Small, local, sequential
+    // reads (no network); a no-op off a colocated MiSTer.
+    hub_cover_manifest::seed_from_manifest();
+    startup_trace("rust:hub cover manifest seeded");
 
     0
 }

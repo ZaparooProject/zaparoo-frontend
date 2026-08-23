@@ -29,7 +29,7 @@ Item {
     id: modal
 
     property bool open: false
-    property string title: qsTr("Go to...")
+    property string title: qsTr("Go to…")
     // Each entry is `{ key, label, count, cursor, offset }`. `label` is the
     // display text; `count` is the bucket size (dim subscript); `offset` is the
     // bucket's authoritative position (from Core), emitted on accept so the

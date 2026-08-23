@@ -139,13 +139,25 @@ Item {
     // stable while browsing so Qt's pixmap cache short-circuits reloads instead
     // of re-decoding; default 256 matches the built-in tinted-asset raster.
     property int coverSourceSize: 256
+    // Opt-in tighter inset for the Hub grid and Settings' own root category
+    // grid (which deliberately shares the Hub's fixed tile size — see
+    // docs/style.md's "Tile aspect and grid blocks"). Both are full-bleed
+    // icon/cover tiles with no caption band competing for space, so they
+    // can afford to give more of the cell to the art itself than a
+    // captioned browse tile can. Off by default — every other caller
+    // (Systems, Games, Recents, Favorites) is unaffected.
+    property bool compactPadding: false
     // Equal cover padding on top, left, and right — the bottom is
     // owned by the caption strip in caption mode and matches `_padding`
     // visually in non-caption mode. pctH(2) is enough to read as
-    // deliberate breathing room without giving back much cover area.
+    // deliberate breathing room without giving back much cover area;
+    // pctH(1) under `compactPadding` still clears the focus ring's own
+    // inset (`_outlineGap`, pctH(0.4) below) with room to spare — the
+    // ring anchors to the tile's full bounds independently of this
+    // padding, so tightening it can't make art touch or overlap the ring.
     // Below the cover sits the caption flush against the card's
     // bottom edge, separated from the cover by `_captionGap`.
-    readonly property int _padding: Sizing.pctH(2)
+    readonly property int _padding: Sizing.pctH(compactPadding ? 1 : 2)
     readonly property int _outlineGap: Sizing.pctH(0.4)
     readonly property int _outlineWidth: Sizing.focusRingWidth
     readonly property int _captionHeight: Sizing.pctH(5.5)

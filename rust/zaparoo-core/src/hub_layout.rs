@@ -268,6 +268,31 @@ impl HubLayout {
         true
     }
 
+    /// Origin-anchored placement for a Move session. Rebuilds `self` from
+    /// `base` — the layout exactly as it stood when the move was armed —
+    /// then places the item at `base`'s `origin`-th visible position onto
+    /// the `to`-th visible position. Unlike `place_visible_item`, repeated
+    /// calls with the same `base`/`origin` and a changing `to` are NOT
+    /// chained: every call starts over from `base`, so at most one other
+    /// tile is ever displaced from where `base` had it — the one currently
+    /// occupying `to` — and any tile a previous call displaced snaps back
+    /// home. This is what makes a Move session read as "carrying one tile
+    /// around a static board" instead of dragging a trail of swaps behind
+    /// it. `origin == to` is a legal no-op that still returns `true` — a
+    /// held tile landing back on its own cell is a full restore, not a
+    /// rejected move (contrast `place_visible_item`, which rejects
+    /// `from == to`). Only an out-of-range `origin` (against `base`) fails.
+    pub fn reseat_held_item(&mut self, base: &Self, origin: usize, to: usize) -> bool {
+        if origin >= base.visible_indices().len() {
+            return false;
+        }
+        self.clone_from(base);
+        if origin == to {
+            return true;
+        }
+        self.place_visible_item(origin, to)
+    }
+
     /// Drop trailing `blank` entries — ones after the last non-blank item.
     /// Leading and interior blanks are the user's deliberate gaps and are
     /// never touched; a trailing blank is indistinguishable on screen from
@@ -836,6 +861,126 @@ type = "blank"
         assert!(!layout.place_visible_item(0, 0));
         assert!(!layout.place_visible_item(999, 0));
         assert_eq!(layout.items, before);
+    }
+
+    #[test]
+    fn reseat_held_item_displaces_only_the_tile_currently_under_the_press() {
+        let mut base = HubLayout::default();
+        base.reconcile(&["A".to_string(), "B".to_string(), "C".to_string()], &[]);
+        // resume, A, B, C, favorites, recents, update, settings
+        let mut layout = base.clone();
+        assert!(layout.reseat_held_item(&base, 1, 2));
+        let ids: Vec<&str> = layout.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "resume",
+                "B",
+                "A",
+                "C",
+                "favorites",
+                "recents",
+                "update",
+                "settings"
+            ],
+            "one step: A and B trade places"
+        );
+
+        // A second press further along must NOT chain off the first
+        // press's result -- B must snap back home and only C, the tile now
+        // under the press, gets displaced.
+        assert!(layout.reseat_held_item(&base, 1, 3));
+        let ids: Vec<&str> = layout.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "resume",
+                "C",
+                "B",
+                "A",
+                "favorites",
+                "recents",
+                "update",
+                "settings"
+            ],
+            "B must return home; only C (currently under the press) is displaced"
+        );
+    }
+
+    #[test]
+    fn reseat_held_item_onto_its_own_origin_is_a_full_restore() {
+        let mut base = HubLayout::default();
+        base.reconcile(&["A".to_string(), "B".to_string()], &[]);
+        let mut layout = base.clone();
+        assert!(layout.reseat_held_item(&base, 1, 4));
+        assert_ne!(
+            layout.items, base.items,
+            "sanity: the move actually changed something"
+        );
+        assert!(
+            layout.reseat_held_item(&base, 1, 1),
+            "landing back on the origin must succeed, unlike place_visible_item's from == to rejection"
+        );
+        assert_eq!(layout.items, base.items, "must reproduce base exactly");
+    }
+
+    #[test]
+    fn reseat_held_item_past_the_end_does_not_accumulate_padding() {
+        let mut base = HubLayout::default();
+        base.reconcile(&["A".to_string()], &[]);
+        let base_len = base.items.len();
+        let mut layout = base.clone();
+        assert!(layout.reseat_held_item(&base, 0, base_len + 2));
+        assert_eq!(
+            layout.items.len(),
+            base_len + 3,
+            "one press past the end pads exactly to the target"
+        );
+
+        // Stepping back inside base's range must drop that padding again,
+        // not add to it -- each call rebuilds from `base`, it never chains.
+        assert!(layout.reseat_held_item(&base, 0, 1));
+        assert_eq!(
+            layout.items.len(),
+            base_len,
+            "padding must not accumulate across presses"
+        );
+    }
+
+    #[test]
+    fn reseat_held_item_leaves_interior_blanks_the_user_left_untouched() {
+        let mut base = HubLayout::default();
+        base.items.push(HubItem::action("resume"));
+        base.items.push(HubItem {
+            kind_raw: "blank".to_string(),
+            ..HubItem::default()
+        });
+        base.items.push(HubItem::action("settings"));
+        // resume, blank, settings -- moving "resume" across the interior
+        // blank onto "settings" must not disturb the blank.
+        let mut layout = base.clone();
+        assert!(layout.reseat_held_item(&base, 0, 2));
+        let ids: Vec<&str> = layout.items.iter().map(|i| i.id.as_str()).collect();
+        let kinds: Vec<HubItemKind> = layout.items.iter().map(HubItem::kind).collect();
+        assert_eq!(ids, vec!["settings", "", "resume"]);
+        assert_eq!(
+            kinds,
+            vec![HubItemKind::Action, HubItemKind::Blank, HubItemKind::Action,],
+            "the interior blank must stay in place, untouched; only resume/settings trade"
+        );
+    }
+
+    #[test]
+    fn reseat_held_item_rejects_an_out_of_range_origin() {
+        let mut base = HubLayout::default();
+        base.reconcile(&["A".to_string()], &[]);
+        let mut layout = base.clone();
+        let before = layout.items.clone();
+        assert!(!layout.reseat_held_item(&base, 999, 0));
+        assert_eq!(
+            layout.items, before,
+            "a rejected reseat must not mutate `self`"
+        );
     }
 
     #[test]

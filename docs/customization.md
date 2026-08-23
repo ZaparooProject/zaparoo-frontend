@@ -57,8 +57,8 @@ systems/turbografx16.png
 | `handheld`  | Handheld category    |
 | `resume`    | Resume Game          |
 | `favorites` | Favorites            |
-| `recents`   | Recently Played      |
-| `settings`  | Settings & Utilities |
+| `recents`   | Recently played      |
+| `settings`  | Settings             |
 
 ```text
 hub/arcade.png
@@ -74,7 +74,7 @@ above.
 ### Rendered as-is (no tinting)
 
 The bundled system logos default to tintable SVGs that match the active theme.
-Settings → Browsing → System logos can switch bundled system art to the restored
+Settings → Appearance → System logos can switch bundled system art to the restored
 full-color logo set where available. Hub icons remain theme-tinted. **Your
 override images are not tinted** - they are shown exactly as they are on disk,
 in full color. If you want an image that tracks the theme colors, supply a
@@ -83,7 +83,7 @@ appear unchanged.
 
 ## Color scheme
 
-Choose a preset live under Settings → Display → Color scheme. There are 19
+Choose a preset live under Settings → Appearance → Color scheme. There are 19
 built-in presets — Zaparoo Dark, Zaparoo Light, and Classic Purple, plus
 popular editor/terminal palettes (Nord, Dracula, Synthwave '84, Gruvbox,
 Everforest, Solarized Dark, Rosé Pine, Oxocarbon), a couple of light-register

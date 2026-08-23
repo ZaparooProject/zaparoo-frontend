@@ -223,6 +223,7 @@ Item {
                 focused: row._highlightVisible
                 centerContent: false
                 fontPixelSize: Sizing.fontSection
+                fontWeight: bar.contentWeight
                 nameColor: row._highlightVisible ? bar.contentColor : Theme.textLabel
                 variantColor: row._highlightVisible ? Theme.onAccentMuted : Theme.textVariant
             }

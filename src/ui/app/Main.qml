@@ -102,8 +102,8 @@ MainLayout {
     property string _transitionAction: ""
     property string _transitionFromScreen: ""
     property string _transitionToScreen: ""
-    readonly property bool activeCardWritePending: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_pending : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_pending : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_pending : false
-    readonly property string activeCardWriteError: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_error : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_error : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_error : ""
+    readonly property bool activeCardWritePending: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_pending : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_pending : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_pending : root.cardWriteOwner === "recents" ? Browse.RecentsModel.card_write_pending : false
+    readonly property string activeCardWriteError: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_error : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_error : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_error : root.cardWriteOwner === "recents" ? Browse.RecentsModel.card_write_error : ""
 
     // Color schemes apply live. Settings normalizes missing or unknown IDs to
     // Zaparoo Black before exposing this value.
@@ -482,55 +482,56 @@ MainLayout {
         // (no model reset), so we can't piggy-back on onModelReset to
         // retry the lookup. `count` bumps on every append, giving us a
         // stable per-page edge to resume the deep-page restore on.
+        //
+        // A restore's own bulk fetch (`fetch_more_restore`) trickles in
+        // over several frame-gapped sub-batches (`chunk_for_subbatching`
+        // in `apply_append_page`) rather than landing as one atomic
+        // insert, so `count` now bumps once per sub-batch while
+        // `loading_more` stays true for the whole fetch. Acting on an
+        // intermediate sub-batch's partial count — rather than waiting for
+        // the fetch to fully settle — both wastes several redundant
+        // `fetch_more_restore()` calls (silently no-op'd by
+        // `fetch_more_with_limit`'s `loading_more` guard, since a second
+        // bulk fetch can't start while the first is still trickling) and,
+        // worse, can give up the restore early on a still-partial row set.
+        //
+        // `loading` (the *initial*-browse flag, distinct from
+        // `loading_more`) needs the same treatment: `set_system`/`set_path`
+        // deliberately re-run `start_initial_browse` even for an
+        // already-current scope ("SystemsScreen accept always wants a
+        // round trip" — see that function's own comment in games.rs) and
+        // `start_initial_browse` resets `has_next_page`/`loading_more` to
+        // false *synchronously*, before the (often cache-served, but still
+        // separately-signalled) corrected values land a moment later.
+        // Widening the restore's own window from near-instant to several
+        // hundred ms made it much likelier for one of those redundant
+        // re-browses to land mid-restore and be observed at exactly that
+        // stale, mid-reset instant — reading `has_next_page: false` as
+        // "genuinely exhausted" and abandoning the walk early, sometimes
+        // onto a page that hasn't been repopulated yet. Wait for both
+        // fetch kinds to fully settle before evaluating.
         function onCountChanged(): void {
-            if (root.gamesScreen === null) {
-                root._whenScreenReady(root.screenGames, function () {
-                    if (root._pendingGameRestorePath !== "")
-                        root._restoreGamesScreenSelection();
-                });
+            if (Browse.GamesModel.loading_more || Browse.GamesModel.loading)
                 return;
-            }
-            const path = root._pendingGameRestorePath;
-            if (path === "")
+            root._continueGamesRestore();
+        }
+        // Fires once a bulk restore fetch (`fetch_more_restore`) fully
+        // settles — see `onCountChanged`'s comment above for why this,
+        // not every intermediate sub-batch's count change, is the right
+        // edge to resume the restore walk on, and why `loading` is
+        // checked too.
+        function onLoading_moreChanged(): void {
+            if (Browse.GamesModel.loading_more || Browse.GamesModel.loading)
                 return;
-            // User backed out to Hub/Systems before pagination caught
-            // up — selected_at_level isn't touched by a peer-screen
-            // exit, so without this gate the loop would keep hammering
-            // fetch_more in the background until the folder exhausts.
-            if (root.activeScreen !== root.screenGames && !(root._startupRestorePending && root._startupRestoreScreen === root.screenGames)) {
-                root._pendingGameRestorePath = "";
+            root._continueGamesRestore();
+        }
+        // A redundant `start_initial_browse` (same-scope re-browse, or a
+        // genuine scope change) settling is the other edge that can leave
+        // a restore walk stalled — see `onCountChanged`'s comment above.
+        function onLoadingChanged(): void {
+            if (Browse.GamesModel.loading_more || Browse.GamesModel.loading)
                 return;
-            }
-            // User input updates `selected_at_level` on every move,
-            // so a divergence between the pending path and the top
-            // of stack means the user navigated during the restore
-            // — drop the auto-restore and let them stay where they
-            // landed.
-            const sels = Browse.GamesState.selected_at_level;
-            const currentTop = sels.length > 0 ? sels[sels.length - 1] : "";
-            if (currentTop !== path) {
-                root._pendingGameRestorePath = "";
-                root._maybeFinishStartupGamesRestore();
-                return;
-            }
-            const idx = Browse.GamesModel.index_for_game_path(path);
-            if (idx >= 0) {
-                root._setGamesRestoreIndex(idx);
-                root._pendingGameRestorePath = "";
-                root._maybeFinishStartupGamesRestore();
-                return;
-            }
-            if (Browse.GamesModel.has_next_page) {
-                // Restoration is not user-visible page navigation: bulk-load
-                // up to Core's 300-row limit so a saved page deep in a large
-                // parent does not require dozens of sequential 10-row RPCs.
-                // The loading gate remains up and bulk insertion skips the
-                // frame-gapped visible-page trickle.
-                Browse.GamesModel.fetch_more_restore();
-                return;
-            }
-            root._pendingGameRestorePath = "";
-            root._maybeFinishStartupGamesRestore();
+            root._continueGamesRestore();
         }
         // `apply_append_page` intentionally publishes terminal
         // has_next_page=false after countChanged so pending grid jumps see the
@@ -539,8 +540,12 @@ MainLayout {
         // value and its guarded follow-up fetch is rejected because the final
         // cursor is already empty. Recheck on the terminal edge to clear the
         // loading gate instead of leaving "Loading games…" stuck forever.
+        // Also gated on `!loading` now — see `onCountChanged`'s comment —
+        // since `start_initial_browse` can produce this exact same
+        // false-edge as a side effect of a redundant re-browse, not just a
+        // genuinely exhausted folder.
         function onHas_next_pageChanged(): void {
-            if (root._pendingGameRestorePath === "" || Browse.GamesModel.has_next_page || Browse.GamesModel.loading_more)
+            if (root._pendingGameRestorePath === "" || Browse.GamesModel.has_next_page || Browse.GamesModel.loading_more || Browse.GamesModel.loading)
                 return;
             root._restoreGamesScreenSelection();
         }
@@ -930,7 +935,22 @@ MainLayout {
     // for the same pre-feedback-freeze reason as _ensureCategory.
     function _ensureSystem(systemId: string, cb): void {
         if (Browse.GamesModel.current_system_id === systemId && Browse.GamesModel.count > 0) {
-            Browse.GamesModel.set_system(systemId);
+            // Skip the redundant re-browse while a deep-position restore
+            // walk (`_pendingGameRestorePath`) is actively growing this
+            // exact model via chained `fetch_more_restore()` calls.
+            // `set_system`'s re-browse is correct and wanted for a live
+            // re-Accept after Esc-back, but here it's an internal
+            // re-entry into an already-populated, already-correct model —
+            // re-running it would truncate the model back down to just
+            // page 1 (`initial_row_replacement`'s `TruncateInPlace`,
+            // since the restore has grown `count` past a fresh page's
+            // worth) and reset `has_next_page`/`loading_more`/`append_seq`,
+            // discarding the restore's progress and dropping its
+            // still-pending sub-batches. The model is already correct
+            // for `systemId`; the in-flight restore chain owns finishing
+            // it from here.
+            if (root._pendingGameRestorePath === "")
+                Browse.GamesModel.set_system(systemId);
             cb();
             return;
         }
@@ -977,8 +997,8 @@ MainLayout {
         Browse.HubLayout.reset_layout(root._currentCategoryIds());
     }
 
-    // West/Y on the Hub — the page-scoped "View" menu. Settings & Utilities
-    // and Quit live here (second-last / last) rather than on a dedicated
+    // West/Y on the Hub — the page-scoped "View" menu. Settings and Quit
+    // live here (second-last / last) rather than on a dedicated
     // button: Quit used to be bound to Cancel/B, which risked a stray
     // Escape/B press quitting the app from the Hub root; both are one-off
     // navigational shortcuts, not layout-editing actions like the two
@@ -995,7 +1015,7 @@ MainLayout {
             },
             {
                 id: "hub_settings",
-                label: qsTr("Settings & Utilities")
+                label: qsTr("Settings")
             },
             {
                 id: "hub_quit",
@@ -1256,7 +1276,20 @@ MainLayout {
         // focus (snapped, since the screen's _focusArmed is still false until
         // the first user input).
         root.systemsScreen._restoreDone = true;
-        if (idx >= 0) {
+        // Browse the saved system whenever we actually have one, regardless
+        // of `idx`. `SystemsModel` is populated for `HubState.category` —
+        // the Hub's own last-viewed category cursor, which has nothing to
+        // do with which category the saved system belongs to — so
+        // `index_for_system_id` legitimately misses whenever those two
+        // categories differ (e.g. Hub last sat on "Computer" while the
+        // saved game is on a Console system). `idx < 0` only means "not in
+        // this possibly-wrong category's list", never "invalid system id";
+        // `set_system` doesn't need a `SystemsModel` index at all, just the
+        // id string, which Core resolves independently. The old `idx >= 0`
+        // gate fell back to `SystemsModel.system_id_at(0)` — silently
+        // browsing whatever system happened to be first in the WRONG
+        // category instead of the one actually saved.
+        if (savedSystem !== "") {
             Browse.GamesModel.set_system(savedSystem);
             const stack = Browse.GamesState.path_stack;
             const top = stack.length > 0 ? stack[stack.length - 1] : "";
@@ -1307,22 +1340,86 @@ MainLayout {
         root._goto(root.screenGames);
     }
 
+    // Resume an in-progress deep-page restore walk once a bulk fetch has
+    // fully settled (`onCountChanged` / `onLoading_moreChanged` above,
+    // both gated on `!Browse.GamesModel.loading_more` before calling this).
+    // Looks for the saved path in what's now loaded; fetches another bulk
+    // chunk if not found and more pages exist; gives up in place otherwise.
+    function _continueGamesRestore(): void {
+        if (root.gamesScreen === null) {
+            root._whenScreenReady(root.screenGames, function () {
+                if (root._pendingGameRestorePath !== "")
+                    root._continueGamesRestore();
+            });
+            return;
+        }
+        const path = root._pendingGameRestorePath;
+        if (path === "")
+            return;
+        // User backed out to Hub/Systems before pagination caught
+        // up — selected_at_level isn't touched by a peer-screen
+        // exit, so without this gate the loop would keep hammering
+        // fetch_more in the background until the folder exhausts.
+        if (root.activeScreen !== root.screenGames && !(root._startupRestorePending && root._startupRestoreScreen === root.screenGames)) {
+            root._pendingGameRestorePath = "";
+            return;
+        }
+        // User input updates `selected_at_level` on every move,
+        // so a divergence between the pending path and the top
+        // of stack means the user navigated during the restore
+        // — drop the auto-restore and let them stay where they
+        // landed.
+        const sels = Browse.GamesState.selected_at_level;
+        const currentTop = sels.length > 0 ? sels[sels.length - 1] : "";
+        if (currentTop !== path) {
+            root._pendingGameRestorePath = "";
+            root._maybeFinishStartupGamesRestore();
+            return;
+        }
+        const idx = Browse.GamesModel.index_for_game_path(path);
+        if (idx >= 0) {
+            root._setGamesRestoreIndex(idx);
+            root._pendingGameRestorePath = "";
+            root._maybeFinishStartupGamesRestore();
+            return;
+        }
+        if (Browse.GamesModel.has_next_page) {
+            // Restoration is not user-visible page navigation: bulk-load
+            // up to Core's 300-row limit so a saved page deep in a large
+            // parent does not require dozens of sequential 10-row RPCs.
+            // The loading gate remains up and bulk insertion skips the
+            // frame-gapped visible-page trickle.
+            Browse.GamesModel.fetch_more_restore();
+            return;
+        }
+        root._pendingGameRestorePath = "";
+        root._maybeFinishStartupGamesRestore();
+    }
+
     // Systems Accept routing. Pin destination to Games, fill the
     // chosen system, then flip. The Games→back routing decision is
     // re-evaluated live from current state at B-press time (see
     // gamesScreen.onRequestSystemsScreen below) so this path needs
     // no per-transition flag.
-    function _navigateFromSystems(systemId: string): void {
+    // `fromHub` distinguishes this function's two callers: HubScreen's
+    // `system` shortcut (skips Systems entirely — pass `true`) vs.
+    // SystemsScreen's own accept handler (normal drill-down — pass
+    // `false`). It's persisted on `GamesState` so `onRequestSystemsScreen`
+    // below can route Back to Hub instead of Systems on the shortcut
+    // path — a screen the user never visited. See the routing contract in
+    // CLAUDE.md and `games_state.rs`'s own module doc.
+    function _navigateFromSystems(systemId: string, fromHub: bool): void {
         root.gamesNavigationInputAt = 0;
         root.gamesNavigationModelReadyAt = 0;
         root.gamesNavigationAction = "";
         root._requestScreen(root.screenGames);
         Browse.SystemsState.system_id = systemId;
         // Setting system_id on GamesState resets path_stack/selected_at_level
-        // to root level — the new system's browse always starts at the
-        // initial games-screen view, regardless of where the user was in
-        // a prior system's folder tree.
+        // (and entered_from_hub) to root level — the new system's browse
+        // always starts at the initial games-screen view, regardless of
+        // where the user was in a prior system's folder tree.
         Browse.GamesState.system_id = systemId;
+        Browse.GamesState.set_entered_from_hub(fromHub);
         root.gamesCoverRevealReady = false;
         root.pendingTransition = "games";
         root._ensureSystem(systemId, function () {
@@ -1338,6 +1435,9 @@ MainLayout {
     // flash-cut/folder-navigation-timing logic doesn't apply to a fresh
     // transition). `systemId` empty is a malformed/pre-this-feature layout
     // entry; no-op rather than asking GamesModel to load an empty system.
+    // Hub-only entry point (no SystemsScreen equivalent calls this), so
+    // `entered_from_hub` is always `true` — see `_navigateFromSystems`'s
+    // own doc comment above for why Back needs this breadcrumb.
     function _navigateFromHubFolder(systemId: string, path: string): void {
         if (systemId === "" || path === "")
             return;
@@ -1347,6 +1447,7 @@ MainLayout {
         root._requestScreen(root.screenGames);
         Browse.SystemsState.system_id = systemId;
         Browse.GamesState.system_id = systemId;
+        Browse.GamesState.set_entered_from_hub(true);
         root.gamesCoverRevealReady = false;
         root.pendingTransition = "games";
         root._ensureSystem(systemId, function () {
@@ -1688,14 +1789,17 @@ MainLayout {
             // `system` and `folder` shortcuts land the user on Games having
             // skipped Systems entirely, the same shape as the
             // MiSTer-Arcade-singleton bypass just above
-            // (onRequestSystemsScreen). That back-routing check is
-            // deliberately left untouched here (see its own flagged
-            // comment) — B/Cancel from a shortcut-entered Games screen
-            // keeps its existing behavior; "Back to Hub" is a new,
-            // unconditional View-menu entry instead (see openPageMenu /
-            // openFavoritesPageMenu), not a change to Cancel.
+            // (onRequestSystemsScreen). Both now persist
+            // `GamesState.entered_from_hub` (set `true` here, `false` from
+            // SystemsScreen's own accept handler below) so B/Cancel from a
+            // shortcut-entered Games screen returns to Hub instead of
+            // Systems — a screen the user never visited on this path. This
+            // used to be left as Systems unconditionally, with "Back to
+            // Hub" only reachable via the unconditional View-menu entry
+            // (openPageMenu / openFavoritesPageMenu); that entry is
+            // unaffected by this change, just no longer the only way back.
             if (kind === "system") {
-                root._navigateFromSystems(id);
+                root._navigateFromSystems(id, true);
                 return;
             }
             if (kind === "folder") {
@@ -1820,7 +1924,10 @@ MainLayout {
                 Browse.SystemsModel.launch_system_id(systemId);
                 return;
             }
-            root._navigateFromSystems(systemId);
+            // Normal Systems-originated drill-down — Back returns to
+            // Systems, not Hub. See `_navigateFromSystems`'s own doc
+            // comment.
+            root._navigateFromSystems(systemId, false);
         }
         function onRequestHubScreen(): void {
             root._navigateBackToScreen(root.screenHub);
@@ -1867,6 +1974,21 @@ MainLayout {
                 root._navigateBackToScreen(root.screenHub);
                 return;
             }
+            // Separate, additive check — NOT part of the Arcade live eval
+            // above, and does not change it. Covers the Hub `system`/
+            // `folder` shortcut case (see `_navigateFromSystems`'s and
+            // `_navigateFromHubFolder`'s own doc comments): unlike the
+            // Arcade case, there's no live-derivable signal for "was this
+            // Games screen entered from Hub" — `system_id` looks
+            // identical either way — so it needs the persisted
+            // `GamesState.entered_from_hub` breadcrumb instead. Cleared
+            // here once consumed, so a later Systems-originated entry
+            // into a different system starts clean.
+            if (Browse.GamesState.entered_from_hub) {
+                Browse.GamesState.set_entered_from_hub(false);
+                root._navigateBackToScreen(root.screenHub);
+                return;
+            }
             root._navigateBackToScreen(root.screenSystems);
         }
         function onRequestNavigateIntoFolder(path: string): void {
@@ -1900,7 +2022,7 @@ MainLayout {
             if (!root.contextMenuVisible || root.contextMenuMode !== "main")
                 return;
             if (Browse.AlternateVersions.count <= 0)
-                root._replaceContextMenuEntryLabel("discover_loading", "No alternates found", "discover_unavailable");
+                root._replaceContextMenuEntryLabel("discover_loading", qsTr("No alternates found"), "discover_unavailable");
             if (Browse.AlternateVersions.count <= 0)
                 return;
             const entries = [];
@@ -1928,12 +2050,16 @@ MainLayout {
     // caller saw `entries.length === 0` despite the function pushing 3
     // items in. Plain `var` round-trips cleanly and silences the
     // "insufficiently annotated" coercion warning at the call site.
+    // Entry order follows docs/content-style.md's menu-ordering rule:
+    // primary action first, then frequent actions, then organizational
+    // actions (Move/Add to Hub/Hide), then long-running maintenance
+    // (index/scrape) last.
     function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool, category: string) {
         if (owner === "systems") {
             const entries = [
                 {
                     id: "launch_system",
-                    label: qsTr("Launch core")
+                    label: qsTr("Launch system")
                 }
             ];
             // Launch-only (virtual) systems have no media and no launcher
@@ -1950,6 +2076,14 @@ MainLayout {
                     label: qsTr("Change launcher")
                 });
             }
+            entries.push({
+                id: "add_to_hub",
+                label: qsTr("Add to Hub")
+            });
+            entries.push({
+                id: "toggle_hide_system",
+                label: isHidden ? qsTr("Unhide") : qsTr("Hide")
+            });
             const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
             if (!launchable && !mediaBusy) {
                 entries.push({
@@ -1960,14 +2094,6 @@ MainLayout {
                     label: qsTr("Scrape metadata")
                 });
             }
-            entries.push({
-                id: "toggle_hide_system",
-                label: isHidden ? qsTr("Unhide") : qsTr("Hide")
-            });
-            entries.push({
-                id: "add_to_hub",
-                label: qsTr("Add to Hub")
-            });
             return entries;
         }
         if (owner === "categories") {
@@ -1977,6 +2103,10 @@ MainLayout {
             // docs/plans/ui-geometry-refresh.md's Hub roadmap. The systems
             // grid's own hide/unhide (owner === "systems", above) is
             // unrelated and unchanged.
+            //
+            // Move/Hide (the organizational actions) are spliced in by
+            // openContextMenu, between this list's primary entry and its
+            // maintenance entries -- see the comment there.
             const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
             const entries = [];
             // Index/scrape act on the category's indexable systems, which
@@ -1986,7 +2116,7 @@ MainLayout {
             // no-op, so omit them rather than show dead entries.
             const hasIndexable = category !== "" && Browse.SystemsModel.system_ids_for_category(category).length > 0;
             if (hasIndexable)
-                entries.unshift({
+                entries.push({
                     id: "launch_random_category",
                     label: qsTr("Random game")
                 });
@@ -2023,17 +2153,37 @@ MainLayout {
             return [];
         }
         if (owner === "recents") {
+            // No favorite-toggle here -- see the module doc comment on
+            // rust/frontend/src/models/recents.rs for why (Core's
+            // media.history carries no tags).
             const entries = [
                 {
                     id: "launch_game",
                     label: qsTr("Launch game")
+                },
+                {
+                    id: "more_info",
+                    label: qsTr("Details")
                 }
             ];
-            if (Browse.Settings.current_discover_arcade_alternate_versions)
-                entries.unshift({
-                    id: "discover",
-                    label: "Discover alt. versions"
+            if (hasNfc)
+                entries.push({
+                    id: "write_card",
+                    label: qsTr("Write to NFC token")
                 });
+            entries.push({
+                id: "qr_code",
+                label: qsTr("Write with phone")
+            });
+            if (Browse.Settings.current_discover_arcade_alternate_versions)
+                entries.push({
+                    id: "discover",
+                    label: qsTr("Discover alt. versions")
+                });
+            entries.push({
+                id: "add_to_hub",
+                label: qsTr("Add to Hub")
+            });
             return entries;
         }
         if (owner === "games" || owner === "favorites") {
@@ -2052,11 +2202,20 @@ MainLayout {
                     }
                 ] : [];
             }
-            const entries = [];
-            entries.push({
-                id: "toggle_favorite",
-                label: isFavorite ? qsTr("Remove from favorites") : qsTr("Add to favorites")
-            });
+            const entries = [
+                {
+                    id: "launch_game",
+                    label: qsTr("Launch game")
+                },
+                {
+                    id: "more_info",
+                    label: qsTr("Details")
+                },
+                {
+                    id: "toggle_favorite",
+                    label: isFavorite ? qsTr("Remove from favorites") : qsTr("Add to favorites")
+                }
+            ];
             if (hasNfc)
                 entries.push({
                     id: "write_card",
@@ -2064,18 +2223,14 @@ MainLayout {
                 });
             entries.push({
                 id: "qr_code",
-                label: qsTr("Write with QR code")
+                label: qsTr("Write with phone")
             });
             if (Browse.Settings.current_discover_arcade_alternate_versions) {
                 entries.push({
                     id: "discover",
-                    label: "Discover alt. versions"
+                    label: qsTr("Discover alt. versions")
                 });
             }
-            entries.push({
-                id: "launch_game",
-                label: qsTr("Launch game")
-            });
             if (owner === "games")
                 entries.push({
                     id: "add_to_hub",
@@ -2116,7 +2271,7 @@ MainLayout {
             if (entry.id === "discover_loading" || entry.id === "discover_unavailable") {
                 entries.push({
                     id: "discover",
-                    label: "Discover alt. versions"
+                    label: qsTr("Discover alt. versions")
                 });
             } else {
                 entries.push(entry);
@@ -2235,11 +2390,18 @@ MainLayout {
         }
         let entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category);
         // "categories" is exclusively Hub-owned (only HubScreen ever opens
-        // it) — append the universal Move/Remove here, keyed off the Hub
+        // it) — splice the universal Move/Hide in here, keyed off the Hub
         // flat index the caller stashed in `_hubItemIndex` (NOT `index`,
         // which is the CategoriesModel index the entries above just used).
-        if (owner === "categories")
-            entries = entries.concat(root._hubMoveRemoveEntries(root._hubItemIndex, "category"));
+        // Per docs/content-style.md's ordering rule these organizational
+        // actions land right after the primary "Random game" entry (if
+        // present) and before the maintenance entries, not tacked onto the
+        // end of the whole list.
+        if (owner === "categories") {
+            const insertAt = entries.length > 0 && entries[0].id === "launch_random_category" ? 1 : 0;
+            const moveRemove = root._hubMoveRemoveEntries(root._hubItemIndex, "category");
+            entries = entries.slice(0, insertAt).concat(moveRemove, entries.slice(insertAt));
+        }
         if (entries.length === 0)
             return;
         root.contextMenuEntries = entries;
@@ -2316,7 +2478,7 @@ MainLayout {
                 path = Browse.RecentsModel.path_at(targetIndex);
             }
             root._discoverMenuPending = true;
-            root._replaceContextMenuEntryLabel("discover", "Searching....", "discover_loading");
+            root._replaceContextMenuEntryLabel("discover", qsTr("Searching…"), "discover_loading");
             Browse.AlternateVersions.discover_for(systemId, name, path);
             return;
         }
@@ -2412,9 +2574,12 @@ MainLayout {
             } else if (owner === "favorites") {
                 root.beginCardWrite("favorites", targetIndex);
                 Browse.FavoritesModel.write_card_at(targetIndex);
+            } else if (owner === "recents") {
+                root.beginCardWrite("recents", targetIndex);
+                Browse.RecentsModel.write_card_at(targetIndex);
             }
         } else if (id === "qr_code") {
-            const text = owner === "systems" ? Browse.SystemsModel.launch_text_at(targetIndex) : owner === "games" ? Browse.GamesModel.launch_text_at(targetIndex) : owner === "favorites" ? Browse.FavoritesModel.launch_text_at(targetIndex) : "";
+            const text = owner === "systems" ? Browse.SystemsModel.launch_text_at(targetIndex) : owner === "games" ? Browse.GamesModel.launch_text_at(targetIndex) : owner === "favorites" ? Browse.FavoritesModel.launch_text_at(targetIndex) : owner === "recents" ? Browse.RecentsModel.launch_text_at(targetIndex) : "";
             if (text !== "") {
                 Browse.QrCode.generate(root._buildQrPayload(text));
                 if (Browse.QrCode.size > 0)
@@ -2882,7 +3047,7 @@ MainLayout {
     }
 
     // Open the page/list-scoped operations menu (West button), the "View"
-    // counterpart to North's item-scoped "Options". Go to... stays
+    // counterpart to North's item-scoped "Options". Go to… stays
     // pre-focused so common path is fixed West-then-Accept chord. Letter
     // index fetch starts here so buckets are likely ready when user opens rail.
     function openPageMenu(): void {
@@ -2890,7 +3055,7 @@ MainLayout {
         const entries = [
             {
                 "id": "jump_letter",
-                "label": qsTr("Go to...")
+                "label": qsTr("Go to…")
             }
         ];
         // Core path random is recursive, so folders containing only nested
@@ -3140,6 +3305,22 @@ MainLayout {
 
     function restartApp() {
         Qt.exit(1000);
+    }
+
+    // The frontend correcting its own wrong boot-time resolution guess
+    // (e.g. the TV was off at launch and came on later — see
+    // mister_runtime::watch_for_output_change), not a setting the user
+    // chose, so it restarts silently through the same path a CRT toggle
+    // uses rather than routing through confirmPendingRestart's
+    // user-facing modal. `output_resolution_stale` flips exactly once
+    // per process and never resets, so this fires at most once per
+    // session.
+    Connections {
+        target: Browse.Settings
+        function onOutput_resolution_staleChanged(): void {
+            if (Browse.Settings.output_resolution_stale)
+                root.restartApp();
+        }
     }
 
     // CRT calibration lifecycle. Full-bleed test pattern mounted
@@ -3468,6 +3649,8 @@ MainLayout {
             Browse.GamesModel.cancel_card_write();
         else if (owner === "favorites")
             Browse.FavoritesModel.cancel_card_write();
+        else if (owner === "recents")
+            Browse.RecentsModel.cancel_card_write();
         root.cardWriteOwner = owner;
         root._cardWriteIndex = index;
         root.cardWriteFailed = false;
@@ -3487,6 +3670,8 @@ MainLayout {
             Browse.GamesModel.write_card_at(index);
         else if (owner === "favorites")
             Browse.FavoritesModel.write_card_at(index);
+        else if (owner === "recents")
+            Browse.RecentsModel.write_card_at(index);
     }
 
     function handleCardWriteStatus(): void {
@@ -3498,7 +3683,7 @@ MainLayout {
             const owner = root.cardWriteOwner;
             const index = root._cardWriteIndex;
             root.hideCardWriteModal();
-            root.presentActionError("card_write:" + owner, qsTr("Card write failed"), qsTr("Could not write to this card. Check that it is writable and try again."), qsTr("Retry"), function () {
+            root.presentActionError("card_write:" + owner, qsTr("Token write failed"), qsTr("Could not write to this token. Check that it is writable and try again."), qsTr("Retry"), function () {
                 root.retryCardWrite(owner, index);
             });
         } else {
@@ -3513,6 +3698,8 @@ MainLayout {
             Browse.GamesModel.cancel_card_write();
         else if (root.cardWriteOwner === "favorites")
             Browse.FavoritesModel.cancel_card_write();
+        else if (root.cardWriteOwner === "recents")
+            Browse.RecentsModel.cancel_card_write();
         root.hideCardWriteModal();
     }
 

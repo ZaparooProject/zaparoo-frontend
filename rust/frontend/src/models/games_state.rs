@@ -28,6 +28,7 @@ pub struct GamesStateRust {
     path_stack: QStringList,
     selected_at_level: QStringList,
     favorites_filter: bool,
+    entered_from_hub: bool,
 }
 
 #[cxx_qt::bridge]
@@ -47,6 +48,7 @@ pub mod ffi {
         #[qproperty(QStringList, path_stack, READ, NOTIFY)]
         #[qproperty(QStringList, selected_at_level, READ, NOTIFY)]
         #[qproperty(bool, favorites_filter, READ, WRITE = set_favorites_filter, NOTIFY)]
+        #[qproperty(bool, entered_from_hub, READ, WRITE = set_entered_from_hub, NOTIFY)]
         type GamesState = super::GamesStateRust;
 
         /// Persisted favorites-only projection for folder listings,
@@ -56,6 +58,14 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_system_id(self: Pin<&mut GamesState>, value: QString);
+
+        /// Written only by `Main.qml`'s router — see this file's own
+        /// module doc and the routing contract in `CLAUDE.md`. `true`
+        /// when the current Games screen was entered directly from a Hub
+        /// `system`/`folder` shortcut (skipping Systems); read and
+        /// cleared by `onRequestSystemsScreen` on Back.
+        #[qinvokable]
+        fn set_entered_from_hub(self: Pin<&mut GamesState>, value: bool);
 
         /// Push a new level on the stack. `path` is the directory path the
         /// user has navigated into; `selected` is the highlighted entry
@@ -87,6 +97,7 @@ impl Initialize for ffi::GamesState {
         self.as_mut().rust_mut().path_stack = vec_to_qstringlist(&path_stack);
         self.as_mut().rust_mut().selected_at_level = vec_to_qstringlist(&selected_at_level);
         self.as_mut().rust_mut().favorites_filter = snapshot.favorites_filter;
+        self.as_mut().rust_mut().entered_from_hub = snapshot.entered_from_hub;
         crate::startup_trace(format!(
             "rust:model GamesState init end dur_ms={}",
             started.elapsed().as_millis()
@@ -119,10 +130,33 @@ impl ffi::GamesState {
         self.as_mut().path_stack_changed();
         self.as_mut().rust_mut().selected_at_level = vec_to_qstringlist(&reset_selected);
         self.as_mut().selected_at_level_changed();
+        // Off by default on every system change, same as the stack reset
+        // above — the Hub-direct entry paths (Main.qml's
+        // `_navigateFromSystems(id, fromHub: true)` and
+        // `_navigateFromHubFolder`) call `set_entered_from_hub(true)`
+        // immediately after this, so a call site that forgets to manage
+        // this explicitly gets the safe default rather than silently
+        // inheriting a stale `true` from a previous system.
+        if self.entered_from_hub {
+            self.as_mut().rust_mut().entered_from_hub = false;
+            self.as_mut().entered_from_hub_changed();
+        }
         persist_games(|g| {
             g.system_id = value_str;
             g.path_stack = reset_stack;
             g.selected_at_level = reset_selected;
+            g.entered_from_hub = false;
+        });
+    }
+
+    fn set_entered_from_hub(mut self: Pin<&mut Self>, value: bool) {
+        if self.entered_from_hub == value {
+            return;
+        }
+        self.as_mut().rust_mut().entered_from_hub = value;
+        self.as_mut().entered_from_hub_changed();
+        persist_games(|g| {
+            g.entered_from_hub = value;
         });
     }
 

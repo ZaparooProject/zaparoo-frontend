@@ -118,16 +118,17 @@ const DEFAULT_PAGE_SIZE: i32 = 15;
 const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 300;
 // Ceiling for a jump-to-letter fetch (Core's `max_results` cap). A position
 // jump must load every row up to the target before
-// `PagedGrid._commitPendingTarget` can land on it; doing that as the 12-row
-// frame-gapped trickle (`apply_append_page`) takes seconds on a far jump. The
-// jump path instead inserts the whole chunk in one shot (`bulk` append) — the
-// loading overlay is up and the appended rows sit far from `currentPage`, so
-// their Tile delegates stay unmaterialised (the per-cell Loader is
-// retention-gated), making the bulk insert cheap. `fetch_more_jump` sizes each
-// request to the gap remaining to the target (rounded up to whole `page_size`
-// pages, plus one page of margin) rather than always pulling the full
-// remainder, so a near/mid-folder jump transfers far less; a gap larger than
-// this ceiling chains another bulk call.
+// `PagedGrid._commitPendingTarget` can land on it. A jump chunk this large
+// still goes through `apply_append_page`'s ordinary 12-row frame-gapped
+// trickle (`bulk` append no longer special-cases a single-shot insert — see
+// the comment above `chunk_for_subbatching`'s call site for why: the outer
+// per-row `cellItem` construction cost is paid regardless of whether the
+// inner Tile delegate materialises, so a single 1000-row insert blocked the
+// Qt thread for tens of seconds). `fetch_more_jump` sizes each request to
+// the gap remaining to the target (rounded up to whole `page_size` pages,
+// plus one page of margin) rather than always pulling the full remainder, so
+// a near/mid-folder jump transfers far less; a gap larger than this ceiling
+// chains another bulk call.
 const JUMP_FETCH_CHUNK_SIZE: i32 = 1000;
 // Stay within Core's `max_results` ceiling, and never smaller than the rapid
 // scroll chunk (a jump must not load slower than ordinary scrolling).
@@ -3423,45 +3424,39 @@ fn apply_append_page(
             // Sub-batching note: the rest of the chunk is posted from
             // `global_handle()` one frame apart so the Repeater's
             // per-delegate `createObject` cost (the dominant Qt-thread
-            // stall on MiSTer) is spread across frames. Stale batches
-            // self-disarm via the `append_seq` ticket if a new
+            // stall on MiSTer, paid per row for the outer cellItem even
+            // when the inner Tile stays retention-gated unmaterialised) is
+            // spread across frames instead of one multi-second block. Stale
+            // batches self-disarm via the `append_seq` ticket if a new
             // `start_initial_browse` lands during the trickle window.
+            //
+            // A bulk jump (`bulk: bool`) chunks exactly like an ordinary
+            // append now -- it used to insert its whole fetched chunk in one
+            // shot on the theory that off-page rows are cheap because their
+            // Tile delegates stay unmaterialised, but the outer per-row
+            // cellItem construction cost is paid regardless of Tile
+            // materialisation, and a `JUMP_FETCH_CHUNK_SIZE`-sized (1000-row)
+            // chunk blocked the Qt thread for tens of seconds. What bulk
+            // still needs, and non-bulk doesn't: `fetch_more_with_limit`
+            // paused cover requests for the whole jump, and that pause --
+            // plus the prefetch that re-arms once it lifts -- must stay held
+            // across every sub-batch and only resolve after the LAST one,
+            // once `_commitPendingTarget` has actually moved
+            // `visible_first_row` to the landing page. Resolving it
+            // per-batch like non-bulk does would warm covers for a page the
+            // cursor hasn't reached yet.
             model.as_mut().rust_mut().next_cursor = next_cursor;
-            // Jump path: insert the whole chunk in one shot, no frame-gapped
-            // trickle. The appended rows sit far from `currentPage`, so their
-            // Tile delegates stay unmaterialised (per-cell Loader is
-            // retention-gated) and the bulk insert is cheap; the loading
-            // overlay is up so a single brief stall is invisible, and it lets
-            // `_commitPendingTarget` see the target as loaded in one step
-            // instead of creeping toward it over dozens of frames.
-            if bulk {
-                let had_entries = !entries.is_empty();
-                if had_entries {
-                    insert_sub_batch(model.as_mut(), entries);
-                }
-                // Resume covers (paused by `fetch_more_with_limit` for the jump
-                // request) BEFORE prefetching: the insert above drives
-                // `_commitPendingTarget` synchronously, which moves
-                // `visible_first_row` to the landing page, so prefetching now —
-                // with covers re-enabled — warms exactly that page. Resuming
-                // unconditionally (even on an empty page) guarantees the pause
-                // never sticks past the request that set it.
-                model.as_mut().set_cover_requests_paused(false);
-                if had_entries {
-                    let visible = model.visible_first_row;
-                    model.as_mut().prefetch_around(visible);
-                }
-                model.as_mut().set_has_next_page(has_next_page);
-                if model.total_files != total {
-                    model.as_mut().set_total_files(total);
-                }
-                model.as_mut().set_loading_more(false);
-                return;
-            }
             let mut batches = chunk_for_subbatching(entries, APPEND_SUB_BATCH_SIZE);
             if batches.is_empty() {
-                // No new rows landed (empty page). Finalise immediately
-                // — there's nothing to defer.
+                // No new rows landed (empty page). Finalise immediately —
+                // there's nothing to defer. A bulk fetch still resumes covers
+                // unconditionally here, even though nothing landed: the pause
+                // must never stick past the request that set it, and
+                // `loading_more` forbids a second concurrent bulk fetch, so
+                // nothing else is relying on it staying up.
+                if bulk {
+                    model.as_mut().set_cover_requests_paused(false);
+                }
                 model.as_mut().set_has_next_page(has_next_page);
                 if model.total_files != total {
                     model.as_mut().set_total_files(total);
@@ -3474,16 +3469,25 @@ fn apply_append_page(
             // resolves within ~200 ms of the user's press.
             let first_batch = batches.remove(0);
             insert_sub_batch(model.as_mut(), first_batch);
-            // Re-arm prefetch around the user's current visible row.
-            // The freshly-appended rows may now occupy the
-            // "current" or "next" page window; this is the only
-            // hook that gets covers warmed for them without a bulk
-            // enqueue.
-            let visible = model.visible_first_row;
-            model.as_mut().prefetch_around(visible);
+            // Non-bulk re-arms prefetch around the user's current visible
+            // row after every batch, including this first one — the
+            // freshly-appended rows may now occupy the "current" or "next"
+            // page window, and this is the only hook that gets covers warmed
+            // for them without a bulk enqueue. A bulk jump leaves covers
+            // paused and prefetch untouched until the LAST batch (below) —
+            // see the comment above `chunk_for_subbatching` for why.
+            if !bulk {
+                let visible = model.visible_first_row;
+                model.as_mut().prefetch_around(visible);
+            }
             if batches.is_empty() {
                 // Single-batch chunk (<= APPEND_SUB_BATCH_SIZE rows).
                 // Finalise now without scheduling deferred work.
+                if bulk {
+                    model.as_mut().set_cover_requests_paused(false);
+                    let visible = model.visible_first_row;
+                    model.as_mut().prefetch_around(visible);
+                }
                 model.as_mut().set_has_next_page(has_next_page);
                 if model.total_files != total {
                     model.as_mut().set_total_files(total);
@@ -3492,7 +3496,8 @@ fn apply_append_page(
                 return;
             }
             // Remaining batches: post one frame apart on the Qt
-            // thread, with the LAST one carrying pagination finalization.
+            // thread, with the LAST one carrying pagination finalization
+            // (and, for a bulk fetch, the deferred cover-resume + prefetch).
             // total_dirs is not touched here: Core computes it once on
             // page 1 and carries the same value forward, so it never
             // changes across appended pages.
@@ -3516,9 +3521,16 @@ fn apply_append_page(
                             return;
                         }
                         insert_sub_batch(model.as_mut(), batch);
-                        let visible = model.visible_first_row;
-                        model.as_mut().prefetch_around(visible);
+                        if !bulk {
+                            let visible = model.visible_first_row;
+                            model.as_mut().prefetch_around(visible);
+                        }
                         if is_last {
+                            if bulk {
+                                model.as_mut().set_cover_requests_paused(false);
+                                let visible = model.visible_first_row;
+                                model.as_mut().prefetch_around(visible);
+                            }
                             model.as_mut().set_has_next_page(has_next_page);
                             if model.total_files != total {
                                 model.as_mut().set_total_files(total);

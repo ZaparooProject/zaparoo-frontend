@@ -265,11 +265,14 @@ screen-specific hooks where the data model or navigation semantics differ.
   `zapscript` shortcuts are user-created via "Add to Hub" on a Systems/
   Games context menu (`Main.qml`'s `_addToHub`,
   `Browse.HubLayout.add_target_item`) — see that qinvokable's doc comment
-  for the one deliberate exception to the "don't persist Core metadata"
-  rule (CLAUDE.md -> "Never"): a game shortcut's display name IS cached in
-  `frontend.toml`, since a `zapscript` entry has no live system/category
-  row to re-resolve it from at render time the way a `system`/`folder`
-  shortcut does, and the cache doubles as a rename hook. Escape emits
+  for one of two deliberate exceptions to the "don't persist Core
+  metadata" rule (CLAUDE.md -> "Never"): a game shortcut's display name IS
+  cached in `frontend.toml`, since a `zapscript` entry has no live
+  system/category row to re-resolve it from at render time the way a
+  `system`/`folder` shortcut does, and the cache doubles as a rename hook.
+  The other exception is `rust/frontend/src/hub_cover_manifest.rs`'s
+  cold-boot cover manifest — see that file's module doc and CLAUDE.md's
+  own scoped exception. Escape emits
   `requestQuit`. No edit mode — Move/Hide/Add reuse the Options (North/X,
   item-scoped) and View (West/Y, page-scoped) menus every other screen
   already has.
@@ -286,8 +289,10 @@ screen-specific hooks where the data model or navigation semantics differ.
   Accept on Ready calls `GamesModel.launch_at(index)`; Accept on Empty/Error
   re-fires `set_system` against the cached `current_system_id` as the retry.
   Escape emits `requestSystemsScreen` (the router decides whether to land on
-  Hub or Systems via `_gamesEnteredFromHub`). Tab on a tile emits
-  `requestGameCardWrite(index)`.
+  Hub or Systems — a live eval for the MiSTer Arcade-singleton bypass, or
+  the persisted `GamesState.entered_from_hub` breadcrumb for a Hub
+  `system`/`folder` shortcut; see `onRequestSystemsScreen` in `Main.qml`).
+  Tab on a tile emits `requestGameCardWrite(index)`.
 
 #### Forward-transition orchestration
 

@@ -144,7 +144,7 @@ Item {
     // matching SystemsScreen.
     property bool gridShowCaption: true
     property bool pageLoadingVisible: false
-    // Footer left-corner count text (e.g. "%1 files"). Empty (the
+    // Footer left-corner count text (e.g. "%1 games"). Empty (the
     // default -- Favorites/Recents leave it unset) simply leaves that
     // slot blank; there is no visibility gate to wire up. The right
     // corner is the built-in PageIndicator below, driven directly off
@@ -552,7 +552,7 @@ Item {
         // total, and would otherwise grow visibly as the user scrolls.
         // Screens with a real total (Games/Favorite Systems) supply their
         // own `topStripTotalTextProvider` and never reach this branch.
-        totalText: (root._listLayout || root._showGridPageCue) ? (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root.paginationTotalKnown && root._count() > 0 ? qsTr("%1 entries").arg(root._count()) : "")) : ""
+        totalText: (root._listLayout || root._showGridPageCue) ? (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root.paginationTotalKnown && root._count() > 0 ? qsTr("%1 games").arg(root._count()) : "")) : ""
         rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : (!root.paginationTotalKnown || !root._listLayout || mediaGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(mediaGrid.currentIndex + 1).arg(Math.max(1, root._count())))
         showPageCounter: root._listLayout || root._showGridPageCue
         pageIndicatorMode: root._showGridPageCue

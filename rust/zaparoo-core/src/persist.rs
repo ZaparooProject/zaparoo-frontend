@@ -74,6 +74,15 @@ pub struct GamesState {
     /// Favorites-only projection of folder listings. Serde-defaulted so
     /// state files written before the field existed keep loading.
     pub favorites_filter: bool,
+    /// True when this Games screen was entered directly from a Hub
+    /// `system`/`folder` shortcut (skipping Systems), so Back should
+    /// return to Hub instead of Systems — a screen the user never
+    /// visited on that path. Persisted (not a plain in-memory flag) so
+    /// it survives the `MiSTer` kill/relaunch cycle around a game launch;
+    /// see `Main.qml`'s `onRequestSystemsScreen` for where it's read and
+    /// cleared, and the routing contract in `CLAUDE.md` for why every
+    /// writer lives in `Main.qml`'s router, never a screen file.
+    pub entered_from_hub: bool,
 }
 
 impl Default for GamesState {
@@ -83,6 +92,7 @@ impl Default for GamesState {
             path_stack: vec![String::new()],
             selected_at_level: vec![String::new()],
             favorites_filter: false,
+            entered_from_hub: false,
         }
     }
 }
@@ -378,6 +388,7 @@ mod tests {
                 path_stack: vec![String::new(), "/roms/nes/mario".into()],
                 selected_at_level: vec!["/roms/nes/mario".into(), "/roms/nes/mario/smb.nes".into()],
                 favorites_filter: false,
+                entered_from_hub: true,
             },
             recents: RecentsState {
                 selected_path: "/roms/nes/mario/smb.nes".into(),
@@ -440,6 +451,9 @@ resolution = "1920x1080"
         assert_eq!(state.favorite_systems, FavoriteSystemsState::default());
         // reduce_motion absent from an older state file defaults to false.
         assert!(!state.settings.reduce_motion);
+        // entered_from_hub absent from an older state file defaults to
+        // false — the ordinary Systems-entered back-routing behaviour.
+        assert!(!state.games.entered_from_hub);
     }
 
     #[test]
@@ -484,6 +498,7 @@ resolution = "1920x1080"
                                 path_stack: vec![String::new()],
                                 selected_at_level: vec![format!("/roms/{i}/{j}.rom")],
                                 favorites_filter: false,
+                                entered_from_hub: false,
                             },
                             favorites: FavoritesState::default(),
                             favorite_systems: FavoriteSystemsState::default(),

@@ -455,7 +455,7 @@ ApplicationWindow {
         if (root.activeScreen === root.screenFavoriteSystems)
             return qsTr("Favorites");
         if (root.activeScreen === root.screenRecents)
-            return qsTr("Recently Played");
+            return qsTr("Recently played");
         return "";
     }
 
@@ -796,7 +796,7 @@ ApplicationWindow {
                         open: root.cardWriteModalVisible
                         kind: "transient"
                         failed: root.cardWriteFailed
-                        title: root.cardWriteFailed ? qsTr("Writing failed") : qsTr("Put a writable card near the reader")
+                        title: root.cardWriteFailed ? qsTr("Writing failed") : qsTr("Hold a writable token near the reader")
                         onCancelRequested: root.cancelCardWriteRequested()
                     }
                 }

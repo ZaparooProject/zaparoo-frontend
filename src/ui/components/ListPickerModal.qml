@@ -89,11 +89,17 @@ Item {
     function _measureLabelWidth(metrics: FontMetrics, label: string, fontSize: int, fontFamily: string): int {
         return Math.ceil(Math.max(metrics.advanceWidth(label), metrics.boundingRect(label).width)) + Sizing.stroke(2);
     }
+    // Measured at the selected row's weight (Font.Medium — see
+    // SelectionBar.qml's contentWeight), not the resting Font.Normal —
+    // otherwise the widest label could elide once selected. Each row's
+    // own `_textWidth` below tracks its own live weight via a per-row
+    // `rowLabelMetrics` instead, so individual labels stay precisely
+    // centered at rest too.
     readonly property int _widestEntryLabelWidth: {
         let widest = 0;
         for (let i = 0; i < modal.entries.length; ++i) {
             const label = modal.entries[i] && modal.entries[i].label !== undefined ? String(modal.entries[i].label) : "";
-            widest = Math.max(widest, modal._measureLabelWidth(_rowLabelMetrics, label, Sizing.fontBody, Theme.fontUi));
+            widest = Math.max(widest, modal._measureLabelWidth(_panelWidthLabelMetrics, label, Sizing.fontBody, Theme.fontUi));
         }
         return widest;
     }
@@ -208,9 +214,10 @@ Item {
     }
 
     FontMetrics {
-        id: _rowLabelMetrics
+        id: _panelWidthLabelMetrics
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontBody
+        font.weight: Font.Medium
     }
 
     FontMetrics {
@@ -283,6 +290,21 @@ Item {
                                 radius: Sizing.radiusSm
                             }
 
+                            // Tracks this row's own live weight (Normal at
+                            // rest, Medium selected — bar.contentWeight) so
+                            // both label variants' own centering/left-align
+                            // box below always matches their actual
+                            // rendered glyph width — see
+                            // `_panelWidthLabelMetrics` above for why panel
+                            // sizing measures at a separate, fixed weight
+                            // instead.
+                            FontMetrics {
+                                id: rowLabelMetrics
+                                font.family: Theme.fontUi
+                                font.pixelSize: Sizing.fontBody
+                                font.weight: bar.contentWeight
+                            }
+
                             MouseArea {
                                 anchors.fill: parent
                                 hoverEnabled: true
@@ -307,7 +329,7 @@ Item {
                                 // docs/qml-gotchas.md, and ContextMenu.qml's
                                 // identical row-label construction.
                                 readonly property int _availableWidth: Math.max(0, parent.width - 2 * modal._rowHorizontalPadding)
-                                readonly property int _textWidth: Math.min(modal._measureLabelWidth(_rowLabelMetrics, row.modelData.label, Sizing.fontBody, Theme.fontUi), _availableWidth)
+                                readonly property int _textWidth: Math.min(modal._measureLabelWidth(rowLabelMetrics, row.modelData.label, Sizing.fontBody, Theme.fontUi), _availableWidth)
 
                                 objectName: "listPickerRowLabelCentered"
                                 visible: !modal._hasSwatchPreview
@@ -321,6 +343,7 @@ Item {
                                 color: bar.active ? bar.contentColor : Theme.textPrimary
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontBody
+                                font.weight: bar.contentWeight
                                 elide: Text.ElideRight
                                 renderType: Text.NativeRendering
                             }
@@ -333,7 +356,7 @@ Item {
                             // preview".
                             Text {
                                 readonly property int _availableWidth: Math.max(0, parent.width - 2 * modal._rowHorizontalPadding - modal._swatchBandWidth - modal._swatchLabelGap)
-                                readonly property int _textWidth: Math.min(modal._measureLabelWidth(_rowLabelMetrics, row.modelData.label, Sizing.fontBody, Theme.fontUi), _availableWidth)
+                                readonly property int _textWidth: Math.min(modal._measureLabelWidth(rowLabelMetrics, row.modelData.label, Sizing.fontBody, Theme.fontUi), _availableWidth)
 
                                 objectName: "listPickerRowLabelSwatch"
                                 visible: modal._hasSwatchPreview
@@ -344,6 +367,7 @@ Item {
                                 color: bar.active ? bar.contentColor : Theme.textPrimary
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontBody
+                                font.weight: bar.contentWeight
                                 elide: Text.ElideRight
                                 renderType: Text.NativeRendering
                             }

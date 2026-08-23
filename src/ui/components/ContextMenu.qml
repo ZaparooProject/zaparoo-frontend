@@ -90,6 +90,15 @@ Item {
         }
     }
 
+    // docs/content-style.md's menu-size cap: 3-8 entries. `panelHeight`
+    // above clamps to `_usableBottom`, but the `Column` painting the rows
+    // has no scroll of its own — past this cap, rows silently paint past
+    // the panel's rounded edge instead of being visible. This is a
+    // development-time backstop (consolidate the menu, don't add a
+    // scrollbar), not a runtime fix — `panel`'s `clip: true` below is the
+    // actual safety net for a shipped build.
+    readonly property int _maxRecommendedEntries: 8
+
     onEntriesChanged: {
         if (menu.entries.length <= 0) {
             currentIndex = 0;
@@ -97,6 +106,8 @@ Item {
         }
         if (menu.currentIndex >= menu.entries.length)
             currentIndex = menu.entries.length - 1;
+        if (menu.entries.length > menu._maxRecommendedEntries)
+            console.warn("ContextMenu: " + menu.entries.length + " entries exceeds the " + menu._maxRecommendedEntries + "-entry cap in docs/content-style.md — consolidate this menu");
     }
 
     function _widestEntryLabelWidth(source: var): int {
@@ -105,7 +116,7 @@ Item {
             return widest;
         for (let i = 0; i < source.length; ++i) {
             const label = source[i] && source[i].label !== undefined ? String(source[i].label) : "";
-            widest = Math.max(widest, Math.ceil(labelMetrics.advanceWidth(label)));
+            widest = Math.max(widest, Math.ceil(panelWidthMetrics.advanceWidth(label)));
         }
         return widest;
     }
@@ -146,10 +157,18 @@ Item {
         }
     }
 
+    // Sizes `_desiredPanelWidth` at the selected row's weight (Font.Medium
+    // — see SelectionBar.qml's contentWeight), never the resting
+    // Font.Normal — a per-row FontMetrics tracking each row's own live
+    // weight handles individual label centering (see `rowLabelMetrics`
+    // in the row delegate below). The resting weight is narrower or
+    // equal, so no row can overflow this panel width once selected
+    // regardless of which row that turns out to be.
     FontMetrics {
-        id: labelMetrics
+        id: panelWidthMetrics
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontCaption
+        font.weight: Font.Medium
     }
 
     // Catches dismiss-clicks on the dimmed area around the anchor.
@@ -290,6 +309,11 @@ Item {
         height: menu.panelHeight
         color: Theme.bgPanel
         radius: menu.panelRadius
+        // Safety net for a menu that exceeds `_maxRecommendedEntries` in a
+        // shipped build: rows past `panelHeight` are cut off cleanly
+        // instead of painting past the panel's rounded corners. Menus
+        // within the documented 3-8 cap never reach this edge.
+        clip: true
 
         Column {
             anchors.fill: parent
@@ -327,6 +351,21 @@ Item {
                         radius: Sizing.radiusSm
                     }
 
+                    // Tracks this row's own live weight (Normal at rest,
+                    // Medium selected — bar.contentWeight) so the label's
+                    // own centering box (`_textWidth` below) always
+                    // matches its actual rendered glyph width. Measuring
+                    // every row at the shared, fixed-Medium
+                    // `panelWidthMetrics` instead would either drift
+                    // resting rows off true center or, worse, elide a
+                    // selected row's own label against a too-narrow box.
+                    FontMetrics {
+                        id: rowLabelMetrics
+                        font.family: Theme.fontUi
+                        font.pixelSize: Sizing.fontCaption
+                        font.weight: bar.contentWeight
+                    }
+
                     MouseArea {
                         anchors.fill: parent
                         hoverEnabled: true
@@ -346,7 +385,7 @@ Item {
                         // under the software renderer. See "Integer-pixel
                         // rules" in docs/qml-gotchas.md.
                         readonly property int _availableWidth: Math.max(0, parent.width - 2 * menu.horizontalPadding)
-                        readonly property int _textWidth: Math.min(Math.ceil(labelMetrics.advanceWidth(row.modelData.label)), _availableWidth)
+                        readonly property int _textWidth: Math.min(Math.ceil(rowLabelMetrics.advanceWidth(row.modelData.label)), _availableWidth)
 
                         anchors.verticalCenter: parent.verticalCenter
                         x: Sizing.center(parent.width, _textWidth)
@@ -357,6 +396,7 @@ Item {
                         color: bar.active ? bar.contentColor : Theme.textPrimary
                         font.family: Theme.fontUi
                         font.pixelSize: Sizing.fontCaption
+                        font.weight: bar.contentWeight
                         elide: Text.ElideRight
                         renderType: Text.NativeRendering
                     }

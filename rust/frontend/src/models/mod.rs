@@ -256,6 +256,12 @@ pub fn with_hub_layout_mut<R>(f: impl FnOnce(&mut HubLayout) -> R) -> R {
         warn!("could not save hub layout: {e}");
         action_error::report_action_error("setting", "");
     }
+    drop(guard);
+    // Every persisted hub-layout mutation (add/remove/move/reset) funnels
+    // through this one function, so this is the single chokepoint for
+    // "the hub layout changed" — see hub_cover_manifest.rs's module doc.
+    // No-op off a colocated MiSTer.
+    crate::hub_cover_manifest::refresh_hub_entries();
     result
 }
 

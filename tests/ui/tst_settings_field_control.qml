@@ -46,7 +46,7 @@ TestCase {
     // list-picker modal) — it was missing from this list, so the row
     // advertised "Change" instead of "Open".
     function test_focused_field_is_picker_includes_color_scheme(): void {
-        screen.currentPage = screen.pageDisplayInterface;
+        screen.currentPage = screen.pageAppearance;
         const fields = screen.fields;
         let idx = -1;
         for (let i = 0; i < fields.length; i++) {
@@ -55,7 +55,7 @@ TestCase {
                 break;
             }
         }
-        verify(idx >= 0, "colorScheme field not found on the Display page");
+        verify(idx >= 0, "colorScheme field not found on the Appearance page");
         screen.currentIndex = idx;
         compare(screen.focusedFieldIsPicker, true);
     }

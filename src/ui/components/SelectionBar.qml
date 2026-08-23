@@ -36,6 +36,16 @@ Item {
     readonly property bool flashing: root._flashing
     readonly property color barColor: root._flashing ? Theme.onAccent : Theme.accent
     readonly property color contentColor: root._flashing ? Theme.accent : Theme.onAccent
+    // Selected-row text weight. Dark-on-light (inverted) text suffers
+    // irradiation — it reads as thinner than light-on-dark text at the
+    // identical weight — so a selected row steps up one notch to read at
+    // parity with a resting row, not to read as emphasised. Medium (500)
+    // is a real cut on the variable NotoSans.ttf ships (has an `fvar`
+    // table), not a synthesised weight. No-op under `Theme.bitmapType`:
+    // the CRT/240p bitmap face has a single strike, and unantialiased
+    // 1-bit text has no irradiation to correct. See docs/style.md's
+    // "Inverse-video rows".
+    readonly property int contentWeight: root.active ? Font.Medium : Font.Normal
     property bool _flashing: false
 
     onActiveChanged: {

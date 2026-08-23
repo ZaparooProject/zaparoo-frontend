@@ -27,7 +27,7 @@ MediaListScreen {
     activeLabelAtBottom: false
     gridBottomMargin: Sizing.pctH(8) + Sizing.pctH(7)
     topStripTitleProvider: () => qsTr("Favorites")
-    topStripTotalTextProvider: () => favoriteSystems.mediaGrid.itemCount > 0 ? qsTr("%n system(s)", "", Browse.FavoriteSystemsModel.count) : ""
+    topStripTotalTextProvider: () => favoriteSystems.mediaGrid.itemCount > 0 ? qsTr("%n system(s) with favorites", "", Browse.FavoriteSystemsModel.count) : ""
     topStripRightTextProvider: () => !favoriteSystems._listLayout || favoriteSystems.mediaGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(favoriteSystems.mediaGrid.currentIndex + 1).arg(Math.max(1, Browse.FavoriteSystemsModel.count))
     activeLabelTextProvider: () => favoriteSystems.mediaGrid.itemCount > 0 ? Browse.FavoriteSystemsModel.name_at(favoriteSystems.mediaGrid.currentIndex) : ""
     activeLabelTagsProvider: () => {

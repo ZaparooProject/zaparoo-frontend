@@ -20,8 +20,16 @@
 // stays a fraction of the size of `GamesModel`. Every page asks Core for
 // newest-session-per-`(systemId, mediaPath)` rows; a matching defensive
 // filter only protects the model from malformed or older responses.
-// Card-write isn't wired here yet —
-// recents launches by `run`-ing the entry's launcher route.
+//
+// `write_card_at`/`launch_text_at` reuse `launch_text_for`'s raw
+// `media_path` payload (see that function's doc comment) rather than a
+// portable `System/Title` ZapScript token — history rows carry no title
+// metadata to build one from. A token written from Recents is therefore
+// specific to this device, unlike one written from Games/Favorites. There
+// is deliberately no favorite-toggle here: Core's `media.history` response
+// carries no tags, so `is_favorite_at` would need either a per-row
+// `media.query` round trip or a Core API change, neither of which belongs
+// in this model.
 
 use crate::media_image_cache::{global_media_image_cache, MediaImageCache, MediaKey};
 use crate::media_meta_cache::{
@@ -45,10 +53,11 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 use zaparoo_core::client::{ClientError, ConnectionState};
+use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::media_types::{
     MediaHistoryEntry, MediaHistoryLatestEntry, MediaHistoryParams, MediaHistoryResult, MediaMeta,
-    MediaMetaParams, RunParams, TagInfo,
+    MediaMetaParams, ReadersWriteParams, RunParams, TagInfo,
 };
 
 const NAME_ROLE: i32 = 256 + 1;
@@ -155,6 +164,12 @@ pub struct RecentsModelRust {
     // thread between sleep-completion and abort.
     cover_gate_seq: Arc<AtomicU64>,
     nav_timing: Option<NavTiming>,
+    card_write_pending: bool,
+    card_write_error: QString,
+    // Disarms a stale write's callback the same way `resume_seq`/`seq` do
+    // for their own async paths — see `favorites.rs::write_card_at` for
+    // the identical pattern this mirrors.
+    card_write_seq: Arc<AtomicU64>,
 }
 
 impl Default for RecentsModelRust {
@@ -194,6 +209,9 @@ impl Default for RecentsModelRust {
             cover_gate_timer: None,
             cover_gate_seq: Arc::new(AtomicU64::new(0)),
             nav_timing: None,
+            card_write_pending: false,
+            card_write_error: QString::default(),
+            card_write_seq: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -235,6 +253,8 @@ pub mod ffi {
         #[qproperty(QString, detail_prefetch_key_prev)]
         #[qproperty(bool, cover_requests_paused)]
         #[qproperty(bool, show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
+        #[qproperty(bool, card_write_pending)]
+        #[qproperty(QString, card_write_error)]
         type RecentsModel = super::RecentsModelRust;
 
         #[qinvokable]
@@ -290,6 +310,15 @@ pub mod ffi {
 
         #[qinvokable]
         fn index_for_path(self: &RecentsModel, path: &QString) -> i32;
+
+        #[qinvokable]
+        fn launch_text_at(self: &RecentsModel, index: i32) -> QString;
+
+        #[qinvokable]
+        fn write_card_at(self: Pin<&mut RecentsModel>, index: i32);
+
+        #[qinvokable]
+        fn cancel_card_write(self: Pin<&mut RecentsModel>);
 
         #[inherit]
         #[cxx_name = "beginResetModel"]
@@ -711,6 +740,15 @@ impl ffi::RecentsModel {
             .resume_seq
             .fetch_add(1, Ordering::SeqCst);
         self.as_mut().set_resume_loading(true);
+        // The Hub's Resume tile can be the only thing in this session
+        // that ever touches RecentsModel — a user who never opens the
+        // Recents screen would otherwise leave `cover_subscription`
+        // unset (the other two call sites are both tied to the
+        // paginated-list fetch lifecycle), so `resume_cover_key_for`'s
+        // own async cover fetch below would complete with nothing
+        // listening to refresh it. See `notify_cover_update`'s
+        // `model.resume_entry` branch.
+        self.as_mut().ensure_cover_subscription();
         sync_resume_state(self.as_mut());
         let seq = self.rust().resume_seq.clone();
         let ticket = seq.load(Ordering::SeqCst);
@@ -835,6 +873,72 @@ impl ffi::RecentsModel {
             return QString::default();
         }
         QString::from(self.entries[index as usize].system_id.as_str())
+    }
+
+    // See the module doc comment: this is the raw device-specific path,
+    // not a portable `System/Title` token — history rows have nothing
+    // else to build one from.
+    fn launch_text_at(&self, index: i32) -> QString {
+        if index < 0 || index >= self.count {
+            return QString::default();
+        }
+        QString::from(launch_text_for(&self.entries[index as usize]).as_str())
+    }
+
+    fn write_card_at(mut self: Pin<&mut Self>, index: i32) {
+        if index < 0 || index >= self.count {
+            self.as_mut()
+                .set_card_write_error(QString::from("invalid selection"));
+            self.as_mut().set_card_write_pending(false);
+            return;
+        }
+        let entry = &self.entries[index as usize];
+        let text = launch_text_for(entry);
+        if text.is_empty() {
+            self.as_mut()
+                .set_card_write_error(QString::from("missing launch payload"));
+            self.as_mut().set_card_write_pending(false);
+            return;
+        }
+        let name = entry.media_name.clone();
+        let store = global_store();
+        let seq = self.rust().card_write_seq.clone();
+        let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
+        self.as_mut().set_card_write_error(QString::default());
+        self.as_mut().set_card_write_pending(true);
+        let qt_thread = self.qt_thread();
+        global_handle().spawn(async move {
+            let result = store
+                .run_mutation::<ReadersWriteMutation>(ReadersWriteParams { text })
+                .await;
+            let _ = qt_thread.queue(move |mut model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                let error = match result {
+                    Ok(()) => QString::default(),
+                    Err(e) => {
+                        warn!("card write failed for {name}: {}", e.message);
+                        QString::from(e.message.as_str())
+                    }
+                };
+                model.as_mut().set_card_write_error(error);
+                model.as_mut().set_card_write_pending(false);
+            });
+        });
+    }
+
+    fn cancel_card_write(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .rust()
+            .card_write_seq
+            .fetch_add(1, Ordering::SeqCst);
+        if !self.card_write_error.is_empty() {
+            self.as_mut().set_card_write_error(QString::default());
+        }
+        if self.card_write_pending {
+            self.as_mut().set_card_write_pending(false);
+        }
     }
 
     fn system_name_at(&self, index: i32) -> QString {
@@ -1067,8 +1171,56 @@ fn cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
     )
 }
 
-fn resume_cover_key_for(_entry: &MediaHistoryEntry, _requests_enabled: bool) -> String {
-    RESUME_FALLBACK_COVER_KEY.to_string()
+/// Resolve the Hub Resume tile's own cover key. Mirrors `cover_key_for`'s
+/// cached / in-flight / negative-memoed triple and enqueues the same
+/// miss-driven fetch; the pure decision itself lives in
+/// `resume_cover_key_for_with` below, split out the same way
+/// `cover_key_for_with` is so it's testable without the global cache and
+/// its tokio runtime.
+fn resume_cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
+    let media_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
+    let cache = global_media_image_cache();
+    let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
+    let negative = media_key.as_ref().is_some_and(|k| cache.is_negative(k));
+    let soft_no_image = media_key
+        .as_ref()
+        .is_some_and(|k| cache.is_soft_no_image(k));
+    if requests_enabled && !cached && !negative && !soft_no_image {
+        if let Some(k) = media_key.as_ref() {
+            cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
+        }
+    }
+    resume_cover_key_for_with(
+        entry,
+        media_key.as_ref(),
+        cached,
+        negative,
+        soft_no_image || !requests_enabled,
+    )
+}
+
+/// Pure helper for `resume_cover_key_for`, mirroring `cover_key_for_with`'s
+/// shape (cached / in-flight / negative-memoed / unattributed). The one
+/// difference from `cover_key_for_with`: a captioned recents row reads
+/// fine next to a system logo when it has no art, but the Resume tile has
+/// no caption to give a bare system logo context, so its "no art
+/// available" state falls back to the dedicated `RESUME_FALLBACK_COVER_KEY`
+/// glyph instead of `systems/<id>`.
+fn resume_cover_key_for_with(
+    entry: &MediaHistoryEntry,
+    key: Option<&MediaKey>,
+    cached: bool,
+    negative: bool,
+    soft_no_image: bool,
+) -> String {
+    if entry.system_id.is_empty() {
+        return RESUME_FALLBACK_COVER_KEY.to_string();
+    }
+    match key {
+        Some(k) if cached => MediaImageCache::image_key_for(k),
+        Some(_) if !negative && !soft_no_image => "icons/Loading".to_string(),
+        _ => RESUME_FALLBACK_COVER_KEY.to_string(),
+    }
 }
 
 fn apply_resume_latest_result(
@@ -1087,11 +1239,26 @@ fn apply_resume_latest_result(
             return;
         }
     };
+    // Captured before the assignment below so a repeated poll that
+    // reports the same current game doesn't churn the manifest — only a
+    // genuine change in *which* game is resumable should trigger the
+    // (occasional) local-path RPC in refresh_resume_entry.
+    let previous_target = model
+        .resume_entry
+        .as_ref()
+        .map(|e| (e.system_id.clone(), e.media_path.clone()));
     model.as_mut().rust_mut().resume_entry =
         latest.map(history_entry_from_latest).filter(|entry| {
             !launch_text_for(entry).is_empty()
                 && resume_entry_is_fresh(entry, OffsetDateTime::now_utc())
         });
+    let next_target = model
+        .resume_entry
+        .as_ref()
+        .map(|e| (e.system_id.clone(), e.media_path.clone()));
+    if next_target != previous_target {
+        crate::hub_cover_manifest::refresh_resume_entry(next_target);
+    }
     if model.resume_loading {
         model.as_mut().set_resume_loading(false);
     }
@@ -1504,7 +1671,19 @@ fn notify_cover_update(mut model: Pin<&mut ffi::RecentsModel>, key: &MediaKey) {
     {
         sync_current_detail_image_key(model.as_mut());
     }
-    if resume_entry(&model.entries)
+    // `model.resume_entry` — not `resume_entry(&model.entries)` — is the
+    // field `resume_cover_key_for`/`sync_resume_state` actually derive
+    // the Hub Resume tile's cover from; it comes from the dedicated
+    // `media.history.latest` RPC (`apply_resume_latest_result`), a
+    // separate fetch from the paginated `entries` list `resume_entry()`
+    // searches. Checking `entries` here previously meant the Resume
+    // tile's own async cover fetch (enqueued from `resume_cover_key_for`)
+    // could complete without ever refreshing `resume_cover_key` when
+    // `entries` was empty — the common case for a user who has only ever
+    // used the Hub's Resume tile and never opened the Recents screen.
+    if model
+        .resume_entry
+        .as_ref()
         .and_then(media_key_for)
         .map(MediaKey::with_current_cover_preference)
         .as_ref()
@@ -1688,6 +1867,12 @@ fn launch_text_for(entry: &MediaHistoryEntry) -> String {
     entry.media_path.clone()
 }
 
+// Test-only convenience wrapper now — `notify_cover_update` reads
+// `model.resume_entry` (the dedicated field) directly rather than
+// searching `entries` with this, but the freshness/launchability search
+// it exercises is still worth covering standalone; see the comment on
+// that `notify_cover_update` branch for why the search target changed.
+#[cfg(test)]
 fn resume_entry(entries: &[MediaHistoryEntry]) -> Option<&MediaHistoryEntry> {
     let now = OffsetDateTime::now_utc();
     entries
@@ -1821,8 +2006,8 @@ mod tests {
     use super::{
         compute_unresolved_keys, cover_key_for_with, dedupe_latest_by_identity,
         filter_entries_by_identity, history_page_params, launch_text_for, media_key_for,
-        page_snapshot, position_of_path, resume_cover_key_for, resume_entry, resume_entry_is_fresh,
-        RESUME_FALLBACK_COVER_KEY,
+        page_snapshot, position_of_path, resume_cover_key_for_with, resume_entry,
+        resume_entry_is_fresh, RESUME_FALLBACK_COVER_KEY,
     };
     use crate::media_image_cache::{MediaImageCache, MediaKey};
     use std::collections::HashSet;
@@ -1902,10 +2087,65 @@ mod tests {
     }
 
     #[test]
-    fn resume_cover_key_always_uses_play_outline() {
+    fn resume_cover_key_falls_back_when_entry_has_no_system() {
+        let e = entry("smb", "/p/smb", "", "NES");
+        let key = media_key_for(&e);
+        assert_eq!(
+            resume_cover_key_for_with(&e, key.as_ref(), false, false, false),
+            RESUME_FALLBACK_COVER_KEY
+        );
+    }
+
+    #[test]
+    fn resume_cover_key_uses_real_art_when_cached() {
         let e = entry("smb", "/p/smb", "NES", "NES");
-        assert_eq!(resume_cover_key_for(&e, true), RESUME_FALLBACK_COVER_KEY);
-        assert_eq!(resume_cover_key_for(&e, false), RESUME_FALLBACK_COVER_KEY);
+        let key = media_key_for(&e).expect("media has key");
+        assert_eq!(
+            resume_cover_key_for_with(&e, Some(&key), true, false, false),
+            MediaImageCache::image_key_for(&key)
+        );
+    }
+
+    #[test]
+    fn resume_cover_key_uses_loading_icon_when_in_flight() {
+        let e = entry("smb", "/p/smb", "NES", "NES");
+        let key = media_key_for(&e).expect("media has key");
+        assert_eq!(
+            resume_cover_key_for_with(&e, Some(&key), false, false, false),
+            "icons/Loading"
+        );
+    }
+
+    #[test]
+    fn resume_cover_key_falls_back_to_glyph_when_negatively_memoed() {
+        let e = entry("smb", "/p/smb", "NES", "NES");
+        let key = media_key_for(&e).expect("media has key");
+        // Unlike `cover_key_for_with`, which falls back to the system logo
+        // here -- the Resume tile has no caption to give a bare logo
+        // context, so it falls back to the dedicated glyph instead.
+        assert_eq!(
+            resume_cover_key_for_with(&e, Some(&key), false, true, false),
+            RESUME_FALLBACK_COVER_KEY
+        );
+    }
+
+    #[test]
+    fn resume_cover_key_falls_back_to_glyph_when_soft_missed() {
+        let e = entry("smb", "/p/smb", "NES", "NES");
+        let key = media_key_for(&e).expect("media has key");
+        assert_eq!(
+            resume_cover_key_for_with(&e, Some(&key), false, false, true),
+            RESUME_FALLBACK_COVER_KEY
+        );
+    }
+
+    #[test]
+    fn resume_cover_key_falls_back_to_glyph_when_no_key() {
+        let e = entry("smb", "/p/smb", "NES", "NES");
+        assert_eq!(
+            resume_cover_key_for_with(&e, None, false, false, false),
+            RESUME_FALLBACK_COVER_KEY
+        );
     }
 
     #[test]

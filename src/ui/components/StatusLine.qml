@@ -178,9 +178,11 @@ Item {
                 return;
             const detail = Browse.StatusEvents.detail;
             switch (Browse.StatusEvents.kind) {
-            case "token_scanned":
-                root._eventMessage = detail !== "" ? qsTr("Card scanned — %1").arg(detail) : qsTr("Card scanned");
-                break;
+            // "token_scanned" is intentionally not handled — not a useful
+            // message in the header; falls through to default and never
+            // occupies this slot. Core's tokens.added subscription and
+            // status_events.rs's classify() mapping stay as-is; the
+            // classified event is simply unconsumed here.
             case "playtime_warning":
                 root._eventMessage = qsTr("Playtime limit in %1").arg(detail);
                 break;

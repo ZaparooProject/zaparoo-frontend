@@ -48,8 +48,8 @@ Item {
     signal requestListPicker(title: string, entries: var, initialId: string, fieldId: string)
 
     readonly property string pageRoot: "root"
+    readonly property string pageAppearance: "appearance"
     readonly property string pageDisplayInterface: "displayInterface"
-    readonly property string pageBrowsing: "browsing"
     readonly property string pageLanguage: "language"
     readonly property string pageControlsInput: "controlsInput"
     readonly property string pageLibraryData: "libraryData"
@@ -72,33 +72,21 @@ Item {
     property bool _pageSwitching: false
 
     // Page-aware field registries. The root mirrors console settings
-    // menus: stable domain categories first, short subpages second.
-    // Future Core features should land in these domains rather than a
-    // vague Advanced bucket.
+    // menus: stable domain categories first, short subpages second. The
+    // six domains are grouped by what the user is trying to do, not by
+    // which Rust module or QML file backs the setting — see
+    // docs/content-style.md's "Adding a setting" checklist before adding
+    // a new row. Appearance = how it looks; Library = the game
+    // collection, browsing and maintenance; Display = video output
+    // geometry; Controls = input; Language = locale; About = identity,
+    // legal, and diagnostics. Future Core features should land in one of
+    // these six rather than a vague Advanced bucket.
     readonly property var categoryFields: [
         {
             kind: "field",
-            id: "pageDisplayInterface",
-            label: qsTr("Display"),
-            coverKey: "icons/Display"
-        },
-        {
-            kind: "field",
-            id: "pageBrowsing",
-            label: qsTr("Browsing"),
-            coverKey: "icons/Browsing"
-        },
-        {
-            kind: "field",
-            id: "pageLanguage",
-            label: qsTr("Language"),
-            coverKey: "icons/Language"
-        },
-        {
-            kind: "field",
-            id: "pageControlsInput",
-            label: qsTr("Controls"),
-            coverKey: "icons/Controls"
+            id: "pageAppearance",
+            label: qsTr("Appearance"),
+            coverKey: "icons/Appearance"
         },
         {
             kind: "field",
@@ -108,35 +96,67 @@ Item {
         },
         {
             kind: "field",
+            id: "pageDisplayInterface",
+            label: qsTr("Display"),
+            coverKey: "icons/Display"
+        },
+        {
+            kind: "field",
+            id: "pageControlsInput",
+            label: qsTr("Controls"),
+            coverKey: "icons/Controls"
+        },
+        {
+            kind: "field",
+            id: "pageLanguage",
+            label: qsTr("Language"),
+            coverKey: "icons/Language"
+        },
+        {
+            kind: "field",
             id: "pageSupportAbout",
-            label: qsTr("Support"),
+            label: qsTr("About"),
             coverKey: "icons/Support"
         }
     ]
-    // Display = video output and presentation controls.
+    // Appearance = how the interface looks: theme, logos, motion, screensaver.
+    readonly property var appearanceFields: [
+        {
+            kind: "field",
+            id: "colorScheme",
+            label: qsTr("Color scheme")
+        },
+        {
+            kind: "field",
+            id: "systemLogoStyle",
+            label: qsTr("System logos")
+        },
+        {
+            kind: "field",
+            id: "reduceMotion",
+            label: qsTr("Reduce motion")
+        },
+        {
+            kind: "field",
+            id: "screensaverTimeout",
+            label: qsTr("Screensaver")
+        }
+    ]
+    // Display = video output geometry — resolution, orientation, analog video.
     readonly property var displayInterfaceFields: {
         const out = [];
         if (Browse.Settings.is_mister && !Browse.CrtVideo.crt_enabled) {
             out.push({
                 kind: "field",
                 id: "resolution",
-                label: qsTr("Interface resolution")
+                label: qsTr("Interface resolution"),
+                description: qsTr("Restarts the frontend to apply.")
             });
         }
         out.push({
             kind: "field",
             id: "orientation",
             label: qsTr("Orientation")
-        });
-        out.push({
-            kind: "field",
-            id: "colorScheme",
-            label: qsTr("Color scheme")
-        });
-        out.push({
-            kind: "field",
-            id: "screensaverTimeout",
-            label: qsTr("Screensaver")
         });
         if (Browse.Settings.is_mister) {
             // Native CRT video path (Menu fork DDR writer). The toggle is
@@ -150,13 +170,15 @@ Item {
             out.push({
                 kind: "field",
                 id: "crtEnabled",
-                label: qsTr("CRT mode")
+                label: qsTr("CRT mode"),
+                description: qsTr("Restarts the frontend to apply.")
             });
             if (Browse.CrtVideo.crt_enabled) {
                 out.push({
                     kind: "field",
                     id: "crtVideoStandard",
-                    label: qsTr("Video standard")
+                    label: qsTr("Video standard"),
+                    description: qsTr("Restarts the frontend to apply.")
                 });
                 out.push({
                     kind: "field",
@@ -167,45 +189,19 @@ Item {
         }
         return out;
     }
-    // Browsing = how the library is presented and which items show.
-    readonly property var browsingFields: [
-        {
-            kind: "field",
-            id: "browseLayout",
-            label: qsTr("Browsing layout")
-        },
-        {
-            kind: "field",
-            id: "systemLogoStyle",
-            label: qsTr("System logos")
-        },
-        {
-            kind: "field",
-            id: "mediaImageType",
-            label: qsTr("Preferred artwork")
-        },
-        {
-            kind: "field",
-            id: "showHidden",
-            label: qsTr("Show hidden items")
-        },
-        {
-            kind: "field",
-            id: "showOriginalFilenames",
-            label: qsTr("Show original filenames")
-        }
-    ]
     // Language = locale/regional preferences.
     readonly property var languageFields: [
         {
             kind: "field",
             id: "language",
-            label: qsTr("Language")
+            label: qsTr("Language"),
+            description: qsTr("Restarts the frontend to apply.")
         },
         {
             kind: "field",
             id: "region",
-            label: qsTr("System names")
+            label: qsTr("Region"),
+            description: qsTr("Affects system and game name conventions, not language.")
         },
         {
             kind: "field",
@@ -223,23 +219,42 @@ Item {
             kind: "field",
             id: "mouseEnabled",
             label: qsTr("Mouse support")
+        }
+    ]
+    // Library = the game collection: how it's browsed, and how it's scanned.
+    readonly property var libraryDataFields: [
+        {
+            kind: "header",
+            label: qsTr("Browsing")
         },
         {
             kind: "field",
-            id: "reduceMotion",
-            label: qsTr("Reduce motion")
-        }
-    ]
-    readonly property var libraryDataFields: [
+            id: "browseLayout",
+            label: qsTr("Browsing layout")
+        },
+        {
+            kind: "field",
+            id: "mediaImageType",
+            label: qsTr("Preferred artwork")
+        },
+        {
+            kind: "field",
+            id: "showHidden",
+            label: qsTr("Show hidden items")
+        },
+        {
+            kind: "field",
+            id: "showOriginalFilenames",
+            label: qsTr("Show original filenames")
+        },
+        {
+            kind: "header",
+            label: qsTr("Maintenance")
+        },
         {
             kind: "field",
             id: "updateMediaDb",
             label: qsTr("Update media database")
-        },
-        {
-            kind: "field",
-            id: "discoverArcadeAlternateVersions",
-            label: qsTr("Discover arcade alternate versions")
         },
         {
             kind: "field",
@@ -249,7 +264,14 @@ Item {
         {
             kind: "field",
             id: "rescrapeExisting",
-            label: qsTr("Re-scrape existing")
+            label: qsTr("Re-scrape existing"),
+            description: qsTr("Also re-fetch metadata for games that already have it, the next time you scrape.")
+        },
+        {
+            kind: "field",
+            id: "discoverArcadeAlternateVersions",
+            label: qsTr("Discover arcade alternate versions"),
+            description: qsTr("Look for other versions of the same arcade game from the Discover alt. versions menu entry.")
         }
     ]
     readonly property var supportAboutFields: [
@@ -261,7 +283,8 @@ Item {
         {
             kind: "field",
             id: "debugLogging",
-            label: qsTr("Debug logging")
+            label: qsTr("Debug logging"),
+            description: qsTr("Takes effect after the next restart.")
         },
         {
             kind: "field",
@@ -270,10 +293,10 @@ Item {
         }
     ]
     readonly property var fields: {
+        if (settings.currentPage === settings.pageAppearance)
+            return settings.appearanceFields;
         if (settings.currentPage === settings.pageDisplayInterface)
             return settings.displayInterfaceFields;
-        if (settings.currentPage === settings.pageBrowsing)
-            return settings.browsingFields;
         if (settings.currentPage === settings.pageLanguage)
             return settings.languageFields;
         if (settings.currentPage === settings.pageControlsInput)
@@ -285,10 +308,10 @@ Item {
         return settings.categoryFields;
     }
     readonly property string pageTitle: {
+        if (settings.currentPage === settings.pageAppearance)
+            return qsTr("Appearance");
         if (settings.currentPage === settings.pageDisplayInterface)
             return qsTr("Display");
-        if (settings.currentPage === settings.pageBrowsing)
-            return qsTr("Browsing");
         if (settings.currentPage === settings.pageLanguage)
             return qsTr("Language");
         if (settings.currentPage === settings.pageControlsInput)
@@ -296,7 +319,7 @@ Item {
         if (settings.currentPage === settings.pageLibraryData)
             return qsTr("Library");
         if (settings.currentPage === settings.pageSupportAbout)
-            return qsTr("Support");
+            return qsTr("About");
         return qsTr("Settings");
     }
 
@@ -431,7 +454,7 @@ Item {
     function _fieldControl(id: string): string {
         if (id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "discoverArcadeAlternateVersions" || id === "debugLogging" || id === "rescrapeExisting" || id === "reduceMotion" || id === "crtEnabled")
             return "toggle";
-        if (id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration")
+        if (id === "aboutLicense" || id === "pageAppearance" || id === "pageDisplayInterface" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration")
             return "navigate";
         if (id === "updateMediaDb" || id === "runScraper" || id === "uploadLog")
             return "action";
@@ -473,6 +496,17 @@ Item {
     // (registry mistake — shouldn't happen).
     function _firstNavigableIndex(): int {
         for (let i = 0; i < settings.fieldCount; i++)
+            if (settings.fields[i].kind === "field")
+                return i;
+        return -1;
+    }
+
+    // Last focusable row in the registry. Symmetric with
+    // `_firstNavigableIndex`, used so the scroll-into-view logic can snap
+    // exactly to the bottom edge on the last field. -1 only if every
+    // entry is a header.
+    function _lastNavigableIndex(): int {
+        for (let i = settings.fieldCount - 1; i >= 0; i--)
             if (settings.fields[i].kind === "field")
                 return i;
         return -1;
@@ -564,7 +598,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return settings.focusedFieldIsPicker || id === "updateMediaDb" || id === "runScraper" || id === "uploadLog" || id === "aboutLicense" || id === "pageDisplayInterface" || id === "pageBrowsing" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration";
+        return settings.focusedFieldIsPicker || id === "updateMediaDb" || id === "runScraper" || id === "uploadLog" || id === "aboutLicense" || id === "pageAppearance" || id === "pageDisplayInterface" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration";
     }
     // Verb shown on the help-bar Accept hint for the focused action
     // row. Index/scrape flip between Start and Cancel because the press
@@ -716,7 +750,7 @@ Item {
             return qsTr("Hindi");
         if (value === "fr" || value === "fr_FR")
             return qsTr("French");
-        return qsTr("Auto");
+        return qsTr("Automatic");
     }
 
     function _clockFormatDisplay(value: string): string {
@@ -724,7 +758,7 @@ Item {
             return qsTr("12-hour");
         if (value === "24h")
             return qsTr("24-hour");
-        return qsTr("Auto");
+        return qsTr("Automatic");
     }
 
     function _regionList(): list<string> {
@@ -847,7 +881,7 @@ Item {
 
     function _mediaImageTypeDisplay(value: string): string {
         if (value === "auto")
-            return qsTr("Auto");
+            return qsTr("Automatic");
         if (value === "image")
             return qsTr("Image");
         if (value === "thumbnail")
@@ -912,7 +946,7 @@ Item {
                 });
             initialId = Browse.Settings.current_clock_format;
         } else if (id === "region") {
-            title = qsTr("System names");
+            title = qsTr("Region");
             const list = settings._regionList();
             for (let i = 0; i < list.length; i++)
                 entries.push({
@@ -1121,7 +1155,15 @@ Item {
         const remembered = settings._pageIndexes[settings.currentPage];
         const idx = remembered === undefined ? fallback : Math.max(0, Math.min(settings.fieldCount - 1, remembered));
         settings.currentIndex = settings._isField(idx) ? idx : fallback;
-        flickable.contentY = 0;
+        // Call directly rather than relying on onCurrentIndexChanged: the
+        // assignment above is a no-op when the new page's remembered
+        // index happens to equal the old numeric currentIndex, but the
+        // Flickable's content just changed pages regardless, so the
+        // viewport needs re-framing either way. `_scrollFocusedIntoView`
+        // itself no-ops safely if the Repeater hasn't rebuilt its
+        // delegates for the new page yet; the `form.implicitHeightChanged`
+        // connection above re-triggers it once that settles.
+        settings._scrollFocusedIntoView();
     }
 
     function _switchPage(page: string): void {
@@ -1145,10 +1187,10 @@ Item {
         // tile) and defer _switchPage so the push-in's downward leg is
         // fully visible before the page swaps out.
         let page = "";
-        if (id === "pageDisplayInterface")
+        if (id === "pageAppearance")
+            page = settings.pageAppearance;
+        else if (id === "pageDisplayInterface")
             page = settings.pageDisplayInterface;
-        else if (id === "pageBrowsing")
-            page = settings.pageBrowsing;
         else if (id === "pageLanguage")
             page = settings.pageLanguage;
         else if (id === "pageControlsInput")
@@ -1301,25 +1343,70 @@ Item {
     }
 
     // Scroll focused row into view if it sits outside the Flickable's
-    // current viewport. No-op for header indices (they aren't focusable
-    // and currentIndex never lands on one in normal flow). Bind via
-    // onCurrentIndexChanged below; no animation — software-renderer
-    // budget can't pay for a moving column behind a focus border.
+    // current viewport, row-by-row rather than by pixel: the first/last
+    // focusable row always lands exactly at 0 / the max scroll (so the
+    // card's own top/bottom breathing room is fully visible at either
+    // extreme), every other move keeps a `form.spacing` gap above/below
+    // the row instead of flush-cutting the neighbouring row at its
+    // boundary, and a section header scrolls in together with the first
+    // field under it rather than being left off-screen above it. No-op
+    // for header indices (they aren't focusable and currentIndex never
+    // lands on one in normal flow). Bound to `onCurrentIndexChanged`
+    // below plus viewport/content-size changes and page mount, since a
+    // resize or a page switch can leave a stale contentY that no longer
+    // frames the (possibly unchanged) focused row correctly. No
+    // animation — software-renderer budget can't pay for a moving
+    // column behind a focus border.
     function _scrollFocusedIntoView(): void {
         if (settings.showingRootGrid || !settings._isField(settings.currentIndex))
             return;
-        const row = rowRepeater.itemAt(settings.currentIndex);
+        const idx = settings.currentIndex;
+        const row = rowRepeater.itemAt(idx);
         if (row === null)
             return;
-        const top = row.y;
-        const bottom = top + row.height;
-        if (top < flickable.contentY)
+        const maxY = Math.max(0, flickable.contentHeight - flickable.height);
+        if (idx === settings._firstNavigableIndex()) {
+            flickable.contentY = 0;
+            return;
+        }
+        if (idx === settings._lastNavigableIndex()) {
+            flickable.contentY = maxY;
+            return;
+        }
+        // Pull a section header along with the field immediately below
+        // it, so the header title doesn't scroll off above a field that
+        // just became focused.
+        let topBound = row.y;
+        const prevRow = idx > 0 ? rowRepeater.itemAt(idx - 1) : null;
+        // itemAt() returns the generic QQuickItem type statically, so the
+        // static analyzer can't see the delegate's own `isHeader`
+        // property — same pattern as PagedGrid.qml's own itemAt()-typed
+        // accesses.
+        // qmllint disable missing-property
+        if (prevRow !== null && prevRow.isHeader)
+            topBound = prevRow.y;
+        // qmllint enable missing-property
+        const top = Math.max(0, topBound - form.spacing);
+        const bottom = Math.min(maxY, row.y + row.height + form.spacing - flickable.height);
+        if (flickable.contentY > top)
             flickable.contentY = top;
-        else if (bottom > flickable.contentY + flickable.height)
-            flickable.contentY = bottom - flickable.height;
+        else if (flickable.contentY < bottom)
+            flickable.contentY = bottom;
     }
 
     onCurrentIndexChanged: settings._scrollFocusedIntoView()
+    Connections {
+        target: flickable
+        function onHeightChanged(): void {
+            settings._scrollFocusedIntoView();
+        }
+    }
+    Connections {
+        target: form
+        function onImplicitHeightChanged(): void {
+            settings._scrollFocusedIntoView();
+        }
+    }
 
     Item {
         id: categoryGrid
@@ -1359,7 +1446,14 @@ Item {
 
         Component {
             id: categoryTileDelegate
-            Tile {}
+            Tile {
+                // Matches the Hub's own tightened padding so these tiles
+                // read as the same physical object as the Hub's, not
+                // just the same outer cell size — see docs/style.md's
+                // "Tile aspect and grid blocks" and Tile.qml's
+                // `compactPadding` doc comment.
+                compactPadding: true
+            }
         }
 
         Repeater {
@@ -1421,171 +1515,233 @@ Item {
         visible: !settings.optimisticLoading && settings.showingRootGrid && settings.fieldCount > 0
     }
 
-    // Form lives in a Flickable so the section bands can grow past
-    // a single screen without dropping off-frame. Width capped so
-    // the rows don't stretch edge-to-edge on widescreen; bottom
+    // Card frame: static geometry, unlike the old design where the card
+    // Rectangle scrolled with the row Column. The card's own top/bottom
+    // edges are never scrollable content now, so they can't be scrolled
+    // out of view — see docs/style.md's Settings hint-band note. Width
+    // capped so the rows don't stretch edge-to-edge on widescreen; bottom
     // margin clears the help bar (pctH(6)) plus a small gap.
-    Flickable {
-        id: flickable
+    Item {
+        id: settingsCard
         visible: !settings.optimisticLoading && !settings.showingRootGrid
 
-        // topMargin and bottomMargin are sized to leave a clear band
-        // for the scroll chevrons to sit outside the scrollable area
-        // (chevron pctH(3) + breathing room). bottomMargin also has to
-        // clear the help bar (pctH(6)) plus a small gap.
+        // topMargin and bottomMargin are sized to leave a clear band for
+        // the scroll chevrons to sit outside the card (chevron pctH(3) +
+        // breathing room). bottomMargin also has to clear the help bar
+        // (pctH(6)) plus a small gap.
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(4)
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Sizing.pctH(10)
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(parent.width - Sizing.pctW(6), Sizing.pctW(70))
-        contentWidth: width
-        contentHeight: form.implicitHeight
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
 
-        // Inset applied to every row mount below so the card keeps a
-        // visible lip on both sides, matching BrowseList's row inset
-        // (see the "Row edge consistency" note in docs/style.md).
-        readonly property int cardPadding: Sizing.pctW(2)
+        readonly property bool _hasContent: settings.fieldCount > 0
+        // Two lines of Sizing.fontBody reserved for hintText below,
+        // regardless of whether the focused row has a description — an
+        // appearing/disappearing band would reflow the row column under
+        // the cursor. 1.35 is a standard UI line-height multiplier; the
+        // box is a reservation, not a tight fit, so a small overshoot
+        // costs nothing.
+        readonly property int _hintLineHeight: Sizing.px(Sizing.fontBody * 1.35)
+        readonly property int _hintTextHeight: 2 * settingsCard._hintLineHeight
 
         // One card behind every section so the rows read as lines of text
         // cut into something, matching the inverse-video vocabulary each
-        // row itself uses (see SettingsField.qml / SelectionBar.qml) rather
-        // than floating loose on the screen background.
+        // row itself uses (see SettingsField.qml / SelectionBar.qml)
+        // rather than floating loose on the screen background. Sized to
+        // this static frame, not to the scrolling Column, so the card's
+        // own edges never move.
         Rectangle {
-            width: form.width
-            height: form.height
-            visible: form.visible
+            anchors.fill: parent
+            visible: settingsCard._hasContent
             color: Theme.surfaceCard
             border.width: Sizing.cardBorderWidth
             border.color: Theme.borderMid
             radius: Sizing.radiusMd
         }
 
-        Column {
-            id: form
+        // Focused-row description, replacing the old per-row description
+        // line (illegible at 540p/CRT — see docs/style.md's Settings
+        // hint-band note and docs/content-style.md's "Adding a setting"
+        // checklist). Always reserved at two lines so the row column
+        // never reflows under the cursor when the description changes.
+        Text {
+            id: hintText
+            visible: settingsCard._hasContent
+            anchors.left: parent.left
+            anchors.leftMargin: flickable.cardPadding
+            anchors.right: parent.right
+            anchors.rightMargin: flickable.cardPadding
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: Sizing.pctH(1)
+            height: settingsCard._hintTextHeight
+            verticalAlignment: Text.AlignTop
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            text: settings._isField(settings.currentIndex) ? (settings.fields[settings.currentIndex].description ?? "") : ""
+            color: Theme.textLabel
+            font.family: Theme.fontUi
+            font.pixelSize: Sizing.fontBody
+            renderType: Text.NativeRendering
+        }
 
-            width: parent.width
-            spacing: Sizing.pctH(1.5)
-            visible: settings.fieldCount > 0
+        Rectangle {
+            id: hintDivider
+            visible: settingsCard._hasContent
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: hintText.top
+            anchors.bottomMargin: Sizing.pctH(0.5)
+            height: Sizing.stroke(1)
+            color: Theme.borderSubtle
+        }
 
-            // Leading spacer — keeps the first field clear of the top
-            // scroll chevron and gives the cut-off edge a breath of
-            // whitespace instead of clipping mid-row.
-            Item {
-                id: leadingSpacer
+        // Form lives in a Flickable so the section bands can grow past
+        // the card's own height without dropping off-frame.
+        Flickable {
+            id: flickable
 
-                width: form.width
-                height: Sizing.pctH(2)
-            }
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: hintDivider.top
+            anchors.bottomMargin: Sizing.pctH(0.5)
+            contentWidth: width
+            contentHeight: form.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
 
-            Repeater {
-                id: rowRepeater
-                model: settings.fields
+            // Inset applied to every row mount below so the card keeps a
+            // visible lip on both sides, matching BrowseList's row inset
+            // (see the "Row edge consistency" note in docs/style.md).
+            readonly property int cardPadding: Sizing.pctW(2)
 
-                // Wrapper row — both potential children exist but only
-                // the kind-matching one paints. A Loader would also
-                // work, but binding-through-`parent.modelData` adds
-                // static-analysis friction under
-                // ComponentBehavior:Bound; the wrapper Item is cheap
-                // (≤ 3 headers + ≤ 7 fields) and keeps every
-                // field-row binding readable in place.
+            Column {
+                id: form
+
+                width: parent.width
+                spacing: Sizing.pctH(1.5)
+                visible: settings.fieldCount > 0
+
+                // Leading spacer — keeps the first field clear of the top
+                // scroll chevron and gives the cut-off edge a breath of
+                // whitespace instead of clipping mid-row.
                 Item {
-                    id: row
-
-                    required property int index
-                    required property var modelData
-
-                    readonly property bool isHeader: modelData.kind === "header"
+                    id: leadingSpacer
 
                     width: form.width
-                    implicitHeight: row.isHeader ? header.implicitHeight : field.implicitHeight
+                    height: Sizing.pctH(2)
+                }
 
-                    SettingsSectionHeader {
-                        id: header
-                        visible: row.isHeader
-                        // No cardPadding margin here (unlike every other
-                        // row) — the header's own filled band spans the
-                        // card edge-to-edge; contentInset makes up the
-                        // difference for the label alone. See
-                        // SettingsSectionHeader.qml.
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        contentInset: flickable.cardPadding
-                        label: row.modelData.label
-                    }
+                Repeater {
+                    id: rowRepeater
+                    model: settings.fields
 
-                    SettingsField {
-                        id: field
-                        visible: !row.isHeader
-                        anchors.left: parent.left
-                        anchors.leftMargin: flickable.cardPadding
-                        anchors.right: parent.right
-                        anchors.rightMargin: flickable.cardPadding
-                        isFocused: row.index === settings.currentIndex
-                        animateChanges: !settings._pageSwitching
-                        activatePulse: settings.fieldActivatePulse
-                        // Index and scrape can't run together; while
-                        // one operation is in flight the other row
-                        // dims and its MouseArea stops responding.
-                        // Keyboard Accept is separately gated in
-                        // `_triggerIndex`/`_triggerScrape`.
-                        enabled: settings._fieldEnabled(row.modelData.id)
-                        label: row.modelData.label
-                        value: settings._fieldValue(row.modelData.id)
-                        control: settings._fieldControl(row.modelData.id)
-                        checked: settings._fieldChecked(row.modelData.id)
-                        actionStatus: row.modelData.id === "updateMediaDb" ? settings._indexActionStatus() : row.modelData.id === "runScraper" ? settings._scrapeActionStatus() : ""
-                        onHovered: settings.currentIndex = row.index
-                        onClicked: {
-                            settings.currentIndex = row.index;
-                            if (row.modelData.id === "mouseEnabled")
-                                settings._toggleMouseEnabled();
-                            else if (row.modelData.id === "showHidden")
-                                settings._toggleShowHidden();
-                            else if (row.modelData.id === "showOriginalFilenames")
-                                settings._toggleShowOriginalFilenames();
-                            else if (row.modelData.id === "discoverArcadeAlternateVersions")
-                                settings._toggleDiscoverArcadeAlternateVersions();
-                            else if (row.modelData.id === "debugLogging")
-                                settings._toggleDebugLogging();
-                            else if (row.modelData.id === "rescrapeExisting")
-                                settings._toggleRescrapeExisting();
-                            else if (row.modelData.id === "reduceMotion")
-                                settings._toggleReduceMotion();
-                            else if (row.modelData.id === "crtEnabled")
-                                settings._requestCrtEnabled(!Browse.CrtVideo.crt_enabled);
+                    // Wrapper row — both potential children exist but only
+                    // the kind-matching one paints. A Loader would also
+                    // work, but binding-through-`parent.modelData` adds
+                    // static-analysis friction under
+                    // ComponentBehavior:Bound; the wrapper Item is cheap
+                    // (≤ 3 headers + ≤ 7 fields) and keeps every
+                    // field-row binding readable in place.
+                    Item {
+                        id: row
+
+                        required property int index
+                        required property var modelData
+
+                        readonly property bool isHeader: modelData.kind === "header"
+
+                        width: form.width
+                        implicitHeight: row.isHeader ? header.implicitHeight : field.implicitHeight
+
+                        SettingsSectionHeader {
+                            id: header
+                            visible: row.isHeader
+                            // No cardPadding margin here (unlike every
+                            // other row) — the header's own filled band
+                            // spans the card edge-to-edge; contentInset
+                            // makes up the difference for the label
+                            // alone. See SettingsSectionHeader.qml.
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            contentInset: flickable.cardPadding
+                            label: row.modelData.label
                         }
-                        onRightClicked: settings._goBack()
-                        // Picker, action, and navigate rows route
-                        // through `onAccepted` (see SettingsField's
-                        // MouseArea), so the focus commit lives here
-                        // too — clicking commits focus before firing
-                        // the action.
-                        onAccepted: {
-                            settings.currentIndex = row.index;
-                            if (settings._openPage(row.modelData.id))
-                                return;
-                            // Non-toggle rows route here (toggles use onClicked).
-                            // Defer like the keyboard path so the push-in shows
-                            // before the modal opens / the screen navigates.
-                            settings.fieldActivatePulse++;
-                            fieldCommit._id = row.modelData.id;
-                            fieldCommit.arm();
+
+                        SettingsField {
+                            id: field
+                            visible: !row.isHeader
+                            anchors.left: parent.left
+                            anchors.leftMargin: flickable.cardPadding
+                            anchors.right: parent.right
+                            anchors.rightMargin: flickable.cardPadding
+                            isFocused: row.index === settings.currentIndex
+                            animateChanges: !settings._pageSwitching
+                            activatePulse: settings.fieldActivatePulse
+                            // Index and scrape can't run together; while
+                            // one operation is in flight the other row
+                            // dims and its MouseArea stops responding.
+                            // Keyboard Accept is separately gated in
+                            // `_triggerIndex`/`_triggerScrape`.
+                            enabled: settings._fieldEnabled(row.modelData.id)
+                            label: row.modelData.label
+                            value: settings._fieldValue(row.modelData.id)
+                            control: settings._fieldControl(row.modelData.id)
+                            checked: settings._fieldChecked(row.modelData.id)
+                            actionStatus: row.modelData.id === "updateMediaDb" ? settings._indexActionStatus() : row.modelData.id === "runScraper" ? settings._scrapeActionStatus() : ""
+                            onHovered: settings.currentIndex = row.index
+                            onClicked: {
+                                settings.currentIndex = row.index;
+                                if (row.modelData.id === "mouseEnabled")
+                                    settings._toggleMouseEnabled();
+                                else if (row.modelData.id === "showHidden")
+                                    settings._toggleShowHidden();
+                                else if (row.modelData.id === "showOriginalFilenames")
+                                    settings._toggleShowOriginalFilenames();
+                                else if (row.modelData.id === "discoverArcadeAlternateVersions")
+                                    settings._toggleDiscoverArcadeAlternateVersions();
+                                else if (row.modelData.id === "debugLogging")
+                                    settings._toggleDebugLogging();
+                                else if (row.modelData.id === "rescrapeExisting")
+                                    settings._toggleRescrapeExisting();
+                                else if (row.modelData.id === "reduceMotion")
+                                    settings._toggleReduceMotion();
+                                else if (row.modelData.id === "crtEnabled")
+                                    settings._requestCrtEnabled(!Browse.CrtVideo.crt_enabled);
+                            }
+                            onRightClicked: settings._goBack()
+                            // Picker, action, and navigate rows route
+                            // through `onAccepted` (see SettingsField's
+                            // MouseArea), so the focus commit lives here
+                            // too — clicking commits focus before firing
+                            // the action.
+                            onAccepted: {
+                                settings.currentIndex = row.index;
+                                if (settings._openPage(row.modelData.id))
+                                    return;
+                                // Non-toggle rows route here (toggles use onClicked).
+                                // Defer like the keyboard path so the push-in shows
+                                // before the modal opens / the screen navigates.
+                                settings.fieldActivatePulse++;
+                                fieldCommit._id = row.modelData.id;
+                                fieldCommit.arm();
+                            }
                         }
                     }
                 }
-            }
 
-            // Trailing spacer — symmetric with the leading spacer, so
-            // the last field clears the bottom chevron and the cut-off
-            // edge sits in whitespace.
-            Item {
-                id: trailingSpacer
+                // Trailing spacer — symmetric with the leading spacer, so
+                // the last field clears the bottom chevron and the cut-off
+                // edge sits in whitespace.
+                Item {
+                    id: trailingSpacer
 
-                width: form.width
-                height: Sizing.pctH(2)
+                    width: form.width
+                    height: Sizing.pctH(2)
+                }
             }
         }
     }

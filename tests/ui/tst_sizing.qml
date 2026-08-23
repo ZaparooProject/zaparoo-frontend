@@ -372,12 +372,7 @@ TestCase {
     // silently drift apart, plus a hand-computed check at one tier for an
     // independent sanity bound.
     function test_hub_tile_size_matches_real_grid_and_hand_math(): void {
-        const cases = [
-            [320, 240],
-            [640, 480],
-            [1280, 720],
-            [1920, 1080]
-        ];
+        const cases = [[320, 240], [640, 480], [1280, 720], [1920, 1080]];
         for (const [w, h] of cases) {
             setResolution(w, h);
             compare(Sizing.hubTileSize, main.hubScreen._gridCellWidth, w + "x" + h);

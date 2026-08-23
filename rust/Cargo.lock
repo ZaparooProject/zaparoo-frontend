@@ -1496,6 +1496,7 @@ dependencies = [
  "libc",
  "qrcode",
  "semver",
+ "serde",
  "serde_json",
  "tempfile",
  "time",

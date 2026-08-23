@@ -9,10 +9,17 @@ import Zaparoo.Theme
 // accessory cluster on the right whose shape is selected by `control`:
 //   "picker"   — current value text. Accept opens a list-picker modal.
 //   "toggle"   — compact square-cornered on/off control.
-//   "action"   — trigger row. Status caption when an operation is in
-//                flight; nothing while idle.
+//   "action"   — trigger row. Centered label, status caption on a second
+//                centered line when an operation is in flight; nothing
+//                while idle. See docs/style.md's "Inverse-video rows".
 //   "navigate" — `›` chevron. Reserved for rows that open another
 //                screen (subpages, About / License).
+//
+// A per-row description string, when the model provides one, is not
+// rendered here — `SettingsScreen.qml` reads it directly for the
+// screen-level hint band pinned under the settings card (one shared band,
+// not a per-row line: see docs/style.md's Settings hint-band note and
+// docs/content-style.md's "Adding a setting" checklist).
 //
 // Rows are lines of text on the section card behind them, not buttons: no
 // fill or border at rest, and a selected row inverts to solid accent rather
@@ -35,9 +42,10 @@ Item {
     // page's model data lands. Restored to true on the next event-loop
     // tick so ordinary user navigation still animates.
     property bool animateChanges: true
-    // For `control: "action"` — short live-state string painted on the
-    // right ("In progress", "Paused", or "" when idle). The screen
-    // owns the binding; the field treats it as a plain caption.
+    // For `control: "action"` — short live-state string painted on a
+    // second centered line below the label ("In progress", "Paused", or
+    // "" when idle). The screen owns the binding; the field treats it as
+    // a plain caption.
     property string actionStatus: ""
     // Inverse-blink cue, matching the BrowseList vocabulary. The host
     // increments this on accept; the focused row flashes bar/content colors
@@ -59,7 +67,15 @@ Item {
     // on the row makes Accept a no-op (the index/scrape pair use this
     // when one of the two is in flight — Core serialises them).
     opacity: enabled ? 1 : 0.4
-    implicitHeight: Sizing.pctH(8)
+    readonly property bool _isAction: root.control === "action"
+    // Action rows grow to show a second, centered status line only while
+    // there's something to say (a live run state or an idle count) — see
+    // the actionStatus Text below and docs/style.md's "Inverse-video
+    // rows" note on centered action-row labels.
+    readonly property bool _hasActionStatus: root._isAction && root.actionStatus !== ""
+    readonly property int _singleLineHeight: Sizing.pctH(8)
+    readonly property int _actionStatusBandHeight: Sizing.pctH(3.2)
+    implicitHeight: root._hasActionStatus ? root._singleLineHeight + root._actionStatusBandHeight : root._singleLineHeight
 
     // One-shot inverse blink. Non-toggle rows only; focused row plays it.
     // `animateChanges` is false during a page switch (same gate the field's
@@ -80,19 +96,53 @@ Item {
         activatePulse: root._barActivatePulse
     }
 
+    // Action rows center their label instead of left-aligning it — the
+    // one row kind that does, per docs/style.md's "Inverse-video rows"
+    // note. Centered via item position (`x`), never
+    // `anchors.horizontalCenter` + `AlignHCenter` — see
+    // docs/qml-gotchas.md's "Integer-pixel rules". `labelText.width` is
+    // its own unconstrained `implicitWidth` in both branches (neither
+    // sets an explicit `width` or a right anchor), so `Sizing.center()`
+    // measures real content width either way.
     Text {
         id: labelText
 
-        anchors.left: parent.left
-        anchors.leftMargin: Sizing.pctW(2)
-        anchors.verticalCenter: parent.verticalCenter
+        x: root._isAction ? Sizing.center(parent.width, labelText.width) : Sizing.pctW(2)
+        anchors.top: parent.top
+        // Pinned toward the top of the taller row when a status line
+        // follows, so that line has room below; centered within the
+        // single-line band otherwise. Right-side accessories below
+        // anchor to `labelText.verticalCenter`, not
+        // `parent.verticalCenter`, so they track this same line.
+        anchors.topMargin: root._hasActionStatus ? Sizing.pctH(1) : Sizing.center(root._singleLineHeight, labelText.height)
         text: root.label
         // Action rows tint their label accent (unselected) / onAccent
         // (selected) instead of getting a chevron — the "Erase All Content
         // and Settings" pattern. See the chevron Image below.
-        color: bar.active ? bar.contentColor : (root.control === "action" ? Theme.accent : Theme.textPrimary)
+        color: bar.active ? bar.contentColor : (root._isAction ? Theme.accent : Theme.textPrimary)
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontBody
+        font.weight: bar.contentWeight
+        renderType: Text.NativeRendering
+    }
+
+    // Action-row status line — a second centered line under the label,
+    // carrying either a transient run state ("In progress" / "Paused") or
+    // a persistent idle count ("100,000 indexed"). Same recipe the old
+    // per-row description line used (fontCaption / textLabel), just
+    // centered under the now-centered label instead of left-aligned full
+    // width. See docs/style.md's "Inverse-video rows" note.
+    Text {
+        id: actionStatusText
+        visible: root._hasActionStatus
+        x: Sizing.center(parent.width, actionStatusText.width)
+        anchors.top: labelText.bottom
+        anchors.topMargin: Sizing.pctH(0.3)
+        text: root.actionStatus
+        color: bar.active ? bar.contentColor : Theme.textLabel
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontCaption
+        font.weight: bar.contentWeight
         renderType: Text.NativeRendering
     }
 
@@ -109,11 +159,12 @@ Item {
         anchors.leftMargin: Sizing.pctW(2)
         anchors.right: navChevron.left
         anchors.rightMargin: Sizing.pctW(2)
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: labelText.verticalCenter
         text: root.value
         color: bar.active ? bar.contentColor : Theme.textPrimary
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontBody
+        font.weight: bar.contentWeight
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignRight
         renderType: Text.NativeRendering
@@ -125,7 +176,7 @@ Item {
         visible: root.control === "toggle"
         anchors.right: parent.right
         anchors.rightMargin: Sizing.pctW(2)
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: labelText.verticalCenter
         // Compact-toggle proportion: width ≈ 1.85 × height keeps the
         // handle's travel close to one diameter on either side without
         // leaving the long rail of empty space the previous
@@ -179,27 +230,6 @@ Item {
         }
     }
 
-    // Right-side value for `control: "action"`. Carries either a
-    // transient run state ("In progress" / "Paused" / "Optimizing")
-    // or a persistent idle count ("100,000 indexed"). Styled to match
-    // the picker right-text recipe so idle counts read as values, not
-    // dimmed chrome. No chevron — chevron is reserved for navigation.
-    Text {
-        visible: root.control === "action" && root.actionStatus !== ""
-        anchors.left: labelText.right
-        anchors.leftMargin: Sizing.pctW(2)
-        anchors.right: parent.right
-        anchors.rightMargin: Sizing.pctW(2)
-        anchors.verticalCenter: parent.verticalCenter
-        text: root.actionStatus
-        color: bar.active ? bar.contentColor : Theme.textPrimary
-        font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontBody
-        elide: Text.ElideRight
-        horizontalAlignment: Text.AlignRight
-        renderType: Text.NativeRendering
-    }
-
     // Right-side chevron. Means "this row opens something else" — a
     // list-picker modal (`control: "picker"`) or another page
     // (`control: "navigate"`, e.g. About / License), per the iOS/Android
@@ -212,7 +242,7 @@ Item {
         visible: root.control === "picker" || root.control === "navigate"
         anchors.right: parent.right
         anchors.rightMargin: Sizing.pctW(2)
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: labelText.verticalCenter
         source: Resources.iconUrl("NavRight", bar.active ? bar.contentColor : Theme.textPrimary)
         width: Sizing.pctH(3.5)
         height: width

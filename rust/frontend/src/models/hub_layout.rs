@@ -76,13 +76,23 @@ pub struct HubLayoutRust {
     cover_subscription: Option<JoinHandle<()>>,
     /// Set for the duration of a Hub Move-mode session (Options -> Move,
     /// through Accept/Cancel) — a snapshot of the layout at the moment
-    /// `begin_move` was called. Every intermediate `move_held_to` press
-    /// mutates the live layout in memory only, via
+    /// `begin_move` was called. A session is origin-anchored, not chained:
+    /// every intermediate `move_held_to` press rebuilds the live layout
+    /// from this snapshot (via `CoreHubLayout::reseat_held_item`) rather
+    /// than continuing from the previous press's result, so at most one
+    /// other tile is ever displaced from where the snapshot had it — the
+    /// one currently under the held tile — and any tile a previous press
+    /// displaced snaps back home. Mutated in memory only, via
     /// `with_hub_layout_mut_unsaved`; `cancel_move` restores this snapshot
     /// verbatim (nothing was ever written to disk, so there's nothing to
     /// revert on disk either), and `commit_move` drops it and performs the
     /// session's one real save. `None` outside a session.
     move_snapshot: Option<CoreHubLayout>,
+    /// The held tile's visible index in `move_snapshot` — `reseat_held_item`'s
+    /// `origin`. Set alongside `move_snapshot` in `begin_move`, cleared
+    /// alongside it in `commit_move`/`cancel_move`; always `Some` exactly
+    /// when `move_snapshot` is.
+    move_origin: Option<usize>,
 }
 
 #[cxx_qt::bridge]
@@ -209,15 +219,20 @@ pub mod ffi {
         #[qinvokable]
         fn begin_move(self: Pin<&mut HubLayout>, index: i32) -> bool;
 
-        /// Board-model swap: the item currently at `from` (visible index)
-        /// trades places with whatever occupies `to` — a tile, or a
-        /// `blank` — see `zaparoo_core::hub_layout::HubLayout::
-        /// place_visible_item`. Only valid inside a Move session (between
-        /// `begin_move` and `commit_move`/`cancel_move`); mutates the
-        /// in-memory layout only, never persists. Bumps `revision` and
-        /// returns whether anything actually moved.
+        /// Origin-anchored placement: the item `begin_move` armed trades
+        /// places with whatever occupies `to` (visible index) — a tile, or
+        /// a `blank` — see `zaparoo_core::hub_layout::HubLayout::
+        /// reseat_held_item`. Every call rebuilds from the session's
+        /// snapshot rather than the previous call's result, so it is safe
+        /// to call repeatedly with a moving `to`: at most one other tile is
+        /// ever displaced (the one currently at `to`), and any tile a prior
+        /// call displaced snaps back to where the snapshot had it. Only
+        /// valid inside a Move session (between `begin_move` and
+        /// `commit_move`/`cancel_move`); mutates the in-memory layout only,
+        /// never persists. Bumps `revision` and returns whether anything
+        /// actually moved.
         #[qinvokable]
-        fn move_held_to(self: Pin<&mut HubLayout>, from: i32, to: i32) -> bool;
+        fn move_held_to(self: Pin<&mut HubLayout>, to: i32) -> bool;
 
         /// End a Move session, keeping the result: trims any dangling
         /// trailing blanks (see `trim_trailing_blanks`) and performs the
@@ -504,15 +519,22 @@ impl ffi::HubLayout {
             return false;
         }
         let snapshot = with_hub_layout_read(CoreHubLayout::clone);
-        self.as_mut().rust_mut().move_snapshot = Some(snapshot);
+        let mut rust = self.as_mut().rust_mut();
+        rust.move_snapshot = Some(snapshot);
+        rust.move_origin = Some(index);
         true
     }
 
-    fn move_held_to(mut self: Pin<&mut Self>, from: i32, to: i32) -> bool {
-        let (Ok(from), Ok(to)) = (usize::try_from(from), usize::try_from(to)) else {
+    fn move_held_to(mut self: Pin<&mut Self>, to: i32) -> bool {
+        let Ok(to) = usize::try_from(to) else {
             return false;
         };
-        let moved = with_hub_layout_mut_unsaved(|layout| layout.place_visible_item(from, to));
+        let rust = self.as_mut().rust_mut();
+        let (Some(snapshot), Some(origin)) = (rust.move_snapshot.clone(), rust.move_origin) else {
+            return false;
+        };
+        let moved =
+            with_hub_layout_mut_unsaved(|layout| layout.reseat_held_item(&snapshot, origin, to));
         if moved {
             let next = self.revision.wrapping_add(1);
             self.as_mut().rust_mut().revision = next;
@@ -522,7 +544,9 @@ impl ffi::HubLayout {
     }
 
     fn commit_move(mut self: Pin<&mut Self>) {
-        if self.as_mut().rust_mut().move_snapshot.take().is_none() {
+        let mut rust = self.as_mut().rust_mut();
+        rust.move_origin = None;
+        if rust.move_snapshot.take().is_none() {
             return;
         }
         let changed = with_hub_layout_mut(|layout| {
@@ -538,7 +562,9 @@ impl ffi::HubLayout {
     }
 
     fn cancel_move(mut self: Pin<&mut Self>) {
-        let Some(snapshot) = self.as_mut().rust_mut().move_snapshot.take() else {
+        let mut rust = self.as_mut().rust_mut();
+        rust.move_origin = None;
+        let Some(snapshot) = rust.move_snapshot.take() else {
             return;
         };
         with_hub_layout_mut_unsaved(|layout| *layout = snapshot);

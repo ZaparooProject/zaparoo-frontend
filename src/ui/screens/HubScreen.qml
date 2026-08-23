@@ -286,19 +286,27 @@ Item {
     function _resolveActionEntry(id: string): var {
         if (id === "resume") {
             const resumeName = hub.resumeModelEnabled ? Browse.RecentsModel.resume_name : "";
-            return hub._actionEntry("resume", hub._hubCoverKey("resume", "icons/PlayOutline"), resumeName.length > 0 ? resumeName : qsTr("Resume"), hub.resumeKnownUnavailable, qsTr("No recent games"));
+            // Real cover art once the model is live and has resolved one
+            // (RecentsModel.resume_cover_key -- see recents.rs's
+            // resume_cover_key_for); the static glyph before first frame
+            // (matching resumeName's own pre-first-frame gating above) or
+            // whenever Rust itself has nothing better to offer. A user's
+            // `hub/resume` override still wins over either via
+            // `_hubCoverKey`.
+            const resumeCoverFallback = hub.resumeModelEnabled ? Browse.RecentsModel.resume_cover_key : "icons/PlayOutline";
+            return hub._actionEntry("resume", hub._hubCoverKey("resume", resumeCoverFallback), resumeName.length > 0 ? resumeName : qsTr("Resume"), hub.resumeKnownUnavailable, qsTr("No recent games"));
         }
         if (id === "favorites")
             return hub._actionEntry("favorites", hub._hubCoverKey("favorites", "icons/HeartOutline"), qsTr("Favorites"));
         if (id === "recents")
-            return hub._actionEntry("recents", hub._hubCoverKey("recents", "icons/History"), qsTr("Recently Played"));
+            return hub._actionEntry("recents", hub._hubCoverKey("recents", "icons/History"), qsTr("Recently played"));
         if (id === "update") {
             if (!Browse.BuildInfo.update_enabled)
                 return null;
             return hub._actionEntry("update", hub._hubCoverKey("update", "icons/RefreshCw"), qsTr("Update"), !hub._internetAvailable, qsTr("No internet connection"));
         }
         if (id === "settings")
-            return hub._actionEntry("settings", hub._hubCoverKey("settings", "icons/Tools"), qsTr("Settings & Utilities"));
+            return hub._actionEntry("settings", hub._hubCoverKey("settings", "icons/Tools"), qsTr("Settings"));
         // A future build's action id this one doesn't recognise -- stays in
         // the persisted layout untouched, just not rendered.
         return null;
@@ -607,10 +615,14 @@ Item {
     //
     // `ListModel.setProperty` patches one row in place without touching
     // any other row's delegate, so the shared prefix touches exactly the
-    // rows whose values actually differ -- normally 2, a swap's pair -- and
-    // every other Tile stays alive, mid-incubation state and all. A length
-    // change (Add/Remove/Reset, or a Move that crosses onto a fresh page)
-    // appends/removes only the tail delta.
+    // rows whose values actually differ -- normally 2 for an ordinary swap,
+    // up to 3 for a Move press (the origin cell, the destination cell, and
+    // -- since each press is re-derived from the session's snapshot rather
+    // than chained off the last press, see `moveArmed`'s doc comment --
+    // whichever cell a previous press's displaced tile is snapping back
+    // out of) -- and every other Tile stays alive, mid-incubation state and
+    // all. A length change (Add/Remove/Reset, or a Move that crosses onto a
+    // fresh page) appends/removes only the tail delta.
     //
     // Deliberately NEVER calls `clear()`. That would drop the model to
     // ZERO rows for an instant before the loop below repopulates it, and
@@ -963,29 +975,41 @@ Item {
 
     // ── Move (Options -> Move) ──────────────────────────────────────────
     // Armed by Main.qml's `hub_move` dispatch (see handleContextMenuAccepted
-    // there). Board model: every direction/page press SWAPS the held tile
-    // with whatever occupies the destination cell (another tile, or a
-    // blank) — always exactly two cells change, never a splice, so a
-    // deliberate gap the user left elsewhere is never disturbed. Rust owns
-    // the session (`begin_move`/`move_held_to`/`commit_move`/`cancel_move`,
-    // `rust/frontend/src/models/hub_layout.rs`): every intermediate press
-    // mutates in memory only, so a fast run of presses costs zero disk I/O;
-    // Accept performs the session's one real save, Cancel restores the
-    // pre-session snapshot exactly (nothing was ever written to disk to
-    // undo). `_moveStartFlat` is the FLAT `items` index (not a
-    // Browse.HubLayout position) the held tile started at, so Cancel can
-    // reseat the cursor directly with no translation needed — the
-    // restored snapshot renders byte-identical to how it looked at
-    // `beginMove` time.
+    // there). Board model, origin-anchored: every direction/page press
+    // rebuilds the layout from the snapshot taken at arm time and swaps
+    // the held tile's ORIGINAL cell with whatever the snapshot has at the
+    // destination cell (another tile, or a blank) — never a splice, so a
+    // deliberate gap the user left elsewhere is never disturbed, and never
+    // chained off the previous press's result, so at most one other tile
+    // is ever displaced from where the snapshot had it: the one currently
+    // under the held tile. A tile a previous press displaced snaps back
+    // home the moment the held tile moves past it -- the committed result
+    // depends only on where the move started and where it's dropped, not
+    // on the path taken to get there. Landing back on the start cell is
+    // therefore a full, exact restore, unlike an ordinary swap onto a
+    // distinct cell. Rust owns the session (`begin_move`/`move_held_to`/
+    // `commit_move`/`cancel_move`, `rust/frontend/src/models/
+    // hub_layout.rs`): every intermediate press mutates in memory only, so
+    // a fast run of presses costs zero disk I/O; Accept performs the
+    // session's one real save, Cancel restores the pre-session snapshot
+    // exactly (nothing was ever written to disk to undo). `_moveStartFlat`
+    // is the FLAT `items` index (not a Browse.HubLayout position) the held
+    // tile started at, so Cancel can reseat the cursor directly with no
+    // translation needed — the restored snapshot renders byte-identical to
+    // how it looked at `beginMove` time.
     property bool moveArmed: false
     property int _moveStartFlat: -1
     // Total page budget for the whole session, frozen at arm time (current
     // real content's pages, plus exactly one reserve) — see
     // `_padToPageSize`'s doc comment for why this must be a floor computed
     // ONCE rather than recomputed from "current real content" on every
-    // press: the latter keeps receding a page further every time a press
-    // makes Rust materialize new real blanks to reach a target, producing
-    // unbounded page growth. `0` outside a session (a no-op floor).
+    // press. Anchoring each press to the session's snapshot (rather than
+    // chaining off the previous press) already keeps the padding itself
+    // from accumulating -- stepping back off the reserve page drops it
+    // again -- but the floor still has to stay fixed for the session's
+    // duration so the reserve page doesn't appear and disappear as the
+    // held tile crosses in and out of it. `0` outside a session (a no-op
+    // floor).
     property int _moveArmedTotalPages: 0
 
     function beginMove(hubIndex: int): void {
@@ -1113,11 +1137,10 @@ Item {
     // at column 0 (or Right at the last column) would otherwise wrap
     // within the same row onto a synthetic tail-padding cell, which
     // `move_held_to` then materializes into a brand-new real position far
-    // from where the tile actually was -- the held tile silently jumps to
-    // the opposite edge of its row while the tile it was previously
-    // swapped with is left stranded, never actually touched by the press
-    // that seemed to move past it. Same class of bug `_wouldWrapVertically`
-    // guards against, just on the horizontal axis.
+    // from where the tile actually was -- the held tile would silently
+    // jump to the opposite edge of its row on a single press. Same class
+    // of bug `_wouldWrapVertically` guards against, just on the horizontal
+    // axis.
     function _wouldWrapColumn(dCol: int): bool {
         if (dCol > 0)
             return pagedGrid.currentColumn === pagedGrid.columns - 1;
@@ -1147,7 +1170,7 @@ Item {
         if (!pagedGrid.moveSelection(dCol, dRow))
             return;
         const toReal = hub._realIndexForFlat(hub.currentIndex);
-        if (toReal < 0 || !Browse.HubLayout.move_held_to(heldEntry.hubIndex, toReal)) {
+        if (toReal < 0 || !Browse.HubLayout.move_held_to(toReal)) {
             hub.currentIndex = fromFlat;
             return;
         }
@@ -1164,7 +1187,7 @@ Item {
         if (!pagedGrid.pageBy(delta))
             return;
         const toReal = hub._realIndexForFlat(hub.currentIndex);
-        if (toReal < 0 || !Browse.HubLayout.move_held_to(heldEntry.hubIndex, toReal)) {
+        if (toReal < 0 || !Browse.HubLayout.move_held_to(toReal)) {
             hub.currentIndex = fromFlat;
             return;
         }
@@ -1304,7 +1327,11 @@ Item {
 
     Component {
         id: tileDelegate
-        Tile {}
+        Tile {
+            // Hub tiles are full-bleed icons/covers with no caption band
+            // — see Tile.qml's `compactPadding` doc comment.
+            compactPadding: true
+        }
     }
 
     // Genuinely blank placeholder for the `isEmpty` rows `_padToPageSize`

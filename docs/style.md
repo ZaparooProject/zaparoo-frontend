@@ -458,6 +458,62 @@ it inside modals — so this isn't the language collapsing into one idiom, just
 narrowing physical treatment to things that are genuinely objects rather than
 list choices. See "Two registers" above.
 
+#### Selected-row text weight
+
+Dark-on-light (inverted) text suffers irradiation — it reads as thinner
+than light-on-dark text at the identical weight, a real optical effect,
+not a rendering bug. Resting rows are `Theme.textPrimary` on
+`Theme.surfaceCard`; a selected row is `Theme.onAccent` on solid
+`Theme.accent` — the inverted case. Round 8 added a weight step to
+correct it: `SelectionBar.contentWeight` resolves to `Font.Medium` when
+`active`, `Font.Normal` otherwise, and every consumer — `SettingsField`,
+`BrowseList` (via `ScrollingCaption.fontWeight`), `ContextMenu`,
+`ListPickerModal` — binds its text to it, the same shared-vocabulary
+guarantee `contentColor` already provides. The goal is parity with the
+resting row, not emphasis — `Font.Medium` is deliberately one notch, not
+a jump to bold. `resources/fonts/NotoSans.ttf` is a variable font (has an
+`fvar` table), so this resolves to a real cut off the weight axis rather
+than a synthesised one.
+
+No-op under `Theme.bitmapType`: the CRT/240p 6x8 face has a single
+strike, and unantialiased 1-bit text has no irradiation to correct in the
+first place — the same reasoning `Theme.fontUi`'s bitmap branch already
+gets a pass on for size (see "Type ladder" below).
+
+Panel-width measurement (`ContextMenu._desiredPanelWidth`,
+`ListPickerModal._desiredPanelWidth`) must size against the *selected*
+weight, not the resting one, or the widest label can elide the moment it
+becomes selected — both files keep a dedicated `FontMetrics` fixed at
+`Font.Medium` for exactly this, separate from each row's own live-weight
+`FontMetrics` used for that row's individual label-centering box.
+
+#### Action rows are the one row kind that centers its label
+
+`control: "action"` rows (`updateMediaDb`, `runScraper`, `uploadLog`) used
+to signal "this row runs something" purely by tinting the label
+`Theme.accent` instead of `Theme.textPrimary` — the only cue, and one that
+disappeared entirely on a selected row (the ternary collapsed to
+`bar.contentColor` regardless of `control`, identical to every other
+selected row). Round 8 kept the tint but added a stronger, selection-proof
+signal: the label centers, following Apple's own convention for an
+accessory-less "runs an action now" row (Sign Out, Erase All Content and
+Settings) rather than inventing a new glyph with no real precedent. It is
+deliberately the *one* row kind that centers — every other row stays
+left-aligned per "Two registers" above, and an embedded button (WinUI's
+`SettingsCard.ActionButton`, libadwaita's `AdwButtonRow`) was considered
+and rejected for the same reason `ContextMenu`/`ListPickerModal` moved off
+`PressableSurface`: it would reintroduce a button-shaped object into a row
+register this file deliberately keeps flat and borderless.
+
+Centered via item position (`x: Sizing.center(parent.width, labelText.width)`),
+never `anchors.horizontalCenter` + `AlignHCenter` — see "Integer-pixel
+drawing" below. The row's live status readout ("100,000 indexed", "In
+progress", "Paused") moved from right-aligned-next-to-the-label to a
+second centered line below it, the same reserved-height mechanism the
+Settings hint band above uses, keyed off `actionStatus` instead of
+`description` (the two are mutually exclusive in practice — action rows
+carry no description, described rows carry no `actionStatus`).
+
 #### Toggle rows
 
 One rule, both row registers: **the track alone carries on/off + row-register
@@ -512,6 +568,38 @@ the break renders identically at 1080p and at 240p. The band stays off
 `Theme.accent`, which `SettingsField.qml` reserves for "this row is an
 action" (see "Toggle rows" above and the action-row label rule below it) —
 reusing it for a header would blur that meaning.
+
+#### Settings hint band
+
+A per-row description line under the label (round 7) did not survive
+contact with 540p and CRT: `SettingsField.qml` grew a described row from
+`pctH(8)` to `pctH(11.2)` and painted the description at
+`Sizing.fontCaption`, but `fontCaption`/`fontBody` both quantize to the
+same 8px bitmap strike under `Theme.bitmapType`, so at 240p/CRT there was
+no size hierarchy left and the band clipped — and on a selected row both
+lines collapsed to the identical `bar.contentColor`, losing the colour
+hierarchy too.
+
+Round 8 replaced it with one shared band pinned to the bottom of the
+settings card, showing the *focused* row's description instead of every
+described row's own line. The card frame became static (an `Item` with
+fixed geometry) instead of scrolling with the row `Column` — the
+`Flickable` now occupies only the region above a hairline divider, with
+the hint `Text` below it. Two lines reserved unconditionally (empty when
+the focused row has no description) so the row column never reflows under
+the cursor; `Sizing.fontBody`/`Theme.textLabel`, not `fontCaption` — the
+same reasoning as above, colour is the only hierarchy signal that
+survives the bitmap tier, so lean on it alone rather than a size step
+that collapses to nothing there.
+
+A right-hand detail pane (the more common modern pattern — Kodi, Android
+TV, Switch) was considered and rejected: the card is already capped at
+`pctW(70)`, and splitting that horizontally at the 240p/CRT tier would
+leave row labels roughly half their current width. A bottom band costs
+one vertical slot, identical at every tier, and doubles as the fix for a
+separate bug: because the card frame is no longer scrollable content
+itself, its top/bottom edges can no longer be scrolled out of view the
+way they could when the whole card lived inside the `Flickable`.
 
 ### Pressable front edge
 
@@ -948,6 +1036,14 @@ Panel uses `bgPanel` + `radiusMd`, no border. Rows are inverse-video —
 surface — see "Two registers" and "Inverse-video rows" above. Panel vertical
 padding is independent from radius.
 
+**3-8 entries maximum** (see `docs/content-style.md`'s menu-ordering and
+menu-size rules for the content-side reasoning). The `Column` painting rows
+has no scroll of its own; `panelHeight` clamps to the window's usable area
+and the panel carries `clip: true` as a shipped-build safety net, but a
+menu that reaches the cap should be consolidated, not left to rely on that
+clip. `ContextMenu.qml` also logs a `console.warn` in development when
+`entries.length` exceeds the cap.
+
 Row labels center the `Text` item itself (`Sizing.center(parent.width,
 _textWidth)`), per the integer-pixel rule below — never
 `anchors.horizontalCenter` + `AlignHCenter`. Panel width tracks content:
@@ -996,6 +1092,30 @@ Default-theme grid gaps (`crt` keeps its own raw pixel values, unaffected):
 `pctH(3)` (matching `systemsGrid`'s own `rowGap`), both set in
 `BrowseLayouts.qml`. `PagedGrid.qml`'s `cellSpacingX` fallback (used when no
 layout profile supplies `columnGap`) mirrors the same `pctW(2)`.
+
+### Compact tile padding on full-bleed icon/cover grids
+
+`Tile._padding` (`Sizing.pctH(2)` on three sides in non-caption mode) insets
+art on every `Tile` caller by default — generic to the component, not
+specific to any one screen. Hub tiles and Settings' own root category grid
+(which deliberately reuses `Sizing.hubTileSize` so its tiles read as the
+same physical object as the Hub's — see above) are both full-bleed
+icon/cover tiles with no caption band competing for space, so round 8 gave
+them an opt-in `compactPadding` property (same opt-in shape as
+`squareCells`) that halves the inset to `Sizing.pctH(1)`. The focus ring's
+own inset (`_outlineGap`, `Sizing.pctH(0.4)`) stays well clear either way
+— it anchors to the tile's full bounds independently of `_padding`, so
+tightening the art padding can never make art touch or overlap the ring.
+Systems tiles are a separate, viewport-fitted grid and stay on the default
+padding; only Hub and Settings' category grid opt in.
+
+Two other levers were considered and set aside rather than folded into
+this pass: fewer Hub columns (`hubGridShape` is deliberately fixed, not
+viewport-fitted — see above — specifically so a hand-arranged Hub layout
+can't get scrambled by a display change; fewer columns reopens that), and
+`Image.PreserveAspectCrop` for game covers (a bigger visual gain, but
+crops the top/bottom of every cover, where title art often sits — worth a
+follow-up look against real covers, not bundled into a padding change).
 
 ### No scrollbars — grids are paged, not scrolled
 

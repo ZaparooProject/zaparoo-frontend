@@ -75,7 +75,9 @@ const CACHE_CAP_BYTES: usize = 128 * 1024 * 1024;
 /// Core's `localPath` response is a resized thumbnail, never an arbitrary
 /// source image. Bound one file well below total cache capacity so a corrupt,
 /// replaced, or remote-host path cannot allocate `MiSTer`'s remaining RAM.
-const MAX_LOCAL_IMAGE_BYTES: usize = 16 * 1024 * 1024;
+/// `pub(crate)` — also the read-size bound `hub_cover_manifest` uses for
+/// its own local-path opens at startup.
+pub(crate) const MAX_LOCAL_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 
 /// Maximum retries for a single key after a transient fetch failure
 /// (RPC error, base64 decode error). Generous enough to ride through
@@ -167,7 +169,11 @@ fn current_cover_preference_marker() -> Option<Arc<str>> {
     Some(Arc::from(format!("{COVER_PREF_PREFIX}{trimmed}")))
 }
 
-fn preferred_image_types(preference: &str) -> Vec<String> {
+// `pub(crate)` — also used by `hub_cover_manifest`'s one-off local-path
+// lookup, which builds the same `image_types` list the ordinary fetch
+// driver does so a manifest-refreshed path matches what a live fetch
+// would have requested.
+pub(crate) fn preferred_image_types(preference: &str) -> Vec<String> {
     let mut out = Vec::with_capacity(CORE_DEFAULT_IMAGE_TYPES.len() + 1);
     out.push(preference.to_string());
     for image_type in CORE_DEFAULT_IMAGE_TYPES {
@@ -827,6 +833,45 @@ impl MediaImageCache {
         Some(entry.bytes.clone())
     }
 
+    /// Seed the cache with bytes read directly from disk rather than
+    /// fetched from Core — used once at startup by the Hub/Resume
+    /// cold-boot cover manifest (see `hub_layout.rs`'s seed-manifest
+    /// module doc) to open Core's own already-on-disk thumbnails
+    /// directly, ahead of the first `media.image` round trip.
+    ///
+    /// Bypasses the fetch queue/retry machinery entirely: this isn't
+    /// answering a request anything is waiting on, it's front-running
+    /// one, so there's no `FetchOutcome`, no broadcast, and nothing to
+    /// retry. A no-op if `key` is already cached (a real fetch that
+    /// happened to land first wins) or if `bytes` is empty or exceeds
+    /// the cache's own byte cap — the manifest never overrides a fresher
+    /// answer or a corrupt read.
+    pub fn seed_local(&self, key: MediaKey, bytes: Vec<u8>) {
+        if bytes.is_empty() || bytes.len() > CACHE_CAP_BYTES {
+            return;
+        }
+        #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
+        let mut guard = self.state.write().unwrap();
+        if guard.map.contains_key(&key) {
+            return;
+        }
+        let clock = guard.next_clock();
+        guard.total_bytes = guard.total_bytes.saturating_add(bytes.len());
+        guard.map.insert(
+            key,
+            MediaImageEntry {
+                bytes,
+                // Core's own thumbnail cache always encodes WebP (see
+                // media_image.go's resize path) — informational only,
+                // the provider decodes by sniffing the byte content.
+                ext: "webp",
+                last_used: clock,
+                read: false,
+            },
+        );
+        guard.evict_until_fits(CACHE_CAP_BYTES);
+    }
+
     /// True iff `key` has bytes in the cache. Unlike `get_bytes`,
     /// this does **not** bump `last_used` or flip `read` — it's a
     /// pure existence query for callers (e.g. role-data lookups in
@@ -1367,7 +1412,10 @@ struct FetchedMediaImage {
     path_read_duration: Duration,
 }
 
-fn should_request_local_path(max_size: u32) -> bool {
+// `pub(crate)` — also used by `hub_cover_manifest`'s one-off local-path
+// lookup, so it shares the exact same gate the ordinary fetch driver
+// uses rather than a duplicated, potentially-drifting copy.
+pub(crate) fn should_request_local_path(max_size: u32) -> bool {
     local_path_request_allowed(
         max_size,
         runtime::current().is_mister(),
@@ -1402,7 +1450,11 @@ async fn read_local_image(path: String) -> Result<Vec<u8>, String> {
     }
 }
 
-fn read_local_image_file(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
+// `pub(crate)` — also used synchronously by `hub_cover_manifest::
+// seed_from_manifest` at startup (small, local, sequential reads before
+// the first frame; no need for `spawn_blocking` there the way the async
+// fetch path needs it).
+pub(crate) fn read_local_image_file(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
     use std::io::Read as _;
 
     let file = std::fs::File::open(path).map_err(|error| error.to_string())?;

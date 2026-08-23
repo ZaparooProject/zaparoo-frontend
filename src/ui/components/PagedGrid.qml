@@ -1019,18 +1019,31 @@ Item {
                 z: isSelected ? 1 : 0
                 visible: root.cellsVisible && cellPage === root.currentPage
 
-                // Card-shaped placeholder painted behind the
-                // TileLoader. When the loader's `active` is false
-                // (cell is outside the retention window) or the Tile
-                // is still incubating asynchronously after a
-                // retention-edge crossing, the user sees this flat
-                // card slot instead of an empty pit. Once the Tile
-                // finishes incubating it paints opaque on top with
-                // the same color and radius, so the silhouette is
-                // hidden for free without an explicit visibility
-                // gate. The only selection-dependent work here is the
-                // focused placeholder ring below; it stays limited to
-                // the current page by the parent visibility gate.
+                // Card-shaped placeholder painted behind the TileLoader,
+                // plus the selection ring it draws during rapidRenderMode
+                // (see the Loader's `active` comment below). Retention-gated
+                // the same way `tileLoader` is: unconditionally building this
+                // per row (a `PressableSurface` — 6 visual primitives, 2
+                // `Behavior` animations, `clip: true` — plus its own implicit
+                // MouseArea) for every model row, including the thousands a
+                // bulk jump/restore can insert far from `currentPage`, was
+                // the dominant residual cost behind a multi-second Qt-thread
+                // stall even though `TileLoader` itself was already
+                // retention-gated — see `games.rs::apply_append_page`'s
+                // `bulk` comment for the Rust-side half of this fix. Off-
+                // retention `cellItem`s now cost only the bare outer `Item`
+                // (role bindings + the `_coverEverRequested` latch).
+                //
+                // When the loader's `active` is false (cell is outside the
+                // retention window) or the Tile is still incubating
+                // asynchronously after a retention-edge crossing, the user
+                // sees this flat card slot instead of an empty pit. Once the
+                // Tile finishes incubating it paints opaque on top with the
+                // same color and radius, so the silhouette is hidden for
+                // free without an explicit visibility gate. The only
+                // selection-dependent work here is the focused placeholder
+                // ring below; it stays limited to the current page by the
+                // parent visibility gate.
                 //
                 // That "paints opaque on top" assumption is specific to
                 // `delegate` — an `emptyDelegate` (`EmptySlot.qml`) is
@@ -1039,54 +1052,93 @@ Item {
                 // permanently visible underneath it instead of being
                 // covered for free. `isEmpty` rows skip it outright: there
                 // is nothing to incubate for a structural placeholder.
-                PressableSurface {
-                    id: placeholderCard
+                Loader {
+                    id: placeholderCardLoader
 
-                    objectName: "pagedGridPlaceholderCard-" + cellItem.index
                     anchors.fill: parent
-                    visible: !cellItem.isEmpty
-                    radius: root._cardRadius
-                    faceColor: Theme.surfaceCard
-                    edgeColor: Theme.tileEdge
-                    // Track the loaded Tile's physical press so both opaque
-                    // surfaces leave the same top gap. At skeleton time the
-                    // placeholder stays raised until a real activation occurs.
-                    // qmllint disable missing-property
-                    pressed: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.cardPressed : false
-                    // Same tracking for the held blink (Hub Options -> Move,
-                    // see Tile.qml's `_heldOpacity`): the "paints opaque on
-                    // top" contract above only holds while the loaded Tile
-                    // actually stays opaque. Without this, the Tile blinking
-                    // to nothing left this skeleton (a blank card with no
-                    // art or name) showing through underneath instead of the
-                    // whole cell going with it.
-                    opacity: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.opacity : 1
-                    // qmllint enable missing-property
+                    // Retention window, OR'd with "on the current page" —
+                    // NOT `&& !root.rapidRenderMode` the way `tileLoader`
+                    // below is. `_coverInRetentionRange` already bakes in
+                    // `!root.rapidRenderMode` internally (it's false for
+                    // every cell during rapidRenderMode), but the selected
+                    // cell's own placeholder + ring must survive
+                    // rapidRenderMode — `tileLoader` goes inactive on
+                    // purpose then, and this skeleton is what keeps
+                    // selection visible while it's torn down (see the ring
+                    // comment inside the loaded component). The selected
+                    // cell is always on `currentPage`, so OR-ing in
+                    // `cellPage === currentPage` keeps it (and the rest of
+                    // the current page, cheaply) alive through
+                    // rapidRenderMode without re-widening the window for
+                    // every other off-page cell this Loader exists to skip.
+                    active: cellItem._coverInRetentionRange || cellItem.cellPage === root.currentPage
+                    // Cross-boundary values, resolved once here (same scope
+                    // as `tileLoader`'s own property bindings below — not a
+                    // new boundary) rather than inside the loaded component.
+                    // A `Loader` never forwards its own properties onto the
+                    // item it loads, so the component below reads these via
+                    // `parent.X`, mirroring how `Tile.qml` reads
+                    // `TileLoader`'s properties.
+                    property bool cardPressed: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.cardPressed : false
+                    property real tileOpacity: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.opacity : 1
+                    property bool ringVisible: cellItem.isSelected && root.focused && root.focusReady && (root.rapidRenderMode || tileLoader.status !== Loader.Ready)
+                    property bool cellIsEmpty: cellItem.isEmpty
 
-                    // Standalone selected-cell ring for skeleton/rapid mode.
-                    // Tile.qml owns the normal ring, but rapidRenderMode
-                    // deliberately disables TileLoader to keep held d-pad
-                    // navigation cheap. Draw the same filled-rect ring on
-                    // the placeholder so selection never disappears while
-                    // covers/delegates are paused.
-                    Rectangle {
-                        id: placeholderFocusRingOuter
+                    sourceComponent: PressableSurface {
+                        id: placeholderCard
 
+                        // Local captures of the Loader's properties, taken
+                        // once here (mirrors Tile.qml's `delegateIsSelected:
+                        // parent.isSelected` pattern) so the nested ring
+                        // Rectangles below read plain same-component
+                        // properties instead of repeating `parent.X`.
+                        readonly property bool _cellIsEmpty: parent.cellIsEmpty
+                        readonly property bool _ringVisible: parent.ringVisible
+
+                        objectName: "pagedGridPlaceholderCard-" + cellItem.index
                         anchors.fill: parent
-                        anchors.margins: Sizing.pctH(0.4)
-                        color: Theme.accent
-                        radius: Math.max(0, root._cardRadius - Sizing.pctH(0.4))
-                        antialiasing: true
-                        visible: cellItem.isSelected && root.focused && root.focusReady && (root.rapidRenderMode || tileLoader.status !== Loader.Ready)
-                    }
+                        visible: !_cellIsEmpty
+                        radius: root._cardRadius
+                        faceColor: Theme.surfaceCard
+                        edgeColor: Theme.tileEdge
+                        // Track the loaded Tile's physical press so both opaque
+                        // surfaces leave the same top gap. At skeleton time the
+                        // placeholder stays raised until a real activation occurs.
+                        pressed: parent.cardPressed
+                        // Same tracking for the held blink (Hub Options -> Move,
+                        // see Tile.qml's `_heldOpacity`): the "paints opaque on
+                        // top" contract above only holds while the loaded Tile
+                        // actually stays opaque. Without this, the Tile blinking
+                        // to nothing left this skeleton (a blank card with no
+                        // art or name) showing through underneath instead of the
+                        // whole cell going with it.
+                        opacity: parent.tileOpacity
 
-                    Rectangle {
-                        anchors.fill: placeholderFocusRingOuter
-                        anchors.margins: Sizing.focusRingWidth
-                        color: placeholderCard.faceColor
-                        radius: Math.max(0, placeholderFocusRingOuter.radius - Sizing.focusRingWidth)
-                        antialiasing: true
-                        visible: placeholderFocusRingOuter.visible
+                        // Standalone selected-cell ring for skeleton/rapid mode.
+                        // Tile.qml owns the normal ring, but rapidRenderMode
+                        // deliberately disables TileLoader to keep held d-pad
+                        // navigation cheap. Draw the same filled-rect ring on
+                        // the placeholder so selection never disappears while
+                        // covers/delegates are paused.
+                        Rectangle {
+                            id: placeholderFocusRingOuter
+
+                            anchors.fill: parent
+                            anchors.margins: Sizing.pctH(0.4)
+                            color: Theme.accent
+                            radius: Math.max(0, root._cardRadius - Sizing.pctH(0.4))
+                            antialiasing: true
+                            visible: placeholderCard._ringVisible
+                        }
+
+                        Rectangle {
+                            anchors.fill: placeholderFocusRingOuter
+                            anchors.margins: Sizing.focusRingWidth
+                            color: placeholderCard.faceColor
+                            radius: Math.max(0, placeholderFocusRingOuter.radius - Sizing.focusRingWidth)
+                            antialiasing: true
+                            visible: placeholderFocusRingOuter.visible
+                        }
                     }
                 }
 
@@ -1143,36 +1195,54 @@ Item {
                     coverSynchronous: root.coverSynchronous && cellItem.cellPage === root.currentPage && !root.rapidRenderMode
                 }
 
-                MouseArea {
+                // Click/hover hit area. Retention-gated the same as
+                // `placeholderCardLoader` above, but WITHOUT the
+                // `cellPage === currentPage` OR-term's rapidRenderMode
+                // concern — a `MouseArea` was never rapidRenderMode-aware
+                // (only `enabled: cellItem.visible` gated it), and
+                // `cellItem.visible` already IS `cellPage === currentPage`
+                // (folded in below), so gating construction on `visible`
+                // directly reproduces the exact original condition: this
+                // hit area only ever did anything on the current page, and
+                // a disabled off-page MouseArea served no purpose anyway.
+                Loader {
+                    id: hitAreaLoader
+
                     anchors.fill: parent
-                    hoverEnabled: true
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    cursorShape: Qt.PointingHandCursor
-                    enabled: cellItem.visible
+                    active: cellItem.visible
+                    property bool cellIsEmpty: cellItem.isEmpty
+                    property int cellIndex: cellItem.index
 
-                    onEntered: {
-                        // Mirrors the directional skip above: with
-                        // `skipEmptyCells` set, a blank is not a landing
-                        // spot for the mouse either.
-                        if (root.skipEmptyCells && cellItem.isEmpty)
-                            return;
-                        if (root.currentIndex !== cellItem.index)
-                            root.currentIndex = cellItem.index;
-                        root.itemHovered(cellItem.index);
+                    sourceComponent: MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        cursorShape: Qt.PointingHandCursor
+
+                        onEntered: {
+                            // Mirrors the directional skip above: with
+                            // `skipEmptyCells` set, a blank is not a landing
+                            // spot for the mouse either.
+                            if (root.skipEmptyCells && parent.cellIsEmpty)
+                                return;
+                            if (root.currentIndex !== parent.cellIndex)
+                                root.currentIndex = parent.cellIndex;
+                            root.itemHovered(parent.cellIndex);
+                        }
+
+                        onClicked: mouse => {
+                            if (root.skipEmptyCells && parent.cellIsEmpty)
+                                return;
+                            if (root.currentIndex !== parent.cellIndex)
+                                root.currentIndex = parent.cellIndex;
+                            if (mouse.button === Qt.RightButton)
+                                root.itemRightClicked(parent.cellIndex);
+                            else
+                                root.itemClicked(parent.cellIndex);
+                        }
+
+                        onWheel: wheel => root._handleWheel(wheel)
                     }
-
-                    onClicked: mouse => {
-                        if (root.skipEmptyCells && cellItem.isEmpty)
-                            return;
-                        if (root.currentIndex !== cellItem.index)
-                            root.currentIndex = cellItem.index;
-                        if (mouse.button === Qt.RightButton)
-                            root.itemRightClicked(cellItem.index);
-                        else
-                            root.itemClicked(cellItem.index);
-                    }
-
-                    onWheel: wheel => root._handleWheel(wheel)
                 }
             }
         }
