@@ -1816,6 +1816,16 @@ MainLayout {
             // (openPageMenu / openFavoritesPageMenu); that entry is
             // unaffected by this change, just no longer the only way back.
             if (kind === "system") {
+                // A `system` shortcut can point at a launch-only (virtual)
+                // system -- "Add to Hub" doesn't exclude those, since the
+                // shortcut is still useful as a one-press launcher. Apply
+                // the same guard SystemsScreen's own accept handler uses
+                // below: launch it directly and stay put, never drill into
+                // an empty games browse.
+                if (Browse.SystemsModel.is_launchable_system(id)) {
+                    Browse.SystemsModel.launch_system_id(id);
+                    return;
+                }
                 root._navigateFromSystems(id, true);
                 return;
             }

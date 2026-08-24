@@ -155,9 +155,10 @@ bool BakedIconAtlas::parse()
             return false;
         }
         const bool singleTone = (flags & baked::kFlagSingleTone) != 0;
-        const qsizetype pixels = static_cast<qsizetype>(width) * height;
-        if (width <= 0 || height <= 0 || pathOffset >= m_size || alphaOffset + pixels > m_size ||
-            (!singleTone && (toneOffset == 0 || toneOffset + pixels > m_size)))
+        const qsizetype planeBytes = static_cast<qsizetype>(baked::paddedStride(width)) * height;
+        if (width <= 0 || height <= 0 || pathOffset >= m_size ||
+            alphaOffset + planeBytes > m_size ||
+            (!singleTone && (toneOffset == 0 || toneOffset + planeBytes > m_size)))
         {
             qWarning("baked icons: entry %lld has out-of-range offsets", static_cast<long long>(i));
             return false;

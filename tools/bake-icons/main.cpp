@@ -53,7 +53,7 @@ namespace
 {
 // Bumped whenever the bake output changes for reasons other than a changed
 // source SVG, so a stale manifest is caught by the cheap check script.
-constexpr int kToolVersion = 2;
+constexpr int kToolVersion = 3;
 
 // Corner masks are baked at every integer radius the radius ladder can reach
 // (docs/style.md -> "Radius ladder"). Resources.qml::cornerCutUrl() rejects
@@ -150,22 +150,28 @@ bool bakeOne(const QString& file, const QString& resourcePath, Baked* out, QStri
     out->baseHeight = base.height();
     out->singleTone = tint::isSingleTone(range);
 
-    const int pixels = out->width * out->height;
-    out->alphaPlane.resize(pixels);
+    // Rows are padded to baked::paddedStride() bytes, not packed tight at
+    // `width` -- see baked_icon_format.h's kRowAlignment. Zero-initialized so
+    // the pad bytes are deterministic (never read, but keeps the bake
+    // reproducible byte for byte).
+    const int stride = baked::paddedStride(out->width);
+    const int planeBytes = stride * out->height;
+    out->alphaPlane.fill('\0', planeBytes);
     if (!out->singleTone)
     {
-        out->tonePlane.resize(pixels);
+        out->tonePlane.fill('\0', planeBytes);
     }
 
-    int index = 0;
     for (int y = 0; y < straight.height(); ++y)
     {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         const auto* line = reinterpret_cast<const QRgb*>(straight.constScanLine(y));
-        for (int x = 0; x < straight.width(); ++x, ++index)
+        const int rowStart = y * stride;
+        for (int x = 0; x < straight.width(); ++x)
         {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             const QRgb source = line[x];
+            const int index = rowStart + x;
             out->alphaPlane[index] = static_cast<char>(qAlpha(source));
             if (!out->singleTone)
             {
@@ -290,15 +296,16 @@ bool bakeCornersForRadius(QQmlEngine& engine, int r, std::vector<Baked>* entries
         entry.baseWidth = r;
         entry.baseHeight = r;
         entry.singleTone = true;
-        const int pixels = r * r;
-        entry.alphaPlane.resize(pixels);
+        const int stride = baked::paddedStride(r);
+        const int planeBytes = stride * r;
+        entry.alphaPlane.fill('\0', planeBytes);
 
-        int index = 0;
         for (int y = 0; y < r; ++y)
         {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             const auto* line = reinterpret_cast<const QRgb*>(sub.constScanLine(y));
-            for (int x = 0; x < r; ++x, ++index)
+            const int rowStart = y * stride;
+            for (int x = 0; x < r; ++x)
             {
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
                 const QRgb source = line[x];
@@ -306,7 +313,7 @@ bool bakeCornersForRadius(QQmlEngine& engine, int r, std::vector<Baked>* entries
                 // live Rectangle paints at this pixel, the mask carries
                 // exactly 255 minus that, so tile and scrim coverage sum to
                 // 1 by construction.
-                entry.alphaPlane[index] = static_cast<char>(255 - qAlpha(source));
+                entry.alphaPlane[rowStart + x] = static_cast<char>(255 - qAlpha(source));
             }
         }
 

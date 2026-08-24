@@ -34,12 +34,17 @@ Item {
 
     height: Sizing.headerHeight
 
-    // Painted width for the header logo (item 3b/9d). 600/135 is the
-    // master's own aspect ratio; Resources.logoUrl() snaps this up to the
-    // smallest pre-sized rung that covers it, so Qt's own sourceSize decode
-    // below only ever does a small final scale instead of bilinearly
-    // downscaling a 600px texture at paint time.
-    readonly property real _logoPaintedWidth: Sizing.px(Sizing.headerHeight * (600 / 135))
+    // The master logo asset's own aspect ratio (width / height), shared by
+    // both the painted-width property below and the Image's sourceSize
+    // binding so the two can't drift apart if the asset is ever redrawn at
+    // a different ratio.
+    readonly property real _logoAspect: 600 / 135
+
+    // Painted width for the header logo (item 3b/9d). Resources.logoUrl()
+    // snaps this up to the smallest pre-sized rung that covers it, so Qt's
+    // own sourceSize decode below only ever does a small final scale
+    // instead of bilinearly downscaling a 600px texture at paint time.
+    readonly property real _logoPaintedWidth: Sizing.px(Sizing.headerHeight * header._logoAspect)
 
     Image {
         id: logo
@@ -55,7 +60,7 @@ Item {
         horizontalAlignment: Image.AlignLeft
         source: Resources.logoUrl(header._logoPaintedWidth)
         sourceSize.height: Sizing.px(height)
-        sourceSize.width: Sizing.px(height * (600 / 135))
+        sourceSize.width: Sizing.px(height * header._logoAspect)
     }
 
     // Format.locale() (Format.qml, same directory/module) lifts this

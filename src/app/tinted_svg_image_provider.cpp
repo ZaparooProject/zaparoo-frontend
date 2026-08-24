@@ -5,6 +5,7 @@
 #include "tinted_svg_image_provider.h"
 
 #include "baked_icon_atlas.h"
+#include "baked_icon_format.h"
 #include "svg_render_size.h"
 #include "tint_lut.h"
 
@@ -75,12 +76,13 @@ bool parseRequest(const QString& id, Request* out, QString* error)
     return true;
 }
 
-// Wraps a mask plane without copying. Planes are tightly packed at `width`
-// bytes per row and 16-byte aligned, so the non-owning QImage constructor can
-// point straight into the mapped blob.
+// Wraps a mask plane without copying. Each row is padded to
+// baked::paddedStride(width) bytes -- the row stride QImage's raw-buffer
+// constructor requires to be a multiple of 4 -- so the non-owning QImage
+// constructor can point straight into the mapped blob.
 QImage planeView(const quint8* data, int width, int height)
 {
-    return {data, width, height, width, QImage::Format_Grayscale8};
+    return {data, width, height, baked::paddedStride(width), QImage::Format_Grayscale8};
 }
 
 QImage scalePlane(const QImage& plane, const QSize& size)

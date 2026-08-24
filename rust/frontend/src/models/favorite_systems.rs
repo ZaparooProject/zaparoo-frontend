@@ -45,6 +45,15 @@ const DISABLED_ROLE: i32 = 256 + 10;
 pub struct FavoriteSystemsModelRust {
     systems: Vec<SystemInfo>,
     media_counts: HashMap<String, u32>,
+    /// Bumps every time `media_counts` is replaced, including the
+    /// same-`systems` refresh path that skips a model reset. `count_at`
+    /// and friends are role-based (QML re-reads them off `dataChanged`),
+    /// but `media_count_for_system` is a bare qinvokable with no role
+    /// behind it -- `FavoriteSystemsScreen.qml`'s `activeLabelTagsProvider`
+    /// binding needs a NOTIFY-backed property to read (even unused) so it
+    /// re-evaluates when a background refresh changes a count for the
+    /// currently focused row. Same escape hatch as `HubLayout::revision`.
+    media_counts_revision: u32,
     count: i32,
     total_items: i32,
     loading: bool,
@@ -78,6 +87,7 @@ pub mod ffi {
         #[qml_element]
         #[qml_singleton]
         #[qproperty(i32, count)]
+        #[qproperty(u32, media_counts_revision, READ, NOTIFY)]
         #[qproperty(i32, total_items)]
         #[qproperty(bool, loading)]
         #[qproperty(bool, cover_requests_paused)]
@@ -228,6 +238,7 @@ fn apply_state(
         let region = system_region::current_region();
         let rows = rows_for_catalog(Some(&data), &hidden_ids, show_hidden, region);
         let (media_counts, total_items) = favorite_media_counts(&data);
+        let counts_changed = model.rust().media_counts != media_counts;
         if model.rust().systems == rows {
             model.as_mut().rust_mut().media_counts = media_counts;
         } else {
@@ -241,6 +252,11 @@ fn apply_state(
             }
             model.as_mut().end_reset_model();
             model.as_mut().count_changed();
+        }
+        if counts_changed {
+            let next = model.media_counts_revision.wrapping_add(1);
+            model.as_mut().rust_mut().media_counts_revision = next;
+            model.as_mut().media_counts_revision_changed();
         }
         if model.total_items != total_items {
             model.as_mut().set_total_items(total_items);

@@ -11,6 +11,7 @@
 // while the bake runs inside the pinned lint image.
 
 #include "baked_icon_atlas.h"
+#include "baked_icon_format.h"
 #include "tinted_svg_image_provider.h"
 
 #include <QByteArray>
@@ -123,11 +124,15 @@ bool checkProviderRoundTrip(TintedSvgImageProvider& provider)
                 passed = false;
                 continue;
             }
+            // entry->alpha is a raw view into the blob, padded to
+            // baked::paddedStride(r) bytes per row (see baked_icon_format.h),
+            // not packed tight at `r`.
+            const int stride = baked::paddedStride(r);
             for (int y = 0; y < r; ++y)
             {
                 for (int x = 0; x < r; ++x)
                 {
-                    const int index = (y * r) + x;
+                    const int index = (y * stride) + x;
                     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
                     const quint8 expected = entry->alpha[index];
                     const int actual = qAlpha(image.pixel(x, y));
@@ -234,13 +239,14 @@ bool checkStrictParityForRadius(QQmlEngine& engine, int r)
             continue; // already reported by checkStructure()
         }
         const QImage sub = grabbed.copy(corner.x0, corner.y0, r, r);
+        const int stride = baked::paddedStride(r);
         for (int y = 0; y < r; ++y)
         {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             const auto* line = reinterpret_cast<const QRgb*>(sub.constScanLine(y));
             for (int x = 0; x < r; ++x)
             {
-                const int index = (y * r) + x;
+                const int index = (y * stride) + x;
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
                 const auto expected = static_cast<quint8>(255 - qAlpha(line[x]));
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)

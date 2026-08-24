@@ -253,7 +253,7 @@ Item {
             kind: "field",
             id: "runScraper",
             label: qsTr("Scrape metadata"),
-            description: qsTr("Downloads box art, descriptions, and tags for your games. Choose a source and which systems to cover.")
+            description: qsTr("Downloads box art, descriptions, and tags for your games. Choose a source and which systems.")
         },
         {
             kind: "header",

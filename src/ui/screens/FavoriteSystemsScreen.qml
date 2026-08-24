@@ -39,6 +39,13 @@ MediaListScreen {
     // this screen no longer needs its own `topStripRightTextProvider`.
     activeLabelTextProvider: () => favoriteSystems.mediaGrid.itemCount > 0 ? Browse.FavoriteSystemsModel.name_at(favoriteSystems.mediaGrid.currentIndex) : ""
     activeLabelTagsProvider: () => {
+        // Reads Browse.FavoriteSystemsModel.media_counts_revision explicitly
+        // as a dependency: media_count_for_system is a qinvokable METHOD,
+        // not a qproperty, so calling it below does not itself register a
+        // reactive dependency -- revision is what makes this binding
+        // re-evaluate after Core refreshes a system's media count in the
+        // background (see FavoriteSystemsModel's header comment).
+        const _rev = Browse.FavoriteSystemsModel.media_counts_revision;
         if (favoriteSystems.mediaGrid.itemCount <= 0)
             return "";
         const systemId = Browse.FavoriteSystemsModel.system_id_at(favoriteSystems.mediaGrid.currentIndex);

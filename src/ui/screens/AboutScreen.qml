@@ -156,8 +156,7 @@ Item {
                 }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                    x: Sizing.center(parent.width, width)
                     text: qsTr("Zaparoo Frontend")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
@@ -167,8 +166,7 @@ Item {
                 }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                    x: Sizing.center(parent.width, width)
                     text: qsTr("Version %1 · %2 · %3").arg(Qt.application.version).arg(Browse.BuildInfo.commit).arg(Browse.BuildInfo.channel)
                     color: Theme.textLabel
                     font.family: Theme.fontUi
@@ -177,8 +175,7 @@ Item {
                 }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                    x: Sizing.center(parent.width, width)
                     text: qsTr("Built %1").arg(Browse.BuildInfo.build_date)
                     color: Theme.textLabel
                     font.family: Theme.fontUi
@@ -231,8 +228,7 @@ Item {
                 }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                    x: Sizing.center(parent.width, width)
                     text: qsTr("Created by")
                     color: Theme.textLabel
                     font.family: Theme.fontUi
@@ -241,22 +237,35 @@ Item {
                 }
 
                 // Contributor names are not translated — they're proper
-                // names. Joined with newlines (not separate Text items)
-                // so the block reads as one credits paragraph and the
-                // Column spacing doesn't push them apart.
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
-                    text: "Andrea Bogazzi\nBossRighteous\nCarlos R.\ndevilschile2\nGiancarlo Erra\nJosé Manuel Barroso Galindo\nPeter Brittain\nTim Wilsie\nWilfried Jeanniard\nWizzo"
-                    color: Theme.textPrimary
-                    font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontBody
-                    renderType: Text.NativeRendering
+                // names. Each is its own Text item, individually centered
+                // via Sizing.center() -- a single multi-line Text centered
+                // with AlignHCenter leaves shorter lines on a sub-pixel
+                // offset within the block (docs/qml-gotchas.md ->
+                // "Integer-pixel rules").
+                Column {
+                    id: creditsColumn
+
+                    x: Sizing.center(parent.width, width)
+                    spacing: 0
+
+                    Repeater {
+                        model: ["Andrea Bogazzi", "BossRighteous", "Carlos R.", "devilschile2", "Giancarlo Erra", "José Manuel Barroso Galindo", "Peter Brittain", "Tim Wilsie", "Wilfried Jeanniard", "Wizzo"]
+
+                        Text {
+                            required property string modelData
+
+                            x: Sizing.center(creditsColumn.width, width)
+                            text: modelData
+                            color: Theme.textPrimary
+                            font.family: Theme.fontUi
+                            font.pixelSize: Sizing.fontBody
+                            renderType: Text.NativeRendering
+                        }
+                    }
                 }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                    x: Sizing.center(parent.width, width)
                     text: qsTr("Translations")
                     color: Theme.textLabel
                     font.family: Theme.fontUi
@@ -264,17 +273,31 @@ Item {
                     renderType: Text.NativeRendering
                 }
 
-                // Translator names are proper names; the full block stays
-                // one text item so translators can localize language labels
-                // without changing the credits layout.
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
-                    text: qsTr("Italiano - Andrea Bogazzi\nEspañol - Carlos R.\nEuskara - devilschile2\nFrançais - Wilfried")
-                    color: Theme.textPrimary
-                    font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontBody
-                    renderType: Text.NativeRendering
+                // Translator names are proper names; one translatable
+                // string with embedded newlines so translators localize
+                // language labels without touching the credits layout,
+                // split into one Text per line so each can be centered
+                // individually (same reasoning as creditsColumn above).
+                Column {
+                    id: translatorsColumn
+
+                    x: Sizing.center(parent.width, width)
+                    spacing: 0
+
+                    Repeater {
+                        model: qsTr("Italiano - Andrea Bogazzi\nEspañol - Carlos R.\nEuskara - devilschile2\nFrançais - Wilfried").split("\n")
+
+                        Text {
+                            required property string modelData
+
+                            x: Sizing.center(translatorsColumn.width, width)
+                            text: modelData
+                            color: Theme.textPrimary
+                            font.family: Theme.fontUi
+                            font.pixelSize: Sizing.fontBody
+                            renderType: Text.NativeRendering
+                        }
+                    }
                 }
 
                 Text {

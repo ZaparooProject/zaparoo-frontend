@@ -24,10 +24,27 @@ namespace baked
 {
 
 constexpr char kMagic[8] = {'Z', 'A', 'P', 'B', 'A', 'K', 'E', '1'};
-constexpr quint32 kVersion = 1;
+// v2: plane rows are padded to kRowAlignment bytes (v1 packed rows tight at
+// `width` bytes, which violated QImage's raw-buffer alignment contract for
+// any non-4-aligned width -- see kRowAlignment above).
+constexpr quint32 kVersion = 2;
 
 // Plane data is padded to this so a future SIMD reader can load aligned.
 constexpr int kPlaneAlignment = 16;
+
+// QImage's raw-buffer constructor requires bytesPerLine to be a multiple of
+// 4 (see QImage's own docs); Format_Grayscale8 is 1 byte/pixel, so a plane's
+// row stride must be `width` rounded up to this, not `width` itself. Corner
+// masks (baked at radii 1-16) hit this constantly -- only radii 4/8/12/16
+// are already 4-aligned. Shared by the bake tool (which pads each row when
+// writing a plane) and the runtime reader (which uses it as bytesPerLine in
+// the zero-copy QImage view), so the two can never disagree about layout.
+constexpr int kRowAlignment = 4;
+
+constexpr int paddedStride(int width)
+{
+    return (width + kRowAlignment - 1) / kRowAlignment * kRowAlignment;
+}
 
 // Header, 32 bytes:
 //   0   magic[8]        "ZAPBAKE1"
@@ -54,7 +71,7 @@ constexpr int kDigestPrefixSize = 8;
 //   10  baseHeight   u16
 //   12  flags        u16
 //   14  reserved     u16
-//   16  alphaOffset  u32   absolute offset, width*height bytes
+//   16  alphaOffset  u32   absolute offset, paddedStride(width)*height bytes
 //   20  toneOffset   u32   absolute offset, or 0 when kFlagSingleTone is set
 //
 // baseWidth/baseHeight are carried so the runtime resolves a partially

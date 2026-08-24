@@ -148,7 +148,15 @@ pub async fn watch_for_output_change() {
     {
         use tracing::info;
 
+        // `--crt` never sets BOOT_RENDER_SIZE (resolve_video_size skips its
+        // whole digital-framebuffer probe on that path), but Settings::init
+        // spawns this watcher for every MiSTer run regardless of CRT mode.
+        // Returning here would let the `await` above it resolve
+        // immediately, which the caller reads as "output changed" and
+        // queues a restart on every `--crt` launch. Stay pending forever
+        // instead, same as the desktop no-op below.
         let Some(baseline) = BOOT_RENDER_SIZE.get().copied() else {
+            std::future::pending::<()>().await;
             return;
         };
         let mut candidate: Option<(u32, u32)> = None;
