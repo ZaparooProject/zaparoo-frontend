@@ -31,6 +31,13 @@ Item {
     property string errorText: qsTr("Check Zaparoo Core and try again.")
     property int loadingDelayMs: 300
     property int minimumLoadingVisibleMs: 200
+    // Vertical center for the loading cue, in overlay-local coordinates.
+    // Defaults to the overlay's own center (matching Empty/Error below);
+    // a caller whose visible content rect is offset from that — the
+    // games/systems grid sits below the header, for instance — overrides
+    // this so the cue lands at the exact y the global transition cue
+    // centered on, and the handoff between the two does not jump.
+    property real cueCenterY: overlay.height / 2
     readonly property bool loadingVisible: overlay.enabled && delayedLoading.showing
     // Named `viewState` rather than `state` — `Item.state` is a
     // built-in slot wired to `states:` / `transitions:`, and shadowing
@@ -42,23 +49,27 @@ Item {
 
     visible: overlay.enabled && overlay.viewState !== "ready"
 
+    // Loading state shares the delayed LoadingIndicator path with the
+    // global transition overlay — single visual vocabulary for "in
+    // flight" without flashing on sub-threshold loads. Positioned on
+    // `cueCenterY` rather than living in the Column below: it must line
+    // up with the global cue it hands off from, which Empty/Error text
+    // (a terminal state, never shown mid-transition) has no need to.
+    DelayedLoadingIndicator {
+        id: delayedLoading
+        objectName: "screenStateLoadingCue"
+        x: Sizing.center(overlay.width, width)
+        y: Sizing.px(overlay.cueCenterY - height / 2)
+        active: overlay.enabled && overlay.loading
+        delayMs: overlay.loadingDelayMs
+        minimumVisibleMs: overlay.minimumLoadingVisibleMs
+        text: overlay.loadingText
+    }
+
     Column {
         x: Sizing.center(parent.width, width)
         y: Sizing.center(parent.height, height)
         spacing: Sizing.pctH(0.6)
-
-        // Loading state shares the delayed LoadingIndicator path with the
-        // global transition overlay — single visual vocabulary for "in
-        // flight" without flashing on sub-threshold loads. Error/Empty
-        // stay as plain text since they are terminal states.
-        DelayedLoadingIndicator {
-            id: delayedLoading
-            anchors.horizontalCenter: parent.horizontalCenter
-            active: overlay.enabled && overlay.loading
-            delayMs: overlay.loadingDelayMs
-            minimumVisibleMs: overlay.minimumLoadingVisibleMs
-            text: overlay.loadingText
-        }
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -73,7 +84,7 @@ Item {
                 return "";
             }
             font.family: Theme.fontUi
-            font.pixelSize: Sizing.fontSize(2.9)
+            font.pixelSize: Sizing.fontSection
             color: Theme.textPrimary
             horizontalAlignment: Text.AlignHCenter
             renderType: Text.NativeRendering
@@ -84,7 +95,7 @@ Item {
             visible: overlay.viewState === "error" && overlay.errorText !== ""
             text: overlay.errorText
             font.family: Theme.fontUi
-            font.pixelSize: Sizing.fontSize(2.4)
+            font.pixelSize: Sizing.fontCaption
             color: Theme.textPrimary
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter

@@ -6,17 +6,17 @@
 // singleton trips qmllint's "Member can be shadowed" check. Suppress
 // the compiler category file-wide until the schema grows the slot.
 // qmllint disable compiler
-// Top header bar — Zaparoo logo on the left, host status row + Core
-// status pill stacked on the right. Height is fixed at
-// `Sizing.headerHeight` so the pill's slot is reserved even when the
-// pill is idle and the logo can match the two stacked rows exactly.
+// Top header bar — Zaparoo logo on the left, host status row + Core/task
+// status line stacked on the right. Height is fixed at
+// `Sizing.headerHeight` so the status line's slot is reserved even when
+// it is idle and the logo can match the two stacked rows exactly.
 
 import QtQuick
 import Zaparoo.Browse as Browse
 import Zaparoo.Theme
 
 // Software-renderer safe: only Image, Row, Item, Text, and the
-// existing CoreStatusPill subtree. No transforms, no shaders.
+// existing StatusLine subtree. No transforms, no shaders.
 Item {
     id: header
 
@@ -29,11 +29,22 @@ Item {
     property var layoutProfile: null
     readonly property var _headerProfile: header.layoutProfile && header.layoutProfile.header ? header.layoutProfile.header : null
     property string browseTitle: ""
-    property string browseProgressText: ""
     property bool statusIconsEnabled: false
     property bool mediaActivityEnabled: false
 
     height: Sizing.headerHeight
+
+    // The master logo asset's own aspect ratio (width / height), shared by
+    // both the painted-width property below and the Image's sourceSize
+    // binding so the two can't drift apart if the asset is ever redrawn at
+    // a different ratio.
+    readonly property real _logoAspect: 600 / 135
+
+    // Painted width for the header logo (item 3b/9d). Resources.logoUrl()
+    // snaps this up to the smallest pre-sized rung that covers it, so Qt's
+    // own sourceSize decode below only ever does a small final scale
+    // instead of bilinearly downscaling a 600px texture at paint time.
+    readonly property real _logoPaintedWidth: Sizing.px(Sizing.headerHeight * header._logoAspect)
 
     Image {
         id: logo
@@ -47,33 +58,16 @@ Item {
         // element fills the full header height.
         fillMode: Image.PreserveAspectFit
         horizontalAlignment: Image.AlignLeft
-        source: "qrc:/qt/qml/Zaparoo/App/resources/images/logo.png"
+        source: Resources.logoUrl(header._logoPaintedWidth)
+        sourceSize.height: Sizing.px(height)
+        sourceSize.width: Sizing.px(height * header._logoAspect)
     }
 
-    Text {
-        id: browseProgressLabel
-
-        visible: header.browseProgressText !== ""
-        anchors.left: logo.right
-        anchors.leftMargin: Sizing.pctW(1)
-        anchors.verticalCenter: logo.verticalCenter
-        width: Math.max(0, Math.floor(parent.width / 4))
-        height: Sizing.headerRowHeight
-        elide: Text.ElideRight
-        horizontalAlignment: Text.AlignLeft
-        verticalAlignment: Text.AlignVCenter
-        text: header.browseProgressText
-        font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
-        color: Theme.textPrimary
-        renderType: Text.NativeRendering
-    }
-
+    // Format.locale() (Format.qml, same directory/module) lifts this
+    // resolution to one shared copy -- round 9's number-grouping work
+    // needed the identical language-setting-over-host-locale logic.
     function _clockLocale(): var {
-        const language = Browse.Settings.current_language;
-        if (language === "" || language === "auto")
-            return Qt.locale();
-        return Qt.locale(language);
+        return Format.locale();
     }
 
     function _clockUses12Hour(): bool {
@@ -117,6 +111,24 @@ Item {
     // wall clock, right-anchored so badges can appear and disappear
     // without nudging the clock away from the edge. Clock width is
     // measured from the widest sample for the selected 12h/24h format.
+    //
+    // Icons and the clock both center on the row's plain geometric middle
+    // (`anchors.verticalCenter: parent.verticalCenter`). This looks like it
+    // should be wrong — Text's AlignVCenter centers the font's full
+    // ascent+descent line box within `height`, not just the rendered ink,
+    // and digits/colon carry no descender, so naively the glyphs should sit
+    // measurably above true center. Measured directly on the actual
+    // rendered clock text (`TextMetrics.tightBoundingRect` — the real ink
+    // extent, not `FontMetrics.ascent`/`descent`, which are whole-font
+    // metrics sized for glyphs like accented capitals that digits never
+    // use and overstate how tall a digit glyph actually renders) the two
+    // centers are 0.64px apart at a 24px row height — under 3% of the row,
+    // and below what `Sizing.px()`'s rounding preserves at most tiers. A
+    // previous attempt "fixed" this using ascent/descent instead of the
+    // measured ink extent, which put the correction almost 4px in the same
+    // direction — a clearly *wrong*, much-too-large shift — and was
+    // reverted. Do not reintroduce a metrics-based correction here without
+    // re-measuring `tightBoundingRect` on the actual rendered text first.
     Row {
         id: topHud
 
@@ -134,28 +146,28 @@ Item {
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
             visible: header.statusIconsEnabled && Browse.SystemStatus.has_nfc
-            source: Resources.statusIconUrl("NFC")
+            source: Resources.statusIconUrl("NFC", Theme.textPrimary)
             name: "NFC"
         }
 
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
             visible: header.statusIconsEnabled && Browse.SystemStatus.has_wifi_internet
-            source: Resources.statusIconUrl("WiFi")
+            source: Resources.statusIconUrl("WiFi", Theme.textPrimary)
             name: "Wi-Fi"
         }
 
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
             visible: header.statusIconsEnabled && Browse.SystemStatus.has_lan_internet
-            source: Resources.statusIconUrl("WiredNetwork")
+            source: Resources.statusIconUrl("WiredNetwork", Theme.textPrimary)
             name: "LAN"
         }
 
         StatusIcon {
             anchors.verticalCenter: parent.verticalCenter
             visible: header.statusIconsEnabled && Browse.SystemStatus.has_bluetooth
-            source: Resources.statusIconUrl("Bluetooth")
+            source: Resources.statusIconUrl("Bluetooth", Theme.textPrimary)
             name: "Bluetooth"
         }
 
@@ -220,18 +232,21 @@ Item {
     }
 
     // Mutually-exclusive Core / indexing / scraper status surface. Sits
-    // on its own line directly under `topHud`, right-aligned to the
-    // same edge as the clock. The pill collapses to zero size when
-    // idle, but its slot stays reserved by the header's fixed height
-    // so the logo and the surrounding layout don't shift.
-    CoreStatusPill {
+    // on its own line directly under `topHud` (or on `parent.top`, HUD
+    // pushed to the bottom, on the CRT profile). Anchored from the
+    // logo's right edge to the header's own right margin so StatusLine
+    // knows its true elide budget -- its content is a right-aligned
+    // cluster within that span, not a stretched fill; see StatusLine.qml's
+    // doc comment. Collapses to zero height when idle, but its slot stays
+    // reserved by the header's fixed height so the logo and the
+    // surrounding layout don't shift.
+    StatusLine {
         anchors.top: header._headerProfile && header._headerProfile.statusPillPinnedTop ? parent.top : topHud.bottom
-        anchors.right: topHud.right
+        anchors.left: logo.right
+        anchors.leftMargin: Sizing.pctW(1)
+        anchors.right: parent.right
+        anchors.rightMargin: Sizing.headerSideMargin
         anchors.topMargin: header._headerProfile && header._headerProfile.statusPillPinnedTop ? 0 : Sizing.headerStackGap
         mediaActivityEnabled: header.mediaActivityEnabled
-        // Second HUD row has no clock/icons competing for width. Let status
-        // text use all space between logo and right edge instead of truncating
-        // every media state to the old fixed-width pill.
-        maximumWidth: Math.max(0, header.width - Sizing.headerSideMargin - (logo.x + logo.paintedWidth + Sizing.pctW(2)))
     }
 }

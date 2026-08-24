@@ -24,7 +24,6 @@ QtObject {
     readonly property string errorHex: AppTheme.Theme.errorHex
     readonly property string fontMono: AppTheme.Theme.fontMono
     readonly property string fontUi: AppTheme.Theme.fontUi
-    readonly property color selectionSurface: AppTheme.Theme.selectionSurface
     readonly property color surfaceCard: AppTheme.Theme.surfaceCard
     readonly property color textLabel: AppTheme.Theme.textLabel
     readonly property string textLabelHex: String(AppTheme.Theme.textLabel)

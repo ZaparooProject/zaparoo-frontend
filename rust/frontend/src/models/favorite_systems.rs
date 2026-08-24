@@ -25,11 +25,35 @@ const FAVORITE_ROLE: i32 = 256 + 3;
 const FILE_STEM_ROLE: i32 = 256 + 4;
 const HIDDEN_ROLE: i32 = 256 + 5;
 const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 6;
+// Every real row is a real system, never a structural placeholder; the role
+// exists only so PagedGrid's `isEmpty` delegate contract (round 6 follow-up
+// — see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
+const IS_EMPTY_ROLE: i32 = 256 + 7;
+// Round 11: `entryType`/`fileCount` exist so this model satisfies the same
+// shared BrowseList/PagedGrid delegate contract GamesModel's folder-count
+// suffix uses (see games.rs's identically-named roles). A system row is
+// never a folder, so these are constant.
+const ENTRY_TYPE_ROLE: i32 = 256 + 8;
+const FILE_COUNT_ROLE: i32 = 256 + 9;
+// No Favorite Systems row is ever "disabled" (Hub-only concept). The role
+// exists only so PagedGrid's `cellItem.disabled` delegate contract (round
+// 11 follow-up — see PagedGrid.qml) is satisfied by direct
+// QAbstractListModel callers.
+const DISABLED_ROLE: i32 = 256 + 10;
 
 #[derive(Default)]
 pub struct FavoriteSystemsModelRust {
     systems: Vec<SystemInfo>,
     media_counts: HashMap<String, u32>,
+    /// Bumps every time `media_counts` is replaced, including the
+    /// same-`systems` refresh path that skips a model reset. `count_at`
+    /// and friends are role-based (QML re-reads them off `dataChanged`),
+    /// but `media_count_for_system` is a bare qinvokable with no role
+    /// behind it -- `FavoriteSystemsScreen.qml`'s `activeLabelTagsProvider`
+    /// binding needs a NOTIFY-backed property to read (even unused) so it
+    /// re-evaluates when a background refresh changes a count for the
+    /// currently focused row. Same escape hatch as `HubLayout::revision`.
+    media_counts_revision: u32,
     count: i32,
     total_items: i32,
     loading: bool,
@@ -63,6 +87,7 @@ pub mod ffi {
         #[qml_element]
         #[qml_singleton]
         #[qproperty(i32, count)]
+        #[qproperty(u32, media_counts_revision, READ, NOTIFY)]
         #[qproperty(i32, total_items)]
         #[qproperty(bool, loading)]
         #[qproperty(bool, cover_requests_paused)]
@@ -213,16 +238,26 @@ fn apply_state(
         let region = system_region::current_region();
         let rows = rows_for_catalog(Some(&data), &hidden_ids, show_hidden, region);
         let (media_counts, total_items) = favorite_media_counts(&data);
-        let count = i32::try_from(rows.len()).unwrap_or(i32::MAX);
-        model.as_mut().begin_reset_model();
-        {
-            let mut rust = model.as_mut().rust_mut();
-            rust.systems = rows;
-            rust.media_counts = media_counts;
-            rust.count = count;
+        let counts_changed = model.rust().media_counts != media_counts;
+        if model.rust().systems == rows {
+            model.as_mut().rust_mut().media_counts = media_counts;
+        } else {
+            let count = i32::try_from(rows.len()).unwrap_or(i32::MAX);
+            model.as_mut().begin_reset_model();
+            {
+                let mut rust = model.as_mut().rust_mut();
+                rust.systems = rows;
+                rust.media_counts = media_counts;
+                rust.count = count;
+            }
+            model.as_mut().end_reset_model();
+            model.as_mut().count_changed();
         }
-        model.as_mut().end_reset_model();
-        model.as_mut().count_changed();
+        if counts_changed {
+            let next = model.media_counts_revision.wrapping_add(1);
+            model.as_mut().rust_mut().media_counts_revision = next;
+            model.as_mut().media_counts_revision_changed();
+        }
         if model.total_items != total_items {
             model.as_mut().set_total_items(total_items);
         }
@@ -262,9 +297,11 @@ impl ffi::FavoriteSystemsModel {
         match role {
             COVER_KEY_ROLE => QVariant::from(&QString::from(s.cover_key.as_str())),
             NAME_ROLE | FILE_STEM_ROLE => QVariant::from(&QString::from(s.name.as_str())),
-            FAVORITE_ROLE => QVariant::from(&0_i32),
+            FAVORITE_ROLE | FILE_COUNT_ROLE => QVariant::from(&0_i32),
             HIDDEN_ROLE => QVariant::from(&s.hidden),
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::default()),
+            IS_EMPTY_ROLE | DISABLED_ROLE => QVariant::from(&false),
+            ENTRY_TYPE_ROLE => QVariant::from(&QString::from("media")),
             _ => QVariant::default(),
         }
     }
@@ -280,6 +317,10 @@ impl ffi::FavoriteSystemsModel {
             DISAMBIGUATING_TAGS_ROLE,
             QByteArray::from("disambiguatingTags"),
         );
+        h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
+        h.insert(ENTRY_TYPE_ROLE, QByteArray::from("entryType"));
+        h.insert(FILE_COUNT_ROLE, QByteArray::from("fileCount"));
+        h.insert(DISABLED_ROLE, QByteArray::from("disabled"));
         h
     }
 

@@ -57,19 +57,33 @@ pub struct Config {
 pub struct SettingsConfig {
     pub orientation: Option<String>,
     pub clock_format: Option<String>,
-    pub browse_layout: Option<String>,
+    // Round 10: split into per-screen fields below.
+    // `settings_config_from_raw` already folds the legacy `browse_layout`
+    // key into both as a fallback, so this consumed struct no longer
+    // exposes the single field at all.
+    pub systems_browse_layout: Option<String>,
+    pub games_browse_layout: Option<String>,
     pub favorites_sort: Option<String>,
     pub system_logo_style: Option<String>,
+    pub color_scheme: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
     pub reduce_motion: Option<bool>,
-    pub discover_arcade_alternate_versions: Option<bool>,
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
     pub favorites_grouping: Option<String>,
     pub show_hidden: Option<bool>,
     pub show_original_filenames: Option<bool>,
+    /// Retired from Hub use (the Hub grid is a persisted `[[hub.items]]`
+    /// layout now — see `hub_layout.rs`, which consumes this ONCE as a
+    /// migration input when seeding a layout for the first time, then never
+    /// reads it again). No writer touches this anymore, but the key stays
+    /// in `SettingsConfig` so `load_config` can still parse it, and
+    /// `save_hidden_browse_prefs` still writes back whatever value it
+    /// loaded so an existing user's list isn't silently dropped from their
+    /// config file the next time an unrelated hidden-prefs save fires.
     pub hidden_categories: Vec<String>,
+    /// Systems grid hide/unhide — unrelated to the Hub, unchanged.
     pub hidden_system_ids: Vec<String>,
     pub region: Option<String>,
     pub crt_video_standard: Option<String>,
@@ -87,12 +101,13 @@ pub struct SettingsMirror<'a> {
     pub language: &'a str,
     pub orientation: &'a str,
     pub clock_format: &'a str,
-    pub browse_layout: &'a str,
+    pub systems_browse_layout: &'a str,
+    pub games_browse_layout: &'a str,
     pub system_logo_style: &'a str,
+    pub color_scheme: &'a str,
     pub button_layout: &'a str,
     pub mouse_enabled: bool,
     pub reduce_motion: bool,
-    pub discover_arcade_alternate_versions: bool,
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
     pub media_image_type: &'a str,
@@ -179,13 +194,19 @@ struct RawInput {
 struct RawSettings {
     orientation: Option<String>,
     clock_format: Option<String>,
+    // Round 10: pre-round-10 config files only have this key. Kept for
+    // parse compatibility; `settings_config_from_raw` folds it into both
+    // new fields below as a fallback, mirroring `favorites_grouped`'s
+    // legacy-bool-to-string migration just above `favorites_grouping`.
     browse_layout: Option<String>,
+    systems_browse_layout: Option<String>,
+    games_browse_layout: Option<String>,
     favorites_sort: Option<String>,
     system_logo_style: Option<String>,
+    color_scheme: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
     reduce_motion: Option<bool>,
-    discover_arcade_alternate_versions: Option<bool>,
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
     favorites_grouping: Option<String>,
@@ -308,27 +329,24 @@ fn normalize_string_list(values: Vec<String>) -> Vec<String> {
     out
 }
 
-fn toml_array_from_strings(values: &[String]) -> toml::Value {
-    toml::Value::Array(
-        values
-            .iter()
-            .map(|value| toml::Value::String(value.trim().to_string()))
-            .filter(|value| value.as_str().is_some_and(|s| !s.is_empty()))
-            .collect(),
-    )
-}
-
 fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
     SettingsConfig {
         orientation: trim_opt(raw.orientation),
         clock_format: trim_opt(raw.clock_format),
-        browse_layout: trim_opt(raw.browse_layout),
+        // Round 10: prefer the new per-screen key; fall back to the
+        // legacy single key for an existing user's config file. Same
+        // `.or_else` shape `favorites_grouping` uses for its own
+        // legacy-bool migration below.
+        systems_browse_layout: trim_opt(raw.systems_browse_layout)
+            .or_else(|| trim_opt(raw.browse_layout.clone())),
+        games_browse_layout: trim_opt(raw.games_browse_layout)
+            .or_else(|| trim_opt(raw.browse_layout)),
         favorites_sort: trim_opt(raw.favorites_sort),
         system_logo_style: trim_opt(raw.system_logo_style),
+        color_scheme: trim_opt(raw.color_scheme),
         button_layout: trim_opt(raw.button_layout),
         mouse_enabled: raw.mouse_enabled,
         reduce_motion: raw.reduce_motion,
-        discover_arcade_alternate_versions: raw.discover_arcade_alternate_versions,
         screensaver_timeout: trim_opt(raw.screensaver_timeout),
         media_image_type: trim_opt(raw.media_image_type),
         favorites_grouping: trim_opt(raw.favorites_grouping).or_else(|| {
@@ -346,214 +364,226 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
     }
 }
 
+// ── Format-preserving writes ────────────────────────────────────────────
+//
+// `load_config` above reads through plain `toml`/serde (`RawConfig` et al)
+// because the read side never needs to round-trip formatting. The write
+// side does: a hand-edited `frontend.toml` is an expected, supported way to
+// configure the Hub layout (`hub_layout.rs`) and everything else in this
+// file, and a save that silently drops comments or reorders keys every
+// time the user touches an unrelated setting is hostile to that workflow.
+// `toml_edit::DocumentMut` parses and re-serializes losslessly; the
+// `set_*` helpers below additionally skip writing a key whose value hasn't
+// changed, so an unrelated save doesn't even touch that key's own
+// formatting/quoting — only genuinely changed keys are rewritten.
+
 /// Get a mutable reference to a TOML section table, creating it if absent.
-fn section_mut<'a>(
-    table: &'a mut toml::Table,
+pub(crate) fn section_mut<'a>(
+    doc: &'a mut toml_edit::DocumentMut,
     key: &'static str,
     path: &Path,
-) -> Result<&'a mut toml::Table, String> {
-    let v = table
-        .entry(key)
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    v.as_table_mut()
+) -> Result<&'a mut toml_edit::Table, String> {
+    doc.entry(key)
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_mut()
         .ok_or_else(|| format!("config key [{key}] in {} is not a table", path.display()))
 }
 
-fn read_config_table(path: &Path) -> Result<toml::Table, String> {
+pub(crate) fn read_config_document(path: &Path) -> Result<toml_edit::DocumentMut, String> {
     if path.exists() {
         let src = std::fs::read_to_string(path)
             .map_err(|e| format!("could not read {}: {e}", path.display()))?;
-        toml::from_str::<toml::Table>(&src)
+        src.parse::<toml_edit::DocumentMut>()
             .map_err(|e| format!("config parse error in {}: {e}", path.display()))
     } else {
-        Ok(toml::Table::new())
+        Ok(toml_edit::DocumentMut::new())
     }
 }
 
-fn toml_tables_semantically_equal(left: &toml::Table, right: &toml::Table) -> bool {
-    left.len() == right.len()
-        && left.iter().all(|(key, left_value)| {
-            right
-                .get(key)
-                .is_some_and(|right_value| toml_values_semantically_equal(left_value, right_value))
-        })
-}
-
-fn toml_values_semantically_equal(left: &toml::Value, right: &toml::Value) -> bool {
-    match (left, right) {
-        (toml::Value::Float(left), toml::Value::Float(right)) => {
-            matches!(left.partial_cmp(right), Some(std::cmp::Ordering::Equal))
-                || (left.is_nan() && right.is_nan())
-        }
-        (toml::Value::Array(left), toml::Value::Array(right)) => {
-            left.len() == right.len()
-                && left.iter().zip(right).all(|(left_value, right_value)| {
-                    toml_values_semantically_equal(left_value, right_value)
-                })
-        }
-        (toml::Value::Table(left), toml::Value::Table(right)) => {
-            toml_tables_semantically_equal(left, right)
-        }
-        _ => left == right,
+/// Set a string value, but only if it differs from what's already there —
+/// leaves that key's original formatting/quoting untouched on a no-op save.
+pub(crate) fn set_str(table: &mut toml_edit::Table, key: &str, value: &str) {
+    if table.get(key).and_then(toml_edit::Item::as_str) != Some(value) {
+        table.insert(key, toml_edit::value(value));
     }
 }
 
-fn write_config_if_changed(
+pub(crate) fn set_bool(table: &mut toml_edit::Table, key: &str, value: bool) {
+    if table.get(key).and_then(toml_edit::Item::as_bool) != Some(value) {
+        table.insert(key, toml_edit::value(value));
+    }
+}
+
+pub(crate) fn set_int(table: &mut toml_edit::Table, key: &str, value: i64) {
+    if table.get(key).and_then(toml_edit::Item::as_integer) != Some(value) {
+        table.insert(key, toml_edit::value(value));
+    }
+}
+
+/// Set a string-array value (trimmed, empties dropped, order preserved, NOT
+/// deduped — matches `normalize_string_list`'s read-side dedup being the
+/// only place duplicates are actually collapsed), skipping the write when
+/// the cleaned list already matches what's stored.
+pub(crate) fn set_string_list(table: &mut toml_edit::Table, key: &str, values: &[String]) {
+    let cleaned: Vec<&str> = values
+        .iter()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .collect();
+    let unchanged = table
+        .get(key)
+        .and_then(toml_edit::Item::as_array)
+        .is_some_and(|arr| {
+            arr.len() == cleaned.len()
+                && arr
+                    .iter()
+                    .zip(&cleaned)
+                    .all(|(item, want)| item.as_str() == Some(*want))
+        });
+    if unchanged {
+        return;
+    }
+    let mut arr = toml_edit::Array::new();
+    for v in cleaned {
+        arr.push(v);
+    }
+    table.insert(key, toml_edit::value(arr));
+}
+
+pub(crate) fn write_document_if_changed(
     path: &Path,
-    original: &toml::Table,
-    updated: &toml::Table,
+    before: &str,
+    doc: &toml_edit::DocumentMut,
 ) -> Result<(), String> {
-    if toml_tables_semantically_equal(updated, original) {
+    let after = doc.to_string();
+    if after == before {
         return Ok(());
     }
-    let serialized =
-        toml::to_string(updated).map_err(|e| format!("config serialisation failed: {e}"))?;
-    write_atomic(path, serialized.as_bytes())
+    write_atomic(path, after.as_bytes())
         .map_err(|e| format!("could not write {}: {e}", path.display()))
 }
 
 pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(), String> {
-    let mut table = read_config_table(path)?;
-    let original = table.clone();
+    let mut doc = read_config_document(path)?;
+    let before = doc.to_string();
 
-    let general = section_mut(&mut table, "general", path)?;
-    general.insert(
-        "language".into(),
-        toml::Value::String(normalize_language_override(mirror.language)),
+    let general = section_mut(&mut doc, "general", path)?;
+    set_str(
+        general,
+        "language",
+        &normalize_language_override(mirror.language),
     );
 
-    let video = section_mut(&mut table, "video", path)?;
+    let video = section_mut(&mut doc, "video", path)?;
     video.remove("backend");
     if let Some((width, height)) = parse_resolution_override(mirror.resolution) {
-        video.insert("width".into(), toml::Value::Integer(i64::from(width)));
-        video.insert("height".into(), toml::Value::Integer(i64::from(height)));
+        set_int(video, "width", i64::from(width));
+        set_int(video, "height", i64::from(height));
     } else {
         video.remove("width");
         video.remove("height");
     }
 
-    let settings = section_mut(&mut table, "settings", path)?;
-    settings.insert(
-        "orientation".into(),
-        toml::Value::String(mirror.orientation.trim().to_string()),
+    let settings = section_mut(&mut doc, "settings", path)?;
+    set_str(settings, "orientation", mirror.orientation.trim());
+    set_str(settings, "clock_format", mirror.clock_format.trim());
+    // Round 10: retire the legacy single key the same way
+    // `favorites_grouped` was retired below, in favor of the two
+    // per-screen keys -- a fresh write never leaves a stale
+    // `browse_layout` behind for a future load to second-guess.
+    settings.remove("browse_layout");
+    set_str(
+        settings,
+        "systems_browse_layout",
+        mirror.systems_browse_layout.trim(),
     );
-    settings.insert(
-        "clock_format".into(),
-        toml::Value::String(mirror.clock_format.trim().to_string()),
+    set_str(
+        settings,
+        "games_browse_layout",
+        mirror.games_browse_layout.trim(),
     );
-    settings.insert(
-        "browse_layout".into(),
-        toml::Value::String(mirror.browse_layout.trim().to_string()),
+    set_str(
+        settings,
+        "system_logo_style",
+        mirror.system_logo_style.trim(),
     );
-    settings.insert(
-        "system_logo_style".into(),
-        toml::Value::String(mirror.system_logo_style.trim().to_string()),
+    set_str(settings, "color_scheme", mirror.color_scheme.trim());
+    set_str(settings, "button_layout", mirror.button_layout.trim());
+    set_bool(settings, "mouse_enabled", mirror.mouse_enabled);
+    set_bool(settings, "reduce_motion", mirror.reduce_motion);
+    set_str(
+        settings,
+        "screensaver_timeout",
+        mirror.screensaver_timeout.trim(),
     );
-    settings.insert(
-        "button_layout".into(),
-        toml::Value::String(mirror.button_layout.trim().to_string()),
-    );
-    settings.insert(
-        "mouse_enabled".into(),
-        toml::Value::Boolean(mirror.mouse_enabled),
-    );
-    settings.insert(
-        "reduce_motion".into(),
-        toml::Value::Boolean(mirror.reduce_motion),
-    );
-    settings.insert(
-        "discover_arcade_alternate_versions".into(),
-        toml::Value::Boolean(mirror.discover_arcade_alternate_versions),
-    );
-    settings.insert(
-        "screensaver_timeout".into(),
-        toml::Value::String(mirror.screensaver_timeout.trim().to_string()),
-    );
-    settings.insert(
-        "media_image_type".into(),
-        toml::Value::String(mirror.media_image_type.trim().to_string()),
-    );
+    set_str(settings, "media_image_type", mirror.media_image_type.trim());
     settings.remove("favorites_grouped");
-    settings.insert(
-        "favorites_grouping".into(),
-        toml::Value::String(mirror.favorites_grouping.trim().to_string()),
+    set_str(
+        settings,
+        "favorites_grouping",
+        mirror.favorites_grouping.trim(),
     );
-    settings.insert(
-        "show_hidden".into(),
-        toml::Value::Boolean(mirror.show_hidden),
+    set_bool(settings, "show_hidden", mirror.show_hidden);
+    set_bool(
+        settings,
+        "show_original_filenames",
+        mirror.show_original_filenames,
     );
-    settings.insert(
-        "show_original_filenames".into(),
-        toml::Value::Boolean(mirror.show_original_filenames),
-    );
-    settings.insert(
-        "region".into(),
-        toml::Value::String(mirror.region.trim().to_string()),
-    );
-    settings.insert(
-        "crt_video_standard".into(),
-        toml::Value::String(normalize_crt_video_standard(mirror.crt_video_standard).to_string()),
+    set_str(settings, "region", mirror.region.trim());
+    set_str(
+        settings,
+        "crt_video_standard",
+        normalize_crt_video_standard(mirror.crt_video_standard),
     );
     let (crt_h, crt_v) = clamp_crt_offsets(mirror.crt_h_offset, mirror.crt_v_offset);
-    settings.insert(
-        "crt_h_offset".into(),
-        toml::Value::Integer(i64::from(crt_h)),
-    );
-    settings.insert(
-        "crt_v_offset".into(),
-        toml::Value::Integer(i64::from(crt_v)),
-    );
+    set_int(settings, "crt_h_offset", i64::from(crt_h));
+    set_int(settings, "crt_v_offset", i64::from(crt_v));
 
-    let logging = section_mut(&mut table, "logging", path)?;
-    logging.insert("debug".into(), toml::Value::Boolean(mirror.debug_logging));
+    let logging = section_mut(&mut doc, "logging", path)?;
+    set_bool(logging, "debug", mirror.debug_logging);
 
-    write_config_if_changed(path, &original, &table)
+    write_document_if_changed(path, &before, &doc)
 }
 
 /// Persist Favorites row order into `frontend.toml`.
 ///
 /// Empty restores Core's default order and removes the optional key.
 pub fn save_favorites_sort(path: &Path, sort: &str) -> Result<(), String> {
-    let mut table = read_config_table(path)?;
-    let original = table.clone();
+    let mut doc = read_config_document(path)?;
+    let before = doc.to_string();
 
-    let settings = section_mut(&mut table, "settings", path)?;
+    let settings = section_mut(&mut doc, "settings", path)?;
     let normalized = sort.trim();
     if normalized.is_empty() {
         settings.remove("favorites_sort");
     } else {
-        settings.insert(
-            "favorites_sort".into(),
-            toml::Value::String(normalized.to_string()),
-        );
+        set_str(settings, "favorites_sort", normalized);
     }
 
-    write_config_if_changed(path, &original, &table)
+    write_document_if_changed(path, &before, &doc)
 }
 
 /// Persist hidden browse filters into `frontend.toml`.
 ///
-/// Hidden categories/systems are durable user preferences, not volatile
-/// navigation state, so `MiSTer`'s `/tmp` state file must not carry them.
+/// Durable user preferences, not volatile navigation state, so `MiSTer`'s
+/// `/tmp` state file must not carry them. `hidden_categories` no longer has
+/// a live writer (Hub hide/unhide was retired — see `SettingsConfig`'s doc
+/// comment on that field) but is still round-tripped here so an existing
+/// user's list survives the next unrelated `hide_system`/`unhide_system`
+/// call rather than silently vanishing from their config file.
 pub fn save_hidden_browse_prefs(
     path: &Path,
     hidden_categories: &[String],
     hidden_system_ids: &[String],
 ) -> Result<(), String> {
-    let mut table = read_config_table(path)?;
-    let original = table.clone();
+    let mut doc = read_config_document(path)?;
+    let before = doc.to_string();
 
-    let settings = section_mut(&mut table, "settings", path)?;
-    settings.insert(
-        "hidden_categories".into(),
-        toml_array_from_strings(hidden_categories),
-    );
-    settings.insert(
-        "hidden_system_ids".into(),
-        toml_array_from_strings(hidden_system_ids),
-    );
+    let settings = section_mut(&mut doc, "settings", path)?;
+    set_string_list(settings, "hidden_categories", hidden_categories);
+    set_string_list(settings, "hidden_system_ids", hidden_system_ids);
 
-    write_config_if_changed(path, &original, &table)
+    write_document_if_changed(path, &before, &doc)
 }
 
 /// Persist a first-run notice acknowledgement into `frontend.toml`.
@@ -561,16 +591,13 @@ pub fn save_hidden_browse_prefs(
 /// pattern so unrelated keys in the file (core endpoint, video, input
 /// bindings) survive untouched.
 pub fn save_notice_ack(path: &Path, commercial_ack: bool) -> Result<(), String> {
-    let mut table = read_config_table(path)?;
-    let original = table.clone();
+    let mut doc = read_config_document(path)?;
+    let before = doc.to_string();
 
-    let notice = section_mut(&mut table, "notice", path)?;
-    notice.insert(
-        "commercial_ack".into(),
-        toml::Value::Boolean(commercial_ack),
-    );
+    let notice = section_mut(&mut doc, "notice", path)?;
+    set_bool(notice, "commercial_ack", commercial_ack);
 
-    write_config_if_changed(path, &original, &table)
+    write_document_if_changed(path, &before, &doc)
 }
 
 /// Offset ranges the Menu fork core honors before clamping in RTL
@@ -728,12 +755,13 @@ mod tests {
             language: "en",
             orientation: "horizontal",
             clock_format: "auto",
-            browse_layout: "grid",
+            systems_browse_layout: "grid",
+            games_browse_layout: "grid",
             system_logo_style: "tinted",
+            color_scheme: "zaparoo-dark",
             button_layout: "a",
             mouse_enabled: true,
             reduce_motion: false,
-            discover_arcade_alternate_versions: false,
             debug_logging: false,
             screensaver_timeout: "60",
             media_image_type: "auto",
@@ -751,9 +779,10 @@ mod tests {
         path: &std::path::Path,
         save: impl FnOnce() -> Result<(), String>,
     ) {
-        // Comments are absent from `toml::Table`, while valid TOML NaN floats
-        // are non-reflexive under derived `PartialEq`. Preserving both proves
-        // the no-op decision compares parsed values with the required semantics.
+        // `toml_edit::DocumentMut` preserves comments and formatting, so a
+        // genuine no-op save must leave this comment (and the deliberately
+        // non-reflexive NaN float — never a key any `set_*` helper reads or
+        // writes) completely untouched, not merely "semantically equal."
         let mut file = std::fs::OpenOptions::new()
             .append(true)
             .open(path)
@@ -813,12 +842,12 @@ mod tests {
         assert_eq!(cfg.language, "");
         assert_eq!(cfg.settings.orientation, None);
         assert_eq!(cfg.settings.clock_format, None);
-        assert_eq!(cfg.settings.browse_layout, None);
+        assert_eq!(cfg.settings.systems_browse_layout, None);
+        assert_eq!(cfg.settings.games_browse_layout, None);
         assert_eq!(cfg.settings.favorites_sort, None);
         assert_eq!(cfg.settings.favorites_grouping, None);
         assert_eq!(cfg.settings.button_layout, None);
         assert_eq!(cfg.settings.mouse_enabled, None);
-        assert_eq!(cfg.settings.discover_arcade_alternate_versions, None);
         assert!(cfg.settings.hidden_categories.is_empty());
         assert!(cfg.settings.hidden_system_ids.is_empty());
         assert_eq!(cfg.settings.region, None);
@@ -1182,7 +1211,10 @@ mod tests {
         assert!(cfg.debug_logging);
         assert_eq!(cfg.settings.orientation.as_deref(), Some("cw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("12h"));
-        assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
+        // Round 10: a legacy `browse_layout` key (no new per-screen keys
+        // present) folds into both.
+        assert_eq!(cfg.settings.systems_browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.games_browse_layout.as_deref(), Some("list"));
         assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("color"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("c"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
@@ -1252,12 +1284,13 @@ mod tests {
                 language: "it_IT",
                 orientation: "cw",
                 clock_format: "24h",
-                browse_layout: "list",
+                systems_browse_layout: "list",
+                games_browse_layout: "grid",
                 system_logo_style: "color",
+                color_scheme: "classic-purple",
                 button_layout: "b",
                 mouse_enabled: false,
                 reduce_motion: true,
-                discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "300",
                 media_image_type: "auto",
@@ -1278,12 +1311,13 @@ mod tests {
         assert!(cfg.video_explicit);
         assert_eq!(cfg.settings.orientation.as_deref(), Some("cw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("24h"));
-        assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.systems_browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.games_browse_layout.as_deref(), Some("grid"));
         assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("color"));
+        assert_eq!(cfg.settings.color_scheme.as_deref(), Some("classic-purple"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
         assert_eq!(cfg.settings.reduce_motion, Some(true));
-        assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
         assert_eq!(cfg.settings.show_hidden, Some(true));
@@ -1308,12 +1342,13 @@ mod tests {
                 language: "en",
                 orientation: "horizontal",
                 clock_format: "auto",
-                browse_layout: "grid",
+                systems_browse_layout: "grid",
+                games_browse_layout: "grid",
                 system_logo_style: "tinted",
+                color_scheme: "zaparoo-dark",
                 button_layout: "a",
                 mouse_enabled: true,
                 reduce_motion: false,
-                discover_arcade_alternate_versions: false,
                 debug_logging: false,
                 screensaver_timeout: "60",
                 media_image_type: "auto",
@@ -1336,12 +1371,13 @@ mod tests {
         assert_eq!(cfg.video_height, 720);
         assert_eq!(cfg.settings.orientation.as_deref(), Some("horizontal"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("auto"));
-        assert_eq!(cfg.settings.browse_layout.as_deref(), Some("grid"));
+        assert_eq!(cfg.settings.systems_browse_layout.as_deref(), Some("grid"));
+        assert_eq!(cfg.settings.games_browse_layout.as_deref(), Some("grid"));
         assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("tinted"));
+        assert_eq!(cfg.settings.color_scheme.as_deref(), Some("zaparoo-dark"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("a"));
         assert_eq!(cfg.settings.mouse_enabled, Some(true));
         assert_eq!(cfg.settings.reduce_motion, Some(false));
-        assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(false));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("60"));
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
         assert_eq!(cfg.settings.hidden_categories, vec!["Arcade"]);
@@ -1357,12 +1393,13 @@ mod tests {
             language: "",
             orientation: "ccw",
             clock_format: "12h",
-            browse_layout: "list",
+            systems_browse_layout: "list",
+            games_browse_layout: "list",
             system_logo_style: "color",
+            color_scheme: "classic-purple",
             button_layout: "c",
             mouse_enabled: false,
             reduce_motion: false,
-            discover_arcade_alternate_versions: true,
             debug_logging: true,
             screensaver_timeout: "off",
             media_image_type: "auto",
@@ -1381,11 +1418,15 @@ mod tests {
         assert!(written.contains("language = \"auto\""));
         assert!(written.contains("orientation = \"ccw\""));
         assert!(written.contains("clock_format = \"12h\""));
-        assert!(written.contains("browse_layout = \"list\""));
+        assert!(
+            !written.contains("\nbrowse_layout ="),
+            "legacy single key must be retired on write, not just left stale"
+        );
+        assert!(written.contains("systems_browse_layout = \"list\""));
+        assert!(written.contains("games_browse_layout = \"list\""));
         assert!(written.contains("system_logo_style = \"color\""));
         assert!(written.contains("button_layout = \"c\""));
         assert!(written.contains("mouse_enabled = false"));
-        assert!(written.contains("discover_arcade_alternate_versions = true"));
         assert!(written.contains("screensaver_timeout = \"off\""));
         assert!(written.contains("debug = true"));
         let cfg = load_config(f.path());
@@ -1393,12 +1434,12 @@ mod tests {
         assert!(!cfg.video_explicit);
         assert_eq!(cfg.settings.orientation.as_deref(), Some("ccw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("12h"));
-        assert_eq!(cfg.settings.browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.systems_browse_layout.as_deref(), Some("list"));
+        assert_eq!(cfg.settings.games_browse_layout.as_deref(), Some("list"));
         assert_eq!(cfg.settings.system_logo_style.as_deref(), Some("color"));
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("c"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
         assert_eq!(cfg.settings.reduce_motion, Some(false));
-        assert_eq!(cfg.settings.discover_arcade_alternate_versions, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("off"));
         assert_eq!(cfg.settings.crt_video_standard.as_deref(), Some("ntsc"));
         assert_eq!(cfg.settings.crt_h_offset, Some(8));

@@ -24,6 +24,8 @@ TestCase {
     function cleanup(): void {
         main.debugCrtSafeAreaOverlay = false;
         main.crtNativePath = false;
+        main.bitmapType = false;
+        setResolution(1280, 720);
     }
 
     function setResolution(w: int, h: int): void {
@@ -114,6 +116,21 @@ TestCase {
         verify(Math.abs(scaled - baseline * 1.5) <= 1, "pctH scaling should track screen height proportionally");
     }
 
+    // Pure function of its argument -- no resolution harness needed. Mirrors
+    // snapCoverTier's "snap up to the smallest rung that covers px" contract
+    // for the header-logo PNG ladder (resources/images/logo/).
+    function test_snap_logo_width_rounds_up_to_ladder_rung(): void {
+        compare(Sizing.snapLogoWidth(1), 96);
+        compare(Sizing.snapLogoWidth(96), 96);
+        compare(Sizing.snapLogoWidth(97), 144);
+        compare(Sizing.snapLogoWidth(192), 192);
+        compare(Sizing.snapLogoWidth(193), 256);
+        compare(Sizing.snapLogoWidth(384), 384);
+        compare(Sizing.snapLogoWidth(385), 600);
+        compare(Sizing.snapLogoWidth(600), 600);
+        compare(Sizing.snapLogoWidth(9999), 600);
+    }
+
     function test_detail_cover_tier_capped_by_viewport_width(): void {
         // Pin the resolution through the Main harness first: the cover-box
         // math reads the singleton's live screen size for its paddings, so
@@ -146,15 +163,267 @@ TestCase {
         compare(shape.rows, 2);
     }
 
-    function test_crt_systems_grid_is_three_by_three(): void {
-        Sizing.crtNativePath = true;
-        setResolution(352, 240);
-        compare(Sizing.systemsGridColumns, 3);
-        compare(Sizing.systemsGridRows, 3);
+    function test_semantic_tiers_radii_fonts_and_strokes(): void {
+        const cases = [
+            {
+                "w": 320,
+                "h": 240,
+                "tier": "240",
+                "radiusMd": 2,
+                "radiusSm": 1,
+                "fonts": [14, 12, 11, 10, 9, 8],
+                "strokes": [1, 1, 1, 2]
+            },
+            {
+                "w": 640,
+                "h": 480,
+                "tier": "480",
+                "radiusMd": 3,
+                "radiusSm": 2,
+                "fonts": [22, 18, 17, 16, 14, 13],
+                "strokes": [1, 2, 3, 4]
+            },
+            {
+                "w": 960,
+                "h": 540,
+                "tier": "540",
+                "radiusMd": 4,
+                "radiusSm": 2,
+                "fonts": [24, 20, 18, 17, 15, 14],
+                "strokes": [1, 2, 3, 4]
+            },
+            {
+                "w": 1280,
+                "h": 720,
+                "tier": "720",
+                "radiusMd": 6,
+                "radiusSm": 3,
+                "fonts": [29, 23, 21, 19, 17, 16],
+                "strokes": [1, 3, 4, 6]
+            },
+            {
+                "w": 1366,
+                "h": 768,
+                "tier": "720",
+                "radiusMd": 6,
+                "radiusSm": 3,
+                "fonts": [29, 23, 21, 19, 17, 16],
+                "strokes": [2, 3, 5, 6]
+            },
+            {
+                "w": 1920,
+                "h": 1080,
+                "tier": "1080",
+                "radiusMd": 8,
+                "radiusSm": 4,
+                "fonts": [43, 35, 31, 28, 26, 24],
+                "strokes": [2, 4, 6, 9]
+            }
+        ];
+        const fontNames = ["fontHero", "fontTitle", "fontSection", "fontBody", "fontCaption", "fontSmall"];
+        const strokeNames = ["cardBorderWidth", "focusBorderWidth", "focusRingWidth", "pressEdgeHeight"];
+        for (const entry of cases) {
+            setResolution(entry.w, entry.h);
+            compare(Sizing.tier, entry.tier);
+            compare(Sizing.radiusMd, entry.radiusMd);
+            compare(Sizing.radiusSm, entry.radiusSm);
+            verify(Sizing.radiusSm <= Sizing.radiusMd);
+            for (let i = 0; i < fontNames.length; ++i) {
+                compare(Sizing[fontNames[i]], entry.fonts[i], fontNames[i] + " at " + entry.w + "x" + entry.h);
+                if (i > 0)
+                    verify(Sizing[fontNames[i - 1]] > Sizing[fontNames[i]], "font roles must strictly descend");
+            }
+            for (let i = 0; i < strokeNames.length; ++i)
+                compare(Sizing[strokeNames[i]], entry.strokes[i], strokeNames[i] + " at " + entry.w + "x" + entry.h);
+        }
+    }
 
-        setResolution(352, 288);
+    // ContextMenu's corner masks (Part 5) are only baked for radii 1..16;
+    // Resources.cornerCutUrl() silently returns "" outside that band, so a
+    // ladder change that pushes radiusMd/radiusSm past 16 would quietly
+    // stop rounding the scrim hole instead of failing loudly. Covers every
+    // resolution tier, including "crt" which the semantic-tier table above
+    // doesn't exercise.
+    function test_radius_ladder_stays_within_baked_corner_mask_range(): void {
+        const resolutions = [[320, 240], [640, 480], [960, 540], [1280, 720], [1920, 1080]];
+        for (const [w, h] of resolutions) {
+            setResolution(w, h);
+            verify(Sizing.radiusMd >= 1 && Sizing.radiusMd <= 16, "radiusMd out of baked corner mask range at " + w + "x" + h);
+            verify(Sizing.radiusSm >= 1 && Sizing.radiusSm <= 16, "radiusSm out of baked corner mask range at " + w + "x" + h);
+        }
+
+        main.crtNativePath = true;
+        setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
+        compare(Sizing.tier, "crt");
+        verify(Sizing.radiusMd >= 1 && Sizing.radiusMd <= 16, "radiusMd out of baked corner mask range on crt tier");
+        verify(Sizing.radiusSm >= 1 && Sizing.radiusSm <= 16, "radiusSm out of baked corner mask range on crt tier");
+        main.crtNativePath = false;
+    }
+
+    function test_common_digital_grid_shapes_are_declared(): void {
+        const cases = [
+            {
+                "w": 320,
+                "h": 240,
+                "systems": [2, 2],
+                "games": [2, 2]
+            },
+            {
+                "w": 640,
+                "h": 480,
+                "systems": [3, 3],
+                "games": [4, 2]
+            },
+            {
+                "w": 960,
+                "h": 540,
+                "systems": [4, 3],
+                "games": [5, 2]
+            },
+            {
+                "w": 1280,
+                "h": 720,
+                "systems": [4, 3],
+                "games": [5, 2]
+            },
+            {
+                "w": 1366,
+                "h": 768,
+                "systems": [4, 3],
+                "games": [5, 2]
+            },
+            {
+                "w": 1920,
+                "h": 1080,
+                "systems": [4, 3],
+                "games": [5, 2]
+            }
+        ];
+        for (const entry of cases) {
+            setResolution(entry.w, entry.h);
+            const systems = Sizing.systemsGridShape(entry.w, entry.h);
+            const games = Sizing.gamesGridShape(entry.w, Math.max(1, entry.h * 0.68));
+            compare(systems.columns, entry.systems[0]);
+            compare(systems.rows, entry.systems[1]);
+            compare(games.columns, entry.games[0]);
+            compare(games.rows, entry.games[1]);
+        }
+    }
+
+    // Hub grid shape (round 6, item 7; row count corrected in the round 6
+    // follow-up — see Sizing.qml's `hubGridShape` comment) — a fixed
+    // per-tier table, unlike systemsGridShape/gamesGridShape above.
+    // Verifies both the table's values AND the property that actually
+    // matters for a hand-arranged Hub layout: it must NOT move with
+    // viewport width the way the adaptive browse-grid shapes do.
+    function test_hub_grid_shape_is_fixed_per_tier_not_viewport(): void {
+        const cases = [
+            {
+                "w": 320,
+                "h": 240,
+                "columns": 3,
+                "rows": 2
+            },
+            {
+                "w": 640,
+                "h": 480,
+                "columns": 4,
+                "rows": 2
+            },
+            {
+                "w": 960,
+                "h": 540,
+                "columns": 7,
+                "rows": 3
+            },
+            {
+                "w": 1280,
+                "h": 720,
+                "columns": 7,
+                "rows": 3
+            },
+            {
+                "w": 1920,
+                "h": 1080,
+                "columns": 7,
+                "rows": 3
+            }
+        ];
+        for (const entry of cases) {
+            setResolution(entry.w, entry.h);
+            compare(Sizing.hubGridColumns, entry.columns, entry.w + "x" + entry.h);
+            compare(Sizing.hubGridRows, entry.rows, entry.w + "x" + entry.h);
+        }
+
+        // Same tier ("720"), two very different widths -- columns must not
+        // move. systemsGridColumns/gamesGridColumns are explicitly allowed
+        // to differ here; hubGridColumns must not, by design.
+        setResolution(1280, 720);
+        const narrowColumns = Sizing.hubGridColumns;
+        setResolution(3000, 720);
+        compare(Sizing.hubGridColumns, narrowColumns, "hub grid shape must not fit to viewport width");
+        compare(Sizing.tier, "720");
+    }
+
+    // Sizing.hubTileSize duplicates HubScreen's own squareCells fit
+    // (Sizing.qml's own doc comment) so Settings can read the Hub's
+    // resolved tile size without a HubScreen instance. Cross-check it
+    // against the real thing at a few tiers so the two formulas can't
+    // silently drift apart, plus a hand-computed check at one tier for an
+    // independent sanity bound.
+    function test_hub_tile_size_matches_real_grid_and_hand_math(): void {
+        const cases = [[320, 240], [640, 480], [1280, 720], [1920, 1080]];
+        for (const [w, h] of cases) {
+            setResolution(w, h);
+            compare(Sizing.hubTileSize, main.hubScreen._gridCellWidth, w + "x" + h);
+        }
+
+        setResolution(1920, 1080);
+        const heightBudget = Sizing.screenHeight - Sizing.headerBottom - Sizing.pctH(6) - Sizing.pctH(7) - 3 * Sizing.pctH(2);
+        const widthFit = Math.floor((Sizing.screenWidth - 2 * Sizing.pctW(3) - (Sizing.hubGridColumns - 1) * Sizing.pctW(2)) / Sizing.hubGridColumns);
+        const heightFit = Math.floor((heightBudget - 2 * Sizing.pctH(2) - (Sizing.hubGridRows - 1) * Sizing.pctH(4)) / Sizing.hubGridRows);
+        compare(Sizing.hubTileSize, Math.min(widthFit, heightFit));
+    }
+
+    function test_nonstandard_scene_uses_adaptive_grid_scorer(): void {
+        setResolution(1000, 600);
+        const shape = Sizing.gamesGridShape(1000, 405);
+        const scored = Sizing._selectGridShape(1000, 405, Sizing._gamesGridConfig);
+        compare(shape.columns, scored.columns);
+        compare(shape.rows, scored.rows);
+    }
+
+    function test_crt_fonts_and_declared_grid_shapes(): void {
+        // Real --crt launches always carry both flags (main.cpp's
+        // bitmapTypeEnabled formula is crtNativePathEnabled || ...), so the
+        // harness sets them together to mirror production wiring.
+        main.crtNativePath = true;
+        main.bitmapType = true;
+        setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
+        compare(Sizing.tier, "crt");
+        compare(Sizing.fontHero, Sizing.fontSize(4.0));
+        compare(Sizing.fontTitle, Sizing.fontSize(3.2));
+        compare(Sizing.fontSection, Sizing.fontSize(2.9));
+        compare(Sizing.fontBody, Sizing.fontSize(2.6));
+        compare(Sizing.fontCaption, Sizing.fontSize(2.4));
+        compare(Sizing.fontSmall, Sizing.fontSize(2.2));
         compare(Sizing.systemsGridColumns, 3);
         compare(Sizing.systemsGridRows, 3);
-        Sizing.crtNativePath = false;
+        compare(Sizing.hubGridColumns, 3);
+        compare(Sizing.hubGridRows, 2);
+        compare(Sizing.swapPercentageAxes, false);
+        compare(Sizing.screenHeight, crtSafeHeight(240));
+        const declaredGames = Sizing._declaredGridShape("games");
+        compare(declaredGames.columns, 2);
+        let games = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
+        compare(games.columns, 2);
+        compare(games.rows, 2);
+
+        setResolutionExpect(352, 288, crtSafeWidth(352), crtSafeHeight(288));
+        compare(Sizing.systemsGridColumns, 3);
+        compare(Sizing.systemsGridRows, 3);
+        games = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
+        compare(games.columns, 3);
+        compare(games.rows, 2);
     }
 }

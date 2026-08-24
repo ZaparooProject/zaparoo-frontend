@@ -21,7 +21,7 @@ MediaListScreen {
 
     mediaModel: Browse.RecentsModel
     mediaState: Browse.RecentsState
-    screenTitle: qsTr("Recently Played")
+    screenTitle: qsTr("Recently played")
     emptyText: qsTr("Nothing played yet")
     loadingText: qsTr("Loading recently played…")
     detailShowTitle: false

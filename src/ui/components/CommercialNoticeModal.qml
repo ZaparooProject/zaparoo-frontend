@@ -29,11 +29,7 @@ Item {
 
     property bool open: false
 
-    // Push-in scale for the "I understand" button, mirroring the shared
-    // Modal shell's prebaked buttons. The button renders at this scale so
-    // both mouse and key/controller accept play the same press cue before
-    // the modal dismisses.
-    property real _pressScale: 1.0
+    property bool _pressed: false
 
     signal closeRequested
 
@@ -48,8 +44,7 @@ Item {
             actionCommit.stop();
             return;
         }
-        modal._pressScale = 1.0;
-        pressAnim.stop();
+        modal._pressed = false;
     }
 
     function handleAction(action: string): void {
@@ -64,22 +59,14 @@ Item {
     // Play the push-in cue on the button, then ack + close deferred so the
     // animation completes before the router pops the modal.
     function _commit(): void {
-        pressAnim.restart();
+        modal._pressed = true;
         actionCommit.arm();
-    }
-
-    NumberAnimation {
-        id: pressAnim
-        target: modal
-        property: "_pressScale"
-        to: Motion.pressScale
-        duration: Motion.dur(Motion.pressMs)
-        easing.type: Easing.OutQuad
     }
 
     DeferredAction {
         id: actionCommit
         onDeferred: {
+            modal._pressed = false;
             // Persist before signalling close so the next Component
             // construction (warm-restart on MiSTer) sees the ack flag
             // already written. The Rust slot is synchronous on the Qt
@@ -106,7 +93,7 @@ Item {
                 width: parent.width
                 text: qsTr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.")
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.6)
+                font.pixelSize: Sizing.fontBody
                 color: Theme.textPrimary
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
@@ -117,7 +104,7 @@ Item {
                 width: parent.width
                 text: qsTr("This free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.")
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.6)
+                font.pixelSize: Sizing.fontBody
                 color: Theme.textPrimary
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
@@ -128,7 +115,7 @@ Item {
                 width: parent.width
                 text: qsTr("Contact: legal@zaparoo.org")
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.6)
+                font.pixelSize: Sizing.fontBody
                 color: Theme.textLabel
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
@@ -139,7 +126,7 @@ Item {
                 width: parent.width
                 text: qsTr("Full details available any time under Settings > About / License.")
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.4)
+                font.pixelSize: Sizing.fontCaption
                 color: Theme.textLabel
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
@@ -157,7 +144,7 @@ Item {
                     width: parent.width
                     text: qsTr("Created by")
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.4)
+                    font.pixelSize: Sizing.fontCaption
                     color: Theme.textLabel
                     horizontalAlignment: Text.AlignHCenter
                     renderType: Text.NativeRendering
@@ -169,7 +156,7 @@ Item {
                     width: parent.width
                     text: "Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo"
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     color: Theme.textPrimary
                     wrapMode: Text.WordWrap
                     horizontalAlignment: Text.AlignHCenter
@@ -182,36 +169,24 @@ Item {
                 width: parent.width
                 height: Sizing.pctH(7)
 
-                Rectangle {
+                PressableSurface {
                     x: Sizing.center(parent.width, width)
                     y: Sizing.center(parent.height, height)
                     width: Math.min(Sizing.pctW(28), understandSlot.width)
                     height: parent.height
-                    color: Theme.surfaceCard
-                    // Single button — always the default action, so
-                    // render with the focused recipe (accent border, 2px)
-                    // instead of the unfocused borderMid edge.
-                    border.width: Sizing.stroke(2)
-                    border.color: Theme.accent
-                    radius: Sizing.cornerRadius
-                    transformOrigin: Item.Center
-                    scale: modal._pressScale
+                    focused: true
+                    pressed: modal._pressed
+                    pointerAcceptedButtons: Qt.LeftButton
+                    onPointerClicked: modal._commit()
 
                     Text {
                         x: Sizing.center(parent.width, width)
                         y: Sizing.center(parent.height, height)
                         text: qsTr("I understand")
                         font.family: Theme.fontUi
-                        font.pixelSize: Sizing.fontSize(2.6)
+                        font.pixelSize: Sizing.fontBody
                         color: Theme.textPrimary
                         renderType: Text.NativeRendering
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        acceptedButtons: Qt.LeftButton
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: modal._commit()
                     }
                 }
             }

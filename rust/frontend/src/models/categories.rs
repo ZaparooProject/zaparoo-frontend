@@ -201,14 +201,16 @@ fn reproject_inner(mut model: Pin<&mut ffi::CategoriesModel>) {
     let show_hidden = with_persist_read(|s| s.settings.show_hidden);
     let raw = model.rust().raw.clone();
     let (names, flags) = visible_categories(&raw, &user_hidden, show_hidden);
-    let count = names.len() as i32;
-    debug!(count, categories = ?names, "categories: reproject_inner");
-    model.as_mut().begin_reset_model();
-    model.as_mut().rust_mut().categories = names;
-    model.as_mut().rust_mut().hidden_flags = flags;
-    model.as_mut().rust_mut().count = count;
-    model.as_mut().end_reset_model();
-    model.as_mut().count_changed();
+    if model.rust().categories != names || model.rust().hidden_flags != flags {
+        let count = names.len() as i32;
+        debug!(count, categories = ?names, "categories: reproject_inner changed rows");
+        model.as_mut().begin_reset_model();
+        model.as_mut().rust_mut().categories = names;
+        model.as_mut().rust_mut().hidden_flags = flags;
+        model.as_mut().rust_mut().count = count;
+        model.as_mut().end_reset_model();
+        model.as_mut().count_changed();
+    }
     if !model.loaded {
         model.as_mut().set_loaded(true);
     }

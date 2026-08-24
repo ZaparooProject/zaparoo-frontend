@@ -57,8 +57,8 @@ systems/turbografx16.png
 | `handheld`  | Handheld category    |
 | `resume`    | Resume Game          |
 | `favorites` | Favorites            |
-| `recents`   | Recently Played      |
-| `settings`  | Settings & Utilities |
+| `recents`   | Recently played      |
+| `settings`  | Settings             |
 
 ```text
 hub/arcade.png
@@ -66,15 +66,40 @@ hub/favorites.svg
 hub/settings.svg
 ```
 
+A custom Hub tile (a specific system, a folder, or arbitrary ZapScript — see
+`[[hub.items]]` in `frontend.toml`) can set its own `icon = "name"` and drop
+a matching `hub/name.png` here, the same way a built-in tile's id works
+above.
+
 ### Rendered as-is (no tinting)
 
 The bundled system logos default to tintable SVGs that match the active theme.
-Settings → Browsing → System logos can switch bundled system art to the restored
+Settings → Appearance → System logos can switch bundled system art to the restored
 full-color logo set where available. Hub icons remain theme-tinted. **Your
 override images are not tinted** - they are shown exactly as they are on disk,
 in full color. If you want an image that tracks the theme colors, supply a
 monochrome SVG drawn in the theme's terms; otherwise expect your PNG/JPG to
 appear unchanged.
+
+## Color scheme
+
+Choose a preset live under Settings → Appearance → Color scheme. There are 19
+built-in presets — Zaparoo Dark, Zaparoo Light, and Classic Purple, plus
+popular editor/terminal palettes (Nord, Dracula, Synthwave '84, Gruvbox,
+Everforest, Solarized Dark, Rosé Pine, Oxocarbon), a couple of light-register
+alternatives (Flexoki Paper, Solarized Light), and retro/console-inspired
+ones (Amber Phosphor, Green Phosphor, Neo Geo, NES, Virtual Boy, Game Boy) —
+each shown with a 3-color swatch preview in the picker. Selection is stored
+as `[settings] color_scheme` in `frontend.toml`:
+
+```toml
+[settings]
+color_scheme = "zaparoo-dark" # or "nord", "dracula", "amber-phosphor", ...
+```
+
+See `src/ui/theme/ColorSchemes.qml`'s `ids` list for every available id.
+Unknown values fall back to `zaparoo-dark`. Presets recolor built-in tinted
+artwork; custom and full-color artwork remains unchanged.
 
 ## System display names
 

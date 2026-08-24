@@ -63,15 +63,55 @@ shared QML, not behind a `crtNativePath` branch.
   `y: Sizing.center(parent.height, height)`. This keeps capsule fills behind
   the text without blurring or z-order hacks.
 
-- **Quantize CRT font sizes.** `Sizing.fontSize()` snaps to `8` or `16`
-  pixels when `crtNativePath` is active. This is a runtime quantization,
-  not a design rule — call `fontSize()` everywhere; the singleton handles
-  the quantization where it applies.
+- **Quantize CRT font sizes.** Semantic `Sizing.fontHero` … `fontSmall`
+  tokens resolve through `Sizing.fontSize()` on CRT, which snaps to `8` or
+  `16` pixels. Specialist calls may still use `fontSize()` directly; never
+  bypass Sizing with a raw pixel size.
 
 - **Reserve space from worst-case metrics.** If dynamic text shares a row with
   icons, measure the widest expected string with `TextMetrics` and reserve that
   width up front. Current example: the header clock reserves the advance width
   of `23:59`.
+
+## Loading-cue anchor rule
+
+There are two loading cues in sequence for any screen transition that takes
+long enough to show one: the global transition cue (`Main.qml`, shown while
+the destination screen has no content yet) hands off to that screen's own
+`ScreenStateOverlay` loading cue once the screen mounts. Both cues render the
+same `DelayedLoadingIndicator`, so if they center on different rects the
+handoff visibly jumps the label by a few pixels — worse in TATE, worse again
+at higher resolutions.
+
+**Both cues must center on the same coordinate space.** The global cue is
+parented into `scene` (not a bare window-relative `Item`) and sized to it, so
+it already accounts for the CRT safe-area inset and `scene.rotation`. A
+screen's `ScreenStateOverlay` is not necessarily the same rect: `MediaListScreen`
+and `SystemsScreen` both start their overlay below a header bar, so the
+overlay's own `height / 2` is *not* the point the global cue centered on.
+
+`ScreenStateOverlay` exposes `cueCenterY` (default `overlay.height / 2`,
+correct when the overlay genuinely fills the screen, e.g. `SettingsScreen`)
+specifically so an inset host can override it:
+
+```qml
+// Content rect starts below the header, so recenter on the full screen
+// (which matches `scene`, the global cue's parent) instead of this rect's
+// own smaller height.
+cueCenterY: root.height / 2 - y
+```
+
+The `- y` term converts a window-space target back into the overlay's own
+local coordinate space, since `cueCenterY` is consumed as
+`y: Sizing.px(cueCenterY - height / 2)` inside the overlay. Get this formula
+wrong (e.g. omit the `- y`) and the cue centers on the wrong point only on
+screens whose overlay is offset from the window origin — exactly the kind of
+regression that is invisible on `SettingsScreen` and only shows up on
+`MediaListScreen`/`SystemsScreen`. `tests/ui/tst_screen_state_overlay.qml`
+maps both a default and an offset-content-rect overlay's cue into a shared
+"window space" `Item` and asserts they land at the same y — add a case there
+for any new loading-capable screen with a content rect offset from its
+container.
 
 ## Software-renderer animation costs
 
@@ -122,8 +162,8 @@ Pick animations from the cheap column when targeting MiSTer.
 
 | Cheap on raster | Expensive on raster |
 |---|---|
-| Instant cut + small one-shot cue (the tile/row push-in) | Translucent overlays of any size (see below) |
-| Translation/scale of small items (one Tile, the scroll-thumb) | Translation of large content (band of N tiles) |
+| Instant cut + small one-shot cue (tile press or row flash) | Translucent overlays of any size (see below) |
+| Integer translation of small items (one tile face or cursor rail) | Translation of large content (band of N tiles) |
 | ColorAnimation on tints / borders | Concurrent slide + scale (compounds raster cost) |
 | Static scenes with one ramping property on a small element | `ShaderEffect` of any kind, `Qt5Compat.GraphicalEffects` |
 | `layer.enabled` for caching a complex sub-tree | `Animator` types (no benefit on basic render loop) |
@@ -170,28 +210,46 @@ plain animations, and `layer.enabled` without an effect.
 ### Recommendation
 
 For state-change feedback, prefer instant cuts with a small localized cue
-(the push-in cue, a help-bar text change) over any fade.
+(the physical press, row flash, or help-bar text change) over any fade.
 Cues are small elements with small dirty rectangles; they paint cheaply
 on raster regardless of DPR or partial-update status. Reach for a fade
 only after diagnosing DPR and ensuring the destination scene is
 genuinely static — and then use `Item.grabToImage()` rather than a
 translucent overlay.
 
+### PagedGrid's skip-empty scan is a bounded JS loop, not a repaint cost
+
+`PagedGrid.skipEmptyCells` (the Hub outside a Move session — see
+docs/style.md → "Empty slots") makes `moveSelection`/`pageBy` repeat their
+normal single step until they land on a non-`isEmpty` cell, instead of
+stopping after one. Each intermediate step DOES reassign `currentIndex`
+(it's the same single-step function the non-skipping path calls once), but
+the whole scan — every candidate cell it rejects along the way — runs
+synchronously inside one JS function call, entirely against plain model data
+(`itemAt(index).isEmpty`), before control returns to the event loop. Qt
+Quick's Software adaptation only actually repaints on the next frame sync,
+so those intermediate `currentIndex` values never get a paint of their own —
+the visible result is the same single repaint an ordinary one-step move
+already causes, just landing on a different final cell. The loop is bounded
+by `itemCount` (or `pageCount` for `pageBy`) iterations, which only matters
+for a pathological all-empty grid (an emptied Hub); the Hub's real content
+resolves in one or two steps almost always, since the whole point is "the
+next real tile," not a long walk.
+
 ### Sanctioned one-shot transient cues
 
 The rule above bans **persistent** motion that runs every frame while content
 is busy (e.g., a scale held on every focused tile on every d-pad move). It
 does NOT ban short one-shot animations on a single small element triggered
-at a state-change moment (activate/launch, selection land). Those are cheap
-for the same reason a single-tile push-in is cheap: one element, one short
-burst, then back to a static scene.
+at a state-change moment (activate/launch, selection land). Those are cheap for the same reason a single-tile face translation is cheap:
+one element, one short burst, then back to a static scene.
 
 Sanctioned patterns and why they are safe:
 
 | Cue | Cost analysis |
 |---|---|
-| Tile push-in on activate or launch (single scale leg, ~80 ms, held) | Single tile's pixmap scales transiently; dirty rect = one tile; the host screen's `settling` flag resets `scale` to 1.0 off-screen so there is no resampling per frame once the screen is hidden. One shared cue covers both forward navigation and game launch |
-| List-detail row push-in on activate or launch (single scale leg, ~80 ms, held) | The same cue as the tile, applied to the selected list row; dirty rect = one row; all neighboring rows are static |
+| Tile physical press on activate or launch (`Motion.pressMs`, held) | One opaque face translates down by `Sizing.pressEdgeHeight`; dirty rect = one tile; no cover-art resampling. The host screen's `settling` flag raises the face off-screen. One shared cue covers forward navigation and game launch |
+| List/settings row inverse-blink on activate or launch (`Motion.pressMs`, self-clearing) | Only the selected row's `SelectionBar` swaps fill and content color for `Motion.pressMs`, then swaps back — 2 repaints total, nothing moves; background and neighboring rows remain static |
 | Settings toggle-knob slide (x, ~110 ms) | One tiny Rectangle handle; 1 pctW |
 
 The shared constraint: the source scene must be static or near-static during
@@ -205,6 +263,39 @@ across every d-pad move while the grid was live. Any tile that held the old
 scale forced its pixmap to be bilinear-filtered on every rendered frame,
 compounding across focus moves. That is the pattern being banned; the
 one-shot transients above do not share that cost profile.
+
+### The one continuous exception: ProgressTrack's leading-cell blink
+
+`ProgressTrack.qml` (the header status line's segmented progress bar,
+replacing `CoreStatusPill`'s old 4-dot spinner) blinks whichever cell sits
+at the fill's leading edge (or the marching cell in indeterminate mode) for
+as long as a background task is active. This is not one-shot, and it is
+deliberately the only cue in the app that isn't:
+
+| Cue | Why it still qualifies |
+|---|---|
+| `ProgressTrack` leading-cell blink (`Motion.pulseMs` ≈ 2 Hz, loops while active) | Header chrome only — never painted over a grid or list. Dirty rect is one small `Sizing.radiusSm` cell. Gated on the task actually running and not paused (`running: root._pulsing`, itself `root.active && !root.paused && Motion.enabled`), so it is inert whenever nothing is happening. Stops outright under Reduce Motion rather than collapsing to a 0 ms loop, matching `Tile.qml`'s `interval: Motion.dur(650)` double-gating precedent (`Motion.dur()` on the duration *and* `Motion.enabled` in `running`) |
+
+It is a genuine blink, not a fade: a plain `Timer` flips a bool
+(`root._blinkOn`) every `Motion.pulseMs`, and the cell's `color` reads that
+bool straight through — `cell._isPulseCell ? (root._blinkOn ? Theme.accent :
+Theme.borderSubtle) : ...`. No `ColorAnimation`, no `Behavior on color`,
+nothing interpolated. Each tick is a single solid-color repaint of one cell,
+the same instant-swap idiom `SelectionBar`'s inverse-video flash already
+uses for its own one-shot cue (`PropertyAction`, not an animated transition)
+— this just repeats it on a timer instead of firing once.
+
+The distinction from the one-shot cues above is why it needs its own
+exemption argument rather than sliding under the same table: those cues
+fire once at a state-change moment and return to a static scene; this one
+repeats for as long as its task does. It still fits the cost model this
+whole section is built on — small dirty rect, cheap per-pixel content (a
+solid-fill `Rectangle`, no interpolation to compute), never composited over
+busy content — so the "persistent motion" ban is about *scale and
+location* (a scale/fade over many delegates or a busy grid), not about
+repetition. A single small cell blinking in otherwise-static header chrome
+was never the expensive case the rule exists to prevent. See
+`docs/style.md` → "Header status line" for the full design writeup.
 
 ### Motion tokens and the reduce-motion convention
 
@@ -240,18 +331,32 @@ Token summary (`Motion.qml`):
 
 | Token | Value | Use |
 |---|---|---|
-| `pressMs` | 80 | Push-in cue (accept/activate) |
-| `settleMs` | 110 | Push-in release leg; toggle-knob slide |
-| `pressScale` | 0.96 | Push-in target |
+| `pressMs` | 34 | Physical press or row inverse-blink cue; also `DeferredAction`'s hold time (see below) |
+| `settleMs` | 110 | Release leg; toggle-knob slide |
+| `pulseMs` | 250 | `ProgressTrack` leading-cell blink, on/off hold time (~2 Hz full cycle) |
 
-Both durations sit just above MiSTer's frame-budget floor (~3 frames at
-~30fps); see the comments in `Motion.qml` before lowering them.
+`settleMs` sits just above MiSTer's frame-budget floor (~3 frames at ~30fps)
+so tracked (positional) motion reads as smooth rather than a two-frame jump;
+see the comments in `Motion.qml` before lowering it. `pressMs` is bound by a
+different, smaller floor: it doubles as `DeferredAction`'s hold time (every
+Accept across the app blocks the actual dispatch by `pressMs` so the flash/
+push-in gets at least one rendered frame before a forward navigation can
+cover it), and that hold is pure added input latency, not tracked motion —
+so its floor is one frame at the slowest real target (MiSTer, ~30fps →
+33.3ms, rounded up to 34), not the ~3-frame smoothness floor `settleMs`
+needs. Don't drop `pressMs` below that one-frame floor or the cue can lose
+its guaranteed frame on the worst-case hardware; there's no perceptual
+reason to raise it back toward `settleMs` — see `Motion.qml`'s own comment
+for the research behind this. `pulseMs` isn't bound by either floor — it's a
+hard on/off cut, not tracked positional motion — its value comes from
+matching a deliberately snappy, "still alive" cadence instead; see the
+exception writeup above before changing it.
 
 Pulse counter pattern (how hosts trigger tile cues without coupling to
 animation internals): the host increments the `activatePulse` int property
 on the grid or TileLoader; `Tile.qml` watches the delegate contract
-`delegateActivatePulse` and fires the push-in `NumberAnimation` if
-`_focusedSelection` is true. This keeps the animation entirely inside
-`Tile.qml` - hosts only bump a counter. There is a single push-in cue for
-every button-like action: forward navigation and game launch both use it,
-so there is no separate launch animation or pulse counter.
+`delegateActivatePulse` and lowers the `PressableSurface` face if
+`_focusedSelection` is true. This keeps cue state entirely inside `Tile.qml` -
+hosts only bump a counter. One physical press covers every button-like action:
+forward navigation and game launch both use it, so there is no separate launch
+animation or pulse counter.

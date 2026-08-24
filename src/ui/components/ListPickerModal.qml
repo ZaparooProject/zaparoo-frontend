@@ -38,8 +38,7 @@ Item {
     property string initialId: ""
     property int currentIndex: 0
 
-    // Push-in scale for the activated row, mirroring the tile push-in.
-    property real _pressScale: 1.0
+    property int _activatePulse: 0
     property string _pendingId: ""
 
     signal accepted(string id)
@@ -64,6 +63,67 @@ Item {
     readonly property bool _hasContentAbove: viewport.contentY > 1
     readonly property bool _hasContentBelow: viewport.contentY + viewport.height < viewport.contentHeight - 1
 
+    // Content-driven panel width, mirroring ContextMenu.qml's
+    // `_widestEntryLabelWidth` pattern (Modal.qml can't measure this itself —
+    // shell content is an opaque caller-supplied Item to it) — see
+    // docs/style.md -> "Content-driven modal width".
+    readonly property int _rowHorizontalPadding: Sizing.pctW(2)
+    readonly property int _contentHorizontalMargin: Sizing.pctW(4)
+    // `Math.max(advanceWidth, boundingRect.width)` plus one `Sizing.stroke(2)`
+    // of slack (the TopStatusStrip.qml `_titleMeasuredWidth` pattern) — the
+    // label paints with `renderType: Text.NativeRendering`, which lays out on
+    // integer, hinted per-glyph advances, while `advanceWidth()` alone
+    // returns QFontMetricsF's fractional, unhinted total; a long string can
+    // paint a few px wider than that alone measures, and a zero-slack fit
+    // then elides text that should have fit. See docs/style.md -> "Preset
+    // catalog" / picker sizing.
+    //
+    // `fontSize`/`fontFamily`/`fontWeight` are unused inside — `metrics`'
+    // own font.* bindings already keep it in sync — but taking them as
+    // explicit parameters, rather than letting only `metrics.font.*` carry
+    // the dependency, is what makes callers below re-evaluate on a
+    // font/tier/weight change: `FontMetrics.advanceWidth()`/
+    // `boundingRect()` are Q_INVOKABLE method calls, and a property binding
+    // that only ever calls a method does not reliably re-run when a
+    // property read *inside* that method changes. `fontWeight` was added
+    // in round 9 — a selected row's `bar.contentWeight` flips Normal ->
+    // Medium (round 8's inverse-video weight step), and without it as a
+    // captured parameter a row's own `_textWidth` stayed at its
+    // Normal-weight measurement while the Text repainted bold, eliding a
+    // label that had actually fit. Matches ContextMenu.qml's
+    // `_widestEntryLabelWidth(entries)`.
+    function _measureLabelWidth(metrics: FontMetrics, label: string, fontSize: int, fontFamily: string, fontWeight: int): int {
+        return Math.ceil(Math.max(metrics.advanceWidth(label), metrics.boundingRect(label).width)) + Sizing.stroke(2);
+    }
+    // Measured at the selected row's weight (Font.Medium — see
+    // SelectionBar.qml's contentWeight), not the resting Font.Normal —
+    // otherwise the widest label could elide once selected. Each row's
+    // own `_textWidth` below tracks its own live weight via a per-row
+    // `rowLabelMetrics` instead, so individual labels stay precisely
+    // centered at rest too.
+    readonly property int _widestEntryLabelWidth: {
+        let widest = 0;
+        for (let i = 0; i < modal.entries.length; ++i) {
+            const label = modal.entries[i] && modal.entries[i].label !== undefined ? String(modal.entries[i].label) : "";
+            widest = Math.max(widest, modal._measureLabelWidth(_panelWidthLabelMetrics, label, Sizing.fontBody, Theme.fontUi, Font.Medium));
+        }
+        return widest;
+    }
+    readonly property int _titleWidth: modal.title !== "" ? modal._measureLabelWidth(_titleLabelMetrics, modal.title, Sizing.fontTitle, Theme.fontUi, Font.Normal) : 0
+    // Optional per-entry color-swatch preview (the color-scheme picker).
+    // `entries[i].swatch` is a 3-color array or undefined; the picker is
+    // homogeneous (either every entry carries one or none do), so checking
+    // the first entry is enough to flag the whole modal into swatch layout.
+    // See docs/style.md -> "Picker swatch preview".
+    readonly property bool _hasSwatchPreview: modal.entries.length > 0 && modal.entries[0].swatch !== undefined
+    readonly property int _swatchBoxSize: Sizing.pctH(2.4)
+    readonly property int _swatchGap: Sizing.pctW(0.6)
+    readonly property int _swatchLabelGap: Sizing.pctW(2)
+    readonly property int _swatchBandWidth: modal._hasSwatchPreview ? 3 * modal._swatchBoxSize + 2 * modal._swatchGap : 0
+    readonly property int _desiredPanelWidth: Math.max(modal._widestEntryLabelWidth + (modal._hasSwatchPreview ? modal._swatchBandWidth + modal._swatchLabelGap : 0) + 2 * modal._rowHorizontalPadding, modal._titleWidth) + 2 * modal._contentHorizontalMargin
+    // Degenerate-case floor only, matching Modal.qml's own floor.
+    readonly property int _minPanelWidth: Sizing.pctW(30)
+
     visible: modal.open
     anchors.fill: parent
     z: 300
@@ -76,8 +136,6 @@ Item {
             return;
         }
         modal._applyInitialIndex();
-        modal._pressScale = 1.0;
-        pressAnim.stop();
         modal._pendingId = "";
     }
 
@@ -88,6 +146,16 @@ Item {
     onEntriesChanged: {
         if (modal.open)
             modal._applyInitialIndex();
+        // Any entries change -- open or not -- destroys and recreates every
+        // row's Repeater delegate (new array reference). Each new row's
+        // SelectionBar binds `activatePulse` to this counter at
+        // construction; a stale nonzero value left over from a previous
+        // accept is itself a 0 -> N change to that fresh binding, and
+        // replays the flash on whichever row starts focused with no real
+        // activation behind it. Resetting unconditionally (not just while
+        // open) matches SelectionBar's own declared default, so every fresh
+        // bind is a no-op until a real accept happens.
+        modal._activatePulse = 0;
     }
 
     function _applyInitialIndex(): void {
@@ -138,17 +206,8 @@ Item {
 
     function _commitAccept(id: string): void {
         modal._pendingId = id;
-        pressAnim.restart();
+        modal._activatePulse++;
         acceptCommit.arm();
-    }
-
-    NumberAnimation {
-        id: pressAnim
-        target: modal
-        property: "_pressScale"
-        to: Motion.rowPressScale
-        duration: Motion.dur(Motion.pressMs)
-        easing.type: Easing.OutQuad
     }
 
     DeferredAction {
@@ -160,12 +219,27 @@ Item {
         }
     }
 
+    FontMetrics {
+        id: _panelWidthLabelMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontBody
+        font.weight: Font.Medium
+    }
+
+    FontMetrics {
+        id: _titleLabelMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontTitle
+    }
+
     Modal {
         id: shell
 
         open: modal.open
         kind: "shell"
         title: modal.title
+        panelMaxWidth: Math.max(modal._minPanelWidth, modal._desiredPanelWidth)
+        contentSized: true
 
         Item {
             id: viewportSlot
@@ -196,34 +270,71 @@ Item {
                     Repeater {
                         model: modal.entries
 
-                        Rectangle {
+                        Item {
                             id: row
 
                             required property int index
                             required property var modelData
 
+                            readonly property bool focused: row.index === modal.currentIndex
+
+                            objectName: "listPickerRow-" + row.index
                             width: rowColumn.width
                             height: modal._rowHeight
-                            color: Theme.surfaceCard
-                            border.width: row.index === modal.currentIndex ? Sizing.stroke(2) : Sizing.stroke(1)
-                            border.color: row.index === modal.currentIndex ? Theme.accent : Theme.borderMid
-                            radius: Sizing.cornerRadius
-                            transformOrigin: Item.Center
-                            scale: row.index === modal.currentIndex ? modal._pressScale : 1.0
 
-                            Text {
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: Sizing.pctW(2)
-                                anchors.rightMargin: Sizing.pctW(2)
+                            // Inverse-video row -- see SelectionBar.qml and
+                            // docs/style.md -> "Two registers". Picking a
+                            // value from this list is the same interaction
+                            // as a SettingsField row; both read the same way
+                            // now instead of flipping registers mid-task.
+                            SelectionBar {
+                                id: bar
+                                objectName: "listPickerSelectionBar"
+                                anchors.fill: parent
+                                active: row.focused
+                                activatePulse: modal._activatePulse
+                                radius: Sizing.radiusSm
+                            }
+
+                            // Tracks this row's own live weight (Normal at
+                            // rest, Medium selected — bar.contentWeight) so
+                            // both label variants' own centering/left-align
+                            // box below always matches their actual
+                            // rendered glyph width — see
+                            // `_panelWidthLabelMetrics` above for why panel
+                            // sizing measures at a separate, fixed weight
+                            // instead.
+                            //
+                            // `TextMetrics` with its own `text:` binding,
+                            // not a `FontMetrics` fed through
+                            // `_measureLabelWidth`'s `metrics.advanceWidth(label)`
+                            // method-call form (round 9's ContextMenu.qml
+                            // fix uses the identical construction, for the
+                            // identical reason). `advanceWidth`/
+                            // `boundingRect` are Q_INVOKABLE methods on
+                            // `FontMetrics`; a caller passing `fontWeight`
+                            // as an explicit-but-otherwise-unused parameter
+                            // to make its own binding "depend on" the
+                            // weight does not reliably work under the AOT
+                            // QML compiler here -- an argument that is
+                            // never read inside the callee's body is a
+                            // strong candidate for the compiler to treat as
+                            // dead and drop the dependency it would
+                            // otherwise establish, so a row's `_textWidth`
+                            // stayed pinned to its stale weight's
+                            // measurement across a selection change. On
+                            // `TextMetrics`, `advanceWidth`/`boundingRect`
+                            // are genuine properties that recompute
+                            // whenever `text`/`font.*` change, so reading
+                            // them from `_textWidth` below is an ordinary,
+                            // reliable property dependency.
+                            TextMetrics {
+                                id: rowLabelMetrics
+                                objectName: "listPickerRowLabelMetrics"
                                 text: row.modelData.label
-                                color: Theme.textPrimary
                                 font.family: Theme.fontUi
-                                font.pixelSize: Sizing.fontSize(2.6)
-                                horizontalAlignment: Text.AlignHCenter
-                                elide: Text.ElideRight
-                                renderType: Text.NativeRendering
+                                font.pixelSize: Sizing.fontBody
+                                font.weight: bar.contentWeight
                             }
 
                             MouseArea {
@@ -232,7 +343,106 @@ Item {
                                 acceptedButtons: Qt.LeftButton
                                 cursorShape: Qt.PointingHandCursor
                                 onEntered: modal.currentIndex = row.index
-                                onClicked: modal._commitAccept(row.modelData.id)
+                                onClicked: {
+                                    modal.currentIndex = row.index;
+                                    modal._commitAccept(row.modelData.id);
+                                }
+                            }
+
+                            // Plain centered label — every picker except the
+                            // color-scheme one (below). Untouched by the
+                            // swatch-preview addition.
+                            Text {
+                                // Centered as a box sized to this row's own
+                                // measured text, not full row width +
+                                // AlignHCenter — a glyph run that straddles a
+                                // half-pixel softens under the software
+                                // renderer. See "Integer-pixel rules" in
+                                // docs/qml-gotchas.md, and ContextMenu.qml's
+                                // identical row-label construction.
+                                readonly property int _availableWidth: Math.max(0, parent.width - 2 * modal._rowHorizontalPadding)
+                                readonly property int _textWidth: Math.min(Math.ceil(Math.max(rowLabelMetrics.advanceWidth, rowLabelMetrics.boundingRect.width)) + Sizing.stroke(2), _availableWidth)
+
+                                objectName: "listPickerRowLabelCentered"
+                                visible: !modal._hasSwatchPreview
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: Sizing.center(parent.width, _textWidth)
+                                width: _textWidth
+                                text: row.modelData.label
+                                // Inverse video on selection, matching
+                                // SettingsField/BrowseList -- see
+                                // SelectionBar.qml.
+                                color: bar.active ? bar.contentColor : Theme.textPrimary
+                                font.family: Theme.fontUi
+                                font.pixelSize: Sizing.fontBody
+                                font.weight: bar.contentWeight
+                                elide: Text.ElideRight
+                                renderType: Text.NativeRendering
+                            }
+
+                            // Label-left, swatch-right — the color-scheme
+                            // picker. Label is left-aligned rather than
+                            // centered so it reads as a row leading into its
+                            // own preview, not two independently-centered
+                            // elements. See docs/style.md -> "Picker swatch
+                            // preview".
+                            Text {
+                                readonly property int _availableWidth: Math.max(0, parent.width - 2 * modal._rowHorizontalPadding - modal._swatchBandWidth - modal._swatchLabelGap)
+                                readonly property int _textWidth: Math.min(Math.ceil(Math.max(rowLabelMetrics.advanceWidth, rowLabelMetrics.boundingRect.width)) + Sizing.stroke(2), _availableWidth)
+
+                                objectName: "listPickerRowLabelSwatch"
+                                visible: modal._hasSwatchPreview
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: modal._rowHorizontalPadding
+                                width: _textWidth
+                                text: row.modelData.label
+                                color: bar.active ? bar.contentColor : Theme.textPrimary
+                                font.family: Theme.fontUi
+                                font.pixelSize: Sizing.fontBody
+                                font.weight: bar.contentWeight
+                                elide: Text.ElideRight
+                                renderType: Text.NativeRendering
+                            }
+
+                            Row {
+                                objectName: "listPickerRowSwatches"
+                                visible: modal._hasSwatchPreview
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: parent.width - modal._rowHorizontalPadding - modal._swatchBandWidth
+                                spacing: modal._swatchGap
+
+                                Repeater {
+                                    model: modal._hasSwatchPreview ? row.modelData.swatch : 0
+
+                                    Rectangle {
+                                        required property color modelData
+                                        required property int index
+
+                                        objectName: "listPickerRowSwatch-" + index
+                                        width: modal._swatchBoxSize
+                                        height: modal._swatchBoxSize
+                                        radius: Sizing.half(Sizing.radiusSm)
+                                        color: modelData
+                                        // A near-black or near-white swatch can
+                                        // sit at the same contrast as the row's
+                                        // resting background and disappear into
+                                        // it (item 1, round 6). `textLabel` is a
+                                        // mid neutral the semantic-tier
+                                        // guardrails already hold >=3:1 against
+                                        // bgDeep on every preset, so it separates
+                                        // either extreme from the row at rest.
+                                        // On a selected row the swatch sits on a
+                                        // solid `accent` fill instead, where
+                                        // `textLabel` isn't guaranteed to
+                                        // separate -- flip to `onAccent`
+                                        // (`bar.contentColor`) there, the same
+                                        // fix the favorite heart uses against
+                                        // SelectionBar (see docs/style.md ->
+                                        // "Inverse-video rows").
+                                        border.width: Sizing.cardBorderWidth
+                                        border.color: bar.active ? bar.contentColor : Theme.textLabel
+                                    }
+                                }
                             }
                         }
                     }
@@ -240,9 +450,11 @@ Item {
             }
 
             Image {
-                source: Resources.iconUrl("ScrollUp")
+                source: Resources.iconUrl("ScrollUp", Theme.textPrimary)
                 width: modal._scrollArrowSize
                 height: width
+                sourceSize.width: Sizing.px(width)
+                sourceSize.height: Sizing.px(height)
                 anchors.bottom: viewport.top
                 anchors.bottomMargin: modal._scrollArrowGap
                 anchors.horizontalCenter: viewport.horizontalCenter
@@ -252,9 +464,11 @@ Item {
             }
 
             Image {
-                source: Resources.iconUrl("ScrollDown")
+                source: Resources.iconUrl("ScrollDown", Theme.textPrimary)
                 width: modal._scrollArrowSize
                 height: width
+                sourceSize.width: Sizing.px(width)
+                sourceSize.height: Sizing.px(height)
                 anchors.top: viewport.bottom
                 anchors.topMargin: modal._scrollArrowGap
                 anchors.horizontalCenter: viewport.horizontalCenter

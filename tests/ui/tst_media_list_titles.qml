@@ -11,6 +11,7 @@ import QtTest
 import Zaparoo.Browse as Browse
 import Zaparoo.Screens
 import Zaparoo.Theme
+import Zaparoo.Ui
 
 TestCase {
     id: testCase
@@ -24,7 +25,7 @@ TestCase {
     property string _originalBrowseLayout: "grid"
 
     Component.onCompleted: {
-        _originalBrowseLayout = Browse.Settings.current_browse_layout;
+        _originalBrowseLayout = Browse.Settings.current_games_browse_layout;
         Sizing.screenWidth = testCase.width;
         Sizing.screenHeight = testCase.height;
     }
@@ -52,7 +53,7 @@ TestCase {
     function init(): void {
         Sizing.screenWidth = testCase.width;
         Sizing.screenHeight = testCase.height;
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_games_browse_layout = "grid";
         mediaModel.clear();
         mediaModel.append({
             "name": "D (Disc 1)",
@@ -60,7 +61,11 @@ TestCase {
             "coverKey": "",
             "favorite": 0,
             "hidden": false,
-            "disambiguatingTags": ""
+            "disambiguatingTags": "",
+            "isEmpty": false,
+            "entryType": "media",
+            "fileCount": 0,
+            "disabled": false
         });
         mediaModel.append({
             "name": "D (Disc 2)",
@@ -68,7 +73,11 @@ TestCase {
             "coverKey": "",
             "favorite": 0,
             "hidden": false,
-            "disambiguatingTags": ""
+            "disambiguatingTags": "",
+            "isEmpty": false,
+            "entryType": "media",
+            "fileCount": 0,
+            "disabled": false
         });
         mediaModel.append({
             "name": "Friendly Alias",
@@ -76,14 +85,18 @@ TestCase {
             "coverKey": "",
             "favorite": 0,
             "hidden": false,
-            "disambiguatingTags": ""
+            "disambiguatingTags": "",
+            "isEmpty": false,
+            "entryType": "media",
+            "fileCount": 0,
+            "disabled": false
         });
         tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
         screen.mediaGrid.setCurrentIndexImmediate(0);
     }
 
     function cleanup(): void {
-        Browse.Settings.current_browse_layout = _originalBrowseLayout;
+        Browse.Settings.current_games_browse_layout = _originalBrowseLayout;
     }
 
     function displayTitleAt(index: int): string {
@@ -107,12 +120,12 @@ TestCase {
     }
 
     function assertGridAndListTitle(index: int, expected: string): void {
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_games_browse_layout = "grid";
         screen.mediaGrid.setCurrentIndexImmediate(index);
         tryCompare(screen.activeLabel, "text", expected);
         tryVerify(() => hasVisibleText(screen.mediaGrid, expected), 1000, "grid title should render " + expected);
 
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_games_browse_layout = "list";
         screen.mediaGrid.setCurrentIndexImmediate(index);
         tryCompare(screen.listCard, "visible", true);
         tryVerify(() => hasVisibleText(screen.listCard, expected), 1000, "list title should render " + expected);
@@ -137,20 +150,79 @@ TestCase {
             "coverKey": "",
             "favorite": 0,
             "hidden": false,
-            "disambiguatingTags": "US"
+            "disambiguatingTags": "US",
+            "isEmpty": false
         });
         const idx = mediaModel.count - 1;
         tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
 
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_games_browse_layout = "grid";
         screen.mediaGrid.setCurrentIndexImmediate(idx);
         tryVerify(() => hasVisibleText(screen.mediaGrid, "Sonic CD"), 1000, "grid name should render");
         tryVerify(() => hasVisibleText(screen.mediaGrid, "US"), 1000, "grid token should render inline");
 
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_games_browse_layout = "list";
         screen.mediaGrid.setCurrentIndexImmediate(idx);
         tryCompare(screen.listCard, "visible", true);
         tryVerify(() => hasVisibleText(screen.listCard, "Sonic CD"), 1000, "list name should render");
         tryVerify(() => hasVisibleText(screen.listCard, "US"), 1000, "list token should render inline");
+    }
+
+    // Round 11: a folder/root row's dim suffix is the item count, not
+    // disambiguating tags -- composed by Format.rowSuffix and threaded
+    // through the same `entryType`/`fileCount` roles in both layouts (see
+    // BrowseList.qml/PagedGrid.qml/Tile.qml).
+    function test_folder_item_count_renders_inline_in_grid_and_list(): void {
+        mediaModel.append({
+            "name": "RPGs",
+            "fileStem": "RPGs",
+            "coverKey": "",
+            "favorite": 0,
+            "hidden": false,
+            "disambiguatingTags": "",
+            "isEmpty": false,
+            "entryType": "directory",
+            "fileCount": 5,
+            "disabled": false
+        });
+        const idx = mediaModel.count - 1;
+        const expected = Format.count(5);
+        tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
+
+        Browse.Settings.current_games_browse_layout = "grid";
+        screen.mediaGrid.setCurrentIndexImmediate(idx);
+        tryVerify(() => hasVisibleText(screen.mediaGrid, "RPGs"), 1000, "grid name should render");
+        tryVerify(() => hasVisibleText(screen.mediaGrid, expected), 1000, "grid item count should render inline");
+
+        Browse.Settings.current_games_browse_layout = "list";
+        screen.mediaGrid.setCurrentIndexImmediate(idx);
+        tryCompare(screen.listCard, "visible", true);
+        tryVerify(() => hasVisibleText(screen.listCard, "RPGs"), 1000, "list name should render");
+        tryVerify(() => hasVisibleText(screen.listCard, expected), 1000, "list item count should render inline");
+    }
+
+    // A media row's own entryType ("media", the default) must not pick up
+    // a folder-style item count from a stray fileCount value.
+    function test_media_row_ignores_file_count(): void {
+        mediaModel.append({
+            "name": "Some Game",
+            "fileStem": "Some Game",
+            "coverKey": "",
+            "favorite": 0,
+            "hidden": false,
+            "disambiguatingTags": "",
+            "isEmpty": false,
+            "entryType": "media",
+            "fileCount": 5,
+            "disabled": false
+        });
+        const idx = mediaModel.count - 1;
+        const suffix = Format.count(5);
+        tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
+
+        Browse.Settings.current_games_browse_layout = "grid";
+        screen.mediaGrid.setCurrentIndexImmediate(idx);
+        tryVerify(() => hasVisibleText(screen.mediaGrid, "Some Game"), 1000, "grid name should render");
+        verify(!hasVisibleText(screen.mediaGrid, suffix), "a media row must not show a folder item count");
     }
 }

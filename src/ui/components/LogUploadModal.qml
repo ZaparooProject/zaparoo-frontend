@@ -34,6 +34,8 @@ Item {
     id: modal
 
     property bool open: false
+    property bool _pressed: false
+    property int _pendingAcceptPhase: -1
 
     signal closeRequested
 
@@ -49,8 +51,13 @@ Item {
     z: 300
 
     onOpenChanged: {
-        if (!modal.open)
+        if (!modal.open) {
+            acceptCommit.stop();
+            modal._pressed = false;
+            modal._pendingAcceptPhase = -1;
             return;
+        }
+        modal._pressed = false;
         if (modal.phase === modal._stateIdle)
             Browse.LogUpload.upload();
     }
@@ -68,14 +75,25 @@ Item {
     }
 
     function handleAction(action: string): void {
-        if (action === "accept") {
-            if (modal.phase === modal._stateSuccess) {
-                modal.closeRequested();
-            } else if (modal.phase === modal._stateError) {
-                Browse.LogUpload.upload();
-            }
+        if (action === "accept" && (modal.phase === modal._stateSuccess || modal.phase === modal._stateError)) {
+            modal._pendingAcceptPhase = modal.phase;
+            modal._pressed = true;
+            acceptCommit.arm();
         } else if (action === "cancel") {
             modal.closeRequested();
+        }
+    }
+
+    DeferredAction {
+        id: acceptCommit
+        onDeferred: {
+            const acceptedPhase = modal._pendingAcceptPhase;
+            modal._pendingAcceptPhase = -1;
+            modal._pressed = false;
+            if (acceptedPhase === modal._stateSuccess)
+                modal.closeRequested();
+            else if (acceptedPhase === modal._stateError)
+                Browse.LogUpload.upload();
         }
     }
 
@@ -94,9 +112,9 @@ Item {
             Text {
                 width: parent.width
                 visible: modal.phase === modal._stateUploading || modal.phase === modal._stateIdle
-                text: qsTr("Uploading log file - this may take a moment.")
+                text: qsTr("Uploading log file. This may take a moment.")
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.6)
+                font.pixelSize: Sizing.fontBody
                 color: Theme.textPrimary
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
@@ -113,65 +131,12 @@ Item {
                 visible: modal.phase === modal._stateSuccess
                 height: visible ? qrHolder.height + urlText.height + Sizing.pctH(2) : 0
 
-                readonly property int matrixSize: Browse.QrCode.size
-                readonly property int quietZone: 4
-                readonly property int maxQrPixels: Math.min(Sizing.pctW(38), Sizing.pctH(54))
-                readonly property int moduleSize: matrixSize > 0 ? Math.max(1, Math.floor(maxQrPixels / (matrixSize + quietZone * 2))) : 1
-                readonly property int qrPixels: moduleSize * (matrixSize + quietZone * 2)
-
-                Rectangle {
+                QrMatrix {
                     id: qrHolder
 
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
-                    width: successBlock.qrPixels
-                    height: successBlock.qrPixels
-                    color: "white"
-                    border.width: Sizing.stroke(successBlock.moduleSize * 0.18)
-                    border.color: Theme.borderSubtle
-
-                    Item {
-                        id: matrix
-
-                        x: Sizing.center(parent.width, width)
-                        y: Sizing.center(parent.height, height)
-                        width: successBlock.moduleSize * successBlock.matrixSize
-                        height: successBlock.moduleSize * successBlock.matrixSize
-                        visible: successBlock.matrixSize > 0
-
-                        Repeater {
-                            model: successBlock.matrixSize
-
-                            delegate: Item {
-                                id: rowDelegate
-
-                                required property int index
-
-                                readonly property int row: index
-                                readonly property string bits: Browse.QrCode.row_at(row)
-
-                                x: 0
-                                y: row * successBlock.moduleSize
-                                width: matrix.width
-                                height: successBlock.moduleSize
-
-                                Repeater {
-                                    model: successBlock.matrixSize
-
-                                    delegate: Rectangle {
-                                        required property int index
-
-                                        x: index * successBlock.moduleSize
-                                        y: 0
-                                        width: successBlock.moduleSize
-                                        height: successBlock.moduleSize
-                                        color: "black"
-                                        visible: rowDelegate.bits.charAt(index) === "1"
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    maxQrPixels: Math.min(Sizing.pctW(38), Sizing.pctH(54))
                 }
 
                 Text {
@@ -183,7 +148,7 @@ Item {
                     width: parent.width
                     text: Browse.LogUpload.url
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.2)
+                    font.pixelSize: Sizing.fontSmall
                     color: Theme.textPrimary
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WrapAnywhere
@@ -196,7 +161,7 @@ Item {
                 visible: modal.phase === modal._stateError
                 text: qsTr("Upload failed. Check the network connection and try again.")
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.4)
+                font.pixelSize: Sizing.fontCaption
                 color: Theme.textPrimary
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
@@ -208,33 +173,24 @@ Item {
                 height: Sizing.pctH(7)
                 visible: modal.phase === modal._stateSuccess || modal.phase === modal._stateError
 
-                Rectangle {
+                PressableSurface {
                     x: Sizing.center(parent.width, width)
                     y: Sizing.center(parent.height, height)
                     width: Sizing.pctW(28)
                     height: parent.height
-                    color: Theme.surfaceCard
-                    // Single button per phase — always the default action,
-                    // so render with the focused recipe (accent border,
-                    // 2px) instead of the unfocused borderMid edge.
-                    border.width: Sizing.stroke(2)
-                    border.color: Theme.accent
-                    radius: Sizing.cornerRadius
+                    focused: true
+                    pressed: modal._pressed
+                    pointerAcceptedButtons: Qt.LeftButton
+                    onPointerClicked: modal.handleAction("accept")
 
                     Text {
                         x: Sizing.center(parent.width, width)
                         y: Sizing.center(parent.height, height)
                         text: modal.phase === modal._stateError ? qsTr("Retry") : qsTr("Done")
                         font.family: Theme.fontUi
-                        font.pixelSize: Sizing.fontSize(2.6)
+                        font.pixelSize: Sizing.fontBody
                         color: Theme.textPrimary
                         renderType: Text.NativeRendering
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        acceptedButtons: Qt.LeftButton
-                        onClicked: modal.handleAction("accept")
                     }
                 }
             }

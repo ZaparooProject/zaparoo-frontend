@@ -17,12 +17,18 @@ import Zaparoo.Theme
 // the menu off-screen. The scrim is drawn as four bands around `anchorRect`
 // so the anchored tile stays bright while the rest of the screen dims —
 // a full-screen scrim would defeat the "this menu is about *that* tile"
-// affordance.
+// affordance. When `anchorRadius` is set, four baked corner masks cut the
+// bands' square hole down to the anchor's actual rounded silhouette instead
+// of leaving bright square notches past its arcs.
 Item {
     id: menu
 
     property bool open: false
     property rect anchorRect: Qt.rect(0, 0, 0, 0)
+    // Corner radius of the anchored tile/row, in px. 0 (the default) keeps
+    // today's square hole byte-identical -- this property is purely
+    // additive. See Resources.cornerCutUrl() for the baked radius range.
+    property int anchorRadius: 0
     // Each entry is `{ id: string, label: string }`. `id` is the dispatch
     // key the router switches on (e.g. "launch_game", "qr_code"); `label`
     // is the localized text. Position-keyed dispatch was a footgun —
@@ -31,8 +37,7 @@ Item {
     property int currentIndex: 0
     property int bottomUnsafeHeight: Sizing.pctH(6) + Sizing.pctH(2)
 
-    // Push-in scale for the activated row, mirroring the tile push-in.
-    property real _pressScale: 1.0
+    property int _activatePulse: 0
     property string _pendingId: ""
 
     signal accepted(string id)
@@ -46,14 +51,31 @@ Item {
     readonly property int panelSideMargin: Sizing.pctW(1)
     readonly property int _widestLabelWidth: _widestEntryLabelWidth(entries)
     readonly property int _usableBottom: Math.max(menu.margin, height - menu.bottomUnsafeHeight - menu.margin)
-    readonly property int _minPanelWidth: Math.max(Sizing.pctW(24), Sizing.pctH(32))
+    // Only a floor against degenerate cases (a single tiny label) — real
+    // menus size around `_desiredPanelWidth`, which tracks the longest
+    // entry.
+    readonly property int _minPanelWidth: Sizing.pctW(12)
     readonly property int _desiredPanelWidth: _widestLabelWidth + 2 * horizontalPadding + 2 * panelSideMargin + 2 * Sizing.stroke(2)
     readonly property int panelWidth: Math.min(Math.max(_minPanelWidth, _desiredPanelWidth), Math.max(0, width - 2 * margin))
-    // Top/bottom margins inside the panel are sized to the panel
-    // radius so a focused row's accent ring never intersects the
-    // rounded corners — see the panel `Rectangle` below.
-    readonly property int panelRadius: Sizing.half(Sizing.cornerRadius)
-    readonly property int panelHeight: Math.min(entries.length * rowHeight + Math.max(0, entries.length - 1) * rowSpacing + 2 * panelRadius, Math.max(0, _usableBottom - menu.margin))
+    // Panel padding is independent of corner shape so tightening the radius
+    // never crowds the first and last focused rows.
+    readonly property int panelRadius: Sizing.radiusMd
+    readonly property int panelVerticalPadding: Sizing.pctH(1.5)
+    // The height every row would need stacked with no clamp -- what
+    // `panelHeight` used to just return outright. Kept separate so
+    // `_scrollable` below can tell "clamped to fit the screen" apart from
+    // "every row already fits".
+    readonly property int _fullContentHeight: entries.length * rowHeight + Math.max(0, entries.length - 1) * rowSpacing + 2 * panelVerticalPadding
+    readonly property int panelHeight: Math.min(_fullContentHeight, Math.max(0, _usableBottom - menu.margin))
+    // True once the entry count needs more room than the anchor position
+    // leaves on screen -- the viewport below scrolls to keep
+    // `currentIndex` in view rather than silently stranding rows past
+    // `panel`'s clipped edge (docs/content-style.md's 3-8 cap is a
+    // development-time backstop for the menus this app authors itself;
+    // "Discover alt. versions" is a data-driven list -- up to
+    // MAX_ALT_RESULTS in alternate_versions.rs -- that routinely exceeds
+    // it for arcade sets with many known revisions).
+    readonly property bool _scrollable: _fullContentHeight > panelHeight
     readonly property bool _fitsRight: anchorRect.x + anchorRect.width + gap + panelWidth <= width - margin
     readonly property bool _fitsLeft: anchorRect.x - gap - panelWidth >= margin
     readonly property bool _placeBesideAnchor: _fitsRight || _fitsLeft
@@ -69,28 +91,64 @@ Item {
     onOpenChanged: {
         if (open) {
             currentIndex = 0;
-            menu._pressScale = 1.0;
-            pressAnim.stop();
             menu._pendingId = "";
+            // A stale scroll position from a previous open would otherwise
+            // carry over -- `rowViewport.contentY` isn't reset by the
+            // Repeater rebuilding its delegates below, only by this.
+            if (rowViewport)
+                rowViewport.contentY = 0;
+            // A fresh open destroys and recreates every row's Repeater
+            // delegate (new `entries` array reference). Each new row's
+            // SelectionBar binds `activatePulse` to this counter at
+            // construction; if it were left at a stale nonzero value from a
+            // previous open's accept, that bind is itself a 0 -> N change
+            // and replays the flash on whichever row starts focused, with
+            // no real activation behind it. Resetting to 0 here matches
+            // SelectionBar's own declared default, so the bind is a no-op.
+            menu._activatePulse = 0;
         }
     }
 
+    // docs/content-style.md's menu-size cap: 3-8 entries, for menus this
+    // app authors itself -- still worth flagging past that even though
+    // `rowViewport` below now scrolls to keep the selection reachable,
+    // since it's a signal the menu should be consolidated rather than
+    // relied on to scroll routinely.
+    readonly property int _maxRecommendedEntries: 8
+
     onEntriesChanged: {
+        // Callers can swap `entries` on an already-open menu (the
+        // "Discover alt. versions" submenu replaces the main list in
+        // place) -- reset scroll position rather than carry over whatever
+        // the previous list had scrolled to.
+        if (rowViewport)
+            rowViewport.contentY = 0;
         if (menu.entries.length <= 0) {
             currentIndex = 0;
             return;
         }
         if (menu.currentIndex >= menu.entries.length)
             currentIndex = menu.entries.length - 1;
+        if (menu.entries.length > menu._maxRecommendedEntries)
+            console.warn("ContextMenu: " + menu.entries.length + " entries exceeds the " + menu._maxRecommendedEntries + "-entry cap in docs/content-style.md — consolidate this menu");
     }
 
+    // `Math.max(advanceWidth, boundingRect.width)` plus `Sizing.stroke(2)`
+    // hinting slack — the same corrected idiom
+    // `ListPickerModal._measureLabelWidth` uses. `Text.NativeRendering`
+    // lays out on integer, hinted per-glyph advances, which can paint a
+    // few px wider than `advanceWidth()` alone's fractional, unhinted
+    // total; a zero-slack fit then elided text that should have fit.
+    // `panelWidthMetrics`'s own weight is fixed (Font.Medium), so unlike
+    // `rowLabelMetrics` below there is no live-weight dependency to lose by
+    // calling these as methods here.
     function _widestEntryLabelWidth(source: var): int {
         let widest = 0;
         if (source === null || source === undefined)
             return widest;
         for (let i = 0; i < source.length; ++i) {
             const label = source[i] && source[i].label !== undefined ? String(source[i].label) : "";
-            widest = Math.max(widest, Math.ceil(labelMetrics.advanceWidth(label)));
+            widest = Math.max(widest, Math.ceil(Math.max(panelWidthMetrics.advanceWidth(label), panelWidthMetrics.boundingRect(label).width)) + Sizing.stroke(2));
         }
         return widest;
     }
@@ -100,6 +158,24 @@ Item {
             return;
         menu.currentIndex = ((menu.currentIndex + delta) % menu.entries.length + menu.entries.length) % menu.entries.length;
     }
+
+    // Slides `rowViewport.contentY` just enough to bring the focused row
+    // back inside the visible band -- no animation, matching
+    // ListPickerModal._scrollCurrentIntoView(). Only matters once
+    // `_scrollable`; a no-op otherwise since the whole content already
+    // fits and contentY stays at 0.
+    function _scrollCurrentIntoView(): void {
+        const stride = menu.rowHeight + menu.rowSpacing;
+        const top = menu.currentIndex * stride;
+        const bottom = top + menu.rowHeight;
+        if (top < rowViewport.contentY) {
+            rowViewport.contentY = top;
+        } else if (bottom > rowViewport.contentY + rowViewport.height) {
+            rowViewport.contentY = bottom - rowViewport.height;
+        }
+    }
+
+    onCurrentIndexChanged: menu._scrollCurrentIntoView()
 
     function handleAction(action: string): void {
         if (action === "up")
@@ -113,21 +189,12 @@ Item {
             menu.closeRequested();
     }
 
-    // Play the push-in cue on the focused row, then emit accepted(id)
-    // deferred so the animation completes before the caller acts.
+    // Play the inverse-video activation flash on the focused row, then emit
+    // accepted(id) deferred so the flash completes before the caller acts.
     function _commitAccept(id: string): void {
         menu._pendingId = id;
-        pressAnim.restart();
+        menu._activatePulse++;
         acceptCommit.arm();
-    }
-
-    NumberAnimation {
-        id: pressAnim
-        target: menu
-        property: "_pressScale"
-        to: Motion.rowPressScale
-        duration: Motion.dur(Motion.pressMs)
-        easing.type: Easing.OutQuad
     }
 
     DeferredAction {
@@ -140,17 +207,25 @@ Item {
         }
     }
 
+    // Sizes `_desiredPanelWidth` at the selected row's weight (Font.Medium
+    // — see SelectionBar.qml's contentWeight), never the resting
+    // Font.Normal — a per-row FontMetrics tracking each row's own live
+    // weight handles individual label centering (see `rowLabelMetrics`
+    // in the row delegate below). The resting weight is narrower or
+    // equal, so no row can overflow this panel width once selected
+    // regardless of which row that turns out to be.
     FontMetrics {
-        id: labelMetrics
+        id: panelWidthMetrics
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.4)
+        font.pixelSize: Sizing.fontCaption
+        font.weight: Font.Medium
     }
 
     // Catches dismiss-clicks on the dimmed area around the anchor.
     // Sits beneath the four scrim bands and the panel; per-row
     // MouseAreas inside the panel win for clicks on rows because the
-    // panel is declared after this MouseArea, so the panel subtree
-    // sits on top in z-order. Clicks on the anchor area also hit this
+    // panel is declared after this MouseArea, so row pointer handlers
+    // sit on top in z-order. Clicks on the anchor area also hit this
     // MouseArea (the bands don't cover the anchor) and close the menu.
     // Clicks inside the panel chrome (top/bottom radius padding, side
     // margins, row spacing) are filtered out by the bounding-rect
@@ -171,6 +246,18 @@ Item {
         }
     }
 
+    // Shared, Sizing.px()-rounded hole edges. The four bands and the four
+    // corner Images below both key off these so a corner piece always lands
+    // flush with its two bands. Rounding a sum in one place and a difference
+    // in another (the old per-band computation) could disagree by a pixel.
+    readonly property int _holeLeft: Sizing.px(Math.max(0, menu.anchorRect.x))
+    readonly property int _holeTop: Sizing.px(Math.max(0, menu.anchorRect.y))
+    readonly property int _holeRight: Sizing.px(Math.max(0, menu.anchorRect.x + menu.anchorRect.width))
+    readonly property int _holeBottom: Sizing.px(Math.max(0, menu.anchorRect.y + menu.anchorRect.height))
+    // Skip the corner pieces rather than overlap them when the anchor is too
+    // small to fit two radii across either axis.
+    readonly property bool _canCutCorners: menu.anchorRadius > 0 && (menu._holeRight - menu._holeLeft) >= 2 * menu.anchorRadius && (menu._holeBottom - menu._holeTop) >= 2 * menu.anchorRadius
+
     // Four scrim bands framing `anchorRect`. The anchor area itself is
     // intentionally not painted so the tile the menu is *about* stays
     // bright. `Math.max(0, ...)` clamps every dimension so an anchor
@@ -180,29 +267,87 @@ Item {
         x: 0
         y: 0
         width: menu.width
-        height: Sizing.px(Math.max(0, menu.anchorRect.y))
+        height: menu._holeTop
         color: Theme.scrim
     }
     Rectangle {
         x: 0
-        y: Sizing.px(menu.anchorRect.y + menu.anchorRect.height)
+        y: menu._holeBottom
         width: menu.width
-        height: Sizing.px(Math.max(0, menu.height - (menu.anchorRect.y + menu.anchorRect.height)))
+        height: Math.max(0, menu.height - menu._holeBottom)
         color: Theme.scrim
     }
     Rectangle {
         x: 0
-        y: Sizing.px(menu.anchorRect.y)
-        width: Sizing.px(Math.max(0, menu.anchorRect.x))
-        height: Sizing.px(Math.max(0, menu.anchorRect.height))
+        y: menu._holeTop
+        width: menu._holeLeft
+        height: Math.max(0, menu._holeBottom - menu._holeTop)
         color: Theme.scrim
     }
     Rectangle {
-        x: Sizing.px(menu.anchorRect.x + menu.anchorRect.width)
-        y: Sizing.px(menu.anchorRect.y)
-        width: Sizing.px(Math.max(0, menu.width - (menu.anchorRect.x + menu.anchorRect.width)))
-        height: Sizing.px(Math.max(0, menu.anchorRect.height))
+        x: menu._holeRight
+        y: menu._holeTop
+        width: Math.max(0, menu.width - menu._holeRight)
+        height: Math.max(0, menu._holeBottom - menu._holeTop)
         color: Theme.scrim
+    }
+
+    // Baked antialiased quarter-disc masks (Part 5) cutting the four square
+    // notches the bands above would otherwise leave past the anchor's real
+    // rounded corners down to its actual silhouette. Each mask's alpha is
+    // the exact complement of the tile's own corner coverage, so tile and
+    // scrim coverage sum to 1 by construction -- no seam to tune.
+    Image {
+        objectName: "contextMenuCornerTl"
+        visible: menu._canCutCorners
+        x: menu._holeLeft
+        y: menu._holeTop
+        width: menu.anchorRadius
+        height: menu.anchorRadius
+        sourceSize.width: menu.anchorRadius
+        sourceSize.height: menu.anchorRadius
+        smooth: false
+        cache: true
+        source: menu._canCutCorners ? Resources.cornerCutUrl(menu.anchorRadius, "tl", Theme.scrim) : ""
+    }
+    Image {
+        objectName: "contextMenuCornerTr"
+        visible: menu._canCutCorners
+        x: menu._holeRight - menu.anchorRadius
+        y: menu._holeTop
+        width: menu.anchorRadius
+        height: menu.anchorRadius
+        sourceSize.width: menu.anchorRadius
+        sourceSize.height: menu.anchorRadius
+        smooth: false
+        cache: true
+        source: menu._canCutCorners ? Resources.cornerCutUrl(menu.anchorRadius, "tr", Theme.scrim) : ""
+    }
+    Image {
+        objectName: "contextMenuCornerBl"
+        visible: menu._canCutCorners
+        x: menu._holeLeft
+        y: menu._holeBottom - menu.anchorRadius
+        width: menu.anchorRadius
+        height: menu.anchorRadius
+        sourceSize.width: menu.anchorRadius
+        sourceSize.height: menu.anchorRadius
+        smooth: false
+        cache: true
+        source: menu._canCutCorners ? Resources.cornerCutUrl(menu.anchorRadius, "bl", Theme.scrim) : ""
+    }
+    Image {
+        objectName: "contextMenuCornerBr"
+        visible: menu._canCutCorners
+        x: menu._holeRight - menu.anchorRadius
+        y: menu._holeBottom - menu.anchorRadius
+        width: menu.anchorRadius
+        height: menu.anchorRadius
+        sourceSize.width: menu.anchorRadius
+        sourceSize.height: menu.anchorRadius
+        smooth: false
+        cache: true
+        source: menu._canCutCorners ? Resources.cornerCutUrl(menu.anchorRadius, "br", Theme.scrim) : ""
     }
 
     Rectangle {
@@ -214,54 +359,141 @@ Item {
         height: menu.panelHeight
         color: Theme.bgPanel
         radius: menu.panelRadius
+        // Safety net for a menu that exceeds `_maxRecommendedEntries` in a
+        // shipped build: rows past `panelHeight` are cut off cleanly
+        // instead of painting past the panel's rounded corners. Menus
+        // within the documented 3-8 cap never reach this edge.
+        clip: true
 
-        Column {
+        // Non-interactive (key navigation drives contentY, not dragging)
+        // scrolling viewport -- see `_scrollCurrentIntoView()` above. Only
+        // engages once `_scrollable`; below that `rowColumn.height` fits
+        // inside `rowViewport` and contentY stays pinned at 0, so this is
+        // visually identical to the old plain-Column layout for every
+        // menu within the documented 3-8 cap. Mirrors
+        // ListPickerModal.qml's `viewport`/`rowColumn` construction.
+        Flickable {
+            id: rowViewport
+
+            objectName: "contextMenuRowViewport"
             anchors.fill: parent
-            anchors.topMargin: menu.panelRadius
-            anchors.bottomMargin: menu.panelRadius
+            anchors.topMargin: menu.panelVerticalPadding
+            anchors.bottomMargin: menu.panelVerticalPadding
             anchors.leftMargin: menu.panelSideMargin
             anchors.rightMargin: menu.panelSideMargin
-            spacing: menu.rowSpacing
+            contentWidth: width
+            contentHeight: rowColumn.height
+            clip: true
+            interactive: false
+            boundsBehavior: Flickable.StopAtBounds
 
-            Repeater {
-                model: menu.entries
+            Column {
+                id: rowColumn
 
-                Rectangle {
-                    id: row
+                width: rowViewport.width
+                spacing: menu.rowSpacing
 
-                    required property int index
-                    required property var modelData
+                Repeater {
+                    model: menu.entries
 
-                    width: parent.width
-                    height: menu.rowHeight
-                    color: Theme.surfaceCard
-                    border.width: index === menu.currentIndex ? Sizing.stroke(2) : Sizing.stroke(1)
-                    border.color: index === menu.currentIndex ? Theme.accent : Theme.borderMid
-                    radius: Sizing.cornerRadius
-                    transformOrigin: Item.Center
-                    scale: row.index === menu.currentIndex ? menu._pressScale : 1.0
+                    Item {
+                        id: row
 
-                    Text {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: menu.horizontalPadding
-                        anchors.rightMargin: menu.horizontalPadding
-                        text: row.modelData.label
-                        color: Theme.textPrimary
-                        font.family: Theme.fontUi
-                        font.pixelSize: Sizing.fontSize(2.4)
-                        elide: Text.ElideRight
-                        renderType: Text.NativeRendering
-                    }
+                        required property int index
+                        required property var modelData
 
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        acceptedButtons: Qt.LeftButton
-                        cursorShape: Qt.PointingHandCursor
-                        onEntered: menu.currentIndex = row.index
-                        onClicked: menu._commitAccept(row.modelData.id)
+                        readonly property bool focused: index === menu.currentIndex
+
+                        objectName: "contextMenuRow-" + row.index
+                        width: parent.width
+                        height: menu.rowHeight
+
+                        // Inverse-video row -- see SelectionBar.qml and
+                        // docs/style.md -> "Two registers". A menu entry is a
+                        // choice from a vertical list, not an object to press;
+                        // the accent bar carries focus on its own.
+                        SelectionBar {
+                            id: bar
+                            objectName: "contextMenuSelectionBar"
+                            anchors.fill: parent
+                            active: row.focused
+                            activatePulse: menu._activatePulse
+                            radius: Sizing.radiusSm
+                        }
+
+                        // Tracks this row's own live weight (Normal at rest,
+                        // Medium selected — bar.contentWeight) so the label's
+                        // own centering box (`_textWidth` below) always
+                        // matches its actual rendered glyph width. Measuring
+                        // every row at the shared, fixed-Medium
+                        // `panelWidthMetrics` instead would either drift
+                        // resting rows off true center or, worse, elide a
+                        // selected row's own label against a too-narrow box.
+                        //
+                        // `TextMetrics` (not `FontMetrics` + a Q_INVOKABLE
+                        // `advanceWidth(text)` call), and its own `text:`
+                        // binding, deliberately — `advanceWidth`/`boundingRect`
+                        // as *properties* here genuinely re-evaluate when
+                        // `font.weight: bar.contentWeight` changes; a property
+                        // binding that only ever calls a method does not
+                        // reliably re-run when a property read *inside* that
+                        // method changes. Round 8 shipped the method-call form:
+                        // a selected row repainted at Font.Medium while
+                        // `_textWidth` stayed pinned to its Font.Normal
+                        // measurement, eliding a label that fit. Matches
+                        // ScrollingCaption.qml's `nameMetrics`/`tagsMetrics`.
+                        TextMetrics {
+                            id: rowLabelMetrics
+                            objectName: "contextMenuRowLabelMetrics"
+                            text: row.modelData.label
+                            font.family: Theme.fontUi
+                            font.pixelSize: Sizing.fontCaption
+                            font.weight: bar.contentWeight
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            acceptedButtons: Qt.LeftButton
+                            cursorShape: Qt.PointingHandCursor
+                            onEntered: menu.currentIndex = row.index
+                            onClicked: {
+                                menu.currentIndex = row.index;
+                                menu._commitAccept(row.modelData.id);
+                            }
+                        }
+
+                        Text {
+                            // Centered as a box sized to this row's own measured
+                            // text, not anchored left+right with AlignHCenter —
+                            // a glyph run that straddles a half-pixel softens
+                            // under the software renderer. See "Integer-pixel
+                            // rules" in docs/qml-gotchas.md.
+                            readonly property int _availableWidth: Math.max(0, parent.width - 2 * menu.horizontalPadding)
+                            // Union of advance and painted bounds, plus
+                            // `Sizing.stroke(2)` hinting slack — the same
+                            // corrected idiom `ListPickerModal._measureLabelWidth`
+                            // uses. `Text.NativeRendering` lays out on integer,
+                            // hinted per-glyph advances, which can paint a few
+                            // px wider than `advanceWidth` alone reports; a
+                            // zero-slack fit then elided text that should have
+                            // fit.
+                            readonly property int _textWidth: Math.min(Math.ceil(Math.max(rowLabelMetrics.advanceWidth, rowLabelMetrics.boundingRect.width)) + Sizing.stroke(2), _availableWidth)
+
+                            objectName: "contextMenuRowLabel"
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: Sizing.center(parent.width, _textWidth)
+                            width: _textWidth
+                            text: row.modelData.label
+                            // Inverse video on selection, matching
+                            // SettingsField/BrowseList -- see SelectionBar.qml.
+                            color: bar.active ? bar.contentColor : Theme.textPrimary
+                            font.family: Theme.fontUi
+                            font.pixelSize: Sizing.fontCaption
+                            font.weight: bar.contentWeight
+                            elide: Text.ElideRight
+                            renderType: Text.NativeRendering
+                        }
                     }
                 }
             }

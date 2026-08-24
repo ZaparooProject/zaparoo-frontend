@@ -4,43 +4,40 @@
 
 #include "tinted_svg_image_provider.h"
 
+#include "baked_icon_atlas.h"
+#include "baked_icon_format.h"
+#include "svg_render_size.h"
+#include "tint_lut.h"
+
 #include <QColor>
+#include <QCoreApplication>
 #include <QFile>
-#include <QImage>
 #include <QPainter>
-#include <QQuickTextureFactory>
 #include <QStringList>
 #include <QSvgRenderer>
+#include <QThread>
 #include <QtGlobal>
-#include <algorithm>
 #include <sys/resource.h>
-#include <utility>
 
 namespace
 {
-constexpr int kDefaultSvgSize = 256;
 constexpr auto kResourcePrefix = ":/qt/qml/Zaparoo/App/resources/";
 
-QSize renderSizeFor(const QSvgRenderer& renderer, const QSize& requestedSize)
+// 4 MiB, down from the 32 MiB the async provider needed. QQuickPixmapCache
+// keeps its own 2 MiB budget for *unreferenced* pixmaps and on-screen tiles are
+// referenced, so this only has to cover what goes unreferenced in one step --
+// the Settings Loader deactivating (~3 MiB) and a color-scheme change
+// re-tinting everything. A miss is now a sub-millisecond LUT pass rather than a
+// 10-20 ms SVG parse, so the cache is a comfort, not load-bearing.
+constexpr int kTintedCacheMaxBytes = 4 * 1024 * 1024;
+
+struct Request
 {
-    const QSize defaultSize = renderer.defaultSize();
-    QSize base = defaultSize.isValid() ? defaultSize : QSize(kDefaultSvgSize, kDefaultSvgSize);
-    const int reqW = requestedSize.width();
-    const int reqH = requestedSize.height();
-    if (reqW > 0 && reqH > 0)
-    {
-        return requestedSize;
-    }
-    if (reqW > 0)
-    {
-        return {reqW, std::max(1, (base.height() * reqW) / std::max(1, base.width()))};
-    }
-    if (reqH > 0)
-    {
-        return {std::max(1, (base.width() * reqH) / std::max(1, base.height())), reqH};
-    }
-    return base;
-}
+    QColor highlight;
+    QColor midtone;
+    QColor shadow;
+    QString resourcePath;
+};
 
 QColor colorFromToken(const QString& token, const QColor& fallback)
 {
@@ -48,208 +45,149 @@ QColor colorFromToken(const QString& token, const QColor& fallback)
     return color.isValid() ? color : fallback;
 }
 
-int channelMix(int a, int b, int amountB)
+bool parseRequest(const QString& id, Request* out, QString* error)
 {
-    return ((a * (255 - amountB)) + (b * amountB) + 127) / 255;
-}
-
-int lumaOf(QRgb source)
-{
-    return (((qRed(source) * 299) + (qGreen(source) * 587) + (qBlue(source) * 114)) + 500) / 1000;
-}
-
-struct ToneRange
-{
-    int min = 255;
-    int max = 0;
-    int pixels = 0;
-};
-
-ToneRange toneRangeOf(const QImage& image)
-{
-    ToneRange range;
-    for (int y = 0; y < image.height(); ++y)
+    const QStringList parts = id.split(QLatin1Char('/'));
+    if (parts.size() < 4)
     {
+        *error = QStringLiteral("malformed tinted-svg id");
+        return false;
+    }
+    out->highlight = colorFromToken(parts.at(0), QColor(Qt::white));
+    out->midtone = colorFromToken(parts.at(1), QColor(Qt::white));
+    out->shadow = colorFromToken(parts.at(2), QColor(Qt::black));
+    out->resourcePath = parts.mid(3).join(QLatin1Char('/'));
+
+    // System logos, Hub category icons, UI glyphs, and host-status icons all
+    // share the provider. Corner masks (ContextMenu's rounded scrim hole)
+    // share it too, but have no SVG source -- they are baked directly from a
+    // Qt Quick render -- so they are exempt from the .svg suffix check below.
+    const bool cornerPrefix = out->resourcePath.startsWith(QStringLiteral("images/corners/"));
+    const bool knownPrefix = out->resourcePath.startsWith(QStringLiteral("images/systems/")) ||
+                             out->resourcePath.startsWith(QStringLiteral("images/categories/")) ||
+                             out->resourcePath.startsWith(QStringLiteral("images/icons/")) ||
+                             out->resourcePath.startsWith(QStringLiteral("images/status/")) ||
+                             cornerPrefix;
+    if (!knownPrefix || (!cornerPrefix && !out->resourcePath.endsWith(QStringLiteral(".svg"))))
+    {
+        *error = QStringLiteral("rejected tinted-svg path");
+        return false;
+    }
+    return true;
+}
+
+// Wraps a mask plane without copying. Each row is padded to
+// baked::paddedStride(width) bytes -- the row stride QImage's raw-buffer
+// constructor requires to be a multiple of 4 -- so the non-owning QImage
+// constructor can point straight into the mapped blob.
+QImage planeView(const quint8* data, int width, int height)
+{
+    return {data, width, height, baked::paddedStride(width), QImage::Format_Grayscale8};
+}
+
+QImage scalePlane(const QImage& plane, const QSize& size)
+{
+    QImage scaled = plane.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    if (scaled.format() != QImage::Format_Grayscale8)
+    {
+        scaled = scaled.convertToFormat(QImage::Format_Grayscale8);
+    }
+    return scaled;
+}
+
+// Single pass, no format conversions and no deep copies. The old path made
+// three passes plus two convertToFormat() copies of the whole image.
+QImage tintFromPlanes(const QImage& alphaPlane, const QImage& tonePlane, const Request& request,
+                      bool singleTone)
+{
+    const int width = alphaPlane.width();
+    const int height = alphaPlane.height();
+    QImage out(width, height, QImage::Format_ARGB32_Premultiplied);
+    if (out.isNull())
+    {
+        return {};
+    }
+    const tint::TintLut lut =
+        tint::makeTintLut(request.highlight, request.midtone, request.shadow, singleTone);
+
+    for (int y = 0; y < height; ++y)
+    {
+        const quint8* alpha = alphaPlane.constScanLine(y);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        const auto* line = reinterpret_cast<const QRgb*>(image.constScanLine(y));
-        for (int x = 0; x < image.width(); ++x)
+        auto* dst = reinterpret_cast<QRgb*>(out.scanLine(y));
+        if (singleTone)
         {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            const QRgb source = line[x];
-            if (qAlpha(source) <= 16)
+            for (int x = 0; x < width; ++x)
             {
-                continue;
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-bounds-constant-array-index)
+                dst[x] = lut.flatPremul[alpha[x]];
             }
-            const int luma = lumaOf(source);
-            range.min = std::min(range.min, luma);
-            range.max = std::max(range.max, luma);
-            ++range.pixels;
+            continue;
+        }
+        const quint8* tone = tonePlane.constScanLine(y);
+        for (int x = 0; x < width; ++x)
+        {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-bounds-constant-array-index)
+            const QRgb graded = lut.tone[tone[x]];
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+            dst[x] = qPremultiply(qRgba(qRed(graded), qGreen(graded), qBlue(graded), alpha[x]));
         }
     }
-    return range;
+    return out;
 }
 
-void tintImage(QImage& image, const QColor& highlight, const QColor& midtone, const QColor& shadow)
+QImage renderFromAtlas(const BakedIconAtlas::Entry& entry, const Request& request,
+                       const QSize& size)
 {
-    QImage straight = image.convertToFormat(QImage::Format_ARGB32);
-    const ToneRange range = toneRangeOf(straight);
-    const bool singleTone = range.pixels == 0 || (range.max - range.min) < 16;
-    const int highlightR = highlight.red();
-    const int highlightG = highlight.green();
-    const int highlightB = highlight.blue();
-    const int midtoneR = midtone.red();
-    const int midtoneG = midtone.green();
-    const int midtoneB = midtone.blue();
-    const int shadowR = shadow.red();
-    const int shadowG = shadow.green();
-    const int shadowB = shadow.blue();
+    const QImage alphaPlane = planeView(entry.alpha, entry.width, entry.height);
+    const QImage tonePlane =
+        entry.singleTone ? QImage() : planeView(entry.tone, entry.width, entry.height);
 
-    for (int y = 0; y < straight.height(); ++y)
+    if (size == QSize(entry.width, entry.height))
     {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        auto* line = reinterpret_cast<QRgb*>(straight.scanLine(y));
-        for (int x = 0; x < straight.width(); ++x)
-        {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            const QRgb source = line[x];
-            const int alpha = qAlpha(source);
-            if (alpha == 0)
-            {
-                continue;
-            }
-
-            int red = highlightR;
-            int green = highlightG;
-            int blue = highlightB;
-            if (!singleTone)
-            {
-                // Preserve source light/dark ordering. This is a color-grade,
-                // not a semantic recolor: darkest source areas map to a lifted
-                // shadow tint, midtones pick up the theme tint, and brightest
-                // source areas stay primary white. Gradients and antialiasing
-                // remain smooth because the curve is monotonic.
-                const int tone = std::clamp((lumaOf(source) - range.min) * 255 /
-                                                std::max(1, range.max - range.min),
-                                            0, 255);
-                if (tone < 128)
-                {
-                    const int amount = tone * 2;
-                    red = channelMix(shadowR, midtoneR, amount);
-                    green = channelMix(shadowG, midtoneG, amount);
-                    blue = channelMix(shadowB, midtoneB, amount);
-                }
-                else
-                {
-                    const int amount = (tone - 128) * 2;
-                    red = channelMix(midtoneR, highlightR, amount);
-                    green = channelMix(midtoneG, highlightG, amount);
-                    blue = channelMix(midtoneB, highlightB, amount);
-                }
-            }
-
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            line[x] = qRgba(red, green, blue, alpha);
-        }
+        return tintFromPlanes(alphaPlane, tonePlane, request, entry.singleTone);
     }
-    image = straight.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-}
-} // namespace
-
-TintedSvgImageResponse::TintedSvgImageResponse(QString id, QSize requestedSize, QMutex* cacheMutex,
-                                               QCache<QString, QImage>* logoCache)
-    : m_id(std::move(id)), m_requestedSize(requestedSize), m_cacheMutex(cacheMutex),
-      m_logoCache(logoCache)
-{
-    setAutoDelete(false);
+    // Downscale the masks, not the tinted result: Qt's smooth transform is an
+    // area average, so averaging tone indices before the ramp keeps the ramp
+    // monotonic instead of blending two graded colors.
+    const QImage scaledAlpha = scalePlane(alphaPlane, size);
+    const QImage scaledTone = entry.singleTone ? QImage() : scalePlane(tonePlane, size);
+    return tintFromPlanes(scaledAlpha, scaledTone, request, entry.singleTone);
 }
 
-QQuickTextureFactory* TintedSvgImageResponse::textureFactory() const
+QImage renderFromSvg(const Request& request, const QSize& requestedSize, QString* error)
 {
-    if (m_factory)
-    {
-        return m_factory.release();
-    }
-    return QQuickTextureFactory::textureFactoryForImage(m_image);
-}
-
-QString TintedSvgImageResponse::errorString() const
-{
-    return m_error;
-}
-
-void TintedSvgImageResponse::run()
-{
-    // Check process-memory cache before doing any SVG render or tint work.
-    // The result is deterministic for a given (id, requestedSize) pair, so
-    // repeat loads after a QPixmapCache eviction or a category re-entry skip
-    // the entire per-pixel pass. Key encodes both id and the requested size so
-    // entries with different sizes don't alias each other.
-    const QString cacheKey = m_id + QStringLiteral(":") + QString::number(m_requestedSize.width()) +
-                             QStringLiteral("x") + QString::number(m_requestedSize.height());
-    {
-        QMutexLocker locker(m_cacheMutex);
-        if (const QImage* cached = m_logoCache->object(cacheKey))
-        {
-            m_image = *cached;
-            m_factory.reset(QQuickTextureFactory::textureFactoryForImage(m_image));
-            emit finished();
-            return;
-        }
-    }
-
+    // Only reached for requests larger than the baked raster (BrowseDetailPane
+    // at 512/768) and for assets missing from the atlas. Rasterizing an SVG is
+    // 10-20 ms, so this branch -- and only this branch -- is worth nicing down
+    // when it runs off the GUI thread.
     static thread_local bool s_decoderNiced = false;
-    if (!s_decoderNiced)
+    if (!s_decoderNiced && QThread::currentThread() != qApp->thread())
     {
         setpriority(PRIO_PROCESS, 0, 10);
         s_decoderNiced = true;
     }
 
-    const QStringList parts = m_id.split(QLatin1Char('/'));
-    if (parts.size() < 4)
-    {
-        m_error = QStringLiteral("malformed tinted-svg id");
-        qWarning("tinted-svg provider: malformed id=%s", qUtf8Printable(m_id));
-        emit finished();
-        return;
-    }
-
-    const QColor primary = colorFromToken(parts.at(0), QColor(Qt::white));
-    const QColor secondary = colorFromToken(parts.at(1), QColor(Qt::white));
-    const QColor shadow = colorFromToken(parts.at(2), QColor(Qt::black));
-    const QString resourcePath = parts.mid(3).join(QLatin1Char('/'));
-    // System logos, Hub category icons, and UI glyphs all share the provider.
-    // Accept all three path prefixes; still require an .svg suffix.
-    const bool knownPrefix = resourcePath.startsWith(QStringLiteral("images/systems/")) ||
-                             resourcePath.startsWith(QStringLiteral("images/categories/")) ||
-                             resourcePath.startsWith(QStringLiteral("images/icons/"));
-    if (!knownPrefix || !resourcePath.endsWith(QStringLiteral(".svg")))
-    {
-        m_error = QStringLiteral("rejected tinted-svg path");
-        qWarning("tinted-svg provider: rejected path=%s", qUtf8Printable(resourcePath));
-        emit finished();
-        return;
-    }
-
-    const QString fullResourcePath = QString::fromLatin1(kResourcePrefix) + resourcePath;
+    const QString fullResourcePath = QString::fromLatin1(kResourcePrefix) + request.resourcePath;
     if (!QFile::exists(fullResourcePath))
     {
-        m_error = QStringLiteral("missing tinted-svg resource");
-        qWarning("tinted-svg provider: missing path=%s", qUtf8Printable(resourcePath));
-        emit finished();
-        return;
+        *error = QStringLiteral("missing tinted-svg resource");
+        return {};
     }
-
     QSvgRenderer renderer(fullResourcePath);
     if (!renderer.isValid())
     {
-        m_error = QStringLiteral("invalid tinted-svg resource");
-        qWarning("tinted-svg provider: invalid svg path=%s", qUtf8Printable(resourcePath));
-        emit finished();
-        return;
+        *error = QStringLiteral("invalid tinted-svg resource");
+        return {};
     }
 
-    const QSize targetSize = renderSizeFor(renderer, m_requestedSize);
+    const QSize targetSize = svgsize::renderSizeFor(renderer, requestedSize);
     QImage image(targetSize, QImage::Format_ARGB32_Premultiplied);
+    if (image.isNull())
+    {
+        *error = QStringLiteral("tinted-svg allocation failed");
+        return {};
+    }
     image.fill(Qt::transparent);
     QPainter painter(&image);
     painter.setRenderHint(QPainter::Antialiasing, true);
@@ -257,43 +195,76 @@ void TintedSvgImageResponse::run()
     renderer.render(&painter);
     painter.end();
 
-    tintImage(image, primary, secondary, shadow);
-    m_image = image;
-    m_factory.reset(QQuickTextureFactory::textureFactoryForImage(m_image));
+    tint::tintImage(image, request.highlight, request.midtone, request.shadow);
+    return image;
+}
+} // namespace
 
-    // Store in the provider's process-memory cache so subsequent requests for
-    // the same logo (e.g. after a QPixmapCache eviction) skip the render pass.
-    // Cost is tracked in bytes so maxCost caps total memory use on MiSTer.
+TintedSvgImageProvider::TintedSvgImageProvider()
+    : QQuickImageProvider(QQuickImageProvider::Image), m_tintedCache(kTintedCacheMaxBytes)
+{
+}
+
+QImage TintedSvgImageProvider::requestImage(const QString& id, QSize* size,
+                                            const QSize& requestedSize)
+{
+    Request request;
+    QString error;
+    if (!parseRequest(id, &request, &error))
     {
-        QMutexLocker locker(m_cacheMutex);
-        if (!m_logoCache->contains(cacheKey))
+        qWarning("tinted-svg provider: %s id=%s", qUtf8Printable(error), qUtf8Printable(id));
+        return {};
+    }
+
+    const BakedIconAtlas::Entry* entry = BakedIconAtlas::instance().find(request.resourcePath);
+    // Resolve the output size before keying the cache. The old key embedded the
+    // raw request, so a 256x0 and a 256x67 request for the same logo stored two
+    // byte-identical copies.
+    const QSize resolved =
+        entry != nullptr ? BakedIconAtlas::resolveSize(*entry, requestedSize) : QSize();
+    const bool atlasFits =
+        entry != nullptr && resolved.width() <= entry->width && resolved.height() <= entry->height;
+    const QString cacheKey =
+        id + QLatin1Char('@') +
+        QString::number(atlasFits ? resolved.width() : requestedSize.width()) + QLatin1Char('x') +
+        QString::number(atlasFits ? resolved.height() : requestedSize.height());
+
+    {
+        const QMutexLocker locker(&m_cacheMutex);
+        if (const QImage* cached = m_tintedCache.object(cacheKey))
         {
-            const auto cost = static_cast<int>(m_image.sizeInBytes());
-            // QCache::insert takes ownership of the raw pointer; this is the
-            // documented API and the owning-memory diagnostic is expected here.
-            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-            m_logoCache->insert(cacheKey, new QImage(m_image), cost);
+            *size = cached->size();
+            return *cached;
         }
     }
 
-    emit finished();
-}
+    QImage image;
+    if (atlasFits)
+    {
+        image = renderFromAtlas(*entry, request, resolved);
+    }
+    else
+    {
+        image = renderFromSvg(request, requestedSize, &error);
+        if (image.isNull())
+        {
+            qWarning("tinted-svg provider: %s path=%s", qUtf8Printable(error),
+                     qUtf8Printable(request.resourcePath));
+            return {};
+        }
+    }
 
-// 16 MB cap: one 256×256 ARGB render is ~256 KB. With two ramps per logo
-// (unfocused + focused) plus category and icon glyphs now in the same pool,
-// the working set for a full visible page is roughly double the old single-ramp
-// estimate. 16 MB keeps ~64 renders without churning re-renders on MiSTer.
-static constexpr int kLogoCacheMaxBytes = 16 * 1024 * 1024;
-
-TintedSvgImageProvider::TintedSvgImageProvider() : m_logoCache(kLogoCacheMaxBytes)
-{
-    m_pool.setMaxThreadCount(4);
-}
-
-QQuickImageResponse* TintedSvgImageProvider::requestImageResponse(const QString& id,
-                                                                  const QSize& requestedSize)
-{
-    auto* response = new TintedSvgImageResponse(id, requestedSize, &m_cacheMutex, &m_logoCache);
-    m_pool.start(response);
-    return response;
+    *size = image.size();
+    {
+        const QMutexLocker locker(&m_cacheMutex);
+        if (!m_tintedCache.contains(cacheKey))
+        {
+            const auto cost = static_cast<int>(image.sizeInBytes());
+            // QCache::insert takes ownership of the raw pointer; this is the
+            // documented API and the owning-memory diagnostic is expected here.
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+            m_tintedCache.insert(cacheKey, new QImage(image), cost);
+        }
+    }
+    return image;
 }

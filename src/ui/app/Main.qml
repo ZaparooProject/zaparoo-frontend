@@ -49,6 +49,13 @@ MainLayout {
     readonly property string modalLetterJump: "letter_jump"
     readonly property string modalSettingNeedsRestart: "restart_confirm"
     readonly property string modalCrtCalibration: "crt_calibration"
+    readonly property string modalScrapeSetup: "scrape_setup"
+    readonly property string modalIndexSetup: "index_setup"
+    // Sentinel id for the "All systems" entry on the media job system-
+    // scope picker (Round 11) -- see `_buildSystemScopeEntries`. Must
+    // never collide with a real category or system id; category entries
+    // are prefixed "cat:" for the same reason.
+    readonly property string _systemScopeAll: "*"
 
     // One-shot session flag: an authoritative empty catalog starts one
     // background index at most once per frontend process. Browsing remains
@@ -67,6 +74,12 @@ MainLayout {
     // file and exits with code 42 so Main_MiSTer respawns the frontend
     // with the new mode (see Browse.CrtVideo).
     property string _pendingCrtToggle: ""
+    // Staged debug-logging toggle awaiting the restart-confirm modal:
+    // "" (none), "on", or "off". Unlike the CRT toggle this needs no
+    // Main_MiSTer respawn -- the tracing subscriber is only built once at
+    // startup (see settings.rs), so confirming just persists the value and
+    // takes the normal in-process restart, the same exit as `language`.
+    property string _pendingDebugLoggingToggle: ""
     property bool _discoverMenuPending: false
     property bool _pendingResumeLaunch: false
     property bool _startupRestorePending: false
@@ -86,6 +99,13 @@ MainLayout {
     property string contextMenuMode: "main"
     property string contextMenuOwner: ""
     property int contextMenuIndex: -1
+    // The Hub item's own `Browse.HubLayout` position, captured whenever a
+    // Hub-owned context menu opens ("categories", "hub_favorites",
+    // "hub_action", "hub_item"). Separate from `contextMenuIndex`, which
+    // for "categories" already carries a *different* index (the
+    // CategoriesModel one its kind-specific entries need) — this is what
+    // the menu-agnostic `hub_move`/`hub_remove` entries dispatch against.
+    property int _hubItemIndex: -1
 
     // One in-flight screen-transition sample. Input dispatch starts it, the
     // router records when destination becomes active, and frameSwapped closes
@@ -95,8 +115,16 @@ MainLayout {
     property string _transitionAction: ""
     property string _transitionFromScreen: ""
     property string _transitionToScreen: ""
-    readonly property bool activeCardWritePending: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_pending : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_pending : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_pending : false
-    readonly property string activeCardWriteError: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_error : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_error : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_error : ""
+    readonly property bool activeCardWritePending: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_pending : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_pending : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_pending : root.cardWriteOwner === "recents" ? Browse.RecentsModel.card_write_pending : false
+    readonly property string activeCardWriteError: root.cardWriteOwner === "systems" ? Browse.SystemsModel.card_write_error : root.cardWriteOwner === "games" ? Browse.GamesModel.card_write_error : root.cardWriteOwner === "favorites" ? Browse.FavoritesModel.card_write_error : root.cardWriteOwner === "recents" ? Browse.RecentsModel.card_write_error : ""
+
+    // Color schemes apply live. Settings normalizes missing or unknown IDs to
+    // Zaparoo Black before exposing this value.
+    Binding {
+        target: Theme
+        property: "colorSchemeId"
+        value: Browse.Settings.current_color_scheme
+    }
 
     // Feed the Motion singleton's master switch from persisted preference and
     // MiSTer's effective render budget. Native 1080p remains available as an
@@ -148,7 +176,7 @@ MainLayout {
     readonly property var _gamesGridShape: Sizing.gamesGridShape(root._gamesGridViewportWidth, root._gamesGridViewportHeight)
     readonly property int _gamesGridColumns: root._gamesGridShape.columns
     readonly property int _gamesGridRows: root._gamesGridShape.rows
-    readonly property int _gamesPageSize: Browse.Settings.current_browse_layout === "list" ? root._gamesListFetchSize : root._gamesGridColumns * root._gamesGridRows
+    readonly property int _gamesPageSize: Browse.Settings.current_games_browse_layout === "list" ? root._gamesListFetchSize : root._gamesGridColumns * root._gamesGridRows
     on_GamesPageSizeChanged: {
         if (root.gamesScreenRequested || root.activeScreen === root.screenGames)
             root._syncGamesModelLayout();
@@ -301,6 +329,10 @@ MainLayout {
             root.settingNeedsRestartModalRequested = true;
         else if (modal === root.modalCrtCalibration)
             root.crtCalibrationModalRequested = true;
+        else if (modal === root.modalScrapeSetup)
+            root.scrapeSetupModalRequested = true;
+        else if (modal === root.modalIndexSetup)
+            root.indexSetupModalRequested = true;
     }
 
     Component.onCompleted: {
@@ -325,6 +357,22 @@ MainLayout {
             root.startupRestoreCurtainVisible = false;
         }
         root._startupTrace("startup/qml Component.onCompleted", "savedScreen=" + savedScreen, "initialActiveScreen=" + root.activeScreen, "startupRestorePending=" + root._startupRestorePending, "connectionState=" + Browse.AppStatus.connection_state);
+        // Start the `custom/hub/` override scan before first paint. It is a
+        // spawn_blocking directory walk that never touches the GUI thread
+        // (rust/frontend/src/models/image_overrides.rs), so starting it here
+        // costs the first frame nothing and usually lands before it — which is
+        // what makes HubScreen's bundled-key default swap invisibly. The model
+        // has its own idempotency guard, so calling it once here is enough.
+        Browse.ImageOverrides.load_hub_overrides();
+        // Same early-arrival reasoning as restoreFromCategoriesReset just
+        // below: if the catalog was already seeded synchronously before
+        // this Item finished constructing, the Connections block's
+        // onModelReset (below) can't have fired yet to catch it (its
+        // target already existed and already reset before this
+        // Connections object itself came alive) — reconcile here too so a
+        // fresh install's very first Hub paint already reflects the real
+        // layout instead of a placeholder frame.
+        root._reconcileHubLayout();
         // Fire the focus restore here so Hub focus is seated and marked ready
         // before first paint. Do not cascade into SystemsModel yet: first
         // paint stays Hub-only, and the post-frame handler below runs the
@@ -343,7 +391,6 @@ MainLayout {
 
     on_FirstFrameSeenChanged: {
         if (root._firstFrameSeen) {
-            Browse.ImageOverrides.load_hub_overrides();
             if (Browse.CategoriesModel.count > 0)
                 root.hubScreen.restoreFromCategoriesReset(true);
             // SystemsScreen's QML tree costs about a second to instantiate on
@@ -394,6 +441,7 @@ MainLayout {
     Connections {
         target: Browse.CategoriesModel
         function onModelReset(): void {
+            root._reconcileHubLayout();
             root.hubScreen.restoreFromCategoriesReset(root._firstFrameSeen);
             root._maybeStartStartupRestore();
             root._maybeContinueOptimisticTransitions();
@@ -451,55 +499,56 @@ MainLayout {
         // (no model reset), so we can't piggy-back on onModelReset to
         // retry the lookup. `count` bumps on every append, giving us a
         // stable per-page edge to resume the deep-page restore on.
+        //
+        // A restore's own bulk fetch (`fetch_more_restore`) trickles in
+        // over several frame-gapped sub-batches (`chunk_for_subbatching`
+        // in `apply_append_page`) rather than landing as one atomic
+        // insert, so `count` now bumps once per sub-batch while
+        // `loading_more` stays true for the whole fetch. Acting on an
+        // intermediate sub-batch's partial count — rather than waiting for
+        // the fetch to fully settle — both wastes several redundant
+        // `fetch_more_restore()` calls (silently no-op'd by
+        // `fetch_more_with_limit`'s `loading_more` guard, since a second
+        // bulk fetch can't start while the first is still trickling) and,
+        // worse, can give up the restore early on a still-partial row set.
+        //
+        // `loading` (the *initial*-browse flag, distinct from
+        // `loading_more`) needs the same treatment: `set_system`/`set_path`
+        // deliberately re-run `start_initial_browse` even for an
+        // already-current scope ("SystemsScreen accept always wants a
+        // round trip" — see that function's own comment in games.rs) and
+        // `start_initial_browse` resets `has_next_page`/`loading_more` to
+        // false *synchronously*, before the (often cache-served, but still
+        // separately-signalled) corrected values land a moment later.
+        // Widening the restore's own window from near-instant to several
+        // hundred ms made it much likelier for one of those redundant
+        // re-browses to land mid-restore and be observed at exactly that
+        // stale, mid-reset instant — reading `has_next_page: false` as
+        // "genuinely exhausted" and abandoning the walk early, sometimes
+        // onto a page that hasn't been repopulated yet. Wait for both
+        // fetch kinds to fully settle before evaluating.
         function onCountChanged(): void {
-            if (root.gamesScreen === null) {
-                root._whenScreenReady(root.screenGames, function () {
-                    if (root._pendingGameRestorePath !== "")
-                        root._restoreGamesScreenSelection();
-                });
+            if (Browse.GamesModel.loading_more || Browse.GamesModel.loading)
                 return;
-            }
-            const path = root._pendingGameRestorePath;
-            if (path === "")
+            root._continueGamesRestore();
+        }
+        // Fires once a bulk restore fetch (`fetch_more_restore`) fully
+        // settles — see `onCountChanged`'s comment above for why this,
+        // not every intermediate sub-batch's count change, is the right
+        // edge to resume the restore walk on, and why `loading` is
+        // checked too.
+        function onLoading_moreChanged(): void {
+            if (Browse.GamesModel.loading_more || Browse.GamesModel.loading)
                 return;
-            // User backed out to Hub/Systems before pagination caught
-            // up — selected_at_level isn't touched by a peer-screen
-            // exit, so without this gate the loop would keep hammering
-            // fetch_more in the background until the folder exhausts.
-            if (root.activeScreen !== root.screenGames && !(root._startupRestorePending && root._startupRestoreScreen === root.screenGames)) {
-                root._pendingGameRestorePath = "";
+            root._continueGamesRestore();
+        }
+        // A redundant `start_initial_browse` (same-scope re-browse, or a
+        // genuine scope change) settling is the other edge that can leave
+        // a restore walk stalled — see `onCountChanged`'s comment above.
+        function onLoadingChanged(): void {
+            if (Browse.GamesModel.loading_more || Browse.GamesModel.loading)
                 return;
-            }
-            // User input updates `selected_at_level` on every move,
-            // so a divergence between the pending path and the top
-            // of stack means the user navigated during the restore
-            // — drop the auto-restore and let them stay where they
-            // landed.
-            const sels = Browse.GamesState.selected_at_level;
-            const currentTop = sels.length > 0 ? sels[sels.length - 1] : "";
-            if (currentTop !== path) {
-                root._pendingGameRestorePath = "";
-                root._maybeFinishStartupGamesRestore();
-                return;
-            }
-            const idx = Browse.GamesModel.index_for_game_path(path);
-            if (idx >= 0) {
-                root._setGamesRestoreIndex(idx);
-                root._pendingGameRestorePath = "";
-                root._maybeFinishStartupGamesRestore();
-                return;
-            }
-            if (Browse.GamesModel.has_next_page) {
-                // Restoration is not user-visible page navigation: bulk-load
-                // up to Core's 300-row limit so a saved page deep in a large
-                // parent does not require dozens of sequential 10-row RPCs.
-                // The loading gate remains up and bulk insertion skips the
-                // frame-gapped visible-page trickle.
-                Browse.GamesModel.fetch_more_restore();
-                return;
-            }
-            root._pendingGameRestorePath = "";
-            root._maybeFinishStartupGamesRestore();
+            root._continueGamesRestore();
         }
         // `apply_append_page` intentionally publishes terminal
         // has_next_page=false after countChanged so pending grid jumps see the
@@ -508,8 +557,12 @@ MainLayout {
         // value and its guarded follow-up fetch is rejected because the final
         // cursor is already empty. Recheck on the terminal edge to clear the
         // loading gate instead of leaving "Loading games…" stuck forever.
+        // Also gated on `!loading` now — see `onCountChanged`'s comment —
+        // since `start_initial_browse` can produce this exact same
+        // false-edge as a side effect of a redundant re-browse, not just a
+        // genuinely exhausted folder.
         function onHas_next_pageChanged(): void {
-            if (root._pendingGameRestorePath === "" || Browse.GamesModel.has_next_page || Browse.GamesModel.loading_more)
+            if (root._pendingGameRestorePath === "" || Browse.GamesModel.has_next_page || Browse.GamesModel.loading_more || Browse.GamesModel.loading)
                 return;
             root._restoreGamesScreenSelection();
         }
@@ -550,10 +603,6 @@ MainLayout {
 
     onFramePresented: {
         root._finishTransitionTiming();
-        if (!root.systemsCoverRevealReady && root.activeScreen === root.screenSystems && root.pendingTransition === "") {
-            root.systemsCoverRevealReady = true;
-            console.debug("responsiveness system covers enabled after destination frame");
-        }
         if (!root.gamesCoverRevealReady && root.activeScreen === root.screenGames && !Browse.GamesModel.loading && root.pendingTransition === "") {
             const presentedAt = Date.now();
             root.gamesCoverRevealReady = true;
@@ -903,7 +952,22 @@ MainLayout {
     // for the same pre-feedback-freeze reason as _ensureCategory.
     function _ensureSystem(systemId: string, cb): void {
         if (Browse.GamesModel.current_system_id === systemId && Browse.GamesModel.count > 0) {
-            Browse.GamesModel.set_system(systemId);
+            // Skip the redundant re-browse while a deep-position restore
+            // walk (`_pendingGameRestorePath`) is actively growing this
+            // exact model via chained `fetch_more_restore()` calls.
+            // `set_system`'s re-browse is correct and wanted for a live
+            // re-Accept after Esc-back, but here it's an internal
+            // re-entry into an already-populated, already-correct model —
+            // re-running it would truncate the model back down to just
+            // page 1 (`initial_row_replacement`'s `TruncateInPlace`,
+            // since the restore has grown `count` past a fresh page's
+            // worth) and reset `has_next_page`/`loading_more`/`append_seq`,
+            // discarding the restore's progress and dropping its
+            // still-pending sub-batches. The model is already correct
+            // for `systemId`; the in-flight restore chain owns finishing
+            // it from here.
+            if (root._pendingGameRestorePath === "")
+                Browse.GamesModel.set_system(systemId);
             cb();
             return;
         }
@@ -912,6 +976,70 @@ MainLayout {
         deferredSystemSetTimer.targetSystemId = systemId;
         deferredSystemSetTimer.interval = root.pendingTransition !== "" && Browse.GamesModel.count > 0 ? root.loadingIndicatorDelayMs + 50 : 1;
         deferredSystemSetTimer.restart();
+    }
+
+    // Reconcile the Hub's persisted layout against whatever categories
+    // Core just reported — see Browse.HubLayout's header comment and
+    // zaparoo_core::hub_layout::HubLayout::reconcile. Additive-only and
+    // idempotent (a no-op when nothing's new, or when Core hasn't answered
+    // at all yet — an empty list never seeds), so it's safe to call on
+    // every CategoriesModel reset rather than needing a guard here.
+    function _currentCategoryIds(): var {
+        const ids = [];
+        for (let i = 0; i < Browse.CategoriesModel.count; i++)
+            ids.push(Browse.CategoriesModel.category_at(i));
+        return ids;
+    }
+
+    function _reconcileHubLayout(): void {
+        Browse.HubLayout.reconcile(root._currentCategoryIds());
+    }
+
+    // View -> "Add item…". Delegates to HubScreen's own resolvers so labels
+    // match what the tile actually shows once added (see
+    // HubScreen.qml's `buildAddEntries`).
+    function openHubAddMenu(): void {
+        if (root.hubScreen === null)
+            return;
+        const entries = root.hubScreen.buildAddEntries();
+        if (entries.length === 0)
+            return;
+        root.openListPickerModal(qsTr("Add item"), entries, entries[0].id, "hub_add_pick");
+    }
+
+    // View -> "Reset layout": wipe and reseed from Core's currently-detected
+    // categories plus the built-in actions — see
+    // zaparoo_core::hub_layout::HubLayout::reset's doc comment.
+    function resetHubLayout(): void {
+        Browse.HubLayout.reset_layout(root._currentCategoryIds());
+    }
+
+    // West/Y on the Hub — the page-scoped "View" menu. Settings and Quit
+    // live here (second-last / last) rather than on a dedicated
+    // button: Quit used to be bound to Cancel/B, which risked a stray
+    // Escape/B press quitting the app from the Hub root; both are one-off
+    // navigational shortcuts, not layout-editing actions like the two
+    // entries above them, but View is the Hub's only page-scoped menu.
+    function openHubPageMenu(): void {
+        const entries = [
+            {
+                id: "hub_add",
+                label: qsTr("Add item…")
+            },
+            {
+                id: "hub_reset",
+                label: qsTr("Reset layout")
+            },
+            {
+                id: "hub_settings",
+                label: qsTr("Settings")
+            },
+            {
+                id: "hub_quit",
+                label: qsTr("Quit")
+            }
+        ];
+        root.openListPickerModal(qsTr("View"), entries, "hub_add", "page_menu_hub");
     }
 
     // Hub Accept routing. Empty-row passthrough preserves the committed
@@ -948,7 +1076,6 @@ MainLayout {
                     root._completeTransition(root.screenGames);
                 });
             } else {
-                root.systemsCoverRevealReady = false;
                 root._completeTransition(root.screenSystems);
             }
         }, true);
@@ -1166,7 +1293,20 @@ MainLayout {
         // focus (snapped, since the screen's _focusArmed is still false until
         // the first user input).
         root.systemsScreen._restoreDone = true;
-        if (idx >= 0) {
+        // Browse the saved system whenever we actually have one, regardless
+        // of `idx`. `SystemsModel` is populated for `HubState.category` —
+        // the Hub's own last-viewed category cursor, which has nothing to
+        // do with which category the saved system belongs to — so
+        // `index_for_system_id` legitimately misses whenever those two
+        // categories differ (e.g. Hub last sat on "Computer" while the
+        // saved game is on a Console system). `idx < 0` only means "not in
+        // this possibly-wrong category's list", never "invalid system id";
+        // `set_system` doesn't need a `SystemsModel` index at all, just the
+        // id string, which Core resolves independently. The old `idx >= 0`
+        // gate fell back to `SystemsModel.system_id_at(0)` — silently
+        // browsing whatever system happened to be first in the WRONG
+        // category instead of the one actually saved.
+        if (savedSystem !== "") {
             Browse.GamesModel.set_system(savedSystem);
             const stack = Browse.GamesState.path_stack;
             const top = stack.length > 0 ? stack[stack.length - 1] : "";
@@ -1217,25 +1357,119 @@ MainLayout {
         root._goto(root.screenGames);
     }
 
+    // Resume an in-progress deep-page restore walk once a bulk fetch has
+    // fully settled (`onCountChanged` / `onLoading_moreChanged` above,
+    // both gated on `!Browse.GamesModel.loading_more` before calling this).
+    // Looks for the saved path in what's now loaded; fetches another bulk
+    // chunk if not found and more pages exist; gives up in place otherwise.
+    function _continueGamesRestore(): void {
+        if (root.gamesScreen === null) {
+            root._whenScreenReady(root.screenGames, function () {
+                if (root._pendingGameRestorePath !== "")
+                    root._continueGamesRestore();
+            });
+            return;
+        }
+        const path = root._pendingGameRestorePath;
+        if (path === "")
+            return;
+        // User backed out to Hub/Systems before pagination caught
+        // up — selected_at_level isn't touched by a peer-screen
+        // exit, so without this gate the loop would keep hammering
+        // fetch_more in the background until the folder exhausts.
+        if (root.activeScreen !== root.screenGames && !(root._startupRestorePending && root._startupRestoreScreen === root.screenGames)) {
+            root._pendingGameRestorePath = "";
+            return;
+        }
+        // User input updates `selected_at_level` on every move,
+        // so a divergence between the pending path and the top
+        // of stack means the user navigated during the restore
+        // — drop the auto-restore and let them stay where they
+        // landed.
+        const sels = Browse.GamesState.selected_at_level;
+        const currentTop = sels.length > 0 ? sels[sels.length - 1] : "";
+        if (currentTop !== path) {
+            root._pendingGameRestorePath = "";
+            root._maybeFinishStartupGamesRestore();
+            return;
+        }
+        const idx = Browse.GamesModel.index_for_game_path(path);
+        if (idx >= 0) {
+            root._setGamesRestoreIndex(idx);
+            root._pendingGameRestorePath = "";
+            root._maybeFinishStartupGamesRestore();
+            return;
+        }
+        if (Browse.GamesModel.has_next_page) {
+            // Restoration is not user-visible page navigation: bulk-load
+            // up to Core's 300-row limit so a saved page deep in a large
+            // parent does not require dozens of sequential 10-row RPCs.
+            // The loading gate remains up and bulk insertion skips the
+            // frame-gapped visible-page trickle.
+            Browse.GamesModel.fetch_more_restore();
+            return;
+        }
+        root._pendingGameRestorePath = "";
+        root._maybeFinishStartupGamesRestore();
+    }
+
     // Systems Accept routing. Pin destination to Games, fill the
     // chosen system, then flip. The Games→back routing decision is
     // re-evaluated live from current state at B-press time (see
     // gamesScreen.onRequestSystemsScreen below) so this path needs
     // no per-transition flag.
-    function _navigateFromSystems(systemId: string): void {
+    // `fromHub` distinguishes this function's two callers: HubScreen's
+    // `system` shortcut (skips Systems entirely — pass `true`) vs.
+    // SystemsScreen's own accept handler (normal drill-down — pass
+    // `false`). It's persisted on `GamesState` so `onRequestSystemsScreen`
+    // below can route Back to Hub instead of Systems on the shortcut
+    // path — a screen the user never visited. See the routing contract in
+    // CLAUDE.md and `games_state.rs`'s own module doc.
+    function _navigateFromSystems(systemId: string, fromHub: bool): void {
         root.gamesNavigationInputAt = 0;
         root.gamesNavigationModelReadyAt = 0;
         root.gamesNavigationAction = "";
         root._requestScreen(root.screenGames);
         Browse.SystemsState.system_id = systemId;
         // Setting system_id on GamesState resets path_stack/selected_at_level
-        // to root level — the new system's browse always starts at the
-        // initial games-screen view, regardless of where the user was in
-        // a prior system's folder tree.
+        // (and entered_from_hub) to root level — the new system's browse
+        // always starts at the initial games-screen view, regardless of
+        // where the user was in a prior system's folder tree.
         Browse.GamesState.system_id = systemId;
+        Browse.GamesState.set_entered_from_hub(fromHub);
         root.gamesCoverRevealReady = false;
         root.pendingTransition = "games";
         root._ensureSystem(systemId, function () {
+            root._completeTransition(root.screenGames);
+        });
+    }
+
+    // A Hub `folder` shortcut's Accept path. Same shape as
+    // `_navigateFromSystems` (Hub/Systems → Games, first-time screen
+    // transition) plus pushing the shortcut's own folder level once the
+    // system is ready — unlike `_navigateIntoFolder`, which assumes the
+    // user is already ON screenGames and drilling down in-screen (its
+    // flash-cut/folder-navigation-timing logic doesn't apply to a fresh
+    // transition). `systemId` empty is a malformed/pre-this-feature layout
+    // entry; no-op rather than asking GamesModel to load an empty system.
+    // Hub-only entry point (no SystemsScreen equivalent calls this), so
+    // `entered_from_hub` is always `true` — see `_navigateFromSystems`'s
+    // own doc comment above for why Back needs this breadcrumb.
+    function _navigateFromHubFolder(systemId: string, path: string): void {
+        if (systemId === "" || path === "")
+            return;
+        root.gamesNavigationInputAt = 0;
+        root.gamesNavigationModelReadyAt = 0;
+        root.gamesNavigationAction = "";
+        root._requestScreen(root.screenGames);
+        Browse.SystemsState.system_id = systemId;
+        Browse.GamesState.system_id = systemId;
+        Browse.GamesState.set_entered_from_hub(true);
+        root.gamesCoverRevealReady = false;
+        root.pendingTransition = "games";
+        root._ensureSystem(systemId, function () {
+            Browse.GamesState.push_level(path, "");
+            Browse.GamesModel.set_path(path);
             root._completeTransition(root.screenGames);
         });
     }
@@ -1260,6 +1494,15 @@ MainLayout {
         root._beginFolderNavigationTiming("forward");
         Browse.GamesState.push_level(path, "");
         root.gamesCoverRevealReady = false;
+        // Cut the accept flash before the model swaps content. This stays on
+        // screenGames — active never toggles false, so screenSettling cannot
+        // catch it — and a same-index selection (row 0 in both the old and
+        // new folder) means the row's `active` binding never changes either,
+        // so nothing else clears an in-flight flash. Without this, a fast
+        // (cached) folder load can land while the flash's PauseAnimation is
+        // still mid-flight, painting the new folder's row inverted.
+        if (root.gamesScreen !== null)
+            root.gamesScreen.releaseActivate();
         Browse.GamesModel.set_path(path);
     }
 
@@ -1523,35 +1766,99 @@ MainLayout {
 
     Connections {
         target: root.hubScreen
-        function onRequestAccept(category: string): void {
-            root._navigateFromHub(category);
+        // Round 6 collapses Hub's five destination signals
+        // (requestAccept(category) + one requestXScreen per action) into
+        // one requestAccept(kind, id, system) — see CLAUDE.md -> "Screens
+        // and routing": "forward = signal + payload, router decides
+        // destination". Hub's forward target is heterogeneous (a category
+        // or one of a handful of actions), so kind + id is the payload
+        // rather than a bare string.
+        function onRequestAccept(kind: string, id: string, system: string): void {
+            if (kind === "category") {
+                root._navigateFromHub(id);
+                return;
+            }
+            if (kind === "action") {
+                if (id === "resume") {
+                    root._navigateFromHub("resume");
+                } else if (id === "favorites") {
+                    if (Browse.Settings.current_favorites_grouping === "system")
+                        root._navigateToFavoriteSystems();
+                    else
+                        root._navigateToFavorites("");
+                } else if (id === "recents") {
+                    root._navigateToRecents();
+                } else if (id === "update") {
+                    root._navigateToUpdate();
+                } else if (id === "settings") {
+                    root._navigateToSettings();
+                }
+                return;
+            }
+            if (kind === "zapscript") {
+                // No screen change -- Core handles the launch/core-swap
+                // externally, same as every other launch invokable
+                // (SystemsModel.launch_at, GamesModel.launch_at, ...);
+                // the Hub just stays put and lets it happen.
+                Browse.HubLayout.run_script(id);
+                return;
+            }
+            // `system` and `folder` shortcuts land the user on Games having
+            // skipped Systems entirely, the same shape as the
+            // MiSTer-Arcade-singleton bypass just above
+            // (onRequestSystemsScreen). Both now persist
+            // `GamesState.entered_from_hub` (set `true` here, `false` from
+            // SystemsScreen's own accept handler below) so B/Cancel from a
+            // shortcut-entered Games screen returns to Hub instead of
+            // Systems — a screen the user never visited on this path. This
+            // used to be left as Systems unconditionally, with "Back to
+            // Hub" only reachable via the unconditional View-menu entry
+            // (openPageMenu / openFavoritesPageMenu); that entry is
+            // unaffected by this change, just no longer the only way back.
+            if (kind === "system") {
+                // A `system` shortcut can point at a launch-only (virtual)
+                // system -- "Add to Hub" doesn't exclude those, since the
+                // shortcut is still useful as a one-press launcher. Apply
+                // the same guard SystemsScreen's own accept handler uses
+                // below: launch it directly and stay put, never drill into
+                // an empty games browse.
+                if (Browse.SystemsModel.is_launchable_system(id)) {
+                    Browse.SystemsModel.launch_system_id(id);
+                    return;
+                }
+                root._navigateFromSystems(id, true);
+                return;
+            }
+            if (kind === "folder") {
+                root._navigateFromHubFolder(system, id);
+                return;
+            }
         }
         function onRequestRetry(): void {
             Browse.CategoriesModel.refresh();
         }
-        function onRequestQuit(): void {
-            root.openQuitConfirmModal();
+        // HubScreen emits the category id, not an index -- once the
+        // layout can freely interleave categories with everything else, a
+        // flat position no longer has any fixed relationship to a
+        // CategoriesModel index the way it did when categories always
+        // occupied a contiguous prefix. Resolve here so
+        // openContextMenu/buildContextMenuEntries/handleContextMenuAccepted
+        // (shared by every owner) stay untouched, still index-based.
+        function onRequestContextMenu(hubIndex: int, categoryId: string, anchorRect, anchorRadius: int): void {
+            const index = Browse.CategoriesModel.index_for_category(categoryId);
+            if (index < 0)
+                return;
+            root._hubItemIndex = hubIndex;
+            root.openContextMenu("categories", index, anchorRect, anchorRadius);
         }
-        function onRequestFavoritesScreen(): void {
-            if (Browse.Settings.current_favorites_grouping === "system")
-                root._navigateToFavoriteSystems();
-            else
-                root._navigateToFavorites("");
+        function onRequestActionContextMenu(hubIndex: int, actionId: string, anchorRect): void {
+            root.openHubActionContextMenu(hubIndex, actionId, anchorRect);
         }
-        function onRequestRecentsScreen(): void {
-            root._navigateToRecents();
+        function onRequestItemContextMenu(hubIndex: int, kind: string, anchorRect, anchorRadius: int): void {
+            root.openHubItemContextMenu(hubIndex, kind, anchorRect, anchorRadius);
         }
-        function onRequestUpdateScreen(): void {
-            root._navigateToUpdate();
-        }
-        function onRequestSettingsScreen(): void {
-            root._navigateToSettings();
-        }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("categories", index, anchorRect);
-        }
-        function onRequestActionContextMenu(actionId: string, anchorRect): void {
-            root.openHubActionContextMenu(actionId, anchorRect);
+        function onRequestPageMenu(): void {
+            root.openHubPageMenu();
         }
     }
     Connections {
@@ -1562,8 +1869,8 @@ MainLayout {
             else
                 root._navigateBackToScreen(root.screenHub);
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("favorites", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("favorites", index, anchorRect, anchorRadius);
         }
         function onRequestPageMenu(): void {
             root.openFavoritesPageMenu();
@@ -1578,8 +1885,8 @@ MainLayout {
         function onRequestHubScreen(): void {
             root._navigateBackToScreen(root.screenHub);
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("favorite_systems", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("favorite_systems", index, anchorRect, anchorRadius);
         }
         function onRequestPageMenu(): void {
             root.openFavoriteSystemsPageMenu();
@@ -1590,8 +1897,8 @@ MainLayout {
         function onRequestHubScreen(): void {
             root._navigateBackToScreen(root.screenHub);
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("recents", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("recents", index, anchorRect, anchorRadius);
         }
     }
     Connections {
@@ -1608,10 +1915,16 @@ MainLayout {
         function onRequestAccept(actionId: string): void {
             if (actionId === "uploadLog")
                 root.openLogUploadModal();
+            else if (actionId === "runScraper")
+                root.openScrapeSetupModal();
+            else if (actionId === "updateMediaDb")
+                root.openIndexSetupModal();
             else if (actionId === "aboutLicense")
                 root._navigateToAbout();
             else if (actionId === "crtEnable" || actionId === "crtDisable")
                 root.stageCrtToggle(actionId === "crtEnable");
+            else if (actionId === "debugLoggingEnable" || actionId === "debugLoggingDisable")
+                root.stageDebugLoggingToggle(actionId === "debugLoggingEnable");
             else if (actionId === "crtCalibration")
                 root.openCrtCalibrationModal();
         }
@@ -1644,13 +1957,16 @@ MainLayout {
                 Browse.SystemsModel.launch_system_id(systemId);
                 return;
             }
-            root._navigateFromSystems(systemId);
+            // Normal Systems-originated drill-down — Back returns to
+            // Systems, not Hub. See `_navigateFromSystems`'s own doc
+            // comment.
+            root._navigateFromSystems(systemId, false);
         }
         function onRequestHubScreen(): void {
             root._navigateBackToScreen(root.screenHub);
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("systems", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("systems", index, anchorRect, anchorRadius);
         }
     }
     Connections {
@@ -1691,6 +2007,21 @@ MainLayout {
                 root._navigateBackToScreen(root.screenHub);
                 return;
             }
+            // Separate, additive check — NOT part of the Arcade live eval
+            // above, and does not change it. Covers the Hub `system`/
+            // `folder` shortcut case (see `_navigateFromSystems`'s and
+            // `_navigateFromHubFolder`'s own doc comments): unlike the
+            // Arcade case, there's no live-derivable signal for "was this
+            // Games screen entered from Hub" — `system_id` looks
+            // identical either way — so it needs the persisted
+            // `GamesState.entered_from_hub` breadcrumb instead. Cleared
+            // here once consumed, so a later Systems-originated entry
+            // into a different system starts clean.
+            if (Browse.GamesState.entered_from_hub) {
+                Browse.GamesState.set_entered_from_hub(false);
+                root._navigateBackToScreen(root.screenHub);
+                return;
+            }
             root._navigateBackToScreen(root.screenSystems);
         }
         function onRequestNavigateIntoFolder(path: string): void {
@@ -1699,8 +2030,8 @@ MainLayout {
         function onRequestNavigateOutOfFolder(): void {
             root._navigateOutOfFolder();
         }
-        function onRequestContextMenu(index: int, anchorRect): void {
-            root.openContextMenu("games", index, anchorRect);
+        function onRequestContextMenu(index: int, anchorRect, anchorRadius: int): void {
+            root.openContextMenu("games", index, anchorRect, anchorRadius);
         }
         function onRequestPageMenu(): void {
             root.openPageMenu();
@@ -1724,7 +2055,7 @@ MainLayout {
             if (!root.contextMenuVisible || root.contextMenuMode !== "main")
                 return;
             if (Browse.AlternateVersions.count <= 0)
-                root._replaceContextMenuEntryLabel("discover_loading", "No alternates found", "discover_unavailable");
+                root._replaceContextMenuEntryLabel("discover_loading", qsTr("No alternates found"), "discover_unavailable");
             if (Browse.AlternateVersions.count <= 0)
                 return;
             const entries = [];
@@ -1752,12 +2083,16 @@ MainLayout {
     // caller saw `entries.length === 0` despite the function pushing 3
     // items in. Plain `var` round-trips cleanly and silences the
     // "insufficiently annotated" coercion warning at the call site.
+    // Entry order follows docs/content-style.md's menu-ordering rule:
+    // primary action first, then frequent actions, then organizational
+    // actions (Move/Add to Hub/Hide), then long-running maintenance
+    // (index/scrape) last.
     function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool, category: string) {
         if (owner === "systems") {
             const entries = [
                 {
                     id: "launch_system",
-                    label: qsTr("Launch core")
+                    label: qsTr("Launch system")
                 }
             ];
             // Launch-only (virtual) systems have no media and no launcher
@@ -1774,6 +2109,14 @@ MainLayout {
                     label: qsTr("Change launcher")
                 });
             }
+            entries.push({
+                id: "add_to_hub",
+                label: qsTr("Add to Hub")
+            });
+            entries.push({
+                id: "toggle_hide_system",
+                label: isHidden ? qsTr("Unhide") : qsTr("Hide")
+            });
             const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
             if (!launchable && !mediaBusy) {
                 entries.push({
@@ -1784,20 +2127,21 @@ MainLayout {
                     label: qsTr("Scrape metadata")
                 });
             }
-            entries.push({
-                id: "toggle_hide_system",
-                label: isHidden ? qsTr("Unhide") : qsTr("Hide")
-            });
             return entries;
         }
         if (owner === "categories") {
+            // Hide/unhide retired for Hub categories -- the Hub is a
+            // persisted layout now (Browse.HubLayout); removing a category
+            // tile is a layout edit, not a hide flag. See
+            // docs/plans/ui-geometry-refresh.md's Hub roadmap. The systems
+            // grid's own hide/unhide (owner === "systems", above) is
+            // unrelated and unchanged.
+            //
+            // Move/Hide (the organizational actions) are spliced in by
+            // openContextMenu, between this list's primary entry and its
+            // maintenance entries -- see the comment there.
             const mediaBusy = Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping;
-            const entries = [
-                {
-                    id: "toggle_hide_category",
-                    label: isHidden ? qsTr("Unhide") : qsTr("Hide")
-                }
-            ];
+            const entries = [];
             // Index/scrape act on the category's indexable systems, which
             // excludes launch-only ones. Show the actions only when the
             // category has at least one indexable system; a category whose
@@ -1805,7 +2149,7 @@ MainLayout {
             // no-op, so omit them rather than show dead entries.
             const hasIndexable = category !== "" && Browse.SystemsModel.system_ids_for_category(category).length > 0;
             if (hasIndexable)
-                entries.unshift({
+                entries.push({
                     id: "launch_random_category",
                     label: qsTr("Random game")
                 });
@@ -1836,28 +2180,25 @@ MainLayout {
                 }
             ];
         }
+        if (owner === "hub_action" || owner === "hub_item") {
+            // No kind-specific entries of their own -- callers append the
+            // universal Move/Remove (see `_hubMoveRemoveEntries`).
+            return [];
+        }
         if (owner === "recents") {
+            // No favorite-toggle here -- see the module doc comment on
+            // rust/frontend/src/models/recents.rs for why (Core's
+            // media.history carries no tags).
             const entries = [
                 {
                     id: "launch_game",
                     label: qsTr("Launch game")
+                },
+                {
+                    id: "more_info",
+                    label: qsTr("Details")
                 }
             ];
-            if (Browse.Settings.current_discover_arcade_alternate_versions)
-                entries.unshift({
-                    id: "discover",
-                    label: "Discover alt. versions"
-                });
-            return entries;
-        }
-        if (owner === "games" || owner === "favorites") {
-            if ((entryType === "directory" || entryType === "root") && !mediaCapable)
-                return [];
-            const entries = [];
-            entries.push({
-                id: "toggle_favorite",
-                label: isFavorite ? qsTr("Remove from favorites") : qsTr("Add to favorites")
-            });
             if (hasNfc)
                 entries.push({
                     id: "write_card",
@@ -1865,18 +2206,75 @@ MainLayout {
                 });
             entries.push({
                 id: "qr_code",
-                label: qsTr("Write with QR code")
+                label: qsTr("Write with App")
             });
-            if (Browse.Settings.current_discover_arcade_alternate_versions) {
+            // Discover alt. versions only ever works for the literal
+            // MiSTer Arcade/MRA system -- alternate_versions.rs matches
+            // `system_id == "Arcade"` exactly, not the 32-system "Arcade"
+            // category Core reports. See docs/style.md or the round-10
+            // plan for the full reasoning.
+            if (systemId === CategoryIds.arcadeId)
                 entries.push({
                     id: "discover",
-                    label: "Discover alt. versions"
+                    label: qsTr("Discover alt. versions")
                 });
-            }
             entries.push({
-                id: "launch_game",
-                label: qsTr("Launch game")
+                id: "add_to_hub",
+                label: qsTr("Add to Hub")
             });
+            return entries;
+        }
+        if (owner === "games" || owner === "favorites") {
+            if (entryType === "root" && !mediaCapable)
+                return [];
+            if (entryType === "directory" && !mediaCapable) {
+                // A plain browsable folder has no media-scoped actions of
+                // its own -- the only thing worth offering is a Hub
+                // shortcut to it, and only on Games (a Favorites row is
+                // already a saved shortcut of its own kind, so this
+                // doesn't extend there).
+                return owner === "games" ? [
+                    {
+                        id: "add_to_hub",
+                        label: qsTr("Add to Hub")
+                    }
+                ] : [];
+            }
+            const entries = [
+                {
+                    id: "launch_game",
+                    label: qsTr("Launch game")
+                },
+                {
+                    id: "more_info",
+                    label: qsTr("Details")
+                },
+                {
+                    id: "toggle_favorite",
+                    label: isFavorite ? qsTr("Remove from favorites") : qsTr("Add to favorites")
+                }
+            ];
+            if (hasNfc)
+                entries.push({
+                    id: "write_card",
+                    label: qsTr("Write to NFC token")
+                });
+            entries.push({
+                id: "qr_code",
+                label: qsTr("Write with App")
+            });
+            // See the "recents" branch above for why this is gated on the
+            // literal Arcade system rather than shown unconditionally.
+            if (systemId === CategoryIds.arcadeId)
+                entries.push({
+                    id: "discover",
+                    label: qsTr("Discover alt. versions")
+                });
+            if (owner === "games")
+                entries.push({
+                    id: "add_to_hub",
+                    label: qsTr("Add to Hub")
+                });
             return entries;
         }
         return [];
@@ -1912,7 +2310,7 @@ MainLayout {
             if (entry.id === "discover_loading" || entry.id === "discover_unavailable") {
                 entries.push({
                     id: "discover",
-                    label: "Discover alt. versions"
+                    label: qsTr("Discover alt. versions")
                 });
             } else {
                 entries.push(entry);
@@ -1921,22 +2319,77 @@ MainLayout {
         return entries;
     }
 
-    function openHubActionContextMenu(actionId: string, anchorRect): void {
-        if (actionId !== "favorites")
+    // Universal Move/Hide-or-Delete, appended to every Hub-owned menu below
+    // — empty (no menu) for an entry with no real `Browse.HubLayout`
+    // backing yet (the bootstrap placeholder window; see HubScreen.qml's
+    // `_blankEntry` doc comment). `kind` is never `"empty"` here — a blank
+    // tile never reaches this function; see `openHubItemContextMenu`'s
+    // guard. The remove label depends on `kind`: category/action stay
+    // tracked in `known` (see hub_layout.rs) and come straight back via
+    // View -> Add item…, so "Hide" is accurate — nothing is lost.
+    // system/folder/zapscript aren't tracked at all, so removing one
+    // really is permanent; "Delete" says so rather than implying a
+    // reversibility that isn't there.
+    function _hubMoveRemoveEntries(hubIndex: int, kind: string): var {
+        if (hubIndex < 0)
+            return [];
+        const removeLabel = kind === "category" || kind === "action" ? qsTr("Hide") : qsTr("Delete");
+        return [
+            {
+                id: "hub_move",
+                label: qsTr("Move")
+            },
+            {
+                id: "hub_remove",
+                label: removeLabel
+            }
+        ];
+    }
+
+    function openHubActionContextMenu(hubIndex: int, actionId: string, anchorRect): void {
+        const owner = actionId === "favorites" ? "hub_favorites" : "hub_action";
+        const entries = root.buildContextMenuEntries(owner, "", false, false, false, "", false, "").concat(root._hubMoveRemoveEntries(hubIndex, "action"));
+        if (entries.length === 0)
             return;
-        const entries = root.buildContextMenuEntries("hub_favorites", "", false, false, false, "", false, "");
+        root._hubItemIndex = hubIndex;
         root.contextMenuEntries = entries;
-        root.contextMenuOwner = "hub_favorites";
+        root.contextMenuOwner = owner;
         root.contextMenuIndex = 0;
         root.contextMenuMode = "main";
         root.contextMenuAnchor = anchorRect;
+        root.contextMenuAnchorRadius = 0;
         root._requestModal(root.modalContextMenu);
         root.contextMenuVisible = true;
         if (ScreenManager.topModal !== root.modalContextMenu)
             ScreenManager.pushModal(root.modalContextMenu);
     }
 
-    function openContextMenu(owner: string, index: int, anchorRect): void {
+    // system / folder / zapscript — none of these have a kind-specific
+    // menu, only the universal Move/Hide-or-Delete. `HubScreen.qml`'s
+    // dispatch already never emits the signal that reaches here for a
+    // blank tile (`kind === "empty"`) — a gap is an implementation
+    // detail, not something to open Options on — but guard it here too
+    // rather than trust a single call site.
+    function openHubItemContextMenu(hubIndex: int, kind: string, anchorRect, anchorRadius: int): void {
+        if (kind === "empty")
+            return;
+        const entries = root._hubMoveRemoveEntries(hubIndex, kind);
+        if (entries.length === 0)
+            return;
+        root._hubItemIndex = hubIndex;
+        root.contextMenuEntries = entries;
+        root.contextMenuOwner = "hub_item";
+        root.contextMenuIndex = 0;
+        root.contextMenuMode = "main";
+        root.contextMenuAnchor = anchorRect;
+        root.contextMenuAnchorRadius = anchorRadius;
+        root._requestModal(root.modalContextMenu);
+        root.contextMenuVisible = true;
+        if (ScreenManager.topModal !== root.modalContextMenu)
+            ScreenManager.pushModal(root.modalContextMenu);
+    }
+
+    function openContextMenu(owner: string, index: int, anchorRect, anchorRadius: int): void {
         if (index < 0)
             return;
         let entryType = "";
@@ -1961,11 +2414,13 @@ MainLayout {
             entryType = Browse.GamesModel.entry_type_at(index);
             mediaCapable = Browse.GamesModel.is_media_capable_at(index);
             isFavorite = Browse.GamesModel.is_favorite_at(index);
+            systemId = Browse.GamesModel.system_id_at(index);
         } else if (owner === "favorites") {
             if (index >= Browse.FavoritesModel.count)
                 return;
             mediaCapable = true;
             isFavorite = Browse.FavoritesModel.is_favorite_at(index);
+            systemId = Browse.FavoritesModel.system_id_at(index);
         } else if (owner === "favorite_systems") {
             if (index >= Browse.FavoriteSystemsModel.count)
                 return;
@@ -1973,8 +2428,22 @@ MainLayout {
         } else if (owner === "recents") {
             if (index >= Browse.RecentsModel.count)
                 return;
+            systemId = Browse.RecentsModel.system_id_at(index);
         }
-        const entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category);
+        let entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category);
+        // "categories" is exclusively Hub-owned (only HubScreen ever opens
+        // it) — splice the universal Move/Hide in here, keyed off the Hub
+        // flat index the caller stashed in `_hubItemIndex` (NOT `index`,
+        // which is the CategoriesModel index the entries above just used).
+        // Per docs/content-style.md's ordering rule these organizational
+        // actions land right after the primary "Random game" entry (if
+        // present) and before the maintenance entries, not tacked onto the
+        // end of the whole list.
+        if (owner === "categories") {
+            const insertAt = entries.length > 0 && entries[0].id === "launch_random_category" ? 1 : 0;
+            const moveRemove = root._hubMoveRemoveEntries(root._hubItemIndex, "category");
+            entries = entries.slice(0, insertAt).concat(moveRemove, entries.slice(insertAt));
+        }
         if (entries.length === 0)
             return;
         root.contextMenuEntries = entries;
@@ -1984,6 +2453,7 @@ MainLayout {
         root._discoverParentEntries = [];
         root._discoverMenuPending = false;
         root.contextMenuAnchor = anchorRect;
+        root.contextMenuAnchorRadius = anchorRadius;
         root._requestModal(root.modalContextMenu);
         root.contextMenuVisible = true;
         if (ScreenManager.topModal !== root.modalContextMenu)
@@ -2005,6 +2475,7 @@ MainLayout {
         root.contextMenuVisible = false;
         root.contextMenuOwner = "";
         root.contextMenuIndex = -1;
+        root._hubItemIndex = -1;
         root.contextMenuMode = "main";
         root._discoverParentEntries = [];
         root._discoverMenuPending = false;
@@ -2016,8 +2487,21 @@ MainLayout {
     function handleContextMenuAccepted(id: string): void {
         const owner = root.contextMenuOwner;
         const targetIndex = root.contextMenuIndex;
+        const hubItemIndex = root._hubItemIndex;
         if (targetIndex < 0)
             return;
+        if (id === "hub_move") {
+            root.closeContextMenu();
+            if (hubItemIndex >= 0 && root.hubScreen !== null)
+                root.hubScreen.beginMove(hubItemIndex);
+            return;
+        }
+        if (id === "hub_remove") {
+            root.closeContextMenu();
+            if (hubItemIndex >= 0)
+                Browse.HubLayout.remove_item(hubItemIndex);
+            return;
+        }
         if (id === "discover") {
             let systemId = "";
             let name = "";
@@ -2036,7 +2520,7 @@ MainLayout {
                 path = Browse.RecentsModel.path_at(targetIndex);
             }
             root._discoverMenuPending = true;
-            root._replaceContextMenuEntryLabel("discover", "Searching....", "discover_loading");
+            root._replaceContextMenuEntryLabel("discover", qsTr("Searching…"), "discover_loading");
             Browse.AlternateVersions.discover_for(systemId, name, path);
             return;
         }
@@ -2094,15 +2578,6 @@ MainLayout {
                     Browse.SystemsState.hide_system(systemId);
                 Browse.SystemsModel.reproject();
             }
-        } else if (id === "toggle_hide_category") {
-            const categoryName = Browse.CategoriesModel.category_at(targetIndex);
-            if (categoryName !== "") {
-                if (Browse.HubState.is_category_hidden(categoryName))
-                    Browse.HubState.unhide_category(categoryName);
-                else
-                    Browse.HubState.hide_category(categoryName);
-                Browse.CategoriesModel.reproject();
-            }
         } else if (id === "index_category") {
             const categoryName = Browse.CategoriesModel.category_at(targetIndex);
             if (categoryName !== "") {
@@ -2141,9 +2616,12 @@ MainLayout {
             } else if (owner === "favorites") {
                 root.beginCardWrite("favorites", targetIndex);
                 Browse.FavoritesModel.write_card_at(targetIndex);
+            } else if (owner === "recents") {
+                root.beginCardWrite("recents", targetIndex);
+                Browse.RecentsModel.write_card_at(targetIndex);
             }
         } else if (id === "qr_code") {
-            const text = owner === "systems" ? Browse.SystemsModel.launch_text_at(targetIndex) : owner === "games" ? Browse.GamesModel.launch_text_at(targetIndex) : owner === "favorites" ? Browse.FavoritesModel.launch_text_at(targetIndex) : "";
+            const text = owner === "systems" ? Browse.SystemsModel.launch_text_at(targetIndex) : owner === "games" ? Browse.GamesModel.launch_text_at(targetIndex) : owner === "favorites" ? Browse.FavoritesModel.launch_text_at(targetIndex) : owner === "recents" ? Browse.RecentsModel.launch_text_at(targetIndex) : "";
             if (text !== "") {
                 Browse.QrCode.generate(root._buildQrPayload(text));
                 if (Browse.QrCode.size > 0)
@@ -2151,7 +2629,44 @@ MainLayout {
             }
         } else if (id === "discover_unavailable" || id === "discover_loading") {
             return;
+        } else if (id === "add_to_hub") {
+            root._addToHub(owner, targetIndex);
         }
+    }
+
+    // "Add to Hub" — creates a `system`/`folder`/`zapscript` shortcut from a
+    // Systems/Games row via `Browse.HubLayout.add_target_item`. Only
+    // `system` and `games` reach here (see `buildContextMenuEntries`);
+    // `owner === "games"` covers both a plain directory (folder shortcut)
+    // and a media row (game shortcut). A game shortcut's `name` is the one
+    // place this layout caches a value resolved from Core — a deliberate,
+    // user-approved exception to the no-Core-metadata rule (see
+    // `zaparoo_core::hub_layout`'s doc comment on `add_target_item`), so the
+    // tile has a real title without needing Core reachable to render, and
+    // doubles as a rename hook (edit `name` in frontend.toml).
+    function _addToHub(owner: string, index: int): void {
+        if (owner === "systems") {
+            const systemId = Browse.SystemsModel.system_id_at(index);
+            if (systemId !== "")
+                Browse.HubLayout.add_target_item("system", systemId, "", "", "", "", "");
+            return;
+        }
+        if (owner !== "games")
+            return;
+        const entryType = Browse.GamesModel.entry_type_at(index);
+        const systemId = Browse.GamesModel.current_system_id;
+        if (entryType === "directory") {
+            const path = Browse.GamesModel.path_at(index);
+            if (path !== "")
+                Browse.HubLayout.add_target_item("folder", "", path, "", "", "", systemId);
+            return;
+        }
+        const path = Browse.GamesModel.path_at(index);
+        const script = Browse.GamesModel.launch_text_at(index);
+        if (script === "")
+            return;
+        const name = Browse.GamesModel.name_at(index);
+        Browse.HubLayout.add_target_item("zapscript", "", path, script, name, "", systemId);
     }
 
     function openGameInfo(owner: string, index: int): void {
@@ -2250,9 +2765,10 @@ MainLayout {
     }
 
     // Poll only while an index is actively discovering content and only on
-    // screens that display category/system membership. Completion still gets
-    // the Store's MEDIA_DB invalidation refetch, so this timer is progressive
-    // presentation rather than correctness machinery.
+    // screens that display category/system membership. Catalog consumers skip
+    // no-op model resets, so unchanged polls stay invisible while newly indexed
+    // systems still appear progressively. Completion also gets the Store's
+    // MEDIA_DB invalidation refetch for correctness.
     Timer {
         id: catalogIndexRefreshTimer
 
@@ -2421,6 +2937,9 @@ MainLayout {
         } else if (kind === "media_scrape") {
             title = qsTr("Metadata scrape failed");
             body = qsTr("Could not start metadata scraping. Check Zaparoo Core and try again.");
+        } else if (kind === "media_scrapers") {
+            title = qsTr("Scraper list unavailable");
+            body = qsTr("Could not load the list of scrapers. Check Zaparoo Core and try again.");
         } else if (kind === "media_cancel") {
             title = qsTr("Cancel failed");
             body = qsTr("Could not cancel the media operation. Check Zaparoo Core and try again.");
@@ -2501,6 +3020,121 @@ MainLayout {
             ScreenManager.popModal();
     }
 
+    // Scrape setup modal lifecycle (round 10). Triggered from the
+    // Settings "Scrape metadata" action when idle; the modal fetches the
+    // scraper list on open via `Browse.MediaStatus.refresh_scrapers()`
+    // and owns its own scraper-choice/re-scrape-toggle state until Start.
+    function openScrapeSetupModal(): void {
+        Browse.MediaStatus.refresh_scrapers();
+        root._requestModal(root.modalScrapeSetup);
+        root.scrapeSetupModalVisible = true;
+        if (ScreenManager.topModal !== root.modalScrapeSetup)
+            ScreenManager.pushModal(root.modalScrapeSetup);
+    }
+
+    function closeScrapeSetupModal(): void {
+        root.scrapeSetupModalVisible = false;
+        if (ScreenManager.topModal === root.modalScrapeSetup)
+            ScreenManager.popModal();
+    }
+
+    onCloseScrapeSetupRequested: root.closeScrapeSetupModal()
+
+    // Index setup modal lifecycle (round 11). Triggered from the Settings
+    // "Update media database" action when idle; mirrors the scrape setup
+    // modal above minus the scraper choice and re-scrape toggle, since a
+    // full index has neither.
+    function openIndexSetupModal(): void {
+        root._requestModal(root.modalIndexSetup);
+        root.indexSetupModalVisible = true;
+        if (ScreenManager.topModal !== root.modalIndexSetup)
+            ScreenManager.pushModal(root.modalIndexSetup);
+    }
+
+    function closeIndexSetupModal(): void {
+        root.indexSetupModalVisible = false;
+        if (ScreenManager.topModal === root.modalIndexSetup)
+            ScreenManager.popModal();
+    }
+
+    onCloseIndexSetupRequested: root.closeIndexSetupModal()
+
+    // Nested picker for the scraper-choice row inside ScrapeSetupModal —
+    // stacks a second modal on top (ScreenManager.pushModal appends, so
+    // the picker becomes topModal and correctly receives input while the
+    // setup modal stays mounted underneath it). The picker's own accept
+    // writes back to `scrapeSetupModal.selectedScraperId` directly (see
+    // the `fieldId === "scraperChoice"` branch in `onListPickerAccepted`)
+    // rather than a Browse.Settings setter, since the choice isn't
+    // persisted until Start is pressed.
+    function openScraperChoicePicker(): void {
+        if (root.scrapeSetupModal === null)
+            return;
+        const ids = Browse.MediaStatus.scraper_ids;
+        const names = Browse.MediaStatus.scraper_names;
+        const entries = [];
+        for (let i = 0; i < ids.length; i++)
+            entries.push({
+                id: ids[i],
+                label: names[i] !== undefined && names[i] !== "" ? names[i] : ids[i]
+            });
+        root.openListPickerModal(qsTr("Scraper"), entries, root.scrapeSetupModal.selectedScraperId, "scraperChoice");
+    }
+
+    onRequestScraperPicker: root.openScraperChoicePicker()
+
+    // Flat "All systems / All <Category> systems / one system" entry list
+    // shared by both media job modals' Systems row. "cat:" ids resolve to
+    // `system_ids_for_category` at Start; the individual-system entries
+    // resolve straight to their own id. Categories with zero indexable
+    // systems are skipped, same gate the systems/categories context menu
+    // already uses to decide whether to offer "index_category"/
+    // "scrape_category" at all.
+    function _buildSystemScopeEntries(): var {
+        const entries = [{
+            id: root._systemScopeAll,
+            label: qsTr("All systems")
+        }];
+        for (let i = 0; i < Browse.CategoriesModel.count; i++) {
+            const category = Browse.CategoriesModel.category_at(i);
+            if (category === "" || Browse.SystemsModel.system_ids_for_category(category).length === 0)
+                continue;
+            entries.push({
+                id: "cat:" + category,
+                label: qsTr("All %1 systems").arg(category)
+            });
+        }
+        const ids = Browse.SystemsModel.all_indexable_system_ids();
+        for (let i = 0; i < ids.length; i++)
+            entries.push({
+                id: ids[i],
+                label: Browse.SystemsModel.system_name_for_id(ids[i])
+            });
+        return entries;
+    }
+
+    // Nested picker for the Systems row, shared by ScrapeSetupModal and
+    // IndexSetupModal (see `requestSystemScopePicker`'s doc comment in
+    // MainLayout.qml for why one signal covers both). The two modals are
+    // mutually exclusive, so whichever one is currently visible is the
+    // request's source and the accept target.
+    function _activeSystemScopeModal(): var {
+        if (root.scrapeSetupModalVisible)
+            return root.scrapeSetupModal;
+        if (root.indexSetupModalVisible)
+            return root.indexSetupModal;
+        return null;
+    }
+
+    function openSystemScopePicker(): void {
+        const target = root._activeSystemScopeModal();
+        if (target === null)
+            return;
+        root.openListPickerModal(qsTr("Systems"), root._buildSystemScopeEntries(), target.selectedSystemScope, "systemScope");
+    }
+
+    onRequestSystemScopePicker: root.openSystemScopePicker()
+
     function handleLogUploadError(): void {
         // LogUpload state 3 is terminal failure; full detail is already logged
         // by the Rust model. Replace the phase view with standard error chrome.
@@ -2569,11 +3203,11 @@ MainLayout {
     }
 
     function _isViewListPicker(fieldId: string): bool {
-        return fieldId === "page_menu" || fieldId === "page_menu_favorites" || fieldId === "page_menu_favorite_systems";
+        return fieldId === "page_menu" || fieldId === "page_menu_favorites" || fieldId === "page_menu_favorite_systems" || fieldId === "page_menu_hub";
     }
 
     // Open the page/list-scoped operations menu (West button), the "View"
-    // counterpart to North's item-scoped "Options". Go to... stays
+    // counterpart to North's item-scoped "Options". Go to… stays
     // pre-focused so common path is fixed West-then-Accept chord. Letter
     // index fetch starts here so buckets are likely ready when user opens rail.
     function openPageMenu(): void {
@@ -2581,7 +3215,7 @@ MainLayout {
         const entries = [
             {
                 "id": "jump_letter",
-                "label": qsTr("Go to...")
+                "label": qsTr("Go to…")
             }
         ];
         // Core path random is recursive, so folders containing only nested
@@ -2596,6 +3230,15 @@ MainLayout {
         entries.push({
             "id": "games_filter",
             "label": qsTr("Show: %1").arg(Browse.GamesModel.favorites_only ? qsTr("Favorites") : qsTr("All"))
+        });
+        // Games is always at least two steps from the Hub (Hub -> Systems
+        // -> Games), or one via the MiSTer Arcade-singleton bypass -- an
+        // unconditional escape hatch regardless of how the user actually
+        // arrived, rather than special-casing shortcut-entered navigation.
+        // See docs/style.md or the plan for the full reasoning.
+        entries.push({
+            "id": "back_to_hub",
+            "label": qsTr("Back to Hub")
         });
         root.openListPickerModal(qsTr("View"), entries, "jump_letter", "page_menu");
     }
@@ -2634,6 +3277,14 @@ MainLayout {
             {
                 "id": "launch_random_favorite",
                 "label": qsTr("Random favorite")
+            },
+            // Favorites is one step from the Hub when grouping is "none",
+            // two when "system" (Hub -> Favorite Systems -> Favorites) --
+            // unconditional regardless of grouping, same reasoning as
+            // Games' own entry above.
+            {
+                "id": "back_to_hub",
+                "label": qsTr("Back to Hub")
             }
         ];
         root.openListPickerModal(qsTr("View"), entries, "favorites_sort", "page_menu_favorites");
@@ -2750,12 +3401,18 @@ MainLayout {
         root.openSettingNeedsRestartModal();
     }
 
+    function stageDebugLoggingToggle(enable: bool): void {
+        root._pendingDebugLoggingToggle = enable ? "on" : "off";
+        root.openSettingNeedsRestartModal();
+    }
+
     function cancelPendingRestart(): void {
         root._pendingLanguageSelection = "";
         root._pendingResolutionSelection = "";
         root._resolutionRestartPending = false;
         root._pendingCrtStandardSelection = "";
         root._pendingCrtToggle = "";
+        root._pendingDebugLoggingToggle = "";
         root.closeSettingNeedsRestartModal();
     }
 
@@ -2778,11 +3435,13 @@ MainLayout {
         const resolution = root._pendingResolutionSelection;
         const resolutionPending = root._resolutionRestartPending;
         const crtStandard = root._pendingCrtStandardSelection;
+        const debugLogging = root._pendingDebugLoggingToggle;
         if (resolutionPending && !Browse.Settings.set_resolution(resolution)) {
             root._pendingLanguageSelection = "";
             root._pendingResolutionSelection = "";
             root._resolutionRestartPending = false;
             root._pendingCrtStandardSelection = "";
+            root._pendingDebugLoggingToggle = "";
             root.closeSettingNeedsRestartModal();
             return;
         }
@@ -2790,9 +3449,12 @@ MainLayout {
         root._pendingResolutionSelection = "";
         root._resolutionRestartPending = false;
         root._pendingCrtStandardSelection = "";
+        root._pendingDebugLoggingToggle = "";
         root.closeSettingNeedsRestartModal();
         if (language !== "")
             Browse.Settings.set_language(language);
+        if (debugLogging !== "")
+            Browse.Settings.set_debug_logging(debugLogging === "on");
         if (crtStandard !== "") {
             Browse.CrtVideo.set_video_standard(crtStandard);
             // A standard change must respawn through Main_MiSTer (exit
@@ -2814,6 +3476,22 @@ MainLayout {
 
     function restartApp() {
         Qt.exit(1000);
+    }
+
+    // The frontend correcting its own wrong boot-time resolution guess
+    // (e.g. the TV was off at launch and came on later — see
+    // mister_runtime::watch_for_output_change), not a setting the user
+    // chose, so it restarts silently through the same path a CRT toggle
+    // uses rather than routing through confirmPendingRestart's
+    // user-facing modal. `output_resolution_stale` flips exactly once
+    // per process and never resets, so this fires at most once per
+    // session.
+    Connections {
+        target: Browse.Settings
+        function onOutput_resolution_staleChanged(): void {
+            if (Browse.Settings.output_resolution_stale)
+                root.restartApp();
+        }
     }
 
     // CRT calibration lifecycle. Full-bleed test pattern mounted
@@ -2891,6 +3569,8 @@ MainLayout {
                 Browse.GamesModel.launch_random();
             else if (selectedId === "games_filter")
                 root.openGamesFilterMenu();
+            else if (selectedId === "back_to_hub")
+                root._navigateBackToScreen(root.screenHub);
             return;
         }
         if (fieldId === "games_filter_pick") {
@@ -2908,12 +3588,63 @@ MainLayout {
                 Browse.FavoritesModel.launch_random();
             else if (selectedId === "favorites_mode")
                 root.openFavoritesModeMenu();
+            else if (selectedId === "back_to_hub")
+                root._navigateBackToScreen(root.screenHub);
             return;
         }
         if (fieldId === "page_menu_favorite_systems") {
             root.closeListPickerModal();
             if (selectedId === "favorites_mode")
                 root.openFavoritesModeMenu();
+            return;
+        }
+        if (fieldId === "page_menu_hub") {
+            root.closeListPickerModal();
+            if (selectedId === "hub_add")
+                root.openHubAddMenu();
+            else if (selectedId === "hub_reset")
+                root.resetHubLayout();
+            else if (selectedId === "hub_settings")
+                root._navigateToSettings();
+            else if (selectedId === "hub_quit")
+                root.openQuitConfirmModal();
+            return;
+        }
+        if (fieldId === "hub_add_pick") {
+            root.closeListPickerModal();
+            // Board-model placement: lands on the Hub's current cell when
+            // it's a blank, otherwise appended after the last tile — see
+            // zaparoo_core::hub_layout::HubLayout::add_item. With
+            // `skipEmptyCells` on, the cursor can no longer normally be
+            // resting on a blank when this menu is opened, so `target`
+            // now almost always falls through to append; kept anyway
+            // since Rust already guards it (a non-blank target is a
+            // no-op there) and it's still correct on the rare path where
+            // a Move session left the cursor somewhere unusual.
+            const cursorEntry = root.hubScreen !== null ? root.hubScreen.items[root.hubScreen.currentIndex] : null;
+            const target = cursorEntry ? cursorEntry.hubIndex : -1;
+            const beforeCount = root.hubScreen !== null ? Browse.HubLayout.item_count() : 0;
+            let added = false;
+            if (selectedId === "blank")
+                added = Browse.HubLayout.add_item("blank", "", target);
+            else {
+                const sep = selectedId.indexOf(":");
+                if (sep > 0)
+                    added = Browse.HubLayout.add_item(selectedId.slice(0, sep), selectedId.slice(sep + 1), target);
+            }
+            // Hand the newly placed item straight to Move so it can be
+            // positioned immediately instead of just sitting wherever
+            // append/target left it — see HubScreen.qml's
+            // `armMoveForHubIndex`. `add_item` only grows `item_count()`
+            // when it actually appended (a filled `target` blank leaves
+            // the count unchanged), so that comparison is what tells us
+            // whether the new item landed at `target` or at the old
+            // count's own position.
+            if (added && root.hubScreen !== null) {
+                const afterCount = Browse.HubLayout.item_count();
+                const newHubIndex = afterCount > beforeCount ? beforeCount : target;
+                root.hubScreen.armMoveForHubIndex(newHubIndex);
+            }
             return;
         }
         if (fieldId === "favorites_mode_pick") {
@@ -2941,6 +3672,29 @@ MainLayout {
             root.beginSystemLauncherUpdate(fieldId.slice("system_launcher:".length), selectedId);
             return;
         }
+        // Round 10: nested picker opened by ScrapeSetupModal itself
+        // (see its own `requestScraperPicker` signal below) -- writes
+        // straight back to the modal's own local `selectedScraperId`
+        // rather than a Browse.Settings setter, since the choice isn't
+        // persisted until "Start" is pressed. Only pops the picker; the
+        // scrape setup modal underneath stays open.
+        if (fieldId === "scraperChoice") {
+            root.closeListPickerModal();
+            if (root.scrapeSetupModal !== null)
+                root.scrapeSetupModal.selectedScraperId = selectedId;
+            return;
+        }
+        // Round 11: nested Systems-row picker shared by ScrapeSetupModal
+        // and IndexSetupModal (see `openSystemScopePicker`/
+        // `_activeSystemScopeModal` above) -- same "write straight back to
+        // the still-open modal underneath" pattern as `scraperChoice`.
+        if (fieldId === "systemScope") {
+            root.closeListPickerModal();
+            const target = root._activeSystemScopeModal();
+            if (target !== null)
+                target.selectedSystemScope = selectedId;
+            return;
+        }
         if (fieldId === "resolution") {
             root.closeListPickerModal();
             if (selectedId !== Browse.Settings.current_resolution)
@@ -2959,10 +3713,14 @@ MainLayout {
             Browse.Settings.set_region(selectedId);
             Browse.SystemsModel.reproject();
             Browse.CategoriesModel.reproject();
-        } else if (fieldId === "browseLayout")
-            Browse.Settings.set_browse_layout(selectedId);
+        } else if (fieldId === "systemsLayout")
+            Browse.Settings.set_systems_browse_layout(selectedId);
+        else if (fieldId === "gamesLayout")
+            Browse.Settings.set_games_browse_layout(selectedId);
         else if (fieldId === "systemLogoStyle")
             Browse.Settings.set_system_logo_style(selectedId);
+        else if (fieldId === "colorScheme")
+            Browse.Settings.set_color_scheme(selectedId);
         else if (fieldId === "buttonLayout")
             Browse.Settings.set_button_layout(selectedId);
         else if (fieldId === "screensaverTimeout")
@@ -3087,6 +3845,8 @@ MainLayout {
             Browse.GamesModel.cancel_card_write();
         else if (owner === "favorites")
             Browse.FavoritesModel.cancel_card_write();
+        else if (owner === "recents")
+            Browse.RecentsModel.cancel_card_write();
         root.cardWriteOwner = owner;
         root._cardWriteIndex = index;
         root.cardWriteFailed = false;
@@ -3106,6 +3866,8 @@ MainLayout {
             Browse.GamesModel.write_card_at(index);
         else if (owner === "favorites")
             Browse.FavoritesModel.write_card_at(index);
+        else if (owner === "recents")
+            Browse.RecentsModel.write_card_at(index);
     }
 
     function handleCardWriteStatus(): void {
@@ -3117,7 +3879,7 @@ MainLayout {
             const owner = root.cardWriteOwner;
             const index = root._cardWriteIndex;
             root.hideCardWriteModal();
-            root.presentActionError("card_write:" + owner, qsTr("Card write failed"), qsTr("Could not write to this card. Check that it is writable and try again."), qsTr("Retry"), function () {
+            root.presentActionError("card_write:" + owner, qsTr("Token write failed"), qsTr("Could not write to this token. Check that it is writable and try again."), qsTr("Retry"), function () {
                 root.retryCardWrite(owner, index);
             });
         } else {
@@ -3132,6 +3894,8 @@ MainLayout {
             Browse.GamesModel.cancel_card_write();
         else if (root.cardWriteOwner === "favorites")
             Browse.FavoritesModel.cancel_card_write();
+        else if (root.cardWriteOwner === "recents")
+            Browse.RecentsModel.cancel_card_write();
         root.hideCardWriteModal();
     }
 
@@ -3213,6 +3977,12 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalLogUpload) {
                 if (root.logUploadModal !== null)
                     root.logUploadModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalScrapeSetup) {
+                if (root.scrapeSetupModal !== null)
+                    root.scrapeSetupModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalIndexSetup) {
+                if (root.indexSetupModal !== null)
+                    root.indexSetupModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalQuitConfirm) {
                 if (root.quitConfirmModal !== null)
                     root.quitConfirmModal.handleAction(action);
@@ -3555,7 +4325,7 @@ MainLayout {
         // bounding box.
         const w = lg.paintedWidth > 0 ? lg.paintedWidth : lg.width;
         const h = lg.paintedHeight > 0 ? lg.paintedHeight : lg.height;
-        screensaverOverlay.activate("qrc:/qt/qml/Zaparoo/App/resources/images/logo.png", Qt.rect(pt.x, pt.y, w, h));
+        screensaverOverlay.activate(Resources.screensaverLogoUrl(w), Qt.rect(pt.x, pt.y, w, h));
     }
 
     Timer {
@@ -3604,7 +4374,23 @@ MainLayout {
     }
 
     function _handleRepeatAction(): void {
-        root._noteRapidNavigationAction(root._heldAction, true);
+        // Round 10: only arm rapid-nav tracking when the active root
+        // screen actually owns the held direction. `handleAction`'s
+        // single-press path already skips this while a modal is open (it
+        // returns before ever reaching its own call to
+        // `_noteRapidNavigationAction`) -- this repeat-tick path used to
+        // call it unconditionally, which meant holding up/down inside a
+        // modal (e.g. GameInfoModal's own scroll) still armed
+        // `rapidNavigationActive` every tick. That property drives the
+        // Games/Favorites/FavoriteSystems/Recents screen's rapid-scroll
+        // ghost-snapshot regardless of whether a modal currently covers
+        // it (see MediaListScreen.qml's `_gateHide`, which has no
+        // `ScreenManager.hasModal` term), so the still-visible-behind-
+        // the-scrim grid popped its freeze-frame in and out on every
+        // repeat tick -- the reported "background visibly re-lays-out"
+        // while scrolling the details dialog.
+        if (!ScreenManager.hasModal)
+            root._noteRapidNavigationAction(root._heldAction, true);
         root.handleAction(root._heldAction);
     }
 
@@ -3700,18 +4486,29 @@ MainLayout {
     }
 
     // Transition cue. Item, not Rectangle — the source screen's existing
-    // background and circuit-trace texture stay visible underneath; never
+    // page background stays visible underneath; never
     // paint a full-screen fill. The delayed indicator suppresses flashes
     // for quick loads; once it appears, screen `transitioning` bindings hide
     // primary content so the centered "Loading…" reads alone in the cleared
     // band. Do not apply a minimum-visible tail here: when the work completes
     // near the delay threshold, the destination must not paint underneath a
-    // stale loading label. Sized to the full window so anchors.centerIn parks
-    // the row in the geometric center regardless of which screen is the source.
+    // stale loading label. Parented into `scene` (not `root`) and sized to
+    // it, not the window, so the centered position matches the per-screen
+    // ScreenStateOverlay cue it hands off to — both now center within the
+    // same safe-area-inset rect instead of the cue centering on the raw
+    // window and the screen cue centering on the smaller inset content,
+    // which used to jump the row a few pixels at handoff. Living outside
+    // `scene` also meant this cue ignored the CRT safe-area inset and
+    // `scene.rotation`, so it painted unrotated over a rotated TATE scene;
+    // reparenting fixes that too. z: 250 sits above chrome (headerBar: 200,
+    // BootOverlay: 50, screen content: 0) but below real modals (commercial
+    // notice and up start at 310) so a modal that legitimately coexists with
+    // a pending transition still wins visually.
     Item {
+        parent: root.scene
         anchors.fill: parent
         visible: transitionCueActive || transitionCue.showing
-        z: 100
+        z: 250
 
         readonly property bool startupRestoreCueActive: root.bootComplete && root.startupRestoreCurtainVisible && root._startupRestoreScreen !== ""
         readonly property bool transitionCueActive: (root.pendingTransition !== "" && !root.startupRestoreCurtainVisible) || startupRestoreCueActive

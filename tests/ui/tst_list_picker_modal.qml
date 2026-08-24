@@ -36,6 +36,21 @@ TestCase {
         title: "Pick one"
     }
 
+    // Standalone probe matching production's `_panelWidthLabelMetrics`
+    // font exactly (the metrics `_widestEntryLabelWidth` measures panel
+    // sizing against, fixed at Font.Medium since round 8 — see
+    // ListPickerModal.qml's own doc comment on that FontMetrics for why
+    // panel-width sizing measures at the selected weight rather than the
+    // resting one) — that `id` is a bare identifier, lexically scoped to
+    // ListPickerModal.qml and not reachable as
+    // `picker._panelWidthLabelMetrics` from this file.
+    FontMetrics {
+        id: probeMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontBody
+        font.weight: Font.Medium
+    }
+
     SignalSpy {
         id: acceptedSpy
         target: picker
@@ -65,6 +80,20 @@ TestCase {
             list.push({
                 id: "id-" + i,
                 label: "Item " + i
+            });
+        return list;
+    }
+
+    // Swatch-bearing entries — the color-scheme picker's shape. Every entry
+    // carries a 3-color `swatch` array; `_hasSwatchPreview` only checks the
+    // first entry, so the picker is assumed homogeneous.
+    function _swatchEntries(count) {
+        const list = [];
+        for (let i = 0; i < count; ++i)
+            list.push({
+                id: "id-" + i,
+                label: "Item " + i,
+                swatch: [Qt.rgba(0.1 * i, 0, 0, 1), Qt.rgba(0, 0.1 * i, 0, 1), Qt.rgba(0, 0, 0.1 * i, 1)]
             });
         return list;
     }
@@ -250,5 +279,212 @@ TestCase {
         picker.open = true;
         compare(picker._visibleRows, 2);
         compare(picker._viewportHeight, picker._contentHeight);
+    }
+
+    // Regression coverage for the color-scheme picker's swatch preview
+    // (round 5). Plain `{id, label}` entries — every picker except color
+    // scheme — must render pixel-for-pixel as before: centered label
+    // visible, swatch elements absent and reserving no panel width.
+    function test_entries_without_swatch_use_plain_centered_row(): void {
+        picker.entries = _entries(1);
+        picker.open = true;
+        verify(!picker._hasSwatchPreview);
+        compare(picker._swatchBandWidth, 0);
+
+        const row = findChild(picker, "listPickerRow-0");
+        verify(row !== null);
+        const centered = findChild(row, "listPickerRowLabelCentered");
+        const swatchLabel = findChild(row, "listPickerRowLabelSwatch");
+        const swatches = findChild(row, "listPickerRowSwatches");
+        verify(centered !== null);
+        verify(centered.visible);
+        verify(swatchLabel !== null);
+        verify(!swatchLabel.visible);
+        verify(swatches !== null);
+        verify(!swatches.visible);
+    }
+
+    // Entries carrying a `swatch` array — the color-scheme picker's shape —
+    // switch the row to a left-aligned label plus three color boxes on the
+    // right, and the panel reserves width for the swatch band.
+    function test_entries_with_swatch_render_label_left_and_three_boxes(): void {
+        picker.entries = _swatchEntries(2);
+        picker.open = true;
+        verify(picker._hasSwatchPreview);
+        verify(picker._swatchBandWidth > 0);
+
+        const row = findChild(picker, "listPickerRow-1");
+        verify(row !== null);
+        const centered = findChild(row, "listPickerRowLabelCentered");
+        const swatchLabel = findChild(row, "listPickerRowLabelSwatch");
+        const swatches = findChild(row, "listPickerRowSwatches");
+        verify(centered !== null);
+        verify(!centered.visible);
+        verify(swatchLabel !== null);
+        verify(swatchLabel.visible);
+        verify(swatches !== null);
+        verify(swatches.visible);
+
+        const expected = picker.entries[1].swatch;
+        for (let i = 0; i < 3; ++i) {
+            const box = findChild(row, "listPickerRowSwatch-" + i);
+            verify(box !== null, "swatch box " + i + " must exist");
+            compare(box.color.toString(), expected[i].toString());
+            // Round 6, item 1: a near-black or near-white swatch can sit at
+            // the same contrast as the row's own resting background and
+            // disappear into it. Every box carries a textLabel border at
+            // rest -- this row (index 1) isn't the selected one.
+            compare(box.border.color.toString(), Theme.textLabel.toString());
+            verify(box.border.width > 0);
+        }
+    }
+
+    // Round 7: rows moved to the same inverse-video SelectionBar as
+    // browse/settings rows (see docs/style.md -> "Two registers"), so a
+    // selected row's swatch now sits on a solid `accent` fill instead of the
+    // row's resting background -- `textLabel` isn't guaranteed to separate
+    // there, so the border flips to `onAccent` the same way the favorite
+    // heart does against a selected BrowseList row.
+    function test_selected_row_swatch_border_flips_to_on_accent(): void {
+        picker.entries = _swatchEntries(2);
+        picker.open = true;
+        picker.currentIndex = 0;
+
+        const row = findChild(picker, "listPickerRow-0");
+        verify(row !== null);
+
+        for (let i = 0; i < 3; ++i) {
+            const box = findChild(row, "listPickerRowSwatch-" + i);
+            verify(box !== null, "swatch box " + i + " must exist");
+            compare(box.border.color.toString(), Theme.onAccent.toString());
+        }
+    }
+
+    // Round 6, item 2: the panel/row width formula must carry deliberate
+    // slack over the raw measured advance width. `Text.NativeRendering`
+    // lays out on integer, hinted per-glyph advances, which can paint a
+    // few px wider than `FontMetrics.advanceWidth()`'s fractional,
+    // unhinted total; a zero-slack fit then elided text that should have
+    // fit. Verified structurally (the formula includes the slack term)
+    // rather than by forcing an actual hinting mismatch, which isn't
+    // reproducible deterministically in a headless test environment.
+    function test_measure_label_width_carries_hinting_slack(): void {
+        const label = "A moderately long label for measuring";
+        const raw = Math.ceil(Math.max(probeMetrics.advanceWidth(label), probeMetrics.boundingRect(label).width));
+        const measured = picker._measureLabelWidth(probeMetrics, label, Sizing.fontBody, Theme.fontUi, Font.Medium);
+        compare(measured, raw + Sizing.stroke(2));
+    }
+
+    // The panel sizes around the widest entry via the same slack-carrying
+    // measurement — a panel sized to exactly the raw advance width was the
+    // other half of the zero-slack bug (item 2): even with per-row slack,
+    // a panel with none of its own would still clip the widest label.
+    function test_widest_entry_label_width_uses_the_same_slack(): void {
+        picker.entries = [
+            {
+                id: "id-0",
+                label: "Short"
+            },
+            {
+                id: "id-1",
+                label: "A rather longer picker entry label"
+            }
+        ];
+        const expected = picker._measureLabelWidth(probeMetrics, "A rather longer picker entry label", Sizing.fontBody, Theme.fontUi, Font.Medium);
+        compare(picker._widestEntryLabelWidth, expected);
+    }
+
+    // Round 9: a row's own `_textWidth` binding used to call
+    // `modal._measureLabelWidth(rowLabelMetrics, ...)` against a
+    // `FontMetrics` fed `bar.contentWeight` as an explicit-but-unused
+    // parameter, on the theory that merely reading a property to pass as
+    // an argument establishes a binding dependency on it. It doesn't
+    // reliably, under this project's AOT-compiled QML: `advanceWidth()`/
+    // `boundingRect()` are Q_INVOKABLE calls, the callee never reads the
+    // `fontWeight` parameter, and the compiler can treat an unread
+    // argument as dead and drop the dependency computing it would
+    // otherwise establish -- `_textWidth` stayed pinned to whichever
+    // weight was current when the binding last ran, going stale the
+    // moment selection moved onto or off of the row (confirmed by first
+    // writing this test against that code and watching it fail). The fix
+    // (matching ContextMenu.qml's identical row-label construction) moved
+    // `rowLabelMetrics` to a `TextMetrics` with its own `text:`/`font.weight:`
+    // bindings, reading `advanceWidth`/`boundingRect` as genuine
+    // *properties* from `_textWidth` -- a real property read, which QML's
+    // ordinary binding-dependency tracking does pick up reliably.
+    //
+    // The test harness (tst_main.cpp) never registers the app's bundled
+    // NotoSans.ttf via QFontDatabase, so asserting a specific pixel delta
+    // between Font.Normal and Font.Medium would be flaky by environment
+    // (font substitution), not by the fix. What IS environment-independent:
+    // `label.width` must never drift from a fresh measurement computed the
+    // same way `_textWidth` itself computes it, in either selection state.
+    function test_selected_row_label_width_never_goes_stale(): void {
+        picker.entries = [
+            {
+                id: "id-0",
+                label: "Short"
+            },
+            {
+                id: "id-1",
+                label: "A rather longer picker entry label that needs the full row"
+            }
+        ];
+        picker.open = true;
+        picker.currentIndex = 0;
+
+        const row = findChild(picker, "listPickerRow-1");
+        verify(row !== null);
+        const label = findChild(row, "listPickerRowLabelCentered");
+        verify(label !== null);
+        const metrics = findChild(row, "listPickerRowLabelMetrics");
+        verify(metrics !== null);
+
+        function expectedWidth() {
+            const available = Math.max(0, row.width - 2 * picker._rowHorizontalPadding);
+            return Math.min(Math.ceil(Math.max(metrics.advanceWidth, metrics.boundingRect.width)) + Sizing.stroke(2), available);
+        }
+
+        compare(metrics.font.weight, Font.Normal, "unselected row must measure at Font.Normal");
+        compare(label.width, expectedWidth(), "resting width must match a fresh measurement");
+
+        picker.currentIndex = 1;
+        compare(metrics.font.weight, Font.Medium, "selecting the row must flip its metrics to Font.Medium");
+        compare(label.width, expectedWidth(), "selected width must match a fresh measurement, not the stale resting one");
+
+        picker.currentIndex = 0;
+        compare(metrics.font.weight, Font.Normal, "deselecting the row must flip its metrics back to Font.Normal");
+        compare(label.width, expectedWidth(), "width after deselecting must match a fresh measurement too");
+    }
+
+    // Round 6 follow-up: the item-2 measurement fix wasn't sufficient on
+    // its own. Modal.qml's shell-mode branch applies its own 78%-of-viewport
+    // breathing-room ceiling on top of whatever `panelMaxWidth` a caller
+    // supplies — fine for the QR/legal shells whose content Modal can't
+    // measure, but it was still clipping the picker's own precisely
+    // measured width whenever the swatch band pushed that past 78% of a
+    // small screen. `contentSized: true` swaps that ceiling for the same
+    // 92% the four prebaked kinds use.
+    function test_content_sized_panel_is_not_clamped_by_shell_breathing_room(): void {
+        const labels = ["Zaparoo Dark", "Zaparoo Light", "Classic Purple", "Amber Phosphor", "Game Boy", "Green Phosphor", "Neo Geo", "NES", "Virtual Boy", "Dracula", "Everforest"];
+        picker.entries = labels.map((label, i) => ({
+                    id: "id-" + i,
+                    label: label,
+                    swatch: [Qt.rgba(0.1, 0, 0, 1), Qt.rgba(0, 0.1, 0, 1), Qt.rgba(0, 0, 0.1, 1)]
+                }));
+        picker.open = true;
+
+        const expectedWidth = Sizing.px(Math.min(testCase.width * 0.92, Math.max(picker._minPanelWidth, picker._desiredPanelWidth)));
+        const panel = findChild(picker, "modalPanel");
+        verify(panel !== null);
+        compare(panel.width, expectedWidth);
+
+        for (let i = 0; i < labels.length; ++i) {
+            const row = findChild(picker, "listPickerRow-" + i);
+            verify(row !== null, "row " + i + " must exist");
+            const swatchLabel = findChild(row, "listPickerRowLabelSwatch");
+            verify(swatchLabel !== null);
+            verify(!swatchLabel.truncated, "label '" + labels[i] + "' must not elide when the panel is content-sized");
+        }
     }
 }

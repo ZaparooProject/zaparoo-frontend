@@ -40,7 +40,7 @@ Item {
     property bool focused: false
     // Center the static block (grid tiles) vs. left-align it (list rows).
     property bool centerContent: false
-    property int fontPixelSize: Sizing.fontSize(2.2)
+    property int fontPixelSize: Sizing.fontSmall
     property int fontWeight: Font.Normal
     property string fontFamily: Theme.fontUi
     property color nameColor: Theme.textLabel
@@ -158,6 +158,7 @@ Item {
 
         Text {
             id: nameText
+            objectName: "scrollingCaptionNameText"
 
             x: 0
             width: root._nameRenderW
@@ -175,6 +176,7 @@ Item {
 
         Text {
             id: suffixText
+            objectName: "scrollingCaptionSuffixText"
 
             x: root._nameRenderW + root._gapW
             width: root._tagsRenderW

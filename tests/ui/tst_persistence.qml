@@ -60,6 +60,7 @@ TestCase {
         Browse.HubState.category = "";
         Browse.HubState.selected_row = 0;
         Browse.HubState.selected_action = "";
+        Browse.HubState.selected_item = "";
         Browse.SystemsState.system_id = "";
         // set_system_id resets path_stack/selected_at_level to [""], [""]
         // internally, but only on an actual transition — the setter
@@ -72,15 +73,23 @@ TestCase {
         Browse.GamesState.system_id = "";
     }
 
-    // CategoriesModel is empty in this test harness (no live Core).
-    // Left/Right must not call _navigate → _at(0) → "" on an empty
-    // model, because that would wipe the saved category from
-    // persisted state.
+    // CategoriesModel is empty in this test harness (no live Core), but the
+    // Hub still renders bootstrap placeholder category tiles plus the
+    // built-in actions (`HubScreen.qml`'s `items` "else" branch) — never a
+    // truly empty grid — so this guards the still-real equivalent: landing
+    // on the trailing blank padding `_padToPageSize` appends past the real
+    // items (`kind: "empty"`, `_commitCurrent`'s early-return) must not
+    // write anything. Landing back on a REAL placeholder category tile
+    // (which Left/Right can and should reach depending on grid width) is
+    // legitimate focus and is expected to update `HubState.category` —
+    // that's not what this test is about, so it starts and stays deep in
+    // the padding, away from any real row.
     function test_empty_categories_navigation_preserves_hub_state(): void {
         Browse.HubState.category = "persistence-probe-category";
+        main.hubScreen.currentIndex = Sizing.hubGridColumns * Sizing.hubGridRows - 1;
         main.handleKey(Qt.Key_Left);
         main.handleKey(Qt.Key_Right);
-        compare(Browse.HubState.category, "persistence-probe-category", "navigating an empty categories row must not overwrite HubState.category");
+        compare(Browse.HubState.category, "persistence-probe-category", "navigating the Hub's trailing blank padding must not overwrite HubState.category");
     }
 
     function test_empty_systems_navigation_preserves_systems_state(): void {
@@ -115,7 +124,9 @@ TestCase {
     // does not persist a screen flip until the catalog/category route
     // has resolved.
     function test_optimistic_category_accept_starts_pending_systems_transition(): void {
-        main.hubScreen.currentRow = 0;
+        // Bootstrap order seeds Resume first (index 0), then the
+        // placeholder categories — see HubScreen.qml's `items`.
+        main.hubScreen.currentIndex = main.hubScreen._itemIndexForId("category", "Arcade");
         main.handleKey(Qt.Key_Return);
         compare(main.pendingTransition, "systems");
         compare(Browse.AppState.active_screen, "", "Pending optimistic transition must not persist a completed screen flip yet");
@@ -146,8 +157,9 @@ TestCase {
     // once the real catalog arrives.
     function test_enter_on_optimistic_categories_writes_hub_state(): void {
         Browse.HubState.category = "persistence-probe-category";
-        main.hubScreen.currentRow = 0;
-        main.hubScreen.currentIndex = 0;
+        // Bootstrap order seeds Resume first (index 0), then the
+        // placeholder categories — see HubScreen.qml's `items`.
+        main.hubScreen.currentIndex = main.hubScreen._itemIndexForId("category", "Arcade");
         main.handleKey(Qt.Key_Return);
         compare(Browse.HubState.selected_row, 0, "Enter on an optimistic category must persist the top row");
         compare(Browse.HubState.category, "Arcade", "Enter on an optimistic category must persist the visible target");
@@ -155,8 +167,7 @@ TestCase {
 
     function test_enter_on_optimistic_console_writes_real_category_id(): void {
         Browse.HubState.category = "persistence-probe-category";
-        main.hubScreen.currentRow = 0;
-        main.hubScreen.currentIndex = 2;
+        main.hubScreen.currentIndex = main.hubScreen._itemIndexForId("category", "Console");
         main.handleKey(Qt.Key_Return);
         compare(Browse.HubState.selected_row, 0, "Enter on an optimistic category must persist the top row");
         compare(Browse.HubState.category, "Console", "Optimistic display labels must persist Core category ids");
@@ -181,7 +192,6 @@ TestCase {
     function test_enter_on_optimistic_recents_writes_hub_state(): void {
         Browse.HubState.selected_row = 0;
         Browse.HubState.selected_action = "settings";
-        main.hubScreen.currentRow = 1;
         main.hubScreen.currentIndex = main.hubScreen._actionIndexForId("recents");
         main.handleKey(Qt.Key_Return);
         compare(main.pendingTransition, "recents");
@@ -216,5 +226,34 @@ TestCase {
         main.hubScreen.restoreFromCategoriesReset(false);
         compare(Browse.HubState.selected_row, 0, "An empty-catalog restore must not overwrite the saved category row with the Resume action");
         compare(Browse.HubState.selected_action, "", "An empty-catalog restore must not persist a Resume fallback action");
+    }
+
+    // Regression: `Main.qml`'s `_maybeArmHubResumeFocus` runs
+    // `HubScreen.focusResumeIfVisible()` right after
+    // `restoreFromCategoriesReset` on every boot (both the immediate
+    // Component.onCompleted path and the delayed startup-restore path).
+    // Resume is optimistically visible by default -- `resumeActionVisible`
+    // only turns false once Core positively confirms there is nothing to
+    // resume -- so `connection_state` staying DISCONNECTED in this harness
+    // (no live Core) reproduces that same boot-time race. It used to
+    // re-select and commit Resume unconditionally whenever visible,
+    // clobbering a just-restored real item with it on every single launch.
+    // MiSTer relaunches the frontend around every game launch, so on
+    // device this fired constantly, not just on a genuine first boot with
+    // nothing saved at all.
+    function test_resume_focus_arm_preserves_a_real_saved_item(): void {
+        verify(main.hubScreen.resumeActionVisible, "resume must be optimistically visible before Core confirms otherwise, to actually exercise this path");
+        Browse.HubState.selected_item = "action:favorites";
+        Browse.HubState.selected_row = 1;
+        Browse.HubState.selected_action = "favorites";
+        main.hubScreen.restoreFromCategoriesReset(false);
+        const favoritesIndex = main.hubScreen._actionIndexForId("favorites");
+        compare(main.hubScreen.currentIndex, favoritesIndex, "restoreFromCategoriesReset must seat the real saved item");
+
+        main._maybeArmHubResumeFocus();
+
+        compare(main.hubScreen.currentIndex, favoritesIndex, "arming resume focus after a real item restore must not steal it");
+        compare(Browse.HubState.selected_item, "action:favorites", "arming resume focus must not overwrite a real persisted item with Resume");
+        compare(Browse.HubState.selected_action, "favorites", "arming resume focus must not overwrite persisted state with Resume");
     }
 }

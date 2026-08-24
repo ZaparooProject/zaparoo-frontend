@@ -17,7 +17,7 @@ import Zaparoo.Theme
 // loading catalog (categories empty, status icons stale). Rather than
 // expose that mid-construction frame to the user we keep the screens
 // hidden until the catalog is Ready and let this component own the
-// window: the global background (`bgDeep` + circuit-trace tile) that
+// window: the global `bgDeep` background that
 // `MainLayout` already paints provides the surface, and the overlay
 // simply adds a single centred `LoadingIndicator` on top — same icon,
 // font, and baseline as every other loading cue in the app.

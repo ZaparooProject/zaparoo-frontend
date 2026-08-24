@@ -52,7 +52,13 @@ Item {
     readonly property real _imageShare: root._detail && root._detail.imageShare !== undefined ? root._detail.imageShare : 1
     readonly property real _metadataShare: root._detail && root._detail.metadataShare !== undefined ? root._detail.metadataShare : 1
     readonly property real _shareTotal: Math.max(1, root._imageShare + root._metadataShare)
-    readonly property int _tagRowHeight: root._detail ? root._detail.tagRowHeight : Sizing.pctH(3)
+    // Round 11: never shorter than the label/value text's own line height.
+    // The per-theme profile value alone let a row box (e.g. `pctH:2.6` at
+    // the 540/480 tiers) sit a few px shorter than Noto Sans's real
+    // ascent+descent at `_tagTextSize`, so the last row's descender (the
+    // tail of "Rating"'s g) crossed `tagTable`'s clip boundary. See
+    // `tagFontMetrics` below.
+    readonly property int _tagRowHeight: Math.max(root._detail ? root._detail.tagRowHeight : Sizing.pctH(3), Math.ceil(tagFontMetrics.height))
     readonly property int _tagRowSpacing: root._detail ? root._detail.tagRowSpacing : Sizing.pctH(0.55)
     readonly property bool _metadataBottomAligned: root._detail && root._detail.metadataBottomAligned === true
     readonly property int _titleBottomMargin: root._detail ? root._detail.titleBottomMargin : Sizing.pctH(2)
@@ -60,46 +66,57 @@ Item {
     readonly property int _imageReservedWidth: root._detail && root._detail.imageReservedWidth !== undefined ? root._detail.imageReservedWidth : 0
     readonly property int _imageReservedHeight: root._detail && root._detail.imageReservedHeight !== undefined ? root._detail.imageReservedHeight : 0
     readonly property int _imageBottomMargin: root._detail && root._detail.imageBottomMargin !== undefined ? root._detail.imageBottomMargin : 0
-    readonly property int _cardRadius: root._surface ? root._surface.cornerRadius : Sizing.cornerRadius
+    readonly property int _cardRadius: root._surface ? root._surface.cardRadius : Sizing.radiusMd
     // Reserve the side gutter whenever this screen supports image cycling
     // (reserveImageNav) OR when can_prev/can_next are already known, so the
     // cover footprint never changes when can_next flips async after meta loads.
     readonly property int _carouselGutter: (root.reserveImageNav || canPreviousImage || canNextImage) ? Sizing.pctW(4) : 0
     readonly property bool _coverPending: coverKey === "icons/Loading"
-    // During the loading grace window, hold the last good cover URL so the
-    // area does not blank while the new bytes arrive. Once the grace elapses
-    // without resolution the source becomes "" and the busy indicator shows.
-    readonly property url _coverSource: _coverPending ? (_coverLoadingDelayElapsed ? "" : _lastGoodCoverSource) : Resources.coverUrl(coverKey, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
+    // Round 11: no more hourglass overlay -- while pending, hold the last
+    // good cover (coverHold below) instead of blanking after a delay. A
+    // row with real art keeps showing it right up until the new one
+    // decodes; a row that's never had art just stays blank, matching how
+    // the grid tiles behave (Tile.qml's `_coverPending` swallows the same
+    // sentinel to an empty source).
+    readonly property url _coverSource: _coverPending ? _lastGoodCoverSource : Resources.coverUrl(coverKey, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
     // True whenever the cover Image is in flight (model pending, Qt async
     // decode, or any non-media-image provider still loading).
     readonly property bool _coverMediaImagePending: coverKey.startsWith("media-image/") && cover.status !== Image.Ready && cover.status !== Image.Error
     readonly property bool _coverBusy: root._coverPending || root._coverMediaImagePending || cover.status === Image.Loading
     readonly property bool _paneLoading: root.loading
     readonly property bool _delayedPaneLoading: root._paneLoading && root._paneLoadingDelayElapsed
-    // Gate every busy-cover signal behind the same grace delay. A cover that
-    // resolves within `loadingDelayMs` (150 ms, the common warm case) never
-    // shows the hourglass. A genuinely cold cover still pending after the
-    // grace becomes visible because `_coverLoadingDelayElapsed` flips true.
-    readonly property bool _coverBusyIndicatorVisible: root._coverBusy && root._coverLoadingDelayElapsed
+    // Only fetched raster art gets the reveal fade (see `cover`'s
+    // `updateReveal`) -- bundled glyphs (the File chip, system logos) load
+    // from memory and would just look like flicker if faded, mirroring
+    // Tile.qml's own `_coverIsRealArt` split.
+    readonly property bool _coverIsRealArt: root.coverKey.startsWith("media-image/") || root.coverKey.startsWith("custom-image/")
     readonly property bool _detailVisible: !root.detailSuppressed
-    readonly property bool _emptyPaneLoading: root._delayedPaneLoading && !root._coverBusyIndicatorVisible && root._coverSource === "" && root._displayRows.length === 0 && root.title === ""
+    readonly property bool _emptyPaneLoading: root._delayedPaneLoading && !root._coverBusy && root._coverSource === "" && root._displayRows.length === 0 && root.title === ""
     readonly property var _detailRows: _parseDetailTags(detailTags)
     readonly property int _tagRowCount: _displayRows.length
-    readonly property int _tagTextSize: Sizing.fontSize(2.2)
+    readonly property int _tagTextSize: Sizing.fontSmall
     readonly property int _tagLabelGap: Sizing.pctW(1.4)
     readonly property int _metadataLabelMaxWidth: root._detail && root._detail.metadataLabelMaxWidth !== undefined ? root._detail.metadataLabelMaxWidth : 0
     readonly property int _labelColumnWidth: root._metadataLabelMaxWidth > 0 ? Math.min(root._labelColumnNaturalWidth, root._metadataLabelMaxWidth) : root._labelColumnNaturalWidth
     readonly property int _metadataNaturalHeight: _tagRowCount <= 0 ? 0 : (_tagRowCount * _tagRowHeight) + ((_tagRowCount - 1) * _tagRowSpacing)
-    readonly property int _compactMetadataHeight: Math.min(Sizing.px(content.height * 0.38), _metadataNaturalHeight)
+    // Round 11: capped at the metadata slot's own real height
+    // (`content.metadataHeight`, the vertical layout's actual secondary
+    // span below the cover) rather than a flat 38% of the pane's total
+    // height, which was disconnected from the profile's real image/
+    // metadata share split and could let `detailBody` size itself taller
+    // than the space `metadataSlot` (its clipping ancestor) actually has —
+    // the mechanism behind the clipped last row. Still floors at the
+    // natural fit so a short tag list never claims more height than it
+    // needs; only clamps when the pane genuinely can't hold all six rows.
+    readonly property int _compactMetadataHeight: Math.min(content.metadataHeight, _metadataNaturalHeight)
     // True for system-logo cover keys; used to select the wordmark fallback
     // instead of the generic File chip when no logo SVG exists.
     readonly property bool _isSystemCover: root.coverKey.startsWith("systems/")
 
     property int _labelColumnNaturalWidth: 0
     property bool _paneLoadingDelayElapsed: false
-    property bool _coverLoadingDelayElapsed: false
-    // Holds the last resolved cover URL so we can display it during the
-    // loading grace window instead of blanking the cover area.
+    // Holds the last resolved cover URL so the area does not blank while a
+    // new one decodes -- see `_coverSource`/`coverHold` above.
     property url _lastGoodCoverSource: ""
     // The detail table tracks the focused row's metadata directly. The model
     // keeps `current_detail_tags` identity-correct on every move — an immediate
@@ -109,11 +126,7 @@ Item {
     readonly property var _displayRows: root._detailRows
 
     onLoadingChanged: root._updatePaneLoadingDelay()
-    onLoadingDelayMsChanged: {
-        root._updatePaneLoadingDelay();
-        root._updateCoverLoadingDelay();
-    }
-    on_CoverBusyChanged: root._updateCoverLoadingDelay()
+    onLoadingDelayMsChanged: root._updatePaneLoadingDelay()
 
     Timer {
         id: paneLoadingDelayTimer
@@ -121,14 +134,6 @@ Item {
         interval: Math.max(0, root.loadingDelayMs)
         repeat: false
         onTriggered: root._paneLoadingDelayElapsed = root._paneLoading
-    }
-
-    Timer {
-        id: coverLoadingDelayTimer
-
-        interval: Math.max(0, root.loadingDelayMs)
-        repeat: false
-        onTriggered: root._coverLoadingDelayElapsed = root._coverBusy
     }
 
     function _updatePaneLoadingDelay(): void {
@@ -143,18 +148,6 @@ Item {
         paneLoadingDelayTimer.restart();
     }
 
-    function _updateCoverLoadingDelay(): void {
-        coverLoadingDelayTimer.stop();
-        root._coverLoadingDelayElapsed = false;
-        if (!root._coverBusy)
-            return;
-        if (root.loadingDelayMs <= 0) {
-            root._coverLoadingDelayElapsed = true;
-            return;
-        }
-        coverLoadingDelayTimer.restart();
-    }
-
     function _tagLabel(fullLabel: string, shortLabel: string): var {
         return {
             "label": fullLabel + "\u009C" + shortLabel,
@@ -163,6 +156,8 @@ Item {
     }
 
     function _localizedTagLabel(label: string): var {
+        if (label === "System")
+            return root._tagLabel(qsTr("System"), qsTr("Sys", "Short metadata label for System; keep 2-4 characters if possible"));
         if (label === "Year")
             return root._tagLabel(qsTr("Year"), qsTr("Yr", "Short metadata label for Year; keep 2-4 characters if possible"));
         if (label === "Genre")
@@ -203,10 +198,17 @@ Item {
         });
     }
 
+    // Backs `_tagRowHeight`'s floor -- see that property's doc comment.
+    FontMetrics {
+        id: tagFontMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: root._tagTextSize
+    }
+
     Rectangle {
         anchors.fill: parent
         color: Theme.surfaceCard
-        border.width: Sizing.stroke(1)
+        border.width: Sizing.cardBorderWidth
         border.color: Theme.borderMid
         radius: root._cardRadius
         visible: root.showChrome
@@ -268,9 +270,12 @@ Item {
 
                 // Holds the previously decoded cover while the new one async-decodes.
                 // Prevents the slot from blanking during the brief Qt pixmap-decode
-                // window (typically < 150 ms for a cached JPEG). Dropped when the
-                // grace elapses without resolution so a genuinely cold cover shows a
-                // clean hourglass instead of a stale image persisting forever.
+                // window (typically < 150 ms for a cached JPEG) or while a fetch is
+                // still in flight (`_coverPending`) -- round 11 dropped the hourglass
+                // overlay in favor of the grid tile's own "stay blank, then fade"
+                // treatment (see `cover`'s `updateReveal` below), so a row with
+                // already-loaded art keeps showing it right up until the new one is
+                // ready rather than ever flashing an hourglass.
                 Image {
                     id: coverHold
 
@@ -282,7 +287,7 @@ Item {
                     smooth: true
                     asynchronous: false
                     cache: true
-                    visible: root._lastGoodCoverSource !== "" && root._lastGoodCoverSource !== root._coverSource && cover.status !== Image.Ready && !root.detailSuppressed && !root._isSystemCover && !root._coverBusyIndicatorVisible
+                    visible: root._lastGoodCoverSource !== "" && root._lastGoodCoverSource !== root._coverSource && cover.status !== Image.Ready && !root.detailSuppressed && !root._isSystemCover
                 }
 
                 Image {
@@ -296,9 +301,41 @@ Item {
                     smooth: true
                     asynchronous: true
                     visible: root._coverSource !== "" && status === Image.Ready && !root.detailSuppressed
+                    // Real fetched art gets one brief reveal after decode, matching
+                    // Tile.qml's `coverBase.revealOpacity`/`updateReveal` byte-for-
+                    // byte -- bundled glyphs (the File chip, system logos) stay
+                    // instant, only `_coverIsRealArt` keys fade.
+                    property real revealOpacity: root._coverIsRealArt ? 0 : 1
+                    opacity: cover.status === Image.Ready ? cover.revealOpacity : 0
+
+                    NumberAnimation {
+                        id: coverRevealAnimation
+                        objectName: "detailCoverRevealAnimation"
+
+                        target: cover
+                        property: "revealOpacity"
+                        from: 0
+                        to: 1
+                        duration: Motion.dur(Motion.pressMs)
+                        easing.type: Easing.OutQuad
+                    }
+
+                    function updateReveal(): void {
+                        coverRevealAnimation.stop();
+                        if (cover.status === Image.Ready && root._coverIsRealArt) {
+                            cover.revealOpacity = 0;
+                            coverRevealAnimation.restart();
+                        } else {
+                            cover.revealOpacity = cover.status === Image.Ready ? 1 : 0;
+                        }
+                    }
+
+                    Component.onCompleted: cover.updateReveal()
+
                     // Record the decoded cover URL so coverHold can display it
                     // while the next cover async-decodes after a d-pad move.
                     onStatusChanged: {
+                        cover.updateReveal();
                         if (status === Image.Ready)
                             root._lastGoodCoverSource = source;
                     }
@@ -314,13 +351,18 @@ Item {
                     // as a modest accent rather than a large placeholder icon.
                     width: Math.round(parent.width * 0.5)
                     height: width
-                    source: root._coverBusy ? Resources.iconUrl("Loading") : Resources.coverUrl("icons/File", Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
+                    source: Resources.coverUrl("icons/File", Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
                     sourceSize.width: Sizing.px(width)
                     sourceSize.height: Sizing.px(height)
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     asynchronous: false
-                    visible: !root.detailSuppressed && !root._isSystemCover && (root._coverBusyIndicatorVisible || (!root._coverBusy && (root._coverSource === "" || cover.status === Image.Error)))
+                    // Round 11: no hourglass branch -- while a cover is busy
+                    // (pending fetch or still decoding) the slot stays blank
+                    // (coverHold/nothing), same as the grid tiles. Only a
+                    // *confirmed* no-cover state (empty resolved source, or a
+                    // terminal decode error) shows the File chip.
+                    visible: !root.detailSuppressed && !root._isSystemCover && !root._coverBusy && (root._coverSource === "" || cover.status === Image.Error)
                 }
 
                 // Wordmark fallback for system entries with no curated logo SVG.
@@ -351,9 +393,11 @@ Item {
         }
 
         Image {
-            source: Resources.iconUrl("NavLeft")
+            source: Resources.iconUrl("NavLeft", Theme.textPrimary)
             width: Sizing.pctH(4)
             height: width
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.left: parent.left
             anchors.verticalCenter: imageSlot.verticalCenter
             fillMode: Image.PreserveAspectFit
@@ -362,9 +406,11 @@ Item {
         }
 
         Image {
-            source: Resources.iconUrl("NavRight")
+            source: Resources.iconUrl("NavRight", Theme.textPrimary)
             width: Sizing.pctH(4)
             height: width
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.right: parent.right
             anchors.verticalCenter: imageSlot.verticalCenter
             fillMode: Image.PreserveAspectFit
@@ -401,7 +447,7 @@ Item {
                     text: root.title
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(3.2)
+                    font.pixelSize: Sizing.fontTitle
                     wrapMode: Text.Wrap
                     maximumLineCount: 3
                     elide: Text.ElideRight
@@ -457,20 +503,30 @@ Item {
                                 readonly property string measureLabel: modelData.measureLabel ?? tagRow.label
                                 readonly property string value: modelData.value ?? ""
 
+                                // Union with boundingRect and a couple px of
+                                // slack, same as every other measurement
+                                // site in the codebase (ScrollingCaption.qml,
+                                // PageIndicator.qml, TopStatusStrip.qml) —
+                                // advanceWidth alone measures cursor
+                                // movement, not every painted pixel, and can
+                                // under-measure a fully hinted glyph run by a
+                                // px or two under NativeRendering.
+                                readonly property int _labelSlack: Theme.crtNativePath ? 0 : Sizing.px(2)
+
                                 TextMetrics {
                                     id: labelMetrics
 
                                     text: tagRow.measureLabel
                                     font.family: Theme.fontUi
                                     font.pixelSize: root._tagTextSize
-                                    onAdvanceWidthChanged: root._labelColumnNaturalWidth = Math.max(root._labelColumnNaturalWidth, Math.ceil(advanceWidth))
+                                    onAdvanceWidthChanged: root._labelColumnNaturalWidth = Math.max(root._labelColumnNaturalWidth, Math.ceil(Math.max(advanceWidth, boundingRect.width) + tagRow._labelSlack))
                                 }
 
-                                Component.onCompleted: root._labelColumnNaturalWidth = Math.max(root._labelColumnNaturalWidth, Math.ceil(labelMetrics.advanceWidth))
+                                Component.onCompleted: root._labelColumnNaturalWidth = Math.max(root._labelColumnNaturalWidth, Math.ceil(Math.max(labelMetrics.advanceWidth, labelMetrics.boundingRect.width) + tagRow._labelSlack))
 
                                 Text {
                                     anchors.left: parent.left
-                                    anchors.top: parent.top
+                                    height: parent.height
                                     width: root._labelColumnWidth
                                     text: tagRow.label
                                     color: Theme.textLabel
@@ -479,6 +535,7 @@ Item {
                                     textFormat: Text.PlainText
                                     elide: Text.ElideRight
                                     horizontalAlignment: Text.AlignRight
+                                    verticalAlignment: Text.AlignVCenter
                                     renderType: Text.NativeRendering
                                 }
 
@@ -486,7 +543,7 @@ Item {
                                     anchors.left: parent.left
                                     anchors.leftMargin: root._labelColumnWidth + root._tagLabelGap
                                     anchors.right: parent.right
-                                    anchors.top: parent.top
+                                    height: parent.height
                                     text: tagRow.value
                                     color: Theme.textPrimary
                                     font.family: Theme.fontUi
@@ -495,6 +552,7 @@ Item {
                                     maximumLineCount: 1
                                     elide: Text.ElideRight
                                     horizontalAlignment: Text.AlignLeft
+                                    verticalAlignment: Text.AlignVCenter
                                     renderType: Text.NativeRendering
                                 }
                             }

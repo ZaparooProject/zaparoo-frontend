@@ -14,10 +14,108 @@ QtObject {
     property real screenWidth: 640
     property real screenHeight: 480
     property bool crtNativePath: false
+    property bool bitmapType: false
     property bool swapPercentageAxes: false
 
+    // Shape and type hierarchy use discrete logical-resolution tiers. In TATE
+    // the scene dimensions are swapped, so read the original framebuffer's
+    // height axis rather than promoting 720p portrait to the 1080 tier.
+    readonly property int effectiveHeight: swapPercentageAxes ? screenWidth : screenHeight
+    readonly property string tier: crtNativePath ? "crt" : effectiveHeight >= 900 ? "1080" : effectiveHeight >= 660 ? "720" : effectiveHeight >= 520 ? "540" : effectiveHeight >= 400 ? "480" : "240"
+
+    // Discrete shape tokens. Rounded-square geometry is deliberately not a
+    // percentage: resolution changes thickness, not the design's silhouette.
+    readonly property int radiusMd: tier === "1080" ? 8 : tier === "720" ? 6 : tier === "540" ? 4 : tier === "480" ? 3 : 2
+    readonly property int radiusSm: Math.max(1, half(radiusMd))
+
+    // Six semantic text roles. Bitmap type (CRT, or embedded 240p without
+    // --crt) keeps the bitmap face's existing 8/16px quantization by
+    // resolving through fontSize(); other paths use a tiered ladder so
+    // adjacent roles never collapse at 240p/480p/540p.
+    readonly property int fontHero: bitmapType ? fontSize(4.0) : _fontForTier(0)
+    readonly property int fontTitle: bitmapType ? fontSize(3.2) : _fontForTier(1)
+    readonly property int fontSection: bitmapType ? fontSize(2.9) : _fontForTier(2)
+    readonly property int fontBody: bitmapType ? fontSize(2.6) : _fontForTier(3)
+    readonly property int fontCaption: bitmapType ? fontSize(2.4) : _fontForTier(4)
+    readonly property int fontSmall: bitmapType ? fontSize(2.2) : _fontForTier(5)
+
+    // Semantic thickness ladder. Every helper returns an integer and clamps to
+    // at least one physical pixel through stroke().
+    readonly property int cardBorderWidth: stroke(pctH(0.2))
+    readonly property int focusBorderWidth: stroke(pctH(0.4))
+    readonly property int focusRingWidth: stroke(pctH(0.6))
+    readonly property int pressEdgeHeight: stroke(pctH(0.8))
+
     // Visible tile-row covers: fewer at very low resolution to avoid crowding.
-    readonly property int visibleCovers: screenHeight < 300 ? 3 : 5
+    readonly property int visibleCovers: effectiveHeight < 300 ? 3 : 5
+
+    // Hub grid shape — a FIXED table keyed only on `tier`, deliberately NOT
+    // run through `_selectGridShape`'s adaptive viewport scorer the way
+    // Systems/Games are. See docs/plans/ui-geometry-refresh.md -> section 9
+    // ("Forward compatibility: Hub as a Wii/3DS-style menu"): a user-arranged
+    // Hub layout must not reflow when the window/display changes, only when
+    // the discrete `tier` itself changes — an adaptive fit would silently
+    // scramble hand-placed tiles on a display or CRT switch.
+    //
+    // `rows` (round 6 follow-up): the original "2 at every tier" carried
+    // over the old two-row design's *visual shape* unexamined, not what
+    // actually fits — checked against real content (5 categories + up to 5
+    // actions = 10 items today), `1080`/`720`/`540` at 5x2 already have zero
+    // headroom for one more item, and `480`/`crt`/`240` already overflow a
+    // single page. Hub tiles carry no embedded caption text (HubScreen's
+    // delegate is a bare `Tile{}`; the selected item's name only ever shows
+    // in `ActiveLabel` below the grid), so they don't need to hold
+    // Systems/Games' 160px minimum cell width — closer to the 72px floor
+    // Systems/Games themselves accept at the CRT tier. 3 rows clears that
+    // relaxed floor comfortably at `1080`/`720`/`540` (224/150/112px);
+    // `480`/`crt`/`240` stay at 2 rows (`crt`/`240`'s 3-row cell would be
+    // 49px, under even the CRT floor). Pagination (PagedGrid already pages
+    // for free) is the intended overflow path at every tier, not a
+    // fallback — see HubScreen.qml's `items` construction.
+    //
+    // Column count at `540`/`720`/`1080` (round follow-up): at 3 rows,
+    // `squareCells` clamps every tier's cell to the *height* fit, not the
+    // width fit — checked against each tier's canonical scene, 3 rows
+    // already bind the cell before columns even enter it (~106/143/212px at
+    // 540/720/1080), leaving the width fit well above that at 5 columns,
+    // i.e. real unused horizontal slack at every one of these three tiers,
+    // not just 540. 7 columns is the largest count whose width fit still
+    // clears the height-bound cell at all three (no shrink, or a ~2px
+    // rounding-noise shrink on a busy 720p page — nothing perceptible); 8
+    // columns drops the width fit under the height-bound cell at every
+    // tier (shrinks it), so 7 is the ceiling, not a per-tier judgment call.
+    // Rows stay at 3: unlike columns, rows have zero slack by construction
+    // — `heightFit(rows)` already divides the full vertical budget, so
+    // going to 4 rows shrinks the cell directly, which is exactly the
+    // "scaling them" this table exists to avoid. `480`/`crt`/`240` are
+    // unrelated tiers (2 rows, tighter budget) and keep their own counts.
+    readonly property var hubGridShape: ({
+            "columns": tier === "crt" || tier === "240" ? 3 : tier === "480" ? 4 : 7,
+            "rows": tier === "480" || tier === "crt" || tier === "240" ? 2 : 3
+        })
+    readonly property int hubGridColumns: hubGridShape.columns
+    readonly property int hubGridRows: hubGridShape.rows
+
+    // Hub tile cell size — the resolved pixel size PagedGrid.squareCells fits
+    // hubGridColumns x hubGridRows into, given the Hub's own reserved
+    // vertical band (header + the label strip below the grid + minimum gap
+    // allowance). A pure function of screenWidth/screenHeight/tier: every
+    // screen fills the whole window, so this needs no HubScreen instance to
+    // compute. Settings' own category grid reads this directly
+    // (SettingsScreen.qml) instead of fitting against its own (smaller)
+    // column count, so its tiles read as the same physical object as the
+    // Hub's rather than an independently-sized one -- see docs/style.md
+    // "Tile aspect and grid blocks". Keep in sync with PagedGrid.qml's
+    // squareCells fit (`_widthFit`/`_heightFit`/`cellWidth`) and
+    // HubScreen.qml's own band math (`_activeLabelHeight`/`_verticalBand`/
+    // `_gridHeightBudget`) if either changes -- this duplicates both rather
+    // than reading a live HubScreen property so the value is available even
+    // when HubScreen isn't the active screen.
+    readonly property int _hubGridHeightBudget: Math.max(0, screenHeight - headerBottom - pctH(6) - pctH(7) - 3 * pctH(2))
+    readonly property int _hubGridWidthFit: Math.max(0, Math.floor((screenWidth - 2 * pctW(3) - (hubGridColumns - 1) * pctW(2)) / hubGridColumns))
+    readonly property int _hubGridHeightFit: Math.max(0, Math.floor((_hubGridHeightBudget - 2 * pctH(2) - (hubGridRows - 1) * pctH(4)) / hubGridRows))
+    readonly property int hubTileSize: Math.min(_hubGridWidthFit, _hubGridHeightFit)
+
     // Shared browse-grid bounds. Systems and games both solve the same
     // viewport-fit problem now, so the common limits live here and the
     // per-surface configs only override what is materially different.
@@ -53,11 +151,6 @@ QtObject {
     readonly property int gamesGridColumns: _gamesGridShape.columns
     readonly property int gamesGridRows: _gamesGridShape.rows
     // qmllint enable compiler
-    // Standard corner radius for rounded surfaces — tile cards, focus
-    // rings (computed as `cornerRadius - outlineGap`), settings rows.
-    // Pill controls (toggle track/thumb) use `height/2` instead and
-    // are intentionally a different shape. See docs/style.md.
-    readonly property int cornerRadius: pctH(3.5)
     // ── Top header (logo + status row + status pill) ──────────────────
     // Single source of truth for the header bar that sits at the top of
     // every screen. The logo's height is locked to the stacked-row
@@ -107,7 +200,8 @@ QtObject {
     }
 
     function gamesGridShape(viewportWidth: int, viewportHeight: int): var {
-        return root._selectGridShape(viewportWidth, viewportHeight, root._gamesGridConfig);
+        const declared = root._declaredGridShape("games");
+        return declared === null ? root._selectGridShape(viewportWidth, viewportHeight, root._gamesGridConfig) : declared;
     }
 
     // Cover decode tiers, mirroring Core's resize ladder. A cover's source
@@ -124,19 +218,38 @@ QtObject {
         return 768;
     }
 
-    // Raw painted height (px) of a games-grid cover in caption mode: the cell
-    // height minus the top padding and the bottom caption band. Box art is
+    // Header-logo asset ladder (resources/images/logo/logo-<variant>-<w>.png).
+    // Pre-sized rungs so HeaderBar decodes close to its painted width instead
+    // of bilinearly downscaling the 600px master at paint time. Snaps up to
+    // the smallest rung that covers `px`, mirroring snapCoverTier.
+    function snapLogoWidth(px: real): int {
+        if (px <= 96)
+            return 96;
+        if (px <= 144)
+            return 144;
+        if (px <= 192)
+            return 192;
+        if (px <= 256)
+            return 256;
+        if (px <= 384)
+            return 384;
+        return 600;
+    }
+
+    // Raw painted height (px) of a games-grid cover in caption mode: raised
+    // face height minus top padding and bottom caption band. Box art is
     // portrait, so this height is the bounding side. Pure function of the
     // resolution — the same value for every grid tile — so callers use it as a
     // stable Image.sourceSize input rather than the live painted height, which
     // fluctuates per layout/recycle and would make Qt reload the Image on every
-    // change. The percentage bands track Tile.qml's _padding / _captionHeight /
-    // _captionGap; exact agreement is not required since the result is snapped.
+    // change. Percentage bands track Tile.qml's front edge, _padding,
+    // _captionHeight, and _captionGap; exact agreement is not required since
+    // the result is snapped.
     // qmllint disable compiler
     function _gamesGridCoverBox(viewportWidth: int, viewportHeight: int): int {
         const shape = gamesGridShape(viewportWidth, viewportHeight);
         const tileHeight = Math.ceil(Math.max(1, viewportHeight) / Math.max(1, shape.rows));
-        const coverBox = tileHeight - pctH(2) - (pctH(5.5) + pctH(0.4));
+        const coverBox = tileHeight - pressEdgeHeight - pctH(2) - (pctH(5.5) + pctH(0.4));
         return Math.max(1, coverBox);
     }
     // qmllint enable compiler
@@ -195,7 +308,64 @@ QtObject {
     }
 
     function systemsGridShape(viewportWidth: int, viewportHeight: int): var {
-        return root._selectGridShape(viewportWidth, viewportHeight, root._systemsGridConfig);
+        const declared = root._declaredGridShape("systems");
+        return declared === null ? root._selectGridShape(viewportWidth, viewportHeight, root._systemsGridConfig) : declared;
+    }
+
+    // Common horizontal framebuffer sizes have declared page geometry. This
+    // prevents a few pixels of header or safe-area drift from changing the
+    // whole page shape. Rotated and arbitrary desktop scenes retain the
+    // adaptive scorer below.
+    function _declaredGridShape(kind: string): var {
+        if (root.swapPercentageAxes)
+            return null;
+        if (root.crtNativePath) {
+            if (kind === "systems")
+                return root._gridShape(3, 3);
+            if (root.screenHeight <= 240)
+                return root._gridShape(2, 2);
+            return root._gridShape(3, 2);
+        }
+
+        const common = root._commonDigitalScene();
+        if (common === "")
+            return null;
+        if (kind === "systems") {
+            if (common === "240")
+                return root._gridShape(2, 2);
+            if (common === "480")
+                return root._gridShape(3, 3);
+            return root._gridShape(4, 3);
+        }
+        if (common === "240")
+            return root._gridShape(2, 2);
+        if (common === "480")
+            return root._gridShape(4, 2);
+        return root._gridShape(5, 2);
+    }
+
+    function _gridShape(columns: int, rows: int): var {
+        return {
+            "columns": columns,
+            "rows": rows
+        };
+    }
+
+    function _commonDigitalScene(): string {
+        const close = (actual, expected) => Math.abs(actual - expected) <= 2;
+        if (close(root.screenWidth, 320) && close(root.screenHeight, 240))
+            return "240";
+        if (close(root.screenWidth, 640) && close(root.screenHeight, 480))
+            return "480";
+        if (close(root.screenWidth, 960) && close(root.screenHeight, 540))
+            return "540";
+        if (close(root.screenWidth, 1280) && close(root.screenHeight, 720))
+            return "720";
+        if (close(root.screenWidth, 1366) && close(root.screenHeight, 768))
+            return "720";
+        if (close(root.screenWidth, 1920) && close(root.screenHeight, 1080))
+            return "1080";
+        return "";
     }
 
     function _gridConfig(base: var, overrides: var): var {
@@ -242,10 +412,16 @@ QtObject {
     }
     // qmllint enable compiler
 
-    // Minimum 8px to remain legible on CRT 240p displays.
+    function _fontForTier(role: int): int {
+        const table = tier === "1080" ? [43, 35, 31, 28, 26, 24] : tier === "720" ? [29, 23, 21, 19, 17, 16] : tier === "540" ? [24, 20, 18, 17, 15, 14] : tier === "480" ? [22, 18, 17, 16, 14, 13] : [14, 12, 11, 10, 9, 8];
+        return table[Math.max(0, Math.min(table.length - 1, role))];
+    }
+
+    // Minimum 8px to remain legible on 240p displays. Kept for specialist
+    // text and geometry; ordinary text chooses one of the six roles above.
     function fontSize(percent: real): int {
         const size = Math.max(8, pctH(percent));
-        if (!crtNativePath)
+        if (!bitmapType)
             return size;
         return size < 12 ? 8 : 16;
     }

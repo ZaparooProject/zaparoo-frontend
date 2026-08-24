@@ -98,9 +98,9 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(parent.width - Sizing.pctW(10), Sizing.pctW(50))
         color: Theme.surfaceCard
-        radius: Sizing.cornerRadius
+        radius: Sizing.radiusMd
         border.color: Theme.borderMid
-        border.width: Sizing.stroke(1)
+        border.width: Sizing.cardBorderWidth
 
         Flickable {
             id: flickable
@@ -124,59 +124,62 @@ Item {
                 width: parent.width
                 spacing: Sizing.pctH(2)
 
-                // Leading spacer — keeps the logo clear of the top
-                // scroll chevron when the page overflows, and gives
-                // the cut-off edge a breath of whitespace instead of
-                // clipping the logo mid-stroke.
-                Item {
-                    width: body.width
-                    height: Sizing.pctH(2)
-                }
-
+                // No leading spacer -- `flickable`'s own `topMargin`
+                // (pctH(4), above) already reserves the full chevron band
+                // (pctH(3) glyph + pctH(0.5) margin) above the scrollable
+                // content, so a spacer here only doubled that whitespace.
+                // Round 8 added `pctH(2)` of spacer plus the Column's own
+                // `pctH(2)` gap before the logo, stacking to `pctH(8)` of
+                // total top inset against `pctW(3)` of side inset --
+                // visibly unbalanced. Round 9 removed both spacers,
+                // leaving `pctH(4)`, the actual minimum the chevrons need.
+                //
                 // Logo width is capped at a screen-height-relative size so
                 // the brand mark stays a header element across 240p →
-                // 1080p without ballooning. sourceSize is pinned to the
-                // native pixel dimensions to stop Qt upscaling then
-                // downsampling and to keep the lines crisp; height is
-                // derived from width via the image's intrinsic aspect.
+                // 1080p without ballooning. Uses the same pre-sized ladder
+                // as HeaderBar (item 9d) so the decode is close to the
+                // painted size instead of always downsampling the 600px
+                // master; height is derived from width via the image's
+                // intrinsic aspect.
                 Image {
+                    id: aboutLogo
+
+                    readonly property real _paintedWidth: Math.min(parent.width, Sizing.pctH(35))
+
                     anchors.horizontalCenter: parent.horizontalCenter
-                    source: "qrc:/qt/qml/Zaparoo/App/resources/images/logo.png"
+                    source: Resources.logoUrl(aboutLogo._paintedWidth)
                     fillMode: Image.PreserveAspectFit
-                    sourceSize.width: 600
-                    sourceSize.height: 135
-                    width: Math.min(parent.width, Sizing.pctH(35))
+                    width: aboutLogo._paintedWidth
                     height: Sizing.px(width * 135 / 600)
+                    sourceSize.width: Sizing.px(width)
+                    sourceSize.height: Sizing.px(height)
                 }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                    x: Sizing.center(parent.width, width)
                     text: qsTr("Zaparoo Frontend")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(4)
+                    font.pixelSize: Sizing.fontHero
                     font.weight: Font.Medium
                     renderType: Text.NativeRendering
                 }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                    x: Sizing.center(parent.width, width)
                     text: qsTr("Version %1 · %2 · %3").arg(Qt.application.version).arg(Browse.BuildInfo.commit).arg(Browse.BuildInfo.channel)
                     color: Theme.textLabel
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.4)
+                    font.pixelSize: Sizing.fontCaption
                     renderType: Text.NativeRendering
                 }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                    x: Sizing.center(parent.width, width)
                     text: qsTr("Built %1").arg(Browse.BuildInfo.build_date)
                     color: Theme.textLabel
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.2)
+                    font.pixelSize: Sizing.fontSmall
                     renderType: Text.NativeRendering
                 }
 
@@ -187,7 +190,7 @@ Item {
                     text: qsTr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     renderType: Text.NativeRendering
                 }
 
@@ -198,7 +201,7 @@ Item {
                     text: qsTr("Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license.")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     renderType: Text.NativeRendering
                 }
 
@@ -209,7 +212,7 @@ Item {
                     text: qsTr("Commercial licensing: legal@zaparoo.org")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     renderType: Text.NativeRendering
                 }
 
@@ -220,55 +223,81 @@ Item {
                     text: qsTr("Project: https://zaparoo.org")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     renderType: Text.NativeRendering
                 }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                    x: Sizing.center(parent.width, width)
                     text: qsTr("Created by")
                     color: Theme.textLabel
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.4)
+                    font.pixelSize: Sizing.fontCaption
                     renderType: Text.NativeRendering
                 }
 
                 // Contributor names are not translated — they're proper
-                // names. Joined with newlines (not separate Text items)
-                // so the block reads as one credits paragraph and the
-                // Column spacing doesn't push them apart.
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
-                    text: "Andrea Bogazzi\nBossRighteous\nTim Wilsie\nWizzo"
-                    color: Theme.textPrimary
-                    font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
-                    renderType: Text.NativeRendering
+                // names. Each is its own Text item, individually centered
+                // via Sizing.center() -- a single multi-line Text centered
+                // with AlignHCenter leaves shorter lines on a sub-pixel
+                // offset within the block (docs/qml-gotchas.md ->
+                // "Integer-pixel rules").
+                Column {
+                    id: creditsColumn
+
+                    x: Sizing.center(parent.width, width)
+                    spacing: 0
+
+                    Repeater {
+                        model: ["Andrea Bogazzi", "BossRighteous", "Carlos R.", "devilschile2", "Giancarlo Erra", "José Manuel Barroso Galindo", "Peter Brittain", "Tim Wilsie", "Wilfried Jeanniard", "Wizzo"]
+
+                        Text {
+                            required property string modelData
+
+                            x: Sizing.center(creditsColumn.width, width)
+                            text: modelData
+                            color: Theme.textPrimary
+                            font.family: Theme.fontUi
+                            font.pixelSize: Sizing.fontBody
+                            renderType: Text.NativeRendering
+                        }
+                    }
                 }
 
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
+                    x: Sizing.center(parent.width, width)
                     text: qsTr("Translations")
                     color: Theme.textLabel
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.4)
+                    font.pixelSize: Sizing.fontCaption
                     renderType: Text.NativeRendering
                 }
 
-                // Translator names are proper names; the full block stays
-                // one text item so translators can localize language labels
-                // without changing the credits layout.
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    horizontalAlignment: Text.AlignHCenter
-                    text: qsTr("Italiano - Andrea Bogazzi\nEspañol - Carlos R.\nEuskara - devilschile2\nFrançais - Wilfried")
-                    color: Theme.textPrimary
-                    font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
-                    renderType: Text.NativeRendering
+                // Translator names are proper names; one translatable
+                // string with embedded newlines so translators localize
+                // language labels without touching the credits layout,
+                // split into one Text per line so each can be centered
+                // individually (same reasoning as creditsColumn above).
+                Column {
+                    id: translatorsColumn
+
+                    x: Sizing.center(parent.width, width)
+                    spacing: 0
+
+                    Repeater {
+                        model: qsTr("Italiano - Andrea Bogazzi\nEspañol - Carlos R.\nEuskara - devilschile2\nFrançais - Wilfried").split("\n")
+
+                        Text {
+                            required property string modelData
+
+                            x: Sizing.center(translatorsColumn.width, width)
+                            text: modelData
+                            color: Theme.textPrimary
+                            font.family: Theme.fontUi
+                            font.pixelSize: Sizing.fontBody
+                            renderType: Text.NativeRendering
+                        }
+                    }
                 }
 
                 Text {
@@ -278,46 +307,50 @@ Item {
                     text: qsTr("Full license text in COPYING.")
                     color: Theme.textLabel
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.4)
+                    font.pixelSize: Sizing.fontCaption
                     renderType: Text.NativeRendering
-                }
-
-                // Trailing spacer — symmetric with the leading spacer.
-                Item {
-                    width: body.width
-                    height: Sizing.pctH(2)
                 }
             }
         }
 
-        // Top/bottom scroll chevrons — mirror the PagedGrid/BrowseList
-        // recipe (same SVG icons, `PreserveAspectFit` + `smooth: true`)
-        // but centered on the viewport in the card's chrome gap *above*
-        // and *below* the Flickable, not inside its visible band.
-        // Sitting outside the scrolled area means the chevrons never
-        // overlap moving content as the user scrolls.
+        // Top/bottom scroll chevrons — mirror the PageIndicator recipe
+        // (same SVG icons, `PreserveAspectFit` + `smooth: true` +
+        // `sourceSize` pinned to the painted size) but centered on the
+        // viewport in the card's chrome gap *above* and *below* the
+        // Flickable, not inside its visible band. Sitting outside the
+        // scrolled area means the chevrons never overlap moving content
+        // as the user scrolls. Round 9: dims (Theme.textLabel) rather than
+        // hides when the page doesn't overflow in that direction, matching
+        // PageIndicator.qml's treatment. Round 10: both also hide entirely
+        // when the page doesn't overflow at all (`!contentOverflows`) — a
+        // short page shows neither chevron rather than two permanently
+        // dim arrows.
         Image {
-            source: Resources.iconUrl("ScrollUp")
+            source: Resources.iconUrl("ScrollUp", about._hasContentAbove ? Theme.textPrimary : Theme.textLabel)
             width: Sizing.pctH(3)
             height: width
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.bottom: flickable.top
             anchors.bottomMargin: Sizing.pctH(0.5)
             anchors.horizontalCenter: flickable.horizontalCenter
             fillMode: Image.PreserveAspectFit
             smooth: true
-            visible: about._hasContentAbove
+            visible: about.contentOverflows
         }
 
         Image {
-            source: Resources.iconUrl("ScrollDown")
+            source: Resources.iconUrl("ScrollDown", about._hasContentBelow ? Theme.textPrimary : Theme.textLabel)
             width: Sizing.pctH(3)
             height: width
+            sourceSize.width: Sizing.px(width)
+            sourceSize.height: Sizing.px(height)
             anchors.top: flickable.bottom
             anchors.topMargin: Sizing.pctH(0.5)
             anchors.horizontalCenter: flickable.horizontalCenter
             fillMode: Image.PreserveAspectFit
             smooth: true
-            visible: about._hasContentBelow
+            visible: about.contentOverflows
         }
     }
 }

@@ -24,35 +24,30 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "grid": {
-                        "leftInset": "pctW:5",
-                        "rightInset": "pctW:5",
-                        "gutterWidth": "pctW:3",
-                        "gutterGap": "pctW:1.5",
-                        "columnGap": "pctW:3",
+                        "leftInset": "pctW:2",
+                        "rightInset": "pctW:2",
+                        "columnGap": "pctW:2",
                         "topInset": "pctH:2",
                         "bottomInset": "pctH:2",
                         "rowGap": "pctH:3",
-                        "scrollThumbWidth": "pctW:1.2",
-                        "scrollThumbRightInset": 0,
-                        "scrollThumbRightAligned": false,
-                        "scrollArrowSize": "min(pctW:3,pctH:4)",
-                        "gutterFollowsContentWidth": false
+                        "pageChevronSize": "min(pctW:3,pctH:4)"
                     },
                     "footer": {
+                        "pageCueInFooter": false,
                         "activeLabelHeight": "pctH:7",
                         "activeLabelBottomMargin": "pctH:8",
-                        "bottomStatusVisible": false,
-                        "bottomStatusLeftMargin": "pctW:5",
-                        "bottomStatusRightMargin": "pctW:5",
+                        "bottomStatusLeftMargin": "pctW:3",
+                        "bottomStatusRightMargin": "pctW:3",
                         "gridBottomMargin": "sum(pctH:8,pctH:7)",
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "systemsList": {
@@ -64,7 +59,7 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "list": {
@@ -73,7 +68,7 @@ QtObject {
                         "detailShare": 1,
                         "dividerWidth": 1,
                         "dividerMargin": 0,
-                        "cardSideMargin": "pctW:5",
+                        "cardSideMargin": "pctW:3",
                         "cardTopMargin": "pctH:2",
                         "cardBottomMargin": "pctH:8",
                         "cardPaddingLeft": "pctW:2",
@@ -83,8 +78,6 @@ QtObject {
                         "rowHeight": 0,
                         "rowSpacing": "pctH:0.7",
                         "centerSlot": -1,
-                        "scrollbarGap": "pctW:1.5",
-                        "selectionAccentWidth": "pctW:0.45",
                         "rowTextLeftPadding": "pctW:1.6",
                         "rowTextRightPadding": "pctW:1.6",
                         "favoriteRightPadding": "pctW:1.6",
@@ -124,7 +117,8 @@ QtObject {
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "systemsListTate": {
@@ -136,7 +130,7 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "list": {
@@ -145,7 +139,7 @@ QtObject {
                         "detailShare": 5,
                         "dividerWidth": 1,
                         "dividerMargin": 0,
-                        "cardSideMargin": "pctW:5",
+                        "cardSideMargin": "pctW:3",
                         "cardTopMargin": "pctH:2",
                         "cardBottomMargin": "pctH:8",
                         "cardPaddingLeft": "pctW:2",
@@ -155,8 +149,6 @@ QtObject {
                         "rowHeight": 0,
                         "rowSpacing": "pctH:0.3",
                         "centerSlot": -1,
-                        "scrollbarGap": "pctW:1.5",
-                        "selectionAccentWidth": "pctW:0.45",
                         "rowTextLeftPadding": "pctW:1.6",
                         "rowTextRightPadding": "pctW:1.6",
                         "favoriteRightPadding": "pctW:1.6",
@@ -196,7 +188,8 @@ QtObject {
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesGrid": {
@@ -208,35 +201,30 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "grid": {
-                        "leftInset": "pctW:5",
-                        "rightInset": "pctW:5",
-                        "gutterWidth": "pctW:3",
-                        "gutterGap": "pctW:1.5",
-                        "columnGap": "pctW:3",
+                        "leftInset": "pctW:2",
+                        "rightInset": "pctW:2",
+                        "columnGap": "pctW:2",
                         "topInset": "pctH:2",
                         "bottomInset": "pctH:2",
-                        "rowGap": "pctH:4",
-                        "scrollThumbWidth": "pctW:1.2",
-                        "scrollThumbRightInset": 0,
-                        "scrollThumbRightAligned": false,
-                        "scrollArrowSize": "min(pctW:3,pctH:4)",
-                        "gutterFollowsContentWidth": false
+                        "rowGap": "pctH:3",
+                        "pageChevronSize": "min(pctW:3,pctH:4)"
                     },
                     "footer": {
+                        "pageCueInFooter": false,
                         "activeLabelHeight": "pctH:7",
                         "activeLabelBottomMargin": "pctH:8",
-                        "bottomStatusVisible": false,
-                        "bottomStatusLeftMargin": "pctW:5",
-                        "bottomStatusRightMargin": "pctW:5",
+                        "bottomStatusLeftMargin": "pctW:3",
+                        "bottomStatusRightMargin": "pctW:3",
                         "gridBottomMargin": "sum(pctH:8,pctH:7)",
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesList": {
@@ -248,7 +236,7 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "list": {
@@ -257,7 +245,7 @@ QtObject {
                         "detailShare": 1,
                         "dividerWidth": 1,
                         "dividerMargin": 0,
-                        "cardSideMargin": "pctW:5",
+                        "cardSideMargin": "pctW:3",
                         "cardTopMargin": "pctH:2",
                         "cardBottomMargin": "pctH:8",
                         "cardPaddingLeft": "pctW:2",
@@ -267,8 +255,6 @@ QtObject {
                         "rowHeight": 0,
                         "rowSpacing": "pctH:0.7",
                         "centerSlot": -1,
-                        "scrollbarGap": "pctW:1.5",
-                        "selectionAccentWidth": "pctW:0.45",
                         "rowTextLeftPadding": "pctW:1.6",
                         "rowTextRightPadding": "pctW:1.6",
                         "favoriteRightPadding": "pctW:1.6",
@@ -308,7 +294,8 @@ QtObject {
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesListTate": {
@@ -320,7 +307,7 @@ QtObject {
                     "status": {
                         "topStripVisible": true,
                         "stripHeight": "pctH:7",
-                        "slotMargin": "pctW:5",
+                        "slotMargin": "pctW:3",
                         "topMargin": "pctH:1"
                     },
                     "list": {
@@ -329,7 +316,7 @@ QtObject {
                         "detailShare": 5,
                         "dividerWidth": 1,
                         "dividerMargin": 0,
-                        "cardSideMargin": "pctW:5",
+                        "cardSideMargin": "pctW:3",
                         "cardTopMargin": "pctH:2",
                         "cardBottomMargin": "pctH:8",
                         "cardPaddingLeft": "pctW:2",
@@ -339,8 +326,6 @@ QtObject {
                         "rowHeight": 0,
                         "rowSpacing": "pctH:0.3",
                         "centerSlot": -1,
-                        "scrollbarGap": "pctW:1.5",
-                        "selectionAccentWidth": "pctW:0.45",
                         "rowTextLeftPadding": "pctW:1.6",
                         "rowTextRightPadding": "pctW:1.6",
                         "favoriteRightPadding": "pctW:1.6",
@@ -380,7 +365,8 @@ QtObject {
                         "bottomUnsafeHeight": "sum(pctH:6,pctH:2)"
                     },
                     "surface": {
-                        "cornerRadius": "cornerRadius"
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 }
             },
@@ -399,30 +385,25 @@ QtObject {
                     },
                     "grid": {
                         "leftInset": 4,
-                        "rightInset": 0,
-                        "gutterWidth": 8,
-                        "gutterGap": 4,
+                        "rightInset": 4,
                         "columnGap": 4,
                         "topInset": 2,
                         "bottomInset": 4,
                         "rowGap": 4,
-                        "scrollThumbWidth": 4,
-                        "scrollThumbRightInset": 2,
-                        "scrollThumbRightAligned": false,
-                        "scrollArrowSize": 8,
-                        "gutterFollowsContentWidth": true
+                        "pageChevronSize": 8
                     },
                     "footer": {
+                        "pageCueInFooter": true,
                         "activeLabelHeight": 8,
                         "activeLabelBottomMargin": "pctH:6",
-                        "bottomStatusVisible": true,
                         "bottomStatusLeftMargin": 4,
                         "bottomStatusRightMargin": "pctW:5",
                         "gridBottomMargin": "sum(pctH:6,8)",
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "systemsList": {
@@ -453,8 +434,6 @@ QtObject {
                         "rowHeight": 12,
                         "rowSpacing": 0,
                         "centerSlot": 7,
-                        "scrollbarGap": 2,
-                        "selectionAccentWidth": 2,
                         "rowTextLeftPadding": 4,
                         "rowTextRightPadding": 2,
                         "favoriteRightPadding": 2,
@@ -495,7 +474,8 @@ QtObject {
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "systemsListTate": {
@@ -526,8 +506,6 @@ QtObject {
                         "rowHeight": 12,
                         "rowSpacing": 0,
                         "centerSlot": 7,
-                        "scrollbarGap": 2,
-                        "selectionAccentWidth": 2,
                         "rowTextLeftPadding": 4,
                         "rowTextRightPadding": 2,
                         "favoriteRightPadding": 2,
@@ -567,7 +545,8 @@ QtObject {
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesGrid": {
@@ -584,30 +563,25 @@ QtObject {
                     },
                     "grid": {
                         "leftInset": 4,
-                        "rightInset": 0,
-                        "gutterWidth": 8,
-                        "gutterGap": 4,
+                        "rightInset": 4,
                         "columnGap": 4,
                         "topInset": 2,
                         "bottomInset": 4,
                         "rowGap": 4,
-                        "scrollThumbWidth": 4,
-                        "scrollThumbRightInset": 2,
-                        "scrollThumbRightAligned": false,
-                        "scrollArrowSize": 8,
-                        "gutterFollowsContentWidth": true
+                        "pageChevronSize": 8
                     },
                     "footer": {
+                        "pageCueInFooter": true,
                         "activeLabelHeight": 8,
                         "activeLabelBottomMargin": "pctH:6",
-                        "bottomStatusVisible": true,
                         "bottomStatusLeftMargin": 4,
                         "bottomStatusRightMargin": "pctW:5",
                         "gridBottomMargin": "sum(pctH:6,8)",
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesList": {
@@ -638,8 +612,6 @@ QtObject {
                         "rowHeight": 12,
                         "rowSpacing": 0,
                         "centerSlot": 7,
-                        "scrollbarGap": 2,
-                        "selectionAccentWidth": 2,
                         "rowTextLeftPadding": 4,
                         "rowTextRightPadding": 2,
                         "favoriteRightPadding": 2,
@@ -680,7 +652,8 @@ QtObject {
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 },
                 "gamesListTate": {
@@ -711,8 +684,6 @@ QtObject {
                         "rowHeight": 12,
                         "rowSpacing": 0,
                         "centerSlot": 7,
-                        "scrollbarGap": 2,
-                        "selectionAccentWidth": 2,
                         "rowTextLeftPadding": 4,
                         "rowTextRightPadding": 2,
                         "favoriteRightPadding": 2,
@@ -752,7 +723,8 @@ QtObject {
                         "bottomUnsafeHeight": 16
                     },
                     "surface": {
-                        "cornerRadius": 4
+                        "cardRadius": "radiusMd",
+                        "rowRadius": "radiusSm"
                     }
                 }
             }
@@ -821,8 +793,10 @@ QtObject {
             return Sizing.pctH(Number(value.substring("pctH:".length)));
         if (value.startsWith("fontSize:"))
             return Sizing.fontSize(Number(value.substring("fontSize:".length)));
-        if (value === "cornerRadius")
-            return Sizing.cornerRadius;
+        if (value === "radiusMd")
+            return Sizing.radiusMd;
+        if (value === "radiusSm")
+            return Sizing.radiusSm;
         if (value === "headerSideMargin")
             return Sizing.headerSideMargin;
         if (value.startsWith("ref:")) {

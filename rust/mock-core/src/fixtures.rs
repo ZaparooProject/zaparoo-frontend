@@ -13,7 +13,7 @@ use std::sync::{Mutex, OnceLock};
 
 static SYSTEM_DEFAULTS: OnceLock<Mutex<Vec<SystemDefaultFixture>>> = OnceLock::new();
 
-const MOCK_SYSTEMS: &[(&str, &str, &str)] = &[
+pub(crate) const MOCK_SYSTEMS: &[(&str, &str, &str)] = &[
     ("NES", "Nintendo Entertainment System", "Consoles"),
     ("SNES", "Super Nintendo", "Consoles"),
     ("Genesis", "Sega Genesis", "Consoles"),

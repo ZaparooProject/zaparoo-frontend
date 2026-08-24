@@ -60,6 +60,22 @@ const HIDDEN_ROLE: i32 = 256 + 8;
 // display priority. Empty when nothing to disambiguate. Same shape and
 // rationale as the GamesModel role; the shared delegate splits on newlines.
 const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 9;
+// Every real row is a real favorite, never a structural placeholder; the
+// role exists only so PagedGrid's `isEmpty` delegate contract (round 6
+// follow-up — see PagedGrid.qml) is satisfied by direct QAbstractListModel
+// callers.
+const IS_EMPTY_ROLE: i32 = 256 + 10;
+// Round 11: `entryType`/`fileCount` exist so this model satisfies the same
+// shared BrowseList/PagedGrid delegate contract GamesModel's folder-count
+// suffix uses (see games.rs's identically-named roles). A favorite is
+// always a `media` row, never a folder, so these are constant.
+const ENTRY_TYPE_ROLE: i32 = 256 + 11;
+const FILE_COUNT_ROLE: i32 = 256 + 12;
+// No Favorites row is ever "disabled" (Hub-only concept). The role exists
+// only so PagedGrid's `cellItem.disabled` delegate contract (round 11
+// follow-up — see PagedGrid.qml) is satisfied by direct QAbstractListModel
+// callers.
+const DISABLED_ROLE: i32 = 256 + 13;
 
 // Page size for the initial load and every cursor follow-up. Core defaults
 // `maxResults` to 100 when the field is absent and validates it at 1000
@@ -580,13 +596,15 @@ impl ffi::FavoritesModel {
             FILE_STEM_ROLE => {
                 QVariant::from(&QString::from(file_stem_or_name(&entry.path, &entry.name)))
             }
-            HIDDEN_ROLE => QVariant::from(&false),
             // Sibling-diffed display string; precomputed in `disambig_displays`.
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::from(
                 self.disambig_displays
                     .get(index.row() as usize)
                     .map_or("", String::as_str),
             )),
+            HIDDEN_ROLE | IS_EMPTY_ROLE | DISABLED_ROLE => QVariant::from(&false),
+            ENTRY_TYPE_ROLE => QVariant::from(&QString::from("media")),
+            FILE_COUNT_ROLE => QVariant::from(&0i32),
             _ => QVariant::default(),
         }
     }
@@ -605,6 +623,10 @@ impl ffi::FavoritesModel {
             DISAMBIGUATING_TAGS_ROLE,
             QByteArray::from("disambiguatingTags"),
         );
+        h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
+        h.insert(ENTRY_TYPE_ROLE, QByteArray::from("entryType"));
+        h.insert(FILE_COUNT_ROLE, QByteArray::from("fileCount"));
+        h.insert(DISABLED_ROLE, QByteArray::from("disabled"));
         h
     }
 
@@ -1085,13 +1107,13 @@ fn cover_key_for(entry: &MediaItem, requests_enabled: bool) -> String {
             cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
         }
     }
-    cover_key_for_with(
-        entry,
-        media_key.as_ref(),
-        cached,
-        negative,
-        soft_no_image || !requests_enabled,
-    )
+    // `!requests_enabled` (paused for a bulk/jump append) is deliberately
+    // NOT folded into `soft_no_image` here -- see games.rs's
+    // `cover_key_for` for the round-10 rationale: "paused" means "haven't
+    // asked yet," not "confirmed absent," and must stay blank
+    // (`icons/Loading`) rather than falling back to the system-logo
+    // placeholder the way a real soft-no-image memo does.
+    cover_key_for_with(entry, media_key.as_ref(), cached, negative, soft_no_image)
 }
 
 fn emit_cover_key_range(mut model: Pin<&mut ffi::FavoritesModel>, first_row: i32, count: i32) {
@@ -1782,6 +1804,23 @@ mod tests {
         assert_eq!(
             cover_key_for_with(&entry, Some(&key), false, false, false),
             "icons/Loading"
+        );
+    }
+
+    // Round 10: a paused fetch must produce the same `soft_no_image:
+    // false` shape as the plain pending case above -- `cover_key_for`
+    // must never fold `!requests_enabled` into `soft_no_image` the way it
+    // used to, or a paused favorite with real art falls back to the
+    // system-logo placeholder for the whole pause window instead of
+    // staying blank.
+    #[test]
+    fn paused_favorite_cover_stays_loading_not_system_fallback() {
+        let entry = favorite_entry();
+        let key = MediaKey::new("SNES", "/games/favorite.rom");
+        assert_eq!(
+            cover_key_for_with(&entry, Some(&key), false, false, false),
+            "icons/Loading",
+            "paused-but-not-soft-missed must render blank, never the system fallback"
         );
     }
 

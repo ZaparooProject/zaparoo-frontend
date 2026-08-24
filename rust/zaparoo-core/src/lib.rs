@@ -5,6 +5,7 @@
 pub mod client;
 pub mod config;
 pub mod endpoints;
+pub mod hub_layout;
 pub mod input_actions;
 pub mod logger;
 pub mod media_types;

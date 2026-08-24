@@ -39,12 +39,24 @@ pub struct PersistedState {
 pub struct HubState {
     pub category: String,
     /// Which Hub row had focus on the last persisted move. 0 = top
-    /// (categories), 1 = bottom (action tiles).
+    /// (categories), 1 = bottom (action tiles). Superseded by
+    /// `selected_item` (round 6) as the authoritative restore source, but
+    /// kept — with `selected_action` below — as the fallback a state.toml
+    /// written by an older build restores from, since `#[serde(default)]`
+    /// on this struct means `selected_item` simply reads empty on such a
+    /// file rather than failing to deserialize.
     pub selected_row: u32,
     /// The bottom-row action tile that last had focus. One of
     /// `"favorites"`, `"recents"`, `"update"` or `"settings"`.
     /// Empty defaults to the leftmost action when restored.
     pub selected_action: String,
+    /// The Hub item that last had focus, as `"<kind>:<id>"` — `kind` is
+    /// `"category"` or `"action"`, `id` is the category id or action id.
+    /// Authoritative when non-empty (round 6, item 7); see HubScreen.qml's
+    /// `restoreFromCategoriesReset`. Empty on any state.toml predating this
+    /// field, which is exactly the fallback-to-`selected_row`/
+    /// `selected_action` case above.
+    pub selected_item: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +74,15 @@ pub struct GamesState {
     /// Favorites-only projection of folder listings. Serde-defaulted so
     /// state files written before the field existed keep loading.
     pub favorites_filter: bool,
+    /// True when this Games screen was entered directly from a Hub
+    /// `system`/`folder` shortcut (skipping Systems), so Back should
+    /// return to Hub instead of Systems — a screen the user never
+    /// visited on that path. Persisted (not a plain in-memory flag) so
+    /// it survives the `MiSTer` kill/relaunch cycle around a game launch;
+    /// see `Main.qml`'s `onRequestSystemsScreen` for where it's read and
+    /// cleared, and the routing contract in `CLAUDE.md` for why every
+    /// writer lives in `Main.qml`'s router, never a screen file.
+    pub entered_from_hub: bool,
 }
 
 impl Default for GamesState {
@@ -71,6 +92,7 @@ impl Default for GamesState {
             path_stack: vec![String::new()],
             selected_at_level: vec![String::new()],
             favorites_filter: false,
+            entered_from_hub: false,
         }
     }
 }
@@ -120,20 +142,29 @@ pub struct SettingsState {
     pub clock_format: String,
     #[serde(default = "default_orientation")]
     pub orientation: String,
+    // Round 10: split into `systems_browse_layout`/`games_browse_layout`
+    // below. Kept (not removed) purely so an existing user's pre-round-10
+    // `state.toml` still deserializes and its value can seed both new
+    // fields once -- see `migrate_browse_layout`. No longer written by
+    // any setter; a fresh install never populates it.
     #[serde(default = "default_browse_layout")]
     pub browse_layout: String,
+    #[serde(default = "default_browse_layout")]
+    pub systems_browse_layout: String,
+    #[serde(default = "default_browse_layout")]
+    pub games_browse_layout: String,
     #[serde(default = "default_favorites_grouping")]
     pub favorites_grouping: String,
     #[serde(default = "default_system_logo_style")]
     pub system_logo_style: String,
+    #[serde(default = "default_color_scheme")]
+    pub color_scheme: String,
     #[serde(default = "default_button_layout")]
     pub button_layout: String,
     #[serde(default = "default_mouse_enabled")]
     pub mouse_enabled: bool,
     #[serde(default)]
     pub reduce_motion: bool,
-    #[serde(default)]
-    pub discover_arcade_alternate_versions: bool,
     #[serde(default)]
     pub debug_logging: bool,
     #[serde(default = "default_screensaver_timeout")]
@@ -176,12 +207,14 @@ impl Default for SettingsState {
             clock_format: default_clock_format(),
             orientation: default_orientation(),
             browse_layout: default_browse_layout(),
+            systems_browse_layout: default_browse_layout(),
+            games_browse_layout: default_browse_layout(),
             favorites_grouping: default_favorites_grouping(),
             system_logo_style: default_system_logo_style(),
+            color_scheme: default_color_scheme(),
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
             reduce_motion: false,
-            discover_arcade_alternate_versions: false,
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
@@ -223,6 +256,10 @@ fn default_system_logo_style() -> String {
     "tinted".into()
 }
 
+fn default_color_scheme() -> String {
+    "zaparoo-dark".into()
+}
+
 fn default_button_layout() -> String {
     // Style A — formerly "nintendo". `models::settings::normalize_button_layout`
     // migrates legacy persisted values, so this default only applies to
@@ -255,12 +292,38 @@ fn load_from(path: &Path) -> PersistedState {
         return PersistedState::default();
     };
     match toml::from_str(&src) {
-        Ok(s) => s,
+        Ok(s) => migrate_browse_layout(s),
         Err(e) => {
             warn!("persist state parse error in {}: {e}", path.display());
             PersistedState::default()
         }
     }
+}
+
+/// One-time migration: an existing `state.toml` from before round 10 has
+/// only the single `browse_layout` field, which the new
+/// `systems_browse_layout`/`games_browse_layout` fields default away from
+/// (both to `default_browse_layout()`, same as the legacy field's own
+/// default). If the legacy field carries a real, non-default choice
+/// (i.e. "list") while both new fields are still sitting at their
+/// compiled default, seed both from it -- otherwise an existing user who
+/// picked list view would silently reset to grid on upgrade. Only fires
+/// once in practice: the first save after this runs writes real values
+/// into both new fields, so `systems_browse_layout`/`games_browse_layout`
+/// stop being "both still at default" on every later load. The
+/// `frontend.toml` side of this same migration lives in
+/// `config::settings_config_from_raw`.
+fn migrate_browse_layout(mut state: PersistedState) -> PersistedState {
+    let default = default_browse_layout();
+    if state.settings.systems_browse_layout == default
+        && state.settings.games_browse_layout == default
+        && state.settings.browse_layout != default
+    {
+        let legacy = state.settings.browse_layout.clone();
+        state.settings.systems_browse_layout.clone_from(&legacy);
+        state.settings.games_browse_layout = legacy;
+    }
+    state
 }
 
 fn save_to(path: &Path, state: &PersistedState) {
@@ -349,6 +412,7 @@ mod tests {
                 category: "Console".into(),
                 selected_row: 1,
                 selected_action: "settings".into(),
+                selected_item: "action:settings".into(),
             },
             systems: SystemsState {
                 system_id: "NES".into(),
@@ -358,6 +422,7 @@ mod tests {
                 path_stack: vec![String::new(), "/roms/nes/mario".into()],
                 selected_at_level: vec!["/roms/nes/mario".into(), "/roms/nes/mario/smb.nes".into()],
                 favorites_filter: false,
+                entered_from_hub: true,
             },
             recents: RecentsState {
                 selected_path: "/roms/nes/mario/smb.nes".into(),
@@ -374,12 +439,14 @@ mod tests {
                 clock_format: "24h".into(),
                 orientation: "cw".into(),
                 browse_layout: "list".into(),
+                systems_browse_layout: "list".into(),
+                games_browse_layout: "grid".into(),
                 favorites_grouping: "system".into(),
                 system_logo_style: "color".into(),
+                color_scheme: "classic-purple".into(),
                 button_layout: "b".into(),
                 mouse_enabled: false,
                 reduce_motion: true,
-                discover_arcade_alternate_versions: true,
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),
@@ -415,9 +482,62 @@ resolution = "1920x1080"
         let state = load_from(&path);
         assert!(!state.settings.show_hidden);
         assert_eq!(state.settings.favorites_grouping, "none");
+        assert_eq!(state.settings.color_scheme, "zaparoo-dark");
         assert_eq!(state.favorite_systems, FavoriteSystemsState::default());
         // reduce_motion absent from an older state file defaults to false.
         assert!(!state.settings.reduce_motion);
+        // entered_from_hub absent from an older state file defaults to
+        // false — the ordinary Systems-entered back-routing behaviour.
+        assert!(!state.games.entered_from_hub);
+    }
+
+    // Round 10: a pre-round-10 state file only ever has the single
+    // `browse_layout` key. A user who had picked list view must not
+    // silently reset to grid on upgrade -- both new fields seed from it.
+    #[test]
+    fn pre_round_10_browse_layout_seeds_both_new_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let on_disk = r#"[settings]
+browse_layout = "list"
+"#;
+        std::fs::write(&path, on_disk).expect("write");
+        let state = load_from(&path);
+        assert_eq!(state.settings.systems_browse_layout, "list");
+        assert_eq!(state.settings.games_browse_layout, "list");
+    }
+
+    // A state file already carrying the new fields (post-migration, or a
+    // user who genuinely wants different layouts per screen) must never
+    // have the legacy field overwrite them.
+    #[test]
+    fn migration_never_overwrites_already_set_new_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let on_disk = r#"[settings]
+browse_layout = "list"
+systems_browse_layout = "grid"
+games_browse_layout = "list"
+"#;
+        std::fs::write(&path, on_disk).expect("write");
+        let state = load_from(&path);
+        assert_eq!(state.settings.systems_browse_layout, "grid");
+        assert_eq!(state.settings.games_browse_layout, "list");
+    }
+
+    // A fresh install (no legacy key at all) must not migrate anything --
+    // both new fields simply take their own compiled default.
+    #[test]
+    fn no_legacy_browse_layout_leaves_new_fields_at_default() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let on_disk = r#"[settings]
+resolution = "1920x1080"
+"#;
+        std::fs::write(&path, on_disk).expect("write");
+        let state = load_from(&path);
+        assert_eq!(state.settings.systems_browse_layout, "grid");
+        assert_eq!(state.settings.games_browse_layout, "grid");
     }
 
     #[test]
@@ -452,6 +572,7 @@ resolution = "1920x1080"
                                 category: format!("cat-{i}-{j}"),
                                 selected_row: 0,
                                 selected_action: String::new(),
+                                selected_item: String::new(),
                             },
                             systems: SystemsState {
                                 system_id: format!("sys-{i}-{j}"),
@@ -461,6 +582,7 @@ resolution = "1920x1080"
                                 path_stack: vec![String::new()],
                                 selected_at_level: vec![format!("/roms/{i}/{j}.rom")],
                                 favorites_filter: false,
+                                entered_from_hub: false,
                             },
                             favorites: FavoritesState::default(),
                             favorite_systems: FavoriteSystemsState::default(),
@@ -499,6 +621,37 @@ resolution = "1920x1080"
         assert_eq!(state.settings, SettingsState::default());
     }
 
+    // Round 6, item 7: a state.toml written by a build predating
+    // `selected_item` still loads, with the field defaulting empty and the
+    // legacy fields intact — this is exactly the shape
+    // HubScreen.qml's `restoreFromCategoriesReset` falls back on.
+    #[test]
+    fn hub_state_without_selected_item_falls_back_to_legacy_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        std::fs::write(
+            &path,
+            "[hub]\ncategory = \"Arcade\"\nselected_row = 1\nselected_action = \"favorites\"\n",
+        )
+        .expect("write");
+        let state = load_from(&path);
+        assert_eq!(state.hub.category, "Arcade");
+        assert_eq!(state.hub.selected_row, 1);
+        assert_eq!(state.hub.selected_action, "favorites");
+        assert_eq!(state.hub.selected_item, "");
+    }
+
+    #[test]
+    fn hub_state_round_trips_selected_item() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let mut state = PersistedState::default();
+        state.hub.selected_item = "action:resume".into();
+        save_to(&path, &state);
+        let loaded = load_from(&path);
+        assert_eq!(loaded.hub.selected_item, "action:resume");
+    }
+
     #[test]
     fn missing_settings_fields_default_to_current_behavior() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -509,6 +662,7 @@ resolution = "1920x1080"
         assert_eq!(state.settings.language, "");
         assert_eq!(state.settings.clock_format, "auto");
         assert_eq!(state.settings.browse_layout, "grid");
+        assert_eq!(state.settings.color_scheme, "zaparoo-dark");
         assert_eq!(state.settings.button_layout, "a");
         assert!(state.settings.mouse_enabled);
         assert!(!state.settings.debug_logging);

@@ -53,6 +53,10 @@ Strings that never face a user do **not** need wrapping: enum tags, filesystem
 paths, QRC URLs, internal error codes routed to `tracing::error!`, QML type
 names, and similar. If it could appear in a screenshot, wrap it.
 
+Before choosing the English wording itself (not just wrapping it), check
+`docs/content-style.md`'s terminology glossary and capitalization rules —
+consistent source strings make the translator's job easier too.
+
 ## Adding a new locale
 
 1. Copy the English catalog:

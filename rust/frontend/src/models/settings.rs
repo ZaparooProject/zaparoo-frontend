@@ -30,10 +30,16 @@
 //     the QML scene wrapper while also mirrored into frontend.toml so
 //     MiSTer survives `/tmp` resets.
 //   * `available_browse_layouts` — CONSTANT. The browsing layout picker
-//     choices. "grid" is the existing layout; "list" is the detailed list
-//     placeholder until the new browsing screen is built.
-//   * `current_browse_layout` — READ + NOTIFY, persisted. Defaults to
-//     "grid" so existing installs keep current behavior.
+//     choices, shared by both scoped properties below. "grid" is the
+//     existing layout; "list" is the detailed list.
+//   * `current_systems_browse_layout` / `current_games_browse_layout` —
+//     READ + NOTIFY, persisted, each defaulting to "grid". Round 10 split
+//     the single `current_browse_layout` into these two so Systems and
+//     Games can run different layouts; FavoriteSystemsScreen follows the
+//     systems value, Favorites/Recents follow the games value (see
+//     MediaListScreen.qml's `layoutScope`). A pre-round-10 install's
+//     single `browse_layout` seeds both once — see persist.rs's
+//     `migrate_browse_layout` and config.rs's `settings_config_from_raw`.
 //   * `current_favorites_grouping` — READ + NOTIFY, persisted. "none"
 //     preserves the flat list; "system" groups favorites by system. A string
 //     leaves room for additional grouping dimensions without a schema change.
@@ -41,6 +47,9 @@
 //     theme-colored SVGs; "color" opts into restored full-color logos.
 //   * `current_system_logo_style` — READ + NOTIFY, persisted. Defaults to
 //     "tinted" so existing installs keep current behavior.
+//   * `available_color_schemes` / `current_color_scheme` — curated live color
+//     presets. Missing and unknown values normalize to "zaparoo-dark"; the
+//     setting is mirrored into state.toml and frontend.toml.
 //   * `available_button_layouts` — CONSTANT. Single-letter ids used to
 //     compose resources/images/buttons/<layout>/Button*.png. User-facing
 //     labels are "Style A/B/C/D" (see
@@ -73,7 +82,7 @@
 
 use crate::models::action_error::report_action_error;
 use crate::models::{with_persist_mut, with_persist_read};
-use cxx_qt::{CxxQtType, Initialize};
+use cxx_qt::{CxxQtType, Initialize, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use std::pin::Pin;
 use tracing::warn;
@@ -128,6 +137,32 @@ const FAVORITES_GROUPINGS: &[&str] = &["none", "system"];
 const DEFAULT_FAVORITES_GROUPING: &str = "none";
 const SYSTEM_LOGO_STYLES: &[&str] = &["tinted", "color"];
 const DEFAULT_SYSTEM_LOGO_STYLE: &str = "tinted";
+// Kept in the same order as `ColorSchemes.ids` in
+// src/ui/theme/ColorSchemes.qml -- see that file's header comment for the
+// round-6 prune (24 presets to 11), round-7 regrowth (11 to 19), and
+// round-10 reorder into family blocks.
+const COLOR_SCHEMES: &[&str] = &[
+    "zaparoo-dark",
+    "zaparoo-light",
+    "classic-purple",
+    "amber-phosphor",
+    "game-boy",
+    "green-phosphor",
+    "neo-geo",
+    "nes",
+    "virtual-boy",
+    "dracula",
+    "everforest",
+    "gruvbox",
+    "nord",
+    "oxocarbon",
+    "rose-pine",
+    "solarized-dark",
+    "synthwave-84",
+    "flexoki-paper",
+    "solarized-light",
+];
+const DEFAULT_COLOR_SCHEME: &str = "zaparoo-dark";
 const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
 const DEFAULT_BUTTON_LAYOUT: &str = "a";
 // Screensaver idle-timeout choices. Values are seconds as ASCII
@@ -177,15 +212,17 @@ pub struct SettingsRust {
     available_orientations: QStringList,
     current_orientation: QString,
     available_browse_layouts: QStringList,
-    current_browse_layout: QString,
+    current_systems_browse_layout: QString,
+    current_games_browse_layout: QString,
     current_favorites_grouping: QString,
     available_system_logo_styles: QStringList,
     current_system_logo_style: QString,
+    available_color_schemes: QStringList,
+    current_color_scheme: QString,
     available_button_layouts: QStringList,
     current_button_layout: QString,
     current_mouse_enabled: bool,
     current_reduce_motion: bool,
-    current_discover_arcade_alternate_versions: bool,
     current_debug_logging: bool,
     current_show_hidden: bool,
     current_show_original_filenames: bool,
@@ -195,6 +232,9 @@ pub struct SettingsRust {
     current_media_image_type: QString,
     available_regions: QStringList,
     current_region: QString,
+    /// Flips once, never resets — see `output_resolution_stale`'s
+    /// qproperty doc comment.
+    output_resolution_stale: bool,
 }
 
 #[cxx_qt::bridge]
@@ -220,15 +260,17 @@ pub mod ffi {
         #[qproperty(QStringList, available_orientations, READ, CONSTANT)]
         #[qproperty(QString, current_orientation, READ, WRITE = set_orientation, NOTIFY)]
         #[qproperty(QStringList, available_browse_layouts, READ, CONSTANT)]
-        #[qproperty(QString, current_browse_layout, READ, WRITE = set_browse_layout, NOTIFY)]
+        #[qproperty(QString, current_systems_browse_layout, READ, WRITE = set_systems_browse_layout, NOTIFY)]
+        #[qproperty(QString, current_games_browse_layout, READ, WRITE = set_games_browse_layout, NOTIFY)]
         #[qproperty(QString, current_favorites_grouping, READ, WRITE = set_favorites_grouping, NOTIFY)]
         #[qproperty(QStringList, available_system_logo_styles, READ, CONSTANT)]
         #[qproperty(QString, current_system_logo_style, READ, WRITE = set_system_logo_style, NOTIFY)]
+        #[qproperty(QStringList, available_color_schemes, READ, CONSTANT)]
+        #[qproperty(QString, current_color_scheme, READ, WRITE = set_color_scheme, NOTIFY)]
         #[qproperty(QStringList, available_button_layouts, READ, CONSTANT)]
         #[qproperty(QString, current_button_layout, READ, WRITE = set_button_layout, NOTIFY)]
         #[qproperty(bool, current_mouse_enabled, READ, WRITE = set_mouse_enabled, NOTIFY)]
         #[qproperty(bool, current_reduce_motion, READ, WRITE = set_reduce_motion, NOTIFY)]
-        #[qproperty(bool, current_discover_arcade_alternate_versions, READ, WRITE = set_discover_arcade_alternate_versions, NOTIFY)]
         #[qproperty(bool, current_debug_logging, READ, WRITE = set_debug_logging, NOTIFY)]
         #[qproperty(bool, current_show_hidden, READ, WRITE = set_show_hidden, NOTIFY)]
         #[qproperty(bool, current_show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
@@ -238,6 +280,18 @@ pub mod ffi {
         #[qproperty(QString, current_media_image_type, READ, WRITE = set_media_image_type, NOTIFY)]
         #[qproperty(QStringList, available_regions, READ, CONSTANT)]
         #[qproperty(QString, current_region, READ, WRITE = set_region, NOTIFY)]
+        // No WRITE — Rust-owned, QML-observed only. `false` for the whole
+        // session until a background poll (see
+        // `mister_runtime::watch_for_output_change`) confirms the live
+        // output timing genuinely changed from what this process resolved
+        // at boot (e.g. a TV that was off at launch came on later). Flips
+        // to `true` exactly once and never resets; `Main.qml` watches for
+        // the change and restarts the process, which re-runs the full
+        // verified boot-time probe. `Main.qml`'s own "needs restart"
+        // confirm modal (language/resolution/CRT standard) is a separate,
+        // user-initiated flow and stays untouched — this is the frontend
+        // correcting its own wrong guess, not a setting to approve.
+        #[qproperty(bool, output_resolution_stale, READ, NOTIFY)]
         type Settings = super::SettingsRust;
 
         #[qinvokable]
@@ -253,13 +307,19 @@ pub mod ffi {
         fn set_orientation(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
-        fn set_browse_layout(self: Pin<&mut Settings>, value: QString);
+        fn set_systems_browse_layout(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_games_browse_layout(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_favorites_grouping(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_system_logo_style(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_color_scheme(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_button_layout(self: Pin<&mut Settings>, value: QString);
@@ -269,9 +329,6 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_reduce_motion(self: Pin<&mut Settings>, value: bool);
-
-        #[qinvokable]
-        fn set_discover_arcade_alternate_versions(self: Pin<&mut Settings>, value: bool);
 
         #[qinvokable]
         fn set_debug_logging(self: Pin<&mut Settings>, value: bool);
@@ -292,6 +349,7 @@ pub mod ffi {
         fn set_region(self: Pin<&mut Settings>, value: QString);
     }
 
+    impl cxx_qt::Threading for Settings {}
     impl cxx_qt::Initialize for Settings {}
 }
 
@@ -328,21 +386,22 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().available_orientations = orientations();
         self.as_mut().rust_mut().current_orientation = QString::from(merged.orientation.as_str());
         self.as_mut().rust_mut().available_browse_layouts = browse_layouts();
-        self.as_mut().rust_mut().current_browse_layout =
-            QString::from(merged.browse_layout.as_str());
+        self.as_mut().rust_mut().current_systems_browse_layout =
+            QString::from(merged.systems_browse_layout.as_str());
+        self.as_mut().rust_mut().current_games_browse_layout =
+            QString::from(merged.games_browse_layout.as_str());
         self.as_mut().rust_mut().current_favorites_grouping =
             QString::from(merged.favorites_grouping.as_str());
         self.as_mut().rust_mut().available_system_logo_styles = system_logo_styles();
         self.as_mut().rust_mut().current_system_logo_style =
             QString::from(merged.system_logo_style.as_str());
+        self.as_mut().rust_mut().available_color_schemes = color_schemes();
+        self.as_mut().rust_mut().current_color_scheme = QString::from(merged.color_scheme.as_str());
         self.as_mut().rust_mut().available_button_layouts = button_layouts();
         self.as_mut().rust_mut().current_button_layout =
             QString::from(merged.button_layout.as_str());
         self.as_mut().rust_mut().current_mouse_enabled = merged.mouse_enabled;
         self.as_mut().rust_mut().current_reduce_motion = merged.reduce_motion;
-        self.as_mut()
-            .rust_mut()
-            .current_discover_arcade_alternate_versions = merged.discover_arcade_alternate_versions;
         self.as_mut().rust_mut().current_debug_logging = merged.debug_logging;
         self.as_mut().rust_mut().current_show_hidden = merged.show_hidden;
         self.as_mut().rust_mut().current_show_original_filenames = merged.show_original_filenames;
@@ -354,11 +413,34 @@ impl Initialize for ffi::Settings {
             QString::from(merged.media_image_type.as_str());
         self.as_mut().rust_mut().available_regions = regions();
         self.as_mut().rust_mut().current_region = QString::from(merged.region.as_str());
+        // Explicit runtime guard, not just the async fn's own internal
+        // cfg gate: keeps a desktop build from ever spawning this task at
+        // all, regardless of what `watch_for_output_change`'s body does
+        // off `MiSTer`.
+        if is_mister {
+            let qt_thread = self.qt_thread();
+            crate::models::global_handle().spawn(async move {
+                crate::mister_runtime::watch_for_output_change().await;
+                let _ = qt_thread.queue(mark_output_resolution_stale);
+            });
+        }
         crate::startup_trace(format!(
             "rust:model Settings init end dur_ms={}",
             started.elapsed().as_millis()
         ));
     }
+}
+
+/// Qt-thread callback queued once `watch_for_output_change` confirms a
+/// real, stable output-timing change. Idempotent (the watcher only ever
+/// resolves once and this only ever sets `true`), matching every other
+/// setter's guard-then-set-then-notify shape.
+fn mark_output_resolution_stale(mut model: Pin<&mut ffi::Settings>) {
+    if model.output_resolution_stale {
+        return;
+    }
+    model.as_mut().rust_mut().output_resolution_stale = true;
+    model.as_mut().output_resolution_stale_changed();
 }
 
 impl ffi::Settings {
@@ -449,15 +531,30 @@ impl ffi::Settings {
         clippy::needless_pass_by_value,
         reason = "cxx-qt qinvokable signature requires QString by value"
     )]
-    fn set_browse_layout(mut self: Pin<&mut Self>, value: QString) {
+    fn set_systems_browse_layout(mut self: Pin<&mut Self>, value: QString) {
         let value_str = normalize_browse_layout(&value.to_string()).to_string();
-        if self.current_browse_layout.to_string() == value_str {
+        if self.current_systems_browse_layout.to_string() == value_str {
             return;
         }
-        let snapshot = persist_settings(|s| s.browse_layout.clone_from(&value_str));
+        let snapshot = persist_settings(|s| s.systems_browse_layout.clone_from(&value_str));
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
-        self.as_mut().rust_mut().current_browse_layout = QString::from(value_str.as_str());
-        self.as_mut().current_browse_layout_changed();
+        self.as_mut().rust_mut().current_systems_browse_layout = QString::from(value_str.as_str());
+        self.as_mut().current_systems_browse_layout_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_games_browse_layout(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_browse_layout(&value.to_string()).to_string();
+        if self.current_games_browse_layout.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.games_browse_layout.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_games_browse_layout = QString::from(value_str.as_str());
+        self.as_mut().current_games_browse_layout_changed();
     }
 
     #[allow(
@@ -494,6 +591,21 @@ impl ffi::Settings {
         clippy::needless_pass_by_value,
         reason = "cxx-qt qinvokable signature requires QString by value"
     )]
+    fn set_color_scheme(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_color_scheme(&value.to_string()).to_string();
+        if self.current_color_scheme.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.color_scheme.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_color_scheme = QString::from(value_str.as_str());
+        self.as_mut().current_color_scheme_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
     fn set_button_layout(mut self: Pin<&mut Self>, value: QString) {
         let value_str = normalize_button_layout(&value.to_string()).to_string();
         if self.current_button_layout.to_string() == value_str {
@@ -523,19 +635,6 @@ impl ffi::Settings {
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
         self.as_mut().rust_mut().current_reduce_motion = value;
         self.as_mut().current_reduce_motion_changed();
-    }
-
-    fn set_discover_arcade_alternate_versions(mut self: Pin<&mut Self>, value: bool) {
-        if self.current_discover_arcade_alternate_versions == value {
-            return;
-        }
-        let snapshot = persist_settings(|s| s.discover_arcade_alternate_versions = value);
-        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
-        self.as_mut()
-            .rust_mut()
-            .current_discover_arcade_alternate_versions = value;
-        self.as_mut()
-            .current_discover_arcade_alternate_versions_changed();
     }
 
     fn set_debug_logging(mut self: Pin<&mut Self>, value: bool) {
@@ -647,12 +746,13 @@ fn save_settings_to_config(
             language: settings.language.as_str(),
             orientation: settings.orientation.as_str(),
             clock_format: settings.clock_format.as_str(),
-            browse_layout: settings.browse_layout.as_str(),
+            systems_browse_layout: settings.systems_browse_layout.as_str(),
+            games_browse_layout: settings.games_browse_layout.as_str(),
             system_logo_style: settings.system_logo_style.as_str(),
+            color_scheme: settings.color_scheme.as_str(),
             button_layout: settings.button_layout.as_str(),
             mouse_enabled: settings.mouse_enabled,
             reduce_motion: settings.reduce_motion,
-            discover_arcade_alternate_versions: settings.discover_arcade_alternate_versions,
             debug_logging: settings.debug_logging,
             screensaver_timeout: settings.screensaver_timeout.as_str(),
             media_image_type: settings.media_image_type.as_str(),
@@ -751,12 +851,27 @@ fn merge_settings(
                 .unwrap_or(snapshot.clock_format.as_str()),
         )
         .to_string(),
-        browse_layout: normalize_browse_layout(
+        // Vestigial -- no reader or writer touches this anymore (see
+        // persist.rs's `browse_layout` field doc comment). Carried
+        // through unchanged rather than normalized/dropped so the
+        // struct's `PartialEq` derive doesn't manufacture a spurious
+        // "changed" result against an on-disk snapshot that still has
+        // the legacy value from before round 10.
+        browse_layout: snapshot.browse_layout.clone(),
+        systems_browse_layout: normalize_browse_layout(
             config
                 .settings
-                .browse_layout
+                .systems_browse_layout
                 .as_deref()
-                .unwrap_or(snapshot.browse_layout.as_str()),
+                .unwrap_or(snapshot.systems_browse_layout.as_str()),
+        )
+        .to_string(),
+        games_browse_layout: normalize_browse_layout(
+            config
+                .settings
+                .games_browse_layout
+                .as_deref()
+                .unwrap_or(snapshot.games_browse_layout.as_str()),
         )
         .to_string(),
         favorites_grouping: normalize_favorites_grouping(
@@ -775,6 +890,14 @@ fn merge_settings(
                 .unwrap_or(snapshot.system_logo_style.as_str()),
         )
         .to_string(),
+        color_scheme: normalize_color_scheme(
+            config
+                .settings
+                .color_scheme
+                .as_deref()
+                .unwrap_or(snapshot.color_scheme.as_str()),
+        )
+        .to_string(),
         button_layout: normalize_button_layout(
             config
                 .settings
@@ -791,10 +914,6 @@ fn merge_settings(
             .settings
             .reduce_motion
             .unwrap_or(snapshot.reduce_motion),
-        discover_arcade_alternate_versions: config
-            .settings
-            .discover_arcade_alternate_versions
-            .unwrap_or(snapshot.discover_arcade_alternate_versions),
         // Config wins so frontend.toml is the durable source of truth on
         // MiSTer (state.toml lives on tmpfs).
         debug_logging: config.debug_logging,
@@ -839,6 +958,14 @@ fn curated_resolutions(output_size: Option<(u32, u32)>) -> QStringList {
     let sizes = output_size.map_or_else(Vec::new, crate::mister_runtime::selectable_render_sizes);
     for (width, height) in sizes {
         list.append(QString::from(format!("{width}x{height}").as_str()));
+    }
+    list
+}
+
+fn color_schemes() -> QStringList {
+    let mut list = QStringList::default();
+    for scheme in COLOR_SCHEMES {
+        list.append(QString::from(*scheme));
     }
     list
 }
@@ -982,6 +1109,15 @@ fn normalize_system_logo_style(value: &str) -> &'static str {
         .unwrap_or(DEFAULT_SYSTEM_LOGO_STYLE)
 }
 
+fn normalize_color_scheme(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    COLOR_SCHEMES
+        .iter()
+        .copied()
+        .find(|scheme| *scheme == trimmed)
+        .unwrap_or(DEFAULT_COLOR_SCHEME)
+}
+
 fn normalize_screensaver_timeout(value: &str) -> &'static str {
     let trimmed = value.trim();
     #[cfg(debug_assertions)]
@@ -1038,13 +1174,14 @@ fn normalize_button_layout(value: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        browse_layouts, button_layouts, clock_formats, curated_resolutions, languages,
-        normalize_browse_layout, normalize_button_layout, normalize_clock_format,
-        normalize_favorites_grouping, normalize_language, normalize_orientation, normalize_region,
-        normalize_system_logo_style, orientations, regions, system_logo_styles, BROWSE_LAYOUTS,
-        BUTTON_LAYOUTS, CLOCK_FORMATS, DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT,
-        DEFAULT_CLOCK_FORMAT, DEFAULT_LANGUAGE, DEFAULT_ORIENTATION, DEFAULT_REGION,
-        DEFAULT_SYSTEM_LOGO_STYLE, ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
+        browse_layouts, button_layouts, clock_formats, color_schemes, curated_resolutions,
+        languages, normalize_browse_layout, normalize_button_layout, normalize_clock_format,
+        normalize_color_scheme, normalize_favorites_grouping, normalize_language,
+        normalize_orientation, normalize_region, normalize_system_logo_style, orientations,
+        regions, system_logo_styles, BROWSE_LAYOUTS, BUTTON_LAYOUTS, CLOCK_FORMATS, COLOR_SCHEMES,
+        DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT, DEFAULT_COLOR_SCHEME,
+        DEFAULT_LANGUAGE, DEFAULT_ORIENTATION, DEFAULT_REGION, DEFAULT_SYSTEM_LOGO_STYLE,
+        ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
     };
 
     #[test]
@@ -1123,11 +1260,62 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // Round 10: Systems and Games must resolve independently through the
+    // merge -- a config override on one must never leak onto the other,
+    // and each falls back to its own snapshot value when config is silent.
+    #[test]
+    fn merge_resolves_systems_and_games_browse_layout_independently() {
+        let snapshot = zaparoo_core::persist::SettingsState {
+            systems_browse_layout: "list".into(),
+            games_browse_layout: "grid".into(),
+            ..zaparoo_core::persist::SettingsState::default()
+        };
+        let config = zaparoo_core::config::Config {
+            settings: zaparoo_core::config::SettingsConfig {
+                games_browse_layout: Some("list".into()),
+                ..zaparoo_core::config::SettingsConfig::default()
+            },
+            ..zaparoo_core::config::Config::default()
+        };
+        let merged = super::merge_settings(&snapshot, &config, false, None, None);
+        // Systems has no config override -> falls back to the snapshot.
+        assert_eq!(merged.systems_browse_layout, "list");
+        // Games has a config override -> config wins over the snapshot's
+        // "grid", proving the two fields aren't cross-wired.
+        assert_eq!(merged.games_browse_layout, "list");
+    }
+
     #[test]
     fn favorites_grouping_normalizes_known_and_unknown_values() {
         assert_eq!(normalize_favorites_grouping(" none "), "none");
         assert_eq!(normalize_favorites_grouping("system"), "system");
         assert_eq!(normalize_favorites_grouping("genre"), "none");
+    }
+
+    #[test]
+    fn color_schemes_preserve_order_and_default_unknown_values() {
+        let list = color_schemes();
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        let expected: Vec<String> = COLOR_SCHEMES.iter().map(|s| (*s).to_string()).collect();
+        assert_eq!(collected, expected);
+        assert_eq!(normalize_color_scheme("classic-purple"), "classic-purple");
+        assert_eq!(normalize_color_scheme("zaparoo-light"), "zaparoo-light");
+        assert_eq!(normalize_color_scheme("removed"), DEFAULT_COLOR_SCHEME);
+        assert_eq!(normalize_color_scheme(""), "zaparoo-dark");
+        // Round-6-pruned ids (still valid round-5 scheme names) must fall
+        // back to the default like any other unknown value.
+        assert_eq!(
+            normalize_color_scheme("midnight-amber"),
+            DEFAULT_COLOR_SCHEME
+        );
+        assert_eq!(
+            normalize_color_scheme("zaparoo-black"),
+            DEFAULT_COLOR_SCHEME
+        );
+        assert_eq!(
+            normalize_color_scheme("catppuccin-mocha"),
+            DEFAULT_COLOR_SCHEME
+        );
     }
 
     #[test]

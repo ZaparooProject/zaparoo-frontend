@@ -74,6 +74,13 @@ Item {
     // Optional per-row label above cover art. Used only by mixed-system flat
     // views (Favorites/Recents); Games leaves it null.
     property var gridTileTopLabelProvider: null
+    // Detail pane's "System" row (list layout) reuses the grid's own
+    // per-index system-name lookup -- Recents/Favorites need only wire
+    // `gridTileTopLabelProvider` once to get both. A screen wanting a
+    // different value here than the grid label can still override it
+    // explicitly. Games leaves both null, so it gets no System row --
+    // correct, since it's already scoped to one system.
+    property var detailSystemNameProvider: root.gridTileTopLabelProvider
     property string gridViewId: "gamesGrid"
     property string listViewId: "gamesList"
     property string tateListViewId: "gamesListTate"
@@ -113,13 +120,19 @@ Item {
     property string detailRapidScrollAction: ""
     property bool pauseCoverRequestsDuringRapid: true
     property bool forceListLayout: false
+    // Round 10: which of Settings' two independent layout preferences
+    // this screen follows. "games" (default) covers Games/Favorites/
+    // Recents; FavoriteSystemsScreen sets "systems" -- it's structurally
+    // a MediaListScreen but semantically a systems screen (MainLayout.qml
+    // groups it with Systems for the same reason). See `_listLayout`
+    // below.
+    property string layoutScope: "games"
     property bool renderGridLayout: true
     // Opt-in: allow the West-button page menu while the list is empty.
     // Default false so screens whose menu cannot empty the list keep the
     // stricter ready-only gate.
     property bool pageMenuEnabledWhenEmpty: false
     property bool showTopStrip: true
-    property bool showBottomStatusRow: false
     property bool activeLabelAtBottom: false
     property bool suppressSelectionPersist: false
     property int gridBottomMargin: Sizing.pctH(15)
@@ -138,14 +151,18 @@ Item {
     // matching SystemsScreen.
     property bool gridShowCaption: true
     property bool pageLoadingVisible: false
+    // Footer left-corner count text (e.g. "%1 games"). Empty (the
+    // default -- Favorites/Recents leave it unset) simply leaves that
+    // slot blank; there is no visibility gate to wire up. The right
+    // corner is the built-in PageIndicator below, driven directly off
+    // `mediaGrid`'s own page state -- no per-screen text override needed.
     property string bottomStatusLeftText: ""
-    property string bottomStatusRightText: ""
     property int gridTotalItemsOverride: -1
     property bool gridHasMorePages: false
     property bool gridLoadingMore: false
     // False for cursor-based queries that cannot know their final page until
-    // the cursor is exhausted. Hides growing denominators/scroll thumbs while
-    // retaining current-page text and directional arrows.
+    // the cursor is exhausted. Hides a growing denominator while retaining
+    // current-page text and the chevrons.
     property bool paginationTotalKnown: true
     readonly property bool _listRapidLineMove: root._listLayout && (root.detailRapidScrollAction === "up" || root.detailRapidScrollAction === "down")
     readonly property bool _showRapidScrollIndicator: root.detailRapidIndicatorActive && !root._listRapidLineMove
@@ -153,7 +170,7 @@ Item {
     property var _rapidSnapshotResult: null
     property bool _rapidSnapshotReady: false
     property int _rapidSnapshotGeneration: 0
-    readonly property bool _listLayout: root.forceListLayout || Browse.Settings.current_browse_layout === "list"
+    readonly property bool _listLayout: root.forceListLayout || (root.layoutScope === "systems" ? Browse.Settings.current_systems_browse_layout : Browse.Settings.current_games_browse_layout) === "list"
     readonly property bool _tateListLayout: root._listLayout && Browse.Settings.current_orientation !== "horizontal"
     readonly property string _activeListViewId: root._tateListLayout ? root.tateListViewId : root.listViewId
     readonly property string _browseThemeId: BrowseLayouts.currentThemeId
@@ -162,6 +179,44 @@ Item {
     readonly property var _activeViewProfile: root._listLayout ? root._listLayoutProfile : root._gridLayoutProfile
     readonly property var _statusProfile: root._activeViewProfile && root._activeViewProfile.status ? root._activeViewProfile.status : null
     readonly property var _footerProfile: root._gridLayoutProfile && root._gridLayoutProfile.footer ? root._gridLayoutProfile.footer : null
+    // CRT keeps the count + page cue in the footer (its top strip is
+    // hidden entirely, `status.topStripVisible: false`); every other
+    // theme hosts it up on the title line instead, alongside the count
+    // badge -- see TopStatusStrip.qml's `pageIndicatorMode` and
+    // BrowseLayouts.qml's `footer.pageCueInFooter`.
+    readonly property bool _pageCueInFooter: !!(root._footerProfile && root._footerProfile.pageCueInFooter)
+    readonly property bool _showGridPageCue: !root._listLayout && root.renderGridLayout && !root._pageCueInFooter
+    // Round 11: list layout gets the same interactive chevron+"N / M"
+    // PageIndicator grid layout already had, instead of a plain "Page N /
+    // M" text or (on Games) an item-position counter with no chevrons at
+    // all. Sibling to `_showGridPageCue` rather than folded into it so
+    // that property's three existing (grid-only) use sites are untouched.
+    readonly property bool _showListPageCue: root._listLayout && !root._pageCueInFooter
+    // Whichever layout is active, is its page cue hosted in the top strip.
+    readonly property bool _showTopPageCue: root._showGridPageCue || root._showListPageCue
+    // List layout's own page size for paging math -- the number of rows
+    // actually on screen at once, same value `listCard.visibleRowCount`
+    // resolves to (a screen's own `targetVisibleRowCount`, when set, is
+    // exactly what that resolves to, so this stays correct for every
+    // MediaListScreen subclass without needing a per-screen override).
+    readonly property int _listVisiblePageSize: Math.max(1, listCard.visibleRowCount)
+    // Mirrors PagedGrid.qml's own `totalItems`/`totalPageCount`/
+    // `hasPagesBelow` formulas (see that file's doc comments), substituting
+    // the list's own page size and `mediaGrid.itemCount`/`currentIndex` —
+    // both tracked identically regardless of which layout is visible (see
+    // `listCard.currentIndex: mediaGrid.currentIndex` below).
+    readonly property int _listTotalItems: root.paginationTotalKnown && root.gridTotalItemsOverride >= 0 ? root.gridTotalItemsOverride : mediaGrid.itemCount
+    readonly property int _listTotalPageCount: Math.max(1, Math.ceil(root._listTotalItems / root._listVisiblePageSize))
+    readonly property int _listCurrentPage: Math.floor(mediaGrid.currentIndex / root._listVisiblePageSize)
+    readonly property bool _listHasPagesAbove: root._listCurrentPage > 0
+    readonly property bool _listHasPagesBelow: root._listCurrentPage < root._listTotalPageCount - 1 || root.gridHasMorePages
+    // Round 11: measure the footer's corner occupants (the left count text,
+    // the right PageIndicator) instead of reserving a flat third of the
+    // screen for each — see SystemsScreen.qml's identical treatment and
+    // ActiveLabel.qml's own name/tags measurement for the same idiom.
+    readonly property int _bottomStatusLeftTextWidth: Math.ceil(Math.max(bottomTotalTextMetrics.advanceWidth, bottomTotalTextMetrics.boundingRect.width) + (Theme.crtNativePath ? 0 : Sizing.px(2)))
+    readonly property int _footerLeftInset: root._bottomStatusLeftTextWidth + root.bottomStatusLeftMargin
+    readonly property int _footerRightInset: footerPageIndicator.width + root.bottomStatusRightMargin
     readonly property bool _crtListStrip: Theme.crtNativePath && root._listLayout
     readonly property int _listOverlayBottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.overlayBottomMargin : Sizing.pctH(15)
     // Hide list/grid content as soon as the model enters Loading, but
@@ -172,7 +227,7 @@ Item {
     readonly property bool _gateHide: root.transitioning || root._loading() || root._overlayLoadingVisible || root._errorMessage() !== ""
 
     signal requestHubScreen
-    signal requestContextMenu(int index, var anchorRect)
+    signal requestContextMenu(int index, var anchorRect, int anchorRadius)
     // Page-scoped operations entry point (West button). The router decides
     // what the menu contains; the screen just reports the press when the list
     // is in a usable state.
@@ -252,8 +307,38 @@ Item {
         return root.mediaModel !== null ? (root.mediaModel.current_detail_image_key ?? "") : "";
     }
 
+    // Default footer-label dim suffix when the screen doesn't supply its
+    // own `activeLabelTagsProvider` (Games/Favorites/Recents). Composes
+    // the same folder-count suffix the grid tiles and list rows show
+    // (Format.rowSuffix) from three index-based lookups, each guarded so
+    // a model missing the invokable (a plain ListModel in tests, or a
+    // real model that's never had a folder row) just no-ops back to plain
+    // disambiguating tags -- see games.rs's `entry_type_at`/
+    // `file_count_at`, the only model that currently has folder rows.
+    function _defaultActiveLabelTags(): string {
+        if (mediaGrid.itemCount <= 0 || root.mediaModel === null)
+            return "";
+        const index = mediaGrid.currentIndex;
+        const tags = typeof root.mediaModel.disambiguating_tags_at === "function" ? root.mediaModel.disambiguating_tags_at(index) : "";
+        const entryType = typeof root.mediaModel.entry_type_at === "function" ? root.mediaModel.entry_type_at(index) : "media";
+        const fileCount = typeof root.mediaModel.file_count_at === "function" ? root.mediaModel.file_count_at(index) : 0;
+        return Format.rowSuffix(entryType, tags, fileCount);
+    }
+
+    // Prepends a "System" row ahead of the model's own tag rows when a
+    // `detailSystemNameProvider` is wired (Recents/Favorites) -- composed
+    // here in QML, not in Rust, so it survives states where the model's own
+    // `current_detail_tags` blanks out entirely (metadata miss/error): the
+    // system name is locally known and doesn't depend on that fetch.
     function _detailTags(): string {
-        return root.mediaModel !== null ? (root.mediaModel.current_detail_tags ?? "") : "";
+        const base = root.mediaModel !== null ? (root.mediaModel.current_detail_tags ?? "") : "";
+        if (typeof root.detailSystemNameProvider !== "function")
+            return base;
+        const sys = root.detailSystemNameProvider(mediaGrid.currentIndex) ?? "";
+        if (sys === "")
+            return base;
+        const row = "System\t" + sys;
+        return base !== "" ? row + "\n" + base : row;
     }
 
     function _detailLoading(): bool {
@@ -363,7 +448,7 @@ Item {
             return;
         }
         if (root._listLayout) {
-            root._performLinearMove(delta * mediaGrid.pageSize);
+            root._performLinearMove(delta * root._listVisiblePageSize);
             return;
         }
         mediaGrid.pageBy(delta);
@@ -454,7 +539,8 @@ Item {
                     return;
                 root._persistFocus();
                 const rect = root._listLayout ? listCard.currentCellRectIn(root) : mediaGrid.currentCellRectIn(root);
-                root.requestContextMenu(idx, rect);
+                const radius = root._listLayout ? listCard.currentCellRadius : mediaGrid.currentCellRadius;
+                root.requestContextMenu(idx, rect, radius);
             }
         } else if (action === "cancel") {
             if (typeof root.cancelAction === "function")
@@ -506,13 +592,39 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: Sizing.headerBottom + (root._statusProfile ? root._statusProfile.topMargin : Sizing.pctH(1))
         height: root._statusProfile ? root._statusProfile.stripHeight : (root.showTopStrip ? Sizing.pctH(7) : 0)
-        slotMargin: root._statusProfile ? root._statusProfile.slotMargin : Sizing.pctW(5)
+        slotMargin: root._statusProfile ? root._statusProfile.slotMargin : Sizing.pctW(3)
         title: typeof root.topStripTitleProvider === "function" ? root.topStripTitleProvider() : root.screenTitle
-        currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : mediaGrid.currentPage
-        totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize))
+        currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : (root._listLayout ? root._listCurrentPage : mediaGrid.currentPage)
+        totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : (root._listLayout ? root._listTotalPageCount : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize)))
         pageTotalKnown: root.paginationTotalKnown
-        totalText: typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root._listLayout ? "" : (root._count() > 0 ? qsTr("%1 entries").arg(root._count()) : ""))
-        rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : (!root.paginationTotalKnown || !root._listLayout || mediaGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(mediaGrid.currentIndex + 1).arg(Math.max(1, root._count())))
+        // List layout keeps each screen's own provider (or the generic
+        // fallback) exactly as before. Grid layout shows the same count
+        // here too now, UNLESS the theme keeps it in the footer instead
+        // (`_pageCueInFooter` -- CRT, whose top strip is hidden entirely
+        // anyway).
+        // Generic fallback must guard on `paginationTotalKnown` same as
+        // `rightTextOverride` below does -- `_count()` is rows-loaded-so-far
+        // for a cursor-paginated model (Recents/Favorites), not a stable
+        // total, and would otherwise grow visibly as the user scrolls.
+        // Screens with a real total (Games/Favorite Systems) supply their
+        // own `topStripTotalTextProvider` and never reach this branch.
+        totalText: (root._listLayout || root._showGridPageCue) ? (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root.paginationTotalKnown && root._count() > 0 ? qsTr("%1 games").arg(root._count()) : "")) : ""
+        // Round 11: list layout now mounts the same interactive
+        // PageIndicator grid layout does (`pageIndicatorMode` below), so a
+        // per-screen provider returning the old "N / M items" position
+        // counter would just never be shown -- those screens dropped it.
+        // A provider returning something else (GamesScreen's transient
+        // "Loading more…" while a background fetch fills in scrolled-past
+        // rows) still needs to be seen, though, so `pageIndicatorMode`
+        // yields the slot back to this plain text for as long as it's
+        // non-empty rather than only ever showing while grid/list is idle.
+        rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : ""
+        showPageCounter: root._listLayout || root._showGridPageCue
+        pageIndicatorMode: root._showTopPageCue && topStrip.rightTextOverride === ""
+        pageIndicatorChevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
+        hasPagesAbove: root._listLayout ? root._listHasPagesAbove : mediaGrid.hasPagesAbove
+        hasPagesBelow: root._listLayout ? root._listHasPagesBelow : mediaGrid.hasPagesBelow
+        onPageRequested: delta => root._performPage(delta)
     }
 
     BrowseListDetailView {
@@ -520,9 +632,9 @@ Item {
 
         visible: !root._gateHide && root._listLayout
         anchors.left: parent.left
-        anchors.leftMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(5)
+        anchors.leftMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(3)
         anchors.right: parent.right
-        anchors.rightMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(5)
+        anchors.rightMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardSideMargin : Sizing.pctW(3)
         anchors.top: topStrip.bottom
         anchors.topMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardTopMargin : Sizing.pctH(2)
         anchors.bottom: parent.bottom
@@ -620,6 +732,13 @@ Item {
         onPageWheelRequested: delta => root.handleAction(delta > 0 ? "page_next" : "page_prev")
     }
 
+    // Footer row — active item caption. The count badge and page cue sit
+    // up on the top strip now instead (`_showGridPageCue` above) except on
+    // CRT, whose top strip is hidden entirely -- CRT keeps them down here,
+    // `_pageCueInFooter`. Everywhere else this is a title-only row, so
+    // `sideInset` reverts to ActiveLabel's own default margin instead of
+    // yielding a third of the width to corner slots that are empty here
+    // now.
     ActiveLabel {
         id: activeLabel
         visible: !root._gateHide && !root._listLayout && root.renderGridLayout
@@ -629,46 +748,59 @@ Item {
         anchors.bottom: root.activeLabelAtBottom ? parent.bottom : undefined
         anchors.bottomMargin: root.activeLabelAtBottom ? root.activeLabelBottomMargin : 0
         height: root.activeLabelHeight
+        sideInset: root._pageCueInFooter ? Math.max(root._footerLeftInset, root._footerRightInset) : Sizing.pctW(3)
         text: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
         // Full (untrimmed) disambiguation tokens for the focused item, shown as a
         // dim suffix. Uses an explicit provider when given, else the model's
         // disambiguating_tags_at; guarded so a plain ListModel (tests) is safe.
-        tags: typeof root.activeLabelTagsProvider === "function" ? root.activeLabelTagsProvider() : ((mediaGrid.itemCount > 0 && root.mediaModel && typeof root.mediaModel.disambiguating_tags_at === "function") ? root.mediaModel.disambiguating_tags_at(mediaGrid.currentIndex) : "")
+        tags: typeof root.activeLabelTagsProvider === "function" ? root.activeLabelTagsProvider() : root._defaultActiveLabelTags()
     }
 
+    TextMetrics {
+        id: bottomTotalTextMetrics
+        text: root.bottomStatusLeftText
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontSection
+    }
+
+    // Round 11: both this and `footerPageIndicator` below used to be
+    // grid-only (`!root._listLayout`). On the CRT profile (`_pageCueInFooter`,
+    // top strip hidden entirely) that left list layout with no page cue
+    // anywhere at all. `bottomStatusLeftText` is already layout-agnostic
+    // content (a screen's own total-count text, e.g. GamesScreen's "%1
+    // games"), so showing it for list layout too needs no new plumbing.
     Text {
         id: bottomTotalText
-        visible: root.showBottomStatusRow && !root._gateHide && !root._listLayout && root.bottomStatusLeftText !== ""
+        visible: !root._gateHide && root._pageCueInFooter && root.bottomStatusLeftText !== ""
         anchors.left: parent.left
         anchors.leftMargin: root.bottomStatusLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - root.bottomStatusLeftMargin
-        height: Sizing.fontSize(2.9)
+        width: root._bottomStatusLeftTextWidth
+        height: Sizing.fontSection
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
         text: root.bottomStatusLeftText
         font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
+        font.pixelSize: Sizing.fontSection
         color: Theme.textPrimary
         renderType: Text.NativeRendering
     }
 
-    Text {
-        visible: root.showBottomStatusRow && !root._gateHide && !root._listLayout && root.bottomStatusRightText !== ""
+    PageIndicator {
+        id: footerPageIndicator
+        objectName: "mediaListFooterPageIndicator"
+        visible: !root._gateHide && root._pageCueInFooter && (root._listLayout || root.renderGridLayout)
         anchors.right: parent.right
         anchors.rightMargin: root.bottomStatusRightMargin
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - root.bottomStatusRightMargin
-        height: Sizing.fontSize(2.9)
-        elide: Text.ElideRight
-        horizontalAlignment: Text.AlignRight
-        verticalAlignment: Text.AlignVCenter
-        text: root.bottomStatusRightText
-        font.family: Theme.fontUi
-        font.pixelSize: Sizing.fontSize(2.9)
-        color: Theme.textPrimary
-        renderType: Text.NativeRendering
+        chevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
+        currentPage: root._listLayout ? root._listCurrentPage : mediaGrid.currentPage
+        totalPages: root._listLayout ? root._listTotalPageCount : mediaGrid.totalPageCount
+        pageTotalKnown: root.paginationTotalKnown
+        hasPagesAbove: root._listLayout ? root._listHasPagesAbove : mediaGrid.hasPagesAbove
+        hasPagesBelow: root._listLayout ? root._listHasPagesBelow : mediaGrid.hasPagesBelow
+        onPageRequested: delta => root._performPage(delta)
     }
 
     LoadingIndicator {
@@ -681,14 +813,36 @@ Item {
     // Frozen rapid-navigation presentation. The live grid is hidden while this
     // is visible, so the dim Image blends once against an opaque black backing
     // rather than compositing over moving delegates on every repeat tick.
+    //
+    // Sink is the FULL grid rect, matching `prepareRapidSnapshot()`'s grab
+    // (`Qt.size(mediaGrid.width, mediaGrid.height)`) exactly, and
+    // `fillMode: Image.Pad` paints the grabbed pixmap at its own natural
+    // size with no resampling -- a true 1:1 overlay. Round 8 sized this
+    // Item to the smaller *content* rect (`_contentWidth` x the cell
+    // block's own height) and relied on `sourceClipRect` to crop the
+    // full-rect grab down to it, with `fillMode: Image.Stretch` filling
+    // whatever `sourceClipRect` returned into that smaller box.
+    // `sourceClipRect` is a `QQuickPixmap` region hint that is not
+    // reliably honored for `image://itemgrabber/…` provider URLs -- when
+    // dropped, `Stretch` squeezed the entire full-size grab (narrower by
+    // `leftInset + rightInset`, shorter by `topInset + bottomInset`) into
+    // the smaller box, with `smooth: false` nearest-neighbour on top --
+    // exactly the "ugly, scaled smaller" artifact. The crop origin also
+    // assumed cells start at `(leftInset, topInset)`, ignoring
+    // `_cellBlockOffsetX`/`_cellBlockOffsetY` (PagedGrid.qml), the
+    // centering offset applied whenever the cell block is smaller than the
+    // available area -- so even a correctly-honored clip would have been
+    // shifted. Showing the whole full-rect grab at 1:1 sidesteps both: no
+    // scaling path exists to fail, and the offset is already baked into
+    // where the grab itself painted the cells.
     Item {
         id: rapidSnapshot
         objectName: "rapidScrollSnapshot"
         visible: root._rapidSnapshotVisible
-        x: mediaGrid.x + mediaGrid.leftInset
-        y: mediaGrid.y + mediaGrid.topInset
-        width: mediaGrid._contentWidth
-        height: mediaGrid.rows * mediaGrid.cellHeight + Math.max(0, mediaGrid.rows - 1) * mediaGrid.cellSpacingY
+        x: mediaGrid.x
+        y: mediaGrid.y
+        width: mediaGrid.width
+        height: mediaGrid.height
         clip: true
         z: 19
 
@@ -701,8 +855,7 @@ Item {
             objectName: "rapidScrollSnapshotImage"
             anchors.fill: parent
             source: root._rapidSnapshotResult ? root._rapidSnapshotResult.url : ""
-            sourceClipRect: Qt.rect(mediaGrid.leftInset, mediaGrid.topInset, rapidSnapshot.width, rapidSnapshot.height)
-            fillMode: Image.Stretch
+            fillMode: Image.Pad
             smooth: false
             opacity: 0.28
         }
@@ -723,6 +876,11 @@ Item {
         y: root._listLayout ? listCard.y : mediaGrid.y
         width: root._listLayout ? listCard.width : mediaGrid.width
         height: root._listLayout ? Math.max(0, root.height - listCard.y - root._listOverlayBottomMargin) : mediaGrid.height
+        // Content rect starts below the header, so recenter on the full
+        // screen (which matches `scene`, the global transition cue's new
+        // parent) rather than this rect's own smaller height — otherwise
+        // the loading cue jumps up when the global cue hands off here.
+        cueCenterY: root.height / 2 - y
         enabled: true
         loading: root._loading()
         errorMessage: root._errorMessage()
@@ -735,9 +893,10 @@ Item {
     // these hidden Images decode the next and previous rows' covers into
     // Qt's pixmap cache at the same sourceSize as the visible detail cover
     // (the shared Sizing.detailCoverSourceWidth tier), so the detail cover switch on a d-pad move is a
-    // synchronous cache hit rather than an async decode. Mirrors the
-    // system-cover prefetch pattern in Main.qml:2629. Active only in list
-    // layout; in grid layout there is no per-row detail pane.
+    // synchronous cache hit rather than an async decode. This is media art
+    // from Core, which is a real decode and genuinely needs warming — bundled
+    // artwork does not, since it tints synchronously out of the baked atlas.
+    // Active only in list layout; in grid layout there is no per-row detail pane.
     // The source guard (`k.startsWith("media-image/")`) keeps the source
     // empty for placeholder keys (`icons/*`) so no decode work is done for
     // folder entries or cold-cache neighbors that haven't resolved yet.

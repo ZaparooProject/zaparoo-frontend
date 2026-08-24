@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // `Browse.AppStatus` — ephemeral connection / catalog health, exposed
-// to QML so the UI can render a status surface (status pill, boot
+// to QML so the UI can render a status surface (header status line, boot
 // overlay) when Core is unreachable or the initial catalog fetch
 // failed. State is not persisted: it is derived from two channels —
 //
@@ -14,9 +14,9 @@
 //     "everything together" view.
 //
 //   * The raw `Client::connection` watch (`ConnectionState`) — the
-//     unmerged link lifecycle. Surfaced as `link_state` so the new
-//     `CoreStatusPill` can distinguish "first-ever connect attempt"
-//     from "lost a live link, retrying" without watching the catalog
+//     unmerged link lifecycle. Surfaced as `link_state` so the header
+//     status line can distinguish "first-ever connect attempt" from
+//     "lost a live link, retrying" without watching the catalog
 //     resource separately.
 //
 // `connection_state` constants (legacy banner view):

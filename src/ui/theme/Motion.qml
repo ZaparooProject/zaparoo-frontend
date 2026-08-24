@@ -4,7 +4,7 @@
 pragma Singleton
 import QtQuick
 
-// Motion tokens — durations, scale targets, and the global on/off switch
+// Motion tokens — durations and the global on/off switch
 // for all interaction animations.
 //
 // `enabled` is written by the app layer from the persisted reduce-motion
@@ -18,33 +18,43 @@ QtObject {
     // Master switch. Written from Main.qml via a Binding.
     property bool enabled: true
 
-    // CRT native path. Bound from MainLayout (like Theme/Sizing) so this
-    // singleton stays dependency-free (no Theme import). At 240p the default
-    // press scales move an edge by under a pixel, so the push-in cue is
-    // deepened on this path to read as a tactile snap.
-    property bool crtNativePath: false
-
     // Duration buckets (milliseconds). The practical floor here is the frame
     // budget, not perception: on MiSTer's software renderer (~30fps) motion the
     // eye tracks needs ~3 frames (~100ms) to read as smooth rather than a
-    // two-frame jump. So `settleMs` (tracked motion) stays above that floor,
-    // while `pressMs` can sit a little under it because it reads as a punchy
-    // tactile snap, not tracked motion. Don't drop these much further or the
-    // cues turn choppy on hardware.
-    // `pressMs`  — push-in feedback on accept/activate.
+    // two-frame jump. So `settleMs` (tracked motion) stays above that floor.
+    // `pressMs` doesn't need to: besides being the press-in/flash duration, it
+    // is also `DeferredAction`'s hold time — how long every Accept across the
+    // app (tiles, browse-list rows, Settings rows, menu/picker rows) blocks
+    // the actual dispatch so the cue gets at least one rendered frame before
+    // a forward navigation can cover it (see DeferredAction.qml). That hold
+    // is pure added input latency, and 80ms sat well past where added latency
+    // reads as lag rather than "instant" — competitive-controller research
+    // puts ~20ms as already noticeable, UI-perception writing puts ~50ms as
+    // the point haptic feedback stops feeling immediate, and one well-known
+    // animation guideline calls out high-frequency keyboard/d-pad-driven
+    // actions specifically as the case NOT to gate behind a fixed animation
+    // tax, since the cost compounds over hundreds of repeated presses. 34ms
+    // is the actual constraint instead: one frame at this app's slowest
+    // real target (MiSTer, ~30fps → 33.3ms), rounded up. Don't drop it
+    // below that or the flash can lose its one guaranteed frame on the
+    // worst-case hardware; there's no perceptual reason to keep it higher.
+    // `pressMs`  — push-in feedback on accept/activate; DeferredAction's hold.
     // `settleMs` — settle/release legs and the toggle-knob slide.
-    readonly property int pressMs: 80
+    readonly property int pressMs: 34
     readonly property int settleMs: 110
-
-    // Scale target for the one-shot push-in cue on squarish surfaces — tiles
-    // and dialog buttons. Deeper on the CRT path so a sub-pixel HD nudge
-    // becomes a visible snap at 240p.
-    readonly property real pressScale: crtNativePath ? 0.90 : 0.96
-    // Gentler target for wide, short rows (list-detail rows, settings fields,
-    // menu/picker rows). The same scale factor moves a full-width row's edges
-    // far more than a squarish tile's, so a wider row needs a value closer to
-    // 1.0 to read as the same subtle press. Same CRT deepening as above.
-    readonly property real rowPressScale: crtNativePath ? 0.95 : 0.985
+    // How long `ProgressTrack`'s leading cell holds each on/off state of
+    // its blink (~2 Hz full cycle). This is a hard cut, not a fade — a
+    // Timer flips a bool every `pulseMs` and `color` reads it directly,
+    // no ColorAnimation or Behavior involved, the same instant-swap idiom
+    // `SelectionBar`'s inverse-video flash already uses. It is the one
+    // exception to "no persistent motion": a background task's progress
+    // cue in header chrome, never over content, gated on `enabled` and on
+    // the task actually running — the same small-dirty-rect page-dot/
+    // focus-ring-blink exemption CLAUDE.md already carves out, just
+    // continuous instead of one-shot because there is no natural "done"
+    // edge mid-task. See ProgressTrack.qml's doc comment and
+    // docs/style.md -> "Header status line" for the write-up.
+    readonly property int pulseMs: 250
 
     // Collapse all durations to 0 under reduce-motion so Behaviors that
     // use dur() resolve instantly without per-call branching.

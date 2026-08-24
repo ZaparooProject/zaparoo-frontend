@@ -16,39 +16,82 @@ import Zaparoo.Browse as Browse
 // category file-wide.
 // qmllint disable compiler
 
-// Hub screen — two centered rows the user navigates as one grid:
+// Hub screen — one uniform paged grid the user navigates with a single flat
+// cursor, rendering `Browse.HubLayout`'s persisted `[[hub.items]]` layout in
+// the user's own order (a "go all in" replacement for round 6's hide/order
+// storage — see `docs/plans/ui-geometry-refresh.md`'s Hub roadmap). A tile
+// can be a category, a built-in action, a specific system, a folder, or an
+// arbitrary ZapScript — see `_resolveLayoutEntry` below, one resolver per
+// kind. The layout records INTENT (this tile exists, here); each resolver
+// folds in whatever LIVE visibility rule that kind needs (Resume needs
+// Recents to answer, Update needs the build flag + internet, a category
+// needs Core to currently confirm it) — the persisted order never changes
+// just because something is temporarily unavailable.
 //
-//   * Top row: dynamic categories from Browse.CategoriesModel (Arcade,
-//     Computer, Console, Handheld).
-//   * Bottom row: actions — optional Resume Game, Favorites,
-//     Recently Played, optional Update and Settings.
+// Bootstrap exception: a genuinely fresh install has no persisted layout
+// yet (`Browse.HubLayout.is_unseeded()`) AND Core hasn't answered this
+// launch either. For that narrow window only, categories fall back to
+// hardcoded placeholders (`_placeholderCategories`) while actions still
+// resolve live in their fixed built-in order — see `items` below. Keying
+// this off `is_unseeded()` rather than `item_count() === 0` matters once a
+// SEEDED layout can be emptied out entirely (every tile removed, trailing
+// blanks trimmed) — that's a real, reachable zero-item state that must
+// render as an empty Hub, not fall back to fake placeholder tiles. The
+// moment Core answers, `Main.qml` calls `Browse.HubLayout.reconcile(...)`,
+// which seeds the real layout from what Core reported; every later launch
+// (the common case) renders the real layout immediately, no placeholder
+// window at all.
 //
-// Both rows wrap left/right modulo their own count, and Up/Down flip
-// between rows in a closed loop (Up from top wraps to bottom, Down
-// from bottom wraps to top). Both rows share cell width and spacing
-// and the bottom row is horizontally centered under the top, so the
-// cross-row jump is "round to the visually-nearest cell". Measuring
-// positions in cell-widths, every cell's center sits at i + 0.5 and
-// the bottom row is offset left by (topCount − bottomCount) / 2 cells.
-// So for either direction:
+// `PagedGrid` -- the same component Systems/Media already use -- owns cell
+// layout, paging, and directional navigation (`moveSelection`). The grid's
+// shape is a FIXED per-tier table (`Sizing.hubGridColumns/Rows`), never
+// fitted to the viewport the way Systems/Games are -- see `Sizing.qml`'s
+// `hubGridShape` comment. Tiles are square (`PagedGrid.squareCells`) and
+// paging is the normal way to reach anything past the first page, not an
+// edge case -- `handleAction` below wires L/R shoulder page turns.
 //
-//   destIdx = round(sourceIdx − (sourceCount − destCount) / 2)
+// A `blank`-kind layout entry (a deliberate spacer the user placed, e.g. to
+// push the next item onto a fresh page) renders through `emptyDelegate` --
+// see the `PagedGrid` block below -- as a genuinely blank, focusable-but-
+// inert slot, the SAME component `_padToPageSize`'s trailing tail padding
+// uses for the last page's leftover cells.
 //
-// clamped into the destination row. The formula is symmetric and
-// generalizes for any (topCount, bottomCount); see `_mapCrossRow`.
+// No edit mode. Move/Hide/Add live in the same two menus every other
+// screen already uses -- Options (North/X, item-scoped) and View (West/Y,
+// page-scoped) -- not built in this pass; see the plan's Phase D.
 //
-// Pure input dispatcher: emits one of `requestAccept(payload)`,
-// `requestFavoritesScreen`, `requestRecentsScreen`, `requestUpdateScreen`,
-// `requestSettingsScreen`, or `requestQuit`.
+// Pure input dispatcher: emits one of `requestAccept(kind, id, system)`
+// (forward; the router decides destination -- see CLAUDE.md -> "Screens and
+// routing") or `requestRetry`. Cancel is a deliberate no-op on the Hub root
+// (there is no "back" from the top of the screen stack) except while a Move
+// is armed, where it's intercepted by `_handleMoveAction`/`_cancelMove`;
+// Quit lives in the View menu instead (Main.qml's `openHubPageMenu`).
 //
 // All cross-screen orchestration (model fills, deferred set_category,
 // cover prefetch, transition overlay, screen flip) lives in Main.qml.
-// `transitioning` is written by the router so both rows hide during
-// the loading wait.
+// `transitioning` is written by the router so the grid hides during the
+// loading wait.
 Item {
     id: hub
 
-    Component.onCompleted: console.debug("startup/qml component HubScreen completed")
+    Component.onCompleted: {
+        console.debug("startup/qml component HubScreen completed");
+        // `onItemsChanged` isn't guaranteed to fire for `items`' very
+        // first evaluation (there's no prior value to have "changed" from)
+        // -- populate the grid model explicitly so `hubGridModel` isn't
+        // empty for first paint. See `_syncGridModel`'s doc comment.
+        hub._syncGridModel();
+        // Raw construction-time default, before Main.qml's first
+        // restoreFromCategoriesReset() call lands (and for test harnesses
+        // that never call it at all) — PagedGrid's own currentIndex
+        // defaults to 0, which now points at the first CATEGORY whenever
+        // any exist. Round <=5's static currentRow/currentIndex defaults
+        // intentionally landed on Resume instead (the highest-value
+        // action, and harmless to navigate before any real focus has been
+        // armed) — reproduce that here now that "first action" is no
+        // longer index 0.
+        hub.currentIndex = hub._actionIndexForId("resume");
+    }
 
     // Prefer a user override cover key over the bundled default. Pure: takes
     // the override-lookup result (empty string when none) and the fallback,
@@ -61,12 +104,17 @@ Item {
     }
 
     // Resolve the cover key for a Hub item: a user override from the `hub/`
-    // namespace if present, else the bundled key. Before the deferred scan
-    // completes, return empty so first paint does no icon image work and avoids
-    // a bundled-to-custom flash.
+    // namespace if present, else the bundled key.
+    //
+    // Never returns empty. Withholding the bundled key until the override scan
+    // lands used to guarantee at least one blank frame on every Hub tile —
+    // a filesystem round-trip's worth of pop-in charged to every user, to spare
+    // the few with a `custom/hub/` folder a one-frame swap. Main.qml now starts
+    // the scan at construction rather than after the first frame, so it usually
+    // completes before first paint and the swap is invisible anyway.
     function _hubCoverKey(id: string, fallbackKey: string): string {
         if (!Browse.ImageOverrides.hub_loaded)
-            return "";
+            return fallbackKey;
         return hub._preferOverride(Browse.ImageOverrides.override_cover_key("hub", id), fallbackKey);
     }
 
@@ -97,47 +145,35 @@ Item {
             coverKey: hub._hubCoverKey(CategoryIds.otherId, CategoryIds.coverKey(CategoryIds.otherId))
         }
     ]
-    readonly property var visibleCategoryEntries: {
-        if (!Browse.CategoriesModel.loaded || Browse.CategoriesModel.raw_count <= 0) {
-            const placeholders = [];
-            for (let i = 0; i < hub._placeholderCategories.length; i++) {
-                const entry = hub._placeholderCategories[i];
-                const hidden = Browse.HubState.is_category_hidden(entry.id);
-                if (hidden && !Browse.Settings.current_show_hidden)
-                    continue;
-                placeholders.push({
-                    id: entry.id,
-                    name: entry.name,
-                    coverKey: entry.coverKey,
-                    hidden: hidden
-                });
-            }
-            return placeholders;
-        }
-        const entries = [];
-        for (let i = 0; i < Browse.CategoriesModel.count; i++) {
-            const name = Browse.CategoriesModel.category_at(i);
-            entries.push({
-                id: name,
-                name: CategoryIds.displayName(name),
-                coverKey: hub._hubCoverKey(name, CategoryIds.coverKey(name)),
-                hidden: Browse.CategoriesModel.is_hidden_at(i)
-            });
-        }
-        return entries;
-    }
     property bool transitioning: false
-    // 0 = categories row, 1 = actions row.
-    property int currentRow: 1
-    // Index within the active row. Resume is first while optimistic/history is unknown.
-    property int currentIndex: 0
+    // Flat cursor over `items` (categories, then actions, back to back).
+    // Alias to the grid's own currentIndex so mouse hover/click
+    // (handled entirely inside PagedGrid) and keyboard navigation
+    // (handleAction below, via pagedGrid.moveSelection) stay a single
+    // source of truth — see PagedGrid.qml.
+    property alias currentIndex: pagedGrid.currentIndex
+    // Exposes the grid's page count so MainLayout's help bar can show the
+    // L/R shoulder glyphs only when there's a second page to jump to (same
+    // pattern Systems already uses) — `pagedGrid` is a bare `id`, lexically
+    // scoped to this file, so a caller in another file can't reach
+    // `pagedGrid.pageCount` directly.
+    readonly property alias pageCount: pagedGrid.pageCount
+    // Test-only geometry access — `pagedGrid` is a bare `id`, lexically
+    // scoped to this file, so a test can't reach `pagedGrid.height`
+    // directly to verify the equal-gap vertical layout below.
+    readonly property alias _gridHeight: pagedGrid.height
+    // Test-only: cross-checks Sizing.hubTileSize (which duplicates this
+    // grid's squareCells fit so Settings can read it without a HubScreen
+    // instance) against the real resolved value, so the two can't silently
+    // drift apart.
+    readonly property alias _gridCellWidth: pagedGrid.cellWidth
     // False on the first-paint path so Hub can draw a static Resume tile
     // without touching RecentsModel. MainLayout flips this after the
     // first frame, then Resume can hide/update from Core history.
     property bool resumeModelEnabled: false
     // Incremented on each Accept so the focused tile plays its push-in
-    // animation. Forwarded to every TileLoader; only the focused+selected
-    // Tile fires its animation.
+    // animation. Forwarded to the grid, which forwards it to every tile;
+    // only the focused+selected Tile fires its animation.
     property int activatePulse: 0
     // False until the user takes control of focus (first input). Combined
     // with `_restoreDone` into `_focusReady`, which gates whether the tiles
@@ -145,153 +181,651 @@ Item {
     property bool _focusArmed: false
     // Set true once the load-time category restore has run. Combined with
     // `_focusArmed` into `_focusReady`, which gates whether the tiles render
-    // focus at all — so the action row's default Resume selection never paints
-    // a ring during the window before `restoreFromCategoriesReset` corrects
-    // focus to the saved tile on a cold start.
+    // focus at all — so the default first-tile selection never paints a
+    // ring before `restoreFromCategoriesReset` corrects focus to the saved
+    // tile on a cold start.
     property bool _restoreDone: false
     readonly property bool _focusReady: hub._focusArmed || hub._restoreDone
-    // Source-row index from the most recent cross. Used to make a
-    // Down → Up (or Up → Down) round-trip return to the originating
-    // tile, which the centered visual-nearest mapping in `_mapCrossRow`
-    // can't deliver when `sourceCount !== destCount`. -1 means no
-    // round-trip is armed: either no cross has happened yet, or the
-    // user moved horizontally on the destination row since the last
-    // cross — at which point the saved index represents stale state
-    // and the next cross falls back to `_mapCrossRow`.
-    property int _crossSavedIndex: -1
 
-    signal requestAccept(category: string)
+    // `system` is only ever populated for `kind === "folder"` -- a folder
+    // shortcut's re-entry needs its owning system id to establish
+    // GamesState's path stack before pushing the folder's own path (see
+    // Main.qml's router). Every other kind passes "".
+    signal requestAccept(kind: string, id: string, system: string)
     signal requestRetry
-    signal requestQuit
-    signal requestFavoritesScreen
-    signal requestRecentsScreen
-    signal requestUpdateScreen
-    signal requestSettingsScreen
     // Emitted when the user opens the options menu on a category tile.
     // `anchorRect` is the tile's bounding rect mapped to hub coordinates,
-    // used by the context menu to position itself.
-    signal requestContextMenu(index: int, anchorRect: rect)
-    signal requestActionContextMenu(actionId: string, anchorRect: rect)
+    // used by the context menu to position itself. `anchorRadius` is the
+    // tile's corner radius so the menu's scrim can cut a rounded hole
+    // around it instead of a square one. `categoryId` (not a flat `items`
+    // or CategoriesModel index) — once the layout can freely interleave
+    // categories with everything else, a flat index no longer has any
+    // fixed relationship to a CategoriesModel index (round <=6 relied on
+    // categories always occupying a contiguous prefix; that's no longer
+    // true). Main.qml resolves the id to a CategoriesModel index itself
+    // before opening the menu. `hubIndex` is the entry's real
+    // `Browse.HubLayout` position (-1 during the bootstrap placeholder
+    // window) — separate from `categoryId`, since Main.qml needs it purely
+    // to dispatch the universal Move/Remove entries this menu now also
+    // carries, unrelated to the CategoriesModel index the category-specific
+    // entries use.
+    signal requestContextMenu(hubIndex: int, categoryId: string, anchorRect: rect, anchorRadius: int)
+    // `hubIndex`: see `requestContextMenu`'s doc comment. Fired for every
+    // action tile now (not just Favorites) so Move/Remove reach them too;
+    // Favorites alone still carries its extra "Random game" entry.
+    signal requestActionContextMenu(hubIndex: int, actionId: string, anchorRect: rect)
+    // Fired for `system`/`folder`/`zapscript` only — never a `blank` tile
+    // (an implementation detail, not an interactable object; see
+    // `handleAction`'s "context_menu" branch) and never tail padding (see
+    // `_blankEntry`'s `hubIndex` doc comment). These kinds have no menu of
+    // their own, only the universal Move/Hide-or-Delete.
+    signal requestItemContextMenu(hubIndex: int, kind: string, anchorRect: rect, anchorRadius: int)
+    // West/Y — the page-scoped "View" menu (Add item… / Reset layout).
+    signal requestPageMenu
 
-    // Vertically center the (categories row + actions row + activeLabel)
-    // block in the band between the HeaderBar bottom (Sizing.headerBottom)
-    // and the help bar top (hub.height - pctH(6)). `_blockHeight`
-    // mirrors the anchor chain below: each row is
-    // `cellHeight + 2*verticalPadding`, the gap between them collapses
-    // the focus-bleed padding (see `actionsRow.anchors.topMargin`),
-    // and the label sits pctH(3) below the actions row at pctH(7) tall.
-    readonly property int _blockHeight: 2 * (categoriesRow.cellHeight + 2 * categoriesRow.verticalPadding) + (categoriesRow.spacing - categoriesRow.verticalPadding - actionsRow.verticalPadding) + Sizing.pctH(3) + Sizing.pctH(7)
-    readonly property int _blockY: Math.round((Sizing.headerBottom + hub.height - Sizing.pctH(6) - hub._blockHeight) / 2)
+    // Header→grid, grid→activeLabel, and activeLabel→help-bar all match —
+    // round 6 follow-up: the previous layout centered the (grid + fixed
+    // pctH(3) gap + activeLabel) block in the band, which only made the two
+    // OUTER gaps equal to each other (a side effect of centering), never to
+    // the fixed inner one — visibly uneven. Solving for one gap size and
+    // using it in all three places replaces that.
+    readonly property int _activeLabelHeight: Sizing.pctH(7)
+    // The band between the HeaderBar bottom and the help bar top,
+    // independent of pagedGrid.height (used both as the cell-fit ceiling
+    // below and, once the grid's real height is known, to solve for the
+    // gap).
+    readonly property int _verticalBand: Math.max(0, hub.height - Sizing.headerBottom - Sizing.pctH(6))
+    // Ceiling fed to pagedGrid's `heightBudget` (see that property's doc
+    // comment for why the grid needs a ceiling distinct from its own
+    // `height`) — reserves activeLabel's height plus a nominal minimum gap
+    // allowance on each side so the grid can't grow to consume the whole
+    // band. Computed independent of `pagedGrid.height` (which is itself
+    // derived FROM the fitted cell size below — reading it here would be
+    // circular); the real, equal gap is solved afterward from the grid's
+    // actual resolved height.
+    readonly property int _gridHeightBudget: Math.max(0, hub._verticalBand - hub._activeLabelHeight - 3 * Sizing.pctH(2))
+    // The actual equal gap, now that pagedGrid.height is resolved: whatever
+    // room the band has left after the grid's real height and the label's
+    // fixed height, split three ways.
+    readonly property int _verticalGap: Math.max(0, Math.round((hub._verticalBand - pagedGrid.height - hub._activeLabelHeight) / 3))
+    readonly property int _blockY: Sizing.headerBottom + hub._verticalGap
 
     readonly property bool resumeKnownUnavailable: hub.resumeModelEnabled && !Browse.RecentsModel.resume_loading && !Browse.RecentsModel.resume_available && Browse.AppStatus.connection_state === 2
     readonly property bool resumeActionVisible: !hub.resumeKnownUnavailable
     readonly property bool _internetAvailable: Browse.SystemStatus.has_wifi_internet || Browse.SystemStatus.has_lan_internet
     readonly property string _emptyCatalogFallbackAction: Browse.BuildInfo.update_enabled && hub._internetAvailable ? "update" : "settings"
 
-    // Action-row data. Resume is visible by default while Core history
-    // is unknown; hide it only after Recents proves there is nothing
-    // resumable. The tile always uses the play icon so startup never
-    // waits on a game cover for the Hub's primary action.
-    readonly property var actionEntries: {
-        const entries = [];
-        if (hub.resumeActionVisible) {
+    // ── Layout entry resolvers ───────────────────────────────────────────
+    // One resolver per kind `Browse.HubLayout` can hand back (see that
+    // singleton's header comment — it already filters out the reserved
+    // `collection` kind and anything this build doesn't recognise, so every
+    // kind reaching here is one of the five below). Each returns a
+    // PagedGrid-ready row (`name`/`coverKey`/`favorite`/`hidden`/`disabled`/
+    // `stateReason`/`disambiguatingTags`/`isEmpty`, Hub's own `kind`+`id`),
+    // or `null` to skip the tile entirely for now — still round-trips on
+    // save (Rust owns persistence), just isn't rendered this frame. `null`
+    // is reserved for STRUCTURAL absence only (a compile-time feature this
+    // build lacks, an id this build doesn't recognise) — anything whose
+    // availability can change at runtime (still loading, currently
+    // unconfirmed, no internet right now) always returns a real entry with
+    // `disabled` set instead, so the tile's presence and position in the
+    // grid never depend on live data — only its enabled/disabled look does.
+    // See this round's plan ("Tile state consolidation") for why: letting
+    // tiles pop in and out as Core/Recents/SystemStatus answer was both a
+    // layout-shift bug and, because `restoreFromCategoriesReset` looks up
+    // the persisted focus by scanning this same array, the "focus goes
+    // missing on boot" bug.
+
+    // Resume is always present; `disabled` is the same boolean that used to
+    // gate its existence (definitively no resumable game, per confirmed
+    // Core history) — see `resumeKnownUnavailable`. Update is present
+    // whenever this build has the feature at all (a compile-time constant,
+    // genuinely structural); `disabled` there tracks live internet
+    // reachability instead of gating existence, so a Wi-Fi toggle mid-session
+    // never adds or removes the tile, only its look.
+    function _resolveActionEntry(id: string): var {
+        if (id === "resume") {
             const resumeName = hub.resumeModelEnabled ? Browse.RecentsModel.resume_name : "";
-            entries.push({
-                id: "resume",
-                coverKey: hub._hubCoverKey("resume", "icons/PlayOutline"),
-                enabled: true,
-                text: resumeName.length > 0 ? resumeName : qsTr("Resume")
-            });
+            // Real cover art once the model is live and has resolved one
+            // (RecentsModel.resume_cover_key -- see recents.rs's
+            // resume_cover_key_for); the static glyph before first frame
+            // (matching resumeName's own pre-first-frame gating above) or
+            // whenever Rust itself has nothing better to offer. A user's
+            // `hub/resume` override still wins over either via
+            // `_hubCoverKey`.
+            const resumeCoverFallback = hub.resumeModelEnabled ? Browse.RecentsModel.resume_cover_key : "icons/PlayOutline";
+            return hub._actionEntry("resume", hub._hubCoverKey("resume", resumeCoverFallback), resumeName.length > 0 ? qsTr("Resume: %1").arg(resumeName) : qsTr("Resume"), hub.resumeKnownUnavailable, qsTr("No recent games"));
         }
-        entries.push({
-            id: "favorites",
-            coverKey: hub._hubCoverKey("favorites", "icons/HeartOutline"),
-            enabled: true,
-            text: qsTr("Favorites")
-        });
-        entries.push({
-            id: "recents",
-            coverKey: hub._hubCoverKey("recents", "icons/History"),
-            enabled: true,
-            text: qsTr("Recently Played")
-        });
-        if (Browse.BuildInfo.update_enabled && hub._internetAvailable) {
-            entries.push({
-                id: "update",
-                coverKey: hub._hubCoverKey("update", "icons/RefreshCw"),
-                enabled: true,
-                text: qsTr("Update")
-            });
+        if (id === "favorites")
+            return hub._actionEntry("favorites", hub._hubCoverKey("favorites", "icons/HeartOutline"), qsTr("Favorites"));
+        if (id === "recents")
+            return hub._actionEntry("recents", hub._hubCoverKey("recents", "icons/History"), qsTr("Recently played"));
+        if (id === "update") {
+            if (!Browse.BuildInfo.update_enabled)
+                return null;
+            return hub._actionEntry("update", hub._hubCoverKey("update", "icons/RefreshCw"), qsTr("Update"), !hub._internetAvailable, qsTr("No internet connection"));
         }
-        entries.push({
-            id: "settings",
-            coverKey: hub._hubCoverKey("settings", "icons/Tools"),
-            enabled: true,
-            text: qsTr("Settings & Utilities")
-        });
-        return entries;
+        if (id === "settings")
+            return hub._actionEntry("settings", hub._hubCoverKey("settings", "icons/Tools"), qsTr("Settings"));
+        // A future build's action id this one doesn't recognise -- stays in
+        // the persisted layout untouched, just not rendered.
+        return null;
     }
 
-    function _actionIndexForId(id: string): int {
-        for (let i = 0; i < hub.actionEntries.length; i++)
-            if (hub.actionEntries[i].id === id)
+    function _actionEntry(id: string, coverKey: string, text: string, disabled: bool, stateReason: string): var {
+        return {
+            kind: "action",
+            id: id,
+            name: text,
+            coverKey: coverKey,
+            favorite: 0,
+            hidden: false,
+            disambiguatingTags: "",
+            entryType: "media",
+            fileCount: 0,
+            disabled: disabled ?? false,
+            stateReason: stateReason ?? "",
+            isEmpty: false
+        };
+    }
+
+    // A category Core hasn't (yet, or ever) confirmed stays in the
+    // persisted layout -- reconciliation is add-only, never remove (see
+    // hub_layout.rs) -- and always renders; `disabled` tracks whether Core
+    // currently lists it, rather than gating existence. `loaded` gates the
+    // check so a category isn't wrongly marked disabled before Core has
+    // answered at all this launch.
+    function _resolveCategoryEntry(id: string): var {
+        const canonicalId = CategoryIds.canonicalize(id);
+        const unconfirmed = Browse.CategoriesModel.loaded && Browse.CategoriesModel.index_for_category(canonicalId) < 0;
+        return {
+            kind: "category",
+            id: canonicalId,
+            name: CategoryIds.displayName(canonicalId),
+            coverKey: hub._hubCoverKey(canonicalId, CategoryIds.coverKey(canonicalId)),
+            favorite: 0,
+            hidden: false,
+            disambiguatingTags: "",
+            entryType: "media",
+            fileCount: 0,
+            disabled: unconfirmed,
+            stateReason: unconfirmed ? qsTr("Not available") : "",
+            isEmpty: false
+        };
+    }
+
+    // A specific-system tile. Name/cover resolve through
+    // Browse.HubLayout's id-only lookups (no live category row needed --
+    // the system's own category may not even be the active one) unless the
+    // layout entry carries an explicit override.
+    function _resolveSystemEntry(id: string, nameOverride: string, iconOverride: string): var {
+        if (id === "")
+            return null;
+        return {
+            kind: "system",
+            id: id,
+            name: nameOverride !== "" ? nameOverride : Browse.HubLayout.resolve_system_name(id),
+            coverKey: iconOverride !== "" ? hub._hubCoverKey(iconOverride, "icons/File") : Browse.HubLayout.resolve_system_cover_key(id),
+            favorite: 0,
+            hidden: false,
+            disambiguatingTags: "",
+            entryType: "media",
+            fileCount: 0,
+            disabled: false,
+            stateReason: "",
+            isEmpty: false
+        };
+    }
+
+    // A folder shortcut, addressed by path (a folder's only stable
+    // identity -- see GamesState.path_stack). Falls back to the path's
+    // final segment as the display name, same as GamesScreen's own
+    // `_folderNameForPath`.
+    function _resolveFolderEntry(path: string, nameOverride: string, iconOverride: string, system: string): var {
+        if (path === "")
+            return null;
+        return {
+            kind: "folder",
+            id: path,
+            path: path,
+            // The owning system id, carried through to Accept (see
+            // `requestAccept`'s doc comment) so the router can re-establish
+            // GamesState's system before pushing this folder's path.
+            system: system,
+            name: nameOverride !== "" ? nameOverride : hub._folderNameForPath(path),
+            coverKey: iconOverride !== "" ? hub._hubCoverKey(iconOverride, "icons/Folder") : hub._hubCoverKey(path, "icons/Folder"),
+            favorite: 0,
+            hidden: false,
+            disambiguatingTags: "",
+            // Hub's own "folder" kind is a ZapScript shortcut styled with a
+            // folder icon, not a Games-browse folder -- never eligible for
+            // the round-11 item-count suffix (games.rs's browse-only
+            // `entryType`/`fileCount` concept), so this stays "media" like
+            // every other Hub tile kind.
+            entryType: "media",
+            fileCount: 0,
+            disabled: false,
+            stateReason: "",
+            isEmpty: false
+        };
+    }
+
+    function _folderNameForPath(path: string): string {
+        const trimmed = path.replace(/\/+$/, "");
+        const idx = trimmed.lastIndexOf("/");
+        return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+    }
+
+    // An arbitrary-ZapScript tile. Neither `system` nor `path` on the
+    // layout entry is a launch target -- the script text itself is what
+    // runs -- but together they identify a LINKED GAME the same way a
+    // Games-grid row or a Favorites/Recents row is addressed, and cover
+    // art resolves the same way: a real Core lookup through
+    // Browse.HubLayout.resolve_media_cover_key, not just a generic icon.
+    // `system` alone (no `path`) is a softer hint for a script with no
+    // single game to fetch art for (e.g. "launch a random game in this
+    // system") and falls back to that system's logo instead. Falls back to
+    // the script text as the label when no name override is set.
+    function _resolveZapScriptEntry(script: string, nameOverride: string, iconOverride: string, systemHint: string, pathHint: string): var {
+        if (script === "")
+            return null;
+        let coverKey = "icons/File";
+        if (iconOverride !== "")
+            coverKey = hub._hubCoverKey(iconOverride, "icons/File");
+        else if (systemHint !== "" && pathHint !== "")
+            coverKey = Browse.HubLayout.resolve_media_cover_key(systemHint, pathHint);
+        else if (systemHint !== "")
+            coverKey = Browse.HubLayout.resolve_system_cover_key(systemHint);
+        return {
+            kind: "zapscript",
+            id: script,
+            script: script,
+            name: nameOverride !== "" ? nameOverride : script,
+            coverKey: coverKey,
+            favorite: 0,
+            hidden: false,
+            disambiguatingTags: "",
+            entryType: "media",
+            fileCount: 0,
+            disabled: false,
+            stateReason: "",
+            isEmpty: false
+        };
+    }
+
+    // `hubIndex` (all entry kinds, including `_blankEntry`) is the entry's
+    // real position in `Browse.HubLayout` -- the same index `move_held_to`/
+    // `remove_item`/`add_item`'s `target` take (a real persisted `blank`
+    // tile can be the TARGET of a move/add, same as any gap). -1 means
+    // "not really backed by the persisted layout": the bootstrap
+    // placeholder window (`items`' `else` branch, below) and
+    // `_padToPageSize`'s synthetic tail padding both use the same
+    // `kind: "empty"` shape a real persisted `blank` tile does. Options
+    // never opens on ANY `kind === "empty"` entry regardless of `hubIndex`
+    // -- a blank is an implementation detail, not something you pick up
+    // and move on its own; see `handleAction`'s "context_menu" branch.
+    function _blankEntry(hubIndex: int): var {
+        return {
+            kind: "empty",
+            id: "",
+            name: "",
+            coverKey: "",
+            favorite: 0,
+            hidden: false,
+            disambiguatingTags: "",
+            entryType: "media",
+            fileCount: 0,
+            disabled: false,
+            stateReason: "",
+            isEmpty: true,
+            hubIndex: hubIndex ?? -1
+        };
+    }
+
+    // One row of `Browse.HubLayout.items_snapshot()`'s batched fields (see
+    // that qinvokable's doc comment for the delimited format) -- `i` is
+    // both this row's real Browse.HubLayout position (the snapshot is
+    // visible-order, same as the old per-field `item_*_at` accessors) and
+    // this entry's `hubIndex`.
+    function _resolveSnapshotRow(i: int, fields: var): var {
+        const kind = fields[0];
+        if (kind === "blank")
+            return hub._blankEntry(i);
+        const id = fields[1];
+        const path = fields[2];
+        const script = fields[3];
+        const name = fields[4];
+        const icon = fields[5];
+        const system = fields[6];
+        let entry = null;
+        if (kind === "category")
+            entry = hub._resolveCategoryEntry(id);
+        else if (kind === "action")
+            entry = hub._resolveActionEntry(id);
+        else if (kind === "system")
+            entry = hub._resolveSystemEntry(id, name, icon);
+        else if (kind === "folder")
+            entry = hub._resolveFolderEntry(path, name, icon, system);
+        else if (kind === "zapscript")
+            entry = hub._resolveZapScriptEntry(script, name, icon, system, path);
+        if (entry)
+            entry.hubIndex = i;
+        return entry;
+    }
+
+    readonly property var _builtInActionIds: ["resume", "favorites", "recents", "update", "settings"]
+    readonly property int _pageSize: Sizing.hubGridColumns * Sizing.hubGridRows
+
+    // Pad the end of the list up to a full page, so the *last* page's
+    // trailing remainder renders as deliberate empty slots (via
+    // `emptyDelegate`, see the PagedGrid block below) instead of just blank
+    // background -- every earlier page is already exactly full by
+    // construction, so this only ever adds cells to the tail. Pads even
+    // from an empty list now that a seeded layout can be emptied out
+    // entirely (every tile removed, trailing blanks trimmed) -- that's a
+    // real, navigable empty Hub, not a broken zero-height grid.
+    //
+    // `minPages` (default 0) is a FLOOR on the total page count, not an
+    // increment on top of the natural page count -- used while `moveArmed`
+    // so the held tile can always be pushed onto a fresh page; see
+    // `beginMove`'s `_moveArmedTotalPages`. A floor (rather than "current
+    // natural pages + 1", recomputed every press) means placing a tile
+    // into the reserve page raises the natural page count to match the
+    // SAME floor, not past it -- an increment would keep receding one page
+    // further every time real content grows to reach a new target,
+    // producing unbounded page growth. See `beginMove`'s doc comment.
+    function _padToPageSize(list: var, pageSize: int, minPages: int): var {
+        if (pageSize <= 0)
+            return list;
+        const floor = Math.max(0, minPages ?? 0);
+        const naturalPages = list.length === 0 ? 1 : Math.ceil(list.length / pageSize);
+        const targetPages = Math.max(naturalPages, floor);
+        const target = targetPages * pageSize;
+        if (target === list.length)
+            return list;
+        const padded = list.slice();
+        for (let i = list.length; i < target; i++)
+            padded.push(hub._blankEntry(-1));
+        return padded;
+    }
+
+    // The flat item list PagedGrid renders, in the user's own order once
+    // the layout is seeded -- see the header comment's "Bootstrap
+    // exception" for the one window where it isn't.
+    readonly property var items: {
+        // Reads Browse.HubLayout.revision explicitly as a dependency:
+        // items_snapshot/is_unseeded are qinvokable METHODS, not
+        // qproperties, so calling them below does not itself register a
+        // reactive dependency (see Browse.HubLayout's header comment) --
+        // revision is what makes this recompute after reconcile() or an
+        // edit-UI mutation.
+        const _rev = Browse.HubLayout.revision;
+        const list = [];
+        if (!Browse.HubLayout.is_unseeded()) {
+            const snapshot = Browse.HubLayout.items_snapshot();
+            // An empty layout's snapshot is "" -- String.split on an empty
+            // string yields [""], one phantom empty row, not zero rows.
+            if (snapshot.length > 0) {
+                const rows = snapshot.split("");
+                for (let i = 0; i < rows.length; i++) {
+                    const entry = hub._resolveSnapshotRow(i, rows[i].split(""));
+                    if (entry)
+                        list.push(entry);
+                }
+            }
+        } else {
+            // Resume seeds first, ahead of every category, so it lands in
+            // the top-left cell by default -- mirrors
+            // zaparoo_core::hub_layout::HubLayout::reconcile's unseeded
+            // seed order, so the bootstrap window looks the same as the
+            // real layout it's about to be replaced by.
+            const resumeEntry = hub._resolveActionEntry(hub._builtInActionIds[0]);
+            if (resumeEntry) {
+                resumeEntry.hubIndex = -1;
+                list.push(resumeEntry);
+            }
+            for (let i = 0; i < hub._placeholderCategories.length; i++) {
+                const p = hub._placeholderCategories[i];
+                list.push({
+                    kind: "category",
+                    id: p.id,
+                    name: p.name,
+                    coverKey: p.coverKey,
+                    favorite: 0,
+                    hidden: false,
+                    disambiguatingTags: "",
+                    entryType: "media",
+                    fileCount: 0,
+                    disabled: false,
+                    stateReason: "",
+                    isEmpty: false,
+                    // Bootstrap-window placeholder, not a real
+                    // Browse.HubLayout row yet -- see `_blankEntry`'s
+                    // `hubIndex` doc comment.
+                    hubIndex: -1
+                });
+            }
+            for (let i = 1; i < hub._builtInActionIds.length; i++) {
+                const entry = hub._resolveActionEntry(hub._builtInActionIds[i]);
+                if (entry) {
+                    entry.hubIndex = -1;
+                    list.push(entry);
+                }
+            }
+        }
+        return hub._padToPageSize(list, hub._pageSize, hub.moveArmed ? hub._moveArmedTotalPages : 0);
+    }
+
+    // `hubGridModel` (the visual-tree `ListModel` below) mirrors `items`
+    // for `pagedGrid`'s `model` binding only -- every OTHER read of an
+    // entry (`_commitCurrent`, `_emitActivate`, `handleAction`,
+    // `_itemIndexForId`, the Move block, etc.) still reads the full-fidelity
+    // `items` array directly and is unaffected by any of this.
+    //
+    // Binding `pagedGrid.model` straight to `hub.items` (a `var` property)
+    // meant every recompute handed the Repeater a brand-new JS array;
+    // `QQmlDelegateModel` has no diffing for plain-array models, so that's
+    // a full `clear()` + `regenerate()` -- every Tile in the grid destroyed
+    // and reconstructed, with the current page's incubated SYNCHRONOUSLY
+    // (see PagedGrid.qml) -- on every `Browse.HubLayout.revision` bump.
+    // During a Move session that fires on every single d-pad press, which
+    // is the dominant cost behind Move feeling sluggish (the other being
+    // Rust's per-press disk write -- see `with_hub_layout_mut_unsaved`).
+    //
+    // `ListModel.setProperty` patches one row in place without touching
+    // any other row's delegate, so the shared prefix touches exactly the
+    // rows whose values actually differ -- normally 2 for an ordinary swap,
+    // up to 3 for a Move press (the origin cell, the destination cell, and
+    // -- since each press is re-derived from the session's snapshot rather
+    // than chained off the last press, see `moveArmed`'s doc comment --
+    // whichever cell a previous press's displaced tile is snapping back
+    // out of) -- and every other Tile stays alive, mid-incubation state and
+    // all. A length change (Add/Remove/Reset, or a Move that crosses onto a
+    // fresh page) appends/removes only the tail delta.
+    //
+    // Deliberately NEVER calls `clear()`. That would drop the model to
+    // ZERO rows for an instant before the loop below repopulates it, and
+    // PagedGrid.qml's `onItemCountChanged` (`:726-747`) watches for exactly
+    // that shape ("model shed rows") to defensively clamp `currentIndex`
+    // into range -- at count zero, that means `currentIndex = 0`. Since
+    // arming Move itself changes `items`' padding (see `_moveArmedTotalPages`
+    // below), a `clear()` here fired on every single `beginMove` call,
+    // before the first press even landed, silently resetting the held
+    // tracking to slot 0 regardless of what was actually focused. Growing
+    // only ever goes existing->existing+k and shrinking only ever goes
+    // existing->existing-k, so count never passes through zero unless the
+    // real final size genuinely is zero.
+    function _syncGridModel(): void {
+        const list = hub.items;
+        const existing = hubGridModel.count;
+        const shared = Math.min(existing, list.length);
+        for (let i = 0; i < shared; i++) {
+            const entry = list[i];
+            const row = hubGridModel.get(i);
+            if (row.name !== entry.name)
+                hubGridModel.setProperty(i, "name", entry.name);
+            if (row.coverKey !== entry.coverKey)
+                hubGridModel.setProperty(i, "coverKey", entry.coverKey);
+            if (row.favorite !== entry.favorite)
+                hubGridModel.setProperty(i, "favorite", entry.favorite);
+            if (row.hidden !== entry.hidden)
+                hubGridModel.setProperty(i, "hidden", entry.hidden);
+            if (row.disabled !== (entry.disabled === true))
+                hubGridModel.setProperty(i, "disabled", entry.disabled === true);
+            if (row.disambiguatingTags !== entry.disambiguatingTags)
+                hubGridModel.setProperty(i, "disambiguatingTags", entry.disambiguatingTags);
+            if (row.isEmpty !== entry.isEmpty)
+                hubGridModel.setProperty(i, "isEmpty", entry.isEmpty);
+            // entryType/fileCount omitted from the diff above -- every Hub
+            // entry builder sets them to the same constants ("media"/0)
+            // always, so there is nothing for them to ever change to.
+        }
+        if (list.length > existing) {
+            for (let i = existing; i < list.length; i++) {
+                const entry = list[i];
+                hubGridModel.append({
+                    name: entry.name,
+                    coverKey: entry.coverKey,
+                    favorite: entry.favorite,
+                    hidden: entry.hidden,
+                    disabled: entry.disabled === true,
+                    disambiguatingTags: entry.disambiguatingTags,
+                    // Round 11: required roles on the shared PagedGrid
+                    // delegate (see PagedGrid.qml's `cellItem.entryType`/
+                    // `fileCount`) -- Hub tiles are never Games-browse
+                    // folders, so always "media"/0.
+                    entryType: entry.entryType,
+                    fileCount: entry.fileCount,
+                    isEmpty: entry.isEmpty
+                });
+            }
+        } else if (list.length < existing) {
+            hubGridModel.remove(list.length, existing - list.length);
+        }
+    }
+
+    // Flat index of the first entry of `kind`, or -1. Used where the old
+    // category/action block split used to give a fixed boundary
+    // (`_categoryItems.length`) -- once the layout can freely interleave
+    // any kind in the user's own order, "where do actions start" has no
+    // fixed answer, so callers search instead.
+    function _firstItemIndexOfKind(kind: string): int {
+        for (let i = 0; i < hub.items.length; i++) {
+            if (hub.items[i].kind === kind)
                 return i;
-        return 0;
+        }
+        return -1;
+    }
+
+    // Flat index of the first entry matching (kind, id), or -1. `kind` is
+    // "category" or "action" — "empty" padding entries carry no id and are
+    // never a lookup target.
+    function _itemIndexForId(kind: string, id: string): int {
+        for (let i = 0; i < hub.items.length; i++) {
+            const entry = hub.items[i];
+            if (entry.kind === kind && entry.id === id)
+                return i;
+        }
+        return -1;
+    }
+
+    // Flat index of the action with `id`, falling back to the first
+    // action-kind slot when not found -- built-in actions always include
+    // at least Favorites/Recently Played/Settings, so this fallback holds
+    // until a future edit UI can remove every action, in which case it
+    // falls back once more to index 0.
+    function _actionIndexForId(id: string): int {
+        const idx = hub._itemIndexForId("action", id);
+        if (idx >= 0)
+            return idx;
+        const anyAction = hub._firstItemIndexOfKind("action");
+        return anyAction >= 0 ? anyAction : 0;
     }
 
     function _remapActionFocus(): void {
-        if (hub.currentRow !== 1)
+        const current = hub.items[hub.currentIndex];
+        if (!current || current.kind !== "action")
             return;
         hub.currentIndex = hub._actionIndexForId(Browse.HubState.selected_action);
     }
 
+    // Every caller of this (Main.qml's `_maybeArmHubResumeFocus`, both call
+    // sites) runs it immediately after `restoreFromCategoriesReset`, which
+    // is the sole authority on what to seat focus on: a real persisted
+    // category/item when one exists, Resume only as its own last-resort,
+    // deliberately non-persisting fallback (see that function's
+    // "Non-persisting seat" comment). This used to re-select and commit
+    // Resume unconditionally whenever it was visible -- which is true by
+    // default until Core positively confirms otherwise, so it fired on
+    // every single launch, not just a genuine first boot -- clobbering a
+    // saved category/item with Resume on every MiSTer relaunch (Main
+    // relaunches the frontend around every game launch). Only commit when
+    // the restore itself already landed on Resume; leave a real restored
+    // item alone.
     function focusResumeIfVisible(): void {
-        const resumeIndex = hub._actionIndexForId("resume");
-        if (!hub.resumeActionVisible || hub.actionEntries[resumeIndex].id !== "resume")
+        if (!hub.resumeActionVisible)
             return;
-        hub.currentRow = 1;
-        hub.currentIndex = resumeIndex;
-        hub._crossSavedIndex = -1;
-        hub._commitActionSelection();
+        const current = hub.items[hub.currentIndex];
+        if (!current || current.kind !== "action" || current.id !== "resume")
+            return;
+        hub._commitCurrent();
     }
 
     function _focusFallbackAfterResumeRemoved(): void {
-        if (Browse.CategoriesModel.count > 0) {
-            hub.currentRow = 0;
-            hub.currentIndex = 0;
-            hub._crossSavedIndex = -1;
-            hub._commitCategorySelection();
+        const anyCategory = hub._firstItemIndexOfKind("category");
+        if (anyCategory >= 0) {
+            hub.currentIndex = anyCategory;
+            hub._commitCurrent();
             return;
         }
-        hub.currentRow = 1;
         hub.currentIndex = hub._actionIndexForId("settings");
-        hub._crossSavedIndex = -1;
-        hub._commitActionSelection();
+        hub._commitCurrent();
     }
 
-    onActionEntriesChanged: {
+    // `items` itself is the single reactive signal now -- the old
+    // category/action block split needed a separate `onActionEntriesChanged`
+    // specifically so a category-only change couldn't spuriously trigger
+    // this; once the layout can interleave any kind, `items` already
+    // recomputes on every relevant change (Browse.HubLayout.revision, live
+    // action-visibility state, category confirmation), and the kind check
+    // below makes a category-only firing a harmless no-op here.
+    onItemsChanged: {
+        // Sync the lightweight grid model unconditionally, armed or not --
+        // this is the part of `items` changing that must always reach the
+        // screen, including every intermediate press of a Move session
+        // (each swap's two traded cells have to repaint). See
+        // `_syncGridModel`'s doc comment.
+        hub._syncGridModel();
+        // A Move session drives `currentIndex` itself (`_moveSplice`/
+        // `_movePage`/`_acceptMove`/`_cancelMove`) and every intermediate
+        // press bumps `revision`, which re-fires this handler mid-session --
+        // neither branch below is meaningful while a tile is held (the
+        // fallback below reseats off `HubState.selected_action`, which the
+        // move hasn't touched and shouldn't consult), so both would fight
+        // the move's own cursor tracking. Bail out of the rest while armed.
+        if (hub.moveArmed)
+            return;
         // Only treat a vanishing Resume tile as a real removal once the user
         // is driving focus (_focusArmed). During the cold-boot settle the
         // resume fetch can briefly read unavailable before it resolves to the
-        // just-played game; reacting then would jump focus to Arcade and
-        // persist it, stranding the user off the (about-to-reappear) Resume
-        // tile. While !_focusArmed, fall through to _remapActionFocus, which
-        // keeps the actions row aligned to the saved "resume" intent without
-        // overwriting persisted state.
-        if (hub._focusArmed && hub.currentRow === 1 && Browse.HubState.selected_action === "resume" && !hub.resumeActionVisible) {
+        // just-played game; reacting then would jump focus to the first
+        // category and persist it, stranding the user off the
+        // (about-to-reappear) Resume tile. While !_focusArmed, fall through
+        // to _remapActionFocus, which keeps focus aligned to the saved
+        // "resume" intent without overwriting persisted state.
+        const current = hub.items[hub.currentIndex];
+        const onAction = current !== undefined && current.kind === "action";
+        if (hub._focusArmed && onAction && Browse.HubState.selected_action === "resume" && !hub.resumeActionVisible) {
             hub._focusFallbackAfterResumeRemoved();
             return;
         }
         hub._remapActionFocus();
     }
 
-    // Test-harness hook so `tst_navigation.qml` can reset both focus
-    // axes between cases without poking individual properties through
-    // MainLayout's alias.
+    // Test-harness hook so `tst_navigation.qml` can reset focus between
+    // cases without poking pagedGrid's aliased currentIndex directly.
     function resetFocus(): void {
-        hub.currentRow = 1;
         hub.currentIndex = hub._actionIndexForId("resume");
-        hub._crossSavedIndex = -1;
     }
 
     // Restore the hub from the persisted `Browse.HubState`. The router
@@ -306,6 +840,22 @@ Item {
     // re-seeded even when SystemsModel is already on the chosen
     // category — otherwise the visible focus drifts off whichever
     // screen the user is on.
+    // Flat `items` position of `categoryId`. Distinct from a
+    // CategoriesModel index (`idx`/`chosenCategoryIndex` in
+    // restoreFromCategoriesReset below) — that had a fixed relationship to
+    // a flat position back when categories always occupied a contiguous
+    // prefix of `items`; once the layout can freely interleave any kind,
+    // it no longer does. Falls back to whichever category tile IS actually
+    // on screen (the bootstrap placeholder path, or Core simply hasn't
+    // confirmed this particular one yet) rather than -1, so a restore
+    // never lands on nothing when at least one category tile exists.
+    function _flatIndexForCategory(categoryId: string): int {
+        const found = hub._itemIndexForId("category", categoryId);
+        if (found >= 0)
+            return found;
+        return hub._firstItemIndexOfKind("category");
+    }
+
     function restoreFromCategoriesReset(cascadeSystems: bool): void {
         // Focus is now being finalized from persisted state; let the tiles
         // render focus from here on (snapped, since `_focusArmed` is still
@@ -316,41 +866,55 @@ Item {
         const chosenCategoryIndex = idx >= 0 ? idx : 0;
         const chosenCategory = idx >= 0 ? savedCategory : Browse.CategoriesModel.category_at(chosenCategoryIndex);
 
-        // Restore which row the user was on, then point currentIndex
-        // at the right slot for that row. Saved row outside [0, 1] is
-        // treated as 0 — same belt-and-braces stance as the category
-        // fallback above. When the catalog reports 0 categories the
-        // top row has no tiles to focus, so we drop focus onto
-        // Update when it exists, otherwise Settings so the user lands
-        // on an actionable tile.
+        // Restore which item was focused. `selected_item` (round 6) is the
+        // authoritative record when present; `selected_row`/`selected_action`
+        // stay as the fallback for a state.toml written by an older build
+        // (serde defaults them to empty/0 when absent, so this branch is
+        // also what a genuinely fresh install takes). When the catalog
+        // reports 0 categories the category block has no tiles to focus, so
+        // we drop focus onto Update when it exists, otherwise Settings so
+        // the user lands on an actionable tile.
+        const savedItem = Browse.HubState.selected_item;
         const savedRow = Browse.HubState.selected_row;
         const savedAction = Browse.HubState.selected_action;
-        if (savedRow === 1 && savedAction !== "") {
-            hub.currentRow = 1;
+        if (savedItem !== "") {
+            const sep = savedItem.indexOf(":");
+            const savedKind = sep >= 0 ? savedItem.slice(0, sep) : "";
+            // A folder path or ZapScript body can itself contain ":"
+            // (a Windows-style drive path, a "**launch.system:x" directive)
+            // — splitting on only the FIRST ":" (already what `indexOf` +
+            // `slice` do above) keeps the rest of the id intact regardless,
+            // so this restore path works for every persisted kind, not
+            // just category/action.
+            const savedId = sep >= 0 ? savedItem.slice(sep + 1) : "";
+            const restoredIdx = savedKind !== "" ? hub._itemIndexForId(savedKind, savedId) : -1;
+            if (restoredIdx >= 0) {
+                hub.currentIndex = restoredIdx;
+            } else if (idx >= 0) {
+                hub.currentIndex = hub._flatIndexForCategory(chosenCategory);
+            } else if (hub.resumeActionVisible) {
+                hub.currentIndex = hub._actionIndexForId("resume");
+            } else if (Browse.CategoriesModel.count === 0) {
+                hub.currentIndex = hub._actionIndexForId(hub._emptyCatalogFallbackAction);
+            } else {
+                hub.currentIndex = hub._flatIndexForCategory(chosenCategory);
+            }
+        } else if (savedRow === 1 && savedAction !== "") {
             hub.currentIndex = hub._actionIndexForId(savedAction);
         } else if (idx >= 0) {
-            hub.currentRow = 0;
-            hub.currentIndex = chosenCategoryIndex;
+            hub.currentIndex = hub._flatIndexForCategory(chosenCategory);
         } else if (hub.resumeActionVisible) {
             // Non-persisting seat: this is a programmatic restore, so it must
             // not commit like focusResumeIfVisible() would. Committing here
             // clobbers a saved category-row intent whenever the catalog is
             // momentarily empty (cold-boot restore, in-session catalog
             // refresh), stranding the user on Resume when they back out.
-            hub.currentRow = 1;
             hub.currentIndex = hub._actionIndexForId("resume");
         } else if (Browse.CategoriesModel.count === 0) {
-            hub.currentRow = 1;
             hub.currentIndex = hub._actionIndexForId(hub._emptyCatalogFallbackAction);
         } else {
-            hub.currentRow = 0;
-            hub.currentIndex = chosenCategoryIndex;
+            hub.currentIndex = hub._flatIndexForCategory(chosenCategory);
         }
-        // A reseat from disk or from a category-list refresh makes any
-        // armed round-trip context meaningless (the user might be on a
-        // different row entirely now, and the saved source-index could
-        // point past the new category list).
-        hub._crossSavedIndex = -1;
 
         if (!cascadeSystems)
             return;
@@ -367,140 +931,49 @@ Item {
         Browse.SystemsModel.set_category(chosenCategory);
     }
 
-    // Returns true if the focus actually moved. Empty rows leave disk
-    // state alone — see tst_persistence.qml for the regression guarded
-    // against. Both rows wrap modulo their count so a single Left/Right
-    // press at either end whips around to the far side.
-    function _navigate(delta: int): bool {
-        const count = hub.currentRow === 0 ? hub.visibleCategoryEntries.length : hub.actionEntries.length;
-        if (count <= 0)
-            return false;
-        const next = ((hub.currentIndex + delta) % count + count) % count;
-        if (next === hub.currentIndex)
-            return false;
-        hub.currentIndex = next;
-        // Horizontal motion on the destination row invalidates the
-        // round-trip context — the user's intent is now to navigate
-        // within this row, not bounce back to where they came from.
-        hub._crossSavedIndex = -1;
-        return true;
-    }
-
-    // Pure arithmetic — no model access. Maps an index in a row of
-    // `sourceCount` cells to the visually-nearest index in a centered
-    // row of `destCount` cells (both rows assumed to share cell width
-    // and spacing). Returned index is clamped to [0, destCount-1]; a
-    // degenerate `destCount <= 0` returns 0 — callers must guard
-    // empty destination rows separately, this exists so the mapping
-    // can be unit-tested without populating CategoriesModel.
-    function _mapCrossRow(sourceIdx: int, sourceCount: int, destCount: int): int {
-        if (destCount <= 0)
-            return 0;
-        const offset = (sourceCount - destCount) / 2;
-        const target = Math.round(sourceIdx - offset);
-        return Math.max(0, Math.min(destCount - 1, target));
-    }
-
-    // Cross-row jump. Up and Down both flip to the *other* row — the
-    // two rows form a closed two-row loop, there is no "off the top"
-    // or "off the bottom".
-    //
-    // The destination index has two sources:
-    //
-    //   1. If `_crossSavedIndex` is armed (>= 0) and within the
-    //      destination row's bounds, restore it. This is the round-trip
-    //      path: the user pressed Down, then Up without horizontal
-    //      input in between, so the originating tile is the natural
-    //      target. With unequal row counts the centered visual mapping
-    //      can't return there on its own.
-    //
-    //   2. Otherwise fall back to `_mapCrossRow` (visually-nearest
-    //      cell in the centered row). This fires on the very first
-    //      cross of a session and after any horizontal input on the
-    //      destination row clears the armed index.
-    //
-    // Returns false only when the destination row is empty (no
-    // categories loaded yet, etc.).
-    function _crossRow(): bool {
-        const topCount = hub.visibleCategoryEntries.length;
-        const bottomCount = hub.actionEntries.length;
-        const sourceCount = hub.currentRow === 0 ? topCount : bottomCount;
-        const destCount = hub.currentRow === 0 ? bottomCount : topCount;
-        if (destCount <= 0)
-            return false;
-
-        const sourceIdx = hub.currentIndex;
-        const restored = hub._crossSavedIndex >= 0 && hub._crossSavedIndex < destCount;
-        const destIdx = restored ? hub._crossSavedIndex : hub._mapCrossRow(sourceIdx, sourceCount, destCount);
-
-        // Save the source-row index BEFORE flipping so the next cross
-        // can return here. Reading `currentIndex` after the flip would
-        // capture the destination index instead.
-        hub._crossSavedIndex = sourceIdx;
-        hub.currentRow = 1 - hub.currentRow;
-        hub.currentIndex = destIdx;
-        return true;
-    }
-
     // Side-effect of every focus move: persist HubState. We do NOT call
     // SystemsModel.set_category here — that one's reserved for Accept
     // (and the router orchestrates it). Calling it on every left/right
     // press fires two model resets per press, each destroying-and-
     // recreating SystemsScreen's bound delegates on the UI thread —
     // choppy on MiSTer even though SystemsScreen is `visible: false`.
-    function _currentCategoryId(): string {
-        if (Browse.CategoriesModel.count > 0 && hub.currentIndex < Browse.CategoriesModel.count)
-            return Browse.CategoriesModel.category_at(hub.currentIndex);
-        const entry = hub.visibleCategoryEntries[hub.currentIndex];
-        return entry ? CategoryIds.canonicalize(entry.id) : "";
-    }
-
-    function _commitCategorySelection(): void {
-        Browse.HubState.selected_row = 0;
-        const category = hub._currentCategoryId();
-        if (category !== "")
-            Browse.HubState.category = category;
-    }
-
-    function _commitActionSelection(): void {
-        Browse.HubState.selected_row = 1;
-        Browse.HubState.selected_action = hub.actionEntries[hub.currentIndex].id;
-    }
-
     function _commitCurrent(): void {
-        if (hub.currentRow === 0)
-            hub._commitCategorySelection();
-        else
-            hub._commitActionSelection();
-    }
-
-    function _focusCategory(index: int): void {
-        if (index < 0 || index >= hub.visibleCategoryEntries.length)
+        const entry = hub.items[hub.currentIndex];
+        if (!entry || entry.kind === "empty")
             return;
-        hub._focusArmed = true;
-        hub.currentRow = 0;
-        hub.currentIndex = index;
-        // Mouse focus is a deliberate landing on a specific tile — any
-        // armed cross-row round-trip is no longer what the user wants.
-        hub._crossSavedIndex = -1;
-        hub._commitCategorySelection();
-    }
-
-    function _focusAction(index: int): void {
-        if (index < 0 || index >= hub.actionEntries.length)
-            return;
-        hub._focusArmed = true;
-        hub.currentRow = 1;
-        hub.currentIndex = index;
-        hub._crossSavedIndex = -1;
-        hub._commitActionSelection();
+        Browse.HubState.selected_item = entry.kind + ":" + entry.id;
+        if (entry.kind === "category") {
+            Browse.HubState.selected_row = 0;
+            if (entry.id !== "")
+                Browse.HubState.category = entry.id;
+        } else {
+            // `selected_row`/`selected_action` are the fallback restore
+            // path for a state.toml written before `selected_item` existed
+            // (round 6) -- pre-dates every kind but category/action, so
+            // "not category" is a fine generic bucket here; `selected_item`
+            // above is what actually restores a system/folder/zapscript
+            // tile precisely.
+            Browse.HubState.selected_row = 1;
+            Browse.HubState.selected_action = entry.id;
+        }
     }
 
     // Emit the navigation signal for the currently selected entry.
-    // Separated from _activateCurrent so DeferredAction can call it
-    // after the push-in cue has had time to play.
+    // Separated from _activateCurrent so DeferredAction can call it after
+    // the push-in cue has had time to play. `requestAccept`'s payload
+    // meaning varies by kind -- category/action id, system id, folder
+    // path, or the raw ZapScript text -- Main.qml's router dispatches on
+    // `kind` to know which.
     function _emitActivate(): void {
-        if (hub.currentRow === 0) {
+        const entry = hub.items[hub.currentIndex];
+        if (!entry || entry.kind === "empty")
+            return;
+        if (entry.kind === "category") {
+            // Unconfirmed/absent is a quiet no-op, same as a disabled
+            // action below -- distinct from a genuine Core error, which
+            // still offers Retry.
+            if (entry.disabled === true)
+                return;
             if ((Browse.CategoriesModel.error_message ?? "") !== "") {
                 hub.requestRetry();
                 return;
@@ -509,74 +982,379 @@ Item {
             // by localized placeholder labels. Accept the stable category
             // id, not the display name, so persisted HubState and router
             // comparisons remain locale-independent.
-            hub.requestAccept(hub._currentCategoryId());
+            hub.requestAccept("category", entry.id, "");
             return;
         }
-
-        const entry = hub.actionEntries[hub.currentIndex];
-        if (!entry || entry.enabled === false)
+        if (entry.kind === "action") {
+            if (entry.disabled === true)
+                return;
+            hub.requestAccept("action", entry.id, "");
             return;
-
-        const id = entry.id;
-        if (id === "resume")
-            hub.requestAccept("resume");
-        else if (id === "favorites")
-            hub.requestFavoritesScreen();
-        else if (id === "recents")
-            hub.requestRecentsScreen();
-        else if (id === "update")
-            hub.requestUpdateScreen();
-        else if (id === "settings")
-            hub.requestSettingsScreen();
+        }
+        if (entry.kind === "system") {
+            hub.requestAccept("system", entry.id, "");
+            return;
+        }
+        if (entry.kind === "folder") {
+            hub.requestAccept("folder", entry.path, entry.system);
+            return;
+        }
+        if (entry.kind === "zapscript") {
+            hub.requestAccept("zapscript", entry.script, "");
+        }
     }
 
     function _activateCurrent(): void {
+        const entry = hub.items[hub.currentIndex];
+        if (!entry || entry.kind === "empty")
+            return;
         hub.activatePulse++;
         hub._commitCurrent();
         pressCommit.arm();
     }
 
-    // Returns the bounding rect of the currently focused category cell,
-    // mapped to hub coordinates. Used to anchor the context menu.
-    function _currentCategoryCellRect(): rect {
-        const item = itemRepeater.itemAt(hub.currentIndex);
-        if (!item)
-            return Qt.rect(0, 0, 0, 0);
-        return item.mapToItem(hub, 0, 0, item.width, item.height);
+    // ── Move (Options -> Move) ──────────────────────────────────────────
+    // Armed by Main.qml's `hub_move` dispatch (see handleContextMenuAccepted
+    // there). Board model, origin-anchored: every direction/page press
+    // rebuilds the layout from the snapshot taken at arm time and swaps
+    // the held tile's ORIGINAL cell with whatever the snapshot has at the
+    // destination cell (another tile, or a blank) — never a splice, so a
+    // deliberate gap the user left elsewhere is never disturbed, and never
+    // chained off the previous press's result, so at most one other tile
+    // is ever displaced from where the snapshot had it: the one currently
+    // under the held tile. A tile a previous press displaced snaps back
+    // home the moment the held tile moves past it -- the committed result
+    // depends only on where the move started and where it's dropped, not
+    // on the path taken to get there. Landing back on the start cell is
+    // therefore a full, exact restore, unlike an ordinary swap onto a
+    // distinct cell. Rust owns the session (`begin_move`/`move_held_to`/
+    // `commit_move`/`cancel_move`, `rust/frontend/src/models/
+    // hub_layout.rs`): every intermediate press mutates in memory only, so
+    // a fast run of presses costs zero disk I/O; Accept performs the
+    // session's one real save, Cancel restores the pre-session snapshot
+    // exactly (nothing was ever written to disk to undo). `_moveStartFlat`
+    // is the FLAT `items` index (not a Browse.HubLayout position) the held
+    // tile started at, so Cancel can reseat the cursor directly with no
+    // translation needed — the restored snapshot renders byte-identical to
+    // how it looked at `beginMove` time.
+    property bool moveArmed: false
+    property int _moveStartFlat: -1
+    // Total page budget for the whole session, frozen at arm time (current
+    // real content's pages, plus exactly one reserve) — see
+    // `_padToPageSize`'s doc comment for why this must be a floor computed
+    // ONCE rather than recomputed from "current real content" on every
+    // press. Anchoring each press to the session's snapshot (rather than
+    // chaining off the previous press) already keeps the padding itself
+    // from accumulating -- stepping back off the reserve page drops it
+    // again -- but the floor still has to stay fixed for the session's
+    // duration so the reserve page doesn't appear and disappear as the
+    // held tile crosses in and out of it. `0` outside a session (a no-op
+    // floor).
+    property int _moveArmedTotalPages: 0
+
+    function beginMove(hubIndex: int): void {
+        if (hubIndex < 0)
+            return;
+        // The tile Options was opened on is always still under the cursor
+        // (menus don't let focus move while open) — reject rather than
+        // guess if that's somehow not true.
+        const current = hub.items[hub.currentIndex];
+        if (!current || current.hubIndex !== hubIndex)
+            return;
+        if (!Browse.HubLayout.begin_move(hubIndex))
+            return;
+        hub._moveStartFlat = hub.currentIndex;
+        hub._moveArmedTotalPages = Math.max(1, Math.ceil(Browse.HubLayout.item_count() / hub._pageSize)) + 1;
+        hub.moveArmed = true;
     }
 
-    function _currentActionCellRect(): rect {
-        const item = actionRepeater.itemAt(hub.currentIndex);
-        if (!item)
-            return Qt.rect(0, 0, 0, 0);
-        return item.mapToItem(hub, 0, 0, item.width, item.height);
+    // View -> Add item… arms Move on whatever it just placed, instead of
+    // relying on the cursor already resting on the target cell the way
+    // `beginMove` above assumes (Options always opens on the tile it
+    // moves). With `skipEmptyCells` on outside a Move session, the cursor
+    // can no longer normally be parked on a blank -- entering empty space
+    // only ever happens while carrying something, so Add now hands the
+    // user something to carry rather than silently placing it wherever
+    // Rust's own append/target rule happened to land it. See
+    // Main.qml's `hub_add_pick` handler for the caller.
+    //
+    // Seating the cursor here is a raw jump, not a `moveSelection` step,
+    // so it skips the commit-on-navigate pairing every directional press
+    // gets in `handleAction` -- `_commitCurrent()` here is what keeps
+    // `HubState.selected_item` pointing at the newly added tile rather
+    // than wherever the cursor was before the View menu opened. That
+    // matters because a Move session itself is in-memory only (see
+    // `beginMove`'s doc comment): if MiSTer kills the process mid-Move,
+    // only this committed selection survives, not the tile's held
+    // position.
+    function armMoveForHubIndex(hubIndex: int): void {
+        if (hubIndex < 0)
+            return;
+        const flat = hub.items.findIndex(entry => entry && entry.hubIndex === hubIndex);
+        if (flat < 0)
+            return;
+        hub.currentIndex = flat;
+        hub._commitCurrent();
+        hub.beginMove(hubIndex);
+    }
+
+    function _clearMoveState(): void {
+        hub.moveArmed = false;
+        hub._moveStartFlat = -1;
+        hub._moveArmedTotalPages = 0;
+    }
+
+    function _acceptMove(): void {
+        Browse.HubLayout.commit_move();
+        hub._clearMoveState();
+    }
+
+    function _cancelMove(): void {
+        Browse.HubLayout.cancel_move();
+        hub.currentIndex = hub._moveStartFlat;
+        hub._clearMoveState();
+        hub._commitCurrent();
+    }
+
+    // Translate a flat `items` index into the Browse.HubLayout position
+    // placing a tile there means: the entry's own `hubIndex` when it's
+    // already backed by the layout (a real tile, or a real persisted
+    // blank), or — for `_padToPageSize`'s synthetic tail padding
+    // (`hubIndex === -1`) — the position placing a tile there would CREATE,
+    // offset from `item_count()` by how far past the first padding cell the
+    // target sits. Padding is always contiguous at the very end of `items`
+    // and mirrors the same order Rust's real positions would extend into,
+    // so this is well-defined for any flat index a cursor can reach.
+    function _realIndexForFlat(flatIndex: int): int {
+        const entry = hub.items[flatIndex];
+        if (!entry)
+            return -1;
+        if (entry.hubIndex >= 0)
+            return entry.hubIndex;
+        const firstPad = hub._firstPadFlatIndex();
+        if (firstPad < 0)
+            return -1;
+        return Browse.HubLayout.item_count() + (flatIndex - firstPad);
+    }
+
+    // Flat index of the first synthetic tail-padding entry, or `items`'
+    // length if there is none. Valid only once the layout is seeded (every
+    // resolved entry then carries a real `hubIndex`, so padding is the
+    // only source of `hubIndex === -1`) — exactly the state Move requires
+    // to arm in the first place.
+    function _firstPadFlatIndex(): int {
+        for (let i = 0; i < hub.items.length; i++) {
+            if (hub.items[i].hubIndex < 0)
+                return i;
+        }
+        return hub.items.length;
+    }
+
+    // Board model: a held tile must never wrap around the grid's edges.
+    // Normal navigation's closed loop (Up on row 0 wraps to the last page —
+    // see PagedGrid.moveSelection, deliberately left alone for ordinary
+    // browsing) makes sense when you're just moving focus around; it does
+    // NOT make sense while carrying a tile, where it would silently
+    // teleport the held tile to the opposite end of the grid. Checked here,
+    // not in PagedGrid, so normal navigation everywhere else is untouched.
+    // Pure geometry -- reads only pagedGrid's current row/column/page and
+    // shape, never the held tile or Rust -- so this is exercised directly
+    // in tests without needing a seeded Browse.HubLayout.
+    function _wouldWrapVertically(dRow: int): bool {
+        if (dRow > 0)
+            return pagedGrid.currentRow === pagedGrid.rows - 1 && pagedGrid.currentPage === pagedGrid.totalPageCount - 1;
+        if (dRow < 0)
+            return pagedGrid.currentRow === 0 && pagedGrid.currentPage === 0;
+        return false;
+    }
+
+    // Same shape as `_wouldWrapVertically`, for L/R same-row wrap. Ordinary
+    // browsing's row-wrap clamps to a partial last row's actual filled
+    // span (see PagedGrid.moveSelection's `maxColOnRow`) so it never walks
+    // through a hole -- but Move's padding (`_moveArmedTotalPages`) always
+    // fills whole pages, so every row a held tile can reach is exactly
+    // `columns` wide and there's never a partial row to special-case. Left
+    // at column 0 (or Right at the last column) would otherwise wrap
+    // within the same row onto a synthetic tail-padding cell, which
+    // `move_held_to` then materializes into a brand-new real position far
+    // from where the tile actually was -- the held tile would silently
+    // jump to the opposite edge of its row on a single press. Same class
+    // of bug `_wouldWrapVertically` guards against, just on the horizontal
+    // axis.
+    function _wouldWrapColumn(dCol: int): bool {
+        if (dCol > 0)
+            return pagedGrid.currentColumn === pagedGrid.columns - 1;
+        if (dCol < 0)
+            return pagedGrid.currentColumn === 0;
+        return false;
+    }
+
+    // Same shape as `_wouldWrapVertically`, for L/R shoulder page jumps.
+    function _wouldWrapPage(delta: int): bool {
+        if (delta < 0)
+            return pagedGrid.currentPage === 0;
+        if (delta > 0)
+            return pagedGrid.currentPage === pagedGrid.totalPageCount - 1;
+        return false;
+    }
+
+    function _moveSplice(dCol: int, dRow: int): void {
+        const fromFlat = hub.currentIndex;
+        const heldEntry = hub.items[fromFlat];
+        if (!heldEntry || heldEntry.hubIndex < 0)
+            return;
+        if (hub._wouldWrapColumn(dCol))
+            return;
+        if (hub._wouldWrapVertically(dRow))
+            return;
+        if (!pagedGrid.moveSelection(dCol, dRow))
+            return;
+        const toReal = hub._realIndexForFlat(hub.currentIndex);
+        if (toReal < 0 || !Browse.HubLayout.move_held_to(toReal)) {
+            hub.currentIndex = fromFlat;
+            return;
+        }
+        hub._commitCurrent();
+    }
+
+    function _movePage(delta: int): void {
+        const fromFlat = hub.currentIndex;
+        const heldEntry = hub.items[fromFlat];
+        if (!heldEntry || heldEntry.hubIndex < 0)
+            return;
+        if (hub._wouldWrapPage(delta))
+            return;
+        if (!pagedGrid.pageBy(delta))
+            return;
+        const toReal = hub._realIndexForFlat(hub.currentIndex);
+        if (toReal < 0 || !Browse.HubLayout.move_held_to(toReal)) {
+            hub.currentIndex = fromFlat;
+            return;
+        }
+        hub._commitCurrent();
+    }
+
+    // context_menu / page_menu are deliberately unhandled here: opening
+    // another menu (or the View rail) mid-move would leave the item picked
+    // up behind it. Accept/Cancel are the only way out.
+    function _handleMoveAction(action: string): void {
+        if (action === "left")
+            hub._moveSplice(-1, 0);
+        else if (action === "right")
+            hub._moveSplice(1, 0);
+        else if (action === "down")
+            hub._moveSplice(0, 1);
+        else if (action === "up")
+            hub._moveSplice(0, -1);
+        else if (action === "page_prev")
+            hub._movePage(-1);
+        else if (action === "page_next")
+            hub._movePage(1);
+        else if (action === "accept")
+            hub._acceptMove();
+        else if (action === "cancel")
+            hub._cancelMove();
+    }
+
+    // Entries for View -> "Add item…": every known category/action key not
+    // currently in the layout (Browse.HubLayout.available_*), resolved
+    // through the same per-kind resolvers the rest of this file uses so
+    // labels match what the tile will actually show once added. No "Blank
+    // space" entry -- a blank tile is an implementation detail (a
+    // deliberate gap), not something the user creates as a first-class
+    // menu choice, same reasoning as why Options never opens on one. Gaps
+    // still form naturally through Hide/Delete and through Move leaving
+    // one behind. Called by Main.qml's View handling.
+    function buildAddEntries(): var {
+        const entries = [];
+        const count = Browse.HubLayout.available_count();
+        for (let i = 0; i < count; i++) {
+            const kind = Browse.HubLayout.available_kind_at(i);
+            const id = Browse.HubLayout.available_id_at(i);
+            // Resume is a special case among the resolvers this loop
+            // otherwise defers to: _resolveActionEntry deliberately returns
+            // the last-played GAME's name (so the live tile matches what it
+            // will show once added), which reads as unrecognizable as "the
+            // Resume slot" in a bare list of menu rows -- and returns null
+            // entirely while no history is currently resumable, which would
+            // silently drop Resume from this picker even though it's still
+            // a valid, re-addable slot. Bypass the resolver here and always
+            // offer the literal "Resume" label (same source string
+            // _resolveActionEntry itself falls back to, so no new
+            // translatable text).
+            if (kind === "action" && id === "resume") {
+                entries.push({
+                    id: "action:resume",
+                    label: qsTr("Resume")
+                });
+                continue;
+            }
+            const resolved = kind === "category" ? hub._resolveCategoryEntry(id) : kind === "action" ? hub._resolveActionEntry(id) : null;
+            if (!resolved)
+                continue;
+            entries.push({
+                id: kind + ":" + id,
+                label: resolved.name
+            });
+        }
+        return entries;
     }
 
     function handleAction(action: string): void {
         hub._focusArmed = true;
+        if (hub.moveArmed) {
+            hub._handleMoveAction(action);
+            return;
+        }
         if (action === "left") {
-            if (hub._navigate(-1))
+            if (pagedGrid.moveSelection(-1, 0))
                 hub._commitCurrent();
         } else if (action === "right") {
-            if (hub._navigate(1))
+            if (pagedGrid.moveSelection(1, 0))
                 hub._commitCurrent();
-        } else if (action === "down" || action === "up") {
-            if (hub._crossRow())
+        } else if (action === "down") {
+            if (pagedGrid.moveSelection(0, 1))
+                hub._commitCurrent();
+        } else if (action === "up") {
+            if (pagedGrid.moveSelection(0, -1))
+                hub._commitCurrent();
+        } else if (action === "page_prev") {
+            // L shoulder — every other paged screen supports this; the Hub
+            // didn't because paging used to be a rare edge case here. Now
+            // that grouping padding is gone (items flow across pages with
+            // no gap), it's the normal case.
+            if (pagedGrid.pageBy(-1))
+                hub._commitCurrent();
+        } else if (action === "page_next") {
+            // R shoulder.
+            if (pagedGrid.pageBy(1))
                 hub._commitCurrent();
         } else if (action === "accept") {
             hub._activateCurrent();
-        } else if (action === "cancel") {
-            hub.requestQuit();
         } else if (action === "context_menu") {
-            // Only real categories have category actions. Favorites is the
-            // only Hub action tile with a collection-scoped Options menu.
-            if (hub.currentRow === 0 && hub.currentIndex < Browse.CategoriesModel.count) {
-                hub.requestContextMenu(hub.currentIndex, hub._currentCategoryCellRect());
-            } else if (hub.currentRow === 1) {
-                const entry = hub.actionEntries[hub.currentIndex];
-                if (entry && entry.id === "favorites")
-                    hub.requestActionContextMenu(entry.id, hub._currentActionCellRect());
+            const entry = hub.items[hub.currentIndex];
+            if (!entry)
+                return;
+            // A category id / action id that Core hasn't confirmed yet (the
+            // bootstrap placeholder window, `hubIndex === -1`) is safe to
+            // emit for "category"/"action" kinds -- Main.qml's id-to-index
+            // resolution (categories) or the `hubIndex < 0` guard (actions,
+            // Move/Remove) just no-ops rather than mutating anything.
+            if (entry.kind === "category") {
+                hub.requestContextMenu(entry.hubIndex, entry.id, pagedGrid.currentCellRectIn(hub), pagedGrid.currentCellRadius);
+            } else if (entry.kind === "action") {
+                hub.requestActionContextMenu(entry.hubIndex, entry.id, pagedGrid.currentCellRectIn(hub));
+            } else if (entry.kind !== "empty" && entry.hubIndex >= 0) {
+                // system / folder / zapscript only -- `kind === "empty"`
+                // covers BOTH a real persisted blank tile and synthetic
+                // tail padding. Neither opens Options: a blank is an
+                // implementation detail (a deliberate gap), not something
+                // you pick up and move on its own -- only a real tile
+                // lands ON a gap, absorbing it; the gap itself is inert.
+                hub.requestItemContextMenu(entry.hubIndex, entry.kind, pagedGrid.currentCellRectIn(hub), pagedGrid.currentCellRadius);
             }
+        } else if (action === "page_menu") {
+            hub.requestPageMenu();
         }
     }
 
@@ -587,222 +1365,206 @@ Item {
         onDeferred: hub._emitActivate()
     }
 
-    Item {
-        id: categoriesRow
+    Component {
+        id: tileDelegate
+        Tile {
+            // Hub tiles are full-bleed icons/covers with no caption band
+            // — see Tile.qml's `compactPadding` doc comment.
+            compactPadding: true
+        }
+    }
 
-        // Cell layout. Tiles are icon-only (no label inside), so the
-        // cell is a roughly-square image area. The category name for
-        // the focused tile renders below the grid in `activeLabel`,
-        // not inside the tile.
-        readonly property int spacing: Sizing.pctW(3)
-        readonly property int sideInset: Sizing.pctW(5)
-        readonly property int maxCellWidth: Sizing.pctH(22)
-        readonly property int n: hub.visibleCategoryEntries.length
-        // n=0 falls back to maxCellWidth so the actions row (which
-        // mirrors `categoriesRow.cellWidth`) still renders at proper
-        // size when the catalog reports 0 systems. Without the
-        // fallback the Settings tile collapses to width=0 and the
-        // user has nothing to navigate to.
-        readonly property int rawCellWidth: n > 0 ? Math.floor((width - 2 * sideInset - (n - 1) * spacing) / n) : maxCellWidth
-        readonly property int cellWidth: Math.min(maxCellWidth, rawCellWidth)
-        // Square cells (1:1) for the main menu. The focused tile's
-        // 1.06× scale bleed is absorbed by `verticalPadding` on the
-        // row Item, not by inflating the cell.
-        readonly property int cellHeight: cellWidth
-        readonly property int totalRowWidth: n > 0 ? n * cellWidth + (n - 1) * spacing : 0
-        readonly property int rowOriginX: Sizing.center(width, totalRowWidth)
+    // Genuinely blank placeholder for the `isEmpty` rows `_padToPageSize`
+    // appends to the last page — see EmptySlot.qml and docs/style.md ->
+    // "Empty slots". PagedGrid resolves this in place of `tileDelegate` for
+    // any row whose `isEmpty` role is true; every other PagedGrid caller
+    // leaves `emptyDelegate` at its default `null` and is unaffected.
+    Component {
+        id: emptySlotDelegate
+        EmptySlot {}
+    }
 
-        // Symmetric padding contains the focused tile's 1.06× scale
-        // bleed inside the row's own bounds.
-        readonly property int verticalPadding: Sizing.pctH(2)
+    // Lightweight mirror of `items`, patched in place by `_syncGridModel` --
+    // see that function's doc comment. This is what `pagedGrid.model` binds
+    // to; every other read of an entry goes through `hub.items` directly.
+    ListModel {
+        id: hubGridModel
+    }
+
+    // One uniform grid replaces round <=5's two hand-positioned Repeater
+    // rows. `columnsOverride`/`rowsOverride` pin the shape to the fixed
+    // per-tier table (see Sizing.qml's `hubGridShape`) instead of the
+    // viewport-fitted default every other PagedGrid caller uses.
+    PagedGrid {
+        id: pagedGrid
+
+        // Square cells (docs/style.md -> "Tile aspect and grid blocks":
+        // "Hub rows remain square"), fit against BOTH axes of the Hub's own
+        // reserved band — `squareCells` clamps cellWidth/cellHeight to the
+        // smaller of the two independent fits. `heightBudget` (rather than
+        // this item's own `height`) is what the height half of that fit
+        // reads, because `height` below is itself derived FROM the fitted
+        // cell size; fitting against `height` directly would be circular.
+        squareCells: true
+        heightBudget: hub._gridHeightBudget
 
         anchors.horizontalCenter: parent.horizontalCenter
         width: parent.width
-        height: cellHeight + 2 * verticalPadding
-        // Vertically centered with actionsRow + activeLabel as one
-        // block in the band between the logo and the help bar. See
-        // `_blockHeight` / `_blockY` on the hub root for the math.
+        height: pagedGrid.topInset + pagedGrid.bottomInset + pagedGrid.rows * pagedGrid.cellHeight + (pagedGrid.rows - 1) * pagedGrid.cellSpacingY
         y: hub._blockY
 
-        // Hide the tiles while the router holds us here on a forward
-        // transition or while its load error is shown. Error text then paints
-        // against the screen background rather than over stale categories.
+        model: hubGridModel
+        delegate: tileDelegate
+        emptyDelegate: emptySlotDelegate
+        columnsOverride: Sizing.hubGridColumns
+        rowsOverride: Sizing.hubGridRows
+        heldIndex: hub.moveArmed ? hub.currentIndex : -1
+        // Normal browsing steps over blanks as if they weren't there; a
+        // Move session must still be able to target one (or the reserve
+        // page `beginMove` pads in) -- that's the whole mechanic. See
+        // PagedGrid.qml's `skipEmptyCells` doc comment.
+        skipEmptyCells: !hub.moveArmed
+
+        activatePulse: hub.activatePulse
+        screenSettling: !hub.visible
+        focusReady: hub._focusReady
+
+        // Hide the whole grid while the router holds us here on a forward
+        // transition or while its load error is shown — the error text
+        // then paints alone against the screen background instead of over
+        // stale/broken category tiles. Unlike round <=5, this now also
+        // hides the actions block during a categories error (previously
+        // only categories hid); a full-grid error state is simpler and the
+        // user can still Cancel/quit or retry.
         visible: !hub.transitioning && (Browse.CategoriesModel.error_message ?? "") === ""
 
-        Component {
-            id: tileDelegate
-            Tile {}
+        onItemHovered: index => {
+            hub._focusArmed = true;
+            hub._commitCurrent();
         }
-
-        Repeater {
-            id: itemRepeater
-
-            model: hub.visibleCategoryEntries
-
-            Item {
-                id: cellItem
-
-                required property int index
-                required property var modelData
-
-                x: categoriesRow.rowOriginX + index * (categoriesRow.cellWidth + categoriesRow.spacing)
-                y: categoriesRow.verticalPadding
-                width: categoriesRow.cellWidth
-                height: categoriesRow.cellHeight
-
-                readonly property bool isSelected: hub.currentRow === 0 && index === hub.currentIndex
-                // Focused tile draws on top so its 1.06× scale-up isn't
-                // clipped by neighbours to the right.
-                z: isSelected ? 1 : 0
-
-                TileLoader {
-                    anchors.fill: parent
-                    sourceComponent: tileDelegate
-                    isSelected: cellItem.isSelected
-                    isFocused: hub.currentRow === 0
-                    name: cellItem.modelData.name
-                    coverKey: cellItem.modelData.coverKey
-                    hidden: cellItem.modelData.hidden ?? false
-                    activatePulse: hub.activatePulse
-                    settling: !hub.visible
-                    focusReady: hub._focusReady
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    cursorShape: Qt.PointingHandCursor
-
-                    onEntered: hub._focusCategory(cellItem.index)
-                    onClicked: mouse => {
-                        hub._focusCategory(cellItem.index);
-                        if (mouse.button === Qt.RightButton) {
-                            if (cellItem.index < Browse.CategoriesModel.count)
-                                hub.requestContextMenu(cellItem.index, cellItem.mapToItem(hub, 0, 0, cellItem.width, cellItem.height));
-                        } else {
-                            hub._activateCurrent();
-                        }
-                    }
-                }
+        onItemClicked: index => {
+            hub._focusArmed = true;
+            hub._commitCurrent();
+            hub._activateCurrent();
+        }
+        onItemRightClicked: index => {
+            hub._focusArmed = true;
+            hub._commitCurrent();
+            const entry = hub.items[index];
+            if (!entry)
+                return;
+            // Mirror `handleAction`'s "context_menu" dispatch exactly --
+            // right-click and Options (X) open the same menu. Previously
+            // called these signals with the wrong arity (`entry.id` first,
+            // no `hubIndex` at all), so a right-click's Move/Hide/Delete
+            // silently targeted whatever `_hubItemIndex` a coerced string
+            // happened to become in Main.qml, not this tile.
+            if (entry.kind === "category") {
+                hub.requestContextMenu(entry.hubIndex, entry.id, pagedGrid.currentCellRectIn(hub), pagedGrid.currentCellRadius);
+            } else if (entry.kind === "action") {
+                hub.requestActionContextMenu(entry.hubIndex, entry.id, pagedGrid.currentCellRectIn(hub));
+            } else if (entry.kind !== "empty" && entry.hubIndex >= 0) {
+                // See handleAction's "context_menu" branch: a blank tile
+                // (kind === "empty") never opens Options.
+                hub.requestItemContextMenu(entry.hubIndex, entry.kind, pagedGrid.currentCellRectIn(hub), pagedGrid.currentCellRadius);
             }
+        }
+        // Mirrors handleAction's page_prev/page_next dispatch (including
+        // the moveArmed branch) for the mouse-wheel path -- previously
+        // unwired, so scrolling the wheel over the Hub grid silently did
+        // nothing even though PagedGrid already emitted this signal.
+        onPageWheelRequested: delta => {
+            if (hub.moveArmed) {
+                hub._movePage(delta);
+                return;
+            }
+            if (pagedGrid.pageBy(delta))
+                hub._commitCurrent();
         }
     }
 
-    // Action row. Same cell geometry and centring formula as
-    // categoriesRow so the two rows visually read as one grid; the
-    // only difference is a small array model with optional Resume. Positioned
-    // directly below categoriesRow with a vertical gap equal to
-    // categoriesRow.spacing so the visual gutter between rows matches
-    // the gutter between tiles within a row.
-    Item {
-        id: actionsRow
-
-        // Mirror categoriesRow's cell metrics so both rows line up
-        // pixel-for-pixel.
-        readonly property int spacing: categoriesRow.spacing
-        readonly property int cellWidth: categoriesRow.cellWidth
-        readonly property int cellHeight: categoriesRow.cellHeight
-        readonly property int verticalPadding: categoriesRow.verticalPadding
-        readonly property int n: hub.actionEntries.length
-        readonly property int totalRowWidth: n > 0 ? n * cellWidth + (n - 1) * spacing : 0
-        readonly property int rowOriginX: Sizing.center(width, totalRowWidth)
-
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: categoriesRow.bottom
-        // Visual gap between the bottom edge of a category cell and the
-        // top edge of an action cell must equal the horizontal `spacing`
-        // between tiles within a row. Both rows reserve `verticalPadding`
-        // above and below their cells (to contain the focused tile's
-        // 1.06× scale bleed); without compensating here the visible gap
-        // would be `spacing + 2 × verticalPadding`.
-        anchors.topMargin: categoriesRow.spacing - categoriesRow.verticalPadding - actionsRow.verticalPadding
-        width: parent.width
-        height: cellHeight + 2 * verticalPadding
-        visible: !hub.transitioning
-
-        Component {
-            id: actionTileDelegate
-            Tile {}
-        }
-
-        Repeater {
-            id: actionRepeater
-
-            model: hub.actionEntries
-
-            Item {
-                id: actionCellItem
-
-                required property int index
-                required property var modelData
-
-                x: actionsRow.rowOriginX + index * (actionsRow.cellWidth + actionsRow.spacing)
-                y: actionsRow.verticalPadding
-                width: actionsRow.cellWidth
-                height: actionsRow.cellHeight
-
-                readonly property bool isSelected: hub.currentRow === 1 && index === hub.currentIndex
-                z: isSelected ? 1 : 0
-
-                TileLoader {
-                    anchors.fill: parent
-                    sourceComponent: actionTileDelegate
-                    isSelected: actionCellItem.isSelected
-                    isFocused: hub.currentRow === 1
-                    name: actionCellItem.modelData.text
-                    coverKey: actionCellItem.modelData.coverKey
-                    activatePulse: hub.activatePulse
-                    settling: !hub.visible
-                    focusReady: hub._focusReady
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    acceptedButtons: actionCellItem.modelData.enabled === false ? Qt.NoButton : (actionCellItem.modelData.id === "favorites" ? Qt.LeftButton | Qt.RightButton : Qt.LeftButton)
-                    cursorShape: actionCellItem.modelData.enabled === false ? Qt.ArrowCursor : Qt.PointingHandCursor
-
-                    onEntered: hub._focusAction(actionCellItem.index)
-                    onClicked: mouse => {
-                        hub._focusAction(actionCellItem.index);
-                        if (mouse.button === Qt.RightButton)
-                            hub.requestActionContextMenu(actionCellItem.modelData.id, actionCellItem.mapToItem(hub, 0, 0, actionCellItem.width, actionCellItem.height));
-                        else
-                            hub._activateCurrent();
-                    }
-                }
-            }
-        }
-    }
-
-    // Active label — single big line under the bottom row, swaps text
-    // on every move. Reads from whichever row owns focus. Keep it visible
-    // while tiles hide for a forward transition so source context remains
-    // stable until the destination cut.
+    // Footer row — single big line under the grid, swaps text on every
+    // move, plus a page cue in the reserved right slot (same one-third
+    // discipline TopStatusStrip uses; see PageIndicator.qml). Hidden
+    // during a forward transition like the grid above (`hub.transitioning`)
+    // — the label used to stay up under the destination's "Loading…" cue
+    // (e.g. "Recently Played" lingering while Games loads), reading as
+    // stale source context rather than the settled label the Favorites
+    // path already showed correctly.
     ActiveLabel {
         id: activeLabel
+        objectName: "hubActiveLabel"
 
-        anchors.top: actionsRow.bottom
-        anchors.topMargin: Sizing.pctH(3)
+        anchors.top: pagedGrid.bottom
+        anchors.topMargin: hub._verticalGap
         anchors.left: parent.left
         anchors.right: parent.right
-        height: Sizing.pctH(7)
+        height: hub._activeLabelHeight
+        // Reserves exactly what the PageIndicator's corner slot below
+        // measures, not a flat third of the screen -- the indicator is
+        // ~10-12% wide, so a hardcoded third-per-side left roughly two
+        // thirds of the label's budget unused. The block stays centred
+        // (see ActiveLabel.qml), so the same inset is paid on the left
+        // even though nothing sits there on Hub -- see the PageIndicator
+        // comment below.
+        sideInset: Sizing.px(hubPageIndicator.width) + Sizing.pctW(3) + Sizing.pctW(1.5)
         text: {
-            if (hub.currentRow === 1) {
-                // currentIndex can briefly outrun actionEntries.length
-                // during cold launch, before HubState is clamped to the
-                // row. Guard the lookup so an undefined access doesn't
-                // surface as a TypeError in the log.
-                const entry = hub.actionEntries[hub.currentIndex];
-                return entry ? entry.text : "";
-            }
-            const entry = hub.visibleCategoryEntries[hub.currentIndex];
-            if (entry)
-                return entry.name;
-            return "";
+            // currentIndex can briefly outrun items.length during cold
+            // launch, before HubState is clamped to it. Guard the lookup so
+            // an undefined access doesn't surface as a TypeError in the log.
+            const entry = hub.items[hub.currentIndex];
+            return entry && entry.kind !== "empty" ? entry.name : "";
         }
-        visible: hub.currentRow === 1 || (Browse.CategoriesModel.error_message ?? "") === ""
+        // Worded reason for a disabled tile -- the detail cue, next to the
+        // muted front edge's glanceable one (Tile.qml's `edgeColor`). Hub
+        // tiles carry no per-tile caption to fold this into the way
+        // Games/Favorites/Recents do (see Tile.qml's caption `tags`), so it
+        // surfaces here instead, only while that tile is focused.
+        tags: {
+            const entry = hub.items[hub.currentIndex];
+            return entry && entry.disabled === true ? (entry.stateReason ?? "") : "";
+        }
+        // Hidden while a categories error is showing AND the current tile
+        // is a category, so the error text can show alone instead of a
+        // stale label -- was an index-range check (`currentIndex >=
+        // _categoryItems.length`, "we're on an action") back when
+        // categories always occupied a fixed prefix of `items`; a kind
+        // check is what that meant and still means now that any kind can
+        // sit at any position.
+        visible: {
+            if (hub.transitioning)
+                return false;
+            const entry = hub.items[hub.currentIndex];
+            return (!entry || entry.kind !== "category") || (Browse.CategoriesModel.error_message ?? "") === "";
+        }
+    }
+
+    // Page cue — right corner of the footer row, alongside activeLabel.
+    // No left-corner counterpart: Hub has no natural "N items" count the
+    // way Systems/Games do, so that slot simply stays empty (still the
+    // same reserved inset as the right corner, for consistency with every
+    // other footer -- there just isn't anything to put there).
+    PageIndicator {
+        id: hubPageIndicator
+        objectName: "hubPageIndicator"
+
+        anchors.right: parent.right
+        anchors.rightMargin: Sizing.pctW(3)
+        anchors.verticalCenter: activeLabel.verticalCenter
+        currentPage: pagedGrid.currentPage
+        totalPages: pagedGrid.totalPageCount
+        hasPagesAbove: pagedGrid.hasPagesAbove
+        hasPagesBelow: pagedGrid.hasPagesBelow
+        visible: activeLabel.visible
+
+        onPageRequested: delta => {
+            if (hub.moveArmed) {
+                hub._movePage(delta);
+                return;
+            }
+            if (pagedGrid.pageBy(delta))
+                hub._commitCurrent();
+        }
     }
 
     // CategoriesModel has no `loading` qproperty — the catalog is
@@ -810,10 +1572,10 @@ Item {
     // window where count===0 surfaces as "No categories" is acceptable
     // per the "Loading is brief" locked decision in MVP_PLAN.md.
     ScreenStateOverlay {
-        x: categoriesRow.x + Sizing.center(categoriesRow.width, width)
-        y: categoriesRow.y + Sizing.center(categoriesRow.height, height)
-        width: categoriesRow.width
-        height: categoriesRow.height
+        x: pagedGrid.x + Sizing.center(pagedGrid.width, width)
+        y: pagedGrid.y + Sizing.center(pagedGrid.height, height)
+        width: pagedGrid.width
+        height: pagedGrid.height
         enabled: Browse.CategoriesModel.loaded || (Browse.CategoriesModel.error_message ?? "") !== ""
         loading: false
         errorMessage: Browse.CategoriesModel.error_message ?? ""

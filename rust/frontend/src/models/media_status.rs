@@ -32,6 +32,15 @@ use tracing::warn;
 use zaparoo_core::media_types::{MediaIndexParams, MediaScrapeParams};
 use zaparoo_core::store::MediaStatusState;
 
+// Round 10: scraper choice for `ScrapeSetupModal.qml`, sourced from the
+// `scrapers` RPC -- never called anywhere in the frontend before this,
+// since every other scrape call site hardcodes `"gamelist.xml"`. This is
+// a one-shot fetch (`refresh_scrapers`), not part of the continuous
+// `MediaStatusState` watch channel every other field above projects from,
+// so it's applied directly from a `qt_thread().queue(...)` closure the
+// same way `GameInfo.load()` applies its own async result -- see that
+// file's `load()` for the identical shape.
+
 #[allow(
     clippy::struct_excessive_bools,
     reason = "wire-faithful flags; one bool per Core status field exposed to QML"
@@ -67,6 +76,17 @@ pub struct MediaStatusRust {
     scrape_current_step: i32,
     scrape_total_steps: i32,
     scrape_current_step_display: QString,
+
+    scrape_current_system_id: QString,
+    scrape_current_system_name: QString,
+    scrape_current_processed: i32,
+    scrape_current_total: i32,
+    scrape_current_matched: i32,
+    scrape_current_skipped: i32,
+
+    scraper_ids: QStringList,
+    scraper_names: QStringList,
+    scrapers_loading: bool,
 }
 
 #[cxx_qt::bridge]
@@ -109,6 +129,15 @@ pub mod ffi {
         #[qproperty(i32, scrape_current_step)]
         #[qproperty(i32, scrape_total_steps)]
         #[qproperty(QString, scrape_current_step_display)]
+        #[qproperty(QString, scrape_current_system_id)]
+        #[qproperty(QString, scrape_current_system_name)]
+        #[qproperty(i32, scrape_current_processed)]
+        #[qproperty(i32, scrape_current_total)]
+        #[qproperty(i32, scrape_current_matched)]
+        #[qproperty(i32, scrape_current_skipped)]
+        #[qproperty(QStringList, scraper_ids)]
+        #[qproperty(QStringList, scraper_names)]
+        #[qproperty(bool, scrapers_loading)]
         type MediaStatus = super::MediaStatusRust;
 
         #[qinvokable]
@@ -138,6 +167,28 @@ pub mod ffi {
 
         #[qinvokable]
         fn cancel_scrape(self: Pin<&mut MediaStatus>);
+
+        /// One-shot fetch of the `scrapers` RPC into `scraper_ids`/
+        /// `scraper_names`. Called by ScrapeSetupModal.qml on open.
+        #[qinvokable]
+        fn refresh_scrapers(self: Pin<&mut MediaStatus>);
+
+        /// Start a scrape with a caller-chosen scraper id, replacing the
+        /// hardcoded "gamelist.xml" every other scrape call site still
+        /// uses. `systems` is resolved by the caller (ScrapeSetupModal's
+        /// Systems row, via Main.qml's system-scope picker) -- empty means
+        /// every system the scraper supports, matching `start_scrape`'s
+        /// own "All systems" behavior. Per-system/per-category context-menu
+        /// scoping is unaffected; those entries stay on
+        /// `start_scrape_for_system`/`start_scrape_for_systems`, which stay
+        /// on "gamelist.xml".
+        #[qinvokable]
+        fn start_scrape_with_scraper(
+            self: Pin<&mut MediaStatus>,
+            scraper_id: QString,
+            systems: QStringList,
+            force: bool,
+        );
     }
 
     impl cxx_qt::Threading for MediaStatus {}
@@ -181,6 +232,13 @@ struct Snapshot {
     scrape_current_step: i32,
     scrape_total_steps: i32,
     scrape_current_step_display: QString,
+
+    scrape_current_system_id: QString,
+    scrape_current_system_name: QString,
+    scrape_current_processed: i32,
+    scrape_current_total: i32,
+    scrape_current_matched: i32,
+    scrape_current_skipped: i32,
 }
 
 fn project(state: &MediaStatusState) -> Snapshot {
@@ -212,6 +270,12 @@ fn project(state: &MediaStatusState) -> Snapshot {
         scrape_current_step: state.scrape_current_step,
         scrape_total_steps: state.scrape_total_steps,
         scrape_current_step_display: QString::from(state.scrape_current_step_display.as_str()),
+        scrape_current_system_id: QString::from(state.scrape_current_system_id.as_str()),
+        scrape_current_system_name: QString::from(state.scrape_current_system_name.as_str()),
+        scrape_current_processed: state.scrape_current_processed,
+        scrape_current_total: state.scrape_current_total,
+        scrape_current_matched: state.scrape_current_matched,
+        scrape_current_skipped: state.scrape_current_skipped,
     }
 }
 
@@ -382,11 +446,73 @@ impl ffi::MediaStatus {
             }
         });
     }
+
+    fn refresh_scrapers(mut self: Pin<&mut Self>) {
+        self.as_mut().set_scrapers_loading(true);
+        let qt_thread = self.qt_thread();
+        let client = crate::models::global_store().client();
+        crate::models::global_handle().spawn(async move {
+            let result = client.scrapers().await;
+            let _ = qt_thread.queue(move |mut model| {
+                model.as_mut().set_scrapers_loading(false);
+                match result {
+                    Ok(result) => {
+                        let mut ids = QStringList::default();
+                        let mut names = QStringList::default();
+                        for scraper in &result.scrapers {
+                            ids.append(QString::from(scraper.id.as_str()));
+                            names.append(QString::from(scraper.name.as_str()));
+                        }
+                        model.as_mut().set_scraper_ids(ids);
+                        model.as_mut().set_scraper_names(names);
+                    }
+                    Err(e) => {
+                        warn!("media_status: refresh_scrapers failed: {}", e.message);
+                        report_action_error("media_scrapers", "");
+                    }
+                }
+            });
+        });
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString/QStringList by value"
+    )]
+    fn start_scrape_with_scraper(
+        self: Pin<&mut Self>,
+        scraper_id: QString,
+        systems: QStringList,
+        force: bool,
+    ) {
+        let scraper_id: String = scraper_id.into();
+        if scraper_id.is_empty() {
+            warn!("media_status: start_scrape_with_scraper ignored empty scraper_id");
+            return;
+        }
+        let systems: Vec<String> = systems.iter().map(String::from).collect();
+        let resource = crate::models::global_store().media_status();
+        crate::models::global_handle().spawn(async move {
+            let params = MediaScrapeParams {
+                scraper_id,
+                systems,
+                force,
+            };
+            if let Err(e) = resource.start_scrape(params).await {
+                warn!(
+                    "media_status: start_scrape_with_scraper failed: {}",
+                    e.message
+                );
+                report_action_error("media_scrape", "");
+            }
+        });
+    }
 }
 
 #[allow(
     clippy::cognitive_complexity,
-    reason = "21 fields × diff-and-set is mechanical; folding it loses the per-field NOTIFY suppression"
+    clippy::too_many_lines,
+    reason = "27 fields × diff-and-set is mechanical; folding it loses the per-field NOTIFY suppression"
 )]
 fn apply(mut model: Pin<&mut ffi::MediaStatus>, s: Snapshot) {
     if model.seeded != s.seeded {
@@ -478,6 +604,36 @@ fn apply(mut model: Pin<&mut ffi::MediaStatus>, s: Snapshot) {
             .as_mut()
             .set_scrape_current_step_display(s.scrape_current_step_display);
     }
+    if model.scrape_current_system_id != s.scrape_current_system_id {
+        model
+            .as_mut()
+            .set_scrape_current_system_id(s.scrape_current_system_id);
+    }
+    if model.scrape_current_system_name != s.scrape_current_system_name {
+        model
+            .as_mut()
+            .set_scrape_current_system_name(s.scrape_current_system_name);
+    }
+    if model.scrape_current_processed != s.scrape_current_processed {
+        model
+            .as_mut()
+            .set_scrape_current_processed(s.scrape_current_processed);
+    }
+    if model.scrape_current_total != s.scrape_current_total {
+        model
+            .as_mut()
+            .set_scrape_current_total(s.scrape_current_total);
+    }
+    if model.scrape_current_matched != s.scrape_current_matched {
+        model
+            .as_mut()
+            .set_scrape_current_matched(s.scrape_current_matched);
+    }
+    if model.scrape_current_skipped != s.scrape_current_skipped {
+        model
+            .as_mut()
+            .set_scrape_current_skipped(s.scrape_current_skipped);
+    }
 }
 
 #[cfg(test)]
@@ -516,6 +672,12 @@ mod tests {
             scrape_current_step: 0,
             scrape_total_steps: 0,
             scrape_current_step_display: String::new(),
+            scrape_current_system_id: String::new(),
+            scrape_current_system_name: String::new(),
+            scrape_current_processed: 0,
+            scrape_current_total: 0,
+            scrape_current_matched: 0,
+            scrape_current_skipped: 0,
         };
         let snapshot = project(&state);
         assert!(snapshot.seeded);
@@ -548,6 +710,12 @@ mod tests {
             scrape_current_step: 2,
             scrape_total_steps: 5,
             scrape_current_step_display: "Super Nintendo".into(),
+            scrape_current_system_id: "SNES".into(),
+            scrape_current_system_name: "Super Nintendo Entertainment System".into(),
+            scrape_current_processed: 12,
+            scrape_current_total: 200,
+            scrape_current_matched: 10,
+            scrape_current_skipped: 2,
             ..MediaStatusState::default()
         };
         let snapshot = project(&state);
@@ -568,6 +736,14 @@ mod tests {
             snapshot.scrape_current_step_display,
             QString::from("Super Nintendo"),
         );
+        assert_eq!(
+            snapshot.scrape_current_system_name,
+            QString::from("Super Nintendo Entertainment System"),
+        );
+        assert_eq!(snapshot.scrape_current_processed, 12);
+        assert_eq!(snapshot.scrape_current_total, 200);
+        assert_eq!(snapshot.scrape_current_matched, 10);
+        assert_eq!(snapshot.scrape_current_skipped, 2);
     }
 
     #[test]

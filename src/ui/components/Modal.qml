@@ -26,8 +26,8 @@ import Zaparoo.Theme
 //                    property slot and owns its own `handleAction` and
 //                    dismissal.
 //
-// All four kinds share the same chrome — rounded corners
-// (`Sizing.cornerRadius`), `Theme.bgPanel` fill, dark scrim — so every
+// All four kinds share the same chrome — `Sizing.radiusMd` panel corners,
+// `Theme.bgPanel` fill, dark scrim — so every
 // modal in the app reads as the same surface. See `docs/style.md` →
 // "Modal chrome".
 //
@@ -38,7 +38,7 @@ import Zaparoo.Theme
 // `confirmed` (confirm Yes).
 //
 // Software-rendering safe — only Item, Rectangle, Text, Column, Row,
-// MouseArea, and scale transforms (buttons push in on activation).
+// MouseArea, and small PressableSurface translations.
 Item {
     id: modal
 
@@ -52,18 +52,59 @@ Item {
     property bool failed: false              // transient only
     // Override the panel's max width on a per-callsite basis. The
     // content-heavier shell modals (legal notice, log upload with QR)
-    // bump this up.
+    // bump this up; shell consumers with narrower content (e.g.
+    // ListPickerModal) bring it down to their own measured content width.
     property int panelMaxWidth: Sizing.pctH(90)
+    // Shell content is opaque to Modal by default, so the shell branch below
+    // applies its own fixed 78%-of-viewport breathing-room ceiling on top of
+    // `panelMaxWidth` (QR/legal notice content can't be measured, so that
+    // ceiling is the real cap for them). A shell consumer that measures its
+    // own content precisely and hands the exact target through
+    // `panelMaxWidth` (ListPickerModal) needs that number honored like the
+    // four prebaked kinds do, not clamped a second time — round 6 follow-up:
+    // the color-scheme picker's widest rows still truncated post-measurement
+    // fix because 78% of the viewport was tighter than the picker's own
+    // computed width.
+    property bool contentSized: false
+
+    // Content-driven width for the four prebaked kinds (title/body/buttons —
+    // content Modal owns and can measure), mirroring ContextMenu.qml's
+    // `_widestEntryLabelWidth` pattern. `kind: "shell"` content is opaque to
+    // Modal (an arbitrary caller-supplied Item), so it keeps the old
+    // percentage-of-viewport sizing instead; a shell caller with narrow,
+    // measurable content overrides `panelMaxWidth` itself.
+    readonly property int _contentHorizontalMargin: Sizing.pctW(4)
+    readonly property int _buttonHorizontalPadding: Sizing.pctW(8)
+    readonly property string _cancelLabel: qsTr("Cancel")
+    readonly property int _titleWidth: modal.title !== "" ? Math.ceil(_titleMetrics.advanceWidth(modal.title)) : 0
+    // 45 characters is the low end of the 45-75 standard readable measure —
+    // a long body paragraph wraps onto more lines instead of forcing a
+    // full-width panel.
+    readonly property int _bodyMaxLineWidth: Math.ceil(_bodyMetrics.averageCharacterWidth * 45)
+    readonly property int _bodyWidth: (modal.body !== "" && modal.kind !== "shell") ? Math.min(Math.ceil(_bodyMetrics.advanceWidth(modal.body)), modal._bodyMaxLineWidth) : 0
+    readonly property int _buttonsWidth: {
+        if (modal.kind === "action_error")
+            return Math.ceil(_bodyMetrics.advanceWidth(modal.buttonLabel)) + modal._buttonHorizontalPadding;
+        if (modal.kind === "transient")
+            return Math.ceil(_bodyMetrics.advanceWidth(modal._cancelLabel)) + modal._buttonHorizontalPadding;
+        if (modal.kind === "confirm")
+            return Math.ceil(_bodyMetrics.advanceWidth(modal.confirmNoLabel)) + modal._buttonHorizontalPadding + Math.ceil(_bodyMetrics.advanceWidth(modal.confirmYesLabel)) + modal._buttonHorizontalPadding + Sizing.pctW(2);
+        return 0;
+    }
+    readonly property int _desiredPanelWidth: Math.max(modal._titleWidth, modal._bodyWidth, modal._buttonsWidth) + 2 * modal._contentHorizontalMargin
+    // Degenerate-case floor only — real prompts size around
+    // `_desiredPanelWidth`, which tracks the longer of title/body/buttons.
+    readonly property int _minPanelWidth: Sizing.pctW(30)
 
     // confirm-only focus. False = No focused (safe default), true = Yes
     // focused. Reset on every open so a previous Yes-focus doesn't leak
     // into the next prompt.
     property bool _focusYes: false
 
-    // Push-in scale for button activation, mirroring the tile push-in.
-    // _pressTarget identifies which button is currently scaled; the others
-    // stay at 1.0 so only the pressed button cues the user's intention.
-    property real _pressScale: 1.0
+    // Physical press for button activation, matching grid tiles.
+    // _pressTarget identifies which button is currently lowered; the others
+    // stay raised so only the pressed button cues the user's intention.
+    property bool _pressed: false
     property string _pressTarget: ""
     property string _pendingSignal: ""
 
@@ -89,10 +130,9 @@ Item {
         }
         if (modal.kind === "confirm")
             modal._focusYes = false;
-        modal._pressScale = 1.0;
+        modal._pressed = false;
         modal._pressTarget = "";
         modal._pendingSignal = "";
-        pressAnim.stop();
     }
 
     // Input dispatch. Main.qml routes key/controller actions here while
@@ -128,17 +168,20 @@ Item {
     function _commit(target: string, sig: string): void {
         modal._pressTarget = target;
         modal._pendingSignal = sig;
-        pressAnim.restart();
+        modal._pressed = true;
         actionCommit.arm();
     }
 
-    NumberAnimation {
-        id: pressAnim
-        target: modal
-        property: "_pressScale"
-        to: Motion.pressScale
-        duration: Motion.dur(Motion.pressMs)
-        easing.type: Easing.OutQuad
+    FontMetrics {
+        id: _titleMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontTitle
+    }
+
+    FontMetrics {
+        id: _bodyMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontBody
     }
 
     DeferredAction {
@@ -146,6 +189,7 @@ Item {
         onDeferred: {
             const sig = modal._pendingSignal;
             modal._pendingSignal = "";
+            modal._pressed = false;
             if (sig === "accepted")
                 modal.accepted();
             else if (sig === "confirmed")
@@ -171,12 +215,17 @@ Item {
         }
 
         Rectangle {
+            objectName: "modalPanel"
             x: Sizing.center(parent.width, width)
             y: Sizing.center(parent.height, height)
-            width: Sizing.px(Math.min(parent.width * 0.78, modal.panelMaxWidth))
+            // `panelMaxWidth` (and the viewport itself) is an unconditional
+            // ceiling -- clamped first -- with the desired/floor width
+            // applied beneath it, so a caller-supplied cap always wins even
+            // when it is tighter than `_minPanelWidth`'s own default floor.
+            width: modal.kind === "shell" ? Sizing.px(Math.min(parent.width * (modal.contentSized ? 0.92 : 0.78), modal.panelMaxWidth)) : Sizing.px(Math.min(Math.min(parent.width * 0.92, modal.panelMaxWidth), Math.max(modal._minPanelWidth, modal._desiredPanelWidth)))
             height: contentColumn.height + Sizing.pctH(8)
             color: Theme.bgPanel
-            radius: Sizing.cornerRadius
+            radius: Sizing.radiusMd
 
             Column {
                 id: contentColumn
@@ -195,7 +244,7 @@ Item {
                     text: modal.title
                     textFormat: Text.PlainText
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(3.2)
+                    font.pixelSize: Sizing.fontTitle
                     color: Theme.textPrimary
                     wrapMode: Text.WordWrap
                     horizontalAlignment: Text.AlignHCenter
@@ -208,7 +257,7 @@ Item {
                     text: modal.body
                     textFormat: Text.PlainText
                     font.family: Theme.fontUi
-                    font.pixelSize: Sizing.fontSize(2.6)
+                    font.pixelSize: Sizing.fontBody
                     color: Theme.textPrimary
                     wrapMode: Text.WordWrap
                     horizontalAlignment: Text.AlignHCenter
@@ -235,7 +284,7 @@ Item {
                     height: Sizing.pctH(7)
                     visible: modal.kind === "transient" && !modal.failed
 
-                    Rectangle {
+                    PressableSurface {
                         x: Sizing.center(parent.width, width)
                         y: Sizing.center(parent.height, height)
                         // Cap at pctW(28) for the typical case but never
@@ -244,30 +293,19 @@ Item {
                         // pill can otherwise overflow the panel.
                         width: Math.min(Sizing.pctW(28), cancelSlot.width)
                         height: parent.height
-                        color: Theme.surfaceCard
-                        // Single button — always the default action, so
-                        // render with the focused recipe (accent border,
-                        // 2px) instead of the unfocused borderMid edge.
-                        border.width: Sizing.stroke(2)
-                        border.color: Theme.accent
-                        radius: Sizing.cornerRadius
-                        transformOrigin: Item.Center
-                        scale: modal._pressTarget === "cancel" ? modal._pressScale : 1.0
+                        focused: true
+                        pressed: modal._pressed && modal._pressTarget === "cancel"
+                        pointerAcceptedButtons: Qt.LeftButton
+                        onPointerClicked: modal._commit("cancel", "cancelRequested")
 
                         Text {
                             x: Sizing.center(parent.width, width)
                             y: Sizing.center(parent.height, height)
-                            text: qsTr("Cancel")
+                            text: modal._cancelLabel
                             font.family: Theme.fontUi
-                            font.pixelSize: Sizing.fontSize(2.6)
+                            font.pixelSize: Sizing.fontBody
                             color: Theme.textPrimary
                             renderType: Text.NativeRendering
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: modal._commit("cancel", "cancelRequested")
                         }
                     }
                 }
@@ -279,35 +317,24 @@ Item {
                     height: Sizing.pctH(7)
                     visible: modal.kind === "action_error"
 
-                    Rectangle {
+                    PressableSurface {
                         x: Sizing.center(parent.width, width)
                         y: Sizing.center(parent.height, height)
                         width: Math.min(Sizing.pctW(28), acceptSlot.width)
                         height: parent.height
-                        color: Theme.surfaceCard
-                        // Single button — always the default action, so
-                        // render with the focused recipe (accent border,
-                        // 2px) instead of the unfocused borderMid edge.
-                        border.width: Sizing.stroke(2)
-                        border.color: Theme.accent
-                        radius: Sizing.cornerRadius
-                        transformOrigin: Item.Center
-                        scale: modal._pressTarget === "ok" ? modal._pressScale : 1.0
+                        focused: true
+                        pressed: modal._pressed && modal._pressTarget === "ok"
+                        pointerAcceptedButtons: Qt.LeftButton
+                        onPointerClicked: modal._commit("ok", "accepted")
 
                         Text {
                             x: Sizing.center(parent.width, width)
                             y: Sizing.center(parent.height, height)
                             text: modal.buttonLabel
                             font.family: Theme.fontUi
-                            font.pixelSize: Sizing.fontSize(2.6)
+                            font.pixelSize: Sizing.fontBody
                             color: Theme.textPrimary
                             renderType: Text.NativeRendering
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: modal._commit("ok", "accepted")
                         }
                     }
                 }
@@ -335,63 +362,52 @@ Item {
                         y: Sizing.center(parent.height, height)
                         spacing: confirmSlot._gap
 
-                        Rectangle {
+                        PressableSurface {
+                            id: noButton
                             width: confirmSlot._pillWidth
                             height: Sizing.pctH(7)
-                            color: Theme.surfaceCard
-                            border.width: modal._focusYes ? Sizing.stroke(1) : Sizing.stroke(2)
-                            border.color: modal._focusYes ? Theme.borderMid : Theme.accent
-                            radius: Sizing.cornerRadius
-                            transformOrigin: Item.Center
-                            scale: modal._pressTarget === "no" ? modal._pressScale : 1.0
+                            focused: !modal._focusYes
+                            pressed: modal._pressed && modal._pressTarget === "no"
+                            pointerAcceptedButtons: Qt.LeftButton
+                            onPointerClicked: {
+                                modal._focusYes = false;
+                                modal._commit("no", "cancelRequested");
+                            }
 
                             Text {
                                 x: Sizing.center(parent.width, width)
                                 y: Sizing.center(parent.height, height)
                                 text: modal.confirmNoLabel
                                 font.family: Theme.fontUi
-                                font.pixelSize: Sizing.fontSize(2.6)
-                                color: Theme.textPrimary
+                                font.pixelSize: Sizing.fontBody
+                                // Mirrors Tile.qml's caption: dim at rest,
+                                // bright when focused -- see
+                                // PressableSurface.qml's doc comment.
+                                color: noButton.focused ? Theme.textPrimary : Theme.textLabel
                                 renderType: Text.NativeRendering
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    modal._focusYes = false;
-                                    modal._commit("no", "cancelRequested");
-                                }
                             }
                         }
 
-                        Rectangle {
+                        PressableSurface {
+                            id: yesButton
                             width: confirmSlot._pillWidth
                             height: Sizing.pctH(7)
-                            color: Theme.surfaceCard
-                            border.width: modal._focusYes ? Sizing.stroke(2) : Sizing.stroke(1)
-                            border.color: modal._focusYes ? Theme.accent : Theme.borderMid
-                            radius: Sizing.cornerRadius
-                            transformOrigin: Item.Center
-                            scale: modal._pressTarget === "yes" ? modal._pressScale : 1.0
+                            focused: modal._focusYes
+                            pressed: modal._pressed && modal._pressTarget === "yes"
+                            pointerAcceptedButtons: Qt.LeftButton
+                            onPointerClicked: {
+                                modal._focusYes = true;
+                                modal._commit("yes", "confirmed");
+                            }
 
                             Text {
                                 x: Sizing.center(parent.width, width)
                                 y: Sizing.center(parent.height, height)
                                 text: modal.confirmYesLabel
                                 font.family: Theme.fontUi
-                                font.pixelSize: Sizing.fontSize(2.6)
-                                color: Theme.textPrimary
+                                font.pixelSize: Sizing.fontBody
+                                color: yesButton.focused ? Theme.textPrimary : Theme.textLabel
                                 renderType: Text.NativeRendering
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    modal._focusYes = true;
-                                    modal._commit("yes", "confirmed");
-                                }
                             }
                         }
                     }

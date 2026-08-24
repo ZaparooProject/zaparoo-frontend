@@ -4,6 +4,20 @@
 
 static DIGITAL_OUTPUT_SIZE: std::sync::OnceLock<(u32, u32)> = std::sync::OnceLock::new();
 static EXPLICIT_REQUEST_APPLIED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+#[cfg(zaparoo_runtime = "mister")]
+static RESOURCE_LEASE: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new();
+/// The render geometry actually left on the framebuffer once
+/// `resolve_video_size` returns — `resolved` below, i.e. what
+/// `current_framebuffer_size()` reads back from that point on. Distinct
+/// from `DIGITAL_OUTPUT_SIZE`: that is the pre-downscale output timing, and
+/// `automatic_render_size` routinely halves or quarters it to stay under
+/// `AUTO_RENDER_MAX_PIXELS`, so the two are legitimately different values
+/// most of the time. `watch_for_output_change` polls with the same cheap
+/// sysfs read used here, so it must diff against this — the render size —
+/// not the output timing, or it would see a permanent mismatch on every
+/// downscaled output and restart-loop every debounce window forever.
+#[cfg(zaparoo_runtime = "mister")]
+static BOOT_RENDER_SIZE: std::sync::OnceLock<(u32, u32)> = std::sync::OnceLock::new();
 
 /// Active digital output timing discovered before the framebuffer is reduced
 /// to the frontend's render size. Settings uses this to offer aspect-correct
@@ -41,6 +55,7 @@ pub fn resolve_video_size(config: &mut zaparoo_core::config::Config, crt_native_
             // Keep stale persisted resolution out of the fallback path if
             // neither Main's scale command nor framebuffer sysfs is available.
             .unwrap_or(((1280, 720), false));
+        let _ = BOOT_RENDER_SIZE.set(resolved);
         if requested.is_some() {
             let _ = EXPLICIT_REQUEST_APPLIED.set(explicit_applied);
         }
@@ -87,6 +102,113 @@ pub fn apply_pre_qt_setup(config: &zaparoo_core::config::Config, crt_native_path
     }
     #[cfg(not(zaparoo_runtime = "mister"))]
     let _ = (config, crt_native_path_forced);
+}
+
+/// Poll interval for `watch_for_output_change`. Cheap sysfs reads (not the
+/// heavier `vmode`-forcing probe `resolve_video_size` uses at boot), so a
+/// wide margin between checks costs nothing and only matters for how
+/// quickly the frontend notices a display that was off at boot coming on.
+#[cfg(zaparoo_runtime = "mister")]
+const OUTPUT_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Wait for the live framebuffer render geometry to genuinely differ from
+/// `BOOT_RENDER_SIZE` — the render size this process actually settled on at
+/// boot, after `automatic_render_size` downscaling — debounced across two
+/// consecutive polls so a momentary mode switch can't fire this on its own.
+/// Resolves once when a real, stable change is confirmed; callers restart
+/// the process to re-run the full (verified) boot-time probe rather than
+/// trying to hot-apply a new render size.
+///
+/// Deliberately compares against `BOOT_RENDER_SIZE`, not
+/// `DIGITAL_OUTPUT_SIZE`: both this poll and the boot-time probe read
+/// geometry through the same cheap `current_framebuffer_size()` sysfs call,
+/// which reflects whatever render size was last applied to the fb, not the
+/// pre-downscale output timing `DIGITAL_OUTPUT_SIZE` records. Diffing
+/// against `DIGITAL_OUTPUT_SIZE` compares two different quantities and is
+/// wrong whenever downscaling is in effect — which is most outputs, since
+/// `AUTO_RENDER_MAX_PIXELS` is well under 1080p and 720p — producing a
+/// permanent, spurious mismatch that restart-loops the frontend every
+/// `OUTPUT_WATCH_INTERVAL` × 2 forever. Caught on real `MiSTer` hardware at
+/// 1080p (`DIGITAL_OUTPUT_SIZE` 1920×1080, downscaled render 960×540): every
+/// poll confirmed a "change" back to the same 960×540 render size the
+/// frontend had itself already applied and left alone.
+///
+/// This exists for one specific gap: `MiSTer` already kills and relaunches
+/// the frontend around every game launch, and each relaunch re-probes
+/// correctly for the output state at that moment — a TV that was off at
+/// boot and came on later is corrected the next time a game is played.
+/// The gap is the window before that: browsing the Hub with the display
+/// now on, where nothing else prompts a re-probe. See the "Re-detect
+/// output resolution while running" round for the full rationale.
+///
+/// No-op (never resolves) off `MiSTer` — desktop has no fb sysfs and no
+/// need for this; callers must not spawn it unconditionally.
+pub async fn watch_for_output_change() {
+    #[cfg(zaparoo_runtime = "mister")]
+    {
+        use tracing::info;
+
+        // `--crt` never sets BOOT_RENDER_SIZE (resolve_video_size skips its
+        // whole digital-framebuffer probe on that path), but Settings::init
+        // spawns this watcher for every MiSTer run regardless of CRT mode.
+        // Returning here would let the `await` above it resolve
+        // immediately, which the caller reads as "output changed" and
+        // queues a restart on every `--crt` launch. Stay pending forever
+        // instead, same as the desktop no-op below.
+        let Some(baseline) = BOOT_RENDER_SIZE.get().copied() else {
+            std::future::pending::<()>().await;
+            return;
+        };
+        let mut candidate: Option<(u32, u32)> = None;
+        loop {
+            tokio::time::sleep(OUTPUT_WATCH_INTERVAL).await;
+            let (confirmed, next_candidate) =
+                debounce_output_change(baseline, candidate, current_framebuffer_size());
+            if let Some(current) = confirmed {
+                info!(
+                    baseline_w = baseline.0,
+                    baseline_h = baseline.1,
+                    new_w = current.0,
+                    new_h = current.1,
+                    "mister_runtime: render size changed while running, requesting restart"
+                );
+                return;
+            }
+            candidate = next_candidate;
+        }
+    }
+    #[cfg(not(zaparoo_runtime = "mister"))]
+    std::future::pending::<()>().await;
+}
+
+/// A raw framebuffer render size in pixels, as read from sysfs or frozen
+/// into `BOOT_RENDER_SIZE`. Named alias purely to keep
+/// `debounce_output_change`'s signature legible.
+#[cfg(any(zaparoo_runtime = "mister", test))]
+type OutputSize = (u32, u32);
+
+/// Pure debounce decision for one `watch_for_output_change` poll tick,
+/// split out so the debounce logic is unit-testable without the
+/// `MiSTer`-only sysfs reads or a tokio runtime — same rationale as
+/// `resume_cover_key_for`/`resume_cover_key_for_with`'s split in
+/// `recents.rs`. `reading` is the tick's sysfs read (`None` on a failed
+/// read); `candidate` is the previous tick's unconfirmed reading, if any.
+/// Returns `(confirmed, next_candidate)`: `confirmed` is `Some` exactly
+/// once `reading` repeats the same non-baseline value on two consecutive
+/// ticks; `next_candidate` is what the caller should carry into the next
+/// tick otherwise.
+#[cfg(any(zaparoo_runtime = "mister", test))]
+fn debounce_output_change(
+    baseline: OutputSize,
+    candidate: Option<OutputSize>,
+    reading: Option<OutputSize>,
+) -> (Option<OutputSize>, Option<OutputSize>) {
+    match reading {
+        None => (None, None),
+        Some(current) if current == baseline => (None, None),
+        Some(current) if candidate == Some(current) => (Some(current), None),
+        Some(current) => (None, Some(current)),
+    }
 }
 
 #[cfg(any(zaparoo_runtime = "mister", test))]
@@ -423,6 +545,46 @@ fn vmode_result_timed_out(stdout: &[u8], stderr: &[u8]) -> bool {
     normalized_vmode_output(stdout, stderr).contains("failed!")
 }
 
+#[cfg(zaparoo_runtime = "mister")]
+fn acquire_resource_lease() {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+    use tracing::{info, warn};
+
+    if RESOURCE_LEASE.get().is_some() {
+        return;
+    }
+    if let Err(e) = std::fs::create_dir_all("/tmp/zaparoo") {
+        warn!("failed to create resource lease directory: {e}");
+        return;
+    }
+    let file = match std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open("/tmp/zaparoo/frontend.active.lock")
+    {
+        Ok(file) => file,
+        Err(e) => {
+            warn!("failed to open frontend resource lease: {e}");
+            return;
+        }
+    };
+    // SAFETY: file remains open in RESOURCE_LEASE for process lifetime.
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        warn!(
+            "failed to acquire frontend resource lease: {}",
+            std::io::Error::last_os_error()
+        );
+        return;
+    }
+    if RESOURCE_LEASE.set(file).is_ok() {
+        info!("acquired MiSTer frontend resource lease");
+    }
+}
+
 #[cfg(any(zaparoo_runtime = "mister", test))]
 fn core_service_start_command() -> std::process::Command {
     let mut command = std::process::Command::new("/usr/bin/taskset");
@@ -437,14 +599,13 @@ fn core_service_start_command() -> std::process::Command {
 }
 
 /// Fire-and-forget `zaparoo.sh -service start`. No-op on non-MiSTer builds.
-/// Core must not inherit the frontend's CPU-0-only affinity: Go runtime worker
-/// and audio threads created from that process would then remain pinned to the
-/// same core. `taskset` gives the service wrapper and every descendant both
-/// `MiSTer` CPUs while leaving frontend affinity unchanged.
+/// Core dynamically responds to the kernel-backed frontend resource lease, so
+/// launch order and service restarts do not determine CPU or IRQ topology.
 pub fn ensure_core_service_running() {
     #[cfg(zaparoo_runtime = "mister")]
     {
         use tracing::{info, warn};
+        acquire_resource_lease();
         info!("spawning core service wrapper with CPU affinity 0-1");
         if let Err(e) = core_service_start_command().spawn() {
             warn!("failed to start zaparoo.sh with taskset: {e}");
@@ -456,10 +617,59 @@ pub fn ensure_core_service_running() {
 mod tests {
     use super::{
         automatic_render_size, configured_render_size_supported, core_service_start_command,
-        infer_full_size_from_half, parse_fb_mode, parse_virtual_size, scale_probe_verified,
-        selectable_render_sizes, vmode_resolution_command, vmode_result_accepted,
-        vmode_result_timed_out, vmode_scale_command, VmodeOutcome,
+        debounce_output_change, infer_full_size_from_half, parse_fb_mode, parse_virtual_size,
+        scale_probe_verified, selectable_render_sizes, vmode_resolution_command,
+        vmode_result_accepted, vmode_result_timed_out, vmode_scale_command, VmodeOutcome,
     };
+
+    #[test]
+    fn debounce_ignores_a_reading_matching_the_baseline() {
+        let (confirmed, candidate) = debounce_output_change((1280, 720), None, Some((1280, 720)));
+        assert_eq!(confirmed, None);
+        assert_eq!(candidate, None);
+    }
+
+    #[test]
+    fn debounce_ignores_a_failed_read() {
+        let (confirmed, candidate) = debounce_output_change((1280, 720), Some((1920, 1080)), None);
+        assert_eq!(
+            confirmed, None,
+            "a failed read must not confirm a stale candidate"
+        );
+        assert_eq!(
+            candidate, None,
+            "a failed read must not carry the old candidate forward either"
+        );
+    }
+
+    #[test]
+    fn debounce_holds_a_first_differing_reading_as_a_candidate() {
+        let (confirmed, candidate) = debounce_output_change((1280, 720), None, Some((1920, 1080)));
+        assert_eq!(
+            confirmed, None,
+            "one differing reading alone must not confirm"
+        );
+        assert_eq!(candidate, Some((1920, 1080)));
+    }
+
+    #[test]
+    fn debounce_confirms_when_two_consecutive_readings_agree() {
+        let (confirmed, candidate) =
+            debounce_output_change((1280, 720), Some((1920, 1080)), Some((1920, 1080)));
+        assert_eq!(confirmed, Some((1920, 1080)));
+        assert_eq!(candidate, None);
+    }
+
+    #[test]
+    fn debounce_resets_the_candidate_when_the_second_reading_disagrees() {
+        // A flickering mode switch (e.g. 1920x1080 then something else
+        // entirely, not back to baseline) must not confirm either value --
+        // it restarts the debounce window on the newer reading.
+        let (confirmed, candidate) =
+            debounce_output_change((1280, 720), Some((1920, 1080)), Some((1366, 768)));
+        assert_eq!(confirmed, None);
+        assert_eq!(candidate, Some((1366, 768)));
+    }
 
     #[test]
     fn automatic_render_size_keeps_pixel_budget_native() {

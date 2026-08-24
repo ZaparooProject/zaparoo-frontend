@@ -21,7 +21,8 @@
 
 use crate::client::{Client, ClientError, ConnectionState, Notification};
 use crate::media_types::{
-    IndexingStatusResponse, MediaIndexParams, MediaScrapeParams, ScrapingStatusResponse,
+    IndexingStatusResponse, MediaIndexParams, MediaScrapeParams, ScrapeSystemProgressResponse,
+    ScrapingStatusResponse,
 };
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -75,6 +76,17 @@ pub struct MediaStatusState {
     pub scrape_current_step: i32,
     pub scrape_total_steps: i32,
     pub scrape_current_step_display: String,
+
+    // From `media.scraping`'s `currentSystem` object. Core's docs mark the
+    // flat `scrape_processed`/`_total`/`_matched`/`_skipped` fields above as
+    // compatibility-only and recommend this object for per-system progress
+    // going forward — see `docs/core/contributing/scraper` "API Surface".
+    pub scrape_current_system_id: String,
+    pub scrape_current_system_name: String,
+    pub scrape_current_processed: i32,
+    pub scrape_current_total: i32,
+    pub scrape_current_matched: i32,
+    pub scrape_current_skipped: i32,
 }
 
 impl MediaStatusState {
@@ -116,6 +128,17 @@ impl MediaStatusState {
             .as_deref()
             .unwrap_or_default()
             .clone_into(&mut self.scrape_current_step_display);
+        self.apply_current_system(status.current_system.as_ref());
+    }
+
+    fn apply_current_system(&mut self, current: Option<&ScrapeSystemProgressResponse>) {
+        let current = current.cloned().unwrap_or_default();
+        self.scrape_current_system_id = current.system_id;
+        self.scrape_current_system_name = current.system_name;
+        self.scrape_current_processed = current.processed;
+        self.scrape_current_total = current.total;
+        self.scrape_current_matched = current.matched;
+        self.scrape_current_skipped = current.skipped;
     }
 }
 
@@ -380,7 +403,11 @@ mod tests {
             "state": "running", "currentStep": 2, "totalSteps": 5,
             "currentStepDisplay": "Super Nintendo",
             "processed": 12, "total": 200, "matched": 10, "skipped": 2,
-            "totalScraped": 50, "force": true, "scraping": true, "done": false, "paused": false
+            "totalScraped": 50, "force": true, "scraping": true, "done": false, "paused": false,
+            "currentSystem": {
+                "systemId": "SNES", "systemName": "Super Nintendo Entertainment System",
+                "processed": 12, "total": 200, "matched": 10, "skipped": 2
+            }
         });
         fold_notification(
             &Notification {
@@ -400,9 +427,50 @@ mod tests {
         assert_eq!(snapshot.scrape_current_step, 2);
         assert_eq!(snapshot.scrape_total_steps, 5);
         assert_eq!(snapshot.scrape_current_step_display, "Super Nintendo");
+        assert_eq!(snapshot.scrape_current_system_id, "SNES");
+        assert_eq!(
+            snapshot.scrape_current_system_name,
+            "Super Nintendo Entertainment System"
+        );
+        assert_eq!(snapshot.scrape_current_processed, 12);
+        assert_eq!(snapshot.scrape_current_total, 200);
+        assert_eq!(snapshot.scrape_current_matched, 10);
+        assert_eq!(snapshot.scrape_current_skipped, 2);
         // `scraped`-side notifications must not flip the indexing
         // `seeded` flag — that's the `media` query's job.
         assert!(!snapshot.seeded);
+    }
+
+    #[test]
+    fn fold_notification_clears_current_system_when_absent() {
+        // Idle/whole-run frames (e.g. the terminal `done` update) may omit
+        // `currentSystem` entirely — the per-system fields must reset to
+        // empty rather than keep stale data from an earlier system.
+        let (tx, rx) = watch::channel(MediaStatusState {
+            scrape_current_system_id: "SNES".into(),
+            scrape_current_system_name: "Super Nintendo Entertainment System".into(),
+            scrape_current_processed: 12,
+            scrape_current_total: 200,
+            scrape_current_matched: 10,
+            scrape_current_skipped: 2,
+            ..MediaStatusState::default()
+        });
+        let tx = Arc::new(tx);
+        fold_notification(
+            &Notification {
+                method: "media.scraping".into(),
+                params: json!({
+                    "scraperId": "gamelist.xml", "scraping": false,
+                    "done": true, "paused": false
+                }),
+            },
+            &tx,
+        );
+        let snapshot = rx.borrow().clone();
+        assert_eq!(snapshot.scrape_current_system_id, "");
+        assert_eq!(snapshot.scrape_current_system_name, "");
+        assert_eq!(snapshot.scrape_current_processed, 0);
+        assert_eq!(snapshot.scrape_current_total, 0);
     }
 
     #[test]

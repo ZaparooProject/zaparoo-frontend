@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 pragma Singleton
 import QtQuick
+import Zaparoo.Theme
 
 // Centralizes the qrc layout for embedded resources so the rule
 // (`qrc:/qt/qml/Zaparoo/App/resources/...`) lives in exactly one place.
@@ -98,27 +99,96 @@ QtObject {
         return baseUrl + "images/" + key + ".svg";
     }
 
-    // Top-right HUD host-status icons (NFC/Wi-Fi/LAN/Bluetooth).
-    function statusIconUrl(name: string): url {
+    // True when `coverUrl(key, ...)` would route through the tinted-svg
+    // provider. Load policy depends on this: the tinted provider is
+    // synchronous and costs a sub-millisecond LUT pass per icon, so a call site
+    // can ask for a same-frame decode. Everything else is a real image decode
+    // — a colored system PNG is ~1-3 ms on ARM, and thirteen of them in one
+    // binding pass is the stutter this exists to prevent.
+    // Must mirror coverUrl()'s routing exactly, including the color-style
+    // short-circuit; see docs/architecture.md -> "Measuring cover pop-in".
+    function isTintedProviderKey(key: string): bool {
+        if (key === "" || key.startsWith("custom-image/") || key.startsWith("media-image/"))
+            return false;
+
+        if (key.startsWith("categories/") || key.startsWith("icons/") || key.startsWith("corners/"))
+            return true;
+
+        if (!key.startsWith("systems/"))
+            return false;
+
+        return _coloredSystemUrl(_systemArtworkKey(key)) === "";
+    }
+
+    // ContextMenu's rounded scrim hole (Part 5). Corner masks are baked at
+    // integer radii 1..16 only -- see docs/style.md -> "Radius ladder"; a
+    // radius outside that range has no atlas entry, so callers must treat ""
+    // as "render no corner piece and keep the square hole".
+    function cornerCutUrl(radius: int, corner: string, color: var): url {
+        if (radius < 1 || radius > 16)
+            return "";
+
+        if (corner !== "tl" && corner !== "tr" && corner !== "bl" && corner !== "br")
+            return "";
+
+        const token = _colorToken(color);
+        return "image://tinted-svg/" + token + "/" + token + "/" + token + "/images/corners/cut-" + radius + "-" + corner;
+    }
+
+    // Top-right HUD host-status icons (NFC/Wi-Fi/LAN/Bluetooth). Routed
+    // through the tinted-svg provider with a flat tint (all three slots the
+    // same color) instead of the raw qrc path -- every source SVG here is
+    // authored stroke/fill="#fff", and on the light preset `bgBar` resolves
+    // *lighter* than white, so a raw white icon was invisible. `color` is
+    // required, matching `iconUrl()` and every other tinted call in this file.
+    function statusIconUrl(name: string, color: var): url {
         if (name === "")
             return "";
 
-        return baseUrl + "images/status/" + name + ".svg";
+        const token = _colorToken(color);
+        return "image://tinted-svg/" + token + "/" + token + "/" + token + "/images/status/" + name + ".svg";
     }
 
     // General-purpose UI glyphs (folder, file, loading spinner, settings,
-    // nav arrows, D-pad, ...) under resources/images/icons/. Gamepad
-    // button glyphs (ButtonA/B/X/Y/L/R) live separately under
-    // resources/images/buttons/<layout>/ and ship as PNG so the
-    // antialiased button-face shading survives intact.
-    function iconUrl(name: string): url {
+    // nav arrows, D-pad, ...) under resources/images/icons/. Routed through
+    // the tinted-svg provider with a flat tint for the same reason as
+    // statusIconUrl() above -- these are also authored white-on-transparent.
+    // Gamepad button glyphs (ButtonA/B/X/Y/L/R) and the D-pad glyphs stay raw
+    // PNG: they are rasters with their own baked shading, not tintable SVGs.
+    function iconUrl(name: string, color: var): url {
         if (name === "")
             return "";
 
         if (name.startsWith("Button"))
             return baseUrl + "images/buttons/" + buttonLayout + "/" + name + ".png";
 
-        const ext = name.startsWith("Dpad") ? "png" : "svg";
-        return baseUrl + "images/icons/" + name + "." + ext;
+        if (name.startsWith("Dpad"))
+            return baseUrl + "images/icons/" + name + ".png";
+
+        const token = _colorToken(color);
+        return "image://tinted-svg/" + token + "/" + token + "/" + token + "/images/icons/" + name + ".svg";
+    }
+
+    // Header-logo asset ladder (resources/images/logo/logo-<variant>-<w>.png,
+    // item 9a). Snaps `paintedWidth` up to the smallest pre-sized rung that
+    // covers it and picks the light/dark variant from the active theme, so
+    // every call site sitting on the theme's own surface (HeaderBar,
+    // AboutScreen) decodes close to its own painted size instead of
+    // downscaling the 600px master at paint time.
+    function logoUrl(paintedWidth: real): url {
+        const rung = Sizing.snapLogoWidth(paintedWidth);
+        const variant = Theme.lightSurface ? "on-light" : "on-dark";
+        return baseUrl + "images/logo/logo-" + variant + "-" + rung + ".png";
+    }
+
+    // Screensaver's bouncing copy (round 6 follow-up). `ScreensaverOverlay`'s
+    // backstop is unconditionally solid black regardless of the active theme
+    // (see its own header comment), so the logo must always be the
+    // on-dark-surface variant too -- `logoUrl()`'s theme-following pick
+    // selects "on-light" on a light preset, which is a logo colored for a
+    // light page and disappears against black.
+    function screensaverLogoUrl(paintedWidth: real): url {
+        const rung = Sizing.snapLogoWidth(paintedWidth);
+        return baseUrl + "images/logo/logo-on-dark-" + rung + ".png";
     }
 }

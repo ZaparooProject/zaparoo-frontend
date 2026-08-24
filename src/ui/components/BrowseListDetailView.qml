@@ -16,6 +16,7 @@ Item {
     property alias currentCoverKey: browseList.currentCoverKey
     property alias itemCount: browseList.itemCount
     property alias visibleRowCount: browseList.visibleRowCount
+    property alias currentCellRadius: browseList.currentCellRadius
     property var layoutProfile: null
 
     property alias detailTitle: detailPane.title
@@ -48,7 +49,7 @@ Item {
     readonly property real _shareTotal: Math.max(1, root._listShare + root._detailShare)
     readonly property int _listSpan: root._verticalSplit ? Math.max(0, Math.floor((height - root._dividerWidth) * root._listShare / root._shareTotal) + root._dividerMargin) : Math.max(0, Math.floor((width - root._dividerWidth) * root._listShare / root._shareTotal) + root._dividerMargin)
     readonly property int _detailSpan: root._verticalSplit ? Math.max(0, height - root._listSpan - root._dividerWidth) : Math.max(0, width - root._listSpan - root._dividerWidth)
-    readonly property int _cardRadius: root._surfaceProfile ? root._surfaceProfile.cornerRadius : Sizing.cornerRadius
+    readonly property int _cardRadius: root._surfaceProfile ? root._surfaceProfile.cardRadius : Sizing.radiusMd
     // qmllint enable compiler
 
     signal itemHovered(int index)
@@ -64,7 +65,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.surfaceCard
-        border.width: Sizing.stroke(1)
+        border.width: Sizing.cardBorderWidth
         border.color: Theme.borderMid
         radius: root._cardRadius
     }

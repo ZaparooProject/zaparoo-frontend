@@ -87,6 +87,15 @@ const HIDDEN_ROLE: i32 = 256 + 11;
 // keeps the QVariant simple and is robust under MiSTer's AOT QML; the
 // delegate splits on newlines.
 const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 12;
+// Every real row is a real entry, never a structural placeholder; the role
+// exists only so PagedGrid's `isEmpty` delegate contract (round 6 follow-up
+// — see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
+const IS_EMPTY_ROLE: i32 = 256 + 13;
+// No Games row is ever "disabled" (Hub-only concept — a live precondition
+// not currently met, e.g. Resume with no history). The role exists only so
+// PagedGrid's `cellItem.disabled` delegate contract (round 11 follow-up —
+// see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
+const DISABLED_ROLE: i32 = 256 + 14;
 
 // Image types that Core's `media.image` endpoint can serve (per the API
 // docs). The carousel tail is filtered to this set so left/right never
@@ -114,16 +123,17 @@ const DEFAULT_PAGE_SIZE: i32 = 15;
 const FETCH_MORE_RAPID_CHUNK_SIZE: i32 = 300;
 // Ceiling for a jump-to-letter fetch (Core's `max_results` cap). A position
 // jump must load every row up to the target before
-// `PagedGrid._commitPendingTarget` can land on it; doing that as the 12-row
-// frame-gapped trickle (`apply_append_page`) takes seconds on a far jump. The
-// jump path instead inserts the whole chunk in one shot (`bulk` append) — the
-// loading overlay is up and the appended rows sit far from `currentPage`, so
-// their Tile delegates stay unmaterialised (the per-cell Loader is
-// retention-gated), making the bulk insert cheap. `fetch_more_jump` sizes each
-// request to the gap remaining to the target (rounded up to whole `page_size`
-// pages, plus one page of margin) rather than always pulling the full
-// remainder, so a near/mid-folder jump transfers far less; a gap larger than
-// this ceiling chains another bulk call.
+// `PagedGrid._commitPendingTarget` can land on it. A jump chunk this large
+// still goes through `apply_append_page`'s ordinary 12-row frame-gapped
+// trickle (`bulk` append no longer special-cases a single-shot insert — see
+// the comment above `chunk_for_subbatching`'s call site for why: the outer
+// per-row `cellItem` construction cost is paid regardless of whether the
+// inner Tile delegate materialises, so a single 1000-row insert blocked the
+// Qt thread for tens of seconds). `fetch_more_jump` sizes each request to
+// the gap remaining to the target (rounded up to whole `page_size` pages,
+// plus one page of margin) rather than always pulling the full remainder, so
+// a near/mid-folder jump transfers far less; a gap larger than this ceiling
+// chains another bulk call.
 const JUMP_FETCH_CHUNK_SIZE: i32 = 1000;
 // Stay within Core's `max_results` ceiling, and never smaller than the rapid
 // scroll chunk (a jump must not load slower than ordinary scrolling).
@@ -516,6 +526,10 @@ pub mod ffi {
         #[qinvokable]
         fn entry_type_at(self: &GamesModel, index: i32) -> QString;
 
+        /// Index-based sibling to the `fileCount` role -- see `file_count_at`.
+        #[qinvokable]
+        fn file_count_at(self: &GamesModel, index: i32) -> i32;
+
         #[qinvokable]
         fn is_media_capable_at(self: &GamesModel, index: i32) -> bool;
 
@@ -624,7 +638,6 @@ impl ffi::GamesModel {
             FILE_STEM_ROLE => {
                 QVariant::from(&QString::from(file_stem_or_name(&entry.path, &entry.name)))
             }
-            HIDDEN_ROLE => QVariant::from(&false),
             // Sibling-diffed display string (common-affix trimmed against
             // same-named neighbors); precomputed in `disambig_displays`.
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::from(
@@ -632,6 +645,7 @@ impl ffi::GamesModel {
                     .get(index.row() as usize)
                     .map_or("", String::as_str),
             )),
+            HIDDEN_ROLE | IS_EMPTY_ROLE | DISABLED_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -653,6 +667,8 @@ impl ffi::GamesModel {
             DISAMBIGUATING_TAGS_ROLE,
             QByteArray::from("disambiguatingTags"),
         );
+        h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
+        h.insert(DISABLED_ROLE, QByteArray::from("disabled"));
         h
     }
 
@@ -1419,6 +1435,16 @@ impl ffi::GamesModel {
             return QString::default();
         }
         QString::from(self.entries[index as usize].entry_type.as_str())
+    }
+
+    /// Round 11: index-based sibling to the `fileCount` role, for the one
+    /// caller that reads by index rather than through a delegate (the
+    /// footer `ActiveLabel`'s tags provider -- see MediaListScreen.qml).
+    fn file_count_at(&self, index: i32) -> i32 {
+        if index < 0 || index >= self.count {
+            return 0;
+        }
+        i32::try_from(self.entries[index as usize].file_count).unwrap_or(i32::MAX)
     }
 
     fn is_media_capable_at(&self, index: i32) -> bool {
@@ -2352,11 +2378,18 @@ fn cover_key_for(entry: &BrowseEntry, page_size: u32, requests_enabled: bool) ->
             cache.enqueue_with_media_id(k.clone(), entry.media_id, page_size);
         }
     }
+    // `!requests_enabled` (covers paused for a bulk/jump append) is
+    // deliberately NOT folded in here — that means "haven't asked yet,"
+    // not "confirmed absent." Folding it in used to show the chip
+    // placeholder for every game while paused, including ones that do
+    // have art, instead of staying blank like an in-flight fetch. Only a
+    // genuine negative memo, soft-no-image, or Core's own `has_cover:
+    // false` earns the chip; see `cover_key_for_with`'s doc comment.
     cover_key_for_with(
         entry,
         media_key.as_ref(),
         effective_cached,
-        negative || soft_no_image || no_cover || !requests_enabled,
+        negative || soft_no_image || no_cover,
     )
 }
 
@@ -2597,23 +2630,28 @@ fn apply_favorite_tags(
 /// without spinning up the global cover cache and its tokio runtime.
 ///
 /// `icons/Loading` is the in-flight cue: an entry that has a media key
-/// but no cached bytes and no negative memo is one we're actively
-/// fetching (or about to). Tile.qml's cover Image renders that
-/// hourglass at full size until the cache update broadcast lands and
-/// `dataChanged(COVER_KEY_ROLE)` flips this to either `media-image/...`
-/// (success) or `icons/File` (negative memo).
+/// but no cached bytes and isn't confirmed absent is one we're actively
+/// fetching, about to fetch, or simply paused on (bulk/jump append in
+/// flight) -- all three render the same blank placeholder. Tile.qml's
+/// cover Image renders that hourglass at full size until the cache
+/// update broadcast lands and `dataChanged(COVER_KEY_ROLE)` flips this to
+/// either `media-image/...` (success) or `icons/File` (confirmed
+/// absent). `confirmed_absent` must only be true for a real negative
+/// memo, soft-no-image, or Core's own `has_cover: false` -- never for
+/// "requests are merely paused right now," which looks identical to an
+/// in-flight fetch to the user and must stay blank, not show the chip.
 fn cover_key_for_with(
     entry: &BrowseEntry,
     key: Option<&MediaKey>,
     cached: bool,
-    unavailable: bool,
+    confirmed_absent: bool,
 ) -> String {
     if !is_media_capable_entry(entry) && entry.is_folder() {
         return "icons/Folder".to_string();
     }
     match key {
         Some(k) if cached => MediaImageCache::image_key_for(k),
-        Some(_) if !unavailable => "icons/Loading".to_string(),
+        Some(_) if !confirmed_absent => "icons/Loading".to_string(),
         _ => "icons/File".to_string(),
     }
 }
@@ -2911,6 +2949,56 @@ fn is_strict_ancestor_path(parent: &str, child: &str) -> bool {
     child
         .strip_prefix(parent)
         .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// Round 11 interim fix for the "which root do I pick" roots screen (a
+/// full client-side merge is deferred to Core -- see the round-11 plan).
+/// A system with multiple configured folders shows one identically-named
+/// `root` row per folder, with nothing distinguishing them; find the
+/// first path component where the page's root entries disagree and
+/// return that component per entry ("fat" vs "usb0", "games" vs
+/// "games2"). Returned `Vec` is the same length and order as `entries`;
+/// non-root entries and any root that never needed disambiguating (fewer
+/// than two roots on the page, or one identical to every sibling up to
+/// where paths run out) get `""`.
+///
+/// Assumes `dedup_roots_drop_ancestors` already ran -- a root path being a
+/// strict prefix of a sibling's (the case that function exists to drop)
+/// is not itself guarded against here.
+fn root_distinguishers(entries: &[BrowseEntry]) -> Vec<String> {
+    let root_indices: Vec<usize> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.entry_type == "root" && !e.path.is_empty())
+        .map(|(i, _)| i)
+        .collect();
+    let mut result = vec![String::new(); entries.len()];
+    if root_indices.len() < 2 {
+        return result;
+    }
+    let components: Vec<Vec<&str>> = root_indices
+        .iter()
+        .map(|&i| {
+            entries[i]
+                .path
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .collect();
+    let max_len = components.iter().map(Vec::len).max().unwrap_or(0);
+    let Some(diverge_at) = (0..max_len).find(|&idx| {
+        let first = components[0].get(idx);
+        components.iter().any(|c| c.get(idx) != first)
+    }) else {
+        return result;
+    };
+    for (&entry_idx, comps) in root_indices.iter().zip(components.iter()) {
+        if let Some(part) = comps.get(diverge_at) {
+            result[entry_idx] = (*part).to_string();
+        }
+    }
+    result
 }
 
 fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<MediaBrowseResult>) {
@@ -3211,7 +3299,18 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
         total, total_dirs, has_next_page, "games: apply_initial_page"
     );
     let reset_started = Instant::now();
-    let displays = compute_disambig_displays(&entries, model.show_original_filenames);
+    let mut displays = compute_disambig_displays(&entries, model.show_original_filenames);
+    // Round 11: overlay the roots-screen distinguisher (see
+    // `root_distinguishers`'s doc comment) onto the same channel the tag
+    // table already uses for a sibling-diffed dim suffix -- root entries
+    // never carry Core tags, so `displays` is otherwise always blank for
+    // them, and QML's folder-count suffix composes `<distinguisher> · <N
+    // items>` from whatever lands here.
+    for (i, distinguisher) in root_distinguishers(&entries).into_iter().enumerate() {
+        if !distinguisher.is_empty() {
+            displays[i] = distinguisher;
+        }
+    }
     model.as_mut().rust_mut().next_cursor = next_cursor;
     // Pagination properties must be current before either modelReset or
     // rowsRevision asks Main.qml to restore a saved deep-page selection.
@@ -3418,45 +3517,39 @@ fn apply_append_page(
             // Sub-batching note: the rest of the chunk is posted from
             // `global_handle()` one frame apart so the Repeater's
             // per-delegate `createObject` cost (the dominant Qt-thread
-            // stall on MiSTer) is spread across frames. Stale batches
-            // self-disarm via the `append_seq` ticket if a new
+            // stall on MiSTer, paid per row for the outer cellItem even
+            // when the inner Tile stays retention-gated unmaterialised) is
+            // spread across frames instead of one multi-second block. Stale
+            // batches self-disarm via the `append_seq` ticket if a new
             // `start_initial_browse` lands during the trickle window.
+            //
+            // A bulk jump (`bulk: bool`) chunks exactly like an ordinary
+            // append now -- it used to insert its whole fetched chunk in one
+            // shot on the theory that off-page rows are cheap because their
+            // Tile delegates stay unmaterialised, but the outer per-row
+            // cellItem construction cost is paid regardless of Tile
+            // materialisation, and a `JUMP_FETCH_CHUNK_SIZE`-sized (1000-row)
+            // chunk blocked the Qt thread for tens of seconds. What bulk
+            // still needs, and non-bulk doesn't: `fetch_more_with_limit`
+            // paused cover requests for the whole jump, and that pause --
+            // plus the prefetch that re-arms once it lifts -- must stay held
+            // across every sub-batch and only resolve after the LAST one,
+            // once `_commitPendingTarget` has actually moved
+            // `visible_first_row` to the landing page. Resolving it
+            // per-batch like non-bulk does would warm covers for a page the
+            // cursor hasn't reached yet.
             model.as_mut().rust_mut().next_cursor = next_cursor;
-            // Jump path: insert the whole chunk in one shot, no frame-gapped
-            // trickle. The appended rows sit far from `currentPage`, so their
-            // Tile delegates stay unmaterialised (per-cell Loader is
-            // retention-gated) and the bulk insert is cheap; the loading
-            // overlay is up so a single brief stall is invisible, and it lets
-            // `_commitPendingTarget` see the target as loaded in one step
-            // instead of creeping toward it over dozens of frames.
-            if bulk {
-                let had_entries = !entries.is_empty();
-                if had_entries {
-                    insert_sub_batch(model.as_mut(), entries);
-                }
-                // Resume covers (paused by `fetch_more_with_limit` for the jump
-                // request) BEFORE prefetching: the insert above drives
-                // `_commitPendingTarget` synchronously, which moves
-                // `visible_first_row` to the landing page, so prefetching now —
-                // with covers re-enabled — warms exactly that page. Resuming
-                // unconditionally (even on an empty page) guarantees the pause
-                // never sticks past the request that set it.
-                model.as_mut().set_cover_requests_paused(false);
-                if had_entries {
-                    let visible = model.visible_first_row;
-                    model.as_mut().prefetch_around(visible);
-                }
-                model.as_mut().set_has_next_page(has_next_page);
-                if model.total_files != total {
-                    model.as_mut().set_total_files(total);
-                }
-                model.as_mut().set_loading_more(false);
-                return;
-            }
             let mut batches = chunk_for_subbatching(entries, APPEND_SUB_BATCH_SIZE);
             if batches.is_empty() {
-                // No new rows landed (empty page). Finalise immediately
-                // — there's nothing to defer.
+                // No new rows landed (empty page). Finalise immediately —
+                // there's nothing to defer. A bulk fetch still resumes covers
+                // unconditionally here, even though nothing landed: the pause
+                // must never stick past the request that set it, and
+                // `loading_more` forbids a second concurrent bulk fetch, so
+                // nothing else is relying on it staying up.
+                if bulk {
+                    model.as_mut().set_cover_requests_paused(false);
+                }
                 model.as_mut().set_has_next_page(has_next_page);
                 if model.total_files != total {
                     model.as_mut().set_total_files(total);
@@ -3469,16 +3562,25 @@ fn apply_append_page(
             // resolves within ~200 ms of the user's press.
             let first_batch = batches.remove(0);
             insert_sub_batch(model.as_mut(), first_batch);
-            // Re-arm prefetch around the user's current visible row.
-            // The freshly-appended rows may now occupy the
-            // "current" or "next" page window; this is the only
-            // hook that gets covers warmed for them without a bulk
-            // enqueue.
-            let visible = model.visible_first_row;
-            model.as_mut().prefetch_around(visible);
+            // Non-bulk re-arms prefetch around the user's current visible
+            // row after every batch, including this first one — the
+            // freshly-appended rows may now occupy the "current" or "next"
+            // page window, and this is the only hook that gets covers warmed
+            // for them without a bulk enqueue. A bulk jump leaves covers
+            // paused and prefetch untouched until the LAST batch (below) —
+            // see the comment above `chunk_for_subbatching` for why.
+            if !bulk {
+                let visible = model.visible_first_row;
+                model.as_mut().prefetch_around(visible);
+            }
             if batches.is_empty() {
                 // Single-batch chunk (<= APPEND_SUB_BATCH_SIZE rows).
                 // Finalise now without scheduling deferred work.
+                if bulk {
+                    model.as_mut().set_cover_requests_paused(false);
+                    let visible = model.visible_first_row;
+                    model.as_mut().prefetch_around(visible);
+                }
                 model.as_mut().set_has_next_page(has_next_page);
                 if model.total_files != total {
                     model.as_mut().set_total_files(total);
@@ -3487,7 +3589,8 @@ fn apply_append_page(
                 return;
             }
             // Remaining batches: post one frame apart on the Qt
-            // thread, with the LAST one carrying pagination finalization.
+            // thread, with the LAST one carrying pagination finalization
+            // (and, for a bulk fetch, the deferred cover-resume + prefetch).
             // total_dirs is not touched here: Core computes it once on
             // page 1 and carries the same value forward, so it never
             // changes across appended pages.
@@ -3511,9 +3614,16 @@ fn apply_append_page(
                             return;
                         }
                         insert_sub_batch(model.as_mut(), batch);
-                        let visible = model.visible_first_row;
-                        model.as_mut().prefetch_around(visible);
+                        if !bulk {
+                            let visible = model.visible_first_row;
+                            model.as_mut().prefetch_around(visible);
+                        }
                         if is_last {
+                            if bulk {
+                                model.as_mut().set_cover_requests_paused(false);
+                                let visible = model.visible_first_row;
+                                model.as_mut().prefetch_around(visible);
+                            }
                             model.as_mut().set_has_next_page(has_next_page);
                             if model.total_files != total {
                                 model.as_mut().set_total_files(total);
@@ -3561,9 +3671,9 @@ mod tests {
         is_strict_ancestor_path, jump_fetch_limit, media_capable_directory_browse_params,
         media_key_for, meta_cache_key_for_entry, meta_params_for_entry, ordered_detail_image_keys,
         position_of_game_path, prefetch_around_plan, prefetch_cursor_window_plan, project_status,
-        result_total_dirs, run_text_for_entry, seeded_refetch_pagination_state,
-        singleton_directory_needs_launch_resolution, transform_entries, InitialAction,
-        InitialRowReplacement, Projection,
+        result_total_dirs, root_distinguishers, run_text_for_entry,
+        seeded_refetch_pagination_state, singleton_directory_needs_launch_resolution,
+        transform_entries, InitialAction, InitialRowReplacement, Projection,
     };
     use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -4091,6 +4201,80 @@ mod tests {
     }
 
     #[test]
+    fn root_distinguishers_finds_the_first_diverging_component() {
+        let entries = vec![
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+            root("SNES", "/media/usb0/games/SNES", "SNES"),
+        ];
+        let d = root_distinguishers(&entries);
+        assert_eq!(d, vec!["fat".to_string(), "usb0".to_string()]);
+    }
+
+    #[test]
+    fn root_distinguishers_uses_a_later_component_when_the_earlier_ones_match() {
+        let entries = vec![
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+            root("SNES", "/media/fat/games2/SNES", "SNES"),
+        ];
+        let d = root_distinguishers(&entries);
+        assert_eq!(d, vec!["games".to_string(), "games2".to_string()]);
+    }
+
+    #[test]
+    fn root_distinguishers_blank_for_a_single_root() {
+        let entries = vec![root("SNES", "/media/fat/games/SNES", "SNES")];
+        assert_eq!(root_distinguishers(&entries), vec![String::new()]);
+    }
+
+    #[test]
+    fn root_distinguishers_blank_when_every_root_is_identical() {
+        // Shouldn't happen in practice (two roots at the exact same path),
+        // but must not panic or produce a spurious label.
+        let entries = vec![
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+        ];
+        let d = root_distinguishers(&entries);
+        assert_eq!(d, vec![String::new(), String::new()]);
+    }
+
+    #[test]
+    fn root_distinguishers_ignores_non_root_and_blank_path_entries() {
+        let entries = vec![
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+            root("SNES", "/media/usb0/games/SNES", "SNES"),
+            folder("RPGs", "/media/fat/games/SNES/RPGs"),
+            root("ghost", "", "SNES"),
+            media("smb", "/media/fat/games/SNES/smb.sfc", "SNES"),
+        ];
+        let d = root_distinguishers(&entries);
+        assert_eq!(
+            d,
+            vec![
+                "fat".to_string(),
+                "usb0".to_string(),
+                String::new(),
+                String::new(),
+                String::new(),
+            ]
+        );
+    }
+
+    #[test]
+    fn root_distinguishers_three_way_split() {
+        let entries = vec![
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+            root("SNES", "/media/usb0/games/SNES", "SNES"),
+            root("SNES", "/media/usb1/games/SNES", "SNES"),
+        ];
+        let d = root_distinguishers(&entries);
+        assert_eq!(
+            d,
+            vec!["fat".to_string(), "usb0".to_string(), "usb1".to_string()]
+        );
+    }
+
+    #[test]
     fn entry_system_id_prefers_singular_field() {
         let entry = BrowseEntry {
             system_id: "SNES".into(),
@@ -4135,6 +4319,28 @@ mod tests {
         assert_eq!(
             cover_key_for_with(&entry, Some(&key), false, false),
             "icons/Loading"
+        );
+    }
+
+    // Round 10: a paused fetch (bulk/jump append in flight,
+    // `cover_requests_paused`) is "haven't asked yet," not "confirmed
+    // absent" -- `cover_key_for` must never fold `!requests_enabled` into
+    // `confirmed_absent` the way it used to, or every game (including
+    // ones with real art) flashes the file-icon chip for the whole pause
+    // window instead of staying blank like an in-flight fetch. This test
+    // pins the shape `cover_key_for` must produce for that case: a media
+    // key, nothing cached yet, not confirmed absent -> blank, not the
+    // chip. Same assertion as the plain in-flight case above by
+    // construction, since paused and in-flight both resolve to
+    // `confirmed_absent: false` post-fix.
+    #[test]
+    fn cover_key_for_paused_with_cover_stays_loading_not_file_icon() {
+        let entry = media("smb", "/p/smb", "NES");
+        let key = media_key_for(&entry).expect("media has key");
+        assert_eq!(
+            cover_key_for_with(&entry, Some(&key), false, false),
+            "icons/Loading",
+            "paused-but-not-confirmed-absent must render blank, never the chip"
         );
     }
 

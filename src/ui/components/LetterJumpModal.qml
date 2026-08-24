@@ -29,7 +29,7 @@ Item {
     id: modal
 
     property bool open: false
-    property string title: qsTr("Go to...")
+    property string title: qsTr("Go to…")
     // Each entry is `{ key, label, count, cursor, offset }`. `label` is the
     // display text; `count` is the bucket size (dim subscript); `offset` is the
     // bucket's authoritative position (from Core), emitted on accept so the
@@ -41,8 +41,7 @@ Item {
     // false and `entries` is empty, no rail applies for this scope.
     property bool loading: false
 
-    // Push-in scale for the activated cell, mirroring the tile push-in.
-    property real _pressScale: 1.0
+    property bool _pressed: false
     property int _pendingOffset: 0
     property bool _hasPendingAccept: false
 
@@ -95,8 +94,7 @@ Item {
             return;
         }
         modal.currentIndex = 0;
-        modal._pressScale = 1.0;
-        pressAnim.stop();
+        modal._pressed = false;
         modal._pendingOffset = 0;
         modal._hasPendingAccept = false;
     }
@@ -176,17 +174,8 @@ Item {
     function _commitAccept(itemOffset: int): void {
         modal._pendingOffset = itemOffset;
         modal._hasPendingAccept = true;
-        pressAnim.restart();
+        modal._pressed = true;
         acceptCommit.arm();
-    }
-
-    NumberAnimation {
-        id: pressAnim
-        target: modal
-        property: "_pressScale"
-        to: Motion.rowPressScale
-        duration: Motion.dur(Motion.pressMs)
-        easing.type: Easing.OutQuad
     }
 
     DeferredAction {
@@ -196,6 +185,7 @@ Item {
             const had = modal._hasPendingAccept;
             modal._pendingOffset = 0;
             modal._hasPendingAccept = false;
+            modal._pressed = false;
             if (had)
                 modal.accepted(offset);
         }
@@ -224,7 +214,7 @@ Item {
                 text: modal.loading ? qsTr("Loading…") : qsTr("No sections")
                 color: Theme.textLabel
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.6)
+                font.pixelSize: Sizing.fontBody
                 renderType: Text.NativeRendering
             }
 
@@ -239,7 +229,7 @@ Item {
                 Repeater {
                     model: modal.entries
 
-                    Rectangle {
+                    PressableSurface {
                         id: cell
 
                         required property int index
@@ -247,12 +237,12 @@ Item {
 
                         width: modal._cell
                         height: modal._cell
-                        color: Theme.surfaceCard
-                        border.width: cell.index === modal.currentIndex ? Sizing.stroke(2) : Sizing.stroke(1)
-                        border.color: cell.index === modal.currentIndex ? Theme.accent : Theme.borderMid
-                        radius: Sizing.cornerRadius
-                        transformOrigin: Item.Center
-                        scale: cell.index === modal.currentIndex ? modal._pressScale : 1.0
+                        focused: cell.index === modal.currentIndex
+                        pressed: modal._pressed && cell.index === modal.currentIndex
+                        pointerAcceptedButtons: Qt.LeftButton
+                        pointerHoverEnabled: true
+                        onPointerEntered: modal.currentIndex = cell.index
+                        onPointerClicked: modal._commitAccept(modal._offsetForIndex(cell.index))
 
                         Column {
                             // Centered as one block via Sizing.center on the
@@ -266,7 +256,10 @@ Item {
                             Text {
                                 x: Sizing.center(parent.width, width)
                                 text: cell.modelData.label
-                                color: Theme.textPrimary
+                                // Mirrors Tile.qml's caption: dim at rest,
+                                // bright when focused -- see
+                                // PressableSurface.qml's doc comment.
+                                color: cell.focused ? Theme.textPrimary : Theme.textLabel
                                 font.family: Theme.fontUi
                                 font.pixelSize: Sizing.fontSize(3.4)
                                 renderType: Text.NativeRendering
@@ -280,15 +273,6 @@ Item {
                                 font.pixelSize: Sizing.fontSize(1.8)
                                 renderType: Text.NativeRendering
                             }
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            acceptedButtons: Qt.LeftButton
-                            cursorShape: Qt.PointingHandCursor
-                            onEntered: modal.currentIndex = cell.index
-                            onClicked: modal._commitAccept(modal._offsetForIndex(cell.index))
                         }
                     }
                 }

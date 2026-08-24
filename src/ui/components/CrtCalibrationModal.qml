@@ -159,7 +159,7 @@ Item {
                 text: qsTr("H %1   V %2").arg(Browse.CrtVideo.h_offset).arg(Browse.CrtVideo.v_offset)
                 color: Theme.textPrimary
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(3.2)
+                font.pixelSize: Sizing.fontTitle
                 renderType: Text.NativeRendering
             }
 
@@ -168,7 +168,7 @@ Item {
                 text: qsTr("Arrows adjust position")
                 color: Theme.textLabel
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.6)
+                font.pixelSize: Sizing.fontBody
                 renderType: Text.NativeRendering
             }
 
@@ -177,7 +177,7 @@ Item {
                 text: qsTr("Press any button to save")
                 color: Theme.textLabel
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.6)
+                font.pixelSize: Sizing.fontBody
                 renderType: Text.NativeRendering
             }
         }

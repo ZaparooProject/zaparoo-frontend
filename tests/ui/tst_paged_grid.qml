@@ -68,6 +68,10 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
         }
         ListElement {
             name: "b"
@@ -75,6 +79,10 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
         }
         ListElement {
             name: "c"
@@ -82,6 +90,10 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
         }
     }
 
@@ -93,6 +105,10 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
         }
     }
 
@@ -106,6 +122,7 @@ TestCase {
             property int favorite: 0
             property bool hidden: false
             property string disambiguatingTags: ""
+            property bool isEmpty: false
             Component.onCompleted: testCase.suspendLiveDelegates++
             Component.onDestruction: testCase.suspendLiveDelegates--
         }
@@ -120,6 +137,486 @@ TestCase {
         rowsOverride: 3
         width: 300
         height: 300
+    }
+
+    ListModel {
+        id: coverSyncModel
+        ListElement {
+            name: "p0a"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+        ListElement {
+            name: "p0b"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+        ListElement {
+            name: "p1a"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+        ListElement {
+            name: "p1b"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+    }
+
+    // Reads the synchronous-decode flag back off its TileLoader host so the
+    // per-cell rule can be asserted without instantiating a real Tile.
+    Component {
+        id: coverSyncDelegate
+        Item {
+            property string name: ""
+            property string coverKey: ""
+            property bool isSelected: false
+            property bool isFocused: false
+            property int favorite: 0
+            // A Loader does not forward its own properties onto the loaded
+            // item, so the delegate reads the contract off `parent` — same as
+            // Tile.qml does.
+            // qmllint disable missing-property
+            readonly property bool observedCoverSynchronous: parent.coverSynchronous
+            objectName: "coverSyncCell-" + parent.name
+            // qmllint enable missing-property
+        }
+    }
+
+    // One page of two cells, so page 0 holds p0a/p0b and page 1 holds p1a/p1b
+    // while both stay inside the retention window.
+    PagedGrid {
+        id: coverSyncProbe
+        model: coverSyncModel
+        delegate: coverSyncDelegate
+        columnsOverride: 2
+        rowsOverride: 1
+        width: 300
+        height: 150
+    }
+
+    // `emptyDelegate` coverage (round 6 follow-up — see PagedGrid.qml's
+    // `emptyDelegate`/HubScreen.qml's `_padToPageSize`). Two real rows plus
+    // one `isEmpty: true` row on a 3-column/1-row page, so all three are on
+    // the same page and reachable without paging. objectName carries the
+    // row's `name` (read off `parent`, same pattern as `coverSyncDelegate`
+    // above) so a specific row's loaded component is checkable — the
+    // delegate Component itself is loaded via `Loader.sourceComponent`,
+    // which does not forward `index`, only the properties PagedGrid/
+    // TileLoader explicitly set.
+    ListModel {
+        id: emptyAwareModel
+        ListElement {
+            name: "real-0"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+        ListElement {
+            name: "real-1"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+        ListElement {
+            name: "pad-2"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+    }
+
+    Component {
+        id: emptyAwareRealDelegate
+        Item {
+            // qmllint disable missing-property
+            objectName: "emptyAwareRealCell-" + parent.name
+            // qmllint enable missing-property
+        }
+    }
+
+    Component {
+        id: emptyAwareEmptyDelegate
+        Item {
+            // qmllint disable missing-property
+            objectName: "emptyAwareEmptyCell-" + parent.name
+            // qmllint enable missing-property
+        }
+    }
+
+    PagedGrid {
+        id: emptyAwareProbe
+        model: emptyAwareModel
+        delegate: emptyAwareRealDelegate
+        emptyDelegate: emptyAwareEmptyDelegate
+        columnsOverride: 3
+        rowsOverride: 1
+        width: 300
+        height: 100
+    }
+
+    // Same model and real delegate, but `emptyDelegate` left at its default
+    // `null` — every existing PagedGrid caller's shape, must render
+    // byte-identically to a grid that has never heard of `isEmpty`.
+    PagedGrid {
+        id: emptyAwareDefaultProbe
+        model: emptyAwareModel
+        delegate: emptyAwareRealDelegate
+        columnsOverride: 3
+        rowsOverride: 1
+        width: 300
+        height: 100
+    }
+
+    // Fixture for `skipEmptyCells` coverage: 3 columns x 2 rows, 2 pages
+    // (12 cells). Deliberately laid out so every skip scenario the
+    // production Hub relies on has a cell to exercise it against:
+    //   page 0        page 1
+    //   real-a . real-b   .   real-c   .
+    //     .     .    .    real-d  .    .
+    // - col 0 has real-a (page0) and real-d (page1): a Down/Up skip must
+    //   cross the page boundary to find the other one.
+    // - col 2 has ONLY real-b (page0): every other cell in that column,
+    //   on both pages, is empty -- Down/Up from real-b must cycle the
+    //   whole column, find nothing else, and settle back exactly on
+    //   real-b having moved nowhere.
+    // - row 0 of page 0 has real-a AND real-b: a Right skip within a
+    //   single row, no page crossing.
+    ListModel {
+        id: skipEmptyModel
+        ListElement {
+            name: "real-a"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+        ListElement {
+            name: "skip-1"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+        ListElement {
+            name: "real-b"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+        ListElement {
+            name: "skip-3"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-4"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-5"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-6"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+        ListElement {
+            name: "real-c"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+        ListElement {
+            name: "skip-8"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+        ListElement {
+            name: "real-d"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+        ListElement {
+            name: "skip-10"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-11"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+    }
+
+    PagedGrid {
+        id: skipEmptyProbe
+        model: skipEmptyModel
+        delegate: emptyAwareRealDelegate
+        emptyDelegate: emptyAwareEmptyDelegate
+        columnsOverride: 3
+        rowsOverride: 2
+        width: 300
+        height: 200
+    }
+
+    SignalSpy {
+        id: skipEmptyHoveredSpy
+        target: skipEmptyProbe
+        signalName: "itemHovered"
+    }
+
+    // Dedicated fixture for the genuine "nothing else on the whole board"
+    // edge case: `_nearestVerticalCandidate` searches every real tile, not
+    // just a column, so a single stray real cell one column over is no
+    // longer a dead end (see `skipEmptyModel` above) -- this needs a board
+    // with truly only one real tile anywhere to exercise the "settle back,
+    // report no movement" path.
+    ListModel {
+        id: singleRealCellModel
+        ListElement {
+            name: "only-real"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: false
+        }
+        ListElement {
+            name: "skip-a"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-b"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+        ListElement {
+            name: "skip-c"
+            coverKey: ""
+            favorite: 0
+            hidden: false
+            disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
+            isEmpty: true
+        }
+    }
+
+    PagedGrid {
+        id: singleRealCellProbe
+        model: singleRealCellModel
+        delegate: emptyAwareRealDelegate
+        emptyDelegate: emptyAwareEmptyDelegate
+        skipEmptyCells: true
+        columnsOverride: 2
+        rowsOverride: 2
+        width: 200
+        height: 200
+    }
+
+    PagedGrid {
+        id: geometryProbe
+        model: model
+        delegate: cellDelegate
+        columnsOverride: 3
+        rowsOverride: 2
+        width: 307
+        height: 293
+        layoutProfile: ({
+                "grid": {
+                    "leftInset": 4,
+                    "rightInset": 0,
+                    "topInset": 3,
+                    "bottomInset": 4,
+                    "columnGap": 5,
+                    "rowGap": 7
+                },
+                "surface": {
+                    "cardRadius": 2,
+                    "rowRadius": 1
+                }
+            })
+    }
+
+    // `squareCells`/`heightBudget` coverage. Deliberately zeroed insets and
+    // gaps for round numbers; `height` is left absurdly large (9999) so a
+    // test can prove `heightBudget` — not `height` — is what governs the
+    // fit when it is set, which is the whole reason the property exists
+    // (see PagedGrid.qml's `heightBudget` doc comment).
+    PagedGrid {
+        id: squareCellsProbe
+        model: model
+        delegate: cellDelegate
+        columnsOverride: 5
+        rowsOverride: 1
+        width: 500
+        height: 9999
+        layoutProfile: ({
+                "grid": {
+                    "leftInset": 0,
+                    "rightInset": 0,
+                    "topInset": 0,
+                    "bottomInset": 0,
+                    "columnGap": 0,
+                    "rowGap": 0
+                }
+            })
+    }
+
+    // Pagination-invariant coverage: with no gutter to reserve, cell
+    // geometry must be identical whether the dataset is single-page or
+    // heavily paginated. `totalItemsOverride` is what a caller like
+    // HubScreen/GamesScreen flips to force pagination -- see the
+    // `test_cell_geometry_is_identical_regardless_of_page_count` test
+    // below, which exercises this probe.
+    PagedGrid {
+        id: paginationInvariantProbe
+        model: model
+        delegate: cellDelegate
+        // 3 columns deliberately doesn't divide the 200px available width
+        // evenly (floor(200/3) = 66, remainder 2) so centering produces a
+        // genuinely nonzero offset -- a 4-column fixture here would floor
+        // to exactly 0 remainder and prove nothing about the formula.
+        columnsOverride: 3
+        rowsOverride: 1
+        width: 220
+        height: 100
+        layoutProfile: ({
+                "grid": {
+                    "leftInset": 10,
+                    "rightInset": 10,
+                    "topInset": 0,
+                    "bottomInset": 0,
+                    "columnGap": 0,
+                    "rowGap": 0
+                }
+            })
     }
 
     function fillModel(count: int): void {
@@ -147,6 +644,9 @@ TestCase {
         fillModel(0);
         grid.setCurrentIndexImmediate(0);
         loadMoreSpy.clear();
+        skipEmptyProbe.skipEmptyCells = false;
+        skipEmptyProbe.setCurrentIndexImmediate(0);
+        skipEmptyHoveredSpy.clear();
     }
 
     function test_suspended_delegates_track_model_without_materializing(): void {
@@ -158,7 +658,8 @@ TestCase {
             "coverKey": "",
             "favorite": 0,
             "hidden": false,
-            "disambiguatingTags": ""
+            "disambiguatingTags": "",
+            "isEmpty": false
         });
         tryCompare(suspendProbe, "itemCount", 4);
         compare(testCase.suspendLiveDelegates, 0);
@@ -188,6 +689,92 @@ TestCase {
         compare(grid.rows, 3, "expected 3 rows at 480px height");
         compare(grid.pageSize, 12);
         compare(grid._coverRetentionPages, 2, "tile retention must convert cover count to pages");
+    }
+
+    function test_integer_cell_remainders_are_centered(): void {
+        fillModel(7);
+        geometryProbe.setCurrentIndexImmediate(0);
+
+        const rightRemainder = geometryProbe._availableWidth - geometryProbe._cellBlockOffsetX - geometryProbe._contentWidth;
+        const bottomRemainder = geometryProbe._availableHeight - geometryProbe._cellBlockOffsetY - geometryProbe._contentHeight;
+        verify(Math.abs(geometryProbe._cellBlockOffsetX - rightRemainder) <= 1);
+        verify(Math.abs(geometryProbe._cellBlockOffsetY - bottomRemainder) <= 1);
+
+        const rect = geometryProbe.currentCellRectIn(geometryProbe);
+        compare(rect.x, geometryProbe.leftInset + geometryProbe._cellBlockOffsetX);
+        compare(rect.y, geometryProbe.topInset + geometryProbe._cellBlockOffsetY);
+        compare(rect.width, geometryProbe.cellWidth);
+        compare(rect.height, geometryProbe.cellHeight);
+    }
+
+    // squareCells clamps BOTH axes to the smaller of the two independent
+    // fits, whichever axis is the binding constraint — not just the axis
+    // that happens to be tighter in a specific scene.
+    function test_square_cells_clamps_to_the_tighter_axis(): void {
+        squareCellsProbe.squareCells = true;
+        // Width is the tighter axis: 500/5 = 100 per column. heightBudget
+        // alone would allow 300 (height, 9999, is deliberately absurd and
+        // must be ignored once heightBudget is set).
+        squareCellsProbe.heightBudget = 300;
+        compare(squareCellsProbe.cellWidth, 100);
+        compare(squareCellsProbe.cellHeight, 100, "height must clamp DOWN to match width, not stay at its own looser fit");
+
+        // Height is now the tighter axis: 60/1 row = 60, less than the
+        // 100px width fit.
+        squareCellsProbe.heightBudget = 60;
+        compare(squareCellsProbe.cellWidth, 60, "width must clamp DOWN to match height");
+        compare(squareCellsProbe.cellHeight, 60);
+    }
+
+    // Both properties at their defaults (squareCells: false, heightBudget:
+    // -1) must be byte-identical to the pre-Hub behavior: each axis fits
+    // independently, against the item's own height.
+    function test_square_cells_and_height_budget_defaults_are_unchanged(): void {
+        squareCellsProbe.squareCells = false;
+        squareCellsProbe.heightBudget = -1;
+        compare(squareCellsProbe.cellWidth, 100);
+        compare(squareCellsProbe.cellHeight, 9999, "with both at default, height fits against the item's own (absurd) height, unclamped by width");
+    }
+
+    // heightBudget: -1 reproduces the item's own `height` exactly even
+    // with squareCells on — the escape hatch only matters once a caller
+    // actually sets it.
+    function test_height_budget_default_uses_own_height(): void {
+        squareCellsProbe.squareCells = true;
+        squareCellsProbe.heightBudget = -1;
+        compare(squareCellsProbe.cellWidth, 100);
+        compare(squareCellsProbe.cellHeight, 100, "with heightBudget unset, the fit uses the item's own (absurd) height, so width is the only real constraint");
+    }
+
+    // The cell block always centers against the full inset-to-inset
+    // width now -- there is no gutter reservation left to bias it left of
+    // true center. width 220, leftInset/rightInset 10 each -> the true
+    // center region is x:10..210 (width 200), midpoint x=110.
+    function test_cell_block_centers_against_full_inset_to_inset_width(): void {
+        compare(paginationInvariantProbe._cellBlockOffsetX, 1);
+        const midpoint = paginationInvariantProbe.leftInset + paginationInvariantProbe._cellBlockOffsetX + paginationInvariantProbe._contentWidth / 2;
+        compare(midpoint, 110, "cell block must center against the full inset-to-inset width");
+    }
+
+    // Regression guard for the round that removed PagedGrid's own gutter
+    // reservation: since arming Hub Move always adds a second page (see
+    // HubScreen.qml's `_moveArmedTotalPages`), a grid that conditionally
+    // reserved space for its own scroll indicator would visibly shift and
+    // shrink its cells the instant Move armed. There is no in-grid
+    // indicator anymore -- the page cue lives in the host screen's footer
+    // (PageIndicator.qml) -- so cell geometry must be identical for a
+    // single-page and a many-page dataset.
+    function test_cell_geometry_is_identical_regardless_of_page_count(): void {
+        compare(paginationInvariantProbe.totalPageCount, 1, "fixture starts single-page, or this test proves nothing");
+        const singlePageOffsetX = paginationInvariantProbe._cellBlockOffsetX;
+        const singlePageContentWidth = paginationInvariantProbe._contentWidth;
+
+        paginationInvariantProbe.totalItemsOverride = 999;
+        compare(paginationInvariantProbe.totalPageCount > 1, true, "fixture must now be multi-page, or this test proves nothing");
+        compare(paginationInvariantProbe._cellBlockOffsetX, singlePageOffsetX, "cell block position must not shift once pagination becomes relevant");
+        compare(paginationInvariantProbe._contentWidth, singlePageContentWidth, "cell size must not shrink either");
+
+        paginationInvariantProbe.totalItemsOverride = -1;
     }
 
     function test_empty_model_refuses_movement(): void {
@@ -441,7 +1028,7 @@ TestCase {
         compare(grid.currentIndex, 13);
     }
 
-    // ── Page-stack flags (gutter arrows / scrollbar derivations) ─────────
+    // ── Page-stack flags (footer PageIndicator derivations) ──────────────
 
     function test_hasPages_flags_track_currentPage(): void {
         fillModel(36); // 3 pages
@@ -463,14 +1050,24 @@ TestCase {
         compare(grid.hasPagesBelow, false);
     }
 
-    function test_single_page_returns_unused_scroll_gutter_to_cells(): void {
-        fillModel(6);
-        compare(grid._scrollIndicatorVisible, false);
-        const singlePageCellWidth = grid.cellWidth;
-        grid.totalItemsOverride = 60;
-        compare(grid._scrollIndicatorVisible, true);
-        verify(grid.cellWidth < singlePageCellWidth);
-        grid.totalItemsOverride = -1;
+    // Round 9: a *known*-total paginated model (Games) fetches exactly one
+    // page's worth of rows on its first load -- `itemCount === pageSize`,
+    // `paginationTotalKnown: true`, `hasMorePages: true`. The old formula's
+    // known-total branch never looked at `hasMorePages` at all
+    // (`currentPage(0) < pageCount(1) - 1` is false, and the OR term was
+    // gated `!paginationTotalKnown &&`), so `hasPagesBelow` read false and
+    // the footer's chevrons/"N / M" readout (PageIndicator._hasMultiplePages)
+    // stayed hidden on entry despite the model plainly having more rows --
+    // only the first d-pad move (which grows `itemCount` past a second
+    // page) made them appear. A model reporting more rows must always
+    // register as "a page below," known total or not.
+    function test_has_pages_below_true_for_known_total_on_first_full_page(): void {
+        fillModel(grid.pageSize);
+        grid.hasMorePages = true;
+        grid.paginationTotalKnown = true;
+        compare(grid.pageCount, 1, "exactly one page's worth loaded so far");
+        compare(grid.currentPage, 0);
+        compare(grid.hasPagesBelow, true, "hasMorePages must register even on a known-total model's first page");
     }
 
     function test_unbounded_pages_keep_down_arrow_at_loaded_edge(): void {
@@ -555,12 +1152,12 @@ TestCase {
         compare(loadMoreSpy.count, 0);
     }
 
-    // ── Scroll thumb sizing (totalItemsOverride) ─────────────────────────
+    // ── Footer PageIndicator's totalPageCount source (totalItemsOverride) ─
 
     function test_totalPageCount_uses_override(): void {
         // 24 items loaded — 2 pages on the 4×3 grid. With an override
         // saying total is 60 (5 pages), totalPageCount must reflect 5
-        // so the scroll thumb sizes from the dataset's true total
+        // so the footer's PageIndicator sizes from the dataset's true total
         // rather than the loaded slice.
         fillModel(24);
         compare(grid.pageCount, 2);
@@ -974,5 +1571,192 @@ TestCase {
         compare(grid.hasPendingTarget, true, "page-wrap arms the generic pending flag");
         compare(grid.hasPendingJump, false, "page-wrap is not a jump");
         _resetPartialLoadState();
+    }
+
+    // Synchronous cover decoding is a GUI-thread cost, so PagedGrid spends it
+    // only where it buys a visibly complete page. These three rules are what
+    // keep it from turning into a stall; see Tile.qml's `delegateCoverSynchronous`.
+    function test_cover_synchronous_only_on_the_current_page(): void {
+        coverSyncProbe.setCurrentIndexImmediate(0);
+        tryCompare(coverSyncProbe, "currentPage", 0);
+        const onPage = findChild(coverSyncProbe, "coverSyncCell-p0a");
+        const offPage = findChild(coverSyncProbe, "coverSyncCell-p1a");
+        verify(onPage !== null);
+        verify(offPage !== null, "the next page must stay materialized inside the retention window");
+        compare(onPage.observedCoverSynchronous, true);
+        compare(offPage.observedCoverSynchronous, false, "retention-edge warmup must not block the GUI thread");
+    }
+
+    function test_cover_synchronous_follows_the_current_page(): void {
+        coverSyncProbe.setCurrentIndexImmediate(2);
+        tryCompare(coverSyncProbe, "currentPage", 1);
+        compare(findChild(coverSyncProbe, "coverSyncCell-p1a").observedCoverSynchronous, true);
+        compare(findChild(coverSyncProbe, "coverSyncCell-p0a").observedCoverSynchronous, false);
+        coverSyncProbe.setCurrentIndexImmediate(0);
+    }
+
+    function test_rapid_render_mode_never_decodes_synchronously(): void {
+        coverSyncProbe.setCurrentIndexImmediate(0);
+        coverSyncProbe.rapidRenderMode = true;
+        // rapidRenderMode also deactivates the TileLoaders, so the assertion is
+        // that nothing survives to request a synchronous decode.
+        tryCompare(coverSyncProbe, "rapidRenderMode", true);
+        compare(findChild(coverSyncProbe, "coverSyncCell-p0a"), null, "held d-pad must not keep delegates alive");
+        coverSyncProbe.rapidRenderMode = false;
+        tryCompare(coverSyncProbe, "rapidRenderMode", false);
+    }
+
+    function test_cover_synchronous_can_be_disabled_wholesale(): void {
+        coverSyncProbe.setCurrentIndexImmediate(0);
+        coverSyncProbe.coverSynchronous = false;
+        compare(findChild(coverSyncProbe, "coverSyncCell-p0a").observedCoverSynchronous, false);
+        coverSyncProbe.coverSynchronous = true;
+        compare(findChild(coverSyncProbe, "coverSyncCell-p0a").observedCoverSynchronous, true);
+    }
+
+    function test_empty_delegate_renders_for_isEmpty_rows_only(): void {
+        verify(findChild(emptyAwareProbe, "emptyAwareRealCell-real-0") !== null, "row 0 must render through the real delegate");
+        verify(findChild(emptyAwareProbe, "emptyAwareRealCell-real-1") !== null, "row 1 must render through the real delegate");
+        verify(findChild(emptyAwareProbe, "emptyAwareEmptyCell-pad-2") !== null, "the isEmpty row must render through emptyDelegate");
+        compare(findChild(emptyAwareProbe, "emptyAwareEmptyCell-real-0"), null, "a real row must never render through emptyDelegate");
+        compare(findChild(emptyAwareProbe, "emptyAwareRealCell-pad-2"), null, "the isEmpty row must not also render through the real delegate");
+    }
+
+    function test_empty_delegate_null_is_unchanged_behavior(): void {
+        // Every existing PagedGrid caller leaves emptyDelegate at its
+        // default null — the isEmpty row must still render through the
+        // ordinary delegate exactly like a real row.
+        verify(findChild(emptyAwareDefaultProbe, "emptyAwareRealCell-real-0") !== null);
+        verify(findChild(emptyAwareDefaultProbe, "emptyAwareRealCell-real-1") !== null);
+        verify(findChild(emptyAwareDefaultProbe, "emptyAwareRealCell-pad-2") !== null, "isEmpty must fall through to the ordinary delegate when emptyDelegate is null");
+    }
+
+    // Regression: the always-on card-shaped skeleton PagedGrid paints behind
+    // every cell (PagedGrid.qml's `placeholderCard`) assumes the loaded
+    // delegate ends up fully opaque on top of it. `EmptySlot` deliberately
+    // isn't — a genuinely blank slot, not a card with nothing on it — so
+    // without an explicit exception the skeleton stays visible underneath
+    // it forever, silently defeating "genuinely blank" while the delegate
+    // itself (checked above) is still correctly EmptySlot.
+    function test_placeholder_skeleton_is_skipped_for_empty_rows(): void {
+        verify(findChild(emptyAwareProbe, "pagedGridPlaceholderCard-0").visible, "a real row keeps its skeleton");
+        compare(findChild(emptyAwareProbe, "pagedGridPlaceholderCard-2").visible, false, "an isEmpty row must not paint the opaque skeleton behind EmptySlot");
+    }
+
+    // Round 3 regression: the skeleton's "paints opaque on top of me"
+    // contract (see the comment above) only holds while the loaded
+    // delegate actually STAYS opaque. Tile.qml's held blink (Hub Options
+    // -> Move) drops the whole tile's own opacity to 0 and back; without
+    // this the skeleton — a blank card with no art or name — showed
+    // through underneath every time the tile blinked off, so only the
+    // tile's CONTENT appeared to blink while a generic card shape stayed
+    // put. The skeleton now tracks the loaded delegate's `opacity`
+    // directly, the same way it already tracks `cardPressed`.
+    function test_placeholder_skeleton_tracks_the_loaded_delegates_opacity(): void {
+        const cell = findChild(emptyAwareProbe, "emptyAwareRealCell-real-0");
+        const placeholder = findChild(emptyAwareProbe, "pagedGridPlaceholderCard-0");
+        verify(cell !== null);
+        verify(placeholder !== null);
+        compare(placeholder.opacity, 1);
+
+        cell.opacity = 0;
+        compare(placeholder.opacity, 0, "the skeleton must vanish along with the delegate it's meant to hide behind");
+
+        cell.opacity = 1;
+        compare(placeholder.opacity, 1);
+    }
+
+    function test_isEmpty_row_remains_reachable_by_navigation(): void {
+        // `skipEmptyCells` defaults false -- every caller but the Hub, and
+        // the Hub itself during a Move session. With it off, isEmpty is a
+        // delegate-selection signal only: PagedGrid's own navigation math
+        // has no concept of it, so the padded row at index 2 is an
+        // ordinary, fully reachable cell.
+        compare(emptyAwareProbe.skipEmptyCells, false);
+        emptyAwareProbe.setCurrentIndexImmediate(1);
+        verify(emptyAwareProbe.moveSelection(1, 0));
+        compare(emptyAwareProbe.currentIndex, 2);
+    }
+
+    // Right from real-a (row 0, col 0) must skip the empty cell at col 1
+    // and land on real-b at col 2 -- a single-row skip, no page crossing.
+    function test_skip_empty_cells_skips_within_a_row(): void {
+        skipEmptyProbe.skipEmptyCells = true;
+        verify(skipEmptyProbe.moveSelection(1, 0));
+        compare(skipEmptyProbe.currentIndex, 2);
+    }
+
+    // Down from real-a (vr0, col0) must cross the page boundary and land
+    // on real-c (vr2, col1) -- NOT real-d (vr3, col0), even though real-d
+    // sits in the exact same column. This is the actual bug fix: real-c is
+    // 2 virtual rows away but 1 column off (score 13*2²+1²=53); real-d is
+    // perfectly aligned but 3 rows away (score 13*3²+0²=117). A search
+    // that only ever walked straight down column 0 would tunnel past
+    // real-c entirely and land on the farther, merely-aligned real-d --
+    // exactly the "cursor sails past something nearby" bug this fixes.
+    function test_skip_empty_cells_prefers_the_nearer_off_column_tile(): void {
+        skipEmptyProbe.skipEmptyCells = true;
+        verify(skipEmptyProbe.moveSelection(0, 1));
+        compare(skipEmptyProbe.currentIndex, 7);
+    }
+
+    // `pageBy` has its own skip pass (land on the target page's preserved
+    // slot, then scan forward for the first real cell on that page) --
+    // distinct code path from moveSelection's nearest-candidate search,
+    // so it needs its own coverage. Page-forward from real-a (page 0)
+    // lands on page 1's slot 0 (skip-6, empty) and must advance to real-c.
+    function test_skip_empty_cells_pageBy_lands_on_first_real_cell(): void {
+        skipEmptyProbe.skipEmptyCells = true;
+        verify(skipEmptyProbe.pageBy(1));
+        compare(skipEmptyProbe.currentIndex, 7);
+    }
+
+    // Down from real-d (vr3, col0), the bottommost real tile on the whole
+    // board, has nothing below it at all -- the wrap pass takes over,
+    // scoring every remaining real tile as if the press had continued past
+    // the bottom edge and come back around to the top. real-a (vr0, col0)
+    // and real-b (vr0, col2) both wrap to the same distance (1), but
+    // real-a's column alignment wins the tie: 13*1²+0² = 13 vs
+    // 13*1²+2² = 17.
+    function test_skip_empty_cells_wraps_to_the_nearest_candidate_at_the_far_edge(): void {
+        skipEmptyProbe.skipEmptyCells = true;
+        skipEmptyProbe.setCurrentIndexImmediate(9);
+        verify(skipEmptyProbe.moveSelection(0, 1));
+        compare(skipEmptyProbe.currentIndex, 0);
+    }
+
+    // A single real tile anywhere on the whole board (not just a single
+    // column) has nothing to search for in either the direct or the wrap
+    // pass, so Down must settle back exactly where it started and report
+    // no movement.
+    function test_skip_empty_cells_with_no_reachable_cell_does_not_move(): void {
+        singleRealCellProbe.setCurrentIndexImmediate(0);
+        verify(!singleRealCellProbe.moveSelection(0, 1));
+        compare(singleRealCellProbe.currentIndex, 0);
+        verify(!singleRealCellProbe.moveSelection(0, -1));
+        compare(singleRealCellProbe.currentIndex, 0);
+    }
+
+    // Mirrors the directional skip: with `skipEmptyCells` set, the mouse
+    // must not be able to park the cursor on a blank either (PagedGrid's
+    // per-cell MouseArea has no isEmpty guard at all on the non-skipping
+    // path, so hover/click always worked there before this).
+    function test_skip_empty_cells_ignores_hover_and_click_on_empty_cells(): void {
+        skipEmptyProbe.skipEmptyCells = true;
+        // Read the empty cell's on-screen rect by landing on it directly
+        // (bypassing moveSelection's own skip), then return to real-a
+        // before simulating the pointer.
+        skipEmptyProbe.setCurrentIndexImmediate(1);
+        const emptyRect = skipEmptyProbe.currentCellRectIn(skipEmptyProbe);
+        skipEmptyProbe.setCurrentIndexImmediate(0);
+        const cx = emptyRect.x + emptyRect.width / 2;
+        const cy = emptyRect.y + emptyRect.height / 2;
+
+        mouseMove(skipEmptyProbe, cx, cy);
+        compare(skipEmptyProbe.currentIndex, 0, "hovering an empty cell must not move the cursor when skipEmptyCells is set");
+        compare(skipEmptyHoveredSpy.count, 0);
+
+        mouseClick(skipEmptyProbe, cx, cy);
+        compare(skipEmptyProbe.currentIndex, 0, "clicking an empty cell must not move the cursor either");
     }
 }

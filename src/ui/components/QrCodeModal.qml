@@ -5,24 +5,12 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Zaparoo.Theme
-import Zaparoo.Browse as Browse
-
-// cxx-qt 0.8 patches `isFinal: true` on singleton properties but the
-// qmltypes schema has no `isFinal` slot, so every read trips qmllint's
-// "Member can be shadowed" check. Until the schema grows the slot,
-// suppress the compiler category file-wide.
-// qmllint disable compiler
+import Zaparoo.Ui
 
 Item {
     id: root
 
     property bool open: false
-    property int quietZone: 4
-
-    readonly property int matrixSize: Browse.QrCode.size
-    readonly property int maxQrPixels: Math.min(Sizing.pctW(36), Sizing.pctH(48))
-    readonly property int moduleSize: matrixSize > 0 ? Math.max(1, Math.floor(maxQrPixels / (matrixSize + quietZone * 2))) : 1
-    readonly property int qrPixels: moduleSize * (matrixSize + quietZone * 2)
 
     visible: root.open
     z: 300
@@ -32,7 +20,7 @@ Item {
 
         open: root.open
         kind: "shell"
-        title: qsTr("Write with QR code")
+        title: qsTr("Write with App")
         panelMaxWidth: Sizing.pctH(105)
 
         Column {
@@ -43,7 +31,7 @@ Item {
                 id: instructionsMetrics
 
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.4)
+                font.pixelSize: Sizing.fontCaption
                 text: instructions.text
             }
 
@@ -52,65 +40,18 @@ Item {
 
                 x: Sizing.center(parent.width, width)
                 width: Math.min(parent.width, Sizing.px(instructionsMetrics.advanceWidth))
-                text: qsTr("Scan this code with your phone to write this game to a Zaparoo token.")
+                text: qsTr("Scan this code with the Zaparoo App to write this game to a Zaparoo token.")
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(2.4)
+                font.pixelSize: Sizing.fontCaption
                 color: Theme.textPrimary
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 renderType: Text.NativeRendering
             }
 
-            Rectangle {
+            QrMatrix {
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: root.qrPixels
-                height: root.qrPixels
-                color: "white"
-                border.width: Sizing.stroke(root.moduleSize * 0.18)
-                border.color: Theme.borderSubtle
-
-                Item {
-                    id: matrix
-
-                    x: Sizing.center(parent.width, width)
-                    y: Sizing.center(parent.height, height)
-                    width: root.moduleSize * root.matrixSize
-                    height: root.moduleSize * root.matrixSize
-                    visible: root.matrixSize > 0
-
-                    Repeater {
-                        model: root.matrixSize
-
-                        delegate: Item {
-                            id: rowDelegate
-
-                            required property int index
-
-                            readonly property int row: index
-                            readonly property string bits: Browse.QrCode.row_at(row)
-
-                            x: 0
-                            y: row * root.moduleSize
-                            width: matrix.width
-                            height: root.moduleSize
-
-                            Repeater {
-                                model: root.matrixSize
-
-                                delegate: Rectangle {
-                                    required property int index
-
-                                    x: index * root.moduleSize
-                                    y: 0
-                                    width: root.moduleSize
-                                    height: root.moduleSize
-                                    color: "black"
-                                    visible: rowDelegate.bits.charAt(index) === "1"
-                                }
-                            }
-                        }
-                    }
-                }
+                maxQrPixels: Math.min(Sizing.pctW(36), Sizing.pctH(48))
             }
         }
     }

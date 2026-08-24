@@ -19,19 +19,33 @@ MediaListScreen {
 
     mediaModel: Browse.FavoriteSystemsModel
     mediaState: Browse.FavoriteSystemsState
+    // Structurally a MediaListScreen but semantically a systems screen —
+    // follows the Systems layout preference, not the Games one.
+    layoutScope: "systems"
     screenTitle: qsTr("Favorites")
     gridViewId: "systemsGrid"
     listViewId: "systemsList"
     tateListViewId: "systemsListTate"
     showTopStrip: true
-    showBottomStatusRow: false
     activeLabelAtBottom: false
     gridBottomMargin: Sizing.pctH(8) + Sizing.pctH(7)
     topStripTitleProvider: () => qsTr("Favorites")
-    topStripTotalTextProvider: () => favoriteSystems.mediaGrid.itemCount > 0 ? qsTr("%n system(s)", "", Browse.FavoriteSystemsModel.count) : ""
-    topStripRightTextProvider: () => !favoriteSystems._listLayout || favoriteSystems.mediaGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(favoriteSystems.mediaGrid.currentIndex + 1).arg(Math.max(1, Browse.FavoriteSystemsModel.count))
+    topStripTotalTextProvider: () => favoriteSystems.mediaGrid.itemCount > 0 ? qsTr("%n system(s) with favorites", "", Browse.FavoriteSystemsModel.count) : ""
+    // Round 11: list layout's right slot now hosts the same interactive
+    // PageIndicator grid layout has (see MediaListScreen's
+    // `pageIndicatorMode`) instead of the old item-position "N / M"
+    // counter -- FavoriteSystemsModel has no background-fetch signal
+    // worth surfacing here the way GamesScreen's "Loading more…" is, so
+    // this screen no longer needs its own `topStripRightTextProvider`.
     activeLabelTextProvider: () => favoriteSystems.mediaGrid.itemCount > 0 ? Browse.FavoriteSystemsModel.name_at(favoriteSystems.mediaGrid.currentIndex) : ""
     activeLabelTagsProvider: () => {
+        // Reads Browse.FavoriteSystemsModel.media_counts_revision explicitly
+        // as a dependency: media_count_for_system is a qinvokable METHOD,
+        // not a qproperty, so calling it below does not itself register a
+        // reactive dependency -- revision is what makes this binding
+        // re-evaluate after Core refreshes a system's media count in the
+        // background (see FavoriteSystemsModel's header comment).
+        const _rev = Browse.FavoriteSystemsModel.media_counts_revision;
         if (favoriteSystems.mediaGrid.itemCount <= 0)
             return "";
         const systemId = Browse.FavoriteSystemsModel.system_id_at(favoriteSystems.mediaGrid.currentIndex);

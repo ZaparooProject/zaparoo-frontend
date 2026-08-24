@@ -25,8 +25,9 @@ src/app/main.cpp
     │     │
     │     ├── src/models/  [Zaparoo.Browse QML module via cxx-qt 0.8]
     │     │     AppStatus, CategoriesModel, SystemsModel, GamesModel,
-    │     │     AppState, HubState, SystemsState, GamesState, Input, Runtime,
-    │     │     BrowseModel. All registered via build.rs QmlModule.
+    │     │     AppState, HubState, HubLayout, SystemsState, GamesState,
+    │     │     Input, Runtime, BrowseModel. All registered via build.rs
+    │     │     QmlModule.
     │     │
     │
     ├── rust/zaparoo-core/  [non-Qt Rust crate]
@@ -38,6 +39,7 @@ src/app/main.cpp
     │     input_actions.rs    — action names + Qt key-code mapping
     │     persist.rs          — write-through persisted UI state
     │     config.rs           — TOML config (frontend.toml)
+    │     hub_layout.rs       — Hub's persisted [[hub.items]] layout schema
     │     logger.rs           — tracing-subscriber: stderr + JSONL file sinks
     │     runtime.rs          — Runtime enum: what device the frontend runs on
     │     platform.rs         — Platform enum: what Zaparoo Core is running on
@@ -206,7 +208,7 @@ Persisted state is split across Rust-backed QML singletons:
 | Singleton | Stored fields | Owner |
 |---|---|---|
 | `Browse.AppState` | `active_screen` | cross-screen route |
-| `Browse.HubState` | `category` | hub-screen row selection |
+| `Browse.HubState` | `category`, `selected_item`, `selected_row`/`selected_action` (legacy fallback) | hub-screen grid selection |
 | `Browse.SystemsState` | `system_id` | systems-screen grid selection |
 | `Browse.GamesState` | `system_id`, `game_path` | games-screen grid selection |
 
@@ -241,10 +243,39 @@ screen-specific hooks where the data model or navigation semantics differ.
 
 #### Screen flow
 
-- **Hub** (`HubScreen.qml`) — two centered rows: category tiles plus action
-  tiles for Favorites, Recently Played, optional Update, and Settings.
-  Left/Right cycles within the focused row and writes `HubState`. Accept
-  emits the matching forward/action signal; Escape emits `requestQuit`.
+- **Hub** (`HubScreen.qml`) — one uniform paged grid rendering
+  `Browse.HubLayout`'s persisted `[[hub.items]]` layout in the user's own
+  order (see `docs/plans/ui-geometry-refresh.md` -> section 9 and its "Hub
+  roadmap" addendum for the full design). A tile is a category, a built-in
+  action, a specific system, a folder, or arbitrary ZapScript; the layout
+  records intent, `HubScreen.qml` resolves each kind against live state
+  (Core confirms the category, Resume needs Recents, Update needs the
+  build flag + internet) at render time. Square cells (`PagedGrid.
+  squareCells`); the grid's shape is a fixed per-tier table
+  (`Sizing.hubGridColumns/Rows`), never fitted to the viewport the way
+  Systems/Games are. `PagedGrid` pages once content overflows a page — the
+  normal case here, not an edge case. The cursor skips empty cells outside
+  a Move session (`PagedGrid.skipEmptyCells`); the last page's trailing
+  remainder (or a user-placed `blank` entry) renders as a genuinely blank,
+  unfocusable `EmptySlot` (via `PagedGrid.emptyDelegate`) rather than a
+  `Tile` with nothing on it. Directional moves write `HubState`. Accept
+  emits `requestAccept(kind, id, system)` — `kind` is `"category"` /
+  `"action"` / `"system"` / `"folder"` / `"zapscript"`, the router switches
+  on it; every kind is wired to a destination. `system`/`folder`/
+  `zapscript` shortcuts are user-created via "Add to Hub" on a Systems/
+  Games context menu (`Main.qml`'s `_addToHub`,
+  `Browse.HubLayout.add_target_item`) — see that qinvokable's doc comment
+  for one of two deliberate exceptions to the "don't persist Core
+  metadata" rule (CLAUDE.md -> "Never"): a game shortcut's display name IS
+  cached in `frontend.toml`, since a `zapscript` entry has no live
+  system/category row to re-resolve it from at render time the way a
+  `system`/`folder` shortcut does, and the cache doubles as a rename hook.
+  The other exception is `rust/frontend/src/hub_cover_manifest.rs`'s
+  cold-boot cover manifest — see that file's module doc and CLAUDE.md's
+  own scoped exception. Escape emits
+  `requestQuit`. No edit mode — Move/Hide/Add reuse the Options (North/X,
+  item-scoped) and View (West/Y, page-scoped) menus every other screen
+  already has.
 - **Update** (`zaparoo-update` package `qml/UpdateScreen.qml`) — crate-owned update screen
   with a Rust-driven progress value surfaced through `Zaparoo.Update.Native`.
   Accept is a no-op for now; Escape emits `requestHubScreen`.
@@ -258,8 +289,10 @@ screen-specific hooks where the data model or navigation semantics differ.
   Accept on Ready calls `GamesModel.launch_at(index)`; Accept on Empty/Error
   re-fires `set_system` against the cached `current_system_id` as the retry.
   Escape emits `requestSystemsScreen` (the router decides whether to land on
-  Hub or Systems via `_gamesEnteredFromHub`). Tab on a tile emits
-  `requestGameCardWrite(index)`.
+  Hub or Systems — a live eval for the MiSTer Arcade-singleton bypass, or
+  the persisted `GamesState.entered_from_hub` breadcrumb for a Hub
+  `system`/`folder` shortcut; see `onRequestSystemsScreen` in `Main.qml`).
+  Tab on a tile emits `requestGameCardWrite(index)`.
 
 #### Forward-transition orchestration
 
@@ -282,8 +315,9 @@ router's flow on a Hub Accept:
 4. Inside that callback the router decides: Arcade-bypass on MiSTer (one
    system, drill straight to Games) or normal Hub→Systems. Arcade-bypass
    re-uses the same machinery via `_ensureSystem(systemId, cb)` against
-   `GamesModel`. Hub→Systems calls `_prefetchSystemCovers(cb)` to warm the
-   `QPixmapCache` so the destination grid paints with logos in place.
+   `GamesModel`. Hub→Systems needs no cover warm: bundled logos tint
+   synchronously out of the baked atlas, so the destination grid resolves
+   all of them in the binding pass that makes it active.
 5. `_completeTransition(screen)` clears `pendingTransition` and calls
    `_goto(screen)` which writes `AppState.active_screen`.
 
@@ -301,3 +335,42 @@ Model reset handlers in `Main.qml` restore saved row/grid indices as
 catalog data arrives. Missing IDs fall back to index 0 without erasing the
 saved value from disk, so a temporary catalog gap does not destroy the
 user's last selection.
+
+## Measuring cover pop-in
+
+Bundled artwork (Systems logos, Hub category/action icons, Settings tile
+icons) is served by `TintedSvgImageProvider`, a plain synchronous
+`QQuickImageProvider` backed by a baked mask atlas read through a tint LUT.
+With `Image.asynchronous: false` and a call site that opts in
+(`coverSynchronous`), the decode runs inline on the GUI thread and the tile
+paints complete artwork in the same frame it appears — the direct fix for the
+pop-in this instrument exists to measure.
+
+`Tile.qml`'s `coverBase.onStatusChanged` sets `_coverEverLoading = true` the
+first time it observes `status === Image.Loading`, and `onSourceChanged`
+resets it to `false` for the next source — so a recycled delegate always
+reports on the cover it is currently showing, never a stale prior request. A
+cover whose first observed status is `Image.Ready` was never `Loading`, which
+is the literal definition of zero blank frames. This is stricter than timing
+the load duration: a fast-but-nonzero async decode still trips the flag,
+because the tile still painted blank for at least one frame.
+
+Trace lines are gated on `Resources.isTintedProviderKey(key)`
+(`_coverTraceResource` in `Tile.qml`), not on a hard-coded key allow-list, so
+the instrument covers every tinted key — Hub, Systems, and Settings alike —
+rather than only the five Hub keys the original allow-list shipped with.
+`MainLayout.qml`'s `_coverTrace()` is deliberately outside the
+`_startupTraceActive` gate, which closes after the first Hub paint: closing it
+there would blind the instrument to the Systems grid and the Settings tiles,
+exactly where remaining pop-in would hide. `console.debug` output stays
+suppressed unless `[logging] debug = true`, so there is no separate gate to
+manage.
+
+**Acceptance criterion:** on Hub, Systems page 1, and the Settings root, 100%
+of tinted tiles must log `everLoading=false`. Enable debug logging
+(`[logging] debug = true` or `ZAPAROO_DEBUG=1`) and grep `frontend.log` for
+`everLoading=` after visiting each screen. For frame cost, the
+`responsiveness transition presented ... present_ms=` line from
+`_finishTransitionTiming` gives Hub→Systems wall time — record before/after on
+real MiSTer hardware, since the pop-in work is only meaningful at MiSTer's
+frame budget.

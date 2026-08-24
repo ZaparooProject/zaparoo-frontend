@@ -154,7 +154,13 @@ _lint-rust-internal:
     cd rust && cargo clippy --workspace --all-targets -- -D warnings
     cd rust && cargo deny check
 
-_lint-all-internal: _lint-rust-internal _lint-cpp-target _lint-translations-internal
+# Container-internal: fail if the committed icon atlas no longer matches the
+# SVGs in the tree. Pure coreutils, so it costs nothing on every lint run;
+# the byte-exactness check lives in tests/tst_baked_icon_atlas.cpp instead.
+_lint-baked-internal:
+    bash scripts/check-baked-icons.sh
+
+_lint-all-internal: _lint-rust-internal _lint-cpp-target _lint-translations-internal _lint-baked-internal
 
 # Container-internal: format-and-autofix surface. xargs -r skips the
 # invocation when the file list is empty.
@@ -189,6 +195,9 @@ lint-qml:
 lint-translations:
     just _lint just _lint-translations-internal
 
+lint-baked:
+    just _lint just _lint-baked-internal
+
 fmt:
     just _lint just _fmt-internal
 
@@ -198,6 +207,29 @@ fix:
     just _lint just _fix-internal
 
 fix-docker: fix
+
+# --- baked artwork ---
+
+# Container-internal: configure and run the standalone bake tool. Uses its own
+# build-tools/ directory so it never shares state with the app build.
+_bake-icons-internal *args:
+    cmake -S tools/bake-icons -B build-tools -G Ninja -DCMAKE_BUILD_TYPE=Release
+    cmake --build build-tools
+    ./build-tools/bake-icons \
+        --source resources/images \
+        --out resources/baked/icons.zbin \
+        --manifest resources/baked/icons.manifest {{args}}
+
+# Re-bake resources/baked/ and commit the result. QtSvg rasterization is not
+# stable across Qt versions, so this always runs inside the pinned lint image;
+# a bake from a Fedora host Qt would fail the strict parity test in CI. Each
+# re-bake adds a fresh incompressible blob to the packfile, so batch them.
+bake-icons *args:
+    just _lint just _bake-icons-internal {{args}}
+
+# Re-bake in memory and diff against the committed outputs without writing.
+verify-baked:
+    just _lint just _bake-icons-internal --verify
 
 # Install the host-only cargo extensions used by `just test*`.
 install-tools:
@@ -209,5 +241,5 @@ deploy-mister *args:
 
 # --- clean ---
 clean:
-    rm -rf build build-release build-dev build-dev-no-update build-san build-docker output
+    rm -rf build build-release build-dev build-dev-no-update build-san build-docker build-tools output
     cd rust && cargo clean

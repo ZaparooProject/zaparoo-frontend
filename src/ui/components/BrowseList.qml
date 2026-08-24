@@ -34,7 +34,8 @@ Item {
     readonly property int itemCount: listView.count
     readonly property int totalItems: totalItemsOverride >= 0 ? totalItemsOverride : itemCount
     readonly property bool _portraitNonCrt: !Theme.crtNativePath && Sizing.screenWidth < Sizing.screenHeight
-    readonly property int _selectionRadius: root._surface ? root._surface.cornerRadius : Sizing.cornerRadius
+    readonly property int _cardRadius: root._surface ? root._surface.cardRadius : Sizing.radiusMd
+    readonly property int _selectionRadius: root._surface ? root._surface.rowRadius : Sizing.radiusSm
     readonly property int cardPaddingLeft: root._list ? root._list.cardPaddingLeft : Sizing.pctW(2)
     readonly property int cardPaddingRight: root._list ? root._list.cardPaddingRight : Sizing.pctW(2)
     readonly property int cardPaddingTop: root._list ? root._list.cardPaddingTop : Sizing.pctH(2)
@@ -48,32 +49,22 @@ Item {
     readonly property int _maxViewTopIndex: Math.max(0, itemCount - visibleRowCount)
     readonly property int _viewTopIndex: Math.max(0, Math.min(_maxViewTopIndex, currentIndex - _centerSlot))
     readonly property int _targetContentY: _viewTopIndex * rowStride
-    readonly property int _maxScrollTopIndex: Math.max(0, totalItems - visibleRowCount)
-    readonly property int _gutterWidth: root._grid ? root._grid.gutterWidth : Sizing.pctW(3)
-    readonly property int _gutterGap: root._list && root._list.scrollbarGap !== undefined ? root._list.scrollbarGap : (root._grid ? root._grid.gutterGap : Sizing.pctW(1.5))
-    readonly property int _scrollThumbWidth: root._grid ? root._grid.scrollThumbWidth : Sizing.pctW(1.2)
-    readonly property int _scrollThumbRightInset: root._grid ? root._grid.scrollThumbRightInset : 0
-    readonly property bool _scrollThumbRightAligned: root._grid && root._grid.scrollThumbRightAligned !== undefined ? root._grid.scrollThumbRightAligned : false
-    readonly property int _scrollArrowSize: root._grid ? root._grid.scrollArrowSize : Math.min(root._gutterWidth, Sizing.pctH(4))
-    readonly property int _selectionAccentWidth: root._list && root._list.selectionAccentWidth !== undefined ? root._list.selectionAccentWidth : Sizing.pctW(0.45)
     readonly property int _rowTextLeftPadding: root._list ? root._list.rowTextLeftPadding : Sizing.pctW(1.6)
     readonly property int _rowTextRightPadding: root._list ? root._list.rowTextRightPadding : Sizing.pctW(1.6)
     readonly property int _favoriteRightPadding: root._list ? root._list.favoriteRightPadding : Sizing.pctW(1.6)
     // qmllint enable compiler
 
-    // Pulse counter for the one-shot row push-in. Callers increment via
-    // activatePulse; only the selected row fires its animation, matching
-    // the Tile activation-pulse vocabulary. Forward navigation and game
-    // launch share this single cue.
+    // Pulse counter for the selected row's inverse-video flash. Callers
+    // increment via activatePulse; only the selected row's bar/content colors
+    // swap. Forward navigation and game launch share this single cue.
     property int activatePulse: 0
-    // Release counter for the row push-in. Incremented by the host to settle
-    // the selected row's scale back to 1.0 after a launch that keeps the
-    // frontend on the same screen. Forward navigation never increments it (the
-    // screen transition resets the push-in off-screen via screenSettling).
+    // Cuts a held flash short. Incremented by the host after a launch that
+    // keeps the frontend on the same screen. Forward navigation never
+    // increments it; screenSettling cuts the flash off-screen.
     property int releasePulse: 0
-    // When true, resets the row push-in scale back to 1.0 so a held press does
-    // not persist when the screen is shown again. Set by the host to
-    // !active while the screen is off-screen.
+    // When true, cuts a held flash short so it does not persist when the
+    // screen is shown again. Set by the host to !active while the screen is
+    // off-screen.
     property bool screenSettling: false
 
     signal itemHovered(int index)
@@ -89,6 +80,10 @@ Item {
         root.pageWheelRequested(amount < 0 ? 1 : -1);
         wheel.accepted = true;
     }
+
+    // Corner radius of the rect `currentCellRectIn()` returns, for
+    // ContextMenu's rounded scrim hole (Part 5).
+    readonly property int currentCellRadius: root._selectionRadius
 
     function currentCellRectIn(target: Item): rect {
         if (root.itemCount <= 0)
@@ -112,9 +107,9 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.surfaceCard
-        border.width: Sizing.stroke(1)
+        border.width: Sizing.cardBorderWidth
         border.color: Theme.borderMid
-        radius: root._selectionRadius
+        radius: root._cardRadius
         visible: root.showChrome
     }
 
@@ -144,7 +139,7 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: root.cardPaddingBottom
         anchors.right: parent.right
-        anchors.rightMargin: root.totalItems > root.visibleRowCount ? root._gutterWidth + root._gutterGap + root.cardPaddingRight : root.cardPaddingRight
+        anchors.rightMargin: root.cardPaddingRight
         model: root.model
         currentIndex: root.currentIndex
         boundsBehavior: Flickable.StopAtBounds
@@ -158,21 +153,29 @@ Item {
         delegate: Item {
             id: row
 
+            objectName: "browseListRow-" + row.index
             required property int index
             required property string name
             required property string fileStem
             required property string coverKey
             required property int favorite
             // Newline-joined disambiguating-tag tokens (empty for models
-            // without variants). Every Browse model exposes this role.
+            // without variants). Every Browse model exposes this role. For
+            // a folder/root row this instead carries the round-11 roots-
+            // screen distinguisher (see games.rs's `root_distinguishers`),
+            // if any -- `_tagsSuffix` below folds it together with
+            // `fileCount` via `Format.rowSuffix`.
             required property string disambiguatingTags
+            // Round 11. Required, same as `disambiguatingTags` above -- a
+            // plain non-required property does NOT automatically bind to a
+            // matching model role (Qt only wires that up for `required
+            // property`), so every model reaching this delegate sets both
+            // explicitly.
+            required property string entryType
+            required property int fileCount
 
             width: listView.width
             height: root.rowHeight
-            // One-shot push-in cue, identical to the tile vocabulary: the
-            // selected row scales to Motion.rowPressScale on accept/activate.
-            scale: row._activateScale
-            transformOrigin: Item.Center
 
             readonly property bool selected: row.index === root.currentIndex
             // Visual highlight is withheld until the host marks focus ready, so
@@ -181,53 +184,9 @@ Item {
             // still track content during the pre-restore window.
             readonly property bool _highlightVisible: row.selected && root.focusReady
             readonly property string _baseTitle: row.name !== "" ? row.name : row.fileStem
+            readonly property string _tagsSuffix: Format.rowSuffix(row.entryType, row.disambiguatingTags, row.fileCount)
             // Horizontal space reserved on the right for the favorite heart.
             readonly property int _favoriteSlot: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) : 0
-            property real _activateScale: 1.0
-
-            // Push in and hold — mirrors Tile.qml. The activate leg has no
-            // return-to-rest because a forward navigation holds the row pressed
-            // while the screen transitions; the release leg settles it back only
-            // when the launch stays on this screen (e.g. an Audio track), and
-            // `screenSettling` resets it off-screen so it is clean on return.
-            NumberAnimation {
-                id: activateAnim
-                target: row
-                property: "_activateScale"
-                to: Motion.rowPressScale
-                duration: Motion.dur(Motion.pressMs)
-                easing.type: Easing.OutQuad
-            }
-
-            NumberAnimation {
-                id: releaseAnim
-                target: row
-                property: "_activateScale"
-                to: 1.0
-                duration: Motion.dur(Motion.settleMs)
-                easing.type: Easing.OutQuad
-            }
-
-            Connections {
-                target: root
-                function onActivatePulseChanged(): void {
-                    if (row.selected)
-                        activateAnim.restart();
-                }
-                function onReleasePulseChanged(): void {
-                    if (row.selected) {
-                        activateAnim.stop();
-                        releaseAnim.restart();
-                    }
-                }
-                function onScreenSettlingChanged(): void {
-                    if (root.screenSettling) {
-                        activateAnim.stop();
-                        releaseAnim.stop();
-                        row._activateScale = 1.0;
-                    }
-                }
-            }
 
             Binding {
                 target: root
@@ -245,33 +204,18 @@ Item {
                 restoreMode: Binding.RestoreNone
             }
 
-            Item {
-                width: parent.width
-                height: parent.height
-                visible: row._highlightVisible
-
-                Rectangle {
-                    anchors.fill: parent
-                    color: Theme.selectionSurface
-                    radius: root._selectionRadius
-                }
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: root._selectionRadius
-                    color: Theme.selectionSurface
-                }
-            }
-
-            Rectangle {
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: root._selectionAccentWidth
-                color: Theme.accent
-                visible: row._highlightVisible
-                radius: Math.max(0, Sizing.px(width / 3))
+            // Inverse-video highlight. See SelectionBar.qml -- selection is a
+            // line of text swapping foreground and background, not an object
+            // lifting off the page.
+            SelectionBar {
+                id: bar
+                objectName: "selectionBar"
+                anchors.fill: parent
+                active: row._highlightVisible
+                activatePulse: root.activatePulse
+                releasePulse: root.releasePulse
+                screenSettling: root.screenSettling
+                radius: root._selectionRadius
             }
 
             // Row title carrying the inline dim token suffix. ScrollingCaption
@@ -287,11 +231,13 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 height: parent.height
                 name: row._baseTitle
-                tags: row.disambiguatingTags
+                tags: row._tagsSuffix
                 focused: row._highlightVisible
                 centerContent: false
-                fontPixelSize: Sizing.fontSize(2.9)
-                nameColor: row._highlightVisible ? Theme.textPrimary : Theme.textLabel
+                fontPixelSize: Sizing.fontSection
+                fontWeight: bar.contentWeight
+                nameColor: row._highlightVisible ? bar.contentColor : Theme.textLabel
+                variantColor: row._highlightVisible ? Theme.onAccentMuted : Theme.textVariant
             }
 
             Image {
@@ -300,7 +246,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Sizing.pctH(3.2)
                 height: width
-                source: Resources.iconUrl("Heart")
+                source: row._highlightVisible ? Resources.coverUrl("icons/Heart", Theme.onAccent, Theme.onAccent, Theme.accent) : Resources.coverUrl("icons/Heart", Theme.marker, Theme.marker, Theme.markerOutline)
                 sourceSize.width: Sizing.px(width)
                 sourceSize.height: Sizing.px(height)
                 fillMode: Image.PreserveAspectFit
@@ -323,87 +269,6 @@ Item {
                         root.itemClicked(row.index);
                 }
                 onWheel: wheel => root._handleWheel(wheel)
-            }
-        }
-    }
-
-    // ── Left-half scroll indicator ────────────────────────────────────────
-    Item {
-        id: scrollGutter
-
-        anchors.right: parent.right
-        anchors.rightMargin: root.cardPaddingRight
-        anchors.top: parent.top
-        anchors.topMargin: root.cardPaddingTop
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.cardPaddingBottom
-        width: root._gutterWidth
-        visible: root.totalItems > root.visibleRowCount
-
-        Image {
-            id: upArrow
-            source: Resources.iconUrl("ScrollUp")
-            width: root._scrollArrowSize
-            height: root._scrollArrowSize
-            anchors.top: parent.top
-            anchors.horizontalCenter: parent.horizontalCenter
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-            visible: root.currentIndex > 0
-
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton
-                cursorShape: Qt.PointingHandCursor
-                enabled: upArrow.visible
-                onClicked: root.pageWheelRequested(-1)
-            }
-        }
-
-        Image {
-            id: downArrow
-            source: Resources.iconUrl("ScrollDown")
-            width: root._scrollArrowSize
-            height: root._scrollArrowSize
-            anchors.bottom: parent.bottom
-            anchors.horizontalCenter: parent.horizontalCenter
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-            visible: root.currentIndex < root.totalItems - 1
-
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton
-                cursorShape: Qt.PointingHandCursor
-                enabled: downArrow.visible
-                onClicked: root.pageWheelRequested(1)
-            }
-        }
-
-        Item {
-            id: scrollRegion
-            anchors.top: parent.top
-            anchors.topMargin: root._scrollArrowSize + Sizing.pctH(1)
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: root._scrollArrowSize + Sizing.pctH(1)
-            anchors.right: root._scrollThumbRightAligned ? parent.right : undefined
-            anchors.rightMargin: root._scrollThumbRightAligned ? root._scrollThumbRightInset : 0
-            anchors.horizontalCenter: root._scrollThumbRightAligned ? undefined : parent.horizontalCenter
-            width: root._scrollThumbWidth
-
-            readonly property int _minThumbHeight: Sizing.pctH(4)
-            readonly property int _thumbHeight: root.totalItems <= 0 ? 0 : Math.min(scrollRegion.height, Math.max(_minThumbHeight, Math.round(scrollRegion.height * root.visibleRowCount / root.totalItems)))
-            readonly property int _thumbY: root._maxScrollTopIndex <= 0 ? 0 : Sizing.px((root._viewTopIndex / root._maxScrollTopIndex) * (scrollRegion.height - _thumbHeight))
-
-            Rectangle {
-                id: scrollThumb
-                width: root._scrollThumbWidth
-                height: scrollRegion._thumbHeight
-                anchors.right: root._scrollThumbRightAligned ? parent.right : undefined
-                anchors.horizontalCenter: root._scrollThumbRightAligned ? undefined : parent.horizontalCenter
-                y: scrollRegion._thumbY
-                color: Theme.textPrimary
-                radius: Sizing.half(width)
             }
         }
     }

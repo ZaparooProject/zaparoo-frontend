@@ -23,7 +23,7 @@ TestCase {
     property string _originalBrowseLayout: "grid"
 
     Component.onCompleted: {
-        _originalBrowseLayout = Browse.Settings.current_browse_layout;
+        _originalBrowseLayout = Browse.Settings.current_games_browse_layout;
         Sizing.screenWidth = testCase.width;
         Sizing.screenHeight = testCase.height;
     }
@@ -57,7 +57,7 @@ TestCase {
     function init(): void {
         Sizing.screenWidth = testCase.width;
         Sizing.screenHeight = testCase.height;
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_games_browse_layout = "grid";
         screen.optimisticLoading = false;
         mediaModel.clear();
         // Enough rows that a single page step in either direction stays
@@ -70,7 +70,11 @@ TestCase {
                 "coverKey": "",
                 "favorite": 0,
                 "hidden": false,
-                "disambiguatingTags": ""
+                "disambiguatingTags": "",
+                "entryType": "media",
+                "fileCount": 0,
+                "disabled": false,
+                "isEmpty": false
             });
         }
         tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
@@ -78,7 +82,7 @@ TestCase {
     }
 
     function cleanup(): void {
-        Browse.Settings.current_browse_layout = _originalBrowseLayout;
+        Browse.Settings.current_games_browse_layout = _originalBrowseLayout;
         screen.optimisticLoading = false;
     }
 
@@ -87,7 +91,7 @@ TestCase {
     // Asserting equivalence (not a hardcoded page size) keeps the test
     // honest if the page metric ever changes.
     function test_list_left_right_page_like_page_prev_next(): void {
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_games_browse_layout = "list";
         screen.mediaGrid.setCurrentIndexImmediate(0);
 
         screen.handleAction("page_next");
@@ -121,10 +125,61 @@ TestCase {
         screen.pageMenuEnabledWhenEmpty = false;
     }
 
+    // Round 11 regression: list-layout paging used to move by
+    // `mediaGrid.pageSize` (this fixture's grid columns x rows = 2x2 = 4),
+    // not by however many rows the list actually shows on screen -- a
+    // mismatch that either paged farther than a screenful or (as here,
+    // where the visible row count is well above 4) left several
+    // screenfuls un-skippable in one press. `_listVisiblePageSize` is
+    // what both the page cue's displayed page number and the actual
+    // press now agree on.
+    function test_list_left_right_page_by_the_lists_own_row_count_not_the_grids(): void {
+        Browse.Settings.current_games_browse_layout = "list";
+        mediaModel.clear();
+        for (let i = 0; i < 60; i++) {
+            mediaModel.append({
+                "name": "Game " + i,
+                "fileStem": "Game " + i,
+                "coverKey": "",
+                "favorite": 0,
+                "hidden": false,
+                "disambiguatingTags": "",
+                "entryType": "media",
+                "fileCount": 0,
+                "disabled": false,
+                "isEmpty": false
+            });
+        }
+        tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
+        screen.mediaGrid.setCurrentIndexImmediate(0);
+
+        const listPageSize = screen._listVisiblePageSize;
+        verify(listPageSize !== screen.mediaGrid.pageSize, "fixture must exercise a list page size different from the grid's, or this test proves nothing");
+        verify(listPageSize < mediaModel.count, "fixture needs more rows than one list page holds, or paging wraps trivially");
+
+        screen.handleAction("right");
+        compare(screen.mediaGrid.currentIndex, listPageSize, "one page-right press must land exactly _listVisiblePageSize rows forward");
+    }
+
+    // The page-cue state (what a mounted PageIndicator would show) must
+    // track the same page size paging actually uses.
+    function test_list_page_state_tracks_the_lists_own_page_size(): void {
+        Browse.Settings.current_games_browse_layout = "list";
+        screen.mediaGrid.setCurrentIndexImmediate(0);
+
+        compare(screen._listCurrentPage, 0);
+        compare(screen._listHasPagesAbove, false);
+        verify(screen._listTotalPageCount >= 1);
+
+        screen.handleAction("right");
+        compare(screen._listCurrentPage, Math.floor(screen.mediaGrid.currentIndex / screen._listVisiblePageSize));
+        compare(screen._listHasPagesAbove, screen._listCurrentPage > 0);
+    }
+
     // Grid layout must keep Left/Right as one-column selection moves;
     // the list paging fallback is gated on _listLayout.
     function test_grid_left_right_still_move_one_column(): void {
-        Browse.Settings.current_browse_layout = "grid";
+        Browse.Settings.current_games_browse_layout = "grid";
         screen.mediaGrid.setCurrentIndexImmediate(0);
 
         screen.handleAction("right");
@@ -136,7 +191,7 @@ TestCase {
     // The paging fallback shares page_prev / page_next's ready-state
     // guard: an empty list must not page.
     function test_list_left_right_do_nothing_when_empty(): void {
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_games_browse_layout = "list";
         mediaModel.clear();
         tryCompare(screen.mediaGrid, "itemCount", 0);
         const before = screen.mediaGrid.currentIndex;
@@ -151,7 +206,7 @@ TestCase {
     // held to the same guard so the paths cannot drift apart. Start from
     // a paged-forward index so a wrap back to row 0 cannot fake a pass.
     function test_list_left_right_do_nothing_while_loading(): void {
-        Browse.Settings.current_browse_layout = "list";
+        Browse.Settings.current_games_browse_layout = "list";
         screen.mediaGrid.setCurrentIndexImmediate(0);
         screen.handleAction("page_next");
         const before = screen.mediaGrid.currentIndex;
