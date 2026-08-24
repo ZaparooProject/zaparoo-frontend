@@ -211,15 +211,24 @@ const POLL_INTERVAL: Duration = Duration::from_millis(300);
 /// unreadable (deleted, permission change, unmounted) drops `last_mtime`
 /// back to `None` and republishes `None`, restoring the no-report fallback
 /// instead of leaving the help bar showing a stale controller's glyphs.
-fn poll_once(path: &Path, last_mtime: &mut Option<SystemTime>) {
+///
+/// `last_read_ok` tracks whether the most recent attempt actually produced a
+/// report, separately from `last_mtime`: a report that exists (mtime is
+/// `Some`) but fails to read or parse -- a transient race with the writer,
+/// not a real "no report" state -- must keep retrying every tick even if the
+/// mtime doesn't move again, instead of silently latching onto the failure
+/// because the mtime guard alone would never see a change to unstick it.
+fn poll_once(path: &Path, last_mtime: &mut Option<SystemTime>, last_read_ok: &mut bool) {
     let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-    if mtime != *last_mtime {
+    if mtime != *last_mtime || !*last_read_ok {
         *last_mtime = mtime;
-        publish_if_changed(if mtime.is_some() {
+        let parsed = if mtime.is_some() {
             read_and_parse(path)
         } else {
             None
-        });
+        };
+        *last_read_ok = mtime.is_none() || parsed.is_some();
+        publish_if_changed(parsed);
     }
 }
 
@@ -243,8 +252,9 @@ pub fn spawn_watcher() {
     publish_if_changed(read_and_parse(&path));
     std::thread::spawn(move || {
         let mut last_mtime: Option<SystemTime> = None;
+        let mut last_read_ok = true;
         loop {
-            poll_once(&path, &mut last_mtime);
+            poll_once(&path, &mut last_mtime, &mut last_read_ok);
             std::thread::sleep(POLL_INTERVAL);
         }
     });
@@ -402,7 +412,8 @@ mod tests {
         let path = file.path().to_path_buf();
 
         let mut last_mtime: Option<SystemTime> = None;
-        poll_once(&path, &mut last_mtime);
+        let mut last_read_ok = true;
+        poll_once(&path, &mut last_mtime, &mut last_read_ok);
         assert!(last_mtime.is_some(), "valid report should set last_mtime");
 
         let mut rx = subscribe();
@@ -415,7 +426,7 @@ mod tests {
         // frontend races a stale/unmounted tmpfs). The next poll must drop
         // back to the no-report fallback, not keep serving the last glyphs.
         drop(file);
-        poll_once(&path, &mut last_mtime);
+        poll_once(&path, &mut last_mtime, &mut last_read_ok);
         assert!(
             last_mtime.is_none(),
             "unavailable file should clear last_mtime"
@@ -424,6 +435,55 @@ mod tests {
             *rx.borrow_and_update(),
             None,
             "unavailable file should republish None"
+        );
+    }
+
+    #[test]
+    fn poll_retries_after_read_failure_even_when_mtime_is_unchanged() {
+        let file = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(file.path(), b"not valid json").expect("write garbage report");
+        let path = file.path().to_path_buf();
+
+        let mut last_mtime: Option<SystemTime> = None;
+        let mut last_read_ok = true;
+        poll_once(&path, &mut last_mtime, &mut last_read_ok);
+        assert!(
+            !last_read_ok,
+            "an unparseable report should be tracked as a failed read"
+        );
+        let unchanged_mtime = last_mtime.expect("existing file should still yield an mtime");
+
+        let mut rx = subscribe();
+        assert_eq!(
+            *rx.borrow_and_update(),
+            None,
+            "unparseable report should publish None"
+        );
+
+        // The report becomes valid, but its mtime lands back on the exact
+        // same value as the failed read (coarse filesystem timestamp
+        // resolution, or the writer stalling). The next poll must still
+        // retry the read because the *previous* attempt failed, not skip it
+        // just because mtime didn't move.
+        std::fs::write(&path, report("xbox", "east", "south")).expect("write valid report");
+        std::fs::File::open(&path)
+            .and_then(|f| f.set_modified(unchanged_mtime))
+            .expect("pin mtime back to its prior value");
+        assert_eq!(
+            std::fs::metadata(&path).and_then(|m| m.modified()).ok(),
+            Some(unchanged_mtime),
+            "mtime should be pinned to its original value"
+        );
+
+        poll_once(&path, &mut last_mtime, &mut last_read_ok);
+        assert!(
+            last_read_ok,
+            "a recovered, parseable report should clear the failed-read state"
+        );
+        assert_eq!(
+            rx.borrow_and_update().as_ref().map(|g| g.layout),
+            Some("style_b"),
+            "recovered report should republish even though mtime didn't change"
         );
     }
 }
