@@ -209,4 +209,91 @@ TestCase {
         compare(metrics.font.weight, Font.Normal, "deselecting the row must flip its metrics back to Font.Normal");
         compare(label.width, expectedWidth(), "width after deselecting must match a fresh measurement too");
     }
+
+    function _manyEntries(count: int): var {
+        const entries = [];
+        for (let i = 0; i < count; i++)
+            entries.push({
+                "id": "entry-" + i,
+                "label": "Entry " + i
+            });
+        return entries;
+    }
+
+    // A data-driven menu (e.g. "Discover alt. versions", up to
+    // MAX_ALT_RESULTS in alternate_versions.rs) can exceed the panel's
+    // available height. `panel`'s `clip: true` used to be the only thing
+    // stopping overflow rows from painting past the rounded corners --
+    // `move()` could still select a row that was clipped out of view
+    // entirely. `rowViewport` must keep the focused row inside its visible
+    // band instead.
+    function test_more_entries_than_fit_scrolls_the_focused_row_into_view(): void {
+        menu.entries = _manyEntries(30);
+        menu.currentIndex = 0;
+
+        verify(menu._scrollable, "30 short entries must exceed the panel's available height in this test window");
+
+        const viewport = findChild(menu, "contextMenuRowViewport");
+        verify(viewport !== null);
+        compare(viewport.contentY, 0, "menu opens scrolled to the top");
+
+        // Column stacks children top to bottom with `spacing` between them
+        // -- a documented, stable property of Column's own layout, not an
+        // implementation detail of ContextMenu.qml (`_scrollCurrentIntoView`
+        // relies on exactly this to compute a row's position without
+        // touching the rendered tree). Used here as the test's independent
+        // oracle instead of reading a delegate's own `y`, which Column only
+        // commits on the next polish pass and would otherwise still read
+        // stale mid-loop with no `wait()` between moves.
+        const stride = menu.rowHeight + menu.rowSpacing;
+
+        // Walk to the last entry one row at a time -- the same path real
+        // input takes -- and confirm the focused row's position never
+        // falls outside the viewport's visible band.
+        for (let i = 1; i < menu.entries.length; i++) {
+            menu.move(1);
+            const rowTop = menu.currentIndex * stride;
+            const rowBottom = rowTop + menu.rowHeight;
+            verify(rowTop >= viewport.contentY, "row " + menu.currentIndex + " top must not sit above the visible band");
+            verify(rowBottom <= viewport.contentY + viewport.height, "row " + menu.currentIndex + " bottom must not sit below the visible band");
+        }
+        compare(menu.currentIndex, menu.entries.length - 1);
+        verify(viewport.contentY > 0, "reaching the last row must have scrolled the viewport");
+
+        // Wrapping back to the first entry must scroll all the way back to
+        // the top, not leave the last row's scroll position behind.
+        menu.move(1);
+        compare(menu.currentIndex, 0);
+        compare(viewport.contentY, 0, "wrapping to the first entry must scroll back to the top");
+    }
+
+    // A menu within the documented 3-8 cap must render exactly as it did
+    // before `rowViewport` existed: unscrollable, contentY pinned at 0.
+    function test_few_entries_never_scrolls(): void {
+        menu.entries = _manyEntries(3);
+        menu.currentIndex = 0;
+
+        verify(!menu._scrollable);
+        const viewport = findChild(menu, "contextMenuRowViewport");
+        verify(viewport !== null);
+        compare(viewport.contentY, 0);
+
+        menu.move(1);
+        menu.move(1);
+        compare(viewport.contentY, 0, "a menu that already fits must never scroll");
+    }
+
+    // Swapping to a new, still-long entry list on an already-open menu
+    // (the "Discover alt. versions" submenu replaces the main list in
+    // place) must not carry over a scroll position left by the previous
+    // list.
+    function test_swapping_entries_while_open_resets_scroll(): void {
+        menu.entries = _manyEntries(30);
+        menu.currentIndex = menu.entries.length - 1;
+        const viewport = findChild(menu, "contextMenuRowViewport");
+        verify(viewport.contentY > 0, "selecting the last of 30 entries must have scrolled down");
+
+        menu.entries = _manyEntries(30);
+        compare(viewport.contentY, 0, "a fresh entries array must reset scroll even if the count is unchanged");
+    }
 }
