@@ -381,6 +381,36 @@ mod tests {
     }
 
     #[test]
+    fn media_browse_root_contents_merges_directories_and_media() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"systems":["NES"],"rootView":"contents"}}"#;
+        let resp = parse(&dispatch(req));
+        assert_eq!(resp["result"]["path"], Value::from(""));
+        let entries = resp["result"]["entries"].as_array().expect("array");
+        // Virtual root first, then the two mock directories, then media --
+        // mirrors `browseSystemRootContents`'s ordering in zaparoo-core.
+        assert_eq!(entries[0]["type"], Value::from("root"));
+        assert_eq!(entries[1]["type"], Value::from("directory"));
+        assert_eq!(entries[2]["type"], Value::from("directory"));
+        assert!(entries[3..].iter().all(|entry| entry["type"] == "media"));
+        // `totalDirs` counts the merged directories only, excluding the
+        // leading virtual root.
+        assert_eq!(resp["result"]["totalDirs"], Value::from(2));
+        assert!(resp["result"]["totalFiles"].as_u64().unwrap_or(0) > 0);
+    }
+
+    #[test]
+    fn media_browse_without_root_view_returns_route_roots() {
+        let req =
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"systems":["NES"]}}"#;
+        let resp = parse(&dispatch(req));
+        let entries = resp["result"]["entries"].as_array().expect("array");
+        assert!(entries.iter().all(|entry| entry["type"] == "root"));
+        assert_eq!(resp["result"]["totalFiles"], Value::from(0));
+        assert_eq!(resp["result"]["totalDirs"], Value::from(0));
+        assert!(resp["result"]["pagination"].is_null());
+    }
+
+    #[test]
     fn media_browse_index_matches_favorite_scope() {
         let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.browse.index","params":{"path":"/games","tags":["user:favorite"]}}"#;
         let resp = parse(&dispatch(req));

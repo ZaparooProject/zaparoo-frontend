@@ -10,7 +10,7 @@
 // because each follow-up has a different cursor.
 
 use crate::client::{Client, ClientError};
-use crate::media_types::{MediaBrowseParams, MediaBrowseResult};
+use crate::media_types::{merged_root_view, MediaBrowseParams, MediaBrowseResult};
 use crate::store::{Endpoint, Tag};
 use futures_util::future::BoxFuture;
 use std::sync::Arc;
@@ -51,6 +51,13 @@ impl BrowseArgs {
             max_results,
         }
     }
+
+    /// Core's merged system-root view for this scope. Derived, not stored:
+    /// the cache key already carries `path` and `systems`, so the view can
+    /// never drift from the key it was fetched under.
+    pub fn root_view(&self) -> Option<String> {
+        merged_root_view(&self.path, &self.systems)
+    }
 }
 
 #[derive(Debug)]
@@ -66,6 +73,7 @@ impl Endpoint for MediaBrowseEndpoint {
         args: Self::Args,
     ) -> BoxFuture<'static, Result<Self::Output, ClientError>> {
         Box::pin(async move {
+            let root_view = args.root_view();
             client
                 .media_browse(MediaBrowseParams {
                     path: args.path,
@@ -75,6 +83,7 @@ impl Endpoint for MediaBrowseEndpoint {
                     tags: args.tags,
                     letter: None,
                     sort: None,
+                    root_view,
                 })
                 .await
         })
@@ -154,5 +163,28 @@ mod tests {
         );
         assert_ne!(unfiltered, filtered);
         assert_eq!(filtered.tags, vec!["user:favorite"]);
+    }
+
+    #[test]
+    fn browse_args_root_view_is_contents_for_single_system_root() {
+        let args = BrowseArgs::new(String::new(), vec!["SNES".into()], 100, Vec::new());
+        assert_eq!(args.root_view(), Some("contents".to_string()));
+    }
+
+    #[test]
+    fn browse_args_root_view_is_none_for_path_browse() {
+        let args = BrowseArgs::new("/roms/SNES".into(), vec!["SNES".into()], 100, Vec::new());
+        assert_eq!(args.root_view(), None);
+    }
+
+    #[test]
+    fn browse_args_root_view_is_none_for_multi_system() {
+        let args = BrowseArgs::new(
+            String::new(),
+            vec!["SNES".into(), "NES".into()],
+            100,
+            Vec::new(),
+        );
+        assert_eq!(args.root_view(), None);
     }
 }

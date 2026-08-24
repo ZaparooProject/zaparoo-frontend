@@ -244,27 +244,10 @@ fn game_has_tag(game: &Value, filter: &str) -> bool {
         })
 }
 
-pub fn media_browse_response(params: &Value) -> Value {
-    let path = params.get("path").and_then(Value::as_str).unwrap_or("");
-    let systems = params
-        .get("systems")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>())
-        .unwrap_or_default();
-    let filters = params
-        .get("tags")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>())
-        .unwrap_or_default();
-    let max = params
-        .get("maxResults")
-        .and_then(Value::as_u64)
-        .unwrap_or(100) as usize;
-    let offset = params
-        .get("cursor")
-        .and_then(Value::as_str)
-        .and_then(|cursor| cursor.parse::<usize>().ok())
-        .unwrap_or(0);
+/// Media rows for `system` under `path_prefix`, filtered by `filters` and
+/// sorted by display name -- the shared core of every `media.browse`
+/// shape below.
+fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) -> Vec<Value> {
     let mut matching: Vec<Value> = ALL_GAMES
         .iter()
         .enumerate()
@@ -272,7 +255,7 @@ pub fn media_browse_response(params: &Value) -> Value {
         .filter_map(|(index, (name, file, system))| {
             let row = json!({
                 "name": name,
-                "path": format!("{path}/{file}"),
+                "path": format!("{path_prefix}/{file}"),
                 "type": "media",
                 "systemId": system,
                 "zapScript": format!("@{system}/{file}"),
@@ -294,6 +277,162 @@ pub fn media_browse_response(params: &Value) -> Value {
             .unwrap_or_default()
             .to_lowercase()
     });
+    matching
+}
+
+fn mock_directory_entry(name: &str, path: &str, file_count: u64) -> Value {
+    json!({
+        "name": name,
+        "path": path,
+        "type": "directory",
+        "fileCount": file_count,
+        "hasCover": false,
+    })
+}
+
+/// A virtual-scheme route. Core never merges these into a system's
+/// contents view (`rootView: "contents"`) -- it prepends them ahead of
+/// the merged directories, and only on the page a cursor is absent from.
+fn mock_virtual_root_entry(system: &str) -> Value {
+    json!({
+        "name": "Mock Arcade",
+        "path": "mock-arcade://",
+        "type": "root",
+        "group": "mock",
+        "systemId": system,
+        "systemIds": [system],
+        "hasCover": false,
+    })
+}
+
+fn mock_route_root_entry(path: &str, system: &str, file_count: u64) -> Value {
+    json!({
+        // Real launcher routes are commonly named after the system
+        // itself, so two configured folders collide on name -- this is
+        // the shape `root_distinguishers`' fallback exists to label.
+        "name": system,
+        "path": path,
+        "type": "root",
+        "systemId": system,
+        "systemIds": [system],
+        "fileCount": file_count,
+        "hasCover": false,
+    })
+}
+
+/// Core's merged system-root view (`rootView: "contents"`): a virtual
+/// route (first page only), two mock directories, then the system's
+/// media, all under one pathless response. Mirrors
+/// `browseSystemRootContents` in zaparoo-core's `media_browse.go`.
+fn media_browse_root_contents_response(
+    system: &str,
+    filters: &[&str],
+    max: usize,
+    offset: usize,
+    cursor_present: bool,
+) -> Value {
+    let path_prefix = format!("/mock/games/{system}");
+    let dirs = if cursor_present {
+        Vec::new()
+    } else {
+        vec![
+            mock_directory_entry("Favorites", &format!("{path_prefix}/Favorites"), 1),
+            mock_directory_entry("Extras", &format!("{path_prefix}/Extras"), 1),
+        ]
+    };
+    let remaining = max.saturating_sub(dirs.len());
+    let matching = matching_media_rows(&path_prefix, &[system], filters);
+    let total_files = matching.len();
+    let media_page: Vec<Value> = matching.into_iter().skip(offset).take(remaining).collect();
+    let next_offset = offset.saturating_add(media_page.len());
+    let has_next_page = !media_page.is_empty() && next_offset < total_files;
+    let mut entries = Vec::new();
+    if !cursor_present {
+        entries.push(mock_virtual_root_entry(system));
+    }
+    entries.extend(dirs);
+    entries.extend(media_page);
+    let mut pagination = json!({
+        "hasNextPage": has_next_page,
+        "pageSize": max,
+    });
+    if has_next_page {
+        pagination["nextCursor"] = json!(next_offset.to_string());
+    }
+    json!({
+        "path": "",
+        "entries": entries,
+        // Virtual roots are excluded, mirroring Core: `totalDirs` counts
+        // merged physical directories only.
+        "totalDirs": 2,
+        "totalFiles": total_files,
+        "pagination": pagination,
+    })
+}
+
+/// Core's default, unmerged system-root view: one `root` entry per
+/// configured launcher route. Reachable in dev by omitting `rootView` on
+/// a pathless, system-scoped request -- the older-Core fallback path the
+/// frontend's `dedup_roots_drop_ancestors` / `root_distinguishers` still
+/// cover. The live frontend never sends this shape itself once
+/// `rootView: "contents"` is wired up, since a pathless single-system
+/// browse always includes it.
+fn media_browse_route_roots_response(systems: &[&str]) -> Value {
+    let entries: Vec<Value> = systems
+        .iter()
+        .flat_map(|system| {
+            let count = ALL_GAMES.iter().filter(|(_, _, s)| s == system).count() as u64;
+            vec![
+                mock_route_root_entry(&format!("/mock/games/{system}"), system, count),
+                mock_route_root_entry(&format!("/mock/usb0/{system}"), system, 0),
+            ]
+        })
+        .collect();
+    json!({
+        "path": "",
+        "entries": entries,
+        "totalFiles": 0,
+        "totalDirs": 0,
+    })
+}
+
+pub fn media_browse_response(params: &Value) -> Value {
+    let path = params.get("path").and_then(Value::as_str).unwrap_or("");
+    let systems = params
+        .get("systems")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let filters = params
+        .get("tags")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let max = params
+        .get("maxResults")
+        .and_then(Value::as_u64)
+        .unwrap_or(100) as usize;
+    let cursor = params.get("cursor").and_then(Value::as_str);
+    let offset = cursor
+        .and_then(|cursor| cursor.parse::<usize>().ok())
+        .unwrap_or(0);
+    if path.is_empty() {
+        let root_view = params.get("rootView").and_then(Value::as_str);
+        if root_view == Some("contents") {
+            if systems.len() == 1 {
+                return media_browse_root_contents_response(
+                    systems[0],
+                    &filters,
+                    max,
+                    offset,
+                    cursor.is_some(),
+                );
+            }
+        } else if !systems.is_empty() {
+            return media_browse_route_roots_response(&systems);
+        }
+    }
+    let matching = matching_media_rows(path, &systems, &filters);
     let total_files = matching.len();
     let entries: Vec<Value> = matching.into_iter().skip(offset).take(max).collect();
     let next_offset = offset.saturating_add(entries.len());
@@ -309,7 +448,8 @@ pub fn media_browse_response(params: &Value) -> Value {
         "path": path,
         "entries": entries,
         "totalFiles": total_files,
-        // Mock browse returns only media entries (no subdirectories).
+        // Mock browse returns only media entries (no subdirectories) for
+        // an ordinary path browse.
         "totalDirs": 0,
         "pagination": pagination,
     })
@@ -381,8 +521,18 @@ pub fn media_browse_index_response(params: &Value) -> Value {
         .map(|object| object.remove("cursor"));
     let browse = media_browse_response(&browse_params);
     let entries = browse["entries"].as_array().cloned().unwrap_or_default();
+    // Bucket by first character over media entries only. A merged-root
+    // page's leading `directory`/`root` entries aren't part of the
+    // ordered file list Core's `offset` describes ("excludes any
+    // directory entries the listing shows before files" -- see
+    // `media.browse.index`'s documented `offset` semantics), so they
+    // must not shift the file-position math below.
+    let media_entries: Vec<&Value> = entries
+        .iter()
+        .filter(|entry| entry["type"] == "media")
+        .collect();
     let mut groups: Vec<Value> = Vec::new();
-    for (offset, entry) in entries.iter().enumerate() {
+    for (offset, entry) in media_entries.iter().enumerate() {
         let first = entry["name"]
             .as_str()
             .and_then(|name| name.chars().next())
