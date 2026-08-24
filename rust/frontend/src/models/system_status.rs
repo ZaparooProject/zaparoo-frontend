@@ -4,7 +4,8 @@
 //
 // `Browse.SystemStatus` — host-local hardware/network status for the
 // top-right HUD. Unsupported probes are intentionally quiet: failing to
-// read a Linux/MiSTer sysfs/procfs path simply leaves the related icon
+// read a Linux/MiSTer sysfs/procfs path (or, for the battery, the optional
+// I2C fuel gauge `mister_battery` probes) simply leaves the related icon
 // hidden.
 
 use cxx_qt::{Initialize, Threading};
@@ -33,13 +34,21 @@ pub struct SystemStatusRust {
     has_wifi_internet: bool,
     has_lan_internet: bool,
     has_bluetooth: bool,
+    has_battery: bool,
+    battery_percent: i32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "mirrors the SystemStatusRust qproperty surface it feeds; folding these into a bitset would obscure the field-by-field diff in apply_local_status"
+)]
 struct LocalStatus {
     has_wifi_internet: bool,
     has_lan_internet: bool,
     has_bluetooth: bool,
+    has_battery: bool,
+    battery_percent: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,6 +71,8 @@ pub mod ffi {
         #[qproperty(bool, has_wifi_internet)]
         #[qproperty(bool, has_lan_internet)]
         #[qproperty(bool, has_bluetooth)]
+        #[qproperty(bool, has_battery)]
+        #[qproperty(i32, battery_percent)]
         type SystemStatus = super::SystemStatusRust;
     }
 
@@ -170,15 +181,27 @@ fn apply_local_status(mut model: Pin<&mut ffi::SystemStatus>, status: LocalStatu
     if model.has_bluetooth != status.has_bluetooth {
         model.as_mut().set_has_bluetooth(status.has_bluetooth);
     }
+    if model.has_battery != status.has_battery {
+        model.as_mut().set_has_battery(status.has_battery);
+    }
+    if model.battery_percent != status.battery_percent {
+        model.as_mut().set_battery_percent(status.battery_percent);
+    }
 }
 
 pub fn support_summary_lines() -> Vec<String> {
     let status = probe_local_status();
-    vec![
+    let mut lines = vec![
         format!("Wi-Fi internet: {}", yes_no(status.has_wifi_internet)),
         format!("LAN internet: {}", yes_no(status.has_lan_internet)),
         format!("Bluetooth: {}", yes_no(status.has_bluetooth)),
-    ]
+    ];
+    lines.push(if status.has_battery {
+        format!("Battery: {}%", status.battery_percent)
+    } else {
+        "Battery: no".to_string()
+    });
+    lines
 }
 
 fn yes_no(value: bool) -> &'static str {
@@ -198,17 +221,22 @@ fn probe_local_status() -> LocalStatus {
             InterfaceKind::Lan => (false, true),
         });
 
+    let battery_percent = crate::mister_battery::read_capacity_percent();
+
     let status = LocalStatus {
         has_wifi_internet: network.0,
         has_lan_internet: network.1,
         has_bluetooth: bluetooth_adapter_present(),
+        has_battery: battery_percent.is_some(),
+        battery_percent: i32::from(battery_percent.unwrap_or(0)),
     };
     crate::startup_trace(format!(
-        "rust:model SystemStatus probe dur_ms={} wifi={} lan={} bt={}",
+        "rust:model SystemStatus probe dur_ms={} wifi={} lan={} bt={} battery={:?}",
         started.elapsed().as_millis(),
         status.has_wifi_internet,
         status.has_lan_internet,
-        status.has_bluetooth
+        status.has_bluetooth,
+        battery_percent
     ));
     status
 }

@@ -486,6 +486,14 @@ Français - Wilfried</source>
     </message>
 </context>
 <context>
+    <name>HeaderBar</name>
+    <message>
+        <location filename="../components/HeaderBar.qml" line="220"/>
+        <source>%1%</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>HubScreen</name>
     <message>
         <location filename="../theme/CategoryIds.qml" line="45"/>

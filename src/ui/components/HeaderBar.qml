@@ -94,6 +94,23 @@ Item {
         return !isNaN(date.getTime()) && date.getFullYear() >= 2020;
     }
 
+    // Battery.svg icon variant for the current reading. Thresholds are a
+    // simple four-way split of the 0-100 capacity Browse.SystemStatus
+    // reports from the optional MiSTer battery HAT -- there is no
+    // established convention to match since Main_MiSTer's own System
+    // Information page shows the icon-less "n/a"/"NN%" battery.cpp reading
+    // as plain text, not a level glyph.
+    function _batteryIconName(): string {
+        const percent = Browse.SystemStatus.battery_percent;
+        if (percent >= 75)
+            return "BatteryFull";
+        if (percent >= 40)
+            return "BatteryHalf";
+        if (percent >= 15)
+            return "BatteryLow";
+        return "BatteryEmpty";
+    }
+
     function _clockMetricSample(): string {
         const sample = header._clockUses12Hour() ? new Date(2000, 0, 1, 12, 59) : new Date(2000, 0, 1, 23, 59);
         return header._clockText(sample);
@@ -107,8 +124,19 @@ Item {
         font.pixelSize: Sizing.headerRowHeight
     }
 
-    // Host status row — NFC / Wi-Fi / LAN / Bluetooth icons plus the
-    // wall clock, right-anchored so badges can appear and disappear
+    // Widest battery reading ("100%") measured once so the percentage
+    // label's width does not change -- and nudge the icons to its left --
+    // as the reading ticks between one and three digits.
+    TextMetrics {
+        id: batteryPercentMetrics
+
+        text: "100%"
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontCaption
+    }
+
+    // Host status row — NFC / Wi-Fi / LAN / Bluetooth / Battery icons plus
+    // the wall clock, right-anchored so badges can appear and disappear
     // without nudging the clock away from the edge. Clock width is
     // measured from the widest sample for the selected 12h/24h format.
     //
@@ -169,6 +197,31 @@ Item {
             visible: header.statusIconsEnabled && Browse.SystemStatus.has_bluetooth
             source: Resources.statusIconUrl("Bluetooth", Theme.textPrimary)
             name: "Bluetooth"
+        }
+
+        StatusIcon {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: header.statusIconsEnabled && Browse.SystemStatus.has_battery
+            source: Resources.statusIconUrl(header._batteryIconName(), Theme.textPrimary)
+            name: "Battery"
+        }
+
+        // Percentage reading next to the battery icon. Hidden on the CRT
+        // profile -- its native-resolution HUD only has room for the icon,
+        // matching how Main_MiSTer's own low-res menu core keeps its status
+        // row to icon-sized glyphs.
+        Text {
+            id: batteryPercentLabel
+
+            visible: header.statusIconsEnabled && Browse.SystemStatus.has_battery && !Theme.crtNativePath
+            anchors.verticalCenter: parent.verticalCenter
+            width: batteryPercentLabel.visible ? Sizing.px(batteryPercentMetrics.advanceWidth) : 0
+            horizontalAlignment: Text.AlignLeft
+            text: qsTr("%1%").arg(Browse.SystemStatus.battery_percent)
+            font.family: Theme.fontUi
+            font.pixelSize: Sizing.fontCaption
+            color: Theme.textPrimary
+            renderType: Text.NativeRendering
         }
 
         Text {

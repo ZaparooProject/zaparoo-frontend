@@ -8,6 +8,7 @@ mod hub_cover_manifest;
 pub mod image_overrides;
 mod media_image_cache;
 mod media_meta_cache;
+mod mister_battery;
 mod mister_runtime;
 mod models;
 pub mod system_logos;
