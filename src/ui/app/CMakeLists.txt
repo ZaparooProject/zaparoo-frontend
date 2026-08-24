@@ -28,9 +28,13 @@ set(_APP_RESOURCES
 # category, and icon SVGs are pre-rasterized into resources/baked/icons.zbin by
 # `just bake-icons`; anything not in that atlas falls back to rasterizing through
 # QtSvg on first load. Top-level icons
-# (folder, file, loading, settings, navigation arrows, D-pad, ...) live under
-# resources/images/icons/. Gamepad button glyphs (ButtonA/B/X/Y/L/R) ship
-# as PNG under resources/images/buttons/<layout>/.
+# (folder, file, loading, settings, navigation arrows, ...) live under
+# resources/images/icons/. Gamepad button and D-pad glyphs ship as
+# per-style SVG under resources/images/buttons/<id>/ (the same neutral
+# style_a/b/c/d ids as the "Style A/B/C/D" picker, plus style_e for
+# keyboard), named by physical position (FaceEast/South/North/West,
+# ShoulderL/R, Dpad/Up/Down/Left/Right) -- every glyph in the help bar
+# comes from the same style, so nothing looks mismatched.
 # Globs use CONFIGURE_DEPENDS so adding/removing a file triggers a re-glob
 # on the next build.
 file(GLOB _HEADER_LOGO CONFIGURE_DEPENDS
@@ -48,7 +52,7 @@ file(GLOB _UI_ICONS CONFIGURE_DEPENDS
     "${_RESOURCE_ROOT}/images/icons/*.png"
     "${_RESOURCE_ROOT}/images/icons/*.svg")
 file(GLOB _BUTTON_ICONS CONFIGURE_DEPENDS
-    "${_RESOURCE_ROOT}/images/buttons/*/*.png")
+    "${_RESOURCE_ROOT}/images/buttons/*/*.svg")
 list(APPEND _APP_RESOURCES
     ${_HEADER_LOGO} ${_SYSTEM_LOGOS} ${_SYSTEM_COLOR_LOGOS} ${_CATEGORY_LOGOS} ${_STATUS_ICONS}
     ${_UI_ICONS} ${_BUTTON_ICONS})

@@ -1,0 +1,17 @@
+Kenney Input Prompts Attribution
+================================
+
+This software bundles the help-bar button and D-pad glyphs under
+resources/images/buttons/{style_a,style_b,style_c,style_d,style_e}/ (face
+buttons, shoulders, and D-pad/arrow-key glyphs for every style), derived
+from:
+
+  Input Prompts (1.5)
+  by Kenney
+  https://kenney.nl/assets/input-prompts
+
+Released under the Creative Commons CC0 1.0 Universal (public domain)
+dedication: https://creativecommons.org/publicdomain/zero/1.0/
+
+No attribution is legally required; this credit is included as a courtesy,
+and supporting Kenney is encouraged.

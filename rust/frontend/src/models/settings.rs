@@ -50,16 +50,29 @@
 //   * `available_color_schemes` / `current_color_scheme` — curated live color
 //     presets. Missing and unknown values normalize to "zaparoo-dark"; the
 //     setting is mirrored into state.toml and frontend.toml.
-//   * `available_button_layouts` — CONSTANT. Single-letter ids used to
-//     compose resources/images/buttons/<layout>/Button*.png. User-facing
-//     labels are "Style A/B/C/D" (see
-//     `SettingsScreen.qml::_buttonLayoutDisplay`) so the picker stays a
-//     neutral aesthetic choice and avoids implying platform affiliation.
+//   * `available_button_layouts` — CONSTANT. `auto` plus the neutral style
+//     ids used to compose resources/images/buttons/<id>/*.svg:
+//     `style_a`/`style_b`/`style_c`/`style_d`/`style_e`. User-facing labels
+//     are "Automatic"/"Style A/B/C/D/E" (see
+//     `SettingsScreen.qml::_buttonLayoutDisplay`), deliberately neutral and
+//     never named after a controller maker — see AGENTS.md.
 //   * `current_button_layout` — READ + NOTIFY, persisted. Defaults to
-//     "a" — the new id for the previous "nintendo" asset directory.
-//     `normalize_button_layout` migrates legacy persisted values
-//     (`nintendo`/`xbox`/`sony`) to the new ids so users keep their
-//     selection across the rename.
+//     "auto", which lets `Browse.ControllerReport` (fed by Main_MiSTer's
+//     input report, see `zaparoo_core::controller_report`) pick the style id
+//     at runtime; `MainLayout.qml` resolves `auto` to an effective id for
+//     `Resources`. A manual pick only pins the *artwork style* — confirm/
+//     cancel face glyphs always follow the live report regardless, since
+//     which physical button accepts is a fact about the connected
+//     controller, not an aesthetic choice. `normalize_button_layout` force-
+//     migrates every pre-autodetect persisted value (the bare `a`/`b`/`c`/`d`
+//     ids, and the even older `nintendo`/`xbox`/`sony` aliases) to "auto" —
+//     not to the matching `style_x` — so every existing install tries
+//     autodetection at least once after upgrading, rather than staying
+//     silently pinned to whatever it had before "auto" existed. The
+//     `style_` prefix is what makes this safe to do exactly once: no
+//     pre-autodetect build could ever have persisted a `style_x` value, so
+//     seeing one unambiguously means the user picked it after trying
+//     autodetect, and it's left alone.
 //   * `current_mouse_enabled` — READ + NOTIFY, persisted. Defaults to true
 //     so existing installs keep the visible cursor and mouse hit targets.
 //   * `current_reduce_motion` — READ + NOTIFY, persisted. Defaults to false
@@ -69,6 +82,18 @@
 //     Toggling it writes `[logging] debug = …` into frontend.toml; the
 //     tracing subscriber is built once at startup so the change only takes
 //     effect on the next launch (mirrors how `language` works).
+//   * `current_swap_confirm_cancel` — READ + NOTIFY, persisted. Defaults to
+//     false. Flips which physical button accepts vs cancels at the
+//     key->action dispatch seam in `Main.qml`, independent of Main_MiSTer's
+//     own OSD OK/Cancel swap — a way to fix a mucked-up controller mapping
+//     without leaving the frontend. Never applies while the keyboard is the
+//     active input source (`MainLayout.qml`'s `_keyboardActive`); the
+//     help-bar glyphs flip in lockstep via the same guard.
+//   * `current_swap_options_view` — READ + NOTIFY, persisted. Defaults to
+//     false. Same idea as `current_swap_confirm_cancel` but for
+//     Options/View (X/Y) — a backwards X/Y mapping is common enough on its
+//     own to warrant an independent toggle. Same key->action seam, same
+//     keyboard exemption, same help-bar lockstep.
 // Frontend-owned durable settings are mirrored into both `state.toml`
 // and `frontend.toml`. `state.toml` keeps the in-process snapshot
 // coherent; `frontend.toml` is the durable copy that survives MiSTer's
@@ -163,8 +188,18 @@ const COLOR_SCHEMES: &[&str] = &[
     "solarized-light",
 ];
 const DEFAULT_COLOR_SCHEME: &str = "zaparoo-dark";
-const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
-const DEFAULT_BUTTON_LAYOUT: &str = "a";
+// "auto" detects the connected controller via Browse.ControllerReport and
+// picks the style id at runtime; a fixed id pins the artwork. "auto" leads
+// so it's the default; "style_e" is a style too, auto-selected when the
+// active input source is the keyboard. The "style_" prefix (vs. the old
+// bare "a"/"b"/"c"/"d") is deliberate: it's a value no pre-autodetect
+// install could ever have persisted, so `normalize_button_layout` can tell
+// "this was written before autodetect existed" from "the user picked this
+// after trying autodetect" by shape alone, with no separate migration flag.
+const BUTTON_LAYOUTS: &[&str] = &[
+    "auto", "style_a", "style_b", "style_c", "style_d", "style_e",
+];
+const DEFAULT_BUTTON_LAYOUT: &str = "auto";
 // Screensaver idle-timeout choices. Values are seconds as ASCII
 // strings, with the `"off"` sentinel meaning "never activate".
 // Default of 5 minutes matches typical TV/console screensavers and
@@ -226,6 +261,8 @@ pub struct SettingsRust {
     current_debug_logging: bool,
     current_show_hidden: bool,
     current_show_original_filenames: bool,
+    current_swap_confirm_cancel: bool,
+    current_swap_options_view: bool,
     available_screensaver_timeouts: QStringList,
     current_screensaver_timeout: QString,
     available_media_image_types: QStringList,
@@ -274,6 +311,8 @@ pub mod ffi {
         #[qproperty(bool, current_debug_logging, READ, WRITE = set_debug_logging, NOTIFY)]
         #[qproperty(bool, current_show_hidden, READ, WRITE = set_show_hidden, NOTIFY)]
         #[qproperty(bool, current_show_original_filenames, READ, WRITE = set_show_original_filenames, NOTIFY)]
+        #[qproperty(bool, current_swap_confirm_cancel, READ, WRITE = set_swap_confirm_cancel, NOTIFY)]
+        #[qproperty(bool, current_swap_options_view, READ, WRITE = set_swap_options_view, NOTIFY)]
         #[qproperty(QStringList, available_screensaver_timeouts, READ, CONSTANT)]
         #[qproperty(QString, current_screensaver_timeout, READ, WRITE = set_screensaver_timeout, NOTIFY)]
         #[qproperty(QStringList, available_media_image_types, READ, CONSTANT)]
@@ -346,6 +385,12 @@ pub mod ffi {
         fn set_show_original_filenames(self: Pin<&mut Settings>, value: bool);
 
         #[qinvokable]
+        fn set_swap_confirm_cancel(self: Pin<&mut Settings>, value: bool);
+
+        #[qinvokable]
+        fn set_swap_options_view(self: Pin<&mut Settings>, value: bool);
+
+        #[qinvokable]
         fn set_region(self: Pin<&mut Settings>, value: QString);
     }
 
@@ -405,6 +450,8 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().current_debug_logging = merged.debug_logging;
         self.as_mut().rust_mut().current_show_hidden = merged.show_hidden;
         self.as_mut().rust_mut().current_show_original_filenames = merged.show_original_filenames;
+        self.as_mut().rust_mut().current_swap_confirm_cancel = merged.swap_confirm_cancel;
+        self.as_mut().rust_mut().current_swap_options_view = merged.swap_options_view;
         self.as_mut().rust_mut().available_screensaver_timeouts = screensaver_timeouts();
         self.as_mut().rust_mut().current_screensaver_timeout =
             QString::from(merged.screensaver_timeout.as_str());
@@ -697,6 +744,26 @@ impl ffi::Settings {
         self.as_mut().current_show_original_filenames_changed();
     }
 
+    fn set_swap_confirm_cancel(mut self: Pin<&mut Self>, value: bool) {
+        if self.current_swap_confirm_cancel == value {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.swap_confirm_cancel = value);
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_swap_confirm_cancel = value;
+        self.as_mut().current_swap_confirm_cancel_changed();
+    }
+
+    fn set_swap_options_view(mut self: Pin<&mut Self>, value: bool) {
+        if self.current_swap_options_view == value {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.swap_options_view = value);
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_swap_options_view = value;
+        self.as_mut().current_swap_options_view_changed();
+    }
+
     #[allow(
         clippy::needless_pass_by_value,
         reason = "cxx-qt qinvokable signature requires QString by value"
@@ -759,6 +826,8 @@ fn save_settings_to_config(
             favorites_grouping: settings.favorites_grouping.as_str(),
             show_hidden: settings.show_hidden,
             show_original_filenames: settings.show_original_filenames,
+            swap_confirm_cancel: settings.swap_confirm_cancel,
+            swap_options_view: settings.swap_options_view,
             region: settings.region.as_str(),
             crt_video_standard: settings.crt_video_standard.as_str(),
             crt_h_offset: settings.crt_h_offset,
@@ -938,6 +1007,14 @@ fn merge_settings(
             .settings
             .show_original_filenames
             .unwrap_or(snapshot.show_original_filenames),
+        swap_confirm_cancel: config
+            .settings
+            .swap_confirm_cancel
+            .unwrap_or(snapshot.swap_confirm_cancel),
+        swap_options_view: config
+            .settings
+            .swap_options_view
+            .unwrap_or(snapshot.swap_options_view),
         region: normalize_region(
             config
                 .settings
@@ -1155,19 +1232,27 @@ fn normalize_region(value: &str) -> &'static str {
 
 fn normalize_button_layout(value: &str) -> &'static str {
     let trimmed = value.trim();
-    // Legacy alias map: state files written by builds before the
-    // a/b/c rename hold "nintendo"/"xbox"/"sony"; preserve the user's
-    // pick instead of silently snapping back to the default.
-    let migrated = match trimmed {
-        "nintendo" => "a",
-        "xbox" => "b",
-        "sony" => "c",
-        other => other,
-    };
+    // Any pre-autodetect value -- the original bare single-letter ids
+    // ("a"/"b"/"c"/"d") or the even older platform aliases
+    // ("nintendo"/"xbox"/"sony") -- force-migrates to "auto" rather than to
+    // the matching "style_x", so an existing install tries autodetection at
+    // least once after upgrading instead of staying silently pinned to
+    // whatever it had before "auto" existed. This only needs to fire once
+    // in effect: it's idempotent (every load re-derives "auto" from the
+    // same stale on-disk value until the user picks something), and the
+    // moment they do, the write is a real "style_x" id, which the match
+    // below no longer touches. See the header doc comment above for why
+    // the "style_" prefix makes this unambiguous.
+    if matches!(
+        trimmed,
+        "a" | "b" | "c" | "d" | "nintendo" | "xbox" | "sony"
+    ) {
+        return DEFAULT_BUTTON_LAYOUT;
+    }
     BUTTON_LAYOUTS
         .iter()
         .copied()
-        .find(|layout| *layout == migrated)
+        .find(|layout| *layout == trimmed)
         .unwrap_or(DEFAULT_BUTTON_LAYOUT)
 }
 
@@ -1452,21 +1537,29 @@ mod tests {
     }
 
     #[test]
-    fn button_layout_normalization_defaults_to_a() {
+    fn button_layout_normalization_defaults_to_auto() {
+        assert_eq!(DEFAULT_BUTTON_LAYOUT, "auto");
         assert_eq!(normalize_button_layout(""), DEFAULT_BUTTON_LAYOUT);
         assert_eq!(
-            normalize_button_layout("playstation"),
+            normalize_button_layout("playstation-5"),
             DEFAULT_BUTTON_LAYOUT
         );
-        assert_eq!(normalize_button_layout("b"), "b");
-        assert_eq!(normalize_button_layout("d"), "d");
+        assert_eq!(normalize_button_layout("auto"), "auto");
+        assert_eq!(normalize_button_layout("style_b"), "style_b");
+        assert_eq!(normalize_button_layout("style_d"), "style_d");
+        assert_eq!(normalize_button_layout("style_e"), "style_e");
     }
 
     #[test]
-    fn button_layout_migrates_legacy_vendor_ids() {
-        assert_eq!(normalize_button_layout("nintendo"), "a");
-        assert_eq!(normalize_button_layout("xbox"), "b");
-        assert_eq!(normalize_button_layout("sony"), "c");
+    fn button_layout_force_migrates_every_pre_autodetect_value_to_auto() {
+        // Bare letters (the pre-autodetect "Style A/B/C/D" picker) and the
+        // even older platform aliases all reset to "auto" -- not to the
+        // matching "style_x" -- so every existing install tries
+        // autodetection at least once, rather than staying pinned to
+        // whatever it had before "auto" existed.
+        for legacy in ["a", "b", "c", "d", "nintendo", "xbox", "sony"] {
+            assert_eq!(normalize_button_layout(legacy), "auto");
+        }
     }
 
     #[test]

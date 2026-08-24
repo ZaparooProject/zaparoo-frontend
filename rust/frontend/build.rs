@@ -8,6 +8,7 @@ const MODEL_FILES: &[&str] = &[
     "src/models/action_error.rs",
     "src/models/alternate_versions.rs",
     "src/models/categories.rs",
+    "src/models/controller_report.rs",
     "src/models/crt_video.rs",
     "src/models/favorite_systems.rs",
     "src/models/favorite_systems_state.rs",
