@@ -2478,7 +2478,6 @@ Français - Wilfried</source>
     <name>Tile</name>
     <message>
         <location filename="../components/Tile.qml" line="716"/>
-        <location filename="../components/Tile.qml" line="716"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>
