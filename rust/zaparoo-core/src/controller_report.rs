@@ -205,6 +205,24 @@ fn publish_if_changed(next: Option<ControllerGlyphs>) {
 
 const POLL_INTERVAL: Duration = Duration::from_millis(300);
 
+/// One poll tick: re-reads the file's mtime and, if it differs from the last
+/// observed value, re-parses and republishes. Covers both directions -- a
+/// fresh/changed report is read and published, and a file that becomes
+/// unreadable (deleted, permission change, unmounted) drops `last_mtime`
+/// back to `None` and republishes `None`, restoring the no-report fallback
+/// instead of leaving the help bar showing a stale controller's glyphs.
+fn poll_once(path: &Path, last_mtime: &mut Option<SystemTime>) {
+    let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+    if mtime != *last_mtime {
+        *last_mtime = mtime;
+        publish_if_changed(if mtime.is_some() {
+            read_and_parse(path)
+        } else {
+            None
+        });
+    }
+}
+
 /// Spawns a dedicated OS thread that polls Main's export file for mtime
 /// changes and republishes the resolved glyphs to [`subscribe`] whenever it
 /// changes. Seeds the current value synchronously first, so a cold start
@@ -226,13 +244,7 @@ pub fn spawn_watcher() {
     std::thread::spawn(move || {
         let mut last_mtime: Option<SystemTime> = None;
         loop {
-            if let Ok(meta) = std::fs::metadata(&path) {
-                let mtime = meta.modified().ok();
-                if mtime.is_some() && mtime != last_mtime {
-                    last_mtime = mtime;
-                    publish_if_changed(read_and_parse(&path));
-                }
-            }
+            poll_once(&path, &mut last_mtime);
             std::thread::sleep(POLL_INTERVAL);
         }
     });
@@ -247,7 +259,10 @@ mod tests {
         reason = "tests should fail-fast on unexpected errors"
     )]
 
-    use super::{parse_report, position_to_face, ControllerGlyphs, GlyphProfile};
+    use super::{
+        parse_report, poll_once, position_to_face, subscribe, ControllerGlyphs, GlyphProfile,
+    };
+    use std::time::SystemTime;
 
     #[test]
     fn profile_maps_to_layout_directory() {
@@ -378,5 +393,37 @@ mod tests {
     fn garbage_is_rejected() {
         assert_eq!(parse_report(b"not json"), None);
         assert_eq!(parse_report(b""), None);
+    }
+
+    #[test]
+    fn poll_resets_to_no_report_when_file_becomes_unavailable() {
+        let file = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(file.path(), report("xbox", "east", "south")).expect("write report");
+        let path = file.path().to_path_buf();
+
+        let mut last_mtime: Option<SystemTime> = None;
+        poll_once(&path, &mut last_mtime);
+        assert!(last_mtime.is_some(), "valid report should set last_mtime");
+
+        let mut rx = subscribe();
+        assert_eq!(
+            rx.borrow_and_update().as_ref().map(|g| g.layout),
+            Some("style_b")
+        );
+
+        // The report file disappears (e.g. Main_MiSTer restarts, or the
+        // frontend races a stale/unmounted tmpfs). The next poll must drop
+        // back to the no-report fallback, not keep serving the last glyphs.
+        drop(file);
+        poll_once(&path, &mut last_mtime);
+        assert!(
+            last_mtime.is_none(),
+            "unavailable file should clear last_mtime"
+        );
+        assert_eq!(
+            *rx.borrow_and_update(),
+            None,
+            "unavailable file should republish None"
+        );
     }
 }

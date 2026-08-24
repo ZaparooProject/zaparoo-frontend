@@ -258,12 +258,16 @@ ApplicationWindow {
     // manually-pinned art style must not silently show the wrong button.
     readonly property bool _autoButtonLayout: Browse.Settings.current_button_layout === "auto"
     readonly property string _effectiveButtonLayout: root._autoButtonLayout ? Browse.ControllerReport.glyph_layout : Browse.Settings.current_button_layout
-    // Style "e" is the keyboard style (auto-detected, or manually pinned).
-    // Enter/Escape are fixed keys, so "Swap controller confirm/cancel"
-    // (Settings > Controls & Input) never applies while it's active --
-    // see Main.qml's `_swapConfirmCancelAction`, which uses this same
-    // property to guard the action-dispatch side of the same swap.
-    readonly property bool _keyboardActive: root._effectiveButtonLayout === "style_e"
+    // Whether the keyboard is the *live* active input source, per the
+    // MiSTer input report -- deliberately read straight off
+    // Browse.ControllerReport.glyph_layout, not _effectiveButtonLayout, so a
+    // manual "Style E" pin (Settings lists it alongside A-D) doesn't get
+    // treated as keyboard input just because a controller player likes its
+    // look. Enter/Escape are fixed keys, so "Swap controller confirm/cancel"
+    // (Settings > Controls & Input) never applies while a real keyboard is
+    // active -- see Main.qml's `_swapConfirmCancelAction`, which uses this
+    // same property to guard the action-dispatch side of the same swap.
+    readonly property bool _keyboardActive: Browse.ControllerReport.glyph_layout === "style_e"
     readonly property bool _swapConfirmCancel: Browse.Settings.current_swap_confirm_cancel && !root._keyboardActive
     // "Swap controller options/view" -- same idea as confirm/cancel above,
     // but for ButtonX/ButtonY. Unlike confirm/cancel, Main_MiSTer never
