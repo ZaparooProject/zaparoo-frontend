@@ -50,6 +50,12 @@ MainLayout {
     readonly property string modalSettingNeedsRestart: "restart_confirm"
     readonly property string modalCrtCalibration: "crt_calibration"
     readonly property string modalScrapeSetup: "scrape_setup"
+    readonly property string modalIndexSetup: "index_setup"
+    // Sentinel id for the "All systems" entry on the media job system-
+    // scope picker (Round 11) -- see `_buildSystemScopeEntries`. Must
+    // never collide with a real category or system id; category entries
+    // are prefixed "cat:" for the same reason.
+    readonly property string _systemScopeAll: "*"
 
     // One-shot session flag: an authoritative empty catalog starts one
     // background index at most once per frontend process. Browsing remains
@@ -68,6 +74,12 @@ MainLayout {
     // file and exits with code 42 so Main_MiSTer respawns the frontend
     // with the new mode (see Browse.CrtVideo).
     property string _pendingCrtToggle: ""
+    // Staged debug-logging toggle awaiting the restart-confirm modal:
+    // "" (none), "on", or "off". Unlike the CRT toggle this needs no
+    // Main_MiSTer respawn -- the tracing subscriber is only built once at
+    // startup (see settings.rs), so confirming just persists the value and
+    // takes the normal in-process restart, the same exit as `language`.
+    property string _pendingDebugLoggingToggle: ""
     property bool _discoverMenuPending: false
     property bool _pendingResumeLaunch: false
     property bool _startupRestorePending: false
@@ -319,6 +331,8 @@ MainLayout {
             root.crtCalibrationModalRequested = true;
         else if (modal === root.modalScrapeSetup)
             root.scrapeSetupModalRequested = true;
+        else if (modal === root.modalIndexSetup)
+            root.indexSetupModalRequested = true;
     }
 
     Component.onCompleted: {
@@ -1893,10 +1907,14 @@ MainLayout {
                 root.openLogUploadModal();
             else if (actionId === "runScraper")
                 root.openScrapeSetupModal();
+            else if (actionId === "updateMediaDb")
+                root.openIndexSetupModal();
             else if (actionId === "aboutLicense")
                 root._navigateToAbout();
             else if (actionId === "crtEnable" || actionId === "crtDisable")
                 root.stageCrtToggle(actionId === "crtEnable");
+            else if (actionId === "debugLoggingEnable" || actionId === "debugLoggingDisable")
+                root.stageDebugLoggingToggle(actionId === "debugLoggingEnable");
             else if (actionId === "crtCalibration")
                 root.openCrtCalibrationModal();
         }
@@ -3012,6 +3030,25 @@ MainLayout {
 
     onCloseScrapeSetupRequested: root.closeScrapeSetupModal()
 
+    // Index setup modal lifecycle (round 11). Triggered from the Settings
+    // "Update media database" action when idle; mirrors the scrape setup
+    // modal above minus the scraper choice and re-scrape toggle, since a
+    // full index has neither.
+    function openIndexSetupModal(): void {
+        root._requestModal(root.modalIndexSetup);
+        root.indexSetupModalVisible = true;
+        if (ScreenManager.topModal !== root.modalIndexSetup)
+            ScreenManager.pushModal(root.modalIndexSetup);
+    }
+
+    function closeIndexSetupModal(): void {
+        root.indexSetupModalVisible = false;
+        if (ScreenManager.topModal === root.modalIndexSetup)
+            ScreenManager.popModal();
+    }
+
+    onCloseIndexSetupRequested: root.closeIndexSetupModal()
+
     // Nested picker for the scraper-choice row inside ScrapeSetupModal —
     // stacks a second modal on top (ScreenManager.pushModal appends, so
     // the picker becomes topModal and correctly receives input while the
@@ -3035,6 +3072,58 @@ MainLayout {
     }
 
     onRequestScraperPicker: root.openScraperChoicePicker()
+
+    // Flat "All systems / All <Category> systems / one system" entry list
+    // shared by both media job modals' Systems row. "cat:" ids resolve to
+    // `system_ids_for_category` at Start; the individual-system entries
+    // resolve straight to their own id. Categories with zero indexable
+    // systems are skipped, same gate the systems/categories context menu
+    // already uses to decide whether to offer "index_category"/
+    // "scrape_category" at all.
+    function _buildSystemScopeEntries(): var {
+        const entries = [{
+            id: root._systemScopeAll,
+            label: qsTr("All systems")
+        }];
+        for (let i = 0; i < Browse.CategoriesModel.count; i++) {
+            const category = Browse.CategoriesModel.category_at(i);
+            if (category === "" || Browse.SystemsModel.system_ids_for_category(category).length === 0)
+                continue;
+            entries.push({
+                id: "cat:" + category,
+                label: qsTr("All %1 systems").arg(category)
+            });
+        }
+        const ids = Browse.SystemsModel.all_indexable_system_ids();
+        for (let i = 0; i < ids.length; i++)
+            entries.push({
+                id: ids[i],
+                label: Browse.SystemsModel.system_name_for_id(ids[i])
+            });
+        return entries;
+    }
+
+    // Nested picker for the Systems row, shared by ScrapeSetupModal and
+    // IndexSetupModal (see `requestSystemScopePicker`'s doc comment in
+    // MainLayout.qml for why one signal covers both). The two modals are
+    // mutually exclusive, so whichever one is currently visible is the
+    // request's source and the accept target.
+    function _activeSystemScopeModal(): var {
+        if (root.scrapeSetupModalVisible)
+            return root.scrapeSetupModal;
+        if (root.indexSetupModalVisible)
+            return root.indexSetupModal;
+        return null;
+    }
+
+    function openSystemScopePicker(): void {
+        const target = root._activeSystemScopeModal();
+        if (target === null)
+            return;
+        root.openListPickerModal(qsTr("Systems"), root._buildSystemScopeEntries(), target.selectedSystemScope, "systemScope");
+    }
+
+    onRequestSystemScopePicker: root.openSystemScopePicker()
 
     function handleLogUploadError(): void {
         // LogUpload state 3 is terminal failure; full detail is already logged
@@ -3302,12 +3391,18 @@ MainLayout {
         root.openSettingNeedsRestartModal();
     }
 
+    function stageDebugLoggingToggle(enable: bool): void {
+        root._pendingDebugLoggingToggle = enable ? "on" : "off";
+        root.openSettingNeedsRestartModal();
+    }
+
     function cancelPendingRestart(): void {
         root._pendingLanguageSelection = "";
         root._pendingResolutionSelection = "";
         root._resolutionRestartPending = false;
         root._pendingCrtStandardSelection = "";
         root._pendingCrtToggle = "";
+        root._pendingDebugLoggingToggle = "";
         root.closeSettingNeedsRestartModal();
     }
 
@@ -3330,11 +3425,13 @@ MainLayout {
         const resolution = root._pendingResolutionSelection;
         const resolutionPending = root._resolutionRestartPending;
         const crtStandard = root._pendingCrtStandardSelection;
+        const debugLogging = root._pendingDebugLoggingToggle;
         if (resolutionPending && !Browse.Settings.set_resolution(resolution)) {
             root._pendingLanguageSelection = "";
             root._pendingResolutionSelection = "";
             root._resolutionRestartPending = false;
             root._pendingCrtStandardSelection = "";
+            root._pendingDebugLoggingToggle = "";
             root.closeSettingNeedsRestartModal();
             return;
         }
@@ -3342,9 +3439,12 @@ MainLayout {
         root._pendingResolutionSelection = "";
         root._resolutionRestartPending = false;
         root._pendingCrtStandardSelection = "";
+        root._pendingDebugLoggingToggle = "";
         root.closeSettingNeedsRestartModal();
         if (language !== "")
             Browse.Settings.set_language(language);
+        if (debugLogging !== "")
+            Browse.Settings.set_debug_logging(debugLogging === "on");
         if (crtStandard !== "") {
             Browse.CrtVideo.set_video_standard(crtStandard);
             // A standard change must respawn through Main_MiSTer (exit
@@ -3572,6 +3672,17 @@ MainLayout {
             root.closeListPickerModal();
             if (root.scrapeSetupModal !== null)
                 root.scrapeSetupModal.selectedScraperId = selectedId;
+            return;
+        }
+        // Round 11: nested Systems-row picker shared by ScrapeSetupModal
+        // and IndexSetupModal (see `openSystemScopePicker`/
+        // `_activeSystemScopeModal` above) -- same "write straight back to
+        // the still-open modal underneath" pattern as `scraperChoice`.
+        if (fieldId === "systemScope") {
+            root.closeListPickerModal();
+            const target = root._activeSystemScopeModal();
+            if (target !== null)
+                target.selectedSystemScope = selectedId;
             return;
         }
         if (fieldId === "resolution") {
@@ -3859,6 +3970,9 @@ MainLayout {
             } else if (ScreenManager.topModal === root.modalScrapeSetup) {
                 if (root.scrapeSetupModal !== null)
                     root.scrapeSetupModal.handleAction(action);
+            } else if (ScreenManager.topModal === root.modalIndexSetup) {
+                if (root.indexSetupModal !== null)
+                    root.indexSetupModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalQuitConfirm) {
                 if (root.quitConfirmModal !== null)
                     root.quitConfirmModal.handleAction(action);

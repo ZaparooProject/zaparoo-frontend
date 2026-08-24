@@ -83,6 +83,8 @@ TestCase {
                     coverKey: ""
                     favorite: 0
                     disambiguatingTags: ""
+                    entryType: "media"
+                    fileCount: 0
                 }
                 ListElement {
                     name: "Beta"
@@ -90,6 +92,8 @@ TestCase {
                     coverKey: ""
                     favorite: 1
                     disambiguatingTags: "US"
+                    entryType: "media"
+                    fileCount: 0
                 }
             }
 

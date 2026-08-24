@@ -1178,6 +1178,21 @@ TestCase {
         verify(Math.abs(gridToLabel - labelToHelpBar) <= 2, "grid->label (" + gridToLabel + ") and label->help-bar (" + labelToHelpBar + ") gaps must match");
     }
 
+    // Round 11: the Hub footer label used to reserve a flat third of the
+    // screen on each side regardless of how wide the PageIndicator it was
+    // clearing actually is. It must now track the indicator's real
+    // measured width instead of a fixed fraction, and stay well under the
+    // old one-third budget on an ordinary screen.
+    function test_hub_active_label_side_inset_tracks_page_indicator_width(): void {
+        const hub = main.hubScreen;
+        const activeLabel = findChild(hub, "hubActiveLabel");
+        const pageIndicator = findChild(hub, "hubPageIndicator");
+        verify(activeLabel !== null);
+        verify(pageIndicator !== null);
+        verify(activeLabel.sideInset >= pageIndicator.width, "inset must clear the indicator's real width");
+        verify(activeLabel.sideInset < hub.width / 3, "inset must not still be paying the old flat one-third budget");
+    }
+
     // resetFocus is the test-harness reset and the cold-launch state — it
     // must always land on Resume regardless of where focus was before.
     function test_reset_focus_seats_on_resume(): void {

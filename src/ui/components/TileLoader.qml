@@ -33,6 +33,12 @@ Loader {
     // Newline-joined disambiguating-tag tokens (region, disc, rev, ...).
     // Default empty so hosts that don't wire it render no variant badges.
     property string disambiguatingTags: ""
+    // Round 11: `entryType`/`fileCount` back the folder/root item-count
+    // suffix (see Tile.qml's `delegateTagsSuffix`/Format.rowSuffix).
+    // Defaults are a no-op for hosts whose model doesn't publish these
+    // roles (the Hub's hand-built ListModel).
+    property string entryType: ""
+    property int fileCount: 0
     // Optional pulse counter — incremented by the host when the user
     // commits on the focused tile (forward navigation or game launch, which
     // share one physical press cue). Tile.qml reads it via

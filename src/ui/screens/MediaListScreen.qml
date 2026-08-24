@@ -186,6 +186,37 @@ Item {
     // BrowseLayouts.qml's `footer.pageCueInFooter`.
     readonly property bool _pageCueInFooter: !!(root._footerProfile && root._footerProfile.pageCueInFooter)
     readonly property bool _showGridPageCue: !root._listLayout && root.renderGridLayout && !root._pageCueInFooter
+    // Round 11: list layout gets the same interactive chevron+"N / M"
+    // PageIndicator grid layout already had, instead of a plain "Page N /
+    // M" text or (on Games) an item-position counter with no chevrons at
+    // all. Sibling to `_showGridPageCue` rather than folded into it so
+    // that property's three existing (grid-only) use sites are untouched.
+    readonly property bool _showListPageCue: root._listLayout && !root._pageCueInFooter
+    // Whichever layout is active, is its page cue hosted in the top strip.
+    readonly property bool _showTopPageCue: root._showGridPageCue || root._showListPageCue
+    // List layout's own page size for paging math -- the number of rows
+    // actually on screen at once, same value `listCard.visibleRowCount`
+    // resolves to (a screen's own `targetVisibleRowCount`, when set, is
+    // exactly what that resolves to, so this stays correct for every
+    // MediaListScreen subclass without needing a per-screen override).
+    readonly property int _listVisiblePageSize: Math.max(1, listCard.visibleRowCount)
+    // Mirrors PagedGrid.qml's own `totalItems`/`totalPageCount`/
+    // `hasPagesBelow` formulas (see that file's doc comments), substituting
+    // the list's own page size and `mediaGrid.itemCount`/`currentIndex` —
+    // both tracked identically regardless of which layout is visible (see
+    // `listCard.currentIndex: mediaGrid.currentIndex` below).
+    readonly property int _listTotalItems: root.paginationTotalKnown && root.gridTotalItemsOverride >= 0 ? root.gridTotalItemsOverride : mediaGrid.itemCount
+    readonly property int _listTotalPageCount: Math.max(1, Math.ceil(root._listTotalItems / root._listVisiblePageSize))
+    readonly property int _listCurrentPage: Math.floor(mediaGrid.currentIndex / root._listVisiblePageSize)
+    readonly property bool _listHasPagesAbove: root._listCurrentPage > 0
+    readonly property bool _listHasPagesBelow: root._listCurrentPage < root._listTotalPageCount - 1 || root.gridHasMorePages
+    // Round 11: measure the footer's corner occupants (the left count text,
+    // the right PageIndicator) instead of reserving a flat third of the
+    // screen for each — see SystemsScreen.qml's identical treatment and
+    // ActiveLabel.qml's own name/tags measurement for the same idiom.
+    readonly property int _bottomStatusLeftTextWidth: Math.ceil(Math.max(bottomTotalTextMetrics.advanceWidth, bottomTotalTextMetrics.boundingRect.width) + (Theme.crtNativePath ? 0 : Sizing.px(2)))
+    readonly property int _footerLeftInset: root._bottomStatusLeftTextWidth + root.bottomStatusLeftMargin
+    readonly property int _footerRightInset: footerPageIndicator.width + root.bottomStatusRightMargin
     readonly property bool _crtListStrip: Theme.crtNativePath && root._listLayout
     readonly property int _listOverlayBottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.overlayBottomMargin : Sizing.pctH(15)
     // Hide list/grid content as soon as the model enters Loading, but
@@ -274,6 +305,24 @@ Item {
 
     function _detailImageKey(): string {
         return root.mediaModel !== null ? (root.mediaModel.current_detail_image_key ?? "") : "";
+    }
+
+    // Default footer-label dim suffix when the screen doesn't supply its
+    // own `activeLabelTagsProvider` (Games/Favorites/Recents). Composes
+    // the same folder-count suffix the grid tiles and list rows show
+    // (Format.rowSuffix) from three index-based lookups, each guarded so
+    // a model missing the invokable (a plain ListModel in tests, or a
+    // real model that's never had a folder row) just no-ops back to plain
+    // disambiguating tags -- see games.rs's `entry_type_at`/
+    // `file_count_at`, the only model that currently has folder rows.
+    function _defaultActiveLabelTags(): string {
+        if (mediaGrid.itemCount <= 0 || root.mediaModel === null)
+            return "";
+        const index = mediaGrid.currentIndex;
+        const tags = typeof root.mediaModel.disambiguating_tags_at === "function" ? root.mediaModel.disambiguating_tags_at(index) : "";
+        const entryType = typeof root.mediaModel.entry_type_at === "function" ? root.mediaModel.entry_type_at(index) : "media";
+        const fileCount = typeof root.mediaModel.file_count_at === "function" ? root.mediaModel.file_count_at(index) : 0;
+        return Format.rowSuffix(entryType, tags, fileCount);
     }
 
     // Prepends a "System" row ahead of the model's own tag rows when a
@@ -399,7 +448,7 @@ Item {
             return;
         }
         if (root._listLayout) {
-            root._performLinearMove(delta * mediaGrid.pageSize);
+            root._performLinearMove(delta * root._listVisiblePageSize);
             return;
         }
         mediaGrid.pageBy(delta);
@@ -545,8 +594,8 @@ Item {
         height: root._statusProfile ? root._statusProfile.stripHeight : (root.showTopStrip ? Sizing.pctH(7) : 0)
         slotMargin: root._statusProfile ? root._statusProfile.slotMargin : Sizing.pctW(3)
         title: typeof root.topStripTitleProvider === "function" ? root.topStripTitleProvider() : root.screenTitle
-        currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : mediaGrid.currentPage
-        totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize))
+        currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : (root._listLayout ? root._listCurrentPage : mediaGrid.currentPage)
+        totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : (root._listLayout ? root._listTotalPageCount : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize)))
         pageTotalKnown: root.paginationTotalKnown
         // List layout keeps each screen's own provider (or the generic
         // fallback) exactly as before. Grid layout shows the same count
@@ -560,12 +609,21 @@ Item {
         // Screens with a real total (Games/Favorite Systems) supply their
         // own `topStripTotalTextProvider` and never reach this branch.
         totalText: (root._listLayout || root._showGridPageCue) ? (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root.paginationTotalKnown && root._count() > 0 ? qsTr("%1 games").arg(root._count()) : "")) : ""
-        rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : (!root.paginationTotalKnown || !root._listLayout || mediaGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(mediaGrid.currentIndex + 1).arg(Math.max(1, root._count())))
+        // Round 11: list layout now mounts the same interactive
+        // PageIndicator grid layout does (`pageIndicatorMode` below), so a
+        // per-screen provider returning the old "N / M items" position
+        // counter would just never be shown -- those screens dropped it.
+        // A provider returning something else (GamesScreen's transient
+        // "Loading more…" while a background fetch fills in scrolled-past
+        // rows) still needs to be seen, though, so `pageIndicatorMode`
+        // yields the slot back to this plain text for as long as it's
+        // non-empty rather than only ever showing while grid/list is idle.
+        rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : ""
         showPageCounter: root._listLayout || root._showGridPageCue
-        pageIndicatorMode: root._showGridPageCue
+        pageIndicatorMode: root._showTopPageCue && topStrip.rightTextOverride === ""
         pageIndicatorChevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
-        hasPagesAbove: mediaGrid.hasPagesAbove
-        hasPagesBelow: mediaGrid.hasPagesBelow
+        hasPagesAbove: root._listLayout ? root._listHasPagesAbove : mediaGrid.hasPagesAbove
+        hasPagesBelow: root._listLayout ? root._listHasPagesBelow : mediaGrid.hasPagesBelow
         onPageRequested: delta => root._performPage(delta)
     }
 
@@ -690,21 +748,34 @@ Item {
         anchors.bottom: root.activeLabelAtBottom ? parent.bottom : undefined
         anchors.bottomMargin: root.activeLabelAtBottom ? root.activeLabelBottomMargin : 0
         height: root.activeLabelHeight
-        sideInset: root._pageCueInFooter ? Sizing.px(width / 3) : Sizing.pctW(3)
+        sideInset: root._pageCueInFooter ? Math.max(root._footerLeftInset, root._footerRightInset) : Sizing.pctW(3)
         text: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
         // Full (untrimmed) disambiguation tokens for the focused item, shown as a
         // dim suffix. Uses an explicit provider when given, else the model's
         // disambiguating_tags_at; guarded so a plain ListModel (tests) is safe.
-        tags: typeof root.activeLabelTagsProvider === "function" ? root.activeLabelTagsProvider() : ((mediaGrid.itemCount > 0 && root.mediaModel && typeof root.mediaModel.disambiguating_tags_at === "function") ? root.mediaModel.disambiguating_tags_at(mediaGrid.currentIndex) : "")
+        tags: typeof root.activeLabelTagsProvider === "function" ? root.activeLabelTagsProvider() : root._defaultActiveLabelTags()
     }
 
+    TextMetrics {
+        id: bottomTotalTextMetrics
+        text: root.bottomStatusLeftText
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontSection
+    }
+
+    // Round 11: both this and `footerPageIndicator` below used to be
+    // grid-only (`!root._listLayout`). On the CRT profile (`_pageCueInFooter`,
+    // top strip hidden entirely) that left list layout with no page cue
+    // anywhere at all. `bottomStatusLeftText` is already layout-agnostic
+    // content (a screen's own total-count text, e.g. GamesScreen's "%1
+    // games"), so showing it for list layout too needs no new plumbing.
     Text {
         id: bottomTotalText
-        visible: !root._gateHide && !root._listLayout && root._pageCueInFooter && root.bottomStatusLeftText !== ""
+        visible: !root._gateHide && root._pageCueInFooter && root.bottomStatusLeftText !== ""
         anchors.left: parent.left
         anchors.leftMargin: root.bottomStatusLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - root.bottomStatusLeftMargin
+        width: root._bottomStatusLeftTextWidth
         height: Sizing.fontSection
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
@@ -719,16 +790,16 @@ Item {
     PageIndicator {
         id: footerPageIndicator
         objectName: "mediaListFooterPageIndicator"
-        visible: !root._gateHide && !root._listLayout && root.renderGridLayout && root._pageCueInFooter
+        visible: !root._gateHide && root._pageCueInFooter && (root._listLayout || root.renderGridLayout)
         anchors.right: parent.right
         anchors.rightMargin: root.bottomStatusRightMargin
         anchors.verticalCenter: activeLabel.verticalCenter
         chevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
-        currentPage: mediaGrid.currentPage
-        totalPages: mediaGrid.totalPageCount
-        pageTotalKnown: mediaGrid.paginationTotalKnown
-        hasPagesAbove: mediaGrid.hasPagesAbove
-        hasPagesBelow: mediaGrid.hasPagesBelow
+        currentPage: root._listLayout ? root._listCurrentPage : mediaGrid.currentPage
+        totalPages: root._listLayout ? root._listTotalPageCount : mediaGrid.totalPageCount
+        pageTotalKnown: root.paginationTotalKnown
+        hasPagesAbove: root._listLayout ? root._listHasPagesAbove : mediaGrid.hasPagesAbove
+        hasPagesBelow: root._listLayout ? root._listHasPagesBelow : mediaGrid.hasPagesBelow
         onPageRequested: delta => root._performPage(delta)
     }
 

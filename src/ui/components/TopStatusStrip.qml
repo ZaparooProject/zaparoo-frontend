@@ -29,18 +29,18 @@ Item {
     property bool pageTotalKnown: true
     property string totalText: "" // formatted; empty hides the slot
     property string rightTextOverride: "" // formatted; non-empty replaces page text
-    // List layouts show paging as plain "Page N / M" text here (unaffected
-    // by any of this -- they have their own separate chevron-band scroll
-    // chrome elsewhere). Grid layout's cue lives in the footer on CRT
-    // (`footer.pageCueInFooter`, BrowseLayouts.qml) but up here, alongside
-    // the count badge, on every other theme -- see `pageIndicatorMode`.
-    // Default true keeps every existing (list-layout) caller byte-identical.
+    // False hides this slot entirely (both the plain page text and the
+    // chevron PageIndicator below). Both grid and list layout show a page
+    // cue here, alongside the count badge, on every theme except CRT
+    // (`footer.pageCueInFooter`, BrowseLayouts.qml, keeps it in the footer
+    // instead -- see `pageIndicatorMode`).
     property bool showPageCounter: true
     // True mounts a `PageIndicator` (chevrons + "N / M") in the right slot
-    // instead of the plain page-count Text -- the grid-layout page cue,
-    // relocated here from the footer. False (default, every list-layout
-    // caller) keeps this slot exactly as it always was. See
-    // SystemsScreen.qml / MediaListScreen.qml for the callers.
+    // instead of the plain page-count Text. Round 9 relocated this here
+    // from the footer for grid layout; round 11 gave list layout the same
+    // treatment (it used to show a plain item-position counter with no
+    // chevrons at all) -- see SystemsScreen.qml / MediaListScreen.qml for
+    // the callers.
     property bool pageIndicatorMode: false
     property bool hasPagesAbove: false
     property bool hasPagesBelow: false

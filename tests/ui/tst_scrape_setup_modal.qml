@@ -7,13 +7,13 @@ import QtTest
 import Zaparoo.Theme
 import Zaparoo.Ui
 
-// Round 10 coverage for the scrape setup modal's own state machine:
-// row navigation, the inline re-scrape toggle, and the two dispatch
-// signals (requestScraperPicker, closeRequested). Doesn't touch
-// Browse.MediaStatus's live scraper data -- the modal never calls
-// refresh_scrapers() itself (Main.qml's openScrapeSetupModal does that),
-// so scraper_ids/scraper_names stay empty here and every assertion below
-// is about the row/toggle state machine, not scraper content.
+// Round 10/11 coverage for the scrape setup modal's own state machine:
+// row navigation, the inline re-scrape toggle, and the dispatch signals
+// (requestScraperPicker, requestSystemScopePicker, closeRequested).
+// Doesn't touch Browse.MediaStatus's live scraper data -- the modal never
+// calls refresh_scrapers() itself (Main.qml's openScrapeSetupModal does
+// that), so scraper_ids/scraper_names stay empty here and every assertion
+// below is about the row/toggle state machine, not scraper content.
 TestCase {
     id: testCase
     name: "UiScrapeSetupModal"
@@ -35,6 +35,12 @@ TestCase {
     }
 
     SignalSpy {
+        id: systemScopePickerSpy
+        target: modal
+        signalName: "requestSystemScopePicker"
+    }
+
+    SignalSpy {
         id: closeSpy
         target: modal
         signalName: "closeRequested"
@@ -49,15 +55,19 @@ TestCase {
         modal.open = false;
         modal.open = true;
         pickerSpy.clear();
+        systemScopePickerSpy.clear();
         closeSpy.clear();
     }
 
     function test_starts_on_the_scraper_row(): void {
         compare(modal.currentIndex, modal._rowScraper);
+        compare(modal.selectedSystemScope, "*");
         compare(modal.rescrapeExisting, false);
     }
 
-    function test_down_advances_through_all_three_rows_and_clamps(): void {
+    function test_down_advances_through_all_four_rows_and_clamps(): void {
+        modal.handleAction("down");
+        compare(modal.currentIndex, modal._rowSystems);
         modal.handleAction("down");
         compare(modal.currentIndex, modal._rowToggle);
         modal.handleAction("down");
@@ -66,10 +76,12 @@ TestCase {
         compare(modal.currentIndex, modal._rowStart, "must clamp at the last row, not wrap or overshoot");
     }
 
-    function test_up_retreats_through_all_three_rows_and_clamps(): void {
+    function test_up_retreats_through_all_four_rows_and_clamps(): void {
         modal.currentIndex = modal._rowStart;
         modal.handleAction("up");
         compare(modal.currentIndex, modal._rowToggle);
+        modal.handleAction("up");
+        compare(modal.currentIndex, modal._rowSystems);
         modal.handleAction("up");
         compare(modal.currentIndex, modal._rowScraper);
         modal.handleAction("up");
@@ -95,6 +107,13 @@ TestCase {
         compare(pickerSpy.count, 1);
     }
 
+    function test_accept_on_systems_row_requests_the_system_scope_picker(): void {
+        modal.currentIndex = modal._rowSystems;
+        modal.handleAction("accept");
+        compare(systemScopePickerSpy.count, 1);
+        compare(pickerSpy.count, 0, "must not also fire the scraper-picker signal");
+    }
+
     function test_accept_on_toggle_row_flips_rescrape_existing(): void {
         modal.currentIndex = modal._rowToggle;
         modal.handleAction("accept");
@@ -110,10 +129,25 @@ TestCase {
 
     function test_reopening_resets_row_and_toggle_state(): void {
         modal.currentIndex = modal._rowStart;
+        modal.selectedSystemScope = "SNES";
         modal.rescrapeExisting = true;
         modal.open = false;
         modal.open = true;
         compare(modal.currentIndex, modal._rowScraper);
+        compare(modal.selectedSystemScope, "*");
         compare(modal.rescrapeExisting, false);
+    }
+
+    // Round 11: the display property backing the Systems row's own
+    // value text -- covers the sentinel scheme without touching
+    // Browse.SystemsModel (which has no catalog loaded in this harness,
+    // so a real system id would resolve to itself via the empty-name
+    // fallback -- exercised separately, this only pins the two sentinel
+    // branches that don't depend on the catalog).
+    function test_selected_system_scope_name_covers_the_sentinel_branches(): void {
+        modal.selectedSystemScope = "*";
+        compare(modal._selectedSystemScopeName, qsTr("All systems"));
+        modal.selectedSystemScope = "cat:Console";
+        compare(modal._selectedSystemScopeName, qsTr("All %1 systems").arg("Console"));
     }
 }

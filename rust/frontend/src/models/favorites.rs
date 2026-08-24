@@ -65,6 +65,17 @@ const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 9;
 // follow-up — see PagedGrid.qml) is satisfied by direct QAbstractListModel
 // callers.
 const IS_EMPTY_ROLE: i32 = 256 + 10;
+// Round 11: `entryType`/`fileCount` exist so this model satisfies the same
+// shared BrowseList/PagedGrid delegate contract GamesModel's folder-count
+// suffix uses (see games.rs's identically-named roles). A favorite is
+// always a `media` row, never a folder, so these are constant.
+const ENTRY_TYPE_ROLE: i32 = 256 + 11;
+const FILE_COUNT_ROLE: i32 = 256 + 12;
+// No Favorites row is ever "disabled" (Hub-only concept). The role exists
+// only so PagedGrid's `cellItem.disabled` delegate contract (round 11
+// follow-up — see PagedGrid.qml) is satisfied by direct QAbstractListModel
+// callers.
+const DISABLED_ROLE: i32 = 256 + 13;
 
 // Page size for the initial load and every cursor follow-up. Core defaults
 // `maxResults` to 100 when the field is absent and validates it at 1000
@@ -591,7 +602,9 @@ impl ffi::FavoritesModel {
                     .get(index.row() as usize)
                     .map_or("", String::as_str),
             )),
-            HIDDEN_ROLE | IS_EMPTY_ROLE => QVariant::from(&false),
+            HIDDEN_ROLE | IS_EMPTY_ROLE | DISABLED_ROLE => QVariant::from(&false),
+            ENTRY_TYPE_ROLE => QVariant::from(&QString::from("media")),
+            FILE_COUNT_ROLE => QVariant::from(&0i32),
             _ => QVariant::default(),
         }
     }
@@ -611,6 +624,9 @@ impl ffi::FavoritesModel {
             QByteArray::from("disambiguatingTags"),
         );
         h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
+        h.insert(ENTRY_TYPE_ROLE, QByteArray::from("entryType"));
+        h.insert(FILE_COUNT_ROLE, QByteArray::from("fileCount"));
+        h.insert(DISABLED_ROLE, QByteArray::from("disabled"));
         h
     }
 

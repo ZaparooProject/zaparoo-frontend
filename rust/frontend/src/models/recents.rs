@@ -76,6 +76,17 @@ const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 9;
 // follow-up — see PagedGrid.qml) is satisfied by direct QAbstractListModel
 // callers.
 const IS_EMPTY_ROLE: i32 = 256 + 10;
+// Round 11: `entryType`/`fileCount` exist so this model satisfies the same
+// shared BrowseList/PagedGrid delegate contract GamesModel's folder-count
+// suffix uses (see games.rs's identically-named roles). A history entry is
+// always a `media` row, never a folder, so these are constant.
+const ENTRY_TYPE_ROLE: i32 = 256 + 11;
+const FILE_COUNT_ROLE: i32 = 256 + 12;
+// No Recents row is ever "disabled" (Hub-only concept). The role exists
+// only so PagedGrid's `cellItem.disabled` delegate contract (round 11
+// follow-up — see PagedGrid.qml) is satisfied by direct QAbstractListModel
+// callers.
+const DISABLED_ROLE: i32 = 256 + 13;
 
 // Page size for the initial load and every cursor follow-up. Core caps
 // `limit` at 100; history rows are tiny (one tile + one caption per row)
@@ -557,13 +568,14 @@ impl ffi::RecentsModel {
                 cover_key_for(entry, !self.cover_requests_paused).as_str(),
             )),
             LAUNCHER_ID_ROLE => QVariant::from(&QString::from(entry.launcher_id.as_str())),
-            FAVORITE_ROLE => QVariant::from(&0_i32),
+            FAVORITE_ROLE | FILE_COUNT_ROLE => QVariant::from(&0_i32),
             FILE_STEM_ROLE => QVariant::from(&QString::from(file_stem_or_name(
                 &entry.media_path,
                 &entry.media_name,
             ))),
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::default()),
-            HIDDEN_ROLE | IS_EMPTY_ROLE => QVariant::from(&false),
+            HIDDEN_ROLE | IS_EMPTY_ROLE | DISABLED_ROLE => QVariant::from(&false),
+            ENTRY_TYPE_ROLE => QVariant::from(&QString::from("media")),
             _ => QVariant::default(),
         }
     }
@@ -583,6 +595,9 @@ impl ffi::RecentsModel {
             QByteArray::from("disambiguatingTags"),
         );
         h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
+        h.insert(ENTRY_TYPE_ROLE, QByteArray::from("entryType"));
+        h.insert(FILE_COUNT_ROLE, QByteArray::from("fileCount"));
+        h.insert(DISABLED_ROLE, QByteArray::from("disabled"));
         h
     }
 
@@ -1177,7 +1192,17 @@ fn cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
 /// `resume_cover_key_for_with` below, split out the same way
 /// `cover_key_for_with` is so it's testable without the global cache and
 /// its tokio runtime.
-fn resume_cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> String {
+///
+/// Unlike `cover_key_for`, this never takes a `requests_enabled` gate.
+/// `cover_requests_paused` exists to stop a *grid* of dozens of tiles from
+/// flooding Core with requests mid-append, and it defaults to `true` until
+/// the Recents screen is actually opened (`Main.qml`'s
+/// `_resumeRecentsCovers`) — which the Hub Resume tile, one image on the
+/// Hub screen, never triggers. Gating this on that flag left the tile
+/// permanently blank (round 10 regression): it never enqueued its fetch,
+/// so it sat on `"icons/Loading"` forever instead of resolving to either a
+/// real cover or the play-glyph fallback.
+fn resume_cover_key_for(entry: &MediaHistoryEntry) -> String {
     let media_key = media_key_for(entry).map(MediaKey::with_current_cover_preference);
     let cache = global_media_image_cache();
     let cached = media_key.as_ref().is_some_and(|k| cache.is_cached(k));
@@ -1185,13 +1210,11 @@ fn resume_cover_key_for(entry: &MediaHistoryEntry, requests_enabled: bool) -> St
     let soft_no_image = media_key
         .as_ref()
         .is_some_and(|k| cache.is_soft_no_image(k));
-    if requests_enabled && !cached && !negative && !soft_no_image {
+    if !cached && !negative && !soft_no_image {
         if let Some(k) = media_key.as_ref() {
             cache.enqueue_search_cover_with_media_id(k.clone(), entry.media_id, PAGE_SIZE);
         }
     }
-    // Same round-10 fix as `cover_key_for` above: paused is not confirmed
-    // absent.
     resume_cover_key_for_with(entry, media_key.as_ref(), cached, negative, soft_no_image)
 }
 
@@ -1285,7 +1308,7 @@ fn sync_resume_state(mut model: Pin<&mut ffi::RecentsModel>) {
                 )
                 .as_str(),
             ),
-            QString::from(resume_cover_key_for(entry, !model.cover_requests_paused).as_str()),
+            QString::from(resume_cover_key_for(entry).as_str()),
         ),
         None => (
             false,
@@ -2144,19 +2167,23 @@ mod tests {
         );
     }
 
-    // Round 10: paused must produce the same `soft_no_image: false` shape
-    // as the plain in-flight case -- `resume_cover_key_for` must never
-    // fold `!requests_enabled` into `soft_no_image`, or a paused Resume
-    // tile with real art falls back to the glyph for the whole pause
-    // window instead of staying blank.
+    // Round 11: `resume_cover_key_for` no longer takes a `requests_enabled`
+    // gate at all (round 10 wired it to `cover_requests_paused`, which
+    // defaults to `true` and is only cleared by opening the Recents
+    // screen -- something the Hub Resume tile never does, so the tile's
+    // fetch never enqueued and it sat blank forever). The Resume tile is
+    // one image, not a grid of dozens; it always enqueues. There is no
+    // "paused" state left to distinguish at the pure `_with` level -- an
+    // in-flight fetch, paused or not, renders the same blank
+    // `icons/Loading` placeholder as any other in-flight fetch.
     #[test]
-    fn resume_cover_key_paused_stays_loading_not_glyph() {
+    fn resume_cover_key_in_flight_or_paused_stays_loading_not_glyph() {
         let e = entry("smb", "/p/smb", "NES", "NES");
         let key = media_key_for(&e).expect("media has key");
         assert_eq!(
             resume_cover_key_for_with(&e, Some(&key), false, false, false),
             "icons/Loading",
-            "paused-but-not-soft-missed must render blank, never the glyph fallback"
+            "an unresolved fetch must render blank, never the glyph fallback"
         );
     }
 

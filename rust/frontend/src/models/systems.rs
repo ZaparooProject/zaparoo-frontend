@@ -41,6 +41,17 @@ const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 7;
 // exists only so PagedGrid's `isEmpty` delegate contract (round 6 follow-up
 // — see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
 const IS_EMPTY_ROLE: i32 = 256 + 8;
+// Round 11: `entryType`/`fileCount` exist so this model satisfies the same
+// shared BrowseList/PagedGrid delegate contract GamesModel's folder-count
+// suffix uses (see games.rs's identically-named roles). A system row is
+// never a folder, so these are constant.
+const ENTRY_TYPE_ROLE: i32 = 256 + 9;
+const FILE_COUNT_ROLE: i32 = 256 + 10;
+// No Systems row is ever "disabled" (Hub-only concept). The role exists
+// only so PagedGrid's `cellItem.disabled` delegate contract (round 11
+// follow-up — see PagedGrid.qml) is satisfied by direct QAbstractListModel
+// callers.
+const DISABLED_ROLE: i32 = 256 + 11;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SystemInfo {
@@ -231,6 +242,23 @@ pub mod ffi {
         #[qinvokable]
         fn system_ids_for_category(self: &SystemsModel, category: &QString) -> QStringList;
 
+        /// Every indexable system ID across every category, from the
+        /// last-known-good catalog. Backs the Settings-level "All systems"
+        /// entry on the media job system-scope picker (Round 11) — the same
+        /// launch-only exclusion `system_ids_for_category` applies, just
+        /// unscoped by category.
+        #[qinvokable]
+        fn all_indexable_system_ids(self: &SystemsModel) -> QStringList;
+
+        /// Resolve `id`'s display name from the last-known-good catalog,
+        /// with the same override/localization priority `rows_for_category`
+        /// applies to every projected row. Empty if `id` isn't in the
+        /// catalog. Used to label individual entries on the media job
+        /// system-scope picker, which lists every system flat rather than
+        /// one category's projected rows.
+        #[qinvokable]
+        fn system_name_for_id(self: &SystemsModel, id: &QString) -> QString;
+
         #[inherit]
         #[cxx_name = "beginResetModel"]
         fn begin_reset_model(self: Pin<&mut SystemsModel>);
@@ -287,6 +315,27 @@ fn position_of_system_id(systems: &[SystemInfo], needle: &str) -> i32 {
         .map_or(-1, |i| i as i32)
 }
 
+/// Display name priority: user `[system_names]` override, then
+/// `Names_MiSTer` localized data, then the Core catalog name (`fallback`) so
+/// unknown systems still show. Shared by `rows_for_category` (per-category
+/// projected rows) and `system_name_for_id` (a flat by-id lookup for the
+/// media job system-scope picker).
+fn resolved_display_name(id: &str, fallback: String, region: Region) -> String {
+    system_name_overrides::lookup(id)
+        .or_else(|| system_names::localized_name(id, region))
+        .unwrap_or(fallback)
+}
+
+pub(crate) fn sort_systems_by_display_name(systems: &mut [SystemInfo]) {
+    systems.sort_by_cached_key(|system| {
+        (
+            system.name.to_lowercase(),
+            system.name.clone(),
+            system.id.clone(),
+        )
+    });
+}
+
 /// Filter `catalog`'s systems to the named category and re-shape them
 /// into the local row type. Returns empty when `catalog` is `None` so
 /// `set_category` and `apply_state` share one filter+map definition.
@@ -299,16 +348,6 @@ fn position_of_system_id(systems: &[SystemInfo], needle: &str) -> i32 {
 /// `region` drives both the localized display name (via `system_names`) and
 /// the logo artwork stem (via `system_logos`). Resolve it once before calling
 /// this function and pass it in so the caller controls the snapshot.
-pub(crate) fn sort_systems_by_display_name(systems: &mut [SystemInfo]) {
-    systems.sort_by_cached_key(|system| {
-        (
-            system.name.to_lowercase(),
-            system.name.clone(),
-            system.id.clone(),
-        )
-    });
-}
-
 fn rows_for_category(
     catalog: Option<&CatalogData>,
     cat: &str,
@@ -325,12 +364,7 @@ fn rows_for_category(
                 if is_hidden && !show_hidden {
                     return None;
                 }
-                // Display name priority: user `[system_names]` override, then
-                // Names_MiSTer localized data, then the Core catalog name so
-                // unknown systems still show.
-                let name = system_name_overrides::lookup(&s.id)
-                    .or_else(|| system_names::localized_name(&s.id, region))
-                    .unwrap_or(s.name);
+                let name = resolved_display_name(&s.id, s.name, region);
                 // Cover key: user override takes priority over bundled art.
                 let cover_key = image_overrides::override_path("systems", &s.id).map_or_else(
                     || format!("systems/{}", system_logos::logo_artwork_stem(&s.id, region)),
@@ -436,10 +470,11 @@ impl ffi::SystemsModel {
             }
             NAME_ROLE | FILE_STEM_ROLE => QVariant::from(&QString::from(s.name.as_str())),
             CATEGORY_ROLE => QVariant::from(&QString::from(s.category.as_str())),
-            FAVORITE_ROLE => QVariant::from(&0_i32),
+            FAVORITE_ROLE | FILE_COUNT_ROLE => QVariant::from(&0_i32),
             HIDDEN_ROLE => QVariant::from(&s.hidden),
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::default()),
-            IS_EMPTY_ROLE => QVariant::from(&false),
+            IS_EMPTY_ROLE | DISABLED_ROLE => QVariant::from(&false),
+            ENTRY_TYPE_ROLE => QVariant::from(&QString::from("media")),
             _ => QVariant::default(),
         }
     }
@@ -457,6 +492,9 @@ impl ffi::SystemsModel {
             QByteArray::from("disambiguatingTags"),
         );
         h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
+        h.insert(ENTRY_TYPE_ROLE, QByteArray::from("entryType"));
+        h.insert(FILE_COUNT_ROLE, QByteArray::from("fileCount"));
+        h.insert(DISABLED_ROLE, QByteArray::from("disabled"));
         h
     }
 
@@ -819,6 +857,34 @@ impl ffi::SystemsModel {
         }
         list
     }
+
+    fn all_indexable_system_ids(&self) -> QStringList {
+        let mut list = QStringList::default();
+        if let Some(ref c) = self.rust().last_ready {
+            for id in every_indexable_system_id(c) {
+                list.append(QString::from(id.as_str()));
+            }
+        }
+        list
+    }
+
+    fn system_name_for_id(&self, id: &QString) -> QString {
+        let region = system_region::current_region();
+        QString::from(
+            system_name_for_id_in(self.rust().last_ready.as_ref(), &id.to_string(), region)
+                .as_str(),
+        )
+    }
+}
+
+/// Pure lookup body for `system_name_for_id`, split out so it's testable
+/// without a live `SystemsModel`/Qt runtime — same reasoning as
+/// `indexable_system_ids`/`rows_for_category` above.
+fn system_name_for_id_in(catalog: Option<&CatalogData>, id: &str, region: Region) -> String {
+    let Some(system) = catalog.and_then(|c| c.systems.iter().find(|s| s.id == id)) else {
+        return String::new();
+    };
+    resolved_display_name(&system.id, system.name.clone(), region)
 }
 
 /// Ids of the indexable systems in `category` (the ones a category-level
@@ -832,6 +898,18 @@ fn indexable_system_ids(catalog: &CatalogData, category: &str) -> Vec<String> {
         .into_iter()
         .filter(|s| s.zap_script.trim().is_empty())
         .map(|s| s.id)
+        .collect()
+}
+
+/// Same launch-only exclusion as `indexable_system_ids`, unscoped by
+/// category — every system in the catalog that a full index/scrape run
+/// can act on.
+fn every_indexable_system_id(catalog: &CatalogData) -> Vec<String> {
+    catalog
+        .systems
+        .iter()
+        .filter(|s| s.zap_script.trim().is_empty())
+        .map(|s| s.id.clone())
         .collect()
 }
 
@@ -877,8 +955,9 @@ mod tests {
     )]
 
     use super::{
-        detail_tags_for_system, indexable_system_ids, is_launchable, launch_text_for,
-        position_of_system_id, project, random_systems_text, rows_for_category, SystemInfo,
+        detail_tags_for_system, every_indexable_system_id, indexable_system_ids, is_launchable,
+        launch_text_for, position_of_system_id, project, random_systems_text, rows_for_category,
+        system_name_for_id_in, SystemInfo,
     };
     use crate::system_region::Region;
     use zaparoo_core::media_types::SystemInfo as MediaSystemInfo;
@@ -1187,5 +1266,41 @@ mod tests {
         b.zap_script = "zaparoo://abc/B".into();
         let catalog = catalog_with(vec![a, b]);
         assert!(indexable_system_ids(&catalog, "Other").is_empty());
+    }
+
+    #[test]
+    fn every_indexable_system_id_spans_every_category_and_excludes_launch_only() {
+        let mut launchable = sys("chess", "Chess", "Other");
+        launchable.zap_script = "zaparoo://abc/Chess".into();
+        let catalog = catalog_with(vec![
+            sys("NES", "NES", "Console"),
+            sys("SNES", "SNES", "Console"),
+            sys("Arcade", "Arcade", "Arcade"),
+            launchable,
+        ]);
+        let ids = every_indexable_system_id(&catalog);
+        assert_eq!(
+            ids,
+            vec!["NES".to_string(), "SNES".to_string(), "Arcade".to_string()]
+        );
+    }
+
+    #[test]
+    fn system_name_for_id_resolves_catalog_name() {
+        let catalog = catalog_with(vec![sys("nes", "NES", "Console")]);
+        assert_eq!(
+            system_name_for_id_in(Some(&catalog), "nes", Region::Us),
+            "NES"
+        );
+    }
+
+    #[test]
+    fn system_name_for_id_empty_when_not_found_or_no_catalog() {
+        let catalog = catalog_with(vec![sys("nes", "NES", "Console")]);
+        assert_eq!(
+            system_name_for_id_in(Some(&catalog), "snes", Region::Us),
+            ""
+        );
+        assert_eq!(system_name_for_id_in(None, "nes", Region::Us), "");
     }
 }

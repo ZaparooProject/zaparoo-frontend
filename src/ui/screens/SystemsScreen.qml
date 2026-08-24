@@ -77,6 +77,32 @@ Item {
     // BrowseLayouts.qml's `footer.pageCueInFooter`.
     readonly property bool _pageCueInFooter: !!(systems._footerProfile && systems._footerProfile.pageCueInFooter)
     readonly property bool _showGridPageCue: !systems._listLayout && !systems._pageCueInFooter
+    // Round 11: list layout gets the same interactive chevron+"N / M"
+    // PageIndicator grid layout already had. Sibling to `_showGridPageCue`
+    // rather than folded into it so that property's existing grid-only
+    // meaning stays intact.
+    readonly property bool _showListPageCue: systems._listLayout && !systems._pageCueInFooter
+    readonly property bool _showTopPageCue: systems._showGridPageCue || systems._showListPageCue
+    // List layout's own page size for paging math -- the number of rows
+    // actually on screen at once. Mirrors PagedGrid.qml's own
+    // `currentPage`/`totalPageCount`/`hasPagesBelow` formulas, substituting
+    // the list's own page size; the catalog has no incremental-fetch
+    // concept (`Browse.SystemsModel.count` is always the true total), so
+    // there's no `hasMorePages`-style term to add on top.
+    readonly property int _listVisiblePageSize: Math.max(1, listCard.visibleRowCount)
+    readonly property int _listTotalPageCount: Math.max(1, Math.ceil(Browse.SystemsModel.count / systems._listVisiblePageSize))
+    readonly property int _listCurrentPage: Math.floor(systemsGrid.currentIndex / systems._listVisiblePageSize)
+    readonly property bool _listHasPagesAbove: systems._listCurrentPage > 0
+    readonly property bool _listHasPagesBelow: systems._listCurrentPage < systems._listTotalPageCount - 1
+    // Round 11: the footer label's sideInset used to reserve a flat third
+    // of the screen on each side to clear the count text (left) and the
+    // PageIndicator (right) — regardless of how wide either one actually
+    // is. Measure them instead, same idiom ActiveLabel itself uses for its
+    // own name/tags block (TextMetrics + a couple px of slack).
+    readonly property string _footerCountText: qsTr("%1 systems").arg(Browse.SystemsModel.count)
+    readonly property int _footerCountTextWidth: Math.ceil(Math.max(footerCountMetrics.advanceWidth, footerCountMetrics.boundingRect.width) + (Theme.crtNativePath ? 0 : Sizing.px(2)))
+    readonly property int _footerLeftInset: systems._footerCountTextWidth + (systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0)
+    readonly property int _footerRightInset: footerPageIndicator.width + (systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0)
     readonly property var _listProfile: systems._viewProfile && systems._viewProfile.list ? systems._viewProfile.list : null
     readonly property int _listOverlayBottomMargin: systems._listProfile ? systems._listProfile.overlayBottomMargin : Sizing.pctH(15)
     readonly property var _gridShape: Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight)
@@ -125,6 +151,13 @@ Item {
     // post-move state-commit path as _performMove so the saved system
     // tracks whichever entry the user lands on.
     function _performPage(delta: int): bool {
+        // Round 11: list layout used to fall straight through to the grid's
+        // own pageBy() unconditionally -- which pages by the GRID's
+        // columns x rows, not by however many rows are actually visible in
+        // the list, so a page turn skipped past (or short of) what the
+        // chevron/counter display implied.
+        if (systems._listLayout)
+            return systems._performLinearMove(delta * systems._listVisiblePageSize);
         if (systems.systemsGrid.pageBy(delta)) {
             Browse.SystemsState.system_id = Browse.SystemsModel.system_id_at(systems.systemsGrid.currentIndex);
             return true;
@@ -230,12 +263,13 @@ Item {
         }
     }
 
-    // Top status strip — category title (center). List layout shows its
-    // own item counter (left) and "N / M" position (right), unaffected by
-    // any of this. Grid layout hosts the count badge (left) and the
-    // chevron page cue (right, `pageIndicatorMode`) here too, UNLESS the
-    // theme keeps them in the footer instead (`_pageCueInFooter` -- CRT,
-    // whose top strip is hidden entirely anyway).
+    // Top status strip — category title (center), count badge (left), and
+    // chevron page cue (right, `pageIndicatorMode`) for both grid and list
+    // layout (round 11 gave list layout the same treatment grid already
+    // had, replacing a plain item-position counter with no chevrons at
+    // all) -- UNLESS the theme keeps them in the footer instead
+    // (`_pageCueInFooter` -- CRT, whose top strip is hidden entirely
+    // anyway).
     //
     // The screen Item fills the whole window, so the strip clears the
     // MainLayout HeaderBar (Sizing.headerBottom) with a small gap.
@@ -248,19 +282,24 @@ Item {
         height: systems._statusProfile ? systems._statusProfile.stripHeight : Sizing.pctH(7)
         slotMargin: systems._statusProfile ? systems._statusProfile.slotMargin : Sizing.pctW(3)
         title: CategoryIds.displayName(Browse.SystemsModel.current_category)
-        currentPage: systemsGrid.currentPage
-        totalPages: Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
+        currentPage: systems._listLayout ? systems._listCurrentPage : systemsGrid.currentPage
+        totalPages: systems._listLayout ? systems._listTotalPageCount : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
         totalText: {
             if (systems._listLayout)
                 return !Theme.crtNativePath && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "";
             return systems._showGridPageCue && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "";
         }
-        rightTextOverride: !systems._listLayout || systemsGrid.itemCount <= 0 ? "" : qsTr("%1 / %2").arg(systemsGrid.currentIndex + 1).arg(Math.max(1, Browse.SystemsModel.count))
+        // Round 11: list layout now mounts the same interactive
+        // PageIndicator grid layout has (`pageIndicatorMode` below) instead
+        // of an item-position "N / M" counter -- the catalog loads fully
+        // upfront (no background-fetch signal worth surfacing here the way
+        // GamesScreen's "Loading more…" is), so this is always empty now.
+        rightTextOverride: ""
         showPageCounter: systems._listLayout || systems._showGridPageCue
-        pageIndicatorMode: systems._showGridPageCue
+        pageIndicatorMode: systems._showTopPageCue
         pageIndicatorChevronSize: systems._gridProfile && systems._gridProfile.grid ? systems._gridProfile.grid.pageChevronSize : Sizing.pctH(4)
-        hasPagesAbove: systemsGrid.hasPagesAbove
-        hasPagesBelow: systemsGrid.hasPagesBelow
+        hasPagesAbove: systems._listLayout ? systems._listHasPagesAbove : systemsGrid.hasPagesAbove
+        hasPagesBelow: systems._listLayout ? systems._listHasPagesBelow : systemsGrid.hasPagesBelow
         onPageRequested: delta => systems._performPage(delta)
         visible: !systems._gateHide && (!systems._statusProfile || systems._statusProfile.topStripVisible)
     }
@@ -362,7 +401,7 @@ Item {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
         height: systems._footerProfile ? systems._footerProfile.activeLabelHeight : Sizing.pctH(7)
-        sideInset: systems._pageCueInFooter ? Sizing.px(width / 3) : Sizing.pctW(3)
+        sideInset: systems._pageCueInFooter ? Math.max(systems._footerLeftInset, systems._footerRightInset) : Sizing.pctW(3)
         text: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_name_at(systemsGrid.currentIndex) : ""
         // Worded reason for the muted front edge (Tile.qml's `edgeColor`)
         // on a hidden system tile -- Systems tiles carry no per-tile
@@ -373,19 +412,33 @@ Item {
         visible: !systems._gateHide && !systems._listLayout
     }
 
+    // Measures `_footerCountText` so the reserved footer inset (above) and
+    // this Text's own width track the count string's actual size instead
+    // of a flat third of the screen.
+    TextMetrics {
+        id: footerCountMetrics
+        text: systems._footerCountText
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontSection
+    }
+
     Text {
         id: footerCount
         objectName: "systemsFooterCount"
-        visible: !systems._gateHide && !systems._listLayout && systems._pageCueInFooter && Browse.SystemsModel.count > 0
+        // Round 11: the count text is layout-agnostic (just "%1 systems"),
+        // so it now shows in the footer for list layout on CRT too --
+        // previously grid-only, leaving list layout with no page cue
+        // anywhere on that profile.
+        visible: !systems._gateHide && systems._pageCueInFooter && Browse.SystemsModel.count > 0
         anchors.left: parent.left
         anchors.leftMargin: systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
-        width: Sizing.px(parent.width / 3) - (systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0)
+        width: systems._footerCountTextWidth
         height: Sizing.fontSection
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
-        text: qsTr("%1 systems").arg(Browse.SystemsModel.count)
+        text: systems._footerCountText
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontSection
         color: Theme.textPrimary
@@ -395,15 +448,15 @@ Item {
     PageIndicator {
         id: footerPageIndicator
         objectName: "systemsFooterPageIndicator"
-        visible: !systems._gateHide && !systems._listLayout && systems._pageCueInFooter
+        visible: !systems._gateHide && systems._pageCueInFooter
         anchors.right: parent.right
         anchors.rightMargin: systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
         chevronSize: systems._gridProfile && systems._gridProfile.grid ? systems._gridProfile.grid.pageChevronSize : Sizing.pctH(4)
-        currentPage: systemsGrid.currentPage
-        totalPages: Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
-        hasPagesAbove: systemsGrid.hasPagesAbove
-        hasPagesBelow: systemsGrid.hasPagesBelow
+        currentPage: systems._listLayout ? systems._listCurrentPage : systemsGrid.currentPage
+        totalPages: systems._listLayout ? systems._listTotalPageCount : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
+        hasPagesAbove: systems._listLayout ? systems._listHasPagesAbove : systemsGrid.hasPagesAbove
+        hasPagesBelow: systems._listLayout ? systems._listHasPagesBelow : systemsGrid.hasPagesBelow
         onPageRequested: delta => systems._performPage(delta)
     }
 

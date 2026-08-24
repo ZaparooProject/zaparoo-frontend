@@ -125,25 +125,25 @@ Item {
             kind: "field",
             id: "colorScheme",
             label: qsTr("Color scheme"),
-            description: qsTr("Pick a color theme from the built-in catalog.")
+            description: qsTr("Changes the colors used across every screen: backgrounds, text, and highlights.")
         },
         {
             kind: "field",
             id: "systemLogoStyle",
             label: qsTr("System logos"),
-            description: qsTr("Show system logos in full color or tinted to match the theme.")
+            description: qsTr("Draw system logos in their original colors, or tinted to match the color scheme.")
         },
         {
             kind: "field",
             id: "reduceMotion",
             label: qsTr("Reduce motion"),
-            description: qsTr("Turn off slide and fade animations throughout the app.")
+            description: qsTr("Turns off animation throughout the interface.")
         },
         {
             kind: "field",
             id: "screensaverTimeout",
             label: qsTr("Screensaver"),
-            description: qsTr("How long to wait on the Hub before the screensaver starts.")
+            description: qsTr("How long the frontend sits idle before the screensaver starts. Set to Off to never start it.")
         }
     ]
     // Display = video output geometry — resolution, orientation, analog video.
@@ -154,14 +154,14 @@ Item {
                 kind: "field",
                 id: "resolution",
                 label: qsTr("Interface resolution"),
-                description: qsTr("Restarts the frontend to apply.")
+                description: qsTr("The resolution the interface renders at. Restarts the frontend.")
             });
         }
         out.push({
             kind: "field",
             id: "orientation",
             label: qsTr("Orientation"),
-            description: qsTr("Rotate the interface to match how the screen is mounted.")
+            description: qsTr("Rotates the whole interface for a screen mounted sideways, as in a tate cabinet.")
         });
         if (Browse.Settings.is_mister) {
             // Native CRT video path (Menu fork DDR writer). The toggle is
@@ -176,20 +176,20 @@ Item {
                 kind: "field",
                 id: "crtEnabled",
                 label: qsTr("CRT mode"),
-                description: qsTr("Restarts the frontend to apply.")
+                description: qsTr("Outputs a 15 kHz analog signal for a CRT through the MiSTer's video out. Restarts the frontend.")
             });
             if (Browse.CrtVideo.crt_enabled) {
                 out.push({
                     kind: "field",
                     id: "crtVideoStandard",
                     label: qsTr("Video standard"),
-                    description: qsTr("Restarts the frontend to apply.")
+                    description: qsTr("Match the analog output to your TV: NTSC or PAL. Restarts the frontend.")
                 });
                 out.push({
                     kind: "field",
                     id: "crtCalibration",
                     label: qsTr("Screen position"),
-                    description: qsTr("Fine-tune the analog picture position and size.")
+                    description: qsTr("Opens a test pattern. Use the arrows to nudge the analog picture into place, then press any button.")
                 });
             }
         }
@@ -201,19 +201,19 @@ Item {
             kind: "field",
             id: "language",
             label: qsTr("Language"),
-            description: qsTr("Restarts the frontend to apply.")
+            description: qsTr("The language used for interface text. Restarts the frontend.")
         },
         {
             kind: "field",
             id: "region",
             label: qsTr("Region"),
-            description: qsTr("Affects system and game name conventions, not language.")
+            description: qsTr("Which regional naming to prefer for systems and games, such as Mega Drive or Genesis.")
         },
         {
             kind: "field",
             id: "clockFormat",
             label: qsTr("Clock format"),
-            description: qsTr("12-hour or 24-hour time in the header clock.")
+            description: qsTr("12-hour or 24-hour time in the top bar.")
         }
     ]
     readonly property var controlsInputFields: [
@@ -221,13 +221,13 @@ Item {
             kind: "field",
             id: "buttonLayout",
             label: qsTr("Button style"),
-            description: qsTr("Match the Accept/Cancel button layout to your controller.")
+            description: qsTr("Which button icons the on-screen prompts use, to match your controller.")
         },
         {
             kind: "field",
             id: "mouseEnabled",
             label: qsTr("Mouse support"),
-            description: qsTr("Allow pointer input alongside the controller and keyboard.")
+            description: qsTr("Lets a mouse click tiles and menu rows.")
         }
     ]
     // Library = the game collection: how it's browsed, and how it's scanned.
@@ -247,13 +247,13 @@ Item {
             kind: "field",
             id: "updateMediaDb",
             label: qsTr("Update media database"),
-            description: qsTr("Rescan game folders for new or removed titles.")
+            description: qsTr("Rescans your game folders to pick up added or removed files. Choose which systems to scan.")
         },
         {
             kind: "field",
             id: "runScraper",
             label: qsTr("Scrape metadata"),
-            description: qsTr("Fetch descriptions, art, and tags for games missing them.")
+            description: qsTr("Downloads box art, descriptions, and tags for your games. Choose a source and which systems to cover.")
         },
         {
             kind: "header",
@@ -263,31 +263,31 @@ Item {
             kind: "field",
             id: "systemsLayout",
             label: qsTr("Systems layout"),
-            description: qsTr("Grid or detailed list for the Systems screen.")
+            description: qsTr("Show systems as a grid of covers, or as a list with details beside it.")
         },
         {
             kind: "field",
             id: "gamesLayout",
             label: qsTr("Games layout"),
-            description: qsTr("Grid or detailed list for Games, Favorites, and Recents.")
+            description: qsTr("Show games as a grid of covers, or as a list with details beside it. Also covers Favorites and Recents.")
         },
         {
             kind: "field",
             id: "mediaImageType",
             label: qsTr("Preferred artwork"),
-            description: qsTr("Which artwork type to show when a game has more than one.")
+            description: qsTr("Which artwork to prefer when a game has more than one image, such as box art or a thumbnail.")
         },
         {
             kind: "field",
             id: "showHidden",
             label: qsTr("Show hidden items"),
-            description: qsTr("Show hidden systems and categories, dimmed, instead of removing them.")
+            description: qsTr("Shows hidden systems and categories, marked as hidden, so you can unhide them.")
         },
         {
             kind: "field",
             id: "showOriginalFilenames",
             label: qsTr("Show original filenames"),
-            description: qsTr("Show the raw filename instead of a cleaned-up display name.")
+            description: qsTr("Shows each file's real name instead of the cleaned-up display title.")
         }
     ]
     readonly property var supportAboutFields: [
@@ -295,19 +295,19 @@ Item {
             kind: "field",
             id: "aboutLicense",
             label: qsTr("About / License"),
-            description: qsTr("Version, license, and project information.")
+            description: qsTr("Version, build date, license terms, and the people who made this.")
         },
         {
             kind: "field",
             id: "debugLogging",
             label: qsTr("Debug logging"),
-            description: qsTr("Takes effect after the next restart.")
+            description: qsTr("Writes extra detail to the log file to help track down a problem. Restarts the frontend.")
         },
         {
             kind: "field",
             id: "uploadLog",
             label: qsTr("Upload log file"),
-            description: qsTr("Share a diagnostic log file for troubleshooting.")
+            description: qsTr("Uploads the log file and gives you a link to share when reporting a problem.")
         }
     ]
     readonly property var fields: {
@@ -399,13 +399,17 @@ Item {
         return Math.max(0, form.implicitHeight - trailingSpacer.height - form.spacing);
     }
 
+    // Round 11: idle Accept now opens the index setup modal (system scope
+    // + Start, see IndexSetupModal.qml) rather than indexing every system
+    // directly — same treatment `_triggerScrape` got in round 10. Busy
+    // Accept still cancels in place; no need to route that through a modal.
     function _triggerIndex(): void {
         if (settings._scrapeBusy)
             return;
         if (settings._indexBusy)
             Browse.MediaStatus.cancel_index();
         else
-            Browse.MediaStatus.start_index();
+            settings.requestAccept("updateMediaDb");
     }
 
     // Round 10: idle Accept now opens the scrape setup modal (scraper
@@ -620,7 +624,7 @@ Item {
             return "";
         const id = settings.fields[settings.currentIndex].id;
         if (id === "updateMediaDb")
-            return settings.focusedActionBusy ? qsTr("Cancel") : qsTr("Start");
+            return settings.focusedActionBusy ? qsTr("Cancel") : qsTr("Configure");
         if (id === "runScraper")
             return settings.focusedActionBusy ? qsTr("Cancel") : qsTr("Configure");
         if (id === "uploadLog")
@@ -1099,12 +1103,14 @@ Item {
         Browse.Settings.set_mouse_enabled(!Browse.Settings.current_mouse_enabled);
     }
 
-    function _setDebugLogging(direction: int): void {
-        Browse.Settings.set_debug_logging(direction > 0);
-    }
-
-    function _toggleDebugLogging(): void {
-        Browse.Settings.set_debug_logging(!Browse.Settings.current_debug_logging);
+    // Debug logging is confirm-gated like CRT mode: the pill never flips
+    // locally. The request routes to Main.qml, which stages the
+    // restart-confirm modal; the actual flip happens once the frontend
+    // relaunches (the tracing subscriber is only built once at startup).
+    function _requestDebugLogging(enable: bool): void {
+        if (enable === Browse.Settings.current_debug_logging)
+            return;
+        settings.requestAccept(enable ? "debugLoggingEnable" : "debugLoggingDisable");
     }
 
     function _setReduceMotion(direction: int): void {
@@ -1138,7 +1144,7 @@ Item {
         else if (id === "showOriginalFilenames")
             settings._setShowOriginalFilenames(direction);
         else if (id === "debugLogging")
-            settings._setDebugLogging(direction);
+            settings._requestDebugLogging(direction > 0);
         else if (id === "reduceMotion")
             settings._setReduceMotion(direction);
         else if (id === "crtEnabled")
@@ -1275,7 +1281,7 @@ Item {
                 else if (id === "showOriginalFilenames")
                     settings._toggleShowOriginalFilenames();
                 else if (id === "debugLogging")
-                    settings._toggleDebugLogging();
+                    settings._requestDebugLogging(!Browse.Settings.current_debug_logging);
                 else if (id === "reduceMotion")
                     settings._toggleReduceMotion();
                 else if (id === "crtEnabled")
@@ -1726,7 +1732,7 @@ Item {
                                 else if (row.modelData.id === "showOriginalFilenames")
                                     settings._toggleShowOriginalFilenames();
                                 else if (row.modelData.id === "debugLogging")
-                                    settings._toggleDebugLogging();
+                                    settings._requestDebugLogging(!Browse.Settings.current_debug_logging);
                                 else if (row.modelData.id === "reduceMotion")
                                     settings._toggleReduceMotion();
                                 else if (row.modelData.id === "crtEnabled")

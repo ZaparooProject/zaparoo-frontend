@@ -160,8 +160,19 @@ Item {
             required property string coverKey
             required property int favorite
             // Newline-joined disambiguating-tag tokens (empty for models
-            // without variants). Every Browse model exposes this role.
+            // without variants). Every Browse model exposes this role. For
+            // a folder/root row this instead carries the round-11 roots-
+            // screen distinguisher (see games.rs's `root_distinguishers`),
+            // if any -- `_tagsSuffix` below folds it together with
+            // `fileCount` via `Format.rowSuffix`.
             required property string disambiguatingTags
+            // Round 11. Required, same as `disambiguatingTags` above -- a
+            // plain non-required property does NOT automatically bind to a
+            // matching model role (Qt only wires that up for `required
+            // property`), so every model reaching this delegate sets both
+            // explicitly.
+            required property string entryType
+            required property int fileCount
 
             width: listView.width
             height: root.rowHeight
@@ -173,6 +184,7 @@ Item {
             // still track content during the pre-restore window.
             readonly property bool _highlightVisible: row.selected && root.focusReady
             readonly property string _baseTitle: row.name !== "" ? row.name : row.fileStem
+            readonly property string _tagsSuffix: Format.rowSuffix(row.entryType, row.disambiguatingTags, row.fileCount)
             // Horizontal space reserved on the right for the favorite heart.
             readonly property int _favoriteSlot: row.favorite !== 0 ? root._favoriteRightPadding + Sizing.pctH(3.2) : 0
 
@@ -219,7 +231,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 height: parent.height
                 name: row._baseTitle
-                tags: row.disambiguatingTags
+                tags: row._tagsSuffix
                 focused: row._highlightVisible
                 centerContent: false
                 fontPixelSize: Sizing.fontSection

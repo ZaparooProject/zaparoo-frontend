@@ -113,6 +113,7 @@ ApplicationWindow {
     property bool letterJumpModalRequested: false
     property bool crtCalibrationModalRequested: false
     property bool scrapeSetupModalRequested: false
+    property bool indexSetupModalRequested: false
 
     function _startupTrace(): void {
         if (!root._startupTraceActive)
@@ -317,6 +318,7 @@ ApplicationWindow {
     property var letterJumpModal: letterJumpModalLoader.item
     property var crtCalibrationModal: crtCalibrationModalLoader.item
     property var scrapeSetupModal: scrapeSetupModalLoader.item
+    property var indexSetupModal: indexSetupModalLoader.item
     property alias headerBar: headerBar
     property alias screensaverOverlay: screensaverOverlay
     // Exposed so Main.qml binds Sizing.screenWidth/Height to the
@@ -338,6 +340,7 @@ ApplicationWindow {
     property bool gameInfoModalVisible: false
     property bool logUploadModalVisible: false
     property bool scrapeSetupModalVisible: false
+    property bool indexSetupModalVisible: false
     property bool quitConfirmModalVisible: false
     property bool listPickerModalVisible: false
     property bool settingNeedsRestartModalVisible: false
@@ -488,11 +491,18 @@ ApplicationWindow {
     signal closeRandomFailedRequested
     signal closeLogUploadRequested
     signal closeScrapeSetupRequested
+    signal closeIndexSetupRequested
     // Bubbled from ScrapeSetupModal's own scraper-picker row -- Main.qml
     // owns opening the shared ListPickerModal (the modal itself can't
     // instantiate a second top-level modal directly; see the Loader
     // pattern every other modal-with-nested-picker interaction uses).
     signal requestScraperPicker
+    // Bubbled from either ScrapeSetupModal's or IndexSetupModal's own
+    // Systems row -- shared because the two modals are mutually
+    // exclusive (only one Settings Accept path opens either at a time),
+    // so Main.qml's handler tells them apart by which one is currently
+    // visible rather than needing two identical signals.
+    signal requestSystemScopePicker
     signal closeQuitConfirmRequested
     signal quitConfirmAccepted
     signal listPickerAccepted(string fieldId, string selectedId)
@@ -993,6 +1003,26 @@ ApplicationWindow {
                         open: root.scrapeSetupModalVisible
                         onCloseRequested: root.closeScrapeSetupRequested()
                         onRequestScraperPicker: root.requestScraperPicker()
+                        onRequestSystemScopePicker: root.requestSystemScopePicker()
+                    }
+                }
+            }
+
+            // Update-media-database setup modal (round 11) — same shell as
+            // ScrapeSetupModal, trimmed to Systems + Start. Pushed by
+            // Main.qml when the user triggers "Update media database" in
+            // Settings while idle.
+            Loader {
+                id: indexSetupModalLoader
+                anchors.fill: parent
+                z: 300
+                active: root.indexSetupModalRequested
+                sourceComponent: Component {
+                    IndexSetupModal {
+                        anchors.fill: parent
+                        open: root.indexSetupModalVisible
+                        onCloseRequested: root.closeIndexSetupRequested()
+                        onRequestSystemScopePicker: root.requestSystemScopePicker()
                     }
                 }
             }

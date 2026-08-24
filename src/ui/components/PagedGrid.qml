@@ -962,15 +962,24 @@ Item {
                 required property int favorite
                 required property bool hidden
                 // True while a tile's live precondition isn't currently met
-                // (Hub only today). Deliberately NOT `required` like
-                // `hidden` above -- no other Browse model exposes a
-                // "disabled" role, so a model without it just leaves this
-                // at its own default instead of failing to construct the
-                // delegate.
-                property bool disabled: false
+                // (Hub only today). Required, same as `entryType`/
+                // `fileCount` below -- a plain non-required property does
+                // NOT automatically bind to a matching model role (Qt only
+                // wires that up for `required property`), so every model
+                // reaching this delegate declares this role even though
+                // only Hub's `hubGridModel` ever sets it to `true`.
+                required property bool disabled
                 // Newline-joined disambiguating-tag tokens (empty for models
                 // without variants). Every Browse model exposes this role.
                 required property string disambiguatingTags
+                // Round 11. Required, same as `disambiguatingTags` above --
+                // a plain non-required property does NOT automatically bind
+                // to a matching model role (Qt only wires that up for
+                // `required property`), so every model reaching this
+                // delegate, including Hub's hand-built `ListModel`
+                // (HubScreen.qml's `hubGridModel`), sets both explicitly.
+                required property string entryType
+                required property int fileCount
                 // Structural placeholder, not a real item — see
                 // `root.emptyDelegate` above. Every model supplies this
                 // (default `false` for models that never have one).
@@ -1199,6 +1208,8 @@ Item {
                     hidden: cellItem.hidden
                     disabled: cellItem.disabled
                     disambiguatingTags: cellItem.disambiguatingTags
+                    entryType: cellItem.entryType
+                    fileCount: cellItem.fileCount
                     activatePulse: root.activatePulse
                     releasePulse: root.releasePulse
                     settling: root.screenSettling

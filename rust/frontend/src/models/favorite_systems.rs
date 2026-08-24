@@ -29,6 +29,17 @@ const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 6;
 // exists only so PagedGrid's `isEmpty` delegate contract (round 6 follow-up
 // — see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
 const IS_EMPTY_ROLE: i32 = 256 + 7;
+// Round 11: `entryType`/`fileCount` exist so this model satisfies the same
+// shared BrowseList/PagedGrid delegate contract GamesModel's folder-count
+// suffix uses (see games.rs's identically-named roles). A system row is
+// never a folder, so these are constant.
+const ENTRY_TYPE_ROLE: i32 = 256 + 8;
+const FILE_COUNT_ROLE: i32 = 256 + 9;
+// No Favorite Systems row is ever "disabled" (Hub-only concept). The role
+// exists only so PagedGrid's `cellItem.disabled` delegate contract (round
+// 11 follow-up — see PagedGrid.qml) is satisfied by direct
+// QAbstractListModel callers.
+const DISABLED_ROLE: i32 = 256 + 10;
 
 #[derive(Default)]
 pub struct FavoriteSystemsModelRust {
@@ -270,10 +281,11 @@ impl ffi::FavoriteSystemsModel {
         match role {
             COVER_KEY_ROLE => QVariant::from(&QString::from(s.cover_key.as_str())),
             NAME_ROLE | FILE_STEM_ROLE => QVariant::from(&QString::from(s.name.as_str())),
-            FAVORITE_ROLE => QVariant::from(&0_i32),
+            FAVORITE_ROLE | FILE_COUNT_ROLE => QVariant::from(&0_i32),
             HIDDEN_ROLE => QVariant::from(&s.hidden),
             DISAMBIGUATING_TAGS_ROLE => QVariant::from(&QString::default()),
-            IS_EMPTY_ROLE => QVariant::from(&false),
+            IS_EMPTY_ROLE | DISABLED_ROLE => QVariant::from(&false),
+            ENTRY_TYPE_ROLE => QVariant::from(&QString::from("media")),
             _ => QVariant::default(),
         }
     }
@@ -290,6 +302,9 @@ impl ffi::FavoriteSystemsModel {
             QByteArray::from("disambiguatingTags"),
         );
         h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
+        h.insert(ENTRY_TYPE_ROLE, QByteArray::from("entryType"));
+        h.insert(FILE_COUNT_ROLE, QByteArray::from("fileCount"));
+        h.insert(DISABLED_ROLE, QByteArray::from("disabled"));
         h
     }
 

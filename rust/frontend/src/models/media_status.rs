@@ -175,12 +175,20 @@ pub mod ffi {
 
         /// Start a scrape with a caller-chosen scraper id, replacing the
         /// hardcoded "gamelist.xml" every other scrape call site still
-        /// uses. Always runs against every system the scraper supports
-        /// (empty `systems`) -- per-system/per-category scoping is
-        /// already covered by `start_scrape_for_system`/
-        /// `start_scrape_for_systems`, which stay on "gamelist.xml".
+        /// uses. `systems` is resolved by the caller (ScrapeSetupModal's
+        /// Systems row, via Main.qml's system-scope picker) -- empty means
+        /// every system the scraper supports, matching `start_scrape`'s
+        /// own "All systems" behavior. Per-system/per-category context-menu
+        /// scoping is unaffected; those entries stay on
+        /// `start_scrape_for_system`/`start_scrape_for_systems`, which stay
+        /// on "gamelist.xml".
         #[qinvokable]
-        fn start_scrape_with_scraper(self: Pin<&mut MediaStatus>, scraper_id: QString, force: bool);
+        fn start_scrape_with_scraper(
+            self: Pin<&mut MediaStatus>,
+            scraper_id: QString,
+            systems: QStringList,
+            force: bool,
+        );
     }
 
     impl cxx_qt::Threading for MediaStatus {}
@@ -469,19 +477,25 @@ impl ffi::MediaStatus {
 
     #[allow(
         clippy::needless_pass_by_value,
-        reason = "cxx-qt qinvokable signature requires QString by value"
+        reason = "cxx-qt qinvokable signature requires QString/QStringList by value"
     )]
-    fn start_scrape_with_scraper(self: Pin<&mut Self>, scraper_id: QString, force: bool) {
+    fn start_scrape_with_scraper(
+        self: Pin<&mut Self>,
+        scraper_id: QString,
+        systems: QStringList,
+        force: bool,
+    ) {
         let scraper_id: String = scraper_id.into();
         if scraper_id.is_empty() {
             warn!("media_status: start_scrape_with_scraper ignored empty scraper_id");
             return;
         }
+        let systems: Vec<String> = systems.iter().map(String::from).collect();
         let resource = crate::models::global_store().media_status();
         crate::models::global_handle().spawn(async move {
             let params = MediaScrapeParams {
                 scraper_id,
-                systems: Vec::new(),
+                systems,
                 force,
             };
             if let Err(e) = resource.start_scrape(params).await {

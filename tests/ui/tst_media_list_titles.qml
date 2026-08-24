@@ -11,6 +11,7 @@ import QtTest
 import Zaparoo.Browse as Browse
 import Zaparoo.Screens
 import Zaparoo.Theme
+import Zaparoo.Ui
 
 TestCase {
     id: testCase
@@ -61,7 +62,10 @@ TestCase {
             "favorite": 0,
             "hidden": false,
             "disambiguatingTags": "",
-            "isEmpty": false
+            "isEmpty": false,
+            "entryType": "media",
+            "fileCount": 0,
+            "disabled": false
         });
         mediaModel.append({
             "name": "D (Disc 2)",
@@ -70,7 +74,10 @@ TestCase {
             "favorite": 0,
             "hidden": false,
             "disambiguatingTags": "",
-            "isEmpty": false
+            "isEmpty": false,
+            "entryType": "media",
+            "fileCount": 0,
+            "disabled": false
         });
         mediaModel.append({
             "name": "Friendly Alias",
@@ -79,7 +86,10 @@ TestCase {
             "favorite": 0,
             "hidden": false,
             "disambiguatingTags": "",
-            "isEmpty": false
+            "isEmpty": false,
+            "entryType": "media",
+            "fileCount": 0,
+            "disabled": false
         });
         tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
         screen.mediaGrid.setCurrentIndexImmediate(0);
@@ -156,5 +166,63 @@ TestCase {
         tryCompare(screen.listCard, "visible", true);
         tryVerify(() => hasVisibleText(screen.listCard, "Sonic CD"), 1000, "list name should render");
         tryVerify(() => hasVisibleText(screen.listCard, "US"), 1000, "list token should render inline");
+    }
+
+    // Round 11: a folder/root row's dim suffix is the item count, not
+    // disambiguating tags -- composed by Format.rowSuffix and threaded
+    // through the same `entryType`/`fileCount` roles in both layouts (see
+    // BrowseList.qml/PagedGrid.qml/Tile.qml).
+    function test_folder_item_count_renders_inline_in_grid_and_list(): void {
+        mediaModel.append({
+            "name": "RPGs",
+            "fileStem": "RPGs",
+            "coverKey": "",
+            "favorite": 0,
+            "hidden": false,
+            "disambiguatingTags": "",
+            "isEmpty": false,
+            "entryType": "directory",
+            "fileCount": 5,
+            "disabled": false
+        });
+        const idx = mediaModel.count - 1;
+        const expected = Format.count(5);
+        tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
+
+        Browse.Settings.current_games_browse_layout = "grid";
+        screen.mediaGrid.setCurrentIndexImmediate(idx);
+        tryVerify(() => hasVisibleText(screen.mediaGrid, "RPGs"), 1000, "grid name should render");
+        tryVerify(() => hasVisibleText(screen.mediaGrid, expected), 1000, "grid item count should render inline");
+
+        Browse.Settings.current_games_browse_layout = "list";
+        screen.mediaGrid.setCurrentIndexImmediate(idx);
+        tryCompare(screen.listCard, "visible", true);
+        tryVerify(() => hasVisibleText(screen.listCard, "RPGs"), 1000, "list name should render");
+        tryVerify(() => hasVisibleText(screen.listCard, expected), 1000, "list item count should render inline");
+    }
+
+    // A media row's own entryType ("media", the default) must not pick up
+    // a folder-style item count from a stray fileCount value.
+    function test_media_row_ignores_file_count(): void {
+        mediaModel.append({
+            "name": "Some Game",
+            "fileStem": "Some Game",
+            "coverKey": "",
+            "favorite": 0,
+            "hidden": false,
+            "disambiguatingTags": "",
+            "isEmpty": false,
+            "entryType": "media",
+            "fileCount": 5,
+            "disabled": false
+        });
+        const idx = mediaModel.count - 1;
+        const suffix = Format.count(5);
+        tryCompare(screen.mediaGrid, "itemCount", mediaModel.count);
+
+        Browse.Settings.current_games_browse_layout = "grid";
+        screen.mediaGrid.setCurrentIndexImmediate(idx);
+        tryVerify(() => hasVisibleText(screen.mediaGrid, "Some Game"), 1000, "grid name should render");
+        verify(!hasVisibleText(screen.mediaGrid, suffix), "a media row must not show a folder item count");
     }
 }

@@ -321,6 +321,8 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            entryType: "media",
+            fileCount: 0,
             disabled: disabled ?? false,
             stateReason: stateReason ?? "",
             isEmpty: false
@@ -344,6 +346,8 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            entryType: "media",
+            fileCount: 0,
             disabled: unconfirmed,
             stateReason: unconfirmed ? qsTr("Not available") : "",
             isEmpty: false
@@ -365,6 +369,8 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            entryType: "media",
+            fileCount: 0,
             disabled: false,
             stateReason: "",
             isEmpty: false
@@ -391,6 +397,13 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            // Hub's own "folder" kind is a ZapScript shortcut styled with a
+            // folder icon, not a Games-browse folder -- never eligible for
+            // the round-11 item-count suffix (games.rs's browse-only
+            // `entryType`/`fileCount` concept), so this stays "media" like
+            // every other Hub tile kind.
+            entryType: "media",
+            fileCount: 0,
             disabled: false,
             stateReason: "",
             isEmpty: false
@@ -432,6 +445,8 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            entryType: "media",
+            fileCount: 0,
             disabled: false,
             stateReason: "",
             isEmpty: false
@@ -458,6 +473,8 @@ Item {
             favorite: 0,
             hidden: false,
             disambiguatingTags: "",
+            entryType: "media",
+            fileCount: 0,
             disabled: false,
             stateReason: "",
             isEmpty: true,
@@ -577,6 +594,8 @@ Item {
                     favorite: 0,
                     hidden: false,
                     disambiguatingTags: "",
+                    entryType: "media",
+                    fileCount: 0,
                     disabled: false,
                     stateReason: "",
                     isEmpty: false,
@@ -657,6 +676,9 @@ Item {
                 hubGridModel.setProperty(i, "disambiguatingTags", entry.disambiguatingTags);
             if (row.isEmpty !== entry.isEmpty)
                 hubGridModel.setProperty(i, "isEmpty", entry.isEmpty);
+            // entryType/fileCount omitted from the diff above -- every Hub
+            // entry builder sets them to the same constants ("media"/0)
+            // always, so there is nothing for them to ever change to.
         }
         if (list.length > existing) {
             for (let i = existing; i < list.length; i++) {
@@ -668,6 +690,12 @@ Item {
                     hidden: entry.hidden,
                     disabled: entry.disabled === true,
                     disambiguatingTags: entry.disambiguatingTags,
+                    // Round 11: required roles on the shared PagedGrid
+                    // delegate (see PagedGrid.qml's `cellItem.entryType`/
+                    // `fileCount`) -- Hub tiles are never Games-browse
+                    // folders, so always "media"/0.
+                    entryType: entry.entryType,
+                    fileCount: entry.fileCount,
                     isEmpty: entry.isEmpty
                 });
             }
@@ -1453,16 +1481,21 @@ Item {
     // path already showed correctly.
     ActiveLabel {
         id: activeLabel
+        objectName: "hubActiveLabel"
 
         anchors.top: pagedGrid.bottom
         anchors.topMargin: hub._verticalGap
         anchors.left: parent.left
         anchors.right: parent.right
         height: hub._activeLabelHeight
-        // Reserves the same width as the PageIndicator's corner slot
-        // below so a long tile name elides before it reaches the
-        // chevrons/page count, rather than running underneath them.
-        sideInset: Sizing.px(hub.width / 3)
+        // Reserves exactly what the PageIndicator's corner slot below
+        // measures, not a flat third of the screen -- the indicator is
+        // ~10-12% wide, so a hardcoded third-per-side left roughly two
+        // thirds of the label's budget unused. The block stays centred
+        // (see ActiveLabel.qml), so the same inset is paid on the left
+        // even though nothing sits there on Hub -- see the PageIndicator
+        // comment below.
+        sideInset: Sizing.px(hubPageIndicator.width) + Sizing.pctW(3) + Sizing.pctW(1.5)
         text: {
             // currentIndex can briefly outrun items.length during cold
             // launch, before HubState is clamped to it. Guard the lookup so
@@ -1497,10 +1530,11 @@ Item {
     // Page cue — right corner of the footer row, alongside activeLabel.
     // No left-corner counterpart: Hub has no natural "N items" count the
     // way Systems/Games do, so that slot simply stays empty (still the
-    // same reserved one-third width, for consistency with every other
-    // footer -- there just isn't anything to put there).
+    // same reserved inset as the right corner, for consistency with every
+    // other footer -- there just isn't anything to put there).
     PageIndicator {
         id: hubPageIndicator
+        objectName: "hubPageIndicator"
 
         anchors.right: parent.right
         anchors.rightMargin: Sizing.pctW(3)

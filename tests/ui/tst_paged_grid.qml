@@ -68,6 +68,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -76,6 +79,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -84,6 +90,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
     }
@@ -96,6 +105,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
     }
@@ -135,6 +147,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -143,6 +158,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -151,6 +169,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -159,6 +180,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
     }
@@ -212,6 +236,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -220,6 +247,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -228,6 +258,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
     }
@@ -296,6 +329,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -304,6 +340,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
         ListElement {
@@ -312,6 +351,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -320,6 +362,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
         ListElement {
@@ -328,6 +373,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
         ListElement {
@@ -336,6 +384,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
         ListElement {
@@ -344,6 +395,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
         ListElement {
@@ -352,6 +406,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -360,6 +417,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
         ListElement {
@@ -368,6 +428,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -376,6 +439,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
         ListElement {
@@ -384,6 +450,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
     }
@@ -419,6 +488,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: false
         }
         ListElement {
@@ -427,6 +499,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
         ListElement {
@@ -435,6 +510,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
         ListElement {
@@ -443,6 +521,9 @@ TestCase {
             favorite: 0
             hidden: false
             disambiguatingTags: ""
+            entryType: "media"
+            fileCount: 0
+            disabled: false
             isEmpty: true
         }
     }

@@ -91,6 +91,11 @@ const DISAMBIGUATING_TAGS_ROLE: i32 = 256 + 12;
 // exists only so PagedGrid's `isEmpty` delegate contract (round 6 follow-up
 // — see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
 const IS_EMPTY_ROLE: i32 = 256 + 13;
+// No Games row is ever "disabled" (Hub-only concept — a live precondition
+// not currently met, e.g. Resume with no history). The role exists only so
+// PagedGrid's `cellItem.disabled` delegate contract (round 11 follow-up —
+// see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
+const DISABLED_ROLE: i32 = 256 + 14;
 
 // Image types that Core's `media.image` endpoint can serve (per the API
 // docs). The carousel tail is filtered to this set so left/right never
@@ -521,6 +526,10 @@ pub mod ffi {
         #[qinvokable]
         fn entry_type_at(self: &GamesModel, index: i32) -> QString;
 
+        /// Index-based sibling to the `fileCount` role -- see `file_count_at`.
+        #[qinvokable]
+        fn file_count_at(self: &GamesModel, index: i32) -> i32;
+
         #[qinvokable]
         fn is_media_capable_at(self: &GamesModel, index: i32) -> bool;
 
@@ -636,7 +645,7 @@ impl ffi::GamesModel {
                     .get(index.row() as usize)
                     .map_or("", String::as_str),
             )),
-            HIDDEN_ROLE | IS_EMPTY_ROLE => QVariant::from(&false),
+            HIDDEN_ROLE | IS_EMPTY_ROLE | DISABLED_ROLE => QVariant::from(&false),
             _ => QVariant::default(),
         }
     }
@@ -659,6 +668,7 @@ impl ffi::GamesModel {
             QByteArray::from("disambiguatingTags"),
         );
         h.insert(IS_EMPTY_ROLE, QByteArray::from("isEmpty"));
+        h.insert(DISABLED_ROLE, QByteArray::from("disabled"));
         h
     }
 
@@ -1425,6 +1435,16 @@ impl ffi::GamesModel {
             return QString::default();
         }
         QString::from(self.entries[index as usize].entry_type.as_str())
+    }
+
+    /// Round 11: index-based sibling to the `fileCount` role, for the one
+    /// caller that reads by index rather than through a delegate (the
+    /// footer `ActiveLabel`'s tags provider -- see MediaListScreen.qml).
+    fn file_count_at(&self, index: i32) -> i32 {
+        if index < 0 || index >= self.count {
+            return 0;
+        }
+        i32::try_from(self.entries[index as usize].file_count).unwrap_or(i32::MAX)
     }
 
     fn is_media_capable_at(&self, index: i32) -> bool {
@@ -2931,6 +2951,56 @@ fn is_strict_ancestor_path(parent: &str, child: &str) -> bool {
         .is_some_and(|rest| rest.starts_with('/'))
 }
 
+/// Round 11 interim fix for the "which root do I pick" roots screen (a
+/// full client-side merge is deferred to Core -- see the round-11 plan).
+/// A system with multiple configured folders shows one identically-named
+/// `root` row per folder, with nothing distinguishing them; find the
+/// first path component where the page's root entries disagree and
+/// return that component per entry ("fat" vs "usb0", "games" vs
+/// "games2"). Returned `Vec` is the same length and order as `entries`;
+/// non-root entries and any root that never needed disambiguating (fewer
+/// than two roots on the page, or one identical to every sibling up to
+/// where paths run out) get `""`.
+///
+/// Assumes `dedup_roots_drop_ancestors` already ran -- a root path being a
+/// strict prefix of a sibling's (the case that function exists to drop)
+/// is not itself guarded against here.
+fn root_distinguishers(entries: &[BrowseEntry]) -> Vec<String> {
+    let root_indices: Vec<usize> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.entry_type == "root" && !e.path.is_empty())
+        .map(|(i, _)| i)
+        .collect();
+    let mut result = vec![String::new(); entries.len()];
+    if root_indices.len() < 2 {
+        return result;
+    }
+    let components: Vec<Vec<&str>> = root_indices
+        .iter()
+        .map(|&i| {
+            entries[i]
+                .path
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .collect();
+    let max_len = components.iter().map(Vec::len).max().unwrap_or(0);
+    let Some(diverge_at) = (0..max_len).find(|&idx| {
+        let first = components[0].get(idx);
+        components.iter().any(|c| c.get(idx) != first)
+    }) else {
+        return result;
+    };
+    for (&entry_idx, comps) in root_indices.iter().zip(components.iter()) {
+        if let Some(part) = comps.get(diverge_at) {
+            result[entry_idx] = (*part).to_string();
+        }
+    }
+    result
+}
+
 fn apply_status(mut model: Pin<&mut ffi::GamesModel>, status: ResourceStatus<MediaBrowseResult>) {
     match project_status(status) {
         Projection::Pending => {
@@ -3229,7 +3299,18 @@ fn apply_initial_page(mut model: Pin<&mut ffi::GamesModel>, result: MediaBrowseR
         total, total_dirs, has_next_page, "games: apply_initial_page"
     );
     let reset_started = Instant::now();
-    let displays = compute_disambig_displays(&entries, model.show_original_filenames);
+    let mut displays = compute_disambig_displays(&entries, model.show_original_filenames);
+    // Round 11: overlay the roots-screen distinguisher (see
+    // `root_distinguishers`'s doc comment) onto the same channel the tag
+    // table already uses for a sibling-diffed dim suffix -- root entries
+    // never carry Core tags, so `displays` is otherwise always blank for
+    // them, and QML's folder-count suffix composes `<distinguisher> · <N
+    // items>` from whatever lands here.
+    for (i, distinguisher) in root_distinguishers(&entries).into_iter().enumerate() {
+        if !distinguisher.is_empty() {
+            displays[i] = distinguisher;
+        }
+    }
     model.as_mut().rust_mut().next_cursor = next_cursor;
     // Pagination properties must be current before either modelReset or
     // rowsRevision asks Main.qml to restore a saved deep-page selection.
@@ -3590,9 +3671,9 @@ mod tests {
         is_strict_ancestor_path, jump_fetch_limit, media_capable_directory_browse_params,
         media_key_for, meta_cache_key_for_entry, meta_params_for_entry, ordered_detail_image_keys,
         position_of_game_path, prefetch_around_plan, prefetch_cursor_window_plan, project_status,
-        result_total_dirs, run_text_for_entry, seeded_refetch_pagination_state,
-        singleton_directory_needs_launch_resolution, transform_entries, InitialAction,
-        InitialRowReplacement, Projection,
+        result_total_dirs, root_distinguishers, run_text_for_entry,
+        seeded_refetch_pagination_state, singleton_directory_needs_launch_resolution,
+        transform_entries, InitialAction, InitialRowReplacement, Projection,
     };
     use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -4117,6 +4198,80 @@ mod tests {
         let kept = dedup_roots_drop_ancestors(entries);
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].path, "/media/fat/games/Genesis");
+    }
+
+    #[test]
+    fn root_distinguishers_finds_the_first_diverging_component() {
+        let entries = vec![
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+            root("SNES", "/media/usb0/games/SNES", "SNES"),
+        ];
+        let d = root_distinguishers(&entries);
+        assert_eq!(d, vec!["fat".to_string(), "usb0".to_string()]);
+    }
+
+    #[test]
+    fn root_distinguishers_uses_a_later_component_when_the_earlier_ones_match() {
+        let entries = vec![
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+            root("SNES", "/media/fat/games2/SNES", "SNES"),
+        ];
+        let d = root_distinguishers(&entries);
+        assert_eq!(d, vec!["games".to_string(), "games2".to_string()]);
+    }
+
+    #[test]
+    fn root_distinguishers_blank_for_a_single_root() {
+        let entries = vec![root("SNES", "/media/fat/games/SNES", "SNES")];
+        assert_eq!(root_distinguishers(&entries), vec![String::new()]);
+    }
+
+    #[test]
+    fn root_distinguishers_blank_when_every_root_is_identical() {
+        // Shouldn't happen in practice (two roots at the exact same path),
+        // but must not panic or produce a spurious label.
+        let entries = vec![
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+        ];
+        let d = root_distinguishers(&entries);
+        assert_eq!(d, vec![String::new(), String::new()]);
+    }
+
+    #[test]
+    fn root_distinguishers_ignores_non_root_and_blank_path_entries() {
+        let entries = vec![
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+            root("SNES", "/media/usb0/games/SNES", "SNES"),
+            folder("RPGs", "/media/fat/games/SNES/RPGs"),
+            root("ghost", "", "SNES"),
+            media("smb", "/media/fat/games/SNES/smb.sfc", "SNES"),
+        ];
+        let d = root_distinguishers(&entries);
+        assert_eq!(
+            d,
+            vec![
+                "fat".to_string(),
+                "usb0".to_string(),
+                String::new(),
+                String::new(),
+                String::new(),
+            ]
+        );
+    }
+
+    #[test]
+    fn root_distinguishers_three_way_split() {
+        let entries = vec![
+            root("SNES", "/media/fat/games/SNES", "SNES"),
+            root("SNES", "/media/usb0/games/SNES", "SNES"),
+            root("SNES", "/media/usb1/games/SNES", "SNES"),
+        ];
+        let d = root_distinguishers(&entries);
+        assert_eq!(
+            d,
+            vec!["fat".to_string(), "usb0".to_string(), "usb1".to_string()]
+        );
     }
 
     #[test]

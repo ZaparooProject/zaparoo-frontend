@@ -40,4 +40,36 @@ QtObject {
     function count(n: int): string {
         return Number(n).toLocaleString(root.locale(), "f", 0);
     }
+
+    // The dim suffix for a folder/root row -- the bare item count, or
+    // "<distinguisher> · N" when the row needed disambiguating from a
+    // same-named sibling root (see games.rs's `root_distinguishers`, which
+    // overlays the distinguisher onto the same `disambiguatingTags` channel
+    // a folder normally leaves blank). No "item(s)" word: this slot is
+    // shared with ScrollingCaption's short 2-4 char disambiguating tags
+    // ("US"/"EU"), which `Text.ElideLeft`s from the front when it overflows
+    // -- a translated word phrase reliably overflowed and truncated down to
+    // a bare "...tem(s)", while the number alone reads unambiguously since
+    // a folder row never shows anything else in this slot. Hidden (empty
+    // string) when `fileCount` is 0 -- Core omits the field on a root whose
+    // exact count it couldn't compute in time, so 0 doesn't reliably mean
+    // "empty," and showing "0" next to a folder that likely has content
+    // would be actively misleading. One shared implementation for every
+    // caller (BrowseList row, grid Tile caption, footer ActiveLabel).
+    function folderCountSuffix(distinguisher: string, fileCount: int): string {
+        if (fileCount <= 0)
+            return distinguisher;
+        const label = root.count(fileCount);
+        return distinguisher !== "" ? distinguisher + " · " + label : label;
+    }
+
+    // Chooses between a game row's own disambiguation tags and a folder/
+    // root row's item-count suffix, keyed on the shared `entryType` role
+    // every Browse list/grid model now publishes (games.rs, favorites.rs,
+    // recents.rs, systems.rs, favorite_systems.rs).
+    function rowSuffix(entryType: string, disambiguatingTags: string, fileCount: int): string {
+        if (entryType === "directory" || entryType === "root")
+            return root.folderCountSuffix(disambiguatingTags, fileCount);
+        return disambiguatingTags;
+    }
 }

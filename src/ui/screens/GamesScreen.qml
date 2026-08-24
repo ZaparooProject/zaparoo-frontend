@@ -158,20 +158,20 @@ MediaListScreen {
     topStripTotalPagesProvider: () => Math.max(1, Math.ceil((Browse.GamesModel.total_dirs + Browse.GamesModel.total_files) / games._browsePageSize))
     // Shown at the top on every theme except CRT (whose top strip is
     // hidden entirely and keeps this in the footer instead --
-    // `_pageCueInFooter`/`bottomStatusLeftText` below). List layout has
-    // its own separate top-strip chrome and never reads this provider for
-    // list layout's own reasons (see MediaListScreen's list/grid split).
+    // `_pageCueInFooter`/`bottomStatusLeftText` below). List layout leaves
+    // this slot blank deliberately -- the visible rows already carry
+    // per-item identity, so a running "%1 games" total next to the page
+    // cue would be redundant; the same total still surfaces in the footer
+    // on CRT via `bottomStatusLeftText`.
     topStripTotalTextProvider: () => games._listLayout ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 games").arg(Format.count(Browse.GamesModel.total_files)) : "")
-    topStripRightTextProvider: () => {
-        if (!games._listLayout)
-            return "";
-        if (Browse.GamesModel.loading_more)
-            return qsTr("Loading more…");
-        if (games.gamesGrid.itemCount <= 0)
-            return "";
-        const total = Math.max(1, Browse.GamesModel.total_dirs + Browse.GamesModel.total_files);
-        return qsTr("%1 / %2").arg(games.gamesGrid.currentIndex + 1).arg(total);
-    }
+    // Round 11: list layout's right slot now normally hosts the same
+    // interactive PageIndicator grid layout has (see MediaListScreen's
+    // `pageIndicatorMode`) instead of an item-position "N / M" counter --
+    // that counter is gone. The one thing still worth surfacing here is a
+    // transient "Loading more…" cue while a background fetch is filling in
+    // rows the user has scrolled past the end of; MediaListScreen yields
+    // the slot back to this plain text for as long as it's non-empty.
+    topStripRightTextProvider: () => games._listLayout && Browse.GamesModel.loading_more && games.gamesGrid.itemCount > 0 ? qsTr("Loading more…") : ""
     gridBottomMargin: games._footerProfile ? games._footerProfile.gridBottomMargin : (Sizing.pctH(8) + Sizing.pctH(7))
 
     function _folderNameForPath(path: string): string {

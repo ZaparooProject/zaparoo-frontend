@@ -26,6 +26,7 @@ set(_TST_UI_QML_FILES
     tst_paged_grid.qml
     tst_footer_chrome.qml
     tst_status_line.qml
+    tst_format.qml
     tst_pressable_surface.qml
     tst_context_menu.qml
     tst_modal.qml
@@ -44,6 +45,7 @@ set(_TST_UI_QML_FILES
     tst_tile_cover_sync.qml
     tst_game_info_modal.qml
     tst_scrape_setup_modal.qml
+    tst_index_setup_modal.qml
 )
 set(_TST_UI_LINK_LIBRARIES
     Zaparoo::CompileOptions

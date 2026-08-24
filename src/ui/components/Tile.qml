@@ -92,8 +92,17 @@ Item {
     // Sibling-diffed disambiguating-tag display string (region, disc, rev, ...).
     // Empty for items with no variants. Rendered as a dim inline suffix after
     // the name in the bottom caption (see ScrollingCaption), identically on the
-    // default and CRT paths.
+    // default and CRT paths. For a folder/root row this instead carries the
+    // round-11 roots-screen distinguisher, if any (games.rs's
+    // `root_distinguishers`) -- `delegateTagsSuffix` below folds it
+    // together with `delegateFileCount`.
     readonly property string delegateDisambiguatingTags: parent.disambiguatingTags ?? ""
+    // Round 11. Defaults keep every model without these roles (Hub's
+    // hand-built ListModel) silently at "no folder-count suffix", same
+    // reasoning as `delegateDisabled` above.
+    readonly property string delegateEntryType: parent.entryType ?? ""
+    readonly property int delegateFileCount: parent.fileCount ?? 0
+    readonly property string delegateTagsSuffix: Format.rowSuffix(root.delegateEntryType, root.delegateDisambiguatingTags, root.delegateFileCount)
     // Pulse counter forwarded by TileLoader — increment to lower the raised
     // face on the focused tile. Every button-like action (folder
     // drill-in, system select, game launch) shares this single cue, so
@@ -704,7 +713,7 @@ Item {
             // Folds the "Hidden" state into the same dim suffix slot
             // disambiguating tags already use, rather than a separate
             // badge -- see this round's plan ("Tile state consolidation").
-            tags: root.delegateHidden ? (root.delegateDisambiguatingTags !== "" ? root.delegateDisambiguatingTags + " · " + qsTr("Hidden") : qsTr("Hidden")) : root.delegateDisambiguatingTags
+            tags: root.delegateHidden ? (root.delegateTagsSuffix !== "" ? root.delegateTagsSuffix + " · " + qsTr("Hidden") : qsTr("Hidden")) : root.delegateTagsSuffix
             fontPixelSize: root._captionTextSize
             fontWeight: root._captionTextWeight
             nameColor: root._focusedSelection ? Theme.textPrimary : Theme.textLabel

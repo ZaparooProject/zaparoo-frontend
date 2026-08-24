@@ -16,16 +16,19 @@ import Zaparoo.Browse as Browse
 // Round 10 — scrape setup modal. Opened from the Settings "Scrape
 // metadata" row when idle (replacing a direct, hardcoded-scraper start).
 // Scoped down from the Zaparoo TUI's `showScrapeSetup` equivalent
-// (`pkg/ui/tui/generatedb.go`): scraper choice + re-scrape toggle +
-// Start, dropping the TUI's per-system multi-select — the frontend
-// already has that scoping via the existing per-system/per-category
-// `scrape_system`/`scrape_category` context-menu entries, which stay on
-// the hardcoded "gamelist.xml" scraper untouched by this modal.
+// (`pkg/ui/tui/generatedb.go`): scraper choice + system scope + re-scrape
+// toggle + Start, dropping the TUI's per-system multi-select widget in
+// favor of the same flat "All systems / All <Category> systems / one
+// system" picker Round 11 gave `IndexSetupModal` — the per-system/
+// per-category `scrape_system`/`scrape_category` context-menu entries
+// still cover a targeted single-system run and stay on the hardcoded
+// "gamelist.xml" scraper untouched by this modal.
 //
-// Three keyboard-navigable rows (`currentIndex` 0-2): Scraper (opens a
+// Four keyboard-navigable rows (`currentIndex` 0-3): Scraper (opens a
 // nested ListPickerModal via Main.qml — see `requestScraperPicker`),
-// Re-scrape existing (inline toggle), Start scrape (action). Chrome
-// comes from the shared `Modal` shell, same as LogUploadModal.
+// Systems (opens the same nested picker via `requestSystemScopePicker`),
+// Re-scrape existing (inline toggle), Start scrape (action). Chrome comes
+// from the shared `Modal` shell, same as LogUploadModal.
 Item {
     id: modal
 
@@ -34,13 +37,18 @@ Item {
     // (`fieldId === "scraperChoice"`) rather than a Browse.Settings
     // setter — the choice isn't persisted until Start is pressed.
     property string selectedScraperId: ""
+    // "*" (all systems), "cat:<Category>", or a single system id. Same
+    // sentinel convention as IndexSetupModal — see Main.qml's
+    // `_systemScopeAll`/`_buildSystemScopeEntries`.
+    property string selectedSystemScope: "*"
     property bool rescrapeExisting: false
     property int currentIndex: 0
     property bool _pressed: false
 
     readonly property int _rowScraper: 0
-    readonly property int _rowToggle: 1
-    readonly property int _rowStart: 2
+    readonly property int _rowSystems: 1
+    readonly property int _rowToggle: 2
+    readonly property int _rowStart: 3
 
     readonly property string _selectedScraperName: {
         const ids = Browse.MediaStatus.scraper_ids;
@@ -52,11 +60,23 @@ Item {
         return modal.selectedScraperId;
     }
 
+    // Same display convention as IndexSetupModal's identical property —
+    // see Main.qml's `_buildSystemScopeEntries` for the sentinel scheme.
+    readonly property string _selectedSystemScopeName: {
+        if (modal.selectedSystemScope === "" || modal.selectedSystemScope === "*")
+            return qsTr("All systems");
+        if (modal.selectedSystemScope.startsWith("cat:"))
+            return qsTr("All %1 systems").arg(modal.selectedSystemScope.slice(4));
+        const name = Browse.SystemsModel.system_name_for_id(modal.selectedSystemScope);
+        return name !== "" ? name : modal.selectedSystemScope;
+    }
+
     signal closeRequested
     // Bubbled to Main.qml (see MainLayout.qml's Loader wiring) — this
     // modal can't instantiate a second top-level modal itself; the
     // router stacks the shared ListPickerModal on top instead.
     signal requestScraperPicker
+    signal requestSystemScopePicker
 
     visible: modal.open
     anchors.fill: parent
@@ -69,6 +89,7 @@ Item {
             return;
         }
         modal.currentIndex = modal._rowScraper;
+        modal.selectedSystemScope = "*";
         modal.rescrapeExisting = false;
         modal._pressed = false;
     }
@@ -102,11 +123,25 @@ Item {
         } else if (action === "accept") {
             if (modal.currentIndex === modal._rowScraper)
                 modal.requestScraperPicker();
+            else if (modal.currentIndex === modal._rowSystems)
+                modal.requestSystemScopePicker();
             else if (modal.currentIndex === modal._rowToggle)
                 modal.rescrapeExisting = !modal.rescrapeExisting;
             else if (modal.currentIndex === modal._rowStart)
                 modal._startScrape();
         }
+    }
+
+    // Resolves `selectedSystemScope`'s "*"/"cat:<Category>"/<system id>
+    // sentinel into the concrete QStringList `start_scrape_with_scraper`
+    // takes — empty for "all systems", matching that invokable's own
+    // "empty means every system the scraper supports" contract.
+    function _resolvedSystems(): var {
+        if (modal.selectedSystemScope === "" || modal.selectedSystemScope === "*")
+            return [];
+        if (modal.selectedSystemScope.startsWith("cat:"))
+            return Browse.SystemsModel.system_ids_for_category(modal.selectedSystemScope.slice(4));
+        return [modal.selectedSystemScope];
     }
 
     function _startScrape(): void {
@@ -123,7 +158,7 @@ Item {
         id: startCommit
         onDeferred: {
             modal._pressed = false;
-            Browse.MediaStatus.start_scrape_with_scraper(modal.selectedScraperId, modal.rescrapeExisting);
+            Browse.MediaStatus.start_scrape_with_scraper(modal.selectedScraperId, modal._resolvedSystems(), modal.rescrapeExisting);
             modal.closeRequested();
         }
     }
@@ -166,6 +201,19 @@ Item {
                     onAccepted: {
                         modal.currentIndex = modal._rowScraper;
                         modal.requestScraperPicker();
+                    }
+                }
+
+                SettingsField {
+                    width: parent.width
+                    label: qsTr("Systems")
+                    value: modal._selectedSystemScopeName
+                    control: "picker"
+                    isFocused: modal.currentIndex === modal._rowSystems
+                    onHovered: modal.currentIndex = modal._rowSystems
+                    onAccepted: {
+                        modal.currentIndex = modal._rowSystems;
+                        modal.requestSystemScopePicker();
                     }
                 }
 
