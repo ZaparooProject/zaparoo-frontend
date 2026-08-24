@@ -749,13 +749,25 @@ Item {
         hub.currentIndex = hub._actionIndexForId(Browse.HubState.selected_action);
     }
 
+    // Every caller of this (Main.qml's `_maybeArmHubResumeFocus`, both call
+    // sites) runs it immediately after `restoreFromCategoriesReset`, which
+    // is the sole authority on what to seat focus on: a real persisted
+    // category/item when one exists, Resume only as its own last-resort,
+    // deliberately non-persisting fallback (see that function's
+    // "Non-persisting seat" comment). This used to re-select and commit
+    // Resume unconditionally whenever it was visible -- which is true by
+    // default until Core positively confirms otherwise, so it fired on
+    // every single launch, not just a genuine first boot -- clobbering a
+    // saved category/item with Resume on every MiSTer relaunch (Main
+    // relaunches the frontend around every game launch). Only commit when
+    // the restore itself already landed on Resume; leave a real restored
+    // item alone.
     function focusResumeIfVisible(): void {
         if (!hub.resumeActionVisible)
             return;
-        const idx = hub._itemIndexForId("action", "resume");
-        if (idx < 0)
+        const current = hub.items[hub.currentIndex];
+        if (!current || current.kind !== "action" || current.id !== "resume")
             return;
-        hub.currentIndex = idx;
         hub._commitCurrent();
     }
 

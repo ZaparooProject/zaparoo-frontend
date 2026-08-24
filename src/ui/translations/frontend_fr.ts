@@ -536,7 +536,7 @@ Français - Wilfried</translation>
     </message>
     <message>
         <location filename="../screens/HubScreen.qml" line="297"/>
-        <location filename="../screens/HubScreen.qml" line="1276"/>
+        <location filename="../screens/HubScreen.qml" line="1288"/>
         <source>Resume</source>
         <translation>Reprendre</translation>
     </message>
@@ -584,7 +584,7 @@ Français - Wilfried</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="1571"/>
+        <location filename="../screens/HubScreen.qml" line="1583"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>Aucun système disponible. Lancez Mettre à jour la base de données média depuis les Réglages.</translation>
     </message>

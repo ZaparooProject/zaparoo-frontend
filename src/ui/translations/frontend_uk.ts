@@ -514,7 +514,7 @@ Français - Wilfried</source>
     </message>
     <message>
         <location filename="../screens/HubScreen.qml" line="297"/>
-        <location filename="../screens/HubScreen.qml" line="1276"/>
+        <location filename="../screens/HubScreen.qml" line="1288"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
@@ -563,7 +563,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="1571"/>
+        <location filename="../screens/HubScreen.qml" line="1583"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>Немає доступних систем. Запустіть Оновлення бази даних з Налаштувань.</translation>
     </message>

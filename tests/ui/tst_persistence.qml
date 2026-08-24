@@ -227,4 +227,33 @@ TestCase {
         compare(Browse.HubState.selected_row, 0, "An empty-catalog restore must not overwrite the saved category row with the Resume action");
         compare(Browse.HubState.selected_action, "", "An empty-catalog restore must not persist a Resume fallback action");
     }
+
+    // Regression: `Main.qml`'s `_maybeArmHubResumeFocus` runs
+    // `HubScreen.focusResumeIfVisible()` right after
+    // `restoreFromCategoriesReset` on every boot (both the immediate
+    // Component.onCompleted path and the delayed startup-restore path).
+    // Resume is optimistically visible by default -- `resumeActionVisible`
+    // only turns false once Core positively confirms there is nothing to
+    // resume -- so `connection_state` staying DISCONNECTED in this harness
+    // (no live Core) reproduces that same boot-time race. It used to
+    // re-select and commit Resume unconditionally whenever visible,
+    // clobbering a just-restored real item with it on every single launch.
+    // MiSTer relaunches the frontend around every game launch, so on
+    // device this fired constantly, not just on a genuine first boot with
+    // nothing saved at all.
+    function test_resume_focus_arm_preserves_a_real_saved_item(): void {
+        verify(main.hubScreen.resumeActionVisible, "resume must be optimistically visible before Core confirms otherwise, to actually exercise this path");
+        Browse.HubState.selected_item = "action:favorites";
+        Browse.HubState.selected_row = 1;
+        Browse.HubState.selected_action = "favorites";
+        main.hubScreen.restoreFromCategoriesReset(false);
+        const favoritesIndex = main.hubScreen._actionIndexForId("favorites");
+        compare(main.hubScreen.currentIndex, favoritesIndex, "restoreFromCategoriesReset must seat the real saved item");
+
+        main._maybeArmHubResumeFocus();
+
+        compare(main.hubScreen.currentIndex, favoritesIndex, "arming resume focus after a real item restore must not steal it");
+        compare(Browse.HubState.selected_item, "action:favorites", "arming resume focus must not overwrite a real persisted item with Resume");
+        compare(Browse.HubState.selected_action, "favorites", "arming resume focus must not overwrite persisted state with Resume");
+    }
 }
