@@ -180,6 +180,24 @@ pub struct SettingsState {
     /// name is shown.
     #[serde(default)]
     pub show_original_filenames: bool,
+    /// When true, flips which physical button accepts vs cancels at the
+    /// key->action dispatch seam (see `Main.qml::_swapConfirmCancelAction`),
+    /// compensating for a misconfigured OK/Cancel swap in `Main_MiSTer`'s own
+    /// OSD without the user having to fix it there. Never applies while the
+    /// keyboard is the active input source -- Enter/Escape are fixed keys.
+    /// The help-bar glyphs (`MainLayout.qml`) flip in lockstep via
+    /// `Browse.ControllerReport`.
+    #[serde(default)]
+    pub swap_confirm_cancel: bool,
+    /// When true, flips which physical button opens Options vs View at the
+    /// same key->action dispatch seam (see
+    /// `Main.qml::_swapOptionsViewAction`) -- a controller whose X/Y (or
+    /// equivalent) mapping is backwards is common enough that this is
+    /// usually the actual fix, independent of the confirm/cancel swap
+    /// above. Never applies while the keyboard is the active input source
+    /// -- Tab/Space are fixed keys. The help-bar glyphs flip in lockstep.
+    #[serde(default)]
+    pub swap_options_view: bool,
     /// Region variant for system names and logos. `"auto"` (default) derives
     /// the region from the effective UI locale: `en` → US, `ja` → JP, all
     /// others → EU. Explicit values are `"us"`, `"eu"`, `"jp"`.
@@ -220,6 +238,8 @@ impl Default for SettingsState {
             media_image_type: default_media_image_type(),
             show_hidden: false,
             show_original_filenames: false,
+            swap_confirm_cancel: false,
+            swap_options_view: false,
             region: default_region(),
             crt_video_standard: default_crt_video_standard(),
             crt_h_offset: 0,
@@ -261,10 +281,12 @@ fn default_color_scheme() -> String {
 }
 
 fn default_button_layout() -> String {
-    // Style A — formerly "nintendo". `models::settings::normalize_button_layout`
-    // migrates legacy persisted values, so this default only applies to
+    // Auto-detect the connected controller's family via
+    // `Browse.ControllerReport`. `models::settings::normalize_button_layout`
+    // migrates legacy persisted values (both the old single-letter ids and
+    // the older platform aliases), so this default only applies to
     // brand-new state files.
-    "a".into()
+    "auto".into()
 }
 
 fn default_mouse_enabled() -> bool {
@@ -452,6 +474,8 @@ mod tests {
                 media_image_type: "auto".into(),
                 show_hidden: true,
                 show_original_filenames: true,
+                swap_confirm_cancel: true,
+                swap_options_view: true,
                 region: "us".into(),
                 crt_video_standard: "pal".into(),
                 crt_h_offset: -3,
@@ -486,6 +510,10 @@ resolution = "1920x1080"
         assert_eq!(state.favorite_systems, FavoriteSystemsState::default());
         // reduce_motion absent from an older state file defaults to false.
         assert!(!state.settings.reduce_motion);
+        // swap_confirm_cancel absent from an older state file defaults to false.
+        assert!(!state.settings.swap_confirm_cancel);
+        // swap_options_view absent from an older state file defaults to false.
+        assert!(!state.settings.swap_options_view);
         // entered_from_hub absent from an older state file defaults to
         // false — the ordinary Systems-entered back-routing behaviour.
         assert!(!state.games.entered_from_hub);
@@ -663,7 +691,7 @@ resolution = "1920x1080"
         assert_eq!(state.settings.clock_format, "auto");
         assert_eq!(state.settings.browse_layout, "grid");
         assert_eq!(state.settings.color_scheme, "zaparoo-dark");
-        assert_eq!(state.settings.button_layout, "a");
+        assert_eq!(state.settings.button_layout, "auto");
         assert!(state.settings.mouse_enabled);
         assert!(!state.settings.debug_logging);
         assert_eq!(state.settings.crt_video_standard, "ntsc");

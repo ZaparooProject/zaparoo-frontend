@@ -51,7 +51,7 @@ use std::time::{Duration, Instant};
 use zaparoo_core::{
     client::Client,
     config::load_config,
-    hub_layout,
+    controller_report, hub_layout,
     logger::{debug_logging_enabled, install},
     persist, platform,
     platform_paths::{config_file_path, custom_dir, log_file_path, stderr_log_path},
@@ -454,6 +454,8 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
     startup_trace("rust:client created");
     platform::spawn_fetcher(client.clone(), &handle);
     startup_trace("rust:platform fetcher spawned");
+    controller_report::spawn_watcher();
+    startup_trace("rust:controller report watcher spawned");
     let store = Store::new(client.clone(), handle.clone());
     startup_trace("rust:store created");
 

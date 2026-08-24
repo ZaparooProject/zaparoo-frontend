@@ -30,6 +30,7 @@ pub mod app_status;
 pub mod browse;
 pub mod build_info;
 pub mod categories;
+pub mod controller_report;
 pub mod crt_video;
 pub mod favorite_systems;
 pub mod favorite_systems_state;

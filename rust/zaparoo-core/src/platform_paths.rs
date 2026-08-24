@@ -100,6 +100,23 @@ pub fn state_file_path() -> PathBuf {
     }
 }
 
+/// Path to `Main_MiSTer`'s alt-launcher controller-input report (see
+/// `crate::controller_report`) -- a fixed `/tmp` location on every runtime,
+/// since only a colocated `Main_MiSTer` ever writes it. Not gated on
+/// `runtime::current().is_mister()` here; `controller_report::spawn_watcher`
+/// does that gating itself (and also honors this same override to force the
+/// watcher on off-`MiSTer`). `ZAPAROO_INPUT_REPORT_FILE` lets tests and
+/// desktop dev runs point at a fixture, mirroring `ZAPAROO_STATE_FILE`
+/// above.
+pub fn launcher_input_report_path() -> PathBuf {
+    if let Ok(custom) = std::env::var("ZAPAROO_INPUT_REPORT_FILE") {
+        if !custom.is_empty() {
+            return PathBuf::from(custom);
+        }
+    }
+    PathBuf::from("/tmp/zaparoo_launcher_input.json")
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -110,7 +127,8 @@ mod tests {
     )]
 
     use super::{
-        cache_dir, config_file_path, custom_dir, log_file_path, state_file_path, stderr_log_path,
+        cache_dir, config_file_path, custom_dir, launcher_input_report_path, log_file_path,
+        state_file_path, stderr_log_path,
     };
     use crate::runtime;
 
@@ -219,6 +237,19 @@ mod tests {
             cfg.parent(),
             state.parent(),
             "state.toml must be a sibling of frontend.toml: cfg={cfg:?} state={state:?}"
+        );
+    }
+
+    #[test]
+    fn launcher_input_report_path_is_fixed_tmp_location() {
+        // No test sets ZAPAROO_INPUT_REPORT_FILE, so the default applies on
+        // every platform -- it is a MiSTer-only artifact at a fixed path.
+        if std::env::var("ZAPAROO_INPUT_REPORT_FILE").is_ok() {
+            return;
+        }
+        assert_eq!(
+            launcher_input_report_path().to_str(),
+            Some("/tmp/zaparoo_launcher_input.json")
         );
     }
 }

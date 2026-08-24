@@ -249,10 +249,63 @@ ApplicationWindow {
             root.applyCrtPreviewScale(fitScale);
     }
 
+    // Help-bar glyphs. "auto" defers the family to the connected controller
+    // (via the MiSTer input report, projected by Browse.ControllerReport);
+    // a manual pick pins the family. Confirm/cancel face glyphs always
+    // follow the live report regardless of which family is active -- which
+    // physical button accepts is a fact about the connected controller
+    // (Main's own OK/Cancel swap included), not an aesthetic choice, so a
+    // manually-pinned art style must not silently show the wrong button.
+    readonly property bool _autoButtonLayout: Browse.Settings.current_button_layout === "auto"
+    readonly property string _effectiveButtonLayout: root._autoButtonLayout ? Browse.ControllerReport.glyph_layout : Browse.Settings.current_button_layout
+    // Whether the keyboard is the *live* active input source, per the
+    // MiSTer input report -- deliberately read straight off
+    // Browse.ControllerReport.glyph_layout, not _effectiveButtonLayout, so a
+    // manual "Style E" pin (Settings lists it alongside A-D) doesn't get
+    // treated as keyboard input just because a controller player likes its
+    // look. Enter/Escape are fixed keys, so "Swap controller confirm/cancel"
+    // (Settings > Controls & Input) never applies while a real keyboard is
+    // active -- see Main.qml's `_swapConfirmCancelAction`, which uses this
+    // same property to guard the action-dispatch side of the same swap.
+    readonly property bool _keyboardActive: Browse.ControllerReport.glyph_layout === "style_e"
+    readonly property bool _swapConfirmCancel: Browse.Settings.current_swap_confirm_cancel && !root._keyboardActive
+    // "Swap controller options/view" -- same idea as confirm/cancel above,
+    // but for ButtonX/ButtonY. Unlike confirm/cancel, Main_MiSTer never
+    // reverse-maps these, so with the swap off they're always the fixed
+    // FaceNorth/FaceWest position -- this setting exists purely to
+    // compensate for a controller whose own X/Y mapping is backwards. Same
+    // keyboard exemption as confirm/cancel (Tab/Space are fixed keys); see
+    // Main.qml's `_swapOptionsViewAction`.
+    readonly property bool _swapOptionsView: Browse.Settings.current_swap_options_view && !root._keyboardActive
+
     Binding {
         target: Resources
         property: "buttonLayout"
-        value: Browse.Settings.current_button_layout
+        value: root._effectiveButtonLayout
+    }
+
+    Binding {
+        target: Resources
+        property: "confirmButton"
+        value: root._swapConfirmCancel ? Browse.ControllerReport.cancel_button : Browse.ControllerReport.accept_button
+    }
+
+    Binding {
+        target: Resources
+        property: "cancelButton"
+        value: root._swapConfirmCancel ? Browse.ControllerReport.accept_button : Browse.ControllerReport.cancel_button
+    }
+
+    Binding {
+        target: Resources
+        property: "optionsButton"
+        value: root._swapOptionsView ? "FaceWest" : "FaceNorth"
+    }
+
+    Binding {
+        target: Resources
+        property: "viewButton"
+        value: root._swapOptionsView ? "FaceNorth" : "FaceWest"
     }
 
     Binding {

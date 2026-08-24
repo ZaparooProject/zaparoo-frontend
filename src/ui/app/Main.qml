@@ -4235,6 +4235,42 @@ MainLayout {
         repeatInitial.restart();
     }
 
+    // "Swap controller confirm/cancel" (Settings > Controls & Input) flips
+    // which physical button accepts vs cancels, independent of Main_MiSTer's
+    // own OSD OK/Cancel swap -- a way to fix a mucked-up controller mapping
+    // without leaving the frontend. Applied at this single seam so every
+    // screen and modal sees the swap uniformly. Never applies while the
+    // keyboard is the active input source (`_keyboardActive`): Enter/Escape
+    // are fixed keys, not something a controller mapping mistake affects.
+    // The help-bar glyphs flip in lockstep via the same guard -- see
+    // MainLayout.qml's `_swapConfirmCancel` binding comment.
+    function _swapConfirmCancelAction(action: string): string {
+        if (!Browse.Settings.current_swap_confirm_cancel || root._keyboardActive)
+            return action;
+        if (action === "accept")
+            return "cancel";
+        if (action === "cancel")
+            return "accept";
+        return action;
+    }
+
+    // "Swap controller options/view" -- same idea as
+    // `_swapConfirmCancelAction` above, for ButtonX/ButtonY. A controller
+    // whose X/Y (or equivalent) mapping is backwards is common enough on
+    // its own to warrant an independent toggle, separate from the
+    // confirm/cancel swap. Same keyboard exemption (Tab/Space are fixed
+    // keys); the help-bar glyphs flip in lockstep via
+    // MainLayout.qml's `_swapOptionsView` binding comment.
+    function _swapOptionsViewAction(action: string): string {
+        if (!Browse.Settings.current_swap_options_view || root._keyboardActive)
+            return action;
+        if (action === "context_menu")
+            return "page_menu";
+        if (action === "page_menu")
+            return "context_menu";
+        return action;
+    }
+
     // Press handler. Single entry point for both Keys.onPressed and the
     // existing tst_navigation.qml harness (which can't drive Keys events
     // on offscreen windows reliably). Fires the action immediately, then
@@ -4245,7 +4281,7 @@ MainLayout {
         // so the dismissing key is never armed for repeat.
         if (root._maybeDismissScreensaver())
             return;
-        const action = Browse.Input.action_for_key(key);
+        const action = root._swapOptionsViewAction(root._swapConfirmCancelAction(Browse.Input.action_for_key(key)));
         root._startupTrace("input/qml key mapped", "key=" + key, "action=" + action);
         if (action === "")
             return;

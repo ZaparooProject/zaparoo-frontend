@@ -35,11 +35,33 @@ QtObject {
 
     // Base URL for everything under `resources/` in the embedded qrc.
     readonly property string baseUrl: "qrc:/qt/qml/Zaparoo/App/resources/"
-    // Single-letter directory under resources/images/buttons/ — "a"/"b"/"c"/"d"
-    // back the user-facing "Style A/B/C/D" picker. MainLayout binds this to
-    // Browse.Settings.current_button_layout; the default keeps early
-    // evaluation on Style A (the legacy glyph set).
-    property string buttonLayout: "a"
+    // Style directory under resources/images/buttons/ —
+    // "style_a"/"style_b"/"style_c"/"style_d" back the neutral
+    // "Style A/B/C/D" picker; "style_e" is the keyboard style. MainLayout
+    // binds this to the auto-detected style (Browse.ControllerReport) or
+    // the user's manual pick (Browse.Settings.current_button_layout); the
+    // default keeps early evaluation on the neutral style.
+    property string buttonLayout: "style_d"
+    // The positional glyph file the confirm/cancel help-bar tokens resolve
+    // to. "ButtonA" is the accept/confirm glyph and "ButtonB" the
+    // cancel/back glyph everywhere in the help bar — these are *semantic*
+    // tokens, never literal letters. Binding these to the live controller
+    // report lets a physical OK/Cancel swap (or an unusual remap) change
+    // which face position each resolves to without touching every help
+    // entry. Defaults reproduce MiSTer's own default: SYS_BTN_A is the east
+    // face position after Main's SDL a/b swap, so "east=accept" is the
+    // baseline every controller report is measured against.
+    property string confirmButton: "FaceEast"
+    property string cancelButton: "FaceSouth"
+    // Same idea as confirmButton/cancelButton, for "ButtonX"/"ButtonY"
+    // (Options/View). Unlike accept/cancel, Main_MiSTer never reverse-maps
+    // these -- they're always the fixed north/west face positions -- so
+    // these two only ever move when the user turns on "Swap
+    // controller options/view" (Settings > Controls & Input), compensating
+    // for a controller whose X/Y mapping is itself backwards. Defaults
+    // match Main_MiSTer's fixed SYS_BTN_X/SYS_BTN_Y positions.
+    property string optionsButton: "FaceNorth"
+    property string viewButton: "FaceWest"
     // "tinted" is the default theme-tracking SVG style. "color" opts system
     // logos into the restored full-color PNG set when a matching asset exists.
     property string systemLogoStyle: "tinted"
@@ -150,20 +172,43 @@ QtObject {
     }
 
     // General-purpose UI glyphs (folder, file, loading spinner, settings,
-    // nav arrows, D-pad, ...) under resources/images/icons/. Routed through
-    // the tinted-svg provider with a flat tint for the same reason as
+    // nav arrows, ...) under resources/images/icons/. Routed through the
+    // tinted-svg provider with a flat tint for the same reason as
     // statusIconUrl() above -- these are also authored white-on-transparent.
-    // Gamepad button glyphs (ButtonA/B/X/Y/L/R) and the D-pad glyphs stay raw
-    // PNG: they are rasters with their own baked shading, not tintable SVGs.
+    //
+    // Gamepad button and D-pad glyphs ship as per-style SVG under
+    // resources/images/buttons/<buttonLayout>/, named by physical position
+    // (Kenney CC0 "Input Prompts" -- see src/LICENSES/Kenney-ATTRIBUTION.txt)
+    // and routed through the same tinted-svg provider, since they're also
+    // authored white-on-transparent -- every glyph in the help bar comes
+    // from the same set, so nothing looks like it belongs to a different
+    // style. "ButtonA"/"ButtonB"/"ButtonX"/"ButtonY" are semantic
+    // confirm/cancel/options/view tokens and resolve through
+    // confirmButton/cancelButton/optionsButton/viewButton rather than a
+    // fixed position -- see the property comments above. "Dpad"/"DpadUp"/
+    // "DpadDown"/"DpadLeft"/"DpadRight" resolve straight through as
+    // filenames.
     function iconUrl(name: string, color: var): url {
         if (name === "")
             return "";
 
-        if (name.startsWith("Button"))
-            return baseUrl + "images/buttons/" + buttonLayout + "/" + name + ".png";
-
-        if (name.startsWith("Dpad"))
-            return baseUrl + "images/icons/" + name + ".png";
+        if (name.startsWith("Button") || name.startsWith("Dpad")) {
+            let file = name;
+            if (name === "ButtonA")
+                file = confirmButton;
+            else if (name === "ButtonB")
+                file = cancelButton;
+            else if (name === "ButtonX")
+                file = optionsButton;
+            else if (name === "ButtonY")
+                file = viewButton;
+            else if (name === "ButtonL")
+                file = "ShoulderL";
+            else if (name === "ButtonR")
+                file = "ShoulderR";
+            const token = _colorToken(color);
+            return "image://tinted-svg/" + token + "/" + token + "/" + token + "/images/buttons/" + buttonLayout + "/" + file + ".svg";
+        }
 
         const token = _colorToken(color);
         return "image://tinted-svg/" + token + "/" + token + "/" + token + "/images/icons/" + name + ".svg";

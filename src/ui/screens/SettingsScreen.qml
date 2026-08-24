@@ -15,9 +15,11 @@ import Zaparoo.Browse as Browse
 // category file-wide.
 // qmllint disable compiler
 
-// Settings screen — gamepad-driven vertical form. Button style is
-// cross-platform and selects the resource directory for
-// help-bar button glyphs (Style A/B/C/D → resources/images/buttons/{a,b,c,d}/).
+// Settings screen — gamepad-driven vertical form. Button style selects the
+// help-bar icon style (Automatic, or a fixed Style A/B/C/D/E →
+// resources/images/buttons/<id>/). Automatic follows the connected
+// controller via Browse.ControllerReport; the ids stay the same neutral
+// letters this picker always used — never named after a controller maker.
 // Mouse support is cross-platform and controls cursor visibility plus mouse
 // hit targets.
 //
@@ -222,6 +224,18 @@ Item {
             id: "buttonLayout",
             label: qsTr("Button style"),
             description: qsTr("Which button icons the on-screen prompts use, to match your controller.")
+        },
+        {
+            kind: "field",
+            id: "swapConfirmCancel",
+            label: qsTr("Swap controller confirm/cancel"),
+            description: qsTr("Flips which controller button accepts and which cancels.")
+        },
+        {
+            kind: "field",
+            id: "swapOptionsView",
+            label: qsTr("Swap controller options/view"),
+            description: qsTr("Flips which controller button opens Options and which opens View.")
         },
         {
             kind: "field",
@@ -466,7 +480,7 @@ Item {
     }
 
     function _fieldControl(id: string): string {
-        if (id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "debugLogging" || id === "reduceMotion" || id === "crtEnabled")
+        if (id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "debugLogging" || id === "reduceMotion" || id === "crtEnabled" || id === "swapConfirmCancel" || id === "swapOptionsView")
             return "toggle";
         if (id === "aboutLicense" || id === "pageAppearance" || id === "pageDisplayInterface" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration")
             return "navigate";
@@ -484,6 +498,10 @@ Item {
             return Browse.Settings.current_show_original_filenames;
         if (id === "reduceMotion")
             return Browse.Settings.current_reduce_motion;
+        if (id === "swapConfirmCancel")
+            return Browse.Settings.current_swap_confirm_cancel;
+        if (id === "swapOptionsView")
+            return Browse.Settings.current_swap_options_view;
         if (id === "crtEnabled")
             return Browse.CrtVideo.crt_enabled;
         return Browse.Settings.current_mouse_enabled;
@@ -590,7 +608,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "debugLogging" || id === "reduceMotion" || id === "crtEnabled";
+        return id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "debugLogging" || id === "reduceMotion" || id === "crtEnabled" || id === "swapConfirmCancel" || id === "swapOptionsView";
     }
     // True when the focused field is a list-picker row (Accept opens a
     // modal; left/right is a no-op — pickers don't cycle inline). Drives
@@ -846,13 +864,17 @@ Item {
     }
 
     function _buttonLayoutDisplay(value: string): string {
-        if (value === "b")
+        if (value === "style_b")
             return qsTr("Style B");
-        if (value === "c")
+        if (value === "style_c")
             return qsTr("Style C");
-        if (value === "d")
+        if (value === "style_d")
             return qsTr("Style D");
-        return qsTr("Style A");
+        if (value === "style_e")
+            return qsTr("Style E");
+        if (value === "style_a")
+            return qsTr("Style A");
+        return qsTr("Automatic");
     }
 
     function _screensaverTimeoutList(): list<string> {
@@ -1121,6 +1143,22 @@ Item {
         Browse.Settings.set_reduce_motion(!Browse.Settings.current_reduce_motion);
     }
 
+    function _setSwapConfirmCancel(direction: int): void {
+        Browse.Settings.set_swap_confirm_cancel(direction > 0);
+    }
+
+    function _toggleSwapConfirmCancel(): void {
+        Browse.Settings.set_swap_confirm_cancel(!Browse.Settings.current_swap_confirm_cancel);
+    }
+
+    function _setSwapOptionsView(direction: int): void {
+        Browse.Settings.set_swap_options_view(direction > 0);
+    }
+
+    function _toggleSwapOptionsView(): void {
+        Browse.Settings.set_swap_options_view(!Browse.Settings.current_swap_options_view);
+    }
+
     // CRT mode is confirm-gated: the pill never flips locally. The
     // request routes to Main.qml, which stages the restart-confirm
     // modal; the actual flip happens on the post-exit-42 respawn.
@@ -1147,6 +1185,10 @@ Item {
             settings._requestDebugLogging(direction > 0);
         else if (id === "reduceMotion")
             settings._setReduceMotion(direction);
+        else if (id === "swapConfirmCancel")
+            settings._setSwapConfirmCancel(direction);
+        else if (id === "swapOptionsView")
+            settings._setSwapOptionsView(direction);
         else if (id === "crtEnabled")
             settings._requestCrtEnabled(direction > 0);
     }
@@ -1284,6 +1326,10 @@ Item {
                     settings._requestDebugLogging(!Browse.Settings.current_debug_logging);
                 else if (id === "reduceMotion")
                     settings._toggleReduceMotion();
+                else if (id === "swapConfirmCancel")
+                    settings._toggleSwapConfirmCancel();
+                else if (id === "swapOptionsView")
+                    settings._toggleSwapOptionsView();
                 else if (id === "crtEnabled")
                     settings._requestCrtEnabled(!Browse.CrtVideo.crt_enabled);
                 return;
@@ -1735,6 +1781,10 @@ Item {
                                     settings._requestDebugLogging(!Browse.Settings.current_debug_logging);
                                 else if (row.modelData.id === "reduceMotion")
                                     settings._toggleReduceMotion();
+                                else if (row.modelData.id === "swapConfirmCancel")
+                                    settings._toggleSwapConfirmCancel();
+                                else if (row.modelData.id === "swapOptionsView")
+                                    settings._toggleSwapOptionsView();
                                 else if (row.modelData.id === "crtEnabled")
                                     settings._requestCrtEnabled(!Browse.CrtVideo.crt_enabled);
                             }

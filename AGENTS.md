@@ -235,6 +235,20 @@ state to go stale because there is no cross-screen state.
 - `ZAPAROO_CORE_ENDPOINT` overrides `[core] endpoint`; `ZAPAROO_STATE_FILE`
   redirects state for tests and ad-hoc runs.
 - Debug logging is enabled with `[logging] debug = true` or `ZAPAROO_DEBUG=1`.
+- `/tmp/zaparoo_launcher_input.json` is Main_MiSTer's alt-launcher input
+  report (written on every button press; source is
+  `support/zaparoo/launcher_input_metadata.cpp` in the `Main_MiSTer` repo).
+  `zaparoo_core::controller_report` polls it and feeds `Browse.ControllerReport`,
+  which drives the help bar's icon style and accept/cancel positions.
+  `ZAPAROO_INPUT_REPORT_FILE` redirects it and forces the watcher on
+  off-MiSTer, mirroring `ZAPAROO_STATE_FILE`. Button-style ids stay the
+  existing neutral `style_a`/`style_b`/`style_c`/`style_d`/`style_e` letters
+  — never a controller maker's name — even though the style is now
+  auto-detected. A pre-autodetect install's bare `a`/`b`/`c`/`d` (or the
+  even older `nintendo`/`xbox`/`sony`) force-migrates to `auto` once, not to
+  the matching `style_x`, so every existing install tries autodetection at
+  least one boot before falling back to a manual pick; see
+  `models::settings::normalize_button_layout`.
 
 ## MiSTer Deploy
 

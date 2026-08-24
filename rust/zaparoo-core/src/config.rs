@@ -74,6 +74,8 @@ pub struct SettingsConfig {
     pub favorites_grouping: Option<String>,
     pub show_hidden: Option<bool>,
     pub show_original_filenames: Option<bool>,
+    pub swap_confirm_cancel: Option<bool>,
+    pub swap_options_view: Option<bool>,
     /// Retired from Hub use (the Hub grid is a persisted `[[hub.items]]`
     /// layout now — see `hub_layout.rs`, which consumes this ONCE as a
     /// migration input when seeding a layout for the first time, then never
@@ -114,6 +116,8 @@ pub struct SettingsMirror<'a> {
     pub favorites_grouping: &'a str,
     pub show_hidden: bool,
     pub show_original_filenames: bool,
+    pub swap_confirm_cancel: bool,
+    pub swap_options_view: bool,
     pub region: &'a str,
     pub crt_video_standard: &'a str,
     pub crt_h_offset: i32,
@@ -214,6 +218,8 @@ struct RawSettings {
     favorites_grouped: Option<bool>,
     show_hidden: Option<bool>,
     show_original_filenames: Option<bool>,
+    swap_confirm_cancel: Option<bool>,
+    swap_options_view: Option<bool>,
     #[serde(default)]
     hidden_categories: Vec<String>,
     #[serde(default)]
@@ -355,6 +361,8 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         }),
         show_hidden: raw.show_hidden,
         show_original_filenames: raw.show_original_filenames,
+        swap_confirm_cancel: raw.swap_confirm_cancel,
+        swap_options_view: raw.swap_options_view,
         hidden_categories: normalize_string_list(raw.hidden_categories),
         hidden_system_ids: normalize_string_list(raw.hidden_system_ids),
         region: trim_opt(raw.region),
@@ -529,6 +537,8 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         "show_original_filenames",
         mirror.show_original_filenames,
     );
+    set_bool(settings, "swap_confirm_cancel", mirror.swap_confirm_cancel);
+    set_bool(settings, "swap_options_view", mirror.swap_options_view);
     set_str(settings, "region", mirror.region.trim());
     set_str(
         settings,
@@ -768,6 +778,8 @@ mod tests {
             favorites_grouping: "system",
             show_hidden: false,
             show_original_filenames: false,
+            swap_confirm_cancel: false,
+            swap_options_view: false,
             region: "auto",
             crt_video_standard: "ntsc",
             crt_h_offset: 0,
@@ -1297,6 +1309,8 @@ mod tests {
                 favorites_grouping: "system",
                 show_hidden: true,
                 show_original_filenames: true,
+                swap_confirm_cancel: true,
+                swap_options_view: true,
                 region: "us",
                 crt_video_standard: "pal",
                 crt_h_offset: -3,
@@ -1322,6 +1336,8 @@ mod tests {
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
         assert_eq!(cfg.settings.show_hidden, Some(true));
         assert_eq!(cfg.settings.show_original_filenames, Some(true));
+        assert_eq!(cfg.settings.swap_confirm_cancel, Some(true));
+        assert_eq!(cfg.settings.swap_options_view, Some(true));
         assert_eq!(cfg.settings.region.as_deref(), Some("us"));
         assert_eq!(cfg.settings.crt_video_standard.as_deref(), Some("pal"));
         assert_eq!(cfg.settings.crt_h_offset, Some(-3));
@@ -1355,6 +1371,8 @@ mod tests {
                 favorites_grouping: "system",
                 show_hidden: false,
                 show_original_filenames: false,
+                swap_confirm_cancel: false,
+                swap_options_view: false,
                 region: "auto",
                 crt_video_standard: "ntsc",
                 crt_h_offset: 0,
@@ -1406,6 +1424,8 @@ mod tests {
             favorites_grouping: "system",
             show_hidden: false,
             show_original_filenames: false,
+            swap_confirm_cancel: false,
+            swap_options_view: false,
             region: "auto",
             // Out-of-range offsets and an unknown standard must be
             // normalised on the way to disk, not written verbatim.
