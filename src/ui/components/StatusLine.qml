@@ -268,7 +268,7 @@ Item {
 
     TextMetrics {
         id: percentMetrics
-        text: "100%"
+        text: qsTr("%1%").arg(100)
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontSmall
     }

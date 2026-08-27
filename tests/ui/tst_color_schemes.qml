@@ -43,7 +43,7 @@ TestCase {
     // `_saturation` above is HSV, which orders by the color's own r/g/b
     // spread rather than perceptual colorfulness -- it disagrees with
     // chroma exactly on presets whose *background* is itself a saturated
-    // colour (`solarized-dark`, `everforest`, `nord`, `green-phosphor`,
+    // color (`solarized-dark`, `everforest`, `nord`, `green-phosphor`,
     // `virtual-boy`), which is what this role's own guardrail needs to
     // measure against.
     function _chroma(value: color): real {

@@ -659,21 +659,19 @@ impl NegativeMemo {
         self.order.retain(|memo_key| memo_key != key);
     }
 
-    /// Drop every entry for `system_id`. Linear scan — this only runs on
-    /// an index/scrape *completion* edge (see
+    /// Drop every entry for `system_id`. One retain pass each over `set`
+    /// and `order` rather than a collect-then-remove-per-key loop (the
+    /// latter is O(K * `order.len()`) for K stale keys, since each `remove`
+    /// call does its own `order.retain` scan) — this only runs on an
+    /// index/scrape *completion* edge (see
     /// `MediaImageCache::invalidate_negative_memo_for_system`), a rare,
     /// user-paced event, not the read/write hot path the rest of this
-    /// struct serves.
+    /// struct serves, but a scrape that invalidates a large slice of one
+    /// system's entries is exactly the case the old approach scaled
+    /// worst for.
     fn remove_system(&mut self, system_id: &str) {
-        let stale: Vec<MediaKey> = self
-            .set
-            .iter()
-            .filter(|key| &*key.system_id == system_id)
-            .cloned()
-            .collect();
-        for key in stale {
-            self.remove(&key);
-        }
+        self.set.retain(|key| &*key.system_id != system_id);
+        self.order.retain(|key| self.set.contains(key));
     }
 
     fn clear(&mut self) {

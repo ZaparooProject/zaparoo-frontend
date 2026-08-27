@@ -2408,6 +2408,7 @@ Français - Wilfried</source>
     </message>
     <message>
         <location filename="../components/StatusLine.qml" line="248"/>
+        <location filename="../components/StatusLine.qml" line="271"/>
         <source>%1%</source>
         <translation type="unfinished"></translation>
     </message>
