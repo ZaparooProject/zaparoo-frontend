@@ -18,11 +18,12 @@ use crate::media_types::{
     MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult,
     MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
     MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
-    MediaMetaBatchParams, MediaMetaBatchResult, MediaMetaParams, MediaMetaResult, MediaResult,
-    MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult,
-    MediaTagsUpdateParams, MediaTagsUpdateResult, ReadersResult, ReadersWriteParams, RunParams,
-    ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult,
-    TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
+    MediaMetaBatchParams, MediaMetaBatchResult, MediaMetaParams, MediaMetaResult,
+    MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult,
+    MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, ReadersResult,
+    ReadersWriteParams, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+    VersionResult,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -712,6 +713,18 @@ impl Client {
             MediaMetaBatchParams::try_new(items).map_err(|message| ClientError { message })?;
         let val = self.call("media.meta", &params).await?;
         deserialize_timed("media.meta batch", val)
+    }
+
+    /// Sets or clears the per-media launcher override, then returns the
+    /// updated metadata graph (same response shape as `media_meta`). Core
+    /// validates the launcher exists and supports the row's system before
+    /// saving it.
+    pub async fn media_meta_update(
+        &self,
+        params: MediaMetaUpdateParams,
+    ) -> Result<MediaMetaResult, ClientError> {
+        let val = self.call("media.meta.update", &params).await?;
+        deserialize_timed("media.meta.update", val)
     }
 
     pub async fn media_history(

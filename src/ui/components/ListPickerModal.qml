@@ -37,6 +37,13 @@ Item {
     // whose id matches. Empty string or no match falls back to 0.
     property string initialId: ""
     property int currentIndex: 0
+    // True while a caller-owned save is in flight and the picker must stay
+    // frozen on the row it's showing progress for. Disables each row's
+    // MouseArea entirely (hover-to-focus and click-to-accept both go
+    // through it) -- the keyboard/gamepad path is gated by the consumer
+    // not forwarding handleAction() at all while this is true (see
+    // Main.qml's modalListPicker routing branch).
+    property bool locked: false
 
     property int _activatePulse: 0
     property string _pendingId: ""
@@ -338,7 +345,9 @@ Item {
                             }
 
                             MouseArea {
+                                objectName: "listPickerRowMouseArea"
                                 anchors.fill: parent
+                                enabled: !modal.locked
                                 hoverEnabled: true
                                 acceptedButtons: Qt.LeftButton
                                 cursorShape: Qt.PointingHandCursor

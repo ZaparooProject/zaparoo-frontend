@@ -1118,6 +1118,10 @@ ApplicationWindow {
                         title: root.listPickerTitle
                         entries: root.listPickerEntries
                         initialId: root.listPickerInitialId
+                        // A launcher save in flight locks the picker on
+                        // its "Saving…" row -- see ListPickerModal's own
+                        // `locked` doc comment.
+                        locked: root.listPickerFieldId === "system_launcher_pending" || root.listPickerFieldId === "game_launcher_pending"
                         onAccepted: id => root.listPickerAccepted(root.listPickerFieldId, id)
                         onCloseRequested: root.listPickerCloseRequested(root.listPickerFieldId)
                     }

@@ -89,6 +89,9 @@ MainLayout {
     property var _discoverParentEntries: []
     property string _pendingLauncherSystemId: ""
     property string _pendingLauncherSelectionId: ""
+    property string _pendingGameLauncherSystemId: ""
+    property string _pendingGameLauncherPath: ""
+    property string _pendingGameLauncherSelectionId: ""
     property string cardWriteOwner: ""
     property int _cardWriteIndex: -1
     property string _gameInfoOwner: ""
@@ -1819,6 +1822,12 @@ MainLayout {
                 // (SystemsModel.launch_at, GamesModel.launch_at, ...);
                 // the Hub just stays put and lets it happen.
                 Browse.HubLayout.run_script(id);
+                // Settle the push-in cue back to rest -- see
+                // HubScreen.releaseActivate()'s doc comment. Every other
+                // accept kind here navigates away and gets this for free
+                // via the screen's own settling reset.
+                if (root.hubScreen !== null)
+                    root.hubScreen.releaseActivate();
                 return;
             }
             // `system` and `folder` shortcuts land the user on Games having
@@ -1842,6 +1851,10 @@ MainLayout {
                 // an empty games browse.
                 if (Browse.SystemsModel.is_launchable_system(id)) {
                     Browse.SystemsModel.launch_system_id(id);
+                    // Settle the push-in cue back to rest -- same "stays
+                    // put" case as the zapscript branch above.
+                    if (root.hubScreen !== null)
+                        root.hubScreen.releaseActivate();
                     return;
                 }
                 root._navigateFromSystems(id, true);
@@ -2092,6 +2105,22 @@ MainLayout {
                 root.contextMenu.currentIndex = 0;
         }
     }
+    // Relabels the still-open games context menu's "Change launcher" entry
+    // once the one-row fetch `openContextMenu` kicked off resolves --
+    // Browse.GameLauncherOverride's own sequence ticket already discards a
+    // late response for a superseded game, so this only needs to confirm
+    // the menu is still showing a game's entries before relabeling.
+    Connections {
+        target: Browse.GameLauncherOverride
+        function onLoadingChanged(): void {
+            if (Browse.GameLauncherOverride.loading)
+                return;
+            if (!root.contextMenuVisible || root.contextMenuMode !== "main" || root.contextMenuOwner !== "games")
+                return;
+            const currentGameLauncher = Browse.GameLauncherOverride.current_override;
+            root._replaceContextMenuEntryLabel("change_launcher", currentGameLauncher !== "" ? qsTr("Change launcher: %1").arg(currentGameLauncher) : qsTr("Change launcher"), "change_launcher");
+        }
+    }
 
     // Pure helper — owner/entryType/mediaCapable/hasNfc/isFavorite → list of `{id,label}` entries.
     // Empty list = no menu (caller bails out of openContextMenu).
@@ -2122,9 +2151,10 @@ MainLayout {
                     label: qsTr("Random game")
                 });
             if (!launchable && !Browse.SystemLaunchers.loading && Browse.SystemLaunchers.error_message === "" && Browse.SystemLaunchers.launcher_count_for_system(systemId) > 0) {
+                const currentSystemLauncher = Browse.SystemLaunchers.current_launcher_for_system(systemId);
                 entries.push({
                     id: "change_launcher",
-                    label: qsTr("Change launcher")
+                    label: currentSystemLauncher !== "" ? qsTr("Change launcher: %1").arg(currentSystemLauncher) : qsTr("Change launcher")
                 });
             }
             entries.push({
@@ -2275,6 +2305,19 @@ MainLayout {
                     label: isFavorite ? qsTr("Remove from favorites") : qsTr("Add to favorites")
                 }
             ];
+            // Per-media launcher override -- Games only for now (see
+            // docs/content-style.md's "library" scope for this feature).
+            // Gated the same way as the system-level entry: launchers must
+            // be loaded and the game's system must have more than one to
+            // choose between. The label itself (with the current override
+            // name, if any) is filled in asynchronously once the context
+            // menu opens -- see openContextMenu's `prepare_game` call and
+            // the Browse.GameLauncherOverride Connections block below.
+            if (owner === "games" && !Browse.SystemLaunchers.loading && Browse.SystemLaunchers.error_message === "" && Browse.SystemLaunchers.launcher_count_for_system(systemId) > 0)
+                entries.push({
+                    id: "change_launcher",
+                    label: qsTr("Change launcher")
+                });
             if (hasNfc)
                 entries.push({
                     id: "write_card",
@@ -2305,6 +2348,41 @@ MainLayout {
     // hands the scanned zapscript back to a Core/frontend pairing.
     function _buildQrPayload(zapscript: string): string {
         return "https://zaparoo.app/write?v=" + encodeURIComponent(zapscript);
+    }
+
+    // Shared by the system- and game-scoped "Change launcher" pickers --
+    // both Browse.SystemLaunchers and Browse.GameLauncherOverride publish
+    // parallel picker_ids/picker_labels lists built by the same Rust
+    // `picker_entries_for_system` helper: "__default__" first (labelled
+    // "Default"), then each launcher id, then an optional synthetic
+    // "Current: <id>" row when the current value isn't in the launcher
+    // list. This just localizes those two special-cased labels.
+    function _launcherPickerEntries(ids: var, labels: var): var {
+        const entries = [];
+        for (let i = 0; i < ids.length; i++) {
+            const launcherId = ids[i];
+            const label = labels[i];
+            entries.push({
+                id: launcherId,
+                label: launcherId === "__default__" ? qsTr("Default") : (label.indexOf("Current: ") === 0 ? qsTr("Current: %1").arg(launcherId) : label)
+            });
+        }
+        return entries;
+    }
+
+    // Relabels one row of a ListPickerModal entries array in place, id
+    // unchanged. Used to show "Saving…" on just the row the user picked
+    // while a launcher save is in flight -- every other row stays exactly
+    // as it was, matching the picker's normal appearance rather than
+    // collapsing to a single placeholder row. The lock in handleAction's
+    // modalListPicker branch (grep "system_launcher_pending") is what
+    // actually stops Up/Down from moving focus off this row, or Accept/
+    // Cancel from doing anything, while pending.
+    function _relabelPickerEntry(entries: var, targetId: string, nextLabel: string): var {
+        return entries.map(entry => entry.id === targetId ? {
+            id: entry.id,
+            label: nextLabel
+        } : entry);
     }
 
     function _replaceContextMenuEntryLabel(targetId: string, nextLabel: string, nextId: string): void {
@@ -2478,6 +2556,23 @@ MainLayout {
         root.contextMenuVisible = true;
         if (ScreenManager.topModal !== root.modalContextMenu)
             ScreenManager.pushModal(root.modalContextMenu);
+        // Games' "Change launcher" entry starts with a plain label; prime
+        // the one-row fetch here so Browse.GameLauncherOverride.current_override
+        // is ready to relabel it in place (see the Connections block below)
+        // by the time the menu is likely to be looked at. Checking the
+        // built `entries` (rather than re-deriving the gating condition)
+        // keeps this in lockstep with buildContextMenuEntries' own gate.
+        // Must run after contextMenuVisible flips true: a warm cache
+        // resolves synchronously inside prepare_game, and the relabel
+        // Connections below only acts while contextMenuVisible is true --
+        // firing this earlier silently dropped the relabel on every
+        // reopen for a game whose override was already cached (e.g. right
+        // after saving one).
+        if (owner === "games" && entries.some(entry => entry.id === "change_launcher")) {
+            const gamePath = Browse.GamesModel.path_at(index);
+            if (gamePath !== "")
+                Browse.GameLauncherOverride.prepare_game(systemId, gamePath);
+        }
     }
 
     function handleContextMenuCloseRequested(): void {
@@ -2546,19 +2641,24 @@ MainLayout {
         }
         root.closeContextMenu();
         if (id === "change_launcher") {
+            if (owner === "games") {
+                const gameSystemId = Browse.GamesModel.system_id_at(targetIndex);
+                const gamePath = Browse.GamesModel.path_at(targetIndex);
+                if (gameSystemId === "" || gamePath === "")
+                    return;
+                // picker_ids/picker_labels were already populated by
+                // openContextMenu's prepare_game call, so no second fetch
+                // is needed here.
+                const entries = root._launcherPickerEntries(Browse.GameLauncherOverride.picker_ids, Browse.GameLauncherOverride.picker_labels);
+                if (entries.length > 0)
+                    root.openListPickerModal(qsTr("Change launcher"), entries, Browse.GameLauncherOverride.current_override === "" ? "__default__" : Browse.GameLauncherOverride.current_override, "game_launcher:" + gameSystemId + "\n" + gamePath);
+                return;
+            }
             const systemId = Browse.SystemsModel.system_id_at(targetIndex);
             if (systemId === "")
                 return;
             Browse.SystemLaunchers.prepare_system(systemId);
-            const entries = [];
-            for (let i = 0; i < Browse.SystemLaunchers.picker_ids.length; i++) {
-                const launcherId = Browse.SystemLaunchers.picker_ids[i];
-                const label = Browse.SystemLaunchers.picker_labels[i];
-                entries.push({
-                    id: launcherId,
-                    label: launcherId === "__default__" ? qsTr("Default") : (label.indexOf("Current: ") === 0 ? qsTr("Current: %1").arg(launcherId) : label)
-                });
-            }
+            const entries = root._launcherPickerEntries(Browse.SystemLaunchers.picker_ids, Browse.SystemLaunchers.picker_labels);
             if (entries.length > 0)
                 root.openListPickerModal(qsTr("Change launcher"), entries, Browse.SystemLaunchers.current_launcher, "system_launcher:" + systemId);
         } else if (id.startsWith("alternate_version:")) {
@@ -3550,35 +3650,63 @@ MainLayout {
 
     onCloseCrtCalibrationRequested: root.closeCrtCalibrationModal()
 
+    // Shared by the system- and game-scoped launcher saves below: only one
+    // of either can be in flight at a time (one ListPickerModal instance),
+    // so a single delay timer + relabel target covers both.
+    //
+    // The row keeps its normal label through `launcherSavingDelay`'s
+    // window and only switches to "Saving…" if the write is still pending
+    // once it elapses -- 300ms, the same threshold already used
+    // everywhere else a loading cue can show in this app
+    // (MainLayout.loadingIndicatorDelayMs, ScreenStateOverlay.loadingDelayMs).
+    // A save that completes inside that window never shows "Saving…" at
+    // all, so there's nothing to flash. No animation on the swap itself.
+    property string _pendingLauncherRelabelId: ""
+
+    Timer {
+        id: launcherSavingDelay
+        interval: 300
+        repeat: false
+        onTriggered: {
+            if (root._pendingLauncherRelabelId !== "")
+                root.listPickerEntries = root._relabelPickerEntry(root.listPickerEntries, root._pendingLauncherRelabelId, qsTr("Saving…"));
+        }
+    }
+
     function beginSystemLauncherUpdate(systemId: string, selectedId: string): void {
         root._pendingLauncherSystemId = systemId;
         root._pendingLauncherSelectionId = selectedId;
-        root.listPickerTitle = qsTr("Saving launcher");
-        root.listPickerEntries = [
-            {
-                id: "saving",
-                label: qsTr("Saving…")
-            }
-        ];
-        root.listPickerInitialId = "saving";
+        // Entries/title are untouched here -- the full list stays exactly
+        // as it was when the user pressed Accept. initialId still needs to
+        // move to the picked row now, ahead of the delayed relabel: that
+        // reassigns listPickerEntries, which re-derives currentIndex from
+        // initialId (see ListPickerModal's onEntriesChanged), and it would
+        // otherwise still be the old current launcher's id from when the
+        // picker first opened.
+        root.listPickerInitialId = selectedId;
         root.listPickerFieldId = "system_launcher_pending";
+        root._pendingLauncherRelabelId = selectedId;
+        launcherSavingDelay.restart();
         Browse.SystemLaunchers.set_system_launcher(systemId, selectedId);
     }
 
     function clearPendingLauncherUpdate(): void {
         root._pendingLauncherSystemId = "";
         root._pendingLauncherSelectionId = "";
+        launcherSavingDelay.stop();
+        root._pendingLauncherRelabelId = "";
     }
 
     function retrySystemLauncherUpdate(systemId: string, selectedId: string): void {
-        root.openListPickerModal(qsTr("Saving launcher"), [
-            {
-                id: "saving",
-                label: qsTr("Saving…")
-            }
-        ], "saving", "system_launcher_pending");
+        // The picker was closed for the error modal, so the full list is
+        // gone -- rebuild it the same way the original "Change launcher"
+        // open did, from the already-loaded picker_ids/picker_labels.
+        const entries = root._launcherPickerEntries(Browse.SystemLaunchers.picker_ids, Browse.SystemLaunchers.picker_labels);
+        root.openListPickerModal(qsTr("Change launcher"), entries, selectedId, "system_launcher_pending");
         root._pendingLauncherSystemId = systemId;
         root._pendingLauncherSelectionId = selectedId;
+        root._pendingLauncherRelabelId = selectedId;
+        launcherSavingDelay.restart();
         Browse.SystemLaunchers.set_system_launcher(systemId, selectedId);
     }
 
@@ -3592,8 +3720,53 @@ MainLayout {
         });
     }
 
+    // Per-game counterparts of the four functions above -- same "keep the
+    // full list, delay-then-relabel the picked row" shape, writing through
+    // Browse.GameLauncherOverride (media.meta.update) instead of
+    // Browse.SystemLaunchers (settings.update).
+    function beginGameLauncherUpdate(systemId: string, path: string, selectedId: string): void {
+        root._pendingGameLauncherSystemId = systemId;
+        root._pendingGameLauncherPath = path;
+        root._pendingGameLauncherSelectionId = selectedId;
+        root.listPickerInitialId = selectedId;
+        root.listPickerFieldId = "game_launcher_pending";
+        root._pendingLauncherRelabelId = selectedId;
+        launcherSavingDelay.restart();
+        Browse.GameLauncherOverride.set_game_launcher(systemId, path, selectedId);
+    }
+
+    function clearPendingGameLauncherUpdate(): void {
+        root._pendingGameLauncherSystemId = "";
+        root._pendingGameLauncherPath = "";
+        root._pendingGameLauncherSelectionId = "";
+        launcherSavingDelay.stop();
+        root._pendingLauncherRelabelId = "";
+    }
+
+    function retryGameLauncherUpdate(systemId: string, path: string, selectedId: string): void {
+        const entries = root._launcherPickerEntries(Browse.GameLauncherOverride.picker_ids, Browse.GameLauncherOverride.picker_labels);
+        root.openListPickerModal(qsTr("Change launcher"), entries, selectedId, "game_launcher_pending");
+        root._pendingGameLauncherSystemId = systemId;
+        root._pendingGameLauncherPath = path;
+        root._pendingGameLauncherSelectionId = selectedId;
+        root._pendingLauncherRelabelId = selectedId;
+        launcherSavingDelay.restart();
+        Browse.GameLauncherOverride.set_game_launcher(systemId, path, selectedId);
+    }
+
+    function showGameLauncherUpdateError(): void {
+        const systemId = root._pendingGameLauncherSystemId;
+        const path = root._pendingGameLauncherPath;
+        const selectedId = root._pendingGameLauncherSelectionId;
+        root.closeListPickerModal();
+        root.clearPendingGameLauncherUpdate();
+        root.presentActionError("game_launcher:" + systemId + "\n" + path, qsTr("Launcher update failed"), qsTr("Could not change the launcher. Check Zaparoo Core and try again."), qsTr("Retry"), function () {
+            root.retryGameLauncherUpdate(systemId, path, selectedId);
+        });
+    }
+
     function handleListPickerCloseRequested(): void {
-        if (root.listPickerFieldId === "system_launcher_pending")
+        if (root.listPickerFieldId === "system_launcher_pending" || root.listPickerFieldId === "game_launcher_pending")
             return;
         root.closeListPickerModal();
     }
@@ -3704,10 +3877,22 @@ MainLayout {
                 root.favoritesScreen.restoreSelection();
             return;
         }
-        if (fieldId === "system_launcher_pending")
+        if (fieldId === "system_launcher_pending" || fieldId === "game_launcher_pending")
             return;
         if (fieldId.startsWith("system_launcher:")) {
             root.beginSystemLauncherUpdate(fieldId.slice("system_launcher:".length), selectedId);
+            return;
+        }
+        if (fieldId.startsWith("game_launcher:")) {
+            // "game_launcher:<systemId>\n<path>" -- see openContextMenu's
+            // gameSystemId/gamePath pairing for why a newline separator is
+            // safe (system IDs never contain one; paths never contain a
+            // literal newline either).
+            const rest = fieldId.slice("game_launcher:".length);
+            const separatorIndex = rest.indexOf("\n");
+            if (separatorIndex < 0)
+                return;
+            root.beginGameLauncherUpdate(rest.slice(0, separatorIndex), rest.slice(separatorIndex + 1), selectedId);
             return;
         }
         // Round 10: nested picker opened by ScrapeSetupModal itself
@@ -3808,6 +3993,20 @@ MainLayout {
                 root.closeListPickerModal();
             } else {
                 root.showSystemLauncherUpdateError();
+            }
+        }
+    }
+
+    Connections {
+        target: Browse.GameLauncherOverride
+        function onUpdate_pendingChanged(): void {
+            if (root._pendingGameLauncherSystemId === "" || Browse.GameLauncherOverride.update_pending)
+                return;
+            if (Browse.GameLauncherOverride.update_error === "") {
+                root.clearPendingGameLauncherUpdate();
+                root.closeListPickerModal();
+            } else {
+                root.showGameLauncherUpdateError();
             }
         }
     }
@@ -4028,6 +4227,16 @@ MainLayout {
                 if (root.settingNeedsRestartModal !== null)
                     root.settingNeedsRestartModal.handleAction(action);
             } else if (ScreenManager.topModal === root.modalListPicker) {
+                // Locked while a launcher save is in flight -- no focus
+                // movement, no cancel, no resubmit. Accept/Cancel are
+                // already separately no-ops downstream once they reach
+                // onListPickerAccepted/handleListPickerCloseRequested (that
+                // still matters for a direct mouse click on a row, which
+                // bypasses this action routing entirely), but gating here
+                // too is what actually stops Up/Down from moving focus off
+                // the "Saving…" row.
+                if (root.listPickerFieldId === "system_launcher_pending" || root.listPickerFieldId === "game_launcher_pending")
+                    return;
                 if (action === "page_menu" && root._isViewListPicker(root.listPickerFieldId))
                     root.closeListPickerModal();
                 else if (root.listPickerModal !== null)

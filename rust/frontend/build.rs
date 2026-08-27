@@ -14,6 +14,7 @@ const MODEL_FILES: &[&str] = &[
     "src/models/favorite_systems_state.rs",
     "src/models/systems.rs",
     "src/models/game_info.rs",
+    "src/models/game_launcher_override.rs",
     "src/models/games.rs",
     "src/models/favorites.rs",
     "src/models/browse.rs",

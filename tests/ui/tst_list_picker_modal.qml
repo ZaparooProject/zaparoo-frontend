@@ -70,6 +70,7 @@ TestCase {
         picker.entries = [];
         picker.initialId = "";
         picker.currentIndex = 0;
+        picker.locked = false;
         acceptedSpy.clear();
         closeSpy.clear();
     }
@@ -204,6 +205,23 @@ TestCase {
         picker.handleAction("page_menu");
         compare(closeSpy.count, 0);
         compare(picker.open, true);
+    }
+
+    // `locked` disables each row's own MouseArea (hover-to-focus and
+    // click-to-accept both live on it) -- the keyboard/gamepad path is a
+    // separate concern owned by the consumer not forwarding handleAction()
+    // at all while locked (Main.qml's modalListPicker routing branch), not
+    // by this component.
+    function test_locked_disables_row_mouse_area(): void {
+        picker.entries = _entries(3);
+        picker.open = true;
+        const row = findChild(picker, "listPickerRow-1");
+        const mouseArea = findChild(row, "listPickerRowMouseArea");
+        compare(mouseArea.enabled, true);
+        picker.locked = true;
+        compare(mouseArea.enabled, false);
+        picker.locked = false;
+        compare(mouseArea.enabled, true);
     }
 
     function test_reopen_recomputes_initial_index(): void {

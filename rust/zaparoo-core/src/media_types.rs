@@ -676,6 +676,44 @@ impl MediaMetaParams {
     }
 }
 
+/// Parameters for `media.meta.update`. Identifies the media row the same
+/// way as `MediaMetaParams`; `media.launcher_override` is deliberately not
+/// `skip_serializing_if`-guarded, since Core requires the key present in
+/// every request (`null` to clear a stored override, a launcher ID to set
+/// one) and rejects a request that omits it entirely.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaMetaUpdateParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<i64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub system: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub path: String,
+    pub media: MediaMetaUpdatePatch,
+}
+
+impl MediaMetaUpdateParams {
+    pub fn for_media(
+        system: impl Into<String>,
+        path: impl Into<String>,
+        launcher_override: Option<String>,
+    ) -> Self {
+        Self {
+            media_id: None,
+            system: system.into(),
+            path: path.into(),
+            media: MediaMetaUpdatePatch { launcher_override },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaMetaUpdatePatch {
+    pub launcher_override: Option<String>,
+}
+
 pub const MEDIA_META_BATCH_MAX_ITEMS: usize = 100;
 
 /// Ordered batch request for `media.meta`. Core accepts one to 100 refs and
@@ -737,6 +775,11 @@ pub struct MediaMeta {
     pub properties: HashMap<String, MediaMetaProperty>,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub available_image_types: Vec<String>,
+    /// Launcher ID stored for this media row, mirrored from
+    /// `property:launcher-override`. `None` when no override is stored;
+    /// Core omits the field entirely in that case.
+    #[serde(default)]
+    pub launcher_override: Option<String>,
     #[serde(default)]
     pub title: MediaMetaTitle,
 }
@@ -1313,11 +1356,11 @@ mod tests {
         MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
         MediaImageParams, MediaImageResult, MediaIndexParams, MediaItem, MediaLookupParams,
         MediaLookupResult, MediaMetaBatchParams, MediaMetaBatchResult, MediaMetaParams,
-        MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult,
-        MediaTagsParams, MediaTagsResult, ReaderInfo, ReadersResult, ScrapersResult,
-        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams, SystemsResult,
-        TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
-        MEDIA_IMAGE_DELIVERY_LOCAL_PATH, MEDIA_META_BATCH_MAX_ITEMS,
+        MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams,
+        MediaSearchResult, MediaTagsParams, MediaTagsResult, ReaderInfo, ReadersResult,
+        ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams,
+        SystemsResult, TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+        VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH, MEDIA_META_BATCH_MAX_ITEMS,
     };
 
     #[test]
@@ -2220,6 +2263,72 @@ mod tests {
         let result: MediaMetaResult = serde_json::from_str(json).expect("parse");
         assert!(result.media.properties.is_empty());
         assert!(result.media.title.properties.is_empty());
+    }
+
+    #[test]
+    fn media_meta_launcher_override_parses_when_present() {
+        let json = r#"{
+            "media": {
+                "path": "/p", "parentDir": "/", "isMissing": false,
+                "tags": [], "properties": {}, "launcherOverride": "RetroArch",
+                "title": {
+                    "slug": "x", "name": "X", "slugLength": 1,
+                    "slugWordCount": 1, "system": {"id":"NES"},
+                    "tags": [], "properties": {}
+                }
+            }
+        }"#;
+        let result: MediaMetaResult = serde_json::from_str(json).expect("parse");
+        assert_eq!(result.media.launcher_override.as_deref(), Some("RetroArch"));
+    }
+
+    #[test]
+    fn media_meta_launcher_override_defaults_to_none_when_absent() {
+        let json = r#"{
+            "media": {
+                "path": "/p", "parentDir": "/", "isMissing": false,
+                "tags": [], "properties": {},
+                "title": {
+                    "slug": "x", "name": "X", "slugLength": 1,
+                    "slugWordCount": 1, "system": {"id":"NES"},
+                    "tags": [], "properties": {}
+                }
+            }
+        }"#;
+        let result: MediaMetaResult = serde_json::from_str(json).expect("parse");
+        assert!(result.media.launcher_override.is_none());
+    }
+
+    #[test]
+    fn media_meta_update_params_sets_launcher_override() {
+        let params =
+            MediaMetaUpdateParams::for_media("SNES", "/roms/snes/x.sfc", Some("RetroArch".into()));
+        let json = serde_json::to_value(&params).expect("serialise");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "system": "SNES",
+                "path": "/roms/snes/x.sfc",
+                "media": {"launcherOverride": "RetroArch"}
+            })
+        );
+    }
+
+    #[test]
+    fn media_meta_update_params_clear_serialises_explicit_null() {
+        let params = MediaMetaUpdateParams::for_media("SNES", "/roms/snes/x.sfc", None);
+        let json = serde_json::to_value(&params).expect("serialise");
+        // Core rejects an update request that omits `launcherOverride`
+        // entirely, so the key must round-trip as an explicit `null`, not
+        // be dropped by a `skip_serializing_if`.
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "system": "SNES",
+                "path": "/roms/snes/x.sfc",
+                "media": {"launcherOverride": null}
+            })
+        );
     }
 
     #[test]
