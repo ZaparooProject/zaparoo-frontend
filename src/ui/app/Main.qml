@@ -92,6 +92,13 @@ MainLayout {
     property string _pendingGameLauncherSystemId: ""
     property string _pendingGameLauncherPath: ""
     property string _pendingGameLauncherSelectionId: ""
+    // Set when "Change launcher" is accepted for a game while
+    // Browse.GameLauncherOverride.prepare_game (fired at context-menu open)
+    // hasn't resolved yet -- see handleContextMenuAccepted's games branch
+    // and the deferred-open Connections block below.
+    property bool _gameLauncherPickerPending: false
+    property string _gameLauncherPickerSystemId: ""
+    property string _gameLauncherPickerPath: ""
     property string cardWriteOwner: ""
     property int _cardWriteIndex: -1
     property string _gameInfoOwner: ""
@@ -2115,6 +2122,10 @@ MainLayout {
         function onLoadingChanged(): void {
             if (Browse.GameLauncherOverride.loading)
                 return;
+            if (root._gameLauncherPickerPending) {
+                root._gameLauncherPickerPending = false;
+                root._openGameLauncherPicker(root._gameLauncherPickerSystemId, root._gameLauncherPickerPath);
+            }
             if (!root.contextMenuVisible || root.contextMenuMode !== "main" || root.contextMenuOwner !== "games")
                 return;
             const currentGameLauncher = Browse.GameLauncherOverride.current_override;
@@ -2370,6 +2381,18 @@ MainLayout {
         return entries;
     }
 
+    // Opens the per-game launcher picker from Browse.GameLauncherOverride's
+    // current picker_ids/picker_labels/current_override. Callers must have
+    // already confirmed `!Browse.GameLauncherOverride.loading` -- see
+    // handleContextMenuAccepted's games "change_launcher" branch (opens
+    // immediately) and the deferred-open Connections block below (opens
+    // once a still-in-flight prepare_game resolves).
+    function _openGameLauncherPicker(gameSystemId: string, gamePath: string): void {
+        const entries = root._launcherPickerEntries(Browse.GameLauncherOverride.picker_ids, Browse.GameLauncherOverride.picker_labels);
+        if (entries.length > 0)
+            root.openListPickerModal(qsTr("Change launcher"), entries, Browse.GameLauncherOverride.current_override === "" ? "__default__" : Browse.GameLauncherOverride.current_override, "game_launcher:" + gameSystemId + "\n" + gamePath);
+    }
+
     // Relabels one row of a ListPickerModal entries array in place, id
     // unchanged. Used to show "Saving…" on just the row the user picked
     // while a launcher save is in flight -- every other row stays exactly
@@ -2570,8 +2593,14 @@ MainLayout {
         // after saving one).
         if (owner === "games" && entries.some(entry => entry.id === "change_launcher")) {
             const gamePath = Browse.GamesModel.path_at(index);
-            if (gamePath !== "")
+            if (gamePath !== "") {
+                // A pending deferred-open from a previous game's still-in-flight
+                // prepare_game (see the Browse.GameLauncherOverride Connections
+                // block) is now stale -- this prepare_game call supersedes it,
+                // same as the model's own sequence ticket does internally.
+                root._gameLauncherPickerPending = false;
                 Browse.GameLauncherOverride.prepare_game(systemId, gamePath);
+            }
         }
     }
 
@@ -2646,12 +2675,19 @@ MainLayout {
                 const gamePath = Browse.GamesModel.path_at(targetIndex);
                 if (gameSystemId === "" || gamePath === "")
                     return;
-                // picker_ids/picker_labels were already populated by
-                // openContextMenu's prepare_game call, so no second fetch
-                // is needed here.
-                const entries = root._launcherPickerEntries(Browse.GameLauncherOverride.picker_ids, Browse.GameLauncherOverride.picker_labels);
-                if (entries.length > 0)
-                    root.openListPickerModal(qsTr("Change launcher"), entries, Browse.GameLauncherOverride.current_override === "" ? "__default__" : Browse.GameLauncherOverride.current_override, "game_launcher:" + gameSystemId + "\n" + gamePath);
+                if (Browse.GameLauncherOverride.loading) {
+                    // openContextMenu's prepare_game call hasn't resolved
+                    // yet (a fast press, or Core busy elsewhere) --
+                    // picker_ids/picker_labels would still be empty. Wait
+                    // for it instead of opening nothing; the
+                    // Browse.GameLauncherOverride Connections below opens
+                    // the picker once loading clears.
+                    root._gameLauncherPickerPending = true;
+                    root._gameLauncherPickerSystemId = gameSystemId;
+                    root._gameLauncherPickerPath = gamePath;
+                    return;
+                }
+                root._openGameLauncherPicker(gameSystemId, gamePath);
                 return;
             }
             const systemId = Browse.SystemsModel.system_id_at(targetIndex);

@@ -44,6 +44,11 @@ pub struct GameLauncherOverrideRust {
     update_pending: bool,
     update_error: QString,
     launchers: Vec<LauncherInfo>,
+    // System id `prepare_game` last ran for, kept so a `LaunchersEndpoint`
+    // update that lands after it (e.g. still loading at menu-open time)
+    // can rebuild the picker list without a second `prepare_game` call —
+    // see `apply_launchers`.
+    prepared_system_id: String,
     seq: Arc<AtomicU64>,
     update_seq: Arc<AtomicU64>,
 }
@@ -110,13 +115,26 @@ fn apply_launchers(
     mut model: Pin<&mut ffi::GameLauncherOverride>,
     status: &ResourceStatus<zaparoo_core::media_types::LaunchersResult>,
 ) {
-    if let ResourceStatus::Ready(data) = status {
-        model
-            .as_mut()
-            .rust_mut()
-            .launchers
-            .clone_from(&data.launchers);
+    let ResourceStatus::Ready(data) = status else {
+        return;
+    };
+    model
+        .as_mut()
+        .rust_mut()
+        .launchers
+        .clone_from(&data.launchers);
+    let system_id = model.rust().prepared_system_id.clone();
+    if system_id.is_empty() {
+        return;
     }
+    let current = model.current_override.to_string();
+    let launchers = model.rust().launchers.clone();
+    set_picker_entries(
+        model,
+        &launchers,
+        &system_id,
+        (!current.is_empty()).then_some(current.as_str()),
+    );
 }
 
 impl ffi::GameLauncherOverride {
@@ -129,6 +147,10 @@ impl ffi::GameLauncherOverride {
         let path = path.to_string();
         self.as_mut().rust_mut().seq.fetch_add(1, Ordering::SeqCst);
         let ticket = self.rust().seq.load(Ordering::SeqCst);
+        self.as_mut()
+            .rust_mut()
+            .prepared_system_id
+            .clone_from(&system_id);
         self.as_mut().set_current_override(QString::default());
         self.as_mut().set_error_message(QString::default());
         self.as_mut().set_picker_ids(QStringList::default());
@@ -262,8 +284,26 @@ fn apply_launcher_override(
     meta: &MediaMeta,
 ) {
     let current = meta.launcher_override.clone();
+    set_picker_entries(model.as_mut(), launchers, system_id, current.as_deref());
+    model
+        .as_mut()
+        .set_current_override(QString::from(current.unwrap_or_default().as_str()));
+}
+
+/// Rebuild `picker_ids`/`picker_labels` from `launchers` filtered to
+/// `system_id`, plus `current` (the launcher already selected, so the
+/// picker's own "Default"/"Current: X" rows land correctly). Shared by
+/// `apply_launcher_override` (a fresh `media.meta` result) and
+/// `apply_launchers` (launcher data arriving after `prepare_game` already
+/// ran, e.g. `LaunchersEndpoint` was still loading at menu-open time).
+fn set_picker_entries(
+    mut model: Pin<&mut ffi::GameLauncherOverride>,
+    launchers: &[LauncherInfo],
+    system_id: &str,
+    current: Option<&str>,
+) {
     let matching = launchers_for_system(launchers, system_id);
-    let entries = picker_entries_for_system(&matching, current.as_deref());
+    let entries = picker_entries_for_system(&matching, current);
     let mut ids = QStringList::default();
     let mut labels = QStringList::default();
     for entry in entries {
@@ -272,7 +312,4 @@ fn apply_launcher_override(
     }
     model.as_mut().set_picker_ids(ids);
     model.as_mut().set_picker_labels(labels);
-    model
-        .as_mut()
-        .set_current_override(QString::from(current.unwrap_or_default().as_str()));
 }

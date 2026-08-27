@@ -1356,6 +1356,17 @@ ApplicationWindow {
                                 label: qsTr("OK")
                             }
                         ];
+                    // A launcher save in flight locks the list picker on its
+                    // "Saving…" row (Main.qml's modalListPicker routing
+                    // branch swallows every action while this is true) --
+                    // Move/Select/Cancel would be false advertising, so swap
+                    // them for the same status text the row itself shows.
+                    if (root.listPickerModalVisible && (root.listPickerFieldId === "system_launcher_pending" || root.listPickerFieldId === "game_launcher_pending"))
+                        return [
+                            {
+                                label: qsTr("Saving…")
+                            }
+                        ];
                     if (root.quitConfirmModalVisible || root.settingNeedsRestartModalVisible || root.listPickerModalVisible || root.letterJumpModalVisible)
                         return [
                             {
@@ -1746,7 +1757,11 @@ ApplicationWindow {
                             required property var modelData
                             spacing: Sizing.pctW(0.6)
 
-                            readonly property var buttonList: helpEntry.modelData.buttons !== undefined ? helpEntry.modelData.buttons : [helpEntry.modelData.button]
+                            // A status-only entry (e.g. "Saving…" while a
+                            // pending save locks the list picker, below)
+                            // supplies neither `button` nor `buttons` --
+                            // renders as a bare label with no icon.
+                            readonly property var buttonList: helpEntry.modelData.buttons !== undefined ? helpEntry.modelData.buttons : (helpEntry.modelData.button !== undefined ? [helpEntry.modelData.button] : [])
 
                             Repeater {
                                 model: helpEntry.buttonList
