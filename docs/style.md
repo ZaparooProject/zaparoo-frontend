@@ -1056,13 +1056,13 @@ Panel uses `bgPanel` + `radiusMd`, no border. Rows are inverse-video —
 surface — see "Two registers" and "Inverse-video rows" above. Panel vertical
 padding is independent from radius.
 
-**3-8 entries maximum** (see `docs/content-style.md`'s menu-ordering and
-menu-size rules for the content-side reasoning). The `Column` painting rows
-has no scroll of its own; `panelHeight` clamps to the window's usable area
-and the panel carries `clip: true` as a shipped-build safety net, but a
-menu that reaches the cap should be consolidated, not left to rely on that
-clip. `ContextMenu.qml` also logs a `console.warn` in development when
-`entries.length` exceeds the cap.
+**No fixed entry cap** (see `docs/content-style.md`'s menu-ordering and
+menu-size rules for the content-side reasoning). `rowViewport` scrolls to keep
+the focused row in view once `_fullContentHeight` exceeds `panelHeight`, and
+`move()` wraps, so the last entry is one press up from the first. `panelHeight`
+clamps to the window's usable area and the panel carries `clip: true` as a
+shipped-build safety net. Judge a menu by whether it still fits without
+scrolling at 240p: a scrolled-past entry is an undiscoverable one.
 
 Row labels center the `Text` item itself (`Sizing.center(parent.width,
 _textWidth)`), per the integer-pixel rule below — never

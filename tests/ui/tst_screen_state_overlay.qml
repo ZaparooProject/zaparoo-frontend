@@ -94,4 +94,75 @@ TestCase {
         overlay.cueCenterY = windowSpace.height / 2 - screenContent.y;
         _verifyNear(_cueCenterInWindowSpace(), windowSpace.height / 2, "window-space match");
     }
+
+    // Returns the two stacked Texts in the Column: title, then detail.
+    function _stateTexts(): var {
+        const found = [];
+        for (let i = 0; i < overlay.children.length; ++i) {
+            const child = overlay.children[i];
+            for (let j = 0; j < child.children.length; ++j) {
+                const leaf = child.children[j];
+                if (leaf.wrapMode !== undefined && leaf.text !== undefined)
+                    found.push(leaf);
+            }
+        }
+        return found;
+    }
+
+    function _enterEmptyState(): void {
+        overlay.loading = false;
+        overlay.errorMessage = "";
+        overlay.count = 0;
+    }
+
+    // The empty state's second line only paints when the caller supplies
+    // one, so every existing single-line call site is unchanged.
+    function test_empty_detail_hidden_when_not_supplied(): void {
+        _enterEmptyState();
+        overlay.emptyText = "No games found yet";
+        overlay.emptyDetailText = "";
+        const texts = _stateTexts();
+        compare(texts.length, 2, "title and detail Texts both exist");
+        verify(texts[0].visible, "title paints in the empty state");
+        verify(!texts[1].visible, "detail stays hidden with no emptyDetailText");
+    }
+
+    // Carbon's empty-state anatomy: title plus a body naming the next
+    // step. `error` already had this; `empty` gained it for the Hub's
+    // indexing-aware copy.
+    function test_empty_detail_paints_when_supplied(): void {
+        _enterEmptyState();
+        overlay.emptyText = "Updating the media database";
+        overlay.emptyDetailText = "Your games appear here as Core finds them.";
+        const texts = _stateTexts();
+        verify(texts[0].visible);
+        compare(texts[0].text, "Updating the media database");
+        verify(texts[1].visible, "detail paints once emptyDetailText is set");
+        compare(texts[1].text, "Your games appear here as Core finds them.");
+    }
+
+    // The error state keeps its own detail line; `emptyDetailText` must
+    // not leak into it.
+    function test_error_detail_still_uses_error_text(): void {
+        overlay.loading = false;
+        overlay.count = 0;
+        overlay.emptyDetailText = "empty detail";
+        overlay.errorText = "Check Zaparoo Core and try again.";
+        overlay.errorMessage = "boom";
+        const texts = _stateTexts();
+        compare(texts[1].text, "Check Zaparoo Core and try again.");
+        overlay.errorMessage = "";
+    }
+
+    // Regression: the title had no width and no wrapMode, so a long
+    // string laid out at natural width and ran off a 240p frame instead
+    // of wrapping. Both lines now share the same measure.
+    function test_long_title_wraps_within_the_overlay(): void {
+        _enterEmptyState();
+        overlay.emptyText = "No systems available. Run Update media database from Settings.";
+        overlay.emptyDetailText = "";
+        const texts = _stateTexts();
+        verify(texts[0].width <= overlay.width, "title never exceeds the overlay width");
+        verify(texts[0].lineCount > 1, "a long title wraps rather than overflowing");
+    }
 }

@@ -1432,22 +1432,22 @@ TestCase {
 
     function test_context_menu_games_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, false, false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub"], "Write to NFC token must be hidden when no reader is reported");
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"], "Write to NFC token must be hidden when no reader is reported");
     }
 
     function test_context_menu_games_with_reader_includes_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, true, false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_favorites_matches_games_media_entries(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, true, true, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     // Round 10: "Discover alt. versions" only appears when the row's own
@@ -1495,12 +1495,12 @@ TestCase {
     // tags (see the doc comment on RecentsModel in recents.rs).
     function test_context_menu_recents_includes_details_and_hub_shortcut(): void {
         const entries = main.buildContextMenuEntries("recents", "", false, false, false, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "qr_code", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_recents_with_reader_includes_write_card(): void {
         const entries = main.buildContextMenuEntries("recents", "", false, true, false, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "write_card", "qr_code", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_games_favorite_label_toggles(): void {

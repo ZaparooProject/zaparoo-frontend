@@ -70,11 +70,9 @@ Item {
     // True once the entry count needs more room than the anchor position
     // leaves on screen -- the viewport below scrolls to keep
     // `currentIndex` in view rather than silently stranding rows past
-    // `panel`'s clipped edge (docs/content-style.md's 3-8 cap is a
-    // development-time backstop for the menus this app authors itself;
-    // "Discover alt. versions" is a data-driven list -- up to
-    // MAX_ALT_RESULTS in alternate_versions.rs -- that routinely exceeds
-    // it for arcade sets with many known revisions).
+    // `panel`'s clipped edge. Both app-authored menus and data-driven ones
+    // ("Discover alt. versions" lists up to MAX_ALT_RESULTS from
+    // alternate_versions.rs) rely on this.
     readonly property bool _scrollable: _fullContentHeight > panelHeight
     readonly property bool _fitsRight: anchorRect.x + anchorRect.width + gap + panelWidth <= width - margin
     readonly property bool _fitsLeft: anchorRect.x - gap - panelWidth >= margin
@@ -109,13 +107,6 @@ Item {
         }
     }
 
-    // docs/content-style.md's menu-size cap: 3-8 entries, for menus this
-    // app authors itself -- still worth flagging past that even though
-    // `rowViewport` below now scrolls to keep the selection reachable,
-    // since it's a signal the menu should be consolidated rather than
-    // relied on to scroll routinely.
-    readonly property int _maxRecommendedEntries: 8
-
     onEntriesChanged: {
         // Callers can swap `entries` on an already-open menu (the
         // "Discover alt. versions" submenu replaces the main list in
@@ -129,8 +120,6 @@ Item {
         }
         if (menu.currentIndex >= menu.entries.length)
             currentIndex = menu.entries.length - 1;
-        if (menu.entries.length > menu._maxRecommendedEntries)
-            console.warn("ContextMenu: " + menu.entries.length + " entries exceeds the " + menu._maxRecommendedEntries + "-entry cap in docs/content-style.md — consolidate this menu");
     }
 
     // `Math.max(advanceWidth, boundingRect.width)` plus `Sizing.stroke(2)`
@@ -359,19 +348,19 @@ Item {
         height: menu.panelHeight
         color: Theme.bgPanel
         radius: menu.panelRadius
-        // Safety net for a menu that exceeds `_maxRecommendedEntries` in a
-        // shipped build: rows past `panelHeight` are cut off cleanly
-        // instead of painting past the panel's rounded corners. Menus
-        // within the documented 3-8 cap never reach this edge.
+        // Safety net for a menu taller than the space the anchor leaves:
+        // rows past `panelHeight` are cut off cleanly instead of painting
+        // past the panel's rounded corners. A menu that fits never reaches
+        // this edge.
         clip: true
 
         // Non-interactive (key navigation drives contentY, not dragging)
         // scrolling viewport -- see `_scrollCurrentIntoView()` above. Only
         // engages once `_scrollable`; below that `rowColumn.height` fits
         // inside `rowViewport` and contentY stays pinned at 0, so this is
-        // visually identical to the old plain-Column layout for every
-        // menu within the documented 3-8 cap. Mirrors
-        // ListPickerModal.qml's `viewport`/`rowColumn` construction.
+        // visually identical to a plain-Column layout for any menu that
+        // fits. Mirrors ListPickerModal.qml's `viewport`/`rowColumn`
+        // construction.
         Flickable {
             id: rowViewport
 

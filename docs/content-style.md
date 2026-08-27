@@ -35,14 +35,17 @@ to "list commands in frequency-of-use order." On a six-button controller
 press, so getting the top of the list right matters more here than on a
 mouse-driven desktop menu.
 
-## Menu size cap
+## Menu size
 
-**3–8 entries per `ContextMenu`.** GNOME's HIG allows 3–12, but
-`ContextMenu.qml` has no scroll or clip safety margin built for that many
-rows on a 240p panel (see `docs/style.md` → "ContextMenu chrome" for the
-enforced backstop). A menu that would grow past 8 needs consolidation —
-fold two related actions into one, or move a rarely-used one into
-Settings — not a scrollbar.
+There is no fixed entry cap. `ContextMenu` navigation wraps, so the last
+entry is one press up from the first, and `rowViewport` scrolls to keep the
+selection reachable when the panel can't fit every row. Ordering matters more
+than length: put the primary action first so the common case stays a single
+press.
+
+Judge a menu by whether it still fits without scrolling at 240p, not by a
+row count. Scrolling hides entries, and a hidden entry is an undiscoverable
+one.
 
 ## Capitalization
 
@@ -134,7 +137,8 @@ lengthening a menu row further.
 1. Where does it fall in the ordering rule above — primary, frequent,
    organizational, or maintenance?
 2. Which glossary term applies? Don't introduce a new synonym.
-3. Does adding it push the menu past 8 entries? If so, consolidate first.
+3. Does the menu still fit without scrolling at 240p? If not, consider
+   consolidating rather than relying on the scroll.
 4. Is it wrapped in `qsTr()`? (Three menu strings shipped without it in
    the past — see `docs/translations.md`.)
 5. Sentence case, no trailing period, ellipsis only if it needs more

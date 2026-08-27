@@ -13,21 +13,32 @@ import Zaparoo.Browse as Browse
 // suppress the compiler category file-wide.
 // qmllint disable compiler
 
-// Round 10 — scrape setup modal. Opened from the Settings "Scrape
-// metadata" row when idle (replacing a direct, hardcoded-scraper start).
+// "Get metadata" setup modal. Every entry point routes here — the
+// Settings > Library row, and the system/category/game context-menu
+// entries, which previously bypassed this modal and started a scrape
+// with a hardcoded "gamelist.xml" scraper and `force: false`. Callers
+// pre-scope via `initialSystemScope` before opening, so a game-level
+// entry that currently scrapes the containing system shows that scope
+// in the Systems row rather than quietly doing more than it claims.
+//
 // Scoped down from the Zaparoo TUI's `showScrapeSetup` equivalent
-// (`pkg/ui/tui/generatedb.go`): scraper choice + system scope + re-scrape
+// (`pkg/ui/tui/generatedb.go`): source choice + system scope + replace
 // toggle + Start, dropping the TUI's per-system multi-select widget in
 // favor of the same flat "All systems / All <Category> systems / one
-// system" picker Round 11 gave `IndexSetupModal` — the per-system/
-// per-category `scrape_system`/`scrape_category` context-menu entries
-// still cover a targeted single-system run and stay on the hardcoded
-// "gamelist.xml" scraper untouched by this modal.
+// system" picker `IndexSetupModal` uses.
 //
-// Four keyboard-navigable rows (`currentIndex` 0-3): Scraper (opens a
+// Naming: entry points say "Get metadata" because the mechanism is a
+// property of the chosen source, not of the action. Inside, once a
+// source is picked, the button can be accurate — today every built-in
+// source imports local files, so it reads "Start import". When real
+// network scrapers land the verb becomes conditional on the source,
+// resolved on the frontend as a presentation concern; Core needs no
+// kind field on `ScraperInfo` for that.
+//
+// Four keyboard-navigable rows (`currentIndex` 0-3): Source (opens a
 // nested ListPickerModal via Main.qml — see `requestScraperPicker`),
 // Systems (opens the same nested picker via `requestSystemScopePicker`),
-// Re-scrape existing (inline toggle), Start scrape (action). Chrome comes
+// Replace existing (inline toggle), Start import (action). Chrome comes
 // from the shared `Modal` shell, same as LogUploadModal.
 Item {
     id: modal
@@ -41,6 +52,11 @@ Item {
     // sentinel convention as IndexSetupModal — see Main.qml's
     // `_systemScopeAll`/`_buildSystemScopeEntries`.
     property string selectedSystemScope: "*"
+    // Scope the modal opens with. Main.qml sets this before opening so a
+    // context-menu entry lands pre-scoped to the system or category it
+    // was invoked from; the Settings row leaves it at "*". Read once in
+    // `onOpenChanged` so the user can still widen or narrow it afterwards.
+    property string initialSystemScope: "*"
     property bool rescrapeExisting: false
     property int currentIndex: 0
     property bool _pressed: false
@@ -49,6 +65,12 @@ Item {
     readonly property int _rowSystems: 1
     readonly property int _rowToggle: 2
     readonly property int _rowStart: 3
+
+    // Accept-button verb for the help bar, mirroring SettingsScreen's
+    // `focusedActionLabel`. The bar describes the press, not the feature,
+    // so it names what A does to the focused row rather than repeating
+    // the modal's title.
+    readonly property string focusedActionLabel: modal.currentIndex === modal._rowStart ? qsTr("Start") : (modal.currentIndex === modal._rowToggle ? qsTr("Toggle") : qsTr("Change"))
 
     readonly property string _selectedScraperName: {
         const ids = Browse.MediaStatus.scraper_ids;
@@ -89,7 +111,7 @@ Item {
             return;
         }
         modal.currentIndex = modal._rowScraper;
-        modal.selectedSystemScope = "*";
+        modal.selectedSystemScope = modal.initialSystemScope !== "" ? modal.initialSystemScope : "*";
         modal.rescrapeExisting = false;
         modal._pressed = false;
     }
@@ -168,12 +190,42 @@ Item {
 
         open: modal.open
         kind: "shell"
-        title: qsTr("Scrape metadata")
+        title: qsTr("Get metadata")
         panelMaxWidth: Sizing.pctH(110)
 
         Column {
             width: parent.width
             spacing: Sizing.pctH(1.5)
+
+            // The single most-misunderstood fact about this feature, put
+            // where the user is about to act on it. zaparoo.org's
+            // troubleshooting page has to state it three separate times,
+            // which is what it costs to leave it unsaid here. The URL is
+            // text rather than a QR because this panel already carries
+            // four rows and a QR large enough to scan from a couch would
+            // not fit at 240p; Settings > About carries the scannable
+            // code.
+            Text {
+                width: parent.width
+                text: qsTr("Zaparoo imports artwork and details from files you already have. It does not download them.")
+                font.family: Theme.fontUi
+                font.pixelSize: Sizing.fontCaption
+                color: Theme.textLabel
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                renderType: Text.NativeRendering
+            }
+
+            Text {
+                width: parent.width
+                text: "zaparoo.org/docs/frontend/scraping"
+                font.family: Theme.fontUi
+                font.pixelSize: Sizing.fontCaption
+                color: Theme.textPrimary
+                wrapMode: Text.WrapAnywhere
+                horizontalAlignment: Text.AlignHCenter
+                renderType: Text.NativeRendering
+            }
 
             Item {
                 width: parent.width
@@ -182,7 +234,7 @@ Item {
 
                 LoadingIndicator {
                     anchors.centerIn: parent
-                    text: qsTr("Loading scrapers…")
+                    text: qsTr("Loading sources…")
                 }
             }
 
@@ -193,7 +245,7 @@ Item {
 
                 SettingsField {
                     width: parent.width
-                    label: qsTr("Scraper")
+                    label: qsTr("Source")
                     value: modal._selectedScraperName
                     control: "picker"
                     isFocused: modal.currentIndex === modal._rowScraper
@@ -219,7 +271,7 @@ Item {
 
                 SettingsField {
                     width: parent.width
-                    label: qsTr("Re-scrape existing")
+                    label: qsTr("Replace existing")
                     value: ""
                     control: "toggle"
                     checked: modal.rescrapeExisting
@@ -233,7 +285,7 @@ Item {
 
                 SettingsField {
                     width: parent.width
-                    label: qsTr("Start scrape")
+                    label: qsTr("Start import")
                     value: ""
                     control: "action"
                     isFocused: modal.currentIndex === modal._rowStart

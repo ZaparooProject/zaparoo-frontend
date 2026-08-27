@@ -102,8 +102,8 @@ Item {
             return Browse.MediaStatus.current_step_display !== "" ? qsTr("Optimizing database: %1").arg(Browse.MediaStatus.current_step_display) : qsTr("Optimizing database…");
         // Scraping is the only remaining `_taskActive` branch.
         if (Browse.MediaStatus.scrape_paused)
-            return qsTr("Scraping paused: game running");
-        return Browse.MediaStatus.scrape_current_step_display !== "" ? qsTr("Scraping: %1").arg(Browse.MediaStatus.scrape_current_step_display) : qsTr("Scraping…");
+            return qsTr("Importing paused: game running");
+        return Browse.MediaStatus.scrape_current_step_display !== "" ? qsTr("Importing: %1").arg(Browse.MediaStatus.scrape_current_step_display) : qsTr("Importing…");
     }
     readonly property bool _taskPaused: Browse.MediaStatus.indexing ? Browse.MediaStatus.paused : Browse.MediaStatus.scrape_paused
     // Optimize/vacuum has no step count Core reports -- one cell marches
@@ -156,7 +156,7 @@ Item {
             root._terminalMessage = "";
             terminalMessageTimer.stop();
         } else if (root._scrapeWasBusy && !root._scrapeBusy) {
-            root._terminalMessage = Browse.MediaStatus.scrape_state === "failed" ? qsTr("Scrape failed: %1").arg(Browse.MediaStatus.scrape_error) : qsTr("Scraped %1 of %2").arg(Format.count(Browse.MediaStatus.scrape_matched)).arg(Format.count(Browse.MediaStatus.scrape_total));
+            root._terminalMessage = Browse.MediaStatus.scrape_state === "failed" ? qsTr("Import failed: %1").arg(Browse.MediaStatus.scrape_error) : qsTr("Imported %1 of %2").arg(Format.count(Browse.MediaStatus.scrape_matched)).arg(Format.count(Browse.MediaStatus.scrape_total));
             terminalMessageTimer.restart();
         }
         root._scrapeWasBusy = root._scrapeBusy;

@@ -266,8 +266,8 @@ Item {
         {
             kind: "field",
             id: "runScraper",
-            label: qsTr("Scrape metadata"),
-            description: qsTr("Downloads box art, descriptions, and tags for your games. Choose a source and which systems.")
+            label: qsTr("Get metadata"),
+            description: qsTr("Imports artwork, descriptions, and details from files you already have. Zaparoo does not download them.")
         },
         {
             kind: "header",
@@ -310,6 +310,12 @@ Item {
             id: "aboutLicense",
             label: qsTr("About / License"),
             description: qsTr("Version, build date, license terms, and the people who made this.")
+        },
+        {
+            kind: "field",
+            id: "documentation",
+            label: qsTr("Documentation"),
+            description: qsTr("Shows a code you can scan to open the Zaparoo Frontend guide on your phone.")
         },
         {
             kind: "field",
@@ -380,7 +386,7 @@ Item {
             return Browse.MediaStatus.scrape_paused ? qsTr("Paused") : qsTr("In progress");
         const total = Browse.MediaStatus.scrape_total_scraped;
         if (total > 0)
-            return qsTr("%1 scraped").arg(Format.count(total));
+            return qsTr("%1 imported").arg(Format.count(total));
         return "";
     }
 
@@ -626,7 +632,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return settings.focusedFieldIsPicker || id === "updateMediaDb" || id === "runScraper" || id === "uploadLog" || id === "aboutLicense" || id === "pageAppearance" || id === "pageDisplayInterface" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration";
+        return settings.focusedFieldIsPicker || id === "updateMediaDb" || id === "runScraper" || id === "uploadLog" || id === "aboutLicense" || id === "documentation" || id === "pageAppearance" || id === "pageDisplayInterface" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration";
     }
     // Verb shown on the help-bar Accept hint for the focused action row.
     // updateMediaDb flips between Start and Cancel because the press

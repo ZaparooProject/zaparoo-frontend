@@ -53,6 +53,10 @@ TestCase {
 
     function init(): void {
         modal.open = false;
+        // Reset before reopening: `initialSystemScope` seeds
+        // `selectedSystemScope` in onOpenChanged, so a test that sets it
+        // would otherwise carry its scope into every later test.
+        modal.initialSystemScope = "*";
         modal.open = true;
         pickerSpy.clear();
         systemScopePickerSpy.clear();
@@ -149,5 +153,47 @@ TestCase {
         compare(modal._selectedSystemScopeName, qsTr("All systems"));
         modal.selectedSystemScope = "cat:Console";
         compare(modal._selectedSystemScopeName, qsTr("All %1 systems").arg("Console"));
+    }
+
+    // Context-menu entries route through this modal pre-scoped, so the
+    // Systems row shows what is actually about to run rather than the
+    // caller quietly scraping wider than the user asked for.
+    function test_initial_scope_seeds_the_systems_row_on_open(): void {
+        modal.open = false;
+        modal.initialSystemScope = "Genesis";
+        modal.open = true;
+        compare(modal.selectedSystemScope, "Genesis");
+    }
+
+    // The Settings > Library entry point passes the all-systems sentinel;
+    // an empty string must not strand the modal on a blank scope.
+    function test_empty_initial_scope_falls_back_to_all_systems(): void {
+        modal.open = false;
+        modal.initialSystemScope = "";
+        modal.open = true;
+        compare(modal.selectedSystemScope, "*");
+    }
+
+    // Pre-scoping seeds the row but doesn't lock it: the user can still
+    // widen or narrow before starting.
+    function test_initial_scope_is_only_a_seed(): void {
+        modal.open = false;
+        modal.initialSystemScope = "Genesis";
+        modal.open = true;
+        modal.selectedSystemScope = "*";
+        compare(modal.selectedSystemScope, "*");
+    }
+
+    // The help bar describes the press, not the feature, so the accept
+    // verb tracks the focused row rather than repeating the title.
+    function test_focused_action_label_tracks_the_focused_row(): void {
+        modal.currentIndex = modal._rowScraper;
+        compare(modal.focusedActionLabel, qsTr("Change"));
+        modal.currentIndex = modal._rowSystems;
+        compare(modal.focusedActionLabel, qsTr("Change"));
+        modal.currentIndex = modal._rowToggle;
+        compare(modal.focusedActionLabel, qsTr("Toggle"));
+        modal.currentIndex = modal._rowStart;
+        compare(modal.focusedActionLabel, qsTr("Start"));
     }
 }
