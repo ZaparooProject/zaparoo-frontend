@@ -1355,6 +1355,14 @@ Item {
             }
         } else if (action === "page_menu") {
             hub.requestPageMenu();
+        } else if (action === "cancel") {
+            // Deliberate no-op. Cancel used to quit the app from the Hub
+            // root screen; that's now exclusively a View-menu action (see
+            // Main.qml's "hub_quit" -> openQuitConfirmModal), so a stray
+            // Cancel/B press here must not do anything, including falling
+            // through to whatever the caller does with an unhandled
+            // action. Explicit branch rather than silent fall-through so
+            // the intent reads here instead of as an accidental gap.
         }
     }
 

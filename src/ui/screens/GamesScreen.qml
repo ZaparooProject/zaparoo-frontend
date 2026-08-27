@@ -145,9 +145,19 @@ MediaListScreen {
     }
     showTopStrip: games._statusProfile ? games._statusProfile.topStripVisible : true
     topStripTitleProvider: () => {
-        const folderName = games._folderNameForPath(Browse.GamesModel.current_path);
-        if (folderName !== "")
-            return folderName;
+        // Only trust the folder-basename title once actually below the
+        // system root -- `current_path` is non-empty at the root too (it's
+        // the system's own root browse path), so a bare non-empty check
+        // here mistook root browsing for folder browsing and printed the
+        // raw directory name ("SMS", "MegaDrive") instead of the resolved
+        // system name ("Master System", "Genesis"). `_atFolderLevel()` is
+        // the same "are we actually inside a navigated folder" signal
+        // `cancelAction` above already uses for back routing.
+        if (games._atFolderLevel()) {
+            const folderName = games._folderNameForPath(Browse.GamesModel.current_path);
+            if (folderName !== "")
+                return folderName;
+        }
         const sid = Browse.GamesModel.current_system_id;
         if (sid === "")
             return "";
@@ -203,7 +213,18 @@ MediaListScreen {
         if (!games._listLayout)
             Browse.GamesModel.prefetch_around(first);
     }
-    activeLabelTextProvider: () => games.gamesGrid.itemCount > 0 ? Browse.GamesModel.name_at(games.gamesGrid.currentIndex) : ""
+    activeLabelTextProvider: () => {
+        // name_at() is a #[qinvokable], not a Q_PROPERTY -- calling it alone
+        // establishes no binding dependency on the row's own data, only on
+        // itemCount/currentIndex below. A folder swap that lands on the same
+        // index with the same item count (a common in-place-replacement
+        // case) left this label showing the previous folder's row name.
+        // rows_revision bumps on exactly that in-place-replacement path
+        // (games.rs's apply_initial_page); reading it here -- unused, but
+        // read -- makes it a tracked dependency so the label refires too.
+        void Browse.GamesModel.rows_revision;
+        return games.gamesGrid.itemCount > 0 ? Browse.GamesModel.name_at(games.gamesGrid.currentIndex) : "";
+    }
     activeLabelAtBottom: true
     activeLabelBottomMargin: games._footerProfile ? games._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
     activeLabelHeight: games._footerProfile ? games._footerProfile.activeLabelHeight : Sizing.pctH(7)

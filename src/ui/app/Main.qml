@@ -1002,8 +1002,26 @@ MainLayout {
         if (root.hubScreen === null)
             return;
         const entries = root.hubScreen.buildAddEntries();
-        if (entries.length === 0)
+        if (entries.length === 0) {
+            // `buildAddEntries()` only ever offers detected categories and
+            // built-in actions (see its own doc comment) -- once every one
+            // of those is already placed, this is a legitimate "nothing
+            // left to add" state, not a bug. Returning silently here used
+            // to read as the button doing nothing at all.
+            //
+            // Tried and rejected: opening the same picker with one
+            // informational, non-actionable row. NN/G's empty-state
+            // guidance is to teach, not just announce -- "use the empty
+            // state to provide help cues; tell the user what could be
+            // displayed, and how to populate the area with that content" --
+            // and a bare "everything's already on the Hub" row doesn't say
+            // where to go next. Route through the existing action_error
+            // modal instead, which already carries a body for exactly this:
+            // point at the real add path, "Add to Hub" on a Systems/Games/
+            // Favorites/Recents row's Options menu, not this menu.
+            root.presentActionError("hub_add_empty", qsTr("Nothing left to add"), qsTr("All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\"."), qsTr("OK"), null);
             return;
+        }
         root.openListPickerModal(qsTr("Add item"), entries, entries[0].id, "hub_add_pick");
     }
 
@@ -2229,10 +2247,13 @@ MainLayout {
                 return [];
             if (entryType === "directory" && !mediaCapable) {
                 // A plain browsable folder has no media-scoped actions of
-                // its own -- the only thing worth offering is a Hub
-                // shortcut to it, and only on Games (a Favorites row is
-                // already a saved shortcut of its own kind, so this
-                // doesn't extend there).
+                // its own, and Favorites never contains a directory row (it
+                // is a flat list of games) -- only Games can reach this
+                // branch, so the empty-array side never actually executes.
+                // Left as an explicit owner check rather than an
+                // unconditional entry so a directory row on a future
+                // Favorites-like owner doesn't silently inherit a folder
+                // shortcut action.
                 return owner === "games" ? [
                     {
                         id: "add_to_hub",
@@ -2270,11 +2291,10 @@ MainLayout {
                     id: "discover",
                     label: qsTr("Discover alt. versions")
                 });
-            if (owner === "games")
-                entries.push({
-                    id: "add_to_hub",
-                    label: qsTr("Add to Hub")
-                });
+            entries.push({
+                id: "add_to_hub",
+                label: qsTr("Add to Hub")
+            });
             return entries;
         }
         return [];
@@ -2635,11 +2655,12 @@ MainLayout {
     }
 
     // "Add to Hub" — creates a `system`/`folder`/`zapscript` shortcut from a
-    // Systems/Games row via `Browse.HubLayout.add_target_item`. Only
-    // `system` and `games` reach here (see `buildContextMenuEntries`);
+    // Systems/Games/Favorites/Recents row via `Browse.HubLayout.add_target_item`.
     // `owner === "games"` covers both a plain directory (folder shortcut)
-    // and a media row (game shortcut). A game shortcut's `name` is the one
-    // place this layout caches a value resolved from Core — a deliberate,
+    // and a media row (game shortcut); Favorites/Recents are always a flat
+    // list of games, so they only ever create a zapscript shortcut, the
+    // same as a Games media row. A game shortcut's `name` is the one place
+    // this layout caches a value resolved from Core — a deliberate,
     // user-approved exception to the no-Core-metadata rule (see
     // `zaparoo_core::hub_layout`'s doc comment on `add_target_item`), so the
     // tile has a real title without needing Core reachable to render, and
@@ -2651,21 +2672,36 @@ MainLayout {
                 Browse.HubLayout.add_target_item("system", systemId, "", "", "", "", "");
             return;
         }
-        if (owner !== "games")
-            return;
-        const entryType = Browse.GamesModel.entry_type_at(index);
-        const systemId = Browse.GamesModel.current_system_id;
-        if (entryType === "directory") {
+        if (owner === "games") {
+            const entryType = Browse.GamesModel.entry_type_at(index);
+            const systemId = Browse.GamesModel.current_system_id;
+            if (entryType === "directory") {
+                const path = Browse.GamesModel.path_at(index);
+                if (path !== "")
+                    Browse.HubLayout.add_target_item("folder", "", path, "", "", "", systemId);
+                return;
+            }
             const path = Browse.GamesModel.path_at(index);
-            if (path !== "")
-                Browse.HubLayout.add_target_item("folder", "", path, "", "", "", systemId);
+            const script = Browse.GamesModel.launch_text_at(index);
+            if (script === "")
+                return;
+            const name = Browse.GamesModel.name_at(index);
+            Browse.HubLayout.add_target_item("zapscript", "", path, script, name, "", systemId);
             return;
         }
-        const path = Browse.GamesModel.path_at(index);
-        const script = Browse.GamesModel.launch_text_at(index);
+        // Favorites/Recents rows: same accessor shape openGameInfo already
+        // uses for these two owners a few lines below, since neither model
+        // has a single "current system" the way a Games browse does --
+        // each row carries its own system_id_at(index).
+        if (owner !== "favorites" && owner !== "recents")
+            return;
+        const model = owner === "favorites" ? Browse.FavoritesModel : Browse.RecentsModel;
+        const systemId = model.system_id_at(index);
+        const path = model.path_at(index);
+        const script = model.launch_text_at(index);
         if (script === "")
             return;
-        const name = Browse.GamesModel.name_at(index);
+        const name = model.name_at(index);
         Browse.HubLayout.add_target_item("zapscript", "", path, script, name, "", systemId);
     }
 
@@ -3091,10 +3127,12 @@ MainLayout {
     // already uses to decide whether to offer "index_category"/
     // "scrape_category" at all.
     function _buildSystemScopeEntries(): var {
-        const entries = [{
-            id: root._systemScopeAll,
-            label: qsTr("All systems")
-        }];
+        const entries = [
+            {
+                id: root._systemScopeAll,
+                label: qsTr("All systems")
+            }
+        ];
         for (let i = 0; i < Browse.CategoriesModel.count; i++) {
             const category = Browse.CategoriesModel.category_at(i);
             if (category === "" || Browse.SystemsModel.system_ids_for_category(category).length === 0)

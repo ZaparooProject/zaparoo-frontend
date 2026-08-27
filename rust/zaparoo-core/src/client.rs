@@ -638,6 +638,7 @@ impl Client {
         debug!(
             path = %params.path,
             systems = ?params.systems,
+            root_view = ?params.root_view,
             max_results = ?params.max_results,
             cursor_set = params.cursor.is_some(),
             letter = ?params.letter,
@@ -661,6 +662,7 @@ impl Client {
         debug!(
             path = %params.path,
             systems = ?params.systems,
+            root_view = ?params.root_view,
             sort = ?params.sort,
             "media.browse.index request",
         );

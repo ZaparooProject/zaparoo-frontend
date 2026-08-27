@@ -26,20 +26,25 @@ import Zaparoo.Theme
 // docs/style.md already sanctions for the global Loading cue and
 // TopStatusStrip titles.
 //
-// Content is a right-aligned pair -- label, then track -- hugging the
-// header's own right margin, not stretched across the full row the way
-// the old pill's replacement first was. The track is the rightmost
-// element; there is no trailing count next to it. That was tried (a
-// step ratio, then an absolute file/record count) and cut both times:
-// the bar already conveys progress on its own, same as the mobile app,
-// and a separate number cell kept adding layout complexity -- a
-// reserved-width void when the number was absent, a shifting anchor
-// point when it wasn't -- for information nobody needed to read twice.
-// A short message just sits closer to the right edge; the label
+// Content is a right-aligned cluster -- label, then a percentage, then
+// the track -- hugging the header's own right margin, not stretched
+// across the full row the way the old pill's replacement first was. The
+// track is the rightmost element. A trailing count next to it was tried
+// twice before this (a step ratio, then an absolute file/record count)
+// and cut both times: a variable-width number cell kept adding layout
+// complexity -- a reserved-width void when the number was absent, a
+// shifting anchor point when it wasn't. The percentage here is not that
+// same mistake a third time: its slot is fixed-width, measured once from
+// "100%" and reserved whenever the track itself is shown (see
+// `_percentReserve`), so neither failure mode reproduces. It also isn't
+// a re-display of the same information the 12-cell track already shows
+// -- the track quantises whatever Core's real step count is down to 12
+// visible states, the percentage keeps the underlying resolution. A
+// short message just sits closer to the right edge; the label
 // shrink-wraps to its own content and only elides once it would run
-// past the logo, so idle space moves to the left of the pair instead of
-// sitting in the middle of the message, and long system names still get
-// real room instead of forcing CRT-only abbreviations ("Idx…", "Scr…").
+// past the logo, so idle space moves to the left of the cluster instead
+// of sitting in the middle of the message, and long system names still
+// get real room instead of forcing CRT-only abbreviations ("Idx…", "Scr…").
 Item {
     id: root
 
@@ -227,12 +232,43 @@ Item {
     // `track.width` short of the right edge even while the track is
     // hidden.
     readonly property int _trackReserve: root._showTrack ? track.width + root._cellsSpacing : 0
+    // Round N: a percentage reading between the label and the track,
+    // derived from the same `_taskCurrentStep`/`_taskTotalSteps` the
+    // track's own cell fill uses. The bare 12-cell track quantises
+    // whatever Core's real step count is down to 12 visible states; this
+    // keeps the underlying resolution instead of re-showing the same
+    // coarse jumps as a second visual. It is NOT the raw step ordinals
+    // ("step 7 of 12") -- those were shown as literal text for two
+    // months by mistake, never meant to be user-facing (an internal
+    // progress signal for the Zaparoo mobile app) -- a normalised
+    // percentage is the correct way to surface that signal, not the
+    // ordinals themselves.
+    readonly property bool _percentKnown: root._taskTotalKnown && root._taskTotalSteps > 0
+    readonly property int _percentValue: Math.round(Math.max(0, Math.min(1, root._taskCurrentStep / Math.max(1, root._taskTotalSteps))) * 100)
+    readonly property string _percentText: root._percentKnown ? qsTr("%1%").arg(root._percentValue) : ""
+    // Fixed-width slot sized once to "100%" (`percentMetrics` below), not
+    // to whatever the current text measures -- a trailing count next to
+    // this track was tried twice before and cut twice for exactly the
+    // reflow a variable-width slot causes (see this file's own doc
+    // comment): a reserved-width void when the number was absent, a
+    // shifting anchor point when it wasn't. Reserved whenever the track
+    // itself is shown, even during the one phase with no percentage to
+    // display (optimize/vacuum -- `_percentKnown` false), so the track's
+    // own position never moves as a run passes through that phase.
+    readonly property int _percentReserve: root._showTrack ? Sizing.px(percentMetrics.advanceWidth) + root._cellsSpacing : 0
     readonly property int _labelNaturalWidth: Math.ceil(Math.max(labelMetrics.advanceWidth, labelMetrics.boundingRect.width))
-    readonly property int _labelWidth: Math.min(root._labelNaturalWidth, Math.max(0, root.width - root._trackReserve))
+    readonly property int _labelWidth: Math.min(root._labelNaturalWidth, Math.max(0, root.width - root._trackReserve - root._percentReserve))
 
     TextMetrics {
         id: labelMetrics
         text: root._label
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontSmall
+    }
+
+    TextMetrics {
+        id: percentMetrics
+        text: "100%"
         font.family: Theme.fontUi
         font.pixelSize: Sizing.fontSmall
     }
@@ -250,6 +286,29 @@ Item {
         totalSteps: root._taskTotalSteps
     }
 
+    // Right-aligned within its fixed-width slot -- not centered, see
+    // CLAUDE.md's integer-pixel rule -- so the boundary against the track
+    // never moves: the ones digit and "%" sit flush there, and growth
+    // (1% -> 100%) eats into the slot leftward instead of shifting the
+    // track's own position. `track.left` is always a valid anchor target
+    // regardless of `track.visible` (its own `width` is fixed
+    // independent of visibility, same as the comment on `_trackReserve`
+    // above notes), so this doesn't need parent.right as a fallback.
+    Text {
+        objectName: "statusLinePercent"
+        anchors.right: track.left
+        anchors.rightMargin: root._cellsSpacing
+        anchors.verticalCenter: parent.verticalCenter
+        width: Sizing.px(percentMetrics.advanceWidth)
+        visible: root._showTrack
+        horizontalAlignment: Text.AlignRight
+        text: root._percentText
+        font.family: Theme.fontUi
+        font.pixelSize: Sizing.fontSmall
+        color: Theme.textPrimary
+        renderType: Text.NativeRendering
+    }
+
     // Shrink-wraps to its own content (`width` is the natural measured
     // width, not the full available span) so it hugs the track instead of
     // leaving a gap -- any slack space lands to the left of this item
@@ -259,7 +318,7 @@ Item {
     Text {
         objectName: "statusLineLabel"
         anchors.right: parent.right
-        anchors.rightMargin: root._trackReserve
+        anchors.rightMargin: root._trackReserve + root._percentReserve
         anchors.verticalCenter: parent.verticalCenter
         width: root._labelWidth
         elide: Text.ElideRight

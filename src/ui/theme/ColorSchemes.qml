@@ -412,6 +412,74 @@ QtObject {
         return candidate;
     }
 
+    // Ambient accent-carrying edge roles (`tileEdge`/`controlEdge`): the
+    // resting front-edge strip on every tile and button, painted
+    // regardless of focus. These were the only two accent-carrying roles
+    // still on `_mix` (sRGB per-channel lerp) instead of this file's OKLCh
+    // path -- at the old 0.44/0.54 mix fractions toward a saturated accent
+    // this was not the near-neutral mix `_mix`'s own module doc says is
+    // fine, so it landed inconsistently loud across the catalog: hot on
+    // high-chroma presets (`nes`, `virtual-boy`, `game-boy`,
+    // `synthwave-84`), muddy on others. Reported independently by two beta
+    // testers as overpowering cover art.
+    //
+    // Chroma is CAPPED, not scaled: proportional scaling preserves the
+    // loudness ordering (the presets already flagged as too loud stay
+    // loudest), a cap pulls the loud ones down to the same ceiling the
+    // quiet presets already sit near. `controlEdge` gets a slightly higher
+    // factor and cap than `tileEdge` so it stays a touch stronger even at
+    // the ceiling -- the old 0.44/0.54 mix fractions kept that ordering by
+    // construction, a shared cap alone would have erased it on
+    // high-chroma presets.
+    //
+    // Lightness is SOLVED for a minimum separation ratio against `card`
+    // rather than a fixed offset: a fixed delta cleared only ~1.27:1 at
+    // the dark end of the catalog, under the 1.5:1 floor
+    // `test_edge_reads_as_a_lit_bevel` asserts. Walking L away from
+    // `card`'s own lightness until the ratio clears (the same
+    // walk-until-it-clears pattern `_clampAccent`/`_onAccentFor` already
+    // use) holds the floor by construction on every preset instead of
+    // needing per-preset eyeballing.
+    // `card` is the surface the edge sits directly against (giving the
+    // "raised surface" 3D separation cue); `ground` is what's typically
+    // behind the whole component (the Hub's deep background for a tile,
+    // a settings panel for a menu-row-style control) —
+    // `tst_pressable_surface.qml`'s `test_edge_uses_contextual_middle_tone`
+    // asserts against `ground`, this file's own
+    // `test_edge_reads_as_a_lit_bevel` asserts against `card`. Both must
+    // clear at once: `card`/`panel`/`bgDeep` sit on the same neutral
+    // ladder (consecutive rungs stepping from `primary` toward `text`), so
+    // walking L away from whichever pole `card` itself leans toward moves
+    // away from all of them together, not just the one the loop happens
+    // to check last.
+    function _edgeFor(accent: color, card: color, chromaFactor: real, chromaCap: real, cardMinContrast: real, ground: color, groundMinContrast: real): color {
+        const accentLch = _toLch(_srgbToOklab(accent));
+        const cardLab = _srgbToOklab(card);
+        const cardLch = _toLch(cardLab);
+        // Guaranteed separation from the card's OWN chroma, not just an
+        // absolute ceiling independent of it. `_mix` is a plain sRGB lerp,
+        // not OKLab-space, so it doesn't preserve chroma proportionally —
+        // a near-black primary mixed even slightly toward a high-chroma
+        // accent (e.g. `game-boy`'s saturated yellow-green over its
+        // near-black primary) can push the card's own perceptual chroma up
+        // more than the small mix fraction suggests, exactly the general
+        // risk this file's own module doc already names for mixing a
+        // saturated accent toward a near-black pole. A fixed cap alone
+        // doesn't account for that; comparing against the card's measured
+        // chroma does.
+        const chroma = Math.max(Math.min(accentLch.C * chromaFactor, chromaCap), cardLch.C + 0.01);
+        const direction = cardLab.L > 0.5 ? -1 : 1;
+        let L = cardLab.L;
+        let candidate = _gamutFit(L, chroma, accentLch.h);
+        for (let i = 0; i < 80 && (_contrastRatio(candidate, card) < cardMinContrast || _contrastRatio(candidate, ground) < groundMinContrast); i++) {
+            L = Math.max(0, Math.min(1, L + direction * 0.01));
+            candidate = _gamutFit(L, chroma, accentLch.h);
+            if (L <= 0 || L >= 1)
+                break;
+        }
+        return candidate;
+    }
+
     function _hueDegrees(radians: real): real {
         let deg = radians * 180 / Math.PI;
         while (deg < 0)
@@ -482,11 +550,6 @@ QtObject {
         const mid = _mix(_mix(primary, text, 0.32), accent, 0.05);
         const variant = _mix(_mix(primary, text, 0.58), accent, 0.14);
 
-        // The pressable front edge rides the accent ramp. It starts one rung
-        // up the neutral ladder so it keeps a little body on a near-black
-        // primary instead of collapsing into the background.
-        const edgeBase = _mix(primary, text, 0.06);
-
         // Semantic tier — see the derivation functions above.
         const onAccent = _onAccentFor(accent, primary, text);
         const onAccentMuted = _onAccentMutedFor(onAccent, accent);
@@ -508,8 +571,8 @@ QtObject {
             "bgPanel": panel,
             "bgBar": _mix(primary, ink, 0.35),
             "surfaceCard": card,
-            "tileEdge": _mix(edgeBase, accent, 0.44),
-            "controlEdge": _mix(edgeBase, accent, 0.54),
+            "tileEdge": _edgeFor(accent, card, 0.5, 0.05, 1.5, primary, 1.8),
+            "controlEdge": _edgeFor(accent, card, 0.6, 0.06, 1.65, panel, 2.0),
             "scrim": "#cc000000",
             "borderSubtle": subtle,
             "borderMid": mid,

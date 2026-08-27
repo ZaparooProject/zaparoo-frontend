@@ -26,10 +26,39 @@ TestCase {
         return (Math.max(firstLuminance, secondLuminance) + 0.05) / (Math.min(firstLuminance, secondLuminance) + 0.05);
     }
 
-    function _saturation(value: color): real {
-        const maximum = Math.max(value.r, value.g, value.b);
-        const minimum = Math.min(value.r, value.g, value.b);
-        return maximum === 0 ? 0 : (maximum - minimum) / maximum;
+    function _cbrt(value: real): real {
+        return value < 0 ? -Math.pow(-value, 1 / 3) : Math.pow(value, 1 / 3);
+    }
+
+    function _srgbToLinearChannel(value: real): real {
+        return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+    }
+
+    // OKLCh chroma (Bjorn Ottosson's OKLab) -- independently reimplemented
+    // from ColorSchemes.qml's own `_srgbToOklab`/`_toLch` (same numbers,
+    // verified separately here rather than calling into the production
+    // helpers, matching this file's existing `_relativeLuminance`/
+    // `_contrastRatio` pattern) so a regression in that derivation itself
+    // gets caught, not just a regression in how the palette consumes it.
+    // `_saturation` above is HSV, which orders by the color's own r/g/b
+    // spread rather than perceptual colorfulness -- it disagrees with
+    // chroma exactly on presets whose *background* is itself a saturated
+    // colour (`solarized-dark`, `everforest`, `nord`, `green-phosphor`,
+    // `virtual-boy`), which is what this role's own guardrail needs to
+    // measure against.
+    function _chroma(value: color): real {
+        const r = _srgbToLinearChannel(value.r);
+        const g = _srgbToLinearChannel(value.g);
+        const b = _srgbToLinearChannel(value.b);
+        const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+        const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+        const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+        const l_ = _cbrt(l);
+        const m_ = _cbrt(m);
+        const s_ = _cbrt(s);
+        const a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+        const bLab = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+        return Math.sqrt(a * a + bLab * bLab);
     }
 
     function cleanup(): void {
@@ -111,6 +140,14 @@ TestCase {
             verify(_contrastRatio(palette.textPrimary, palette.surfaceCard) >= 4.5, id + " primary text/card");
             verify(_contrastRatio(palette.accent, palette.bgDeep) >= 3.0, id + " accent/background");
             verify(_contrastRatio(palette.textLabel, palette.bgDeep) >= 3.0, id + " label/background");
+            // Round N: `textLabel` was only floored against `bgDeep` above,
+            // not `surfaceCard`, where most of it actually renders (menu/
+            // settings rows, tile captions); `textVariant` had no floor at
+            // all, even though it's the dimmest text role in the palette.
+            // Both matter more at 540p, where a TV's own scaling/sharpening
+            // is the first thing to make marginal contrast go mushy.
+            verify(_contrastRatio(palette.textLabel, palette.surfaceCard) >= 3.0, id + " label/card");
+            verify(_contrastRatio(palette.textVariant, palette.surfaceCard) >= 3.0, id + " variant/card");
         }
     }
 
@@ -118,12 +155,26 @@ TestCase {
     // edge is chromatically separated from the face along the accent ramp, not
     // merely a darker version of it. A derivation that flattens the edge into
     // the card loses the gloss cue even though nothing looks obviously broken.
+    //
+    // Separation is measured in OKLCh chroma, not HSV saturation: HSV
+    // saturation orders by a color's own r/g/b spread, which is high on a
+    // preset whose *background* is itself a saturated hue
+    // (`solarized-dark`, `everforest`, `nord`, `green-phosphor`,
+    // `virtual-boy`) even when the edge's perceptual chroma is
+    // deliberately low there -- chroma is what these roles are actually
+    // tuned in (see `ColorSchemes.qml`'s `_edgeFor`), so it's what the
+    // guardrail needs to measure. `controlEdge` gets the same floor as
+    // `tileEdge` (previously untested) since it carries the "this is a
+    // button" cue on every menu/settings row the same way `tileEdge` does
+    // on tiles.
     function test_edge_reads_as_a_lit_bevel(): void {
         for (let i = 0; i < ColorSchemes.ids.length; i++) {
             const id = ColorSchemes.ids[i];
             const palette = ColorSchemes.palette(id);
             verify(_contrastRatio(palette.tileEdge, palette.surfaceCard) >= 1.5, id + " tile edge/card separation");
-            verify(_saturation(palette.tileEdge) > _saturation(palette.surfaceCard), id + " tile edge must be more saturated than the card");
+            verify(_contrastRatio(palette.controlEdge, palette.surfaceCard) >= 1.5, id + " control edge/card separation");
+            verify(_chroma(palette.tileEdge) > _chroma(palette.surfaceCard), id + " tile edge must be more chromatic than the card");
+            verify(_chroma(palette.controlEdge) > _chroma(palette.surfaceCard), id + " control edge must be more chromatic than the card");
         }
     }
 

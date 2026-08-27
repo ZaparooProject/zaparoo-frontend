@@ -32,7 +32,7 @@
 // `image://media-image/<...>`, which `requestImage` decodes back to a
 // `MediaKey` and looks up in the in-memory map.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::ffi::{c_char, c_void};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
@@ -608,7 +608,13 @@ struct QueueEntry {
 
 #[derive(Debug)]
 struct MediaImageEntry {
-    bytes: Vec<u8>,
+    // `Arc`, not `Vec<u8>` directly: `get_bytes` used to clone the full
+    // 30-80 KiB buffer while holding CacheState's write lock, serialising
+    // every cover paint against every other reader/writer for the
+    // duration of a real memcpy. An `Arc` clone under the lock is an
+    // atomic refcount bump instead; the actual byte copy (`to_vec()`)
+    // happens after the lock is released. See `get_bytes`.
+    bytes: Arc<Vec<u8>>,
     #[allow(dead_code, reason = "ext is informational; provider only needs bytes")]
     ext: &'static str,
     /// Monotonically increasing usage counter used as the LRU clock.
@@ -652,6 +658,28 @@ impl NegativeMemo {
         }
         self.order.retain(|memo_key| memo_key != key);
     }
+
+    /// Drop every entry for `system_id`. Linear scan — this only runs on
+    /// an index/scrape *completion* edge (see
+    /// `MediaImageCache::invalidate_negative_memo_for_system`), a rare,
+    /// user-paced event, not the read/write hot path the rest of this
+    /// struct serves.
+    fn remove_system(&mut self, system_id: &str) {
+        let stale: Vec<MediaKey> = self
+            .set
+            .iter()
+            .filter(|key| &*key.system_id == system_id)
+            .cloned()
+            .collect();
+        for key in stale {
+            self.remove(&key);
+        }
+    }
+
+    fn clear(&mut self) {
+        self.set.clear();
+        self.order.clear();
+    }
 }
 
 #[derive(Debug)]
@@ -688,6 +716,23 @@ struct CacheState {
     /// Strictly increasing LRU clock. Bumped on every successful read
     /// or insert; the entry with the smallest value is the LRU.
     clock: u64,
+    /// LRU index into `map`, split into two independent trees (read vs
+    /// unread) rather than one composite-keyed tree — eviction always
+    /// prefers a read entry over an unread one regardless of how stale
+    /// the unread entry is (see `evict_until_fits`'s doc comment), so the
+    /// two populations must be independently orderable, not just sorted
+    /// within one shared key. Keyed on `last_used`, which `next_clock`
+    /// guarantees is unique across the cache's entire lifetime — that
+    /// uniqueness is what makes removing an entry from its tree by
+    /// `last_used` alone (no key comparison needed) correct. Replaces the
+    /// old O(N) linear scan over `map` that `evict_until_fits` used to do
+    /// per evicted entry; kept in sync exclusively through
+    /// `insert_entry`/`remove_entry`/`touch_entry` below — nothing else
+    /// may touch `map`, `read_lru`, or `unread_lru` directly, or the
+    /// index silently drifts out of sync with the data it's meant to
+    /// describe.
+    read_lru: BTreeMap<u64, MediaKey>,
+    unread_lru: BTreeMap<u64, MediaKey>,
 }
 
 impl CacheState {
@@ -703,6 +748,8 @@ impl CacheState {
             media_ids: HashMap::new(),
             resolved_types: HashMap::new(),
             clock: 0,
+            read_lru: BTreeMap::new(),
+            unread_lru: BTreeMap::new(),
         }
     }
 
@@ -711,33 +758,92 @@ impl CacheState {
         self.clock
     }
 
-    /// Drop entries until `total_bytes` fits under `cap_bytes`. Two-pass:
-    /// pick the LRU among **read** entries first, fall back to the LRU
-    /// among unread entries only when nothing has been read yet. This
-    /// means QML-consumed entries are eligible for eviction before
+    fn index_insert(&mut self, last_used: u64, read: bool, key: MediaKey) {
+        if read {
+            self.read_lru.insert(last_used, key);
+        } else {
+            self.unread_lru.insert(last_used, key);
+        }
+    }
+
+    fn index_remove(&mut self, last_used: u64, read: bool) {
+        if read {
+            self.read_lru.remove(&last_used);
+        } else {
+            self.unread_lru.remove(&last_used);
+        }
+    }
+
+    /// Insert a fresh entry, or replace an existing one, keeping
+    /// `read_lru`/`unread_lru` in sync. The only path that may write into
+    /// `map` — see the field doc comment on `read_lru` for why.
+    fn insert_entry(&mut self, key: MediaKey, entry: MediaImageEntry) -> Option<MediaImageEntry> {
+        let last_used = entry.last_used;
+        let read = entry.read;
+        let prev = self.map.insert(key.clone(), entry);
+        if let Some(ref prev) = prev {
+            self.index_remove(prev.last_used, prev.read);
+        }
+        self.index_insert(last_used, read, key);
+        prev
+    }
+
+    /// Remove `key`, keeping `read_lru`/`unread_lru` in sync. The only
+    /// path that may remove from `map` — see the field doc comment on
+    /// `read_lru` for why.
+    fn remove_entry(&mut self, key: &MediaKey) -> Option<MediaImageEntry> {
+        let removed = self.map.remove(key);
+        if let Some(ref removed) = removed {
+            self.index_remove(removed.last_used, removed.read);
+        }
+        removed
+    }
+
+    /// Bump `key`'s `last_used` to `next_clock` and mark it read, keeping
+    /// `read_lru`/`unread_lru` in sync. Returns the entry so the caller
+    /// can read its bytes without a second lookup. The only path that may
+    /// mutate an existing `map` entry in place — see the field doc
+    /// comment on `read_lru` for why.
+    fn touch_entry(&mut self, key: &MediaKey, next_clock: u64) -> Option<&MediaImageEntry> {
+        let entry = self.map.get_mut(key)?;
+        let old_last_used = entry.last_used;
+        let old_read = entry.read;
+        entry.last_used = next_clock;
+        entry.read = true;
+        self.index_remove(old_last_used, old_read);
+        self.index_insert(next_clock, true, key.clone());
+        self.map.get(key)
+    }
+
+    /// Drop entries until `total_bytes` fits under `cap_bytes`. Prefers
+    /// the LRU among **read** entries; falls back to the LRU among
+    /// unread entries only when nothing has been read yet. This means
+    /// QML-consumed entries are eligible for eviction before
     /// prefetched-but-not-yet-painted ones — without that ordering, a
     /// page-fill burst that overshoots the cap can drop entries before
-    /// the `QtQuick` provider's first paint pass reads them. Linear scan
-    /// over `map`; the cache holds at most a few hundred entries so
-    /// the O(N) pass per evicted entry is well below noise.
+    /// the `QtQuick` provider's first paint pass reads them.
+    ///
+    /// O(log N) per evicted entry via `read_lru`/`unread_lru` (a
+    /// `BTreeMap`'s first element is its smallest key, i.e. the oldest
+    /// `last_used`). Replaces an old O(N) linear scan over `map` per
+    /// evicted entry — fine at the "a few hundred entries" the cache was
+    /// originally sized for, but the cap comment on `CACHE_CAP_BYTES`
+    /// says 128 MiB holds "thousands of tiles" once `max_cover_size` is
+    /// set, and `get_bytes` takes the cache's write lock too, so every
+    /// cover paint was serialising against an eviction pass whose cost
+    /// scaled with total cache size once the cache was actually full.
     fn evict_until_fits(&mut self, cap_bytes: usize) {
         while self.total_bytes > cap_bytes {
             let victim = self
-                .map
-                .iter()
-                .filter(|(_, e)| e.read)
-                .min_by_key(|(_, e)| e.last_used)
-                .map(|(k, _)| k.clone())
-                .or_else(|| {
-                    self.map
-                        .iter()
-                        .min_by_key(|(_, e)| e.last_used)
-                        .map(|(k, _)| k.clone())
-                });
+                .read_lru
+                .values()
+                .next()
+                .or_else(|| self.unread_lru.values().next())
+                .cloned();
             let Some(victim) = victim else {
                 break;
             };
-            if let Some(entry) = self.map.remove(&victim) {
+            if let Some(entry) = self.remove_entry(&victim) {
                 self.total_bytes = self.total_bytes.saturating_sub(entry.bytes.len());
                 // Keep the sidecars in lock-step with `map` — without
                 // this the hint tables grow unboundedly past `cap_bytes`
@@ -819,18 +925,22 @@ impl MediaImageCache {
         self.max_cover_size.store(size, Ordering::Relaxed);
     }
 
-    /// Bytes for `key`, if cached. Bumps `last_used` so the entry's
-    /// LRU position reflects the read. Returns a clone — encoded
-    /// images are 30–80 KiB, the clone cost is below the cost of
-    /// holding a lock across Qt code on the requester thread.
+    /// Bytes for `key`, if cached. Bumps `last_used` so the entry's LRU
+    /// position reflects the read.
+    ///
+    /// The `Arc` clone happens under the write lock (cheap — a refcount
+    /// bump, not a copy); the real byte copy (`to_vec()`, 30-80 KiB) is
+    /// deferred until after the guard is dropped, so a cover paint no
+    /// longer holds every other cache reader/writer for the duration of
+    /// a memcpy. See `MediaImageEntry.bytes`'s doc comment.
     pub fn get_bytes(&self, key: &MediaKey) -> Option<Vec<u8>> {
-        #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
-        let mut guard = self.state.write().unwrap();
-        let next = guard.next_clock();
-        let entry = guard.map.get_mut(key)?;
-        entry.last_used = next;
-        entry.read = true;
-        Some(entry.bytes.clone())
+        let bytes = {
+            #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
+            let mut guard = self.state.write().unwrap();
+            let next = guard.next_clock();
+            guard.touch_entry(key, next)?.bytes.clone()
+        };
+        Some(bytes.to_vec())
     }
 
     /// Seed the cache with bytes read directly from disk rather than
@@ -857,10 +967,10 @@ impl MediaImageCache {
         }
         let clock = guard.next_clock();
         guard.total_bytes = guard.total_bytes.saturating_add(bytes.len());
-        guard.map.insert(
+        guard.insert_entry(
             key,
             MediaImageEntry {
-                bytes,
+                bytes: Arc::new(bytes),
                 // Core's own thumbnail cache always encodes WebP (see
                 // media_image.go's resize path) — informational only,
                 // the provider decodes by sniffing the byte content.
@@ -901,6 +1011,48 @@ impl MediaImageCache {
         #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
         let guard = self.state.read().unwrap();
         guard.soft_no_image.contains(key)
+    }
+
+    /// Drop every negative-memo entry (all three memos — `negative`,
+    /// `soft_no_image`, `search_seen`) for `system_id`. No-op for an empty
+    /// `system_id`.
+    ///
+    /// The negative memo is deliberately process-lifetime-only (see this
+    /// file's module doc comment) — a "no image" answer that was actually
+    /// a transient race (a NAS mount not yet up when the initial boot
+    /// index ran, say) stayed memoized for the rest of the process's life
+    /// with nothing to clear it, so a subsequently fixed system's covers
+    /// never came back without a full frontend restart. Called on that
+    /// system's index/scrape completion edge (`media_status.rs::apply`)
+    /// so a rescrape's answer actually gets a chance to land.
+    pub fn invalidate_negative_memo_for_system(&self, system_id: &str) {
+        if system_id.is_empty() {
+            return;
+        }
+        #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
+        let mut guard = self.state.write().unwrap();
+        guard.negative.remove_system(system_id);
+        guard.soft_no_image.remove_system(system_id);
+        guard.search_seen.remove_system(system_id);
+        debug!(
+            system_id,
+            "media_image_cache: invalidated negative memo for system"
+        );
+    }
+
+    /// Drop every negative-memo entry across all systems (all three
+    /// memos). Called on a whole-library index completion — indexing
+    /// carries no per-system scope (unlike a targeted scrape), so a
+    /// system-scoped call can't distinguish "this system's covers are
+    /// still genuinely missing" from "this system's covers failed during
+    /// the same race that just got fixed."
+    pub fn invalidate_negative_memo_all(&self) {
+        #[allow(clippy::unwrap_used, reason = "RwLock poisoning is unrecoverable")]
+        let mut guard = self.state.write().unwrap();
+        guard.negative.clear();
+        guard.soft_no_image.clear();
+        guard.search_seen.clear();
+        debug!("media_image_cache: invalidated negative memo for all systems");
     }
 
     /// Return the short image type that Core resolved for `key` on its last
@@ -1839,7 +1991,7 @@ fn finish_fetch(
                     "media_image_cache: payload exceeds cache cap, recording as negative",
                 );
                 if no_image_policy == NoImagePolicy::Memoize && !search_seen {
-                    if let Some(prev) = guard.map.remove(key) {
+                    if let Some(prev) = guard.remove_entry(key) {
                         guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
                     }
                     // Remove unconditionally: media_ids is written in
@@ -1860,12 +2012,12 @@ fn finish_fetch(
             let bytes_len = bytes.len();
             let next = guard.next_clock();
             let entry = MediaImageEntry {
-                bytes,
+                bytes: Arc::new(bytes),
                 ext,
                 last_used: next,
                 read: false,
             };
-            if let Some(prev) = guard.map.insert(key.clone(), entry) {
+            if let Some(prev) = guard.insert_entry(key.clone(), entry) {
                 guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
             }
             // Record the resolved type for carousel dedup. Non-empty only
@@ -1890,7 +2042,7 @@ fn finish_fetch(
         }
         FetchOutcome::NoImage => {
             if no_image_policy == NoImagePolicy::Memoize && !search_seen {
-                if let Some(prev) = guard.map.remove(key) {
+                if let Some(prev) = guard.remove_entry(key) {
                     guard.total_bytes = guard.total_bytes.saturating_sub(prev.bytes.len());
                 }
                 guard.media_ids.remove(key);
@@ -2112,6 +2264,66 @@ mod tests {
         assert_eq!(pop_one(&cache.queue).expect("second").key, second);
         assert_eq!(pop_one(&cache.queue).expect("third").key, third);
         assert!(pop_one(&cache.queue).is_none());
+    }
+
+    #[test]
+    fn invalidate_negative_memo_for_system_clears_only_the_matching_system() {
+        let cache = cache_for_test();
+        let stale_snes = key("SNES", "/a");
+        let stale_snes2 = key("SNES", "/b");
+        let unrelated_nes = key("NES", "/c");
+        {
+            let mut guard = cache.state.write().unwrap();
+            guard.negative.insert(stale_snes.clone());
+            guard.negative.insert(stale_snes2.clone());
+            guard.negative.insert(unrelated_nes.clone());
+            guard.soft_no_image.insert(stale_snes.clone());
+            guard.search_seen.insert(stale_snes.clone());
+        }
+
+        cache.invalidate_negative_memo_for_system("SNES");
+
+        let guard = cache.state.read().unwrap();
+        assert!(!guard.negative.contains(&stale_snes));
+        assert!(!guard.negative.contains(&stale_snes2));
+        assert!(!guard.soft_no_image.contains(&stale_snes));
+        assert!(!guard.search_seen.contains(&stale_snes));
+        // A different system's memoized "no image" answer is untouched --
+        // this is not a blunt full clear.
+        assert!(guard.negative.contains(&unrelated_nes));
+    }
+
+    #[test]
+    fn invalidate_negative_memo_for_system_is_a_noop_for_empty_system_id() {
+        let cache = cache_for_test();
+        let k = key("SNES", "/a");
+        cache.state.write().unwrap().negative.insert(k.clone());
+
+        cache.invalidate_negative_memo_for_system("");
+
+        assert!(cache.state.read().unwrap().negative.contains(&k));
+    }
+
+    #[test]
+    fn invalidate_negative_memo_all_clears_every_system() {
+        let cache = cache_for_test();
+        let snes = key("SNES", "/a");
+        let nes = key("NES", "/b");
+        {
+            let mut guard = cache.state.write().unwrap();
+            guard.negative.insert(snes.clone());
+            guard.negative.insert(nes.clone());
+            guard.soft_no_image.insert(snes.clone());
+            guard.search_seen.insert(nes.clone());
+        }
+
+        cache.invalidate_negative_memo_all();
+
+        let guard = cache.state.read().unwrap();
+        assert!(!guard.negative.contains(&snes));
+        assert!(!guard.negative.contains(&nes));
+        assert!(!guard.soft_no_image.contains(&snes));
+        assert!(!guard.search_seen.contains(&nes));
     }
 
     #[test]
@@ -2651,6 +2863,53 @@ mod tests {
         );
     }
 
+    // Re-fetching an already-cached, already-*read* key (a real path —
+    // e.g. a cover preference change re-requests a key the fetch driver
+    // already resolved once) must retire its OLD index entry before
+    // installing the new one. A gap here leaves a ghost key in
+    // `read_lru`/`unread_lru` pointing at a `last_used` no longer in
+    // `map` — `evict_until_fits` would then pick that ghost as its
+    // victim forever (`remove_entry` returns `None` for a key that isn't
+    // in `map`, so neither `total_bytes` shrinks nor the ghost index
+    // entry ever gets removed), hanging on the cache's write lock
+    // permanently. This asserts the invariant directly rather than
+    // relying on eviction happening to still terminate.
+    #[test]
+    fn replacing_a_read_entry_retires_its_old_index_slot() {
+        let state = Arc::new(RwLock::new(CacheState::new()));
+        let cap = 10_000;
+        let a = key("SNES", "/a");
+        ok_png(&state, cap, &a, 100);
+        {
+            let mut g = state.write().unwrap();
+            let next = g.next_clock();
+            g.touch_entry(&a, next).expect("a present");
+        }
+        {
+            let g = state.read().unwrap();
+            assert_eq!(g.read_lru.len(), 1, "a should be in read_lru after touch");
+            assert_eq!(g.unread_lru.len(), 0);
+        }
+
+        // Re-fetch the same key — the success path replaces the map
+        // entry with a fresh, unread one.
+        ok_png(&state, cap, &a, 150);
+
+        let g = state.read().unwrap();
+        assert_eq!(g.map.len(), 1);
+        assert_eq!(
+            g.read_lru.len() + g.unread_lru.len(),
+            g.map.len(),
+            "index must track map exactly, no stale/ghost slots"
+        );
+        assert_eq!(g.read_lru.len(), 0, "replacement resets read to false");
+        assert_eq!(g.unread_lru.len(), 1);
+        assert_eq!(
+            g.total_bytes, 150,
+            "old byte count fully replaced, not summed"
+        );
+    }
+
     #[test]
     fn eviction_drops_oldest_when_over_cap() {
         let state = Arc::new(RwLock::new(CacheState::new()));
@@ -2688,12 +2947,22 @@ mod tests {
         let c = key("SNES", "/c");
         ok_png(&state, cap, &a, 100);
         ok_png(&state, cap, &b, 100);
-        // Touch `a` so it becomes the most recent entry — `b` is
-        // now the LRU and should be evicted next.
+        // Touch `a`'s `last_used` only, deliberately not `read` -- this
+        // isolates within-population LRU ordering (does recency alone
+        // pick the right victim among still-unread entries) from the
+        // read-vs-unread priority `eviction_prefers_read_entries_over_unread`
+        // below already covers; `get_bytes`/`touch_entry` always bump both
+        // together, so this reaches into the index directly (same private
+        // access the rest of this test module already relies on for
+        // `map`/`negative`/etc.) rather than through the public API.
         {
             let mut g = state.write().unwrap();
             let next = g.next_clock();
-            g.map.get_mut(&a).expect("a present").last_used = next;
+            let entry = g.map.get_mut(&a).expect("a present");
+            let old_last_used = entry.last_used;
+            entry.last_used = next;
+            g.index_remove(old_last_used, false);
+            g.index_insert(next, false, a.clone());
         }
         ok_png(&state, cap, &c, 100);
         let g = state.read().unwrap();
@@ -2750,14 +3019,13 @@ mod tests {
         for k in [&a, &b, &c] {
             ok_png(&state, cap, k, 100);
         }
-        // Mark `a` as read. Mirrors what `get_bytes` would do: bump
-        // `last_used` and flip the read flag.
+        // Mark `a` as read via the same `touch_entry` path `get_bytes`
+        // itself calls, so this exercises the real production code, not
+        // a hand-rolled mirror of it.
         {
             let mut state_w = state.write().unwrap();
             let next = state_w.next_clock();
-            let entry = state_w.map.get_mut(&a).expect("a present");
-            entry.last_used = next;
-            entry.read = true;
+            state_w.touch_entry(&a, next).expect("a present");
         }
         ok_png(&state, cap, &d, 100);
         let state_r = state.read().unwrap();

@@ -41,26 +41,31 @@ QtObject {
         return Number(n).toLocaleString(root.locale(), "f", 0);
     }
 
-    // The dim suffix for a folder/root row -- the bare item count, or
-    // "<distinguisher> · N" when the row needed disambiguating from a
-    // same-named sibling root (see games.rs's `root_distinguishers`, which
-    // overlays the distinguisher onto the same `disambiguatingTags` channel
-    // a folder normally leaves blank). No "item(s)" word: this slot is
-    // shared with ScrollingCaption's short 2-4 char disambiguating tags
-    // ("US"/"EU"), which `Text.ElideLeft`s from the front when it overflows
-    // -- a translated word phrase reliably overflowed and truncated down to
-    // a bare "...tem(s)", while the number alone reads unambiguously since
-    // a folder row never shows anything else in this slot. Hidden (empty
+    // The dim suffix for a folder/root row -- the row's distinguisher (see
+    // games.rs's `root_distinguishers`, which overlays a sibling-diffed
+    // distinguisher onto the same `disambiguatingTags` channel a folder
+    // normally leaves blank) when it has one, otherwise the bare item
+    // count. Never both: a distinguisher only ever appears on a `root` row
+    // (disambiguating same-named sibling roots), a count only ever appears
+    // on a `directory` row Core hasn't already collapsed to a single
+    // playable item (see `fileCount`'s own doc comment on `games.rs`'s
+    // `FILE_COUNT_ROLE` -- a media-capable directory reports 0 here), and
+    // those two cases don't overlap -- so no separator between them is
+    // needed. No "item(s)" word on the count: this slot is shared with
+    // ScrollingCaption's short 2-4 char disambiguating tags ("US"/"EU"),
+    // which `Text.ElideLeft`s from the front when it overflows -- a
+    // translated word phrase reliably overflowed and truncated down to a
+    // bare "...tem(s)", while the number alone reads unambiguously since a
+    // folder row never shows anything else in this slot. Hidden (empty
     // string) when `fileCount` is 0 -- Core omits the field on a root whose
     // exact count it couldn't compute in time, so 0 doesn't reliably mean
     // "empty," and showing "0" next to a folder that likely has content
     // would be actively misleading. One shared implementation for every
     // caller (BrowseList row, grid Tile caption, footer ActiveLabel).
     function folderCountSuffix(distinguisher: string, fileCount: int): string {
-        if (fileCount <= 0)
+        if (distinguisher !== "")
             return distinguisher;
-        const label = root.count(fileCount);
-        return distinguisher !== "" ? distinguisher + " · " + label : label;
+        return fileCount > 0 ? root.count(fileCount) : "";
     }
 
     // Chooses between a game row's own disambiguation tags and a folder/

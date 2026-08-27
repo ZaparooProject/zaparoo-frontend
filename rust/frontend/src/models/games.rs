@@ -53,7 +53,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 use zaparoo_core::client::ClientError;
-use zaparoo_core::endpoints::media_browse::{BrowseArgs, MediaBrowseEndpoint};
+use zaparoo_core::endpoints::media_browse::{root_view_for, BrowseArgs, MediaBrowseEndpoint};
 use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
 use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
 use zaparoo_core::endpoints::run::RunMutation;
@@ -632,7 +632,20 @@ impl ffi::GamesModel {
                 .as_str(),
             )),
             ENTRY_TYPE_ROLE => QVariant::from(&QString::from(entry.entry_type.as_str())),
-            FILE_COUNT_ROLE => QVariant::from(&i32::try_from(entry.file_count).unwrap_or(i32::MAX)),
+            // 0 for a media-capable directory (Core already resolved it to
+            // a single playable item -- `media_id` set, or a direct
+            // `zap_script`; see `is_media_capable_entry`) so
+            // `Format.folderCountSuffix`'s existing `fileCount <= 0`
+            // early-out suppresses the count everywhere it renders (grid,
+            // list, active label) from this one source instead of each
+            // caller re-deriving the same collapse. A tile the cover-art
+            // path already renders as the game itself showing a stray "1"
+            // beside it read as a bug, not a folder count.
+            FILE_COUNT_ROLE => QVariant::from(&if is_media_capable_entry(entry) {
+                0
+            } else {
+                i32::try_from(entry.file_count).unwrap_or(i32::MAX)
+            }),
             FAVORITE_ROLE => QVariant::from(&favorite_role_value(&entry.tags)),
             DESCRIPTION_ROLE => QVariant::from(&QString::from(entry.description.as_str())),
             FILE_STEM_ROLE => {
@@ -790,6 +803,9 @@ impl ffi::GamesModel {
         } else {
             vec![sid]
         };
+        // Must match the initial page's `BrowseArgs::new`-derived root view:
+        // Core embeds it in the cursor and validates follow-ups against it.
+        let root_view = root_view_for(&path, &systems);
         let tags = favorites_tags(self.favorites_only);
         // Read the active ticket WITHOUT bumping it. `fetch_more`
         // continues the same path's load — only `set_system` /
@@ -825,6 +841,7 @@ impl ffi::GamesModel {
                 .media_browse(MediaBrowseParams {
                     path,
                     systems,
+                    root_view,
                     max_results: Some(max_results),
                     cursor,
                     tags,
@@ -848,18 +865,22 @@ impl ffi::GamesModel {
     /// user picks "Jump to letter".
     fn load_letter_index(mut self: Pin<&mut Self>) {
         let path = self.current_path.to_string();
-        // A root listing has no meaningful first-character rail.
-        if path.is_empty() {
-            self.as_mut().set_letter_index_json(QString::from("[]"));
-            self.as_mut().set_letter_index_scheme(QString::from("none"));
-            return;
-        }
         let sid = self.current_system_id.to_string();
         let systems = if sid.is_empty() {
             Vec::new()
         } else {
             vec![sid]
         };
+        let root_view = root_view_for(&path, &systems);
+        // A route listing (multi-root/no-system pathless scope) has no
+        // meaningful first-character rail -- only a single system's merged
+        // root contents (PR #1312's `rootView: "contents"`) or an ordinary
+        // path below a system root does.
+        if path.is_empty() && root_view.is_none() {
+            self.as_mut().set_letter_index_json(QString::from("[]"));
+            self.as_mut().set_letter_index_scheme(QString::from("none"));
+            return;
+        }
         let tags = favorites_tags(self.favorites_only);
         // Clear any facet from a prior scope to the loading state (empty groups,
         // empty scheme) so the rail shows "loading" rather than the previous
@@ -878,6 +899,7 @@ impl ffi::GamesModel {
                 .media_browse_index(MediaBrowseIndexParams {
                     path,
                     systems,
+                    root_view,
                     tags,
                     sort: None,
                 })
@@ -1444,7 +1466,13 @@ impl ffi::GamesModel {
         if index < 0 || index >= self.count {
             return 0;
         }
-        i32::try_from(self.entries[index as usize].file_count).unwrap_or(i32::MAX)
+        let entry = &self.entries[index as usize];
+        // See FILE_COUNT_ROLE's data-arm comment: 0 for a media-capable
+        // directory suppresses the folder-count suffix at the source.
+        if is_media_capable_entry(entry) {
+            return 0;
+        }
+        i32::try_from(entry.file_count).unwrap_or(i32::MAX)
     }
 
     fn is_media_capable_at(&self, index: i32) -> bool {
