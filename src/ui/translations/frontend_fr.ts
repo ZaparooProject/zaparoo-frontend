@@ -2038,6 +2038,11 @@ Français - Wilfried</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../screens/SettingsScreen.qml" line="270"/>
+        <source>Imports artwork and details from files you already have. Zaparoo does not download them.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../screens/SettingsScreen.qml" line="279"/>
         <location filename="../screens/SettingsScreen.qml" line="1014"/>
         <source>Systems layout</source>
@@ -2353,11 +2358,6 @@ Français - Wilfried</translation>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="269"/>
         <source>Get metadata</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../screens/SettingsScreen.qml" line="270"/>
-        <source>Imports artwork, descriptions, and details from files you already have. Zaparoo does not download them.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

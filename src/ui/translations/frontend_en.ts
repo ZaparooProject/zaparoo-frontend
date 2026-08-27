@@ -1711,6 +1711,11 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../screens/SettingsScreen.qml" line="270"/>
+        <source>Imports artwork and details from files you already have. Zaparoo does not download them.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../screens/SettingsScreen.qml" line="298"/>
         <source>Shows hidden systems and categories, marked as hidden, so you can unhide them.</source>
         <translation type="unfinished"></translation>
@@ -2195,11 +2200,6 @@ Français - Wilfried</source>
     <message>
         <location filename="../screens/SettingsScreen.qml" line="269"/>
         <source>Get metadata</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../screens/SettingsScreen.qml" line="270"/>
-        <source>Imports artwork, descriptions, and details from files you already have. Zaparoo does not download them.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

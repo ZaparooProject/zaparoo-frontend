@@ -267,7 +267,7 @@ Item {
             kind: "field",
             id: "runScraper",
             label: qsTr("Get metadata"),
-            description: qsTr("Imports artwork, descriptions, and details from files you already have. Zaparoo does not download them.")
+            description: qsTr("Imports artwork and details from files you already have. Zaparoo does not download them.")
         },
         {
             kind: "header",
