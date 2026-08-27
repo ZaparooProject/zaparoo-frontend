@@ -462,8 +462,8 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="166"/>
-        <location filename="../screens/GamesScreen.qml" line="217"/>
+        <location filename="../screens/GamesScreen.qml" line="176"/>
+        <location filename="../screens/GamesScreen.qml" line="238"/>
         <source>%1 games</source>
         <translation type="unfinished"></translation>
     </message>
@@ -473,7 +473,7 @@ Français - Wilfried</source>
         <translation>Cargando juegos…</translation>
     </message>
     <message>
-        <location filename="../screens/GamesScreen.qml" line="174"/>
+        <location filename="../screens/GamesScreen.qml" line="184"/>
         <source>Loading more…</source>
         <translation>Cargando más…</translation>
     </message>
@@ -569,7 +569,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/HubScreen.qml" line="1583"/>
+        <location filename="../screens/HubScreen.qml" line="1591"/>
         <source>No systems available. Run Update media database from Settings.</source>
         <translation>No hay sistemas disponibles. Ejecuta Actualizar la base de datos de medios desde Ajustes.</translation>
     </message>
@@ -675,24 +675,24 @@ Français - Wilfried</source>
         <translation type="vanished">Lanzar core</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2109"/>
-        <location filename="../app/Main.qml" line="2543"/>
+        <location filename="../app/Main.qml" line="2127"/>
+        <location filename="../app/Main.qml" line="2563"/>
         <source>Change launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2254"/>
+        <location filename="../app/Main.qml" line="2275"/>
         <source>Remove from favorites</source>
         <translation>Eliminar de favoritos</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2254"/>
+        <location filename="../app/Main.qml" line="2275"/>
         <source>Add to favorites</source>
         <translation>Agregar a favoritos</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2205"/>
-        <location filename="../app/Main.qml" line="2260"/>
+        <location filename="../app/Main.qml" line="2223"/>
+        <location filename="../app/Main.qml" line="2281"/>
         <source>Write to NFC token</source>
         <translation>Escribir en token NFC</translation>
     </message>
@@ -701,430 +701,441 @@ Français - Wilfried</source>
         <translation type="vanished">Código QR</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2195"/>
-        <location filename="../app/Main.qml" line="2246"/>
+        <location filename="../app/Main.qml" line="2213"/>
+        <location filename="../app/Main.qml" line="2267"/>
         <source>Launch game</source>
         <translation>Iniciar juego</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1042"/>
-        <location filename="../app/Main.qml" line="3243"/>
-        <location filename="../app/Main.qml" line="3290"/>
-        <location filename="../app/Main.qml" line="3300"/>
+        <location filename="../app/Main.qml" line="1060"/>
+        <location filename="../app/Main.qml" line="3281"/>
+        <location filename="../app/Main.qml" line="3328"/>
+        <location filename="../app/Main.qml" line="3338"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3279"/>
+        <location filename="../app/Main.qml" line="3317"/>
         <source>Random favorite</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="4565"/>
+        <location filename="../app/Main.qml" line="4603"/>
         <source>Loading systems…</source>
         <translation>Cargando sistemas…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="4572"/>
+        <location filename="../app/Main.qml" line="4610"/>
         <source>Loading favorites…</source>
         <translation>Cargando favoritos…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="4567"/>
+        <location filename="../app/Main.qml" line="4605"/>
         <source>Loading games…</source>
         <translation>Cargando juegos…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2124"/>
-        <location filename="../app/Main.qml" line="2159"/>
+        <location filename="../app/Main.qml" line="2142"/>
+        <location filename="../app/Main.qml" line="2177"/>
         <source>Update media database</source>
         <translation type="unfinished">Actualizar base de datos de medios</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2127"/>
-        <location filename="../app/Main.qml" line="2162"/>
+        <location filename="../app/Main.qml" line="2145"/>
+        <location filename="../app/Main.qml" line="2180"/>
         <source>Scrape metadata</source>
         <translation type="unfinished">Extraer metadatos</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2118"/>
+        <location filename="../app/Main.qml" line="2136"/>
         <source>Unhide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1035"/>
+        <location filename="../app/Main.qml" line="1053"/>
         <source>Settings</source>
         <translation type="unfinished">Ajustes</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2058"/>
+        <location filename="../app/Main.qml" line="2076"/>
         <source>No alternates found</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2095"/>
+        <location filename="../app/Main.qml" line="2113"/>
         <source>Launch system</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2118"/>
-        <location filename="../app/Main.qml" line="2336"/>
+        <location filename="../app/Main.qml" line="2136"/>
+        <location filename="../app/Main.qml" line="2356"/>
         <source>Hide</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2199"/>
-        <location filename="../app/Main.qml" line="2250"/>
+        <location filename="../app/Main.qml" line="2217"/>
+        <location filename="../app/Main.qml" line="2271"/>
         <source>Details</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2219"/>
-        <location filename="../app/Main.qml" line="2271"/>
-        <location filename="../app/Main.qml" line="2313"/>
+        <location filename="../app/Main.qml" line="2237"/>
+        <location filename="../app/Main.qml" line="2292"/>
+        <location filename="../app/Main.qml" line="2333"/>
         <source>Discover alt. versions</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2336"/>
+        <location filename="../app/Main.qml" line="2356"/>
         <source>Delete</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2539"/>
-        <location filename="../app/Main.qml" line="3322"/>
-        <location filename="../app/Main.qml" line="3333"/>
+        <location filename="../app/Main.qml" line="2559"/>
+        <location filename="../app/Main.qml" line="3360"/>
+        <location filename="../app/Main.qml" line="3371"/>
         <source>Default</source>
         <translation type="unfinished">Por defecto</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2539"/>
+        <location filename="../app/Main.qml" line="2559"/>
         <source>Current: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2104"/>
-        <location filename="../app/Main.qml" line="2154"/>
-        <location filename="../app/Main.qml" line="2171"/>
-        <location filename="../app/Main.qml" line="2179"/>
-        <location filename="../app/Main.qml" line="2917"/>
-        <location filename="../app/Main.qml" line="3226"/>
+        <location filename="../app/Main.qml" line="2122"/>
+        <location filename="../app/Main.qml" line="2172"/>
+        <location filename="../app/Main.qml" line="2189"/>
+        <location filename="../app/Main.qml" line="2197"/>
+        <location filename="../app/Main.qml" line="2953"/>
+        <location filename="../app/Main.qml" line="3264"/>
         <source>Random game</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3271"/>
+        <location filename="../app/Main.qml" line="3309"/>
         <source>Sort: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3232"/>
+        <location filename="../app/Main.qml" line="3270"/>
         <source>Show: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3322"/>
-        <location filename="../app/Main.qml" line="3337"/>
+        <location filename="../app/Main.qml" line="3360"/>
+        <location filename="../app/Main.qml" line="3375"/>
         <source>A-Z</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3232"/>
-        <location filename="../app/Main.qml" line="3254"/>
+        <location filename="../app/Main.qml" line="3270"/>
+        <location filename="../app/Main.qml" line="3292"/>
         <source>All</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3341"/>
+        <location filename="../app/Main.qml" line="3379"/>
         <source>Sort</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3262"/>
+        <location filename="../app/Main.qml" line="3300"/>
         <source>Show</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1007"/>
+        <location filename="../app/Main.qml" line="1025"/>
         <source>Add item</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1027"/>
+        <location filename="../app/Main.qml" line="1045"/>
         <source>Add item…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1031"/>
+        <location filename="../app/Main.qml" line="1049"/>
         <source>Reset layout</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="1039"/>
+        <location filename="../app/Main.qml" line="1057"/>
         <source>Quit</source>
         <translation type="unfinished">Salir</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2114"/>
-        <location filename="../app/Main.qml" line="2223"/>
-        <location filename="../app/Main.qml" line="2239"/>
-        <location filename="../app/Main.qml" line="2276"/>
+        <location filename="../app/Main.qml" line="2132"/>
+        <location filename="../app/Main.qml" line="2241"/>
+        <location filename="../app/Main.qml" line="2260"/>
+        <location filename="../app/Main.qml" line="2296"/>
         <source>Add to Hub</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2209"/>
-        <location filename="../app/Main.qml" line="2264"/>
+        <location filename="../app/Main.qml" line="2227"/>
+        <location filename="../app/Main.qml" line="2285"/>
         <source>Write with App</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2340"/>
+        <location filename="../app/Main.qml" line="2360"/>
         <source>Move</source>
         <translation type="unfinished">Mover</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2523"/>
+        <location filename="../app/Main.qml" line="2543"/>
         <source>Searching…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2715"/>
+        <location filename="../app/Main.qml" line="2751"/>
         <source>Details unavailable</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2715"/>
+        <location filename="../app/Main.qml" line="2751"/>
         <source>Could not load details for this item. Check Zaparoo Core and try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2871"/>
-        <location filename="../app/Main.qml" line="2893"/>
-        <location filename="../app/Main.qml" line="2917"/>
-        <location filename="../app/Main.qml" line="2959"/>
+        <location filename="../app/Main.qml" line="1022"/>
+        <location filename="../app/Main.qml" line="2907"/>
+        <location filename="../app/Main.qml" line="2929"/>
+        <location filename="../app/Main.qml" line="2953"/>
+        <location filename="../app/Main.qml" line="2995"/>
         <source>OK</source>
         <translation type="unfinished">Aceptar</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2917"/>
-        <source>No matching games found.</source>
+        <location filename="../app/Main.qml" line="1022"/>
+        <source>Nothing left to add</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2926"/>
-        <source>Action failed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2927"/>
-        <source>The action could not be completed. Check Zaparoo Core and try again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2929"/>
-        <source>Launch failed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2930"/>
-        <source>Could not start %1. Check Zaparoo Core and try again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2930"/>
-        <source>Could not start this item. Check Zaparoo Core and try again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2932"/>
-        <source>Favorite update failed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2933"/>
-        <source>Could not update this favorite. Check Zaparoo Core and try again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2935"/>
-        <source>Media update failed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2936"/>
-        <source>Could not start the media database update. Check Zaparoo Core and try again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2938"/>
-        <source>Metadata scrape failed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2939"/>
-        <source>Could not start metadata scraping. Check Zaparoo Core and try again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2941"/>
-        <source>Scraper list unavailable</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2942"/>
-        <source>Could not load the list of scrapers. Check Zaparoo Core and try again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2944"/>
-        <source>Cancel failed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2945"/>
-        <source>Could not cancel the media operation. Check Zaparoo Core and try again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2948"/>
-        <location filename="../app/Main.qml" line="3552"/>
-        <source>Could not change the launcher. Check Zaparoo Core and try again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2950"/>
-        <source>Alternate versions unavailable</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app/Main.qml" line="2951"/>
-        <source>Could not find alternate versions. Check Zaparoo Core and try again.</source>
+        <location filename="../app/Main.qml" line="1022"/>
+        <source>All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose &quot;Add to Hub&quot;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../app/Main.qml" line="2953"/>
+        <source>No matching games found.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2962"/>
+        <source>Action failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2963"/>
+        <source>The action could not be completed. Check Zaparoo Core and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2965"/>
+        <source>Launch failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2966"/>
+        <source>Could not start %1. Check Zaparoo Core and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2966"/>
+        <source>Could not start this item. Check Zaparoo Core and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2968"/>
+        <source>Favorite update failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2969"/>
+        <source>Could not update this favorite. Check Zaparoo Core and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2971"/>
+        <source>Media update failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2972"/>
+        <source>Could not start the media database update. Check Zaparoo Core and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2974"/>
+        <source>Metadata scrape failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2975"/>
+        <source>Could not start metadata scraping. Check Zaparoo Core and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2977"/>
+        <source>Scraper list unavailable</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2978"/>
+        <source>Could not load the list of scrapers. Check Zaparoo Core and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2980"/>
+        <source>Cancel failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2981"/>
+        <source>Could not cancel the media operation. Check Zaparoo Core and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2984"/>
+        <location filename="../app/Main.qml" line="3590"/>
+        <source>Could not change the launcher. Check Zaparoo Core and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2986"/>
+        <source>Alternate versions unavailable</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2987"/>
+        <source>Could not find alternate versions. Check Zaparoo Core and try again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../app/Main.qml" line="2989"/>
         <source>QR code failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2954"/>
+        <location filename="../app/Main.qml" line="2990"/>
         <source>Could not create the QR code for this item.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2956"/>
+        <location filename="../app/Main.qml" line="2992"/>
         <source>Setting not saved</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2957"/>
+        <location filename="../app/Main.qml" line="2993"/>
         <source>Could not save this setting. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3081"/>
+        <location filename="../app/Main.qml" line="3117"/>
         <source>Scraper</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3096"/>
+        <location filename="../app/Main.qml" line="3133"/>
         <source>All systems</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3104"/>
+        <location filename="../app/Main.qml" line="3142"/>
         <source>All %1 systems</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3133"/>
+        <location filename="../app/Main.qml" line="3171"/>
         <source>Systems</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3144"/>
+        <location filename="../app/Main.qml" line="3182"/>
         <source>Log upload failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3144"/>
+        <location filename="../app/Main.qml" line="3182"/>
         <source>Could not upload the logs. Check the network connection and try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3218"/>
+        <location filename="../app/Main.qml" line="3256"/>
         <source>Go to…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3232"/>
-        <location filename="../app/Main.qml" line="3258"/>
+        <location filename="../app/Main.qml" line="3270"/>
+        <location filename="../app/Main.qml" line="3296"/>
         <source>Favorites</source>
         <translation type="unfinished">Favoritos</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3241"/>
-        <location filename="../app/Main.qml" line="3287"/>
+        <location filename="../app/Main.qml" line="3279"/>
+        <location filename="../app/Main.qml" line="3325"/>
         <source>Back to Hub</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3275"/>
-        <location filename="../app/Main.qml" line="3297"/>
+        <location filename="../app/Main.qml" line="3313"/>
+        <location filename="../app/Main.qml" line="3335"/>
         <source>Group by: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3304"/>
-        <location filename="../app/Main.qml" line="3315"/>
+        <location filename="../app/Main.qml" line="3342"/>
+        <location filename="../app/Main.qml" line="3353"/>
         <source>System</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3304"/>
-        <location filename="../app/Main.qml" line="3311"/>
+        <location filename="../app/Main.qml" line="3342"/>
+        <location filename="../app/Main.qml" line="3349"/>
         <source>None</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3318"/>
+        <location filename="../app/Main.qml" line="3356"/>
         <source>Group by</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3518"/>
-        <location filename="../app/Main.qml" line="3536"/>
+        <location filename="../app/Main.qml" line="3556"/>
+        <location filename="../app/Main.qml" line="3574"/>
         <source>Saving launcher</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3522"/>
-        <location filename="../app/Main.qml" line="3539"/>
+        <location filename="../app/Main.qml" line="3560"/>
+        <location filename="../app/Main.qml" line="3577"/>
         <source>Saving…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3882"/>
+        <location filename="../app/Main.qml" line="3920"/>
         <source>Token write failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="3882"/>
+        <location filename="../app/Main.qml" line="3920"/>
         <source>Could not write to this token. Check that it is writable and try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2947"/>
-        <location filename="../app/Main.qml" line="3552"/>
+        <location filename="../app/Main.qml" line="2983"/>
+        <location filename="../app/Main.qml" line="3590"/>
         <source>Launcher update failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="2715"/>
-        <location filename="../app/Main.qml" line="3144"/>
-        <location filename="../app/Main.qml" line="3552"/>
-        <location filename="../app/Main.qml" line="3882"/>
+        <location filename="../app/Main.qml" line="2751"/>
+        <location filename="../app/Main.qml" line="3182"/>
+        <location filename="../app/Main.qml" line="3590"/>
+        <location filename="../app/Main.qml" line="3920"/>
         <source>Retry</source>
         <translation type="unfinished">Reintentar</translation>
     </message>
@@ -1133,22 +1144,22 @@ Français - Wilfried</source>
         <translation type="obsolete">Cancelar</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="4569"/>
+        <location filename="../app/Main.qml" line="4607"/>
         <source>Loading game…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="4574"/>
+        <location filename="../app/Main.qml" line="4612"/>
         <source>Loading recently played…</source>
         <translation>Cargando jugados recientemente…</translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="4576"/>
+        <location filename="../app/Main.qml" line="4614"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../app/Main.qml" line="4578"/>
+        <location filename="../app/Main.qml" line="4616"/>
         <source>Loading…</source>
         <translation>Cargando…</translation>
     </message>
@@ -2354,68 +2365,74 @@ Français - Wilfried</source>
 <context>
     <name>StatusLine</name>
     <message>
-        <location filename="../components/StatusLine.qml" line="66"/>
-        <location filename="../components/StatusLine.qml" line="70"/>
+        <location filename="../components/StatusLine.qml" line="71"/>
+        <location filename="../components/StatusLine.qml" line="75"/>
         <source>Disconnected</source>
         <translation type="unfinished">Desconectado</translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="68"/>
+        <location filename="../components/StatusLine.qml" line="73"/>
         <source>Reconnecting…</source>
         <translation type="unfinished">Reconectando…</translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="72"/>
+        <location filename="../components/StatusLine.qml" line="77"/>
         <source>Connecting…</source>
         <translation type="unfinished">Conectando…</translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="74"/>
+        <location filename="../components/StatusLine.qml" line="79"/>
         <source>Core error</source>
         <translation type="unfinished">Error del Core</translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="94"/>
+        <location filename="../components/StatusLine.qml" line="99"/>
         <source>Indexing…</source>
         <translation type="unfinished">Indexando…</translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="97"/>
+        <location filename="../components/StatusLine.qml" line="102"/>
         <source>Optimizing database…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="101"/>
+        <location filename="../components/StatusLine.qml" line="106"/>
         <source>Scraping…</source>
         <translation type="unfinished">Extrayendo…</translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="94"/>
+        <location filename="../components/StatusLine.qml" line="248"/>
+        <location filename="../components/StatusLine.qml" line="271"/>
+        <source>%1%</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../components/StatusLine.qml" line="99"/>
         <source>Indexing: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="74"/>
+        <location filename="../components/StatusLine.qml" line="79"/>
         <source>Core error: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="88"/>
+        <location filename="../components/StatusLine.qml" line="93"/>
         <source>Indexing paused: game running</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="97"/>
+        <location filename="../components/StatusLine.qml" line="102"/>
         <source>Optimizing database: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="100"/>
+        <location filename="../components/StatusLine.qml" line="105"/>
         <source>Scraping paused: game running</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="101"/>
+        <location filename="../components/StatusLine.qml" line="106"/>
         <source>Scraping: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2428,27 +2445,27 @@ Français - Wilfried</source>
         <translation type="obsolete">%1 extraídos</translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="143"/>
+        <location filename="../components/StatusLine.qml" line="148"/>
         <source>Indexed %1 files</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="143"/>
+        <location filename="../components/StatusLine.qml" line="148"/>
         <source>Indexing complete</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="154"/>
+        <location filename="../components/StatusLine.qml" line="159"/>
         <source>Scraped %1 of %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="154"/>
+        <location filename="../components/StatusLine.qml" line="159"/>
         <source>Scrape failed: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/StatusLine.qml" line="187"/>
+        <location filename="../components/StatusLine.qml" line="192"/>
         <source>Playtime limit in %1</source>
         <translation type="unfinished"></translation>
     </message>

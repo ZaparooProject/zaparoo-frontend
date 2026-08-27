@@ -1442,12 +1442,12 @@ TestCase {
 
     function test_context_menu_favorites_matches_games_media_entries(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, true, true, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub"]);
     }
 
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub"]);
     }
 
     // Round 10: "Discover alt. versions" only appears when the row's own

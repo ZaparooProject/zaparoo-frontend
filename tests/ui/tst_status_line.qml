@@ -229,6 +229,83 @@ TestCase {
         compare(track.totalSteps, 10);
     }
 
+    // The percentage keeps the resolution the 12-cell track quantises
+    // away -- computed from the same current/total the track's own fill
+    // uses, not a separate source that could drift.
+    function test_percentage_matches_current_over_total(): void {
+        Browse.MediaStatus.indexing = true;
+        Browse.MediaStatus.current_step = 3;
+        Browse.MediaStatus.total_steps = 10;
+
+        const line = createTemporaryObject(statusLineComponent, testCase, {
+            "mediaActivityEnabled": true
+        });
+        verify(line !== null);
+        compare(line._percentText, "30%");
+
+        Browse.MediaStatus.current_step = 10;
+        compare(line._percentText, "100%");
+    }
+
+    // Optimize/vacuum has no step count Core reports (mirrors
+    // ProgressTrack's own indeterminate mode) -- the percentage slot
+    // renders blank rather than a misleading number, but stays reserved
+    // at its full width so the track's position doesn't shift the moment
+    // a run passes through this phase.
+    function test_percentage_blank_but_reserved_during_optimize(): void {
+        Browse.MediaStatus.optimizing = true;
+
+        const line = createTemporaryObject(statusLineComponent, testCase, {
+            "mediaActivityEnabled": true
+        });
+        verify(line !== null);
+        compare(line._showTrack, true);
+        compare(line._percentKnown, false);
+        compare(line._percentText, "");
+
+        const percent = findChild(line, "statusLinePercent");
+        verify(percent !== null);
+        compare(percent.text, "");
+        // The reserve must equal the slot's own fixed width (which does
+        // NOT depend on text content, same as `track.width` per
+        // `_trackReserve`'s doc comment) plus one gap -- i.e. the blank
+        // slot claims exactly the room a populated one would, not a
+        // collapsed 0.
+        compare(line._percentReserve, percent.width + line._cellsSpacing, "a blank slot must reserve the same room a populated one would");
+    }
+
+    // Mirrors ProgressTrack's own test_track_width_is_invariant_across_states:
+    // the slot's width must never depend on the current value, or the
+    // track drifts as the run progresses from "1%" to "100%".
+    function test_percentage_slot_width_is_invariant_across_values(): void {
+        Browse.MediaStatus.indexing = true;
+        Browse.MediaStatus.total_steps = 100;
+        Browse.MediaStatus.current_step = 1;
+
+        const line = createTemporaryObject(statusLineComponent, testCase, {
+            "mediaActivityEnabled": true
+        });
+        verify(line !== null);
+        const percent = findChild(line, "statusLinePercent");
+        verify(percent !== null);
+        const narrowWidth = percent.width;
+
+        Browse.MediaStatus.current_step = 100;
+        compare(percent.text, "100%");
+        compare(percent.width, narrowWidth, "the slot must not resize as the digit count grows");
+    }
+
+    // No task, no track, nothing to reserve room for -- mirrors
+    // `_trackReserve`'s own idle collapse.
+    function test_percentage_reserve_collapses_when_idle(): void {
+        const line = createTemporaryObject(statusLineComponent, testCase, {
+            "mediaActivityEnabled": true
+        });
+        verify(line !== null);
+        compare(line._showTrack, false);
+        compare(line._percentReserve, 0);
+    }
+
     function test_indexing_paused_reports_game_running_and_freezes_track(): void {
         Browse.MediaStatus.indexing = true;
         Browse.MediaStatus.paused = true;
@@ -347,11 +424,14 @@ TestCase {
         verify(line !== null);
 
         const label = findChild(line, "statusLineLabel");
+        const percent = findChild(line, "statusLinePercent");
         const track = findChild(line, "statusLineTrack");
         verify(label !== null);
+        verify(percent !== null);
         verify(track !== null);
         compare(label.width, line._labelNaturalWidth);
-        compare(Math.round(label.x + label.width + line._cellsSpacing), Math.round(track.x));
+        compare(Math.round(label.x + label.width + line._cellsSpacing), Math.round(percent.x), "the label must hug the percentage slot");
+        compare(Math.round(percent.x + percent.width + line._cellsSpacing), Math.round(track.x), "the percentage slot must hug the track");
         compare(Math.round(track.x + track.width), Math.round(line.width), "the track must be flush against the row's own right edge");
     }
 

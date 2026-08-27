@@ -24,6 +24,7 @@
 // errors are logged but not surfaced as a Q_PROPERTY because the
 // notification stream is the source of truth for what the UI renders.
 
+use crate::media_image_cache::global_media_image_cache;
 use crate::models::action_error::report_action_error;
 use cxx_qt::{Initialize, Threading};
 use cxx_qt_lib::{QString, QStringList};
@@ -515,6 +516,19 @@ impl ffi::MediaStatus {
     reason = "27 fields × diff-and-set is mechanical; folding it loses the per-field NOTIFY suppression"
 )]
 fn apply(mut model: Pin<&mut ffi::MediaStatus>, s: Snapshot) {
+    // Edge detection for the negative image-cache memo -- see
+    // media_image_cache.rs's invalidate_negative_memo_for_system/_all doc
+    // comments for why: a "no image" answer memoized during a transient
+    // race (a NAS mount not yet up at boot, say) otherwise stays memoized
+    // for the rest of the process's life with nothing to clear it, so a
+    // subsequent successful reindex/rescrape never actually reaches the
+    // cache. Captured against the model's state going INTO this update
+    // (before anything below reads or moves out of `s`), so this is a
+    // "was busy a moment ago, now idle" edge, not a same-frame no-op.
+    let index_just_finished = model.indexing && !s.indexing;
+    let scrape_just_finished = model.scraping && !s.scraping;
+    let scrape_system_id = s.scrape_system_id.to_string();
+
     if model.seeded != s.seeded {
         model.as_mut().set_seeded(s.seeded);
     }
@@ -633,6 +647,22 @@ fn apply(mut model: Pin<&mut ffi::MediaStatus>, s: Snapshot) {
         model
             .as_mut()
             .set_scrape_current_skipped(s.scrape_current_skipped);
+    }
+
+    // Indexing carries no per-system scope (a whole-library operation),
+    // so a completion can only invalidate globally. A completed scrape
+    // targeting one system (`start_scrape_for_system`) invalidates just
+    // that system; an untargeted "all systems" scrape (empty
+    // scrape_system_id) invalidates globally, same as indexing.
+    if index_just_finished {
+        global_media_image_cache().invalidate_negative_memo_all();
+    }
+    if scrape_just_finished {
+        if scrape_system_id.is_empty() {
+            global_media_image_cache().invalidate_negative_memo_all();
+        } else {
+            global_media_image_cache().invalidate_negative_memo_for_system(&scrape_system_id);
+        }
     }
 }
 

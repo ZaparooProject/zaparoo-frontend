@@ -635,7 +635,20 @@ impl ffi::GamesModel {
                 .as_str(),
             )),
             ENTRY_TYPE_ROLE => QVariant::from(&QString::from(entry.entry_type.as_str())),
-            FILE_COUNT_ROLE => QVariant::from(&i32::try_from(entry.file_count).unwrap_or(i32::MAX)),
+            // 0 for a media-capable directory (Core already resolved it to
+            // a single playable item -- `media_id` set, or a direct
+            // `zap_script`; see `is_media_capable_entry`) so
+            // `Format.folderCountSuffix`'s existing `fileCount <= 0`
+            // early-out suppresses the count everywhere it renders (grid,
+            // list, active label) from this one source instead of each
+            // caller re-deriving the same collapse. A tile the cover-art
+            // path already renders as the game itself showing a stray "1"
+            // beside it read as a bug, not a folder count.
+            FILE_COUNT_ROLE => QVariant::from(&if is_media_capable_entry(entry) {
+                0
+            } else {
+                i32::try_from(entry.file_count).unwrap_or(i32::MAX)
+            }),
             FAVORITE_ROLE => QVariant::from(&favorite_role_value(&entry.tags)),
             DESCRIPTION_ROLE => QVariant::from(&QString::from(entry.description.as_str())),
             FILE_STEM_ROLE => {
@@ -1454,7 +1467,13 @@ impl ffi::GamesModel {
         if index < 0 || index >= self.count {
             return 0;
         }
-        i32::try_from(self.entries[index as usize].file_count).unwrap_or(i32::MAX)
+        let entry = &self.entries[index as usize];
+        // See FILE_COUNT_ROLE's data-arm comment: 0 for a media-capable
+        // directory suppresses the folder-count suffix at the source.
+        if is_media_capable_entry(entry) {
+            return 0;
+        }
+        i32::try_from(entry.file_count).unwrap_or(i32::MAX)
     }
 
     fn is_media_capable_at(&self, index: i32) -> bool {
