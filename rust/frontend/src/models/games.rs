@@ -53,7 +53,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 use zaparoo_core::client::ClientError;
-use zaparoo_core::endpoints::media_browse::{root_view_for, BrowseArgs, MediaBrowseEndpoint};
+use zaparoo_core::endpoints::media_browse::{BrowseArgs, MediaBrowseEndpoint};
 use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
 use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
 use zaparoo_core::endpoints::run::RunMutation;
@@ -803,9 +803,6 @@ impl ffi::GamesModel {
         } else {
             vec![sid]
         };
-        // Must match the initial page's `BrowseArgs::new`-derived root view:
-        // Core embeds it in the cursor and validates follow-ups against it.
-        let root_view = root_view_for(&path, &systems);
         let tags = favorites_tags(self.favorites_only);
         // Read the active ticket WITHOUT bumping it. `fetch_more`
         // continues the same path's load — only `set_system` /
@@ -841,7 +838,6 @@ impl ffi::GamesModel {
                 .media_browse(MediaBrowseParams {
                     path,
                     systems,
-                    root_view,
                     max_results: Some(max_results),
                     cursor,
                     tags,
@@ -865,22 +861,18 @@ impl ffi::GamesModel {
     /// user picks "Jump to letter".
     fn load_letter_index(mut self: Pin<&mut Self>) {
         let path = self.current_path.to_string();
+        // A root listing has no meaningful first-character rail.
+        if path.is_empty() {
+            self.as_mut().set_letter_index_json(QString::from("[]"));
+            self.as_mut().set_letter_index_scheme(QString::from("none"));
+            return;
+        }
         let sid = self.current_system_id.to_string();
         let systems = if sid.is_empty() {
             Vec::new()
         } else {
             vec![sid]
         };
-        let root_view = root_view_for(&path, &systems);
-        // A route listing (multi-root/no-system pathless scope) has no
-        // meaningful first-character rail -- only a single system's merged
-        // root contents (PR #1312's `rootView: "contents"`) or an ordinary
-        // path below a system root does.
-        if path.is_empty() && root_view.is_none() {
-            self.as_mut().set_letter_index_json(QString::from("[]"));
-            self.as_mut().set_letter_index_scheme(QString::from("none"));
-            return;
-        }
         let tags = favorites_tags(self.favorites_only);
         // Clear any facet from a prior scope to the loading state (empty groups,
         // empty scheme) so the rail shows "loading" rather than the previous
@@ -899,7 +891,6 @@ impl ffi::GamesModel {
                 .media_browse_index(MediaBrowseIndexParams {
                     path,
                     systems,
-                    root_view,
                     tags,
                     sort: None,
                 })

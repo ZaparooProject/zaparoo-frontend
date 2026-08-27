@@ -233,15 +233,6 @@ pub struct MediaBrowseParams {
     pub path: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<String>,
-    /// Pathless system-root presentation (`media.browse` PR #1312).
-    /// `"contents"` replaces a single system's filesystem routes with a
-    /// one-level, display-only merge of their immediate children —
-    /// requires exactly one entry in `systems`. Omitted (Core default:
-    /// `"routes"`) returns today's separate populated routes. Ignored by
-    /// Core when `path` is non-empty. See `BrowseArgs::new` for the one
-    /// rule that decides when the frontend sets this.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub root_view: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_results: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -375,11 +366,6 @@ pub struct MediaBrowseIndexParams {
     pub path: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<String>,
-    /// See `MediaBrowseParams::root_view` -- same field, same rule, kept in
-    /// sync so a letter-index request against a merged root validates
-    /// against the same cursor `media.browse` itself would issue.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub root_view: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1676,7 +1662,6 @@ mod tests {
         let params = MediaBrowseIndexParams {
             path: "/roms/SNES".into(),
             systems: vec!["SNES".into()],
-            root_view: None,
             tags: vec!["user:favorite".into()],
             sort: None,
         };
@@ -1727,7 +1712,6 @@ mod tests {
         let params = MediaBrowseParams {
             path: "/roms/SNES".into(),
             systems: vec!["SNES".into()],
-            root_view: None,
             max_results: Some(100),
             cursor: Some("opaque".into()),
             tags: vec!["user:favorite".into()],
@@ -1761,33 +1745,6 @@ mod tests {
             Some(1)
         );
         assert!(!object.contains_key("fuzzySystem"));
-    }
-
-    #[test]
-    fn media_browse_params_omits_root_view_when_unset() {
-        let params = MediaBrowseParams {
-            systems: vec!["SNES".into()],
-            ..MediaBrowseParams::default()
-        };
-        let json = serde_json::to_value(&params).expect("serialise");
-        assert!(!json.as_object().expect("object").contains_key("rootView"));
-    }
-
-    #[test]
-    fn media_browse_params_serialises_root_view_contents() {
-        let params = MediaBrowseParams {
-            systems: vec!["SNES".into()],
-            root_view: Some("contents".into()),
-            ..MediaBrowseParams::default()
-        };
-        let json = serde_json::to_value(&params).expect("serialise");
-        assert_eq!(
-            json.as_object()
-                .expect("object")
-                .get("rootView")
-                .and_then(|v| v.as_str()),
-            Some("contents")
-        );
     }
 
     #[test]

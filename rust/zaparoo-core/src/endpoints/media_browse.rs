@@ -31,15 +31,6 @@ pub struct BrowseArgs {
     /// a fetch (in practice each screen has a fixed page size, so
     /// duplicates inside one process are rare).
     pub max_results: u32,
-    /// `media.browse`'s pathless `rootView` (PR #1312) -- `Some("contents")`
-    /// whenever `path` is empty and `systems` names exactly one system,
-    /// `None` otherwise. Derived here rather than accepted as a
-    /// constructor parameter so no caller can forget it; a field on the
-    /// struct rather than computed inline at the call site so it
-    /// participates in the derived `Eq`/`Hash` the store's cache keys on,
-    /// even though in practice it can never actually vary independently
-    /// of `path`/`systems` for a given cache entry.
-    pub root_view: Option<String>,
 }
 
 impl BrowseArgs {
@@ -53,30 +44,13 @@ impl BrowseArgs {
         systems.dedup();
         tags.sort();
         tags.dedup();
-        let root_view = root_view_for(&path, &systems);
         Self {
             path,
             systems,
             tags,
             max_results,
-            root_view,
         }
     }
-}
-
-/// The one rule that decides `media.browse`/`media.browse.index`'s
-/// pathless `rootView` (PR #1312): `Some("contents")` for a pathless
-/// browse scoped to exactly one system, `None` otherwise (multi-system,
-/// no system, or already below a path -- Core ignores the field there
-/// anyway). `BrowseArgs::new` is the only caller that goes through the
-/// cached `Endpoint` path; every direct `Client::media_browse`/
-/// `media_browse_index` call elsewhere (cursor follow-ups, the letter
-/// index) must derive the same value the initial page did, since Core
-/// embeds the root view in the browse cursor and validates follow-ups
-/// against it -- exported so those call sites share this exact function
-/// rather than re-deriving the rule and risking drift.
-pub fn root_view_for(path: &str, systems: &[String]) -> Option<String> {
-    (path.is_empty() && systems.len() == 1).then(|| "contents".to_string())
 }
 
 #[derive(Debug)]
@@ -96,7 +70,6 @@ impl Endpoint for MediaBrowseEndpoint {
                 .media_browse(MediaBrowseParams {
                     path: args.path,
                     systems: args.systems,
-                    root_view: args.root_view,
                     max_results: Some(args.max_results),
                     cursor: None,
                     tags: args.tags,
@@ -181,36 +154,5 @@ mod tests {
         );
         assert_ne!(unfiltered, filtered);
         assert_eq!(filtered.tags, vec!["user:favorite"]);
-    }
-
-    #[test]
-    fn browse_args_requests_root_contents_only_for_a_pathless_single_system() {
-        let args = BrowseArgs::new(String::new(), vec!["SNES".into()], 15, Vec::new());
-        assert_eq!(args.root_view.as_deref(), Some("contents"));
-    }
-
-    #[test]
-    fn browse_args_leaves_root_view_unset_below_the_system_root() {
-        let args = BrowseArgs::new("/roms/SNES".into(), vec!["SNES".into()], 15, Vec::new());
-        assert_eq!(args.root_view, None);
-    }
-
-    #[test]
-    fn browse_args_leaves_root_view_unset_for_multiple_systems() {
-        let args = BrowseArgs::new(
-            String::new(),
-            vec!["SNES".into(), "NES".into()],
-            15,
-            Vec::new(),
-        );
-        assert_eq!(args.root_view, None);
-    }
-
-    #[test]
-    fn browse_args_leaves_root_view_unset_with_no_system_scope() {
-        // The category-browse "Systems" screen root: no system selected yet,
-        // Core returns launcher routes for every configured system.
-        let args = BrowseArgs::new(String::new(), Vec::new(), 15, Vec::new());
-        assert_eq!(args.root_view, None);
     }
 }
