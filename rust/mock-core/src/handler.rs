@@ -69,6 +69,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.browse" => Some(Ok(fixtures::media_browse_response(&req.params))),
         "media.browse.index" => Some(Ok(fixtures::media_browse_index_response(&req.params))),
         "media.meta" => Some(Ok(fixtures::media_meta_response(&req.params))),
+        "media.meta.update" => Some(fixtures::media_meta_update_response(&req.params)),
         "media.history" => Some(Ok(fixtures::media_history_response(&req.params))),
         "media.history.latest" => Some(Ok(fixtures::media_history_latest_response())),
         "media" => Some(Ok(media_state::media_response())),
@@ -437,6 +438,51 @@ mod tests {
         assert_eq!(items[0]["media"]["path"], "/games/first.nes");
         assert_eq!(items[0]["media"]["title"]["system"]["id"], "NES");
         assert_eq!(items[1]["media"]["path"], "/mock/media/42");
+    }
+
+    #[test]
+    fn media_meta_update_sets_and_media_meta_reflects_the_override() {
+        let update = r#"{"jsonrpc":"2.0","id":"1","method":"media.meta.update","params":{"system":"SNES","path":"/games/set.sfc","media":{"launcherOverride":"snes9x"}}}"#;
+        let resp = parse(&dispatch(update));
+        assert_eq!(resp["result"]["media"]["launcherOverride"], "snes9x");
+
+        let read = r#"{"jsonrpc":"2.0","id":"2","method":"media.meta","params":{"system":"SNES","path":"/games/set.sfc"}}"#;
+        let resp = parse(&dispatch(read));
+        assert_eq!(resp["result"]["media"]["launcherOverride"], "snes9x");
+    }
+
+    #[test]
+    fn media_meta_update_clear_removes_the_override() {
+        let set = r#"{"jsonrpc":"2.0","id":"1","method":"media.meta.update","params":{"system":"SNES","path":"/games/clear.sfc","media":{"launcherOverride":"snes9x"}}}"#;
+        dispatch(set);
+
+        let clear = r#"{"jsonrpc":"2.0","id":"2","method":"media.meta.update","params":{"system":"SNES","path":"/games/clear.sfc","media":{"launcherOverride":null}}}"#;
+        let resp = parse(&dispatch(clear));
+        assert!(resp["result"]["media"]["launcherOverride"].is_null());
+    }
+
+    #[test]
+    fn media_meta_update_rejects_unknown_launcher() {
+        let update = r#"{"jsonrpc":"2.0","id":"1","method":"media.meta.update","params":{"system":"SNES","path":"/games/unknown.sfc","media":{"launcherOverride":"not-a-real-launcher"}}}"#;
+        let resp = parse(&dispatch(update));
+        assert_eq!(resp["error"]["code"], -32000);
+        assert!(resp["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("launcher not found"));
+    }
+
+    #[test]
+    fn media_meta_update_rejects_launcher_from_a_different_system() {
+        // "nestopia" is a real fixture launcher, but it's registered for
+        // NES, not SNES.
+        let update = r#"{"jsonrpc":"2.0","id":"1","method":"media.meta.update","params":{"system":"SNES","path":"/games/wrong-system.sfc","media":{"launcherOverride":"nestopia"}}}"#;
+        let resp = parse(&dispatch(update));
+        assert_eq!(resp["error"]["code"], -32000);
+        assert!(resp["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("launcher not found"));
     }
 
     #[test]

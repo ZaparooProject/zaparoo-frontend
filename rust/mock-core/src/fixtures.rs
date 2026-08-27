@@ -9,9 +9,15 @@
 // into it.
 
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 static SYSTEM_DEFAULTS: OnceLock<Mutex<Vec<SystemDefaultFixture>>> = OnceLock::new();
+// Per-media launcher overrides set via `media.meta.update`, keyed by the
+// same `(system, path)` pair `media_ref_key` derives for `media.meta`.
+// Mirrors `SYSTEM_DEFAULTS`'s in-memory, process-lifetime pattern -- this
+// is dev-server state, not a real database.
+static LAUNCHER_OVERRIDES: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
 
 pub(crate) const MOCK_SYSTEMS: &[(&str, &str, &str)] = &[
     ("NES", "Nintendo Entertainment System", "Consoles"),
@@ -122,6 +128,29 @@ fn system_defaults() -> &'static Mutex<Vec<SystemDefaultFixture>> {
             before_exit: String::new(),
         }])
     })
+}
+
+fn launcher_overrides() -> &'static Mutex<HashMap<(String, String), String>> {
+    LAUNCHER_OVERRIDES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Derive the `(system, path)` identity `media.meta`/`media.meta.update`
+/// share for one media ref -- a `mediaId`-only ref falls back to the same
+/// synthetic `/mock/media/<id>` path `media_for` already uses, and an
+/// absent `system` falls back to `"Mock"`, so both call sites agree on the
+/// same key regardless of which ref shape the caller sent.
+fn media_ref_key(reference: &Value) -> (String, String) {
+    let media_id = reference.get("mediaId").and_then(Value::as_i64);
+    let system = reference
+        .get("system")
+        .and_then(Value::as_str)
+        .unwrap_or("Mock")
+        .to_string();
+    let path = reference.get("path").and_then(Value::as_str).map_or_else(
+        || format!("/mock/media/{}", media_id.unwrap_or_default()),
+        str::to_string,
+    );
+    (system, path)
 }
 
 pub fn systems_response(params: &Value) -> Value {
@@ -457,15 +486,7 @@ pub fn media_browse_response(params: &Value) -> Value {
 
 pub fn media_meta_response(params: &Value) -> Value {
     fn media_for(reference: &Value) -> Value {
-        let media_id = reference.get("mediaId").and_then(Value::as_i64);
-        let system = reference
-            .get("system")
-            .and_then(Value::as_str)
-            .unwrap_or("Mock");
-        let path = reference.get("path").and_then(Value::as_str).map_or_else(
-            || format!("/mock/media/{}", media_id.unwrap_or_default()),
-            str::to_string,
-        );
+        let (system, path) = media_ref_key(reference);
         let name = path
             .rsplit('/')
             .next()
@@ -474,7 +495,11 @@ pub fn media_meta_response(params: &Value) -> Value {
             .next()
             .unwrap_or("Mock Game")
             .to_string();
-        json!({
+        let launcher_override = launcher_overrides()
+            .lock()
+            .ok()
+            .and_then(|overrides| overrides.get(&(system.clone(), path.clone())).cloned());
+        let mut media = json!({
             "path": path,
             "parentDir": "/mock",
             "isMissing": false,
@@ -486,7 +511,7 @@ pub fn media_meta_response(params: &Value) -> Value {
                 "name": name,
                 "slugLength": name.len(),
                 "slugWordCount": name.split_whitespace().count(),
-                "system": {"id": system, "name": system_display_for(system)},
+                "system": {"id": &system, "name": system_display_for(&system)},
                 "tags": [
                     {"type": "year", "tag": "1994"},
                     {"type": "developer", "tag": "Mock Studio"}
@@ -499,7 +524,11 @@ pub fn media_meta_response(params: &Value) -> Value {
                 },
                 "availableImageTypes": []
             }
-        })
+        });
+        if let Some(launcher_override) = launcher_override {
+            media["launcherOverride"] = json!(launcher_override);
+        }
+        media
     }
 
     if let Some(items) = params.get("items").and_then(Value::as_array) {
@@ -511,6 +540,51 @@ pub fn media_meta_response(params: &Value) -> Value {
         });
     }
     json!({"media": media_for(params)})
+}
+
+/// Mirrors Core's `media.meta.update`: sets or clears the per-media
+/// launcher override, validated against `launchers_response()`'s known
+/// launchers for the row's system, then returns the same shape
+/// `media.meta` would (via `media_meta_response`) so the caller sees its
+/// own write reflected immediately.
+pub fn media_meta_update_response(params: &Value) -> Result<Value, String> {
+    let key = media_ref_key(params);
+    let Some(field) = params
+        .get("media")
+        .and_then(|media| media.get("launcherOverride"))
+    else {
+        return Err("no supported media updates provided".to_string());
+    };
+    if field.is_null() {
+        if let Ok(mut overrides) = launcher_overrides().lock() {
+            overrides.remove(&key);
+        }
+    } else if let Some(launcher_id) = field.as_str() {
+        let (system, _path) = &key;
+        let known = launchers_response()["launchers"]
+            .as_array()
+            .is_some_and(|launchers| {
+                launchers.iter().any(|launcher| {
+                    launcher
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|id| id.eq_ignore_ascii_case(launcher_id))
+                        && launcher
+                            .get("systemId")
+                            .and_then(Value::as_str)
+                            .is_some_and(|system_id| system_id.eq_ignore_ascii_case(system))
+                })
+            });
+        if !known {
+            return Err(format!("launcher not found: {launcher_id}"));
+        }
+        if let Ok(mut overrides) = launcher_overrides().lock() {
+            overrides.insert(key.clone(), launcher_id.to_string());
+        }
+    } else {
+        return Err("media.launcherOverride must be a string or null".to_string());
+    }
+    Ok(media_meta_response(params))
 }
 
 pub fn media_browse_index_response(params: &Value) -> Value {

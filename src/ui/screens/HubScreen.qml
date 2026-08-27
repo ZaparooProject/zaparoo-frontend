@@ -175,6 +175,9 @@ Item {
     // animation. Forwarded to the grid, which forwards it to every tile;
     // only the focused+selected Tile fires its animation.
     property int activatePulse: 0
+    // Incremented by releaseActivate() (below) to settle the push-in cue
+    // back to rest. Forwarded to the grid the same way activatePulse is.
+    property int releasePulse: 0
     // False until the user takes control of focus (first input). Combined
     // with `_restoreDone` into `_focusReady`, which gates whether the tiles
     // render focus at all.
@@ -1013,6 +1016,20 @@ Item {
         pressCommit.arm();
     }
 
+    // Settle the push-in cue back to rest. Only needed for accept kinds
+    // that keep Hub as the active screen -- a raw ZapScript shortcut, or a
+    // launch-only virtual system (Main.qml's onRequestAccept calls this
+    // right where it has already decided no screen transition is
+    // happening, mirroring the same split GamesScreen's own pressCommit
+    // makes between its folder-navigate and launch branches). Every other
+    // accept kind (category/system/folder navigation) leaves Hub and gets
+    // the cue reset for free via `screenSettling` (`!hub.visible`) --
+    // calling this there too would be harmless but pointless, so Main.qml
+    // only calls it for the two kinds that actually need it.
+    function releaseActivate(): void {
+        hub.releasePulse++;
+    }
+
     // ── Move (Options -> Move) ──────────────────────────────────────────
     // Armed by Main.qml's `hub_move` dispatch (see handleContextMenuAccepted
     // there). Board model, origin-anchored: every direction/page press
@@ -1434,6 +1451,7 @@ Item {
         skipEmptyCells: !hub.moveArmed
 
         activatePulse: hub.activatePulse
+        releasePulse: hub.releasePulse
         screenSettling: !hub.visible
         focusReady: hub._focusReady
 

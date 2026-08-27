@@ -37,6 +37,7 @@ pub mod favorite_systems_state;
 pub mod favorites;
 pub mod favorites_state;
 pub mod game_info;
+pub mod game_launcher_override;
 pub mod games;
 pub mod games_state;
 pub mod hub_layout;

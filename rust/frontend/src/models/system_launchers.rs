@@ -17,7 +17,10 @@ use zaparoo_core::endpoints::system_launcher_default::{
 use zaparoo_core::media_types::{LauncherInfo, SettingsResult, SystemDefault};
 use zaparoo_core::remote_resource::ResourceStatus;
 
-const DEFAULT_LAUNCHER_ID: &str = "__default__";
+// `pub(crate)` — shared with `game_launcher_override`, whose picker uses
+// the same "Default" sentinel to mean "clear the stored override, fall
+// back to normal resolution."
+pub(crate) const DEFAULT_LAUNCHER_ID: &str = "__default__";
 
 #[allow(
     clippy::struct_excessive_bools,
@@ -68,6 +71,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn launcher_count_for_system(self: &SystemLaunchers, system_id: &QString) -> i32;
+
+        #[qinvokable]
+        fn current_launcher_for_system(self: &SystemLaunchers, system_id: &QString) -> QString;
 
         #[qinvokable]
         fn set_system_launcher(
@@ -181,9 +187,9 @@ impl ffi::SystemLaunchers {
     )]
     fn prepare_system(mut self: Pin<&mut Self>, system_id: QString) {
         let system_id = system_id.to_string();
-        let current = current_launcher_for_system(&self.system_defaults, &system_id)
-            .unwrap_or_else(|| DEFAULT_LAUNCHER_ID.to_string());
-        let entries = picker_entries_for_system(&self.launchers, &self.system_defaults, &system_id);
+        let current = current_launcher_for_system(&self.system_defaults, &system_id);
+        let matching = launchers_for_system(&self.launchers, &system_id);
+        let entries = picker_entries_for_system(&matching, current.as_deref());
         let mut ids = QStringList::default();
         let mut labels = QStringList::default();
         for entry in entries {
@@ -192,12 +198,24 @@ impl ffi::SystemLaunchers {
         }
         self.as_mut().set_picker_ids(ids);
         self.as_mut().set_picker_labels(labels);
-        self.as_mut()
-            .set_current_launcher(QString::from(current.as_str()));
+        self.as_mut().set_current_launcher(QString::from(
+            current
+                .unwrap_or_else(|| DEFAULT_LAUNCHER_ID.to_string())
+                .as_str(),
+        ));
     }
 
     fn launcher_count_for_system(&self, system_id: &QString) -> i32 {
         launchers_for_system(&self.launchers, &system_id.to_string()).len() as i32
+    }
+
+    /// Synchronous read of the current system default launcher, for menu
+    /// labels that need it without going through `prepare_system` (which
+    /// also rebuilds the picker list). Empty string when no system default
+    /// is configured.
+    fn current_launcher_for_system(&self, system_id: &QString) -> QString {
+        current_launcher_for_system(&self.system_defaults, &system_id.to_string())
+            .map_or_else(QString::default, |id| QString::from(id.as_str()))
     }
 
     #[allow(
@@ -270,27 +288,31 @@ pub fn current_launcher_for_system(defaults: &[SystemDefault], system_id: &str) 
         })
 }
 
+/// Build the picker entry list: `Default` first, then `launchers` in
+/// order, then a synthetic `Current: <id>` row when `current` names a
+/// launcher not present in `launchers` (e.g. one uninstalled since it was
+/// selected). `launchers` must already be filtered to the target system or
+/// media row — this function is agnostic of that distinction so both the
+/// system-default picker and the per-game override picker share it.
 pub fn picker_entries_for_system(
     launchers: &[LauncherInfo],
-    defaults: &[SystemDefault],
-    system_id: &str,
+    current: Option<&str>,
 ) -> Vec<PickerEntry> {
     let mut entries = vec![PickerEntry {
         id: DEFAULT_LAUNCHER_ID.into(),
         label: "Default".into(),
     }];
-    let matching = launchers_for_system(launchers, system_id);
-    for launcher in &matching {
+    for launcher in launchers {
         entries.push(PickerEntry {
             id: launcher.id.clone(),
             label: launcher.id.clone(),
         });
     }
-    if let Some(current) = current_launcher_for_system(defaults, system_id) {
-        let known = matching.iter().any(|launcher| launcher.id == current);
+    if let Some(current) = current {
+        let known = launchers.iter().any(|launcher| launcher.id == current);
         if !known {
             entries.push(PickerEntry {
-                id: current.clone(),
+                id: current.to_string(),
                 label: format!("Current: {current}"),
             });
         }
@@ -310,14 +332,6 @@ mod tests {
         }
     }
 
-    fn default(system: &str, launcher: &str) -> SystemDefault {
-        SystemDefault {
-            system: system.into(),
-            launcher: launcher.into(),
-            before_exit: String::new(),
-        }
-    }
-
     #[test]
     fn filters_launchers_by_exact_system_id() {
         let launchers = vec![launcher("snes9x", "SNES"), launcher("nestopia", "NES")];
@@ -327,7 +341,7 @@ mod tests {
 
     #[test]
     fn picker_entries_put_default_first() {
-        let entries = picker_entries_for_system(&[launcher("snes9x", "SNES")], &[], "SNES");
+        let entries = picker_entries_for_system(&[launcher("snes9x", "SNES")], None);
         assert_eq!(entries[0].id, DEFAULT_LAUNCHER_ID);
         assert_eq!(entries[0].label, "Default");
         assert_eq!(entries[1].id, "snes9x");
@@ -335,11 +349,7 @@ mod tests {
 
     #[test]
     fn picker_entries_include_unknown_current_override() {
-        let entries = picker_entries_for_system(
-            &[launcher("snes9x", "SNES")],
-            &[default("SNES", "libretro")],
-            "SNES",
-        );
+        let entries = picker_entries_for_system(&[launcher("snes9x", "SNES")], Some("libretro"));
         assert_eq!(
             entries,
             vec![
@@ -354,6 +364,24 @@ mod tests {
                 PickerEntry {
                     id: "libretro".into(),
                     label: "Current: libretro".into()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn picker_entries_omit_current_row_when_current_is_known() {
+        let entries = picker_entries_for_system(&[launcher("snes9x", "SNES")], Some("snes9x"));
+        assert_eq!(
+            entries,
+            vec![
+                PickerEntry {
+                    id: DEFAULT_LAUNCHER_ID.into(),
+                    label: "Default".into()
+                },
+                PickerEntry {
+                    id: "snes9x".into(),
+                    label: "snes9x".into()
                 },
             ]
         );
