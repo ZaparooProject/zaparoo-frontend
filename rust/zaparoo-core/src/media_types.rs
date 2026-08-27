@@ -248,6 +248,22 @@ pub struct MediaBrowseParams {
     /// `filename-asc`, `filename-desc`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort: Option<String>,
+    /// `contents` asks Core to replace a single system's filesystem routes
+    /// with one merged view of their immediate contents. Only honoured when
+    /// `path` is empty and exactly one system is set; omitted otherwise so
+    /// path browses are unchanged on the wire. Build with
+    /// [`merged_root_view`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_view: Option<String>,
+}
+
+/// Core's merged system-root view. Eligible only when browsing the top of
+/// exactly one system; Core rejects anything else with "rootView contents
+/// requires exactly one system". Every request in one page chain (the
+/// initial browse, each cursor page, and the letter index) must agree,
+/// because Core stamps the cursor with the view and rejects a mismatch.
+pub fn merged_root_view(path: &str, systems: &[String]) -> Option<String> {
+    (path.is_empty() && systems.len() == 1).then(|| "contents".to_string())
 }
 
 // `Default` is implemented manually below so that `has_cover` defaults to
@@ -370,6 +386,12 @@ pub struct MediaBrowseIndexParams {
     pub tags: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort: Option<String>,
+    /// Same merged-root-view semantics as [`MediaBrowseParams::root_view`].
+    /// Must match the `root_view` of the `media.browse` page this index is
+    /// for, or Core's cursors will not line up. Build with
+    /// [`merged_root_view`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_view: Option<String>,
 }
 
 /// One first-character section of a browse list. `key`/`label` are opaque so a
@@ -1285,17 +1307,17 @@ mod tests {
     )]
 
     use super::{
-        BrowseEntry, BrowseIndexGroup, HealthResult, IndexingStatusResponse, LaunchersResult,
-        LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams,
-        MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult, MediaHistoryParams,
-        MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams,
-        MediaImageResult, MediaIndexParams, MediaItem, MediaLookupParams, MediaLookupResult,
-        MediaMetaBatchParams, MediaMetaBatchResult, MediaMetaParams, MediaMetaResult, MediaResult,
-        MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult,
-        ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse, SettingsResult,
-        SystemDefault, SystemsParams, SystemsResult, TagInfo, TokensHistoryResult, TokensResult,
-        UpdateSettingsParams, VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
-        MEDIA_META_BATCH_MAX_ITEMS,
+        merged_root_view, BrowseEntry, BrowseIndexGroup, HealthResult, IndexingStatusResponse,
+        LaunchersResult, LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult,
+        MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult,
+        MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
+        MediaImageParams, MediaImageResult, MediaIndexParams, MediaItem, MediaLookupParams,
+        MediaLookupResult, MediaMetaBatchParams, MediaMetaBatchResult, MediaMetaParams,
+        MediaMetaResult, MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult,
+        MediaTagsParams, MediaTagsResult, ReaderInfo, ReadersResult, ScrapersResult,
+        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams, SystemsResult,
+        TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
+        MEDIA_IMAGE_DELIVERY_LOCAL_PATH, MEDIA_META_BATCH_MAX_ITEMS,
     };
 
     #[test]
@@ -1664,6 +1686,7 @@ mod tests {
             systems: vec!["SNES".into()],
             tags: vec!["user:favorite".into()],
             sort: None,
+            root_view: None,
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
@@ -1717,6 +1740,7 @@ mod tests {
             tags: vec!["user:favorite".into()],
             letter: Some("M".into()),
             sort: Some("name-asc".into()),
+            root_view: None,
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
@@ -1745,6 +1769,64 @@ mod tests {
             Some(1)
         );
         assert!(!object.contains_key("fuzzySystem"));
+    }
+
+    #[test]
+    fn media_browse_params_omits_root_view_for_path_browse() {
+        let params = MediaBrowseParams {
+            path: "/roms/SNES".into(),
+            ..MediaBrowseParams::default()
+        };
+        let json = serde_json::to_value(&params).expect("serialise");
+        assert!(!json.as_object().expect("object").contains_key("rootView"));
+    }
+
+    #[test]
+    fn media_browse_params_serialises_contents_root_view() {
+        let params = MediaBrowseParams {
+            systems: vec!["SNES".into()],
+            root_view: Some("contents".into()),
+            ..MediaBrowseParams::default()
+        };
+        let json = serde_json::to_value(&params).expect("serialise");
+        assert_eq!(
+            json.as_object()
+                .expect("object")
+                .get("rootView")
+                .and_then(|v| v.as_str()),
+            Some("contents")
+        );
+    }
+
+    #[test]
+    fn media_browse_index_params_serialises_contents_root_view() {
+        let params = MediaBrowseIndexParams {
+            systems: vec!["SNES".into()],
+            root_view: Some("contents".into()),
+            ..MediaBrowseIndexParams::default()
+        };
+        let json = serde_json::to_value(&params).expect("serialise");
+        assert_eq!(
+            json.as_object()
+                .expect("object")
+                .get("rootView")
+                .and_then(|v| v.as_str()),
+            Some("contents")
+        );
+    }
+
+    #[test]
+    fn merged_root_view_requires_empty_path_and_single_system() {
+        assert_eq!(
+            merged_root_view("", &["SNES".to_string()]),
+            Some("contents".to_string())
+        );
+        assert_eq!(merged_root_view("", &[]), None);
+        assert_eq!(
+            merged_root_view("", &["SNES".to_string(), "NES".to_string()]),
+            None
+        );
+        assert_eq!(merged_root_view("/roms/SNES", &["SNES".to_string()]), None);
     }
 
     #[test]

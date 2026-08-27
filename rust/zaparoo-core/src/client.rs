@@ -642,6 +642,7 @@ impl Client {
             cursor_set = params.cursor.is_some(),
             letter = ?params.letter,
             sort = ?params.sort,
+            root_view = ?params.root_view,
             "media.browse request",
         );
         let val = self.call("media.browse", &params).await?;

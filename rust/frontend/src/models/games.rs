@@ -8,16 +8,19 @@
 // Two paths into the model:
 //
 //   * `set_system(id)` — entry from SystemsScreen accept. Issues
-//     `media.browse({systems: [id]})` (system-scoped roots). When the
-//     scoped roots collapse to a single folder entry, we auto-navigate
-//     into that folder so the user never sees a 1-item list — most
-//     systems have one root and showing it standalone would be empty
-//     ceremony.
+//     `media.browse({systems: [id]})`, which Core answers with a merged,
+//     one-level view of the system's launcher routes (`rootView:
+//     "contents"`, see `merged_root_view`) rather than a route to pick.
+//     The one remaining single-entry case worth auto-navigating past is a
+//     lone `root` row: either a virtual-only system Core never merges
+//     (MiSTer Arcade's single `mame-arcade://` route), or an older Core
+//     still returning its pre-merge routes list. See `decide_initial`.
 //
 //   * `set_path(path)` — entry from a folder accept inside the games
 //     screen. Issues `media.browse({path, systems: [current_system]})`.
 //     No auto-navigation; explicit folder navigation is treated as
-//     intent.
+//     intent (MiSTer's single-child-folder flatten aside, see
+//     `decide_initial`).
 //
 // `fetch_more()` advances pagination without resetting the model:
 // `begin_insert_rows` appends entries from the next cursor onto the
@@ -58,8 +61,8 @@ use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
 use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::media_types::{
-    BrowseEntry, MediaBrowseIndexParams, MediaBrowseParams, MediaBrowseResult, MediaMeta,
-    MediaMetaParams, MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
+    merged_root_view, BrowseEntry, MediaBrowseIndexParams, MediaBrowseParams, MediaBrowseResult,
+    MediaMeta, MediaMetaParams, MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
 };
 use zaparoo_core::platform::{self, Platform};
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -819,6 +822,7 @@ impl ffi::GamesModel {
         // append no longer belongs to the current page chain and
         // would corrupt the freshly-reset entries.
         let expected_prev_cursor = cursor.clone();
+        let root_view = merged_root_view(&path, &systems);
         global_handle().spawn(async move {
             let result = store
                 .client()
@@ -830,6 +834,7 @@ impl ffi::GamesModel {
                     tags,
                     letter: None,
                     sort: None,
+                    root_view,
                 })
                 .await;
             let _ = qt_thread.queue(move |model| {
@@ -848,18 +853,22 @@ impl ffi::GamesModel {
     /// user picks "Jump to letter".
     fn load_letter_index(mut self: Pin<&mut Self>) {
         let path = self.current_path.to_string();
-        // A root listing has no meaningful first-character rail.
-        if path.is_empty() {
-            self.as_mut().set_letter_index_json(QString::from("[]"));
-            self.as_mut().set_letter_index_scheme(QString::from("none"));
-            return;
-        }
         let sid = self.current_system_id.to_string();
         let systems = if sid.is_empty() {
             Vec::new()
         } else {
             vec![sid]
         };
+        let root_view = merged_root_view(&path, &systems);
+        // A pathless, systemless listing (the unscoped root) has no
+        // meaningful first-character rail. A merged system root
+        // (`root_view` is `Some`, see `merged_root_view`) is an ordinary
+        // media list and gets a rail like any folder.
+        if path.is_empty() && root_view.is_none() {
+            self.as_mut().set_letter_index_json(QString::from("[]"));
+            self.as_mut().set_letter_index_scheme(QString::from("none"));
+            return;
+        }
         let tags = favorites_tags(self.favorites_only);
         // Clear any facet from a prior scope to the loading state (empty groups,
         // empty scheme) so the rail shows "loading" rather than the previous
@@ -880,6 +889,7 @@ impl ffi::GamesModel {
                     systems,
                     tags,
                     sort: None,
+                    root_view,
                 })
                 .await;
             let _ = qt_thread.queue(move |mut model| {
@@ -1495,10 +1505,10 @@ impl ffi::GamesModel {
     /// queued callbacks bail unless the ticket still matches.
     ///
     /// `eligible_for_auto_nav` is set when this load came from
-    /// `set_system`. The single-root auto-nav case in
-    /// `apply_initial_page` consumes the flag to decide whether to skip
-    /// rendering the 1-item roots list and dive straight into that
-    /// root.
+    /// `set_system`. `decide_initial` consumes the flag to decide whether
+    /// to skip rendering a lone leftover `root` entry (a virtual-only
+    /// system, or an older Core's pre-merge routes list) and dive straight
+    /// into it.
     fn start_initial_browse(
         mut self: Pin<&mut Self>,
         path: String,
@@ -2848,17 +2858,36 @@ fn decide_initial(
     platform: Option<&Platform>,
     current_path: &str,
 ) -> InitialAction {
-    // On MiSTer, single-folder loads also flatten on `set_path`. MiSTer
-    // collections often unzip into nested single-child folders; the
-    // recursion in `apply_status` calls `start_initial_browse(... false)`
-    // on the auto-nav target, so a chain of single-child folders
-    // collapses all the way down on each navigation step.
-    let mister_set_path_flatten = matches!(platform, Some(Platform::Mister));
-    let single_entry_flatten = eligible_after_set_system || mister_set_path_flatten;
-    if !single_entry_flatten || result.entries.len() != 1 {
+    if result.entries.len() != 1 {
         return InitialAction::Apply;
     }
     let entry = &result.entries[0];
+    if current_path.is_empty() {
+        // At the top of a system, Core's merged root (`rootView: "contents"`,
+        // see `merged_root_view`) can legitimately render as one directory --
+        // that's just a system with one subfolder of games, not a route to
+        // skip past. Only a lone `root` entry is a route: either an older
+        // Core still returning the unmerged routes list, or a virtual-only
+        // system (e.g. MiSTer Arcade's single `mame-arcade://` route) that
+        // Core never merges. Diving into anything else here would be a trap:
+        // `Main.qml`'s `_navigateOutOfFolder` refuses to pop below the top
+        // of the path stack, so the user could never get back to this level.
+        if !eligible_after_set_system || entry.entry_type != "root" {
+            return InitialAction::Apply;
+        }
+    } else {
+        // On MiSTer, single-folder loads also flatten on `set_path`. MiSTer
+        // collections often unzip into nested single-child folders; the
+        // recursion in `apply_status` calls `start_initial_browse(... false)`
+        // on the auto-nav target, so a chain of single-child folders
+        // collapses all the way down on each navigation step. This only
+        // applies below the system root -- see the empty-`current_path`
+        // branch above for the root-level rule.
+        let mister_set_path_flatten = matches!(platform, Some(Platform::Mister));
+        if !eligible_after_set_system && !mister_set_path_flatten {
+            return InitialAction::Apply;
+        }
+    }
     // Cycle guard: refuse to auto-nav into the path we're already on.
     // Prevents stack overflow if Core erroneously returns a folder
     // whose path equals the parent.
@@ -2913,11 +2942,14 @@ fn display_name<'a>(raw: &'a str, platform: Option<&Platform>) -> std::borrow::C
 }
 
 /// Drop any root-type entry whose path is a strict ancestor of another
-/// root entry's path. Defends against Core occasionally surfacing the
-/// shared parent dir (e.g. `/media/fat/games`) as a system root alongside
-/// the actual per-system roots beneath it; the parent appears as a
-/// phantom option in the frontend's roots screen, and selecting it
-/// browses into a directory that contains every other system.
+/// root entry's path. A Core new enough to merge system roots
+/// (`merged_root_view`) never sends this shape; this now only defends the
+/// pre-merge routes list an older Core still returns, where the shared
+/// parent dir (e.g. `/media/fat/games`) can occasionally surface as a
+/// system root alongside the actual per-system roots beneath it. Left in
+/// place unchanged: the parent would otherwise appear as a phantom option
+/// in that fallback list, and selecting it browses into a directory that
+/// contains every other system.
 ///
 /// Only `root`-type entries participate. `directory` and `media` entries
 /// pass through unchanged — a normal directory listing where a folder
@@ -2951,16 +2983,17 @@ fn is_strict_ancestor_path(parent: &str, child: &str) -> bool {
         .is_some_and(|rest| rest.starts_with('/'))
 }
 
-/// Round 11 interim fix for the "which root do I pick" roots screen (a
-/// full client-side merge is deferred to Core -- see the round-11 plan).
-/// A system with multiple configured folders shows one identically-named
-/// `root` row per folder, with nothing distinguishing them; find the
-/// first path component where the page's root entries disagree and
-/// return that component per entry ("fat" vs "usb0", "games" vs
-/// "games2"). Returned `Vec` is the same length and order as `entries`;
-/// non-root entries and any root that never needed disambiguating (fewer
-/// than two roots on the page, or one identical to every sibling up to
-/// where paths run out) get `""`.
+/// Round 11's "which root do I pick" fix, kept as the fallback for a Core
+/// older than the merged-root view (`merged_root_view`): a system with
+/// multiple configured folders shows one identically-named `root` row per
+/// folder, with nothing distinguishing them; find the first path component
+/// where the page's root entries disagree and return that component per
+/// entry ("fat" vs "usb0", "games" vs "games2"). A Core new enough to merge
+/// system roots resolves this server-side and never sends the shape this
+/// function looks for. Returned `Vec` is the same length and order as
+/// `entries`; non-root entries and any root that never needed
+/// disambiguating (fewer than two roots on the page, or one identical to
+/// every sibling up to where paths run out) get `""`.
 ///
 /// Assumes `dedup_roots_drop_ancestors` already ran -- a root path being a
 /// strict prefix of a sibling's (the case that function exists to drop)
@@ -3139,7 +3172,23 @@ fn result_total_dirs(result: &MediaBrowseResult) -> i32 {
                 .filter(|entry| entry.is_folder())
                 .count()
         },
-        |total_dirs| usize::try_from(total_dirs).unwrap_or(usize::MAX),
+        |total_dirs| {
+            // Core's merged-root `totalDirs` counts only the merged
+            // physical directories; it excludes the virtual-scheme
+            // `root` entries the same response prepends ahead of them
+            // (`rootView: "contents"`, see `merged_root_view`). Every
+            // frontend consumer of `total_dirs` treats it as "rows
+            // before the first media row", so fold those roots in here
+            // rather than patching each call site. Outside the merged
+            // root, `entries` never carries a `root` type alongside a
+            // present `totalDirs`, so this is a no-op there.
+            let leading_roots = result
+                .entries
+                .iter()
+                .filter(|entry| entry.entry_type == "root")
+                .count();
+            usize::try_from(total_dirs).unwrap_or(usize::MAX) + leading_roots
+        },
     );
     i32::try_from(total_dirs).unwrap_or(i32::MAX)
 }
@@ -3851,6 +3900,41 @@ mod tests {
     }
 
     #[test]
+    fn total_dirs_adds_leading_virtual_roots() {
+        // Core's merged-root `totalDirs` counts only the merged physical
+        // directories; it excludes the virtual-scheme `root` entries the
+        // same response prepends ahead of them (`rootView: "contents"`).
+        let result = MediaBrowseResult {
+            entries: vec![
+                root("Arcade", "mame-arcade://", "Arcade"),
+                folder("Dir", "/games/Dir"),
+                media("Game", "/games/game.rom", "NES"),
+            ],
+            total_dirs: Some(1),
+            ..MediaBrowseResult::default()
+        };
+        assert_eq!(result_total_dirs(&result), 2);
+    }
+
+    #[test]
+    fn total_dirs_fallback_still_counts_roots_once() {
+        // Same case as `total_dirs_falls_back_to_folder_count_when_missing`,
+        // named to make explicit that the `None` fallback (an older Core
+        // without `totalDirs`) already counts `root` entries via
+        // `is_folder()` and must not be double-counted by the leading-roots
+        // fold, which only applies when `total_dirs` is present.
+        let result = MediaBrowseResult {
+            entries: vec![
+                root("NES", "/games/NES", "NES"),
+                media("Game", "/games/g", "NES"),
+            ],
+            total_dirs: None,
+            ..MediaBrowseResult::default()
+        };
+        assert_eq!(result_total_dirs(&result), 1);
+    }
+
+    #[test]
     fn same_sized_nonempty_pages_replace_rows_in_place() {
         assert_eq!(
             initial_row_replacement(10, 10),
@@ -3911,7 +3995,11 @@ mod tests {
     }
 
     #[test]
-    fn decide_initial_with_single_root_eligible_returns_auto_nav() {
+    fn decide_initial_auto_navigates_single_virtual_root_at_system_root() {
+        // A lone `root` entry at the system root is always a route to skip
+        // past: either a virtual-only system Core never merges (MiSTer
+        // Arcade's single `mame-arcade://` route), or an older Core still
+        // returning the unmerged routes list.
         let result = MediaBrowseResult {
             entries: vec![root("NES", "/roms/NES", "NES")],
             ..MediaBrowseResult::default()
@@ -3925,16 +4013,19 @@ mod tests {
     }
 
     #[test]
-    fn decide_initial_with_single_directory_eligible_returns_auto_nav() {
+    fn decide_initial_with_single_directory_at_merged_root_renders_as_apply() {
+        // A merged system root (`rootView: "contents"`, see
+        // `merged_root_view`) can legitimately render as one directory --
+        // that's a system with a single subfolder of games, not a route to
+        // skip past. Only a lone `root` entry (see the sibling test with a
+        // `root` entry above) is a route to auto-nav through.
         let result = MediaBrowseResult {
             entries: vec![folder("Games", "/roms/Shared/Games")],
             ..MediaBrowseResult::default()
         };
         assert_eq!(
             decide_initial(&result, true, None, ""),
-            InitialAction::AutoNavigate {
-                path: "/roms/Shared/Games".into()
-            }
+            InitialAction::Apply
         );
     }
 
@@ -3961,16 +4052,33 @@ mod tests {
     fn decide_initial_with_single_folder_not_eligible_flattens_on_mister() {
         // On MiSTer, a `set_path` load that returns exactly one folder
         // also flattens — collections often unzip into nested
-        // single-child folders.
+        // single-child folders. Only applies below the system root: a
+        // real parent path here (not the merged root's empty path)
+        // distinguishes this from the merged-root case above.
         let result = MediaBrowseResult {
             entries: vec![folder("Sub", "/x/Sub")],
             ..MediaBrowseResult::default()
         };
         assert_eq!(
-            decide_initial(&result, false, Some(&Platform::Mister), ""),
+            decide_initial(&result, false, Some(&Platform::Mister), "/x"),
             InitialAction::AutoNavigate {
                 path: "/x/Sub".into()
             },
+        );
+    }
+
+    #[test]
+    fn decide_initial_does_not_flatten_at_root_on_mister() {
+        // The MiSTer single-child flatten is a drill-down rule; it must
+        // not also swallow a genuine single-directory merged root (see
+        // `decide_initial_with_single_directory_at_merged_root_renders_as_apply`).
+        let result = MediaBrowseResult {
+            entries: vec![folder("Games", "/roms/Shared/Games")],
+            ..MediaBrowseResult::default()
+        };
+        assert_eq!(
+            decide_initial(&result, false, Some(&Platform::Mister), ""),
+            InitialAction::Apply,
         );
     }
 
