@@ -64,6 +64,11 @@ TestCase {
     }
 
     function init(): void {
+        // The tier sweep below mutates the Sizing singleton; reset it here
+        // so it can't leak into this file's other tests or into whichever
+        // test file runs next in the same engine.
+        Sizing.crtNativePath = false;
+        Sizing.bitmapType = false;
         Sizing.screenWidth = testCase.width;
         Sizing.screenHeight = testCase.height;
         picker.open = false;
@@ -97,6 +102,113 @@ TestCase {
                 swatch: [Qt.rgba(0.1 * i, 0, 0, 1), Qt.rgba(0, 0.1 * i, 0, 1), Qt.rgba(0, 0, 0.1 * i, 1)]
             });
         return list;
+    }
+
+    // The panel is content-driven: whatever labels the caller passes, the
+    // widest one must render in full. Core's scraper list is data, not a
+    // fixed set -- "MiSTer docs databases" elided in the Source picker, and
+    // a picker that has to be re-tuned every time a scraper is added is the
+    // bug, not that one string. So assert the invariant over a range of
+    // label lengths and tiers instead of pinning a measurement.
+    //
+    // Clearance, not just `!truncated`: `_widestEntryLabelWidth` and each
+    // row's `_textWidth` apply the same `Sizing.stroke(2)` hinting slack, so
+    // they cancel. An exact fit passes `!truncated` wherever hinting rounds
+    // down and elides wherever it rounds up, which is how this shipped
+    // looking fine on one machine and broken on another.
+    function test_panel_fits_the_widest_label_whatever_it_is(): void {
+        const labels = ["gamelist.xml", "ScreenScraper", "MiSTer docs database", "MiSTer docs databases", "A considerably longer scraper name"];
+        const tiers = [
+            {
+                w: 1280,
+                h: 720,
+                crt: false
+            },
+            {
+                w: 640,
+                h: 480,
+                crt: false
+            },
+            {
+                w: 316,
+                h: 216,
+                crt: true
+            }
+        ];
+        for (let t = 0; t < tiers.length; t++) {
+            const tier = tiers[t];
+            for (let n = 2; n <= labels.length; n++) {
+                const entries = [];
+                for (let i = 0; i < n; i++)
+                    entries.push({
+                        id: "id-" + i,
+                        label: labels[i]
+                    });
+                picker.open = false;
+                Sizing.crtNativePath = tier.crt;
+                Sizing.bitmapType = tier.crt;
+                Sizing.screenWidth = tier.w;
+                Sizing.screenHeight = tier.h;
+                picker.entries = entries;
+                picker.open = true;
+                // Panel sizing is fixed at Font.Medium, the selected weight,
+                // so the selected row is the hard case for every entry.
+                for (let i = 0; i < n; i++) {
+                    picker.currentIndex = i;
+                    const where = tier.w + "x" + tier.h + " n=" + n + " row " + i + " (\"" + labels[i] + "\")";
+                    const row = findChild(picker, "listPickerRow-" + i);
+                    verify(row !== null, where + ": row not instantiated");
+                    const label = _centeredLabelOf(row);
+                    verify(label !== null, where + ": no centered label");
+                    compare(label.text, labels[i]);
+                    verify(!label.truncated, where + ": must not elide");
+                    verify(label._availableWidth >= label._textWidth + picker._labelClearance, where + ": fits with no clearance (available " + label._availableWidth + " vs text " + label._textWidth + ")");
+                }
+                picker.open = false;
+            }
+        }
+    }
+
+    // The app applies its resolution setting after startup, so the picker is
+    // routinely re-measured at a tier it wasn't built at. The panel binding
+    // has to follow `Sizing.fontBody` across that change, not stay pinned to
+    // the size it was constructed with.
+    function test_panel_remeasures_when_the_tier_changes_after_construction(): void {
+        const entries = [
+            {
+                id: "a",
+                label: "gamelist.xml"
+            },
+            {
+                id: "b",
+                label: "MiSTer docs databases"
+            }
+        ];
+        Sizing.screenWidth = 1920;
+        Sizing.screenHeight = 1080;
+        picker.entries = entries;
+        picker.open = true;
+        picker.currentIndex = 1;
+        const wide = picker._widestEntryLabelWidth;
+
+        Sizing.screenWidth = 640;
+        Sizing.screenHeight = 480;
+        verify(picker._widestEntryLabelWidth < wide, "panel measurement must shrink with the font tier, stayed at " + wide);
+
+        const row = findChild(picker, "listPickerRow-1");
+        const label = _centeredLabelOf(row);
+        verify(!label.truncated, "widest entry must not elide after a tier change");
+        verify(label._availableWidth >= label._textWidth + picker._labelClearance, "no clearance after a tier change (available " + label._availableWidth + " vs text " + label._textWidth + ")");
+    }
+
+    // `findChild` walks into the row's SelectionBar and metrics children
+    // too; the centered label is a direct child, so match it there.
+    function _centeredLabelOf(row) {
+        const kids = row.children;
+        for (let i = 0; i < kids.length; i++)
+            if (kids[i].objectName === "listPickerRowLabelCentered")
+                return kids[i];
+        return null;
     }
 
     function test_open_with_no_initial_id_starts_at_zero(): void {

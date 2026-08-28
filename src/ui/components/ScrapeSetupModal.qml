@@ -197,31 +197,19 @@ Item {
             width: parent.width
             spacing: Sizing.pctH(1.5)
 
-            // The single most-misunderstood fact about this feature, put
-            // where the user is about to act on it. zaparoo.org's
-            // troubleshooting page has to state it three separate times,
-            // which is what it costs to leave it unsaid here. The URL is
-            // text rather than a QR because this panel already carries
-            // four rows and a QR large enough to scan from a couch would
-            // not fit at 240p; Settings > About carries the scannable
-            // code.
+            // Labeled pointer rather than a paragraph explaining what the
+            // sources do: the panel already carries four rows, and at 240p
+            // every line above them is a line the Start row can't have. The
+            // label is what makes a bare URL readable as a destination.
+            // Text rather than a QR because a code large enough to scan
+            // from a couch would not fit here; Settings > About carries the
+            // scannable one.
             Text {
                 width: parent.width
-                text: qsTr("Zaparoo imports artwork and details from files you already have. It does not download them.")
+                text: qsTr("Documentation: %1").arg("zaparoo.org/docs/frontend/scraping")
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontCaption
                 color: Theme.textLabel
-                wrapMode: Text.WordWrap
-                horizontalAlignment: Text.AlignHCenter
-                renderType: Text.NativeRendering
-            }
-
-            Text {
-                width: parent.width
-                text: "zaparoo.org/docs/frontend/scraping"
-                font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontCaption
-                color: Theme.textPrimary
                 wrapMode: Text.WrapAnywhere
                 horizontalAlignment: Text.AlignHCenter
                 renderType: Text.NativeRendering

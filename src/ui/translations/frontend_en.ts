@@ -35,7 +35,7 @@
     </message>
     <message>
         <location filename="../screens/AboutScreen.qml" line="212"/>
-        <source>Commercial licensing: legal@zaparoo.org</source>
+        <source>Commercial licensing: legal@zaparoo.com</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -227,7 +227,7 @@ Français - Wilfried</source>
     </message>
     <message>
         <location filename="../components/CommercialNoticeModal.qml" line="116"/>
-        <source>Contact: legal@zaparoo.org</source>
+        <source>Contact: legal@zaparoo.com</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1456,32 +1456,32 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="210"/>
-        <source>Zaparoo imports artwork and details from files you already have. It does not download them.</source>
+        <location filename="../components/ScrapeSetupModal.qml" line="209"/>
+        <source>Documentation: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="237"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="225"/>
         <source>Loading sources…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="248"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="236"/>
         <source>Source</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="274"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="262"/>
         <source>Replace existing</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="288"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="276"/>
         <source>Start import</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="261"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="249"/>
         <source>Systems</source>
         <translation type="unfinished"></translation>
     </message>

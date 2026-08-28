@@ -630,6 +630,42 @@ TestCase {
         compare(main.activeScreen, main.screenHub);
     }
 
+    // Settings > About > Documentation, end to end: the row's Accept has to
+    // reach `openDocumentationQrModal`, the QR has to actually generate for
+    // the docs URL (`size > 0` gates the open, so a generator failure would
+    // look exactly like a dead row), and the modal has to take the stack.
+    // tst_settings_field_control covers the screen's half of this in
+    // isolation; the dead branch that shipped was between the two.
+    function test_documentation_row_opens_the_qr_modal(): void {
+        main.activeScreen = main.screenSettings;
+        main.settingsScreen.optimisticLoading = false;
+        main.settingsScreen._switchPage(main.settingsScreen.pageSupportAbout);
+        const fields = main.settingsScreen.fields;
+        let idx = -1;
+        for (let i = 0; i < fields.length; i++) {
+            if (fields[i].id === "documentation") {
+                idx = i;
+                break;
+            }
+        }
+        verify(idx >= 0, "documentation field not found on the Support & About page");
+        main.settingsScreen.currentIndex = idx;
+
+        main.handleAction("accept");
+        // The dispatch is deferred behind the row's push-in cue.
+        tryCompare(main, "qrCodeModalVisible", true);
+        verify(Browse.QrCode.size > 0, "the docs URL must produce a QR matrix");
+        compare(main.qrCodeModalTitle, "Documentation");
+        compare(main.qrCodeModalUrlText, "zaparoo.org/docs/frontend");
+        compare(ScreenManager.topModal, main.modalQrCode);
+
+        main.handleAction("cancel");
+        compare(main.qrCodeModalVisible, false);
+        compare(ScreenManager.modalCount, 0);
+        main.settingsScreen._switchPage(main.settingsScreen.pageRoot);
+        main.activeScreen = main.screenHub;
+    }
+
     function test_settings_resolution_labels_explain_automatic_and_motion(): void {
         compare(main.settingsScreen._resolutionDisplay(""), "Automatic");
         compare(main.settingsScreen._resolutionDisplay("1280x720"), "1280 × 720");
