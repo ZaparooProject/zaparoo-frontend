@@ -114,4 +114,4 @@ The CLA Assistant Lite bot will record your signature in
 `.github/contributors/signatures.json`. You only need to sign once;
 future pull requests will be recognized automatically.
 
-Questions? Email [legal@zaparoo.org](mailto:legal@zaparoo.org).
+Questions? Email [legal@zaparoo.com](mailto:legal@zaparoo.com).

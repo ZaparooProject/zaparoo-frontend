@@ -113,7 +113,7 @@ Item {
 
             Text {
                 width: parent.width
-                text: qsTr("Contact: legal@zaparoo.org")
+                text: qsTr("Contact: legal@zaparoo.com")
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontBody
                 color: Theme.textLabel

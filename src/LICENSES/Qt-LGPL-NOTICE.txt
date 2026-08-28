@@ -30,7 +30,7 @@ In accordance with the LGPLv3:
      practical shared-library story). To re-link this application against
      a modified Qt, the Minimal Corresponding Source — that is, the
      application's compiled object files — is available on request at
-     legal@zaparoo.org, per LGPLv3 §4(d)(1).
+     legal@zaparoo.com, per LGPLv3 §4(d)(1).
 
 2. Release artifact procedure for static Qt builds:
    - Keep the exact Qt version and toolchain tag used for the release.
@@ -39,7 +39,7 @@ In accordance with the LGPLv3:
      to re-link the frontend with a modified Qt build.
    - Ship COPYING, LGPLv3.txt, this notice, and all files under src/LICENSES/
      with release bundles.
-   - Fulfil object-file requests through legal@zaparoo.org for as long as the
+   - Fulfil object-file requests through legal@zaparoo.com for as long as the
      corresponding binary is distributed.
 
 3. The complete source code for Qt is available at:
@@ -71,4 +71,4 @@ obtained from:
 2. Qt download page: https://www.qt.io/download-open-source
 
 Alternatively, you may request a copy of the Qt source code by contacting
-legal@zaparoo.org.
+legal@zaparoo.com.

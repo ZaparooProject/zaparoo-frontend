@@ -44,14 +44,14 @@ for the details.
 Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 Source available under the [PolyForm Noncommercial License 1.0.0](COPYING).
 Non-commercial use only. For commercial licensing, contact
-[legal@zaparoo.org](mailto:legal@zaparoo.org).
+[legal@zaparoo.com](mailto:legal@zaparoo.com).
 
 Third-party components:
 
 - **Qt framework**: LGPLv3. Dynamically linked on desktop builds; statically
   linked on MiSTer ARM32. Object files for re-linking against a modified Qt
   are available on request at
-  [legal@zaparoo.org](mailto:legal@zaparoo.org).
+  [legal@zaparoo.com](mailto:legal@zaparoo.com).
   See [`src/LICENSES/Qt-LGPL-NOTICE.txt`](src/LICENSES/Qt-LGPL-NOTICE.txt)
   and [`src/LICENSES/LGPLv3.txt`](src/LICENSES/LGPLv3.txt).
 - **zaparoo-update**: optional third-party update integration, separately owned

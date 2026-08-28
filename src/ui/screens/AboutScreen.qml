@@ -209,7 +209,7 @@ Item {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
-                    text: qsTr("Commercial licensing: legal@zaparoo.org")
+                    text: qsTr("Commercial licensing: legal@zaparoo.com")
                     color: Theme.textPrimary
                     font.family: Theme.fontUi
                     font.pixelSize: Sizing.fontBody
