@@ -1712,11 +1712,16 @@ ApplicationWindow {
                             return [];
                         const pages = root.gamesScreen.gamesGrid.pageCount;
                         // Mirror the real context-menu gate used by
-                        // GamesScreen/openContextMenu. Singleton folders
-                        // with media identity can launch and be favorited,
-                        // so they should advertise Options too.
+                        // GamesScreen's `contextMenuEnabledAt`. Singleton
+                        // folders with media identity can launch and be
+                        // favorited; a plain directory and a filesystem `root`
+                        // both get the folder shortcut action. All of them
+                        // open a menu, so all of them must advertise Options
+                        // -- this used to test media capability alone, which
+                        // left every folder row with a working Options button
+                        // and no cue saying so. Keep the two in step.
                         const idx = root.gamesScreen.gamesGrid.currentIndex;
-                        const mediaCapable = Browse.GamesModel.is_media_capable_at(idx);
+                        const hasContextMenu = Browse.GamesModel.is_media_capable_at(idx) || Browse.GamesModel.entry_type_at(idx) === "directory" || Browse.GamesModel.is_filesystem_root_at(idx);
                         // D-pad moves; L/R shoulders page-jump. Folded into one
                         // "Move" cue; shoulder glyphs appear only with a second
                         // page.
@@ -1730,7 +1735,7 @@ ApplicationWindow {
                             button: "ButtonA",
                             label: qsTr("Open")
                         });
-                        if (mediaCapable)
+                        if (hasContextMenu)
                             row.push({
                                 button: "ButtonX",
                                 label: qsTr("Options")

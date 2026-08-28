@@ -1288,8 +1288,8 @@ Français - Wilfried</source>
         <location filename="../app/MainLayout.qml" line="1506"/>
         <location filename="../app/MainLayout.qml" line="1593"/>
         <location filename="../app/MainLayout.qml" line="1611"/>
-        <location filename="../app/MainLayout.qml" line="1743"/>
-        <location filename="../app/MainLayout.qml" line="1762"/>
+        <location filename="../app/MainLayout.qml" line="1748"/>
+        <location filename="../app/MainLayout.qml" line="1767"/>
         <source>View</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1302,7 +1302,7 @@ Français - Wilfried</source>
         <location filename="../app/MainLayout.qml" line="1578"/>
         <location filename="../app/MainLayout.qml" line="1634"/>
         <location filename="../app/MainLayout.qml" line="1653"/>
-        <location filename="../app/MainLayout.qml" line="1726"/>
+        <location filename="../app/MainLayout.qml" line="1731"/>
         <source>Move</source>
         <translation>Bewegen</translation>
     </message>
@@ -1351,7 +1351,7 @@ Français - Wilfried</source>
         <location filename="../app/MainLayout.qml" line="1534"/>
         <location filename="../app/MainLayout.qml" line="1583"/>
         <location filename="../app/MainLayout.qml" line="1639"/>
-        <location filename="../app/MainLayout.qml" line="1731"/>
+        <location filename="../app/MainLayout.qml" line="1736"/>
         <source>Open</source>
         <translation>Openen</translation>
     </message>
@@ -1372,8 +1372,8 @@ Français - Wilfried</source>
         <location filename="../app/MainLayout.qml" line="1677"/>
         <location filename="../app/MainLayout.qml" line="1698"/>
         <location filename="../app/MainLayout.qml" line="1707"/>
-        <location filename="../app/MainLayout.qml" line="1747"/>
-        <location filename="../app/MainLayout.qml" line="1766"/>
+        <location filename="../app/MainLayout.qml" line="1752"/>
+        <location filename="../app/MainLayout.qml" line="1771"/>
         <source>Back</source>
         <translation>Terug</translation>
     </message>
@@ -1385,7 +1385,7 @@ Français - Wilfried</source>
         <location filename="../app/MainLayout.qml" line="1502"/>
         <location filename="../app/MainLayout.qml" line="1537"/>
         <location filename="../app/MainLayout.qml" line="1588"/>
-        <location filename="../app/MainLayout.qml" line="1736"/>
+        <location filename="../app/MainLayout.qml" line="1741"/>
         <source>Options</source>
         <translation>Opties</translation>
     </message>
@@ -1394,7 +1394,7 @@ Français - Wilfried</source>
         <location filename="../app/MainLayout.qml" line="1496"/>
         <location filename="../app/MainLayout.qml" line="1547"/>
         <location filename="../app/MainLayout.qml" line="1605"/>
-        <location filename="../app/MainLayout.qml" line="1754"/>
+        <location filename="../app/MainLayout.qml" line="1759"/>
         <source>Retry</source>
         <translation>Opnieuw proberen</translation>
     </message>
@@ -1525,32 +1525,32 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="216"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="226"/>
         <source>Get metadata</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="232"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="242"/>
         <source>Documentation: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="248"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="258"/>
         <source>Loading sources…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="259"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="269"/>
         <source>Source</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="285"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="295"/>
         <source>Replace existing</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="299"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="309"/>
         <source>Start import</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1559,7 +1559,7 @@ Français - Wilfried</source>
         <translation type="obsolete">Metadata ophalen</translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="272"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="282"/>
         <source>Systems</source>
         <translation type="unfinished"></translation>
     </message>

@@ -122,10 +122,20 @@ Item {
         // made and then abandoned (changed the row, then backed out without
         // pressing Start) doesn't persist visually as though it had applied.
         // Falls through to the Connections below when the list hasn't landed.
+        //
+        // When the persisted id is NOT in Core's list -- it was removed, or
+        // Core was reconfigured -- clear the selection rather than leaving the
+        // previous session's pick sitting there. Holding a stale-but-valid id
+        // would make the Connections below early-return on it and show a
+        // scraper that is not the one in force. Clearing hands the choice back
+        // to that handler, which prefers the persisted id and falls back to
+        // `ids[0]`. Safe to blank: `openScrapeSetupModal` calls
+        // `refresh_scrapers()` before opening, so the handler always runs, and
+        // the scraper row is replaced by a loading indicator until it does.
         const ids = Browse.MediaStatus.scraper_ids;
         const persisted = Browse.Settings.current_metadata_scraper;
-        if (ids.length > 0 && ids.indexOf(persisted) >= 0)
-            modal.selectedScraperId = persisted;
+        if (ids.length > 0)
+            modal.selectedScraperId = ids.indexOf(persisted) >= 0 ? persisted : "";
     }
 
     // Seed the selection once the scraper list lands, if nothing is

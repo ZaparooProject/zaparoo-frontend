@@ -245,10 +245,12 @@ fn poll_once(path: &Path, last_mtime: &mut Option<SystemTime>, last_read_ok: &mu
 /// `ZAPAROO_INPUT_REPORT_FILE` override forces the watcher on regardless, so
 /// the feature can be exercised on desktop against a fixture file.
 /// Returns whether the watcher actually started. Callers log against this
-/// rather than assuming it did — the skip below is silent and indistinguishable
-/// from a running watcher that has simply never seen a report, which is exactly
-/// the ambiguity that made "Automatic isn't picking up my controller" reports
-/// untriageable from a log.
+/// rather than assuming it did: a skipped watcher and a running one that has
+/// simply never seen a report both leave `Browse.ControllerReport` at the same
+/// neutral fallback, which is the ambiguity that made "Automatic isn't picking
+/// up my controller" reports untriageable from a log. Both paths now also emit
+/// their own `debug!`, so a debug-logging run distinguishes them without the
+/// caller having to.
 pub fn spawn_watcher() -> bool {
     let forced = std::env::var_os("ZAPAROO_INPUT_REPORT_FILE").is_some_and(|v| !v.is_empty());
     if !runtime::current().is_mister() && !forced {
@@ -256,7 +258,41 @@ pub fn spawn_watcher() -> bool {
         return false;
     }
     let path = launcher_input_report_path();
-    let seed = read_and_parse(&path);
+    // Read and parse inline rather than through `read_and_parse` so the three
+    // ways this can come up empty stay distinguishable in the log. They mean
+    // very different things to whoever is triaging: a missing file is the
+    // normal case on a Main_MiSTer without the launcher-input feature, an
+    // unreadable one is a permissions or IO problem worth chasing, and a
+    // present-but-unparseable one means Main wrote a shape this build does not
+    // understand. Every branch still falls back to the same neutral glyphs.
+    let seed = match std::fs::read(&path) {
+        Ok(bytes) => {
+            let parsed = parse_report(&bytes);
+            if parsed.is_none() {
+                debug!(
+                    ?path,
+                    bytes = bytes.len(),
+                    "controller report: file present but not parseable, using neutral fallback",
+                );
+            }
+            parsed
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            debug!(
+                ?path,
+                "controller report: no report file, using neutral fallback",
+            );
+            None
+        }
+        Err(e) => {
+            debug!(
+                ?path,
+                error = %e,
+                "controller report: report file unreadable, using neutral fallback",
+            );
+            None
+        }
+    };
     if let Some(glyphs) = &seed {
         debug!(
             ?path,
@@ -264,15 +300,6 @@ pub fn spawn_watcher() -> bool {
             accept = glyphs.accept_button,
             cancel = glyphs.cancel_button,
             "controller report: seeded from report",
-        );
-    } else {
-        // Absent and unparseable are not the same failure — the first is
-        // normal on a Main_MiSTer without the launcher-input feature, the
-        // second means the file is there and wrong — so name which it was.
-        debug!(
-            ?path,
-            present = path.exists(),
-            "controller report: no usable report at startup, using neutral fallback",
         );
     }
     publish_if_changed(seed);
