@@ -136,6 +136,14 @@ MainLayout {
         value: Browse.Settings.current_color_scheme
     }
 
+    // Applies live for the same reason the preset above does — both only feed
+    // ColorSchemes.palette(), so every dependent binding recomputes on change.
+    Binding {
+        target: Theme
+        property: "colorIntensityId"
+        value: Browse.Settings.current_color_intensity
+    }
+
     // Feed the Motion singleton's master switch from persisted preference and
     // MiSTer's effective render budget. Native 1080p remains available as an
     // explicit quality override, but animation would repeatedly dirty its much
@@ -2147,7 +2155,12 @@ MainLayout {
     // primary action first, then frequent actions, then organizational
     // actions (Move/Add to Hub/Hide), then long-running maintenance
     // (index/scrape) last.
-    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool, category: string) {
+    // `pinnableRoot` is trailing and optional: only the games branch reads it,
+    // and every other caller (the hub_action path above, the tests) simply
+    // omits it and gets `undefined`, which is falsy. Kept as its own argument
+    // rather than folded into `entryType` so the type stays what Core actually
+    // said the row was.
+    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool, category: string, pinnableRoot: bool) {
         if (owner === "systems") {
             const entries = [
                 {
@@ -2295,9 +2308,14 @@ MainLayout {
             return entries;
         }
         if (owner === "games" || owner === "favorites") {
-            if (entryType === "root" && !mediaCapable)
+            // A root addressing a real filesystem folder is one of the
+            // system's configured game directories -- pinnable, exactly like
+            // a plain directory, so it falls through to the same branch.
+            // A virtual-scheme root (`mame-arcade://`, never merged by Core)
+            // still gets no menu: nothing here can act on it.
+            if (entryType === "root" && !mediaCapable && !pinnableRoot)
                 return [];
-            if (entryType === "directory" && !mediaCapable) {
+            if ((entryType === "directory" || entryType === "root") && !mediaCapable) {
                 // A plain browsable folder has no media-scoped actions of
                 // its own, and Favorites never contains a directory row (it
                 // is a flat list of games) -- only Games can reach this
@@ -2420,9 +2438,9 @@ MainLayout {
     // Cancel from doing anything, while pending.
     function _relabelPickerEntry(entries: var, targetId: string, nextLabel: string): var {
         return entries.map(entry => entry.id === targetId ? {
-            id: entry.id,
-            label: nextLabel
-        } : entry);
+                id: entry.id,
+                label: nextLabel
+            } : entry);
     }
 
     function _replaceContextMenuEntryLabel(targetId: string, nextLabel: string, nextId: string): void {
@@ -2534,6 +2552,7 @@ MainLayout {
         let isFavorite = false;
         let systemId = "";
         let mediaCapable = false;
+        let pinnableRoot = false;
         let isHidden = false;
         let category = "";
         if (owner === "systems") {
@@ -2551,6 +2570,7 @@ MainLayout {
                 return;
             entryType = Browse.GamesModel.entry_type_at(index);
             mediaCapable = Browse.GamesModel.is_media_capable_at(index);
+            pinnableRoot = Browse.GamesModel.is_filesystem_root_at(index);
             isFavorite = Browse.GamesModel.is_favorite_at(index);
             systemId = Browse.GamesModel.system_id_at(index);
         } else if (owner === "favorites") {
@@ -2568,7 +2588,7 @@ MainLayout {
                 return;
             systemId = Browse.RecentsModel.system_id_at(index);
         }
-        let entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category);
+        let entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category, pinnableRoot);
         // "categories" is exclusively Hub-owned (only HubScreen ever opens
         // it) — splice the universal Move/Hide in here, keyed off the Hub
         // flat index the caller stashed in `_hubItemIndex` (NOT `index`,
@@ -2834,7 +2854,12 @@ MainLayout {
         if (owner === "games") {
             const entryType = Browse.GamesModel.entry_type_at(index);
             const systemId = Browse.GamesModel.current_system_id;
-            if (entryType === "directory") {
+            // A filesystem `root` is one of the system's configured game
+            // directories -- addressed by path exactly like a `directory`, so
+            // it pins as the same `folder` item. `is_filesystem_root_at`
+            // already excluded virtual-scheme routes, which have no
+            // filesystem path to pin.
+            if (entryType === "directory" || Browse.GamesModel.is_filesystem_root_at(index)) {
                 const path = Browse.GamesModel.path_at(index);
                 if (path !== "")
                     Browse.HubLayout.add_target_item("folder", "", path, "", "", "", systemId);
@@ -3925,14 +3950,15 @@ MainLayout {
             const cursorEntry = root.hubScreen !== null ? root.hubScreen.items[root.hubScreen.currentIndex] : null;
             const target = cursorEntry ? cursorEntry.hubIndex : -1;
             const beforeCount = root.hubScreen !== null ? Browse.HubLayout.item_count() : 0;
+            // Every entry this picker can produce is a `kind:id` pair from
+            // `available_known()`. There is no "blank" case to handle:
+            // buildAddEntries deliberately offers no "Blank space" row (see
+            // its doc comment -- a gap is not something the user creates as a
+            // first-class choice), so a branch for it was unreachable.
             let added = false;
-            if (selectedId === "blank")
-                added = Browse.HubLayout.add_item("blank", "", target);
-            else {
-                const sep = selectedId.indexOf(":");
-                if (sep > 0)
-                    added = Browse.HubLayout.add_item(selectedId.slice(0, sep), selectedId.slice(sep + 1), target);
-            }
+            const sep = selectedId.indexOf(":");
+            if (sep > 0)
+                added = Browse.HubLayout.add_item(selectedId.slice(0, sep), selectedId.slice(sep + 1), target);
             // Hand the newly placed item straight to Move so it can be
             // positioned immediately instead of just sitting wherever
             // append/target left it — see HubScreen.qml's
@@ -4034,6 +4060,8 @@ MainLayout {
             Browse.Settings.set_system_logo_style(selectedId);
         else if (fieldId === "colorScheme")
             Browse.Settings.set_color_scheme(selectedId);
+        else if (fieldId === "colorIntensity")
+            Browse.Settings.set_color_intensity(selectedId);
         else if (fieldId === "buttonLayout")
             Browse.Settings.set_button_layout(selectedId);
         else if (fieldId === "screensaverTimeout")
@@ -4901,6 +4929,12 @@ MainLayout {
                 case "systems":
                     return qsTr("Loading systems…");
                 case "games":
+                // Backing out to a parent folder whose page isn't cached.
+                // Always a games browse, so it gets the same cue as a
+                // forward one rather than falling through to the generic
+                // default -- which is what it did before, making the one
+                // transition users hit most often the least specific.
+                case "folder_back":
                     return qsTr("Loading games…");
                 case "resume":
                     return qsTr("Loading game…");

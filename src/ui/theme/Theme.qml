@@ -10,9 +10,14 @@ QtObject {
     property bool crtNativePath: false
     property bool bitmapType: false
     property string colorSchemeId: ColorSchemes.defaultId
+    // How much of the accent bleeds into resting chrome and surfaces —
+    // "subtle" (the shipped look) or "vivid". Focus, selection, the favorite
+    // marker and the logo ramps are unaffected; see ColorSchemes' own
+    // `_intensities` comment for the full boundary and why it sits there.
+    property string colorIntensityId: ColorSchemes.defaultIntensity
 
     readonly property string effectiveColorSchemeId: ColorSchemes.effectiveId(colorSchemeId)
-    readonly property var _palette: ColorSchemes.palette(colorSchemeId)
+    readonly property var _palette: ColorSchemes.palette(colorSchemeId, colorIntensityId)
     // Not a color role — a raster-asset selection flag for cases a color
     // binding cannot express, such as HeaderBar's light/dark logo PNG ladder.
     readonly property bool lightSurface: ColorSchemes.isLightSurface(colorSchemeId)

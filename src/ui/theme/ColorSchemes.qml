@@ -525,7 +525,61 @@ QtObject {
         return candidate;
     }
 
-    function palette(id: string): var {
+    // The two intensity settings, as multipliers on the ambient-accent
+    // terms below. `subtle` is 1.0 by construction — it must reproduce the
+    // shipped palette byte for byte, so an install that never touches the
+    // setting sees no change.
+    //
+    // Only the resting front edges (`tileEdge`/`controlEdge`) scale — the
+    // one ambient, purely decorative place the accent is painted, and the
+    // one testers actually reported both directions on.
+    //
+    // The neutral ladder's accent cast (`panel`/`card`/`subtle`/`mid`) was
+    // tried here too and pulled back out. It cannot scale safely: `card` is
+    // the surface `textLabel` and `textVariant` are floored against at 3:1
+    // by `tst_color_schemes.qml`, nothing in this file SOLVES that floor
+    // (it is asserted, not enforced), and on presets whose text and accent
+    // share a hue — `game-boy` (green on green), `virtual-boy` (red on red)
+    // — casting the card further toward the accent walks it straight into
+    // the text. Both 2.0x and 1.5x broke one of those two. The cast is 0.03
+    // to 0.05 anyway, so there was little to gain against a real legibility
+    // risk on exactly the vivid presets this setting exists to serve.
+    //
+    // Also deliberately excluded, in the order someone is most likely to
+    // try adding them:
+    //   * `accent` itself and the logo focus ramp — a focus affordance whose
+    //     contrast `_clampAccent` already solves for. Scaling it makes focus
+    //     louder or quieter, which is an accessibility change, not a taste one.
+    //   * the resting logo ramp (`_greyAt`) — grey on purpose, so an
+    //     unfocused grid reads plain and focus visibly GAINS color. Tinting
+    //     it collapses that distinction.
+    //   * `marker` — hue-rotated AWAY from the accent by `_markerFor` so
+    //     favorites read the same red under every preset.
+    //   * `variant` (`textVariant`) — it takes the largest cast of the
+    //     ladder (0.14), but it is a TEXT role and carries the same 3:1
+    //     floor described above.
+    readonly property var _intensities: ({
+            "subtle": {
+                "edgeChroma": 1.0,
+                "edgeCap": 1.0
+            },
+            "vivid": {
+                "edgeChroma": 1.8,
+                "edgeCap": 2.2
+            }
+        })
+
+    readonly property string defaultIntensity: "subtle"
+
+    function _intensity(name: string): var {
+        return _intensities[name] ?? _intensities[defaultIntensity];
+    }
+
+    // `intensity` is optional so the 13 existing `palette(id)` call sites
+    // (Theme plus the color-scheme and pressable-surface suites) keep
+    // resolving the shipped look without a signature change at each one.
+    function palette(id: string, intensity: string): var {
+        const scale = _intensity(intensity ?? defaultIntensity);
         const source = _sources[effectiveId(id)];
         const primary = Qt.color(source.primary);
         const text = Qt.color(source.text);
@@ -571,8 +625,15 @@ QtObject {
             "bgPanel": panel,
             "bgBar": _mix(primary, ink, 0.35),
             "surfaceCard": card,
-            "tileEdge": _edgeFor(accent, card, 0.5, 0.05, 1.5, primary, 1.8),
-            "controlEdge": _edgeFor(accent, card, 0.6, 0.06, 1.65, panel, 2.0),
+            // Chroma factor clamps at 1.0 — "use all of the accent's own
+            // chroma" is the ceiling; past that the edge would be more
+            // saturated than the accent it derives from. The cap is the term
+            // that actually binds on high-chroma presets (nes, virtual-boy,
+            // game-boy, synthwave-84), which is why Vivid scales it harder.
+            // Both contrast floors still solve afterwards, so the bevel reads
+            // at either setting.
+            "tileEdge": _edgeFor(accent, card, Math.min(1, 0.5 * scale.edgeChroma), 0.05 * scale.edgeCap, 1.5, primary, 1.8),
+            "controlEdge": _edgeFor(accent, card, Math.min(1, 0.6 * scale.edgeChroma), 0.06 * scale.edgeCap, 1.65, panel, 2.0),
             "scrim": "#cc000000",
             "borderSubtle": subtle,
             "borderMid": mid,

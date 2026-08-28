@@ -259,8 +259,11 @@ pub mod ffi {
 
         /// Number of entries the "Add item…" grab bag currently offers —
         /// every `known` category/action key not currently in the layout.
-        /// Does NOT include the always-available "blank" option; that's a
-        /// fixed entry the caller (`HubScreen`'s View menu) adds itself.
+        /// That is the whole menu: `HubScreen`'s `buildAddEntries` adds no
+        /// "blank" row of its own, deliberately — a blank cell is a gap, not
+        /// something the user creates as a first-class choice, and gaps still
+        /// arise from Hide/Delete and from Move. See that function's doc
+        /// comment.
         #[qinvokable]
         fn available_count(self: &HubLayout) -> i32;
 

@@ -454,8 +454,11 @@ pub extern "C" fn zaparoo_rust_init(crt_native_path_forced: bool) -> c_int {
     startup_trace("rust:client created");
     platform::spawn_fetcher(client.clone(), &handle);
     startup_trace("rust:platform fetcher spawned");
-    controller_report::spawn_watcher();
-    startup_trace("rust:controller report watcher spawned");
+    startup_trace(if controller_report::spawn_watcher() {
+        "rust:controller report watcher spawned"
+    } else {
+        "rust:controller report watcher skipped (not MiSTer)"
+    });
     let store = Store::new(client.clone(), handle.clone());
     startup_trace("rust:store created");
 

@@ -515,14 +515,20 @@ ApplicationWindow {
     }
     readonly property string _browseThemeId: BrowseLayouts.currentThemeId
     readonly property var _browseViewProfile: BrowseLayouts.themeProfile(root._browseThemeId, root._browseViewId)
+    // Same resolution as GamesScreen's own `_systemDisplayName` -- see the
+    // comment there for why the category-scoped `index_for_system_id` lookup
+    // this used to do disagreed with the Systems grid, and why the two `void`
+    // reads are load-bearing.
     readonly property string _crtGamesHeaderTitle: {
         if (root.activeScreen !== root.screenGames)
             return "";
         const sid = Browse.GamesModel.current_system_id;
         if (sid === "")
             return "";
-        const idx = Browse.SystemsModel.index_for_system_id(sid);
-        return idx >= 0 ? Browse.SystemsModel.system_name_at(idx) : sid;
+        void Browse.SystemsModel.count;
+        void Browse.Settings.current_region;
+        const resolved = Browse.SystemsModel.system_name_for_id(sid);
+        return resolved !== "" ? resolved : sid;
     }
     readonly property string browseHeaderTitle: {
         if (!root.crtNativePath)

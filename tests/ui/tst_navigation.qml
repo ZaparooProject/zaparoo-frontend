@@ -1462,8 +1462,25 @@ TestCase {
         compare(main.buildContextMenuEntries("favorites", "directory", false, true, false, ""), [], "Favorites rows never offer Add to Hub");
     }
 
-    function test_context_menu_games_root_returns_empty(): void {
-        compare(main.buildContextMenuEntries("games", "root", false, true, false, ""), []);
+    // A `root` addressing a real filesystem folder is one of the system's
+    // configured game directories, so it pins exactly like a plain folder.
+    // Refusing every root was why a multi-folder system (the reported case
+    // was MS-DOS with an AO486 and a _DOS Games directory) had no way to pin
+    // any of them. `pinnableRoot` is the trailing argument;
+    // `GamesModel.is_filesystem_root_at` decides it for the real call site.
+    function test_context_menu_games_filesystem_root_offers_add_to_hub(): void {
+        const entries = main.buildContextMenuEntries("games", "root", false, true, false, "", false, "", true);
+        compare(_idsOf(entries), ["add_to_hub"], "A system's game folder pins like any other folder");
+    }
+
+    // Virtual-scheme routes (mame-arcade://) are still refused: Core never
+    // merges them, they remain in merged listings, and a Hub folder tile is
+    // addressed by filesystem path so there is nothing to pin.
+    function test_context_menu_games_scheme_root_returns_empty(): void {
+        compare(main.buildContextMenuEntries("games", "root", false, true, false, "", false, "", false), [], "A scheme route offers no actions");
+        // Omitting the argument entirely must behave as before this existed —
+        // that is what every non-games caller does.
+        compare(main.buildContextMenuEntries("games", "root", false, true, false, ""), [], "Absent pinnableRoot stays refused");
     }
 
     function test_context_menu_games_no_reader_omits_write_card(): void {

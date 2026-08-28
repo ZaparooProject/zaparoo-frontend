@@ -131,6 +131,12 @@ Item {
         },
         {
             kind: "field",
+            id: "colorIntensity",
+            label: qsTr("Color intensity"),
+            description: qsTr("Sets how strongly the color scheme's accent tints tiles, buttons, and backgrounds.")
+        },
+        {
+            kind: "field",
             id: "systemLogoStyle",
             label: qsTr("System logos"),
             description: qsTr("Draw system logos in their original colors, or tinted to match the color scheme.")
@@ -470,6 +476,8 @@ Item {
             return settings._systemLogoStyleDisplay(Browse.Settings.current_system_logo_style);
         if (id === "colorScheme")
             return settings._colorSchemeDisplay(Browse.Settings.current_color_scheme);
+        if (id === "colorIntensity")
+            return settings._colorIntensityDisplay(Browse.Settings.current_color_intensity);
         if (id === "buttonLayout")
             return settings._buttonLayoutDisplay(Browse.Settings.current_button_layout);
         if (id === "screensaverTimeout")
@@ -623,7 +631,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "resolution" || id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "systemsLayout" || id === "gamesLayout" || id === "systemLogoStyle" || id === "colorScheme" || id === "buttonLayout" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
+        return id === "resolution" || id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "systemsLayout" || id === "gamesLayout" || id === "systemLogoStyle" || id === "colorScheme" || id === "colorIntensity" || id === "buttonLayout" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
     }
     // True when focused row accepts A without left/right cycling:
     // pickers, jobs, modal/navigation rows, and root category rows.
@@ -720,6 +728,11 @@ Item {
 
     function _colorSchemeList(): list<string> {
         const raw = Browse.Settings.available_color_schemes;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
+    function _colorIntensityList(): list<string> {
+        const raw = Browse.Settings.available_color_intensities;
         return raw === undefined || raw === null ? [] : raw;
     }
 
@@ -867,6 +880,18 @@ Item {
             "solarized-light": qsTr("Solarized Light")
         };
         return names[value] !== undefined ? names[value] : names["zaparoo-dark"];
+    }
+
+    // Two values only. "Subtle" is what ships and what every existing
+    // install already sees; "Vivid" lets the high-chroma presets (NES,
+    // Virtual Boy, Game Boy, Synthwave '84) read as vividly as their name
+    // suggests. A middle rung was considered and dropped -- the difference
+    // is too soft to perceive reliably, and it would triple what has to be
+    // checked across 19 presets.
+    function _colorIntensityDisplay(value: string): string {
+        if (value === "vivid")
+            return qsTr("Vivid");
+        return qsTr("Subtle");
     }
 
     function _buttonLayoutDisplay(value: string): string {
@@ -1053,6 +1078,15 @@ Item {
                     swatch: ColorSchemes.previewColors(list[i])
                 });
             initialId = Browse.Settings.current_color_scheme;
+        } else if (id === "colorIntensity") {
+            title = qsTr("Color intensity");
+            const list = settings._colorIntensityList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._colorIntensityDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_color_intensity;
         } else if (id === "buttonLayout") {
             title = qsTr("Button style");
             const list = settings._buttonLayoutList();

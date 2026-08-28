@@ -536,6 +536,14 @@ pub mod ffi {
         #[qinvokable]
         fn is_media_capable_at(self: &GamesModel, index: i32) -> bool;
 
+        /// True when the row at `index` is a `root` addressing a real
+        /// filesystem folder, as opposed to a virtual-scheme route. Gates the
+        /// games context menu's "Add to Hub" on root rows — see
+        /// `is_filesystem_root_entry` for why roots were refused outright
+        /// before, and why scheme routes still are.
+        #[qinvokable]
+        fn is_filesystem_root_at(self: &GamesModel, index: i32) -> bool;
+
         #[qinvokable]
         fn index_for_game_path(self: &GamesModel, path: &QString) -> i32;
 
@@ -1483,6 +1491,13 @@ impl ffi::GamesModel {
         is_media_capable_entry(&self.entries[index as usize])
     }
 
+    fn is_filesystem_root_at(&self, index: i32) -> bool {
+        if index < 0 || index >= self.count {
+            return false;
+        }
+        is_filesystem_root_entry(&self.entries[index as usize])
+    }
+
     fn index_for_game_path(&self, path: &QString) -> i32 {
         position_of_game_path(&self.entries, &path.to_string())
     }
@@ -1659,6 +1674,27 @@ fn entry_system_id(entry: &BrowseEntry) -> String {
         return entry.system_id.clone();
     }
     entry.system_ids.first().cloned().unwrap_or_default()
+}
+
+/// A `root` row that addresses a real filesystem folder — one of a system's
+/// configured game directories, the shape Core returns when it hasn't merged
+/// them (`rootView: "contents"` needs a Core new enough, an empty path, and
+/// exactly one system; see `merged_root_view`).
+///
+/// Exists so the games context menu can offer "Add to Hub" on those rows. It
+/// used to refuse every `root`, on the stated grounds that they were a
+/// `..`/scope pseudo-entry — but nothing synthesizes such a row; Back is the
+/// cancel button, not a list entry. Every `root` here is a real, browsable
+/// Core route, and refusing them is why a system with several game folders
+/// could not have those folders pinned.
+///
+/// Virtual-scheme routes are deliberately excluded. Core never merges them
+/// (`MiSTer` Arcade's `mame-arcade://` is the in-tree example) and they are
+/// still prepended to merged listings, but a Hub `folder` tile is addressed
+/// by filesystem path — pointing one at a scheme URL is untried, and the
+/// reported gap was about real directories.
+fn is_filesystem_root_entry(entry: &BrowseEntry) -> bool {
+    entry.entry_type == "root" && !entry.path.is_empty() && !entry.path.contains("://")
 }
 
 fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
@@ -3735,13 +3771,14 @@ mod tests {
         cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
         detail_cover_key_for_entry, detail_image_keys_from_meta, detail_tags_from_tags,
         display_name, display_title_for_entry, entry_system_id, favorites_tags,
-        games_random_launch_text, initial_row_replacement, is_media_capable_entry,
-        is_strict_ancestor_path, jump_fetch_limit, media_capable_directory_browse_params,
-        media_key_for, meta_cache_key_for_entry, meta_params_for_entry, ordered_detail_image_keys,
-        position_of_game_path, prefetch_around_plan, prefetch_cursor_window_plan, project_status,
-        result_total_dirs, root_distinguishers, run_text_for_entry,
-        seeded_refetch_pagination_state, singleton_directory_needs_launch_resolution,
-        transform_entries, InitialAction, InitialRowReplacement, Projection,
+        games_random_launch_text, initial_row_replacement, is_filesystem_root_entry,
+        is_media_capable_entry, is_strict_ancestor_path, jump_fetch_limit,
+        media_capable_directory_browse_params, media_key_for, meta_cache_key_for_entry,
+        meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
+        prefetch_around_plan, prefetch_cursor_window_plan, project_status, result_total_dirs,
+        root_distinguishers, run_text_for_entry, seeded_refetch_pagination_state,
+        singleton_directory_needs_launch_resolution, transform_entries, InitialAction,
+        InitialRowReplacement, Projection,
     };
     use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -4193,6 +4230,41 @@ mod tests {
     fn display_title_falls_back_to_file_stem_when_name_empty() {
         let entry = media("", "/roms/PSX/D (Disc 2).cue", "PSX");
         assert_eq!(display_title_for_entry(&entry).as_ref(), "D (Disc 2)");
+    }
+
+    /// The games context menu refused every `root` row, so a system with
+    /// several configured game folders had no way to pin any of them. The
+    /// stated reason was that roots were a `..`/scope pseudo-entry; nothing
+    /// creates such a row. These pin down which roots are now eligible.
+    #[test]
+    fn filesystem_roots_are_pinnable_but_scheme_routes_are_not() {
+        assert!(is_filesystem_root_entry(&root(
+            "MS-DOS",
+            "/media/fat/games/AO486",
+            "MSDOS"
+        )));
+        assert!(is_filesystem_root_entry(&root(
+            "MS-DOS",
+            "/media/fat/games/_DOS Games",
+            "MSDOS"
+        )));
+        // Virtual-scheme routes: Core never merges these and they are still
+        // prepended to a merged listing, but a Hub folder tile is addressed
+        // by filesystem path, so there is nothing to pin.
+        assert!(!is_filesystem_root_entry(&root(
+            "Arcade",
+            "mame-arcade://",
+            "Arcade"
+        )));
+        // An empty path is the shape `dedup_roots_drop_ancestors` already
+        // guards against; it addresses nothing.
+        assert!(!is_filesystem_root_entry(&root("Empty", "", "NES")));
+        // Only `root` rows -- a directory takes the existing branch, and a
+        // media row is never a folder.
+        assert!(!is_filesystem_root_entry(&folder(
+            "Sub",
+            "/media/fat/games/NES/Sub"
+        )));
     }
 
     #[test]

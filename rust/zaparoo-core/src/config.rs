@@ -66,6 +66,8 @@ pub struct SettingsConfig {
     pub favorites_sort: Option<String>,
     pub system_logo_style: Option<String>,
     pub color_scheme: Option<String>,
+    pub color_intensity: Option<String>,
+    pub metadata_scraper: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
     pub reduce_motion: Option<bool>,
@@ -107,6 +109,8 @@ pub struct SettingsMirror<'a> {
     pub games_browse_layout: &'a str,
     pub system_logo_style: &'a str,
     pub color_scheme: &'a str,
+    pub color_intensity: &'a str,
+    pub metadata_scraper: &'a str,
     pub button_layout: &'a str,
     pub mouse_enabled: bool,
     pub reduce_motion: bool,
@@ -208,6 +212,8 @@ struct RawSettings {
     favorites_sort: Option<String>,
     system_logo_style: Option<String>,
     color_scheme: Option<String>,
+    color_intensity: Option<String>,
+    metadata_scraper: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
     reduce_motion: Option<bool>,
@@ -350,6 +356,8 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         favorites_sort: trim_opt(raw.favorites_sort),
         system_logo_style: trim_opt(raw.system_logo_style),
         color_scheme: trim_opt(raw.color_scheme),
+        color_intensity: trim_opt(raw.color_intensity),
+        metadata_scraper: trim_opt(raw.metadata_scraper),
         button_layout: trim_opt(raw.button_layout),
         mouse_enabled: raw.mouse_enabled,
         reduce_motion: raw.reduce_motion,
@@ -516,6 +524,8 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         mirror.system_logo_style.trim(),
     );
     set_str(settings, "color_scheme", mirror.color_scheme.trim());
+    set_str(settings, "color_intensity", mirror.color_intensity.trim());
+    set_str(settings, "metadata_scraper", mirror.metadata_scraper.trim());
     set_str(settings, "button_layout", mirror.button_layout.trim());
     set_bool(settings, "mouse_enabled", mirror.mouse_enabled);
     set_bool(settings, "reduce_motion", mirror.reduce_motion);
@@ -769,6 +779,8 @@ mod tests {
             games_browse_layout: "grid",
             system_logo_style: "tinted",
             color_scheme: "zaparoo-dark",
+            color_intensity: "subtle",
+            metadata_scraper: "gamelist.xml",
             button_layout: "a",
             mouse_enabled: true,
             reduce_motion: false,
@@ -1300,6 +1312,8 @@ mod tests {
                 games_browse_layout: "grid",
                 system_logo_style: "color",
                 color_scheme: "classic-purple",
+                color_intensity: "subtle",
+                metadata_scraper: "gamelist.xml",
                 button_layout: "b",
                 mouse_enabled: false,
                 reduce_motion: true,
@@ -1362,6 +1376,8 @@ mod tests {
                 games_browse_layout: "grid",
                 system_logo_style: "tinted",
                 color_scheme: "zaparoo-dark",
+                color_intensity: "subtle",
+                metadata_scraper: "gamelist.xml",
                 button_layout: "a",
                 mouse_enabled: true,
                 reduce_motion: false,
@@ -1415,6 +1431,8 @@ mod tests {
             games_browse_layout: "list",
             system_logo_style: "color",
             color_scheme: "classic-purple",
+            color_intensity: "subtle",
+            metadata_scraper: "gamelist.xml",
             button_layout: "c",
             mouse_enabled: false,
             reduce_motion: false,

@@ -61,6 +61,11 @@ Item {
     property var contextMenuEnabledAt: null
     property var restoreSelectionPath: null
     property var persistSelectionPath: null
+    // Counterpart to `persistSelectionPath` for screens that debounce their
+    // writes: drop anything already scheduled without committing it. Called
+    // when a model replacement starts, where the grid's index-0 snap is
+    // bookkeeping rather than a real selection -- see `_replacingModel`.
+    property var discardSelectionPersist: null
     property var topStripTitleProvider: null
     property var topStripCurrentPageProvider: null
     property var topStripTotalPagesProvider: null
@@ -135,6 +140,13 @@ Item {
     property bool showTopStrip: true
     property bool activeLabelAtBottom: false
     property bool suppressSelectionPersist: false
+    // True for the duration of `prepareForModelReplacement()`. That call snaps
+    // `currentIndex` to 0 synchronously, which fires `onCurrentIndexChanged` ->
+    // `_persistFocus()` while the model still holds the OUTGOING rows -- so the
+    // path read back is the previous scope's row 0, aimed at the incoming
+    // scope's slot. `suppressSelectionPersist` can't cover this: the router
+    // only sets it once rows have landed, several frames later.
+    property bool _replacingModel: false
     property int gridBottomMargin: Sizing.pctH(15)
     property int activeLabelBottomMargin: 0
     property int activeLabelHeight: Sizing.pctH(7)
@@ -237,8 +249,18 @@ Item {
         target: root.mediaModel
 
         function onLoadingChanged(): void {
-            if (root.mediaModel && root.mediaModel.loading)
-                mediaGrid.prepareForModelReplacement();
+            if (!root.mediaModel || !root.mediaModel.loading)
+                return;
+            // Drop any write already scheduled for the outgoing scope's slot
+            // before the index snap can queue another one. Both halves matter:
+            // a debounce armed by the user's last move is still in flight on
+            // the Accept/Cancel paths that don't flush, and the snap itself
+            // would arm a fresh one from stale rows.
+            if (typeof root.discardSelectionPersist === "function")
+                root.discardSelectionPersist();
+            root._replacingModel = true;
+            mediaGrid.prepareForModelReplacement();
+            root._replacingModel = false;
         }
     }
 
@@ -318,6 +340,16 @@ Item {
     function _defaultActiveLabelTags(): string {
         if (mediaGrid.itemCount <= 0 || root.mediaModel === null)
             return "";
+        // Same dependency the text provider needs and for the same reason (see
+        // GamesScreen's `activeLabelTextProvider`): all three lookups below are
+        // #[qinvokable] methods, so a folder swap that replaces rows in place
+        // and lands on the same index with the same count changes nothing this
+        // binding tracks. The name half was fixed and this half was not, which
+        // left the new folder's name rendering beside the old folder's item
+        // count. Guarded because only GamesModel carries a revision counter --
+        // Favorites/Recents and the plain ListModels in tests do not.
+        if (root.mediaModel.rows_revision !== undefined)
+            void root.mediaModel.rows_revision;
         const index = mediaGrid.currentIndex;
         const tags = typeof root.mediaModel.disambiguating_tags_at === "function" ? root.mediaModel.disambiguating_tags_at(index) : "";
         const entryType = typeof root.mediaModel.entry_type_at === "function" ? root.mediaModel.entry_type_at(index) : "media";
@@ -360,7 +392,7 @@ Item {
     }
 
     function _persistFocus(): void {
-        if (root.suppressSelectionPersist || root.mediaModel === null)
+        if (root.suppressSelectionPersist || root._replacingModel || root.mediaModel === null)
             return;
         const idx = mediaGrid.currentIndex;
         if (idx < 0)

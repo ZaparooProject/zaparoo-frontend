@@ -46,7 +46,11 @@ Item {
     property bool open: false
     // Written back directly by Main.qml's list-picker accept handler
     // (`fieldId === "scraperChoice"`) rather than a Browse.Settings
-    // setter — the choice isn't persisted until Start is pressed.
+    // setter — the choice isn't persisted until Start is pressed, at which
+    // point `start_scrape_with_scraper` records it (see media_status.rs's
+    // `persist_selected_scraper_id`). Seeded from that persisted value below
+    // rather than defaulting to the first scraper Core lists, so reopening
+    // this modal shows the scraper actually in force.
     property string selectedScraperId: ""
     // "*" (all systems), "cat:<Category>", or a single system id. Same
     // sentinel convention as IndexSetupModal — see Main.qml's
@@ -114,11 +118,28 @@ Item {
         modal.selectedSystemScope = modal.initialSystemScope !== "" ? modal.initialSystemScope : "*";
         modal.rescrapeExisting = false;
         modal._pressed = false;
+        // Re-seed from the scraper actually in force on every open, so a pick
+        // made and then abandoned (changed the row, then backed out without
+        // pressing Start) doesn't persist visually as though it had applied.
+        // Falls through to the Connections below when the list hasn't landed.
+        const ids = Browse.MediaStatus.scraper_ids;
+        const persisted = Browse.Settings.current_metadata_scraper;
+        if (ids.length > 0 && ids.indexOf(persisted) >= 0)
+            modal.selectedScraperId = persisted;
     }
 
     // Seed the selection once the scraper list lands, if nothing is
     // chosen yet (first open) or the previous choice fell out of the
     // list (a stale id from a prior session/Core reconfiguration).
+    //
+    // Preference order: whatever is already selected in this open modal, then
+    // the persisted choice, then Core's first scraper. The middle rung is
+    // what makes the persisted id user-visible — without it the modal would
+    // keep proposing `ids[0]` while a different scraper was the one actually
+    // running. This is also the only place a stale persisted id gets
+    // reconciled: `normalize_metadata_scraper` deliberately can't check
+    // membership, because Core reports its scrapers at runtime and this list
+    // is the only view of them.
     Connections {
         target: Browse.MediaStatus
         function onScrapers_loadingChanged(): void {
@@ -127,8 +148,10 @@ Item {
             const ids = Browse.MediaStatus.scraper_ids;
             if (ids.length === 0)
                 return;
-            if (modal.selectedScraperId === "" || ids.indexOf(modal.selectedScraperId) < 0)
-                modal.selectedScraperId = ids[0];
+            if (modal.selectedScraperId !== "" && ids.indexOf(modal.selectedScraperId) >= 0)
+                return;
+            const persisted = Browse.Settings.current_metadata_scraper;
+            modal.selectedScraperId = ids.indexOf(persisted) >= 0 ? persisted : ids[0];
         }
     }
 

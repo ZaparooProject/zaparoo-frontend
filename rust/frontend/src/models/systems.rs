@@ -1294,6 +1294,36 @@ mod tests {
         );
     }
 
+    /// The Games header used to resolve its title through
+    /// `index_for_system_id` + `system_name_at`, which only search the rows of
+    /// the CURRENTLY loaded category — so a system reached from another
+    /// category (a Hub shortcut, a startup restore) missed and the header fell
+    /// back to the raw Core id: "Genesis" under a Systems grid reading "Mega
+    /// Drive". This lookup is category-independent by construction; assert it,
+    /// since the whole point of moving the header onto it is that a catalog
+    /// entry resolves no matter which category is projected.
+    #[test]
+    fn system_name_for_id_is_independent_of_the_projected_category() {
+        let catalog = catalog_with(vec![
+            sys("Genesis", "Genesis", "Console"),
+            sys("Arcade", "Arcade", "Arcade"),
+        ]);
+        // Same catalog, same id, both regions — no category is passed in at
+        // all, which is exactly the property the header now relies on.
+        assert_eq!(
+            system_name_for_id_in(Some(&catalog), "Genesis", Region::Us),
+            "Genesis"
+        );
+        assert_eq!(
+            system_name_for_id_in(Some(&catalog), "Genesis", Region::Eu),
+            "Mega Drive"
+        );
+        assert_eq!(
+            system_name_for_id_in(Some(&catalog), "Genesis", Region::Jp),
+            "Mega Drive"
+        );
+    }
+
     #[test]
     fn system_name_for_id_empty_when_not_found_or_no_catalog() {
         let catalog = catalog_with(vec![sys("nes", "NES", "Console")]);

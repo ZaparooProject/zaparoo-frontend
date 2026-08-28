@@ -36,6 +36,7 @@ set(_TST_UI_QML_FILES
     tst_browse_detail_pane.qml
     tst_media_list_titles.qml
     tst_media_list_paging.qml
+    tst_media_list_persist.qml
     tst_list_picker_modal.qml
     tst_letter_jump_modal.qml
     tst_settings_field_control.qml

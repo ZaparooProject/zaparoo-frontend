@@ -26,6 +26,7 @@
 
 use crate::media_image_cache::global_media_image_cache;
 use crate::models::action_error::report_action_error;
+use crate::models::with_persist_read;
 use cxx_qt::{Initialize, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use std::pin::Pin;
@@ -242,6 +243,48 @@ struct Snapshot {
     scrape_current_skipped: i32,
 }
 
+/// The scraper every metadata import runs with — the one last chosen in
+/// `ScrapeSetupModal`, or `gamelist.xml` if nothing has been.
+///
+/// Read from persisted state rather than from `Browse.Settings` because these
+/// call sites are already off the Qt thread by the time they need it, and the
+/// persisted snapshot is the same value the settings singleton mirrors.
+/// Never returns empty: Core validates `scraperId` as `min=1` and has no
+/// server-side "default" alias, so an empty id is a guaranteed error.
+fn selected_scraper_id() -> String {
+    let id = with_persist_read(|s| s.settings.metadata_scraper.clone());
+    let trimmed = id.trim();
+    if trimmed.is_empty() {
+        "gamelist.xml".to_owned()
+    } else {
+        trimmed.to_owned()
+    }
+}
+
+/// Record the scraper chosen in `ScrapeSetupModal` so later context-menu
+/// scrapes use it. Writes the persisted snapshot directly rather than going
+/// through `Settings::set_metadata_scraper`: this runs from the modal's own
+/// invokable, and routing back through the settings singleton would mean a
+/// second Qt-thread hop for a value the singleton re-reads on load anyway.
+///
+/// Mirrored into `frontend.toml` as well, not just `state.toml`. This is a
+/// durable preference, and on `MiSTer` the state file lives in `/tmp` — a
+/// state-only write would silently lose the choice on the next boot, which
+/// is the exact behavior this whole change exists to remove.
+fn persist_selected_scraper_id(scraper_id: &str) {
+    let trimmed = scraper_id.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let snapshot = crate::models::settings::persist_settings(|s| {
+        trimmed.clone_into(&mut s.metadata_scraper);
+    });
+    crate::models::settings::mirror_settings_to_config(
+        &zaparoo_core::platform_paths::config_file_path(),
+        &snapshot.settings,
+    );
+}
+
 fn project(state: &MediaStatusState) -> Snapshot {
     Snapshot {
         seeded: state.seeded,
@@ -344,17 +387,13 @@ impl ffi::MediaStatus {
     fn start_scrape(self: Pin<&mut Self>, force: bool) {
         let resource = crate::models::global_store().media_status();
         crate::models::global_handle().spawn(async move {
-            // ES gamelist.xml across every indexed system. `force` is
-            // a one-shot UI toggle for re-scraping existing metadata.
-            // Core ships this scraper in-tree (see `pkg/api/server.go`
-            // wiring `gamelistxml.NewGamelistXMLScraper`) and validates
-            // `scraperId` as `min=1` — there is no server-side "default"
-            // alias, so the id has to be a real scraper. An empty
-            // `systems` runs every system the scraper supports
-            // (gamelist.xml supports all). Picking a different scraper
-            // or a system subset is a future chooser-UI job.
+            // `force` is a one-shot UI toggle for re-scraping existing
+            // metadata. Core validates `scraperId` as `min=1` — there is no
+            // server-side "default" alias, so the id has to be a real
+            // scraper; `selected_scraper_id` guarantees a non-empty one. An
+            // empty `systems` runs every system the scraper supports.
             let params = MediaScrapeParams {
-                scraper_id: "gamelist.xml".into(),
+                scraper_id: selected_scraper_id(),
                 systems: Vec::new(),
                 force,
             };
@@ -374,7 +413,7 @@ impl ffi::MediaStatus {
         let resource = crate::models::global_store().media_status();
         crate::models::global_handle().spawn(async move {
             let params = MediaScrapeParams {
-                scraper_id: "gamelist.xml".into(),
+                scraper_id: selected_scraper_id(),
                 systems: vec![system_id],
                 force: false,
             };
@@ -424,7 +463,7 @@ impl ffi::MediaStatus {
         let resource = crate::models::global_store().media_status();
         crate::models::global_handle().spawn(async move {
             let params = MediaScrapeParams {
-                scraper_id: "gamelist.xml".into(),
+                scraper_id: selected_scraper_id(),
                 systems: ids,
                 force: false,
             };
@@ -491,6 +530,13 @@ impl ffi::MediaStatus {
             warn!("media_status: start_scrape_with_scraper ignored empty scraper_id");
             return;
         }
+        // Remember the pick. Every other scrape entry point (the full run and
+        // the per-system/per-category context-menu actions) reads it back
+        // through `selected_scraper_id`, so choosing a scraper here once means
+        // choosing it for good. They used to hardcode `gamelist.xml`, which
+        // silently discarded the choice on every later "Get metadata" press
+        // and read as "that scraper doesn't work".
+        persist_selected_scraper_id(&scraper_id);
         let systems: Vec<String> = systems.iter().map(String::from).collect();
         let resource = crate::models::global_store().media_status();
         crate::models::global_handle().spawn(async move {

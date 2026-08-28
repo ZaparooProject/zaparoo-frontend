@@ -178,6 +178,81 @@ TestCase {
         }
     }
 
+    // "Color intensity" ships defaulted to Subtle precisely so that adding
+    // the setting changes nothing for an install that never touches it. That
+    // promise is only worth anything if it's checked: every role, every
+    // preset, byte for byte against the no-argument call every other test
+    // here (and Theme, before the setting existed) makes.
+    function test_subtle_intensity_reproduces_the_shipped_palette(): void {
+        for (let i = 0; i < ColorSchemes.ids.length; i++) {
+            const id = ColorSchemes.ids[i];
+            const shipped = ColorSchemes.palette(id);
+            const subtle = ColorSchemes.palette(id, "subtle");
+            for (let r = 0; r < requiredRoles.length; r++) {
+                const role = requiredRoles[r];
+                compare(Qt.color(subtle[role]), Qt.color(shipped[role]), id + " " + role + " must be unchanged at Subtle");
+            }
+        }
+    }
+
+    // An unknown or empty value must land on Subtle, not on a broken palette
+    // — a state.toml hand-edited to a typo, or written by a newer build with
+    // a third intensity, still has to render.
+    function test_unknown_intensity_falls_back_to_subtle(): void {
+        const subtle = ColorSchemes.palette("nes", "subtle");
+        compare(Qt.color(ColorSchemes.palette("nes", "not-an-intensity").tileEdge), Qt.color(subtle.tileEdge));
+        compare(Qt.color(ColorSchemes.palette("nes", "").tileEdge), Qt.color(subtle.tileEdge));
+        compare(ColorSchemes.defaultIntensity, "subtle");
+    }
+
+    // The whole point of Vivid is that the accent actually reaches the
+    // resting chrome, so assert it moved rather than only that it stayed
+    // legal. Measured on the high-chroma presets, which are the ones the
+    // chroma cap binds hardest and the ones testers picked expecting vivid
+    // color ("I liked the red underlines on the NES theme").
+    function test_vivid_intensity_raises_ambient_accent(): void {
+        const presets = ["nes", "virtual-boy", "game-boy", "synthwave-84"];
+        for (let i = 0; i < presets.length; i++) {
+            const id = presets[i];
+            const subtle = ColorSchemes.palette(id, "subtle");
+            const vivid = ColorSchemes.palette(id, "vivid");
+            verify(_chroma(vivid.tileEdge) > _chroma(subtle.tileEdge), id + " vivid tile edge must be more chromatic than subtle");
+            verify(_chroma(vivid.controlEdge) > _chroma(subtle.controlEdge), id + " vivid control edge must be more chromatic than subtle");
+            // Surfaces are NOT part of the setting -- see `_intensities`.
+            // Asserted rather than left implicit so a future attempt to
+            // scale the ladder cast has to come back through that comment.
+            compare(Qt.color(vivid.surfaceCard), Qt.color(subtle.surfaceCard), id + " card must not change with intensity");
+            compare(Qt.color(vivid.textVariant), Qt.color(subtle.textVariant), id + " variant text must not change with intensity");
+            compare(Qt.color(vivid.accent), Qt.color(subtle.accent), id + " accent must not change with intensity");
+            compare(Qt.color(vivid.marker), Qt.color(subtle.marker), id + " marker must not change with intensity");
+        }
+    }
+
+    // Vivid scales the inputs to the same solvers, so every floor the shipped
+    // palette clears must still clear. Mirrors the assertions in
+    // `test_edge_reads_as_a_lit_bevel` and
+    // `test_presets_keep_content_and_focus_legible`, run against the other
+    // intensity — a scale factor tuned too far up is exactly the regression
+    // this catches, and it would otherwise ship invisible because every other
+    // test in this file only ever exercises Subtle.
+    function test_vivid_intensity_holds_every_contrast_floor(): void {
+        for (let i = 0; i < ColorSchemes.ids.length; i++) {
+            const id = ColorSchemes.ids[i];
+            const palette = ColorSchemes.palette(id, "vivid");
+            verify(_contrastRatio(palette.tileEdge, palette.surfaceCard) >= 1.5, id + " vivid tile edge/card separation");
+            verify(_contrastRatio(palette.controlEdge, palette.surfaceCard) >= 1.5, id + " vivid control edge/card separation");
+            verify(_chroma(palette.tileEdge) > _chroma(palette.surfaceCard), id + " vivid tile edge must be more chromatic than the card");
+            verify(_chroma(palette.controlEdge) > _chroma(palette.surfaceCard), id + " vivid control edge must be more chromatic than the card");
+            // Surfaces do not scale, so these should be untouched — kept
+            // as a guardrail against a change that starts moving them.
+            verify(_contrastRatio(palette.textPrimary, palette.surfaceCard) >= 4.5, id + " vivid primary text/card");
+            verify(_contrastRatio(palette.textLabel, palette.surfaceCard) >= 3.0, id + " vivid label/card");
+            verify(_contrastRatio(palette.textVariant, palette.surfaceCard) >= 3.0, id + " vivid variant/card");
+            verify(_contrastRatio(palette.textPrimary, palette.bgPanel) >= 4.5, id + " vivid primary text/panel");
+            verify(_contrastRatio(palette.borderMid, palette.surfaceCard) >= 1.2, id + " vivid borderMid/card");
+        }
+    }
+
     // The focused logo ramp is a gradient map, so its span is what turns an
     // antialiased glyph boundary into a rim light. Collapse the span and tinted
     // artwork goes flat. Measured in OKLCh L rather than Rec.709 relative
