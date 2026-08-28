@@ -62,4 +62,25 @@ TestCase {
         compare(up.visible, false);
         compare(down.visible, false);
     }
+
+    // Both chevrons hang OUTSIDE the flickable — the up one above
+    // `flick.top`, the down one below `flick.bottom` — so each needs its own
+    // height plus its margin of clear space on that side. The up chevron's gap
+    // was `pctH(2)` against a `pctH(3.5)` requirement, so it drew through the
+    // title divider whenever the body scrolled. Anchors resolve regardless of
+    // `visible`, so this is checkable without driving Browse.GameInfo's live
+    // data, matching how the rest of this file works.
+    function test_scroll_chevrons_do_not_overlap_their_neighbours(): void {
+        const up = findChild(modal, "gameInfoScrollUp");
+        const down = findChild(modal, "gameInfoScrollDown");
+        const divider = findChild(modal, "gameInfoTitleDivider");
+        verify(up !== null);
+        verify(down !== null);
+        verify(divider !== null, "title divider needs an objectName for this assertion");
+        verify(up.height > 0, "chevron must have resolved geometry");
+        verify(up.y >= divider.y + divider.height, "up chevron (" + up.y + ") must clear the title divider (" + (divider.y + divider.height) + ")");
+        // The down chevron has the room already; assert it so a future change
+        // to the bottom margin cannot quietly take it away.
+        verify(down.y + down.height <= modal.height, "down chevron must stay inside the card");
+    }
 }

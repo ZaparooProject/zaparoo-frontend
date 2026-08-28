@@ -136,6 +136,7 @@ Item {
             // of a bare gap.
             Rectangle {
                 id: titleDivider
+                objectName: "gameInfoTitleDivider"
                 anchors.left: parent.left
                 anchors.leftMargin: Sizing.pctW(4)
                 anchors.right: parent.right
@@ -179,7 +180,15 @@ Item {
                 anchors.right: parent.right
                 anchors.rightMargin: Sizing.pctW(4)
                 anchors.top: titleDivider.bottom
-                anchors.topMargin: Sizing.pctH(2)
+                // Must clear the up chevron, which hangs ABOVE this anchor
+                // (`gameInfoScrollUp` is `anchors.bottom: flick.top`): it needs
+                // its own `pctH(3)` height plus its `pctH(0.5)` margin, so a
+                // gap under `pctH(3.5)` puts it through the title divider. This
+                // was `pctH(2)`, which overlapped by `pctH(1.5)` whenever the
+                // body scrolled. Matches the bottom margin below, where the
+                // down chevron has always had the room it needs -- keep the two
+                // in step so the chevrons sit symmetrically.
+                anchors.topMargin: Sizing.pctH(4)
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: Sizing.pctH(4)
                 contentWidth: width

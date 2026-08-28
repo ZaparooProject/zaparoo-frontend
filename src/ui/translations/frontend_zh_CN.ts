@@ -389,22 +389,22 @@ Français - Wilfried</source>
 <context>
     <name>GameInfoModal</name>
     <message>
-        <location filename="../components/GameInfoModal.qml" line="153"/>
+        <location filename="../components/GameInfoModal.qml" line="154"/>
         <source>Loading details…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/GameInfoModal.qml" line="164"/>
+        <location filename="../components/GameInfoModal.qml" line="165"/>
         <source>Could not load details. Check Zaparoo Core and try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/GameInfoModal.qml" line="228"/>
+        <location filename="../components/GameInfoModal.qml" line="237"/>
         <source>Loading image…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/GameInfoModal.qml" line="340"/>
+        <location filename="../components/GameInfoModal.qml" line="349"/>
         <source>Description</source>
         <translation type="unfinished"></translation>
     </message>
