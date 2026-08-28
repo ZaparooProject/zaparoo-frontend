@@ -104,4 +104,4 @@ first.
 
 - Architecture or design questions: open a GitHub Discussion or issue so the
   answer is searchable later.
-- CLA or licensing: [legal@zaparoo.org](mailto:legal@zaparoo.org).
+- CLA or licensing: [legal@zaparoo.com](mailto:legal@zaparoo.com).

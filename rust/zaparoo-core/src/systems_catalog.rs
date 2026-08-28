@@ -23,8 +23,8 @@ impl CatalogData {
     /// launchables feature, a device with no `media.db` still returns
     /// these, so "is the catalog empty?" no longer answers "are there
     /// indexed games?". This count does: it ignores launchables and only
-    /// tallies real, indexed systems. The first-run scan prompt gates on
-    /// it (see `Main.qml` → `_maybeOpenFirstRunIndex`).
+    /// tallies real, indexed systems. The first-run background index
+    /// gates on it (see `Main.qml` → `_shouldStartFirstRunIndex`).
     pub fn indexed_count(&self) -> usize {
         self.systems
             .iter()

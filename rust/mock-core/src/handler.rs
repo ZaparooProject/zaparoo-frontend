@@ -63,6 +63,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
     let outcome: Option<Result<Value, String>> = match req.method.as_str() {
         "systems" => Some(Ok(fixtures::systems_response(&req.params))),
         "launchers" => Some(Ok(fixtures::launchers_response())),
+        "scrapers" => Some(Ok(fixtures::scrapers_response())),
         "settings" => Some(Ok(fixtures::settings_response())),
         "settings.update" => Some(Ok(fixtures::settings_update_response(&req.params))),
         "media.search" => Some(Ok(fixtures::media_search_response(&req.params))),

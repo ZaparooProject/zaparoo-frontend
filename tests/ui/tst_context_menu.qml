@@ -267,8 +267,8 @@ TestCase {
         compare(viewport.contentY, 0, "wrapping to the first entry must scroll back to the top");
     }
 
-    // A menu within the documented 3-8 cap must render exactly as it did
-    // before `rowViewport` existed: unscrollable, contentY pinned at 0.
+    // A menu short enough to fit must render exactly as it did before
+    // `rowViewport` existed: unscrollable, contentY pinned at 0.
     function test_few_entries_never_scrolls(): void {
         menu.entries = _manyEntries(3);
         menu.currentIndex = 0;

@@ -1954,11 +1954,13 @@ MainLayout {
             if (actionId === "uploadLog")
                 root.openLogUploadModal();
             else if (actionId === "runScraper")
-                root.openScrapeSetupModal();
+                root.openScrapeSetupModal(root._systemScopeAll);
             else if (actionId === "updateMediaDb")
                 root.openIndexSetupModal();
             else if (actionId === "aboutLicense")
                 root._navigateToAbout();
+            else if (actionId === "documentation")
+                root.openDocumentationQrModal();
             else if (actionId === "crtEnable" || actionId === "crtDisable")
                 root.stageCrtToggle(actionId === "crtEnable");
             else if (actionId === "debugLoggingEnable" || actionId === "debugLoggingDisable")
@@ -2183,7 +2185,7 @@ MainLayout {
                     label: qsTr("Update media database")
                 }, {
                     id: "scrape_system",
-                    label: qsTr("Scrape metadata")
+                    label: qsTr("Get metadata")
                 });
             }
             return entries;
@@ -2218,7 +2220,7 @@ MainLayout {
                     label: qsTr("Update media database")
                 }, {
                     id: "scrape_category",
-                    label: qsTr("Scrape metadata")
+                    label: qsTr("Get metadata")
                 });
             }
             return entries;
@@ -2281,6 +2283,15 @@ MainLayout {
                 id: "add_to_hub",
                 label: qsTr("Add to Hub")
             });
+            // Maintenance last, per docs/content-style.md's ordering rule.
+            // A coverless game is the moment a user goes looking for
+            // artwork, and this is the menu they open to look -- see the
+            // scrape_game dispatch for why it scopes to the system.
+            if (!(Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping))
+                entries.push({
+                    id: "scrape_game",
+                    label: qsTr("Get metadata")
+                });
             return entries;
         }
         if (owner === "games" || owner === "favorites") {
@@ -2349,6 +2360,12 @@ MainLayout {
                 id: "add_to_hub",
                 label: qsTr("Add to Hub")
             });
+            // See the "recents" branch above.
+            if (!(Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping))
+                entries.push({
+                    id: "scrape_game",
+                    label: qsTr("Get metadata")
+                });
             return entries;
         }
         return [];
@@ -2724,7 +2741,7 @@ MainLayout {
         } else if (id === "scrape_system") {
             const systemId = Browse.SystemsModel.system_id_at(targetIndex);
             if (systemId !== "")
-                Browse.MediaStatus.start_scrape_for_system(systemId);
+                root.openScrapeSetupModal(systemId);
         } else if (id === "toggle_hide_system") {
             const systemId = Browse.SystemsModel.system_id_at(targetIndex);
             if (systemId !== "") {
@@ -2743,11 +2760,17 @@ MainLayout {
             }
         } else if (id === "scrape_category") {
             const categoryName = Browse.CategoriesModel.category_at(targetIndex);
-            if (categoryName !== "") {
-                const systemIds = Browse.SystemsModel.system_ids_for_category(categoryName);
-                if (systemIds.length > 0)
-                    Browse.MediaStatus.start_scrape_for_systems(systemIds);
-            }
+            if (categoryName !== "")
+                root.openScrapeSetupModal("cat:" + categoryName);
+        } else if (id === "scrape_game") {
+            // Core scrapes by system, not by game (MediaScrapeParams is
+            // `{ scraperId, systems, force }`), so the best we can scope
+            // to today is the game's own system. Routing through the
+            // setup modal means that wider scope is visible in the
+            // Systems row instead of happening silently. Narrows to the
+            // game once Core grows a media/path filter.
+            const gameSystemId = owner === "favorites" ? Browse.FavoritesModel.system_id_at(targetIndex) : (owner === "recents" ? Browse.RecentsModel.system_id_at(targetIndex) : Browse.GamesModel.system_id_at(targetIndex));
+            root.openScrapeSetupModal(gameSystemId !== "" ? gameSystemId : root._systemScopeAll);
         } else if (id === "launch_game") {
             if (owner === "favorites")
                 Browse.FavoritesModel.launch_at(targetIndex);
@@ -2781,7 +2804,7 @@ MainLayout {
             if (text !== "") {
                 Browse.QrCode.generate(root._buildQrPayload(text));
                 if (Browse.QrCode.size > 0)
-                    root.openQrCodeModal();
+                    root.openQrCodeModal(qsTr("Write with App"), qsTr("Scan this code with the Zaparoo App to write this game to a Zaparoo token."), "");
             }
         } else if (id === "discover_unavailable" || id === "discover_loading") {
             return;
@@ -2896,11 +2919,31 @@ MainLayout {
         }
     }
 
-    function openQrCodeModal(): void {
+    // Callers own the payload: generate into the shared Browse.QrCode slot
+    // and check `size > 0` first, then pass the copy that describes what
+    // was generated. `urlText` is the readable fallback for a web
+    // destination — a QR is not scannable at 240p over composite, so
+    // anywhere the code points at a page the URL has to be legible too.
+    function openQrCodeModal(title: string, instruction: string, urlText: string): void {
+        root.qrCodeModalTitle = title;
+        root.qrCodeModalInstruction = instruction;
+        root.qrCodeModalUrlText = urlText;
         root._requestModal(root.modalQrCode);
         root.qrCodeModalVisible = true;
         if (ScreenManager.topModal !== root.modalQrCode)
             ScreenManager.pushModal(root.modalQrCode);
+    }
+
+    // Docs pointer from Settings > About. Deep-links the Frontend guide
+    // rather than the site root, per the "link where it promises to go"
+    // rule; the scrape modal carries its own narrower link to the
+    // artwork page.
+    readonly property string _docsUrl: "https://zaparoo.org/docs/frontend/"
+
+    function openDocumentationQrModal(): void {
+        Browse.QrCode.generate(root._docsUrl);
+        if (Browse.QrCode.size > 0)
+            root.openQrCodeModal(qsTr("Documentation"), qsTr("Scan this code to open the Zaparoo Frontend guide on your phone."), "zaparoo.org/docs/frontend");
     }
 
     function closeQrCodeModal(): void {
@@ -3107,11 +3150,11 @@ MainLayout {
             title = qsTr("Media update failed");
             body = qsTr("Could not start the media database update. Check Zaparoo Core and try again.");
         } else if (kind === "media_scrape") {
-            title = qsTr("Metadata scrape failed");
-            body = qsTr("Could not start metadata scraping. Check Zaparoo Core and try again.");
+            title = qsTr("Get metadata failed");
+            body = qsTr("Could not start getting metadata. Check Zaparoo Core and try again.");
         } else if (kind === "media_scrapers") {
-            title = qsTr("Scraper list unavailable");
-            body = qsTr("Could not load the list of scrapers. Check Zaparoo Core and try again.");
+            title = qsTr("Source list unavailable");
+            body = qsTr("Could not load the list of metadata sources. Check Zaparoo Core and try again.");
         } else if (kind === "media_cancel") {
             title = qsTr("Cancel failed");
             body = qsTr("Could not cancel the media operation. Check Zaparoo Core and try again.");
@@ -3192,13 +3235,24 @@ MainLayout {
             ScreenManager.popModal();
     }
 
-    // Scrape setup modal lifecycle (round 10). Triggered from the
-    // Settings "Scrape metadata" action when idle; the modal fetches the
-    // scraper list on open via `Browse.MediaStatus.refresh_scrapers()`
-    // and owns its own scraper-choice/re-scrape-toggle state until Start.
-    function openScrapeSetupModal(): void {
+    // "Get metadata" setup modal lifecycle. Every entry point routes here
+    // — the Settings > Library row and the system/category/game
+    // context-menu entries — so the chosen source, scope and replace flag
+    // are always the user's rather than hardcoded. `scope` uses the same
+    // "*"/"cat:<Category>"/<system id> sentinel as
+    // `_buildSystemScopeEntries`; a context-menu caller passes the thing
+    // it was invoked on so the modal opens pre-scoped and the Systems row
+    // shows exactly what is about to run. The modal fetches the source
+    // list on open via `Browse.MediaStatus.refresh_scrapers()`.
+    function openScrapeSetupModal(scope: string): void {
         Browse.MediaStatus.refresh_scrapers();
+        // `_requestModal` activates the Loader, and a sourceComponent
+        // Loader instantiates synchronously, so the item exists by the
+        // next line even on the very first open. Seed the scope before
+        // flipping `visible`, since `onOpenChanged` is what reads it.
         root._requestModal(root.modalScrapeSetup);
+        if (root.scrapeSetupModal !== null)
+            root.scrapeSetupModal.initialSystemScope = scope !== "" ? scope : root._systemScopeAll;
         root.scrapeSetupModalVisible = true;
         if (ScreenManager.topModal !== root.modalScrapeSetup)
             ScreenManager.pushModal(root.modalScrapeSetup);
@@ -3250,7 +3304,7 @@ MainLayout {
                 id: ids[i],
                 label: names[i] !== undefined && names[i] !== "" ? names[i] : ids[i]
             });
-        root.openListPickerModal(qsTr("Scraper"), entries, root.scrapeSetupModal.selectedScraperId, "scraperChoice");
+        root.openListPickerModal(qsTr("Source"), entries, root.scrapeSetupModal.selectedScraperId, "scraperChoice");
     }
 
     onRequestScraperPicker: root.openScraperChoicePicker()

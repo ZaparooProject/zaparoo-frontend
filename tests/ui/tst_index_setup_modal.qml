@@ -95,4 +95,14 @@ TestCase {
         modal.selectedSystemScope = "cat:Console";
         compare(modal._selectedSystemScopeName, qsTr("All %1 systems").arg("Console"));
     }
+
+    // The help bar describes the press, not the feature. Before this
+    // existed neither setup modal had a helpEntries branch at all, so the
+    // bar advertised the Settings screen's rows while a modal owned input.
+    function test_focused_action_label_tracks_the_focused_row(): void {
+        modal.currentIndex = modal._rowSystems;
+        compare(modal.focusedActionLabel, qsTr("Change"));
+        modal.currentIndex = modal._rowStart;
+        compare(modal.focusedActionLabel, qsTr("Start"));
+    }
 }

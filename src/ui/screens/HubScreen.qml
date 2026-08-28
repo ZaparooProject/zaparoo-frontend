@@ -1595,7 +1595,7 @@ Item {
 
     // CategoriesModel has no `loading` qproperty — the catalog is
     // fetched eagerly via bind_to_endpoint!. The brief cold-launch
-    // window where count===0 surfaces as "No categories" is acceptable
+    // window where count===0 surfaces as the empty state is acceptable
     // per the "Loading is brief" locked decision in MVP_PLAN.md.
     ScreenStateOverlay {
         x: pagedGrid.x + Sizing.center(pagedGrid.width, width)
@@ -1606,6 +1606,13 @@ Item {
         loading: false
         errorMessage: Browse.CategoriesModel.error_message ?? ""
         count: Browse.CategoriesModel.loaded ? Browse.CategoriesModel.count : 1
-        emptyText: qsTr("No systems available. Run Update media database from Settings.")
+        // Indexing is background work that starts on its own, so on a first
+        // run this overlay is the only thing on screen until the first
+        // category lands. Saying "nothing here, go fix it" during a scan
+        // that is already running reads as a failure report. Name the
+        // operation the Settings row uses so the first thing a new user
+        // reads teaches the name of the thing they'll later go looking for.
+        emptyText: Browse.MediaStatus.indexing ? qsTr("Updating the media database") : qsTr("No games found yet")
+        emptyDetailText: Browse.MediaStatus.indexing ? qsTr("Your games appear here as Core finds them.") : qsTr("Update media database in Settings > Library.")
     }
 }

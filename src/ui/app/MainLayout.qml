@@ -391,6 +391,12 @@ ApplicationWindow {
     property string actionErrorButtonLabel: qsTr("OK")
     property bool randomFailedModalVisible: false
     property bool gameInfoModalVisible: false
+    // QR modal wording, set by Main.qml before opening. The shared
+    // Browse.QrCode singleton is a single slot, so the payload and the
+    // copy describing it are always set together at the call site.
+    property string qrCodeModalTitle: ""
+    property string qrCodeModalInstruction: ""
+    property string qrCodeModalUrlText: ""
     property bool logUploadModalVisible: false
     property bool scrapeSetupModalVisible: false
     property bool indexSetupModalVisible: false
@@ -985,6 +991,9 @@ ApplicationWindow {
                     QrCodeModal {
                         anchors.fill: parent
                         open: root.qrCodeModalVisible
+                        title: root.qrCodeModalTitle
+                        instructionText: root.qrCodeModalInstruction
+                        urlText: root.qrCodeModalUrlText
                     }
                 }
             }
@@ -1382,6 +1391,29 @@ ApplicationWindow {
                                 label: qsTr("Cancel")
                             }
                         ];
+                    // Below the list-picker branch above deliberately: both
+                    // setup modals stay mounted while their nested picker
+                    // is open, so the picker's own row has to win first.
+                    // Without this branch the bar fell through to the
+                    // Settings screen underneath and advertised its rows
+                    // while a modal owned input.
+                    if (root.indexSetupModalVisible || root.scrapeSetupModalVisible) {
+                        const setupModal = root.indexSetupModalVisible ? root.indexSetupModal : root.scrapeSetupModal;
+                        return [
+                            {
+                                button: "Dpad",
+                                label: qsTr("Move")
+                            },
+                            {
+                                button: "ButtonA",
+                                label: setupModal !== null ? setupModal.focusedActionLabel : qsTr("Select")
+                            },
+                            {
+                                button: "ButtonB",
+                                label: qsTr("Back")
+                            }
+                        ];
+                    }
                     if (root.crtCalibrationModalVisible)
                         return [
                             {

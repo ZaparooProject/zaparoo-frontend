@@ -630,6 +630,42 @@ TestCase {
         compare(main.activeScreen, main.screenHub);
     }
 
+    // Settings > About > Documentation, end to end: the row's Accept has to
+    // reach `openDocumentationQrModal`, the QR has to actually generate for
+    // the docs URL (`size > 0` gates the open, so a generator failure would
+    // look exactly like a dead row), and the modal has to take the stack.
+    // tst_settings_field_control covers the screen's half of this in
+    // isolation; the dead branch that shipped was between the two.
+    function test_documentation_row_opens_the_qr_modal(): void {
+        main.activeScreen = main.screenSettings;
+        main.settingsScreen.optimisticLoading = false;
+        main.settingsScreen._switchPage(main.settingsScreen.pageSupportAbout);
+        const fields = main.settingsScreen.fields;
+        let idx = -1;
+        for (let i = 0; i < fields.length; i++) {
+            if (fields[i].id === "documentation") {
+                idx = i;
+                break;
+            }
+        }
+        verify(idx >= 0, "documentation field not found on the Support & About page");
+        main.settingsScreen.currentIndex = idx;
+
+        main.handleAction("accept");
+        // The dispatch is deferred behind the row's push-in cue.
+        tryCompare(main, "qrCodeModalVisible", true);
+        verify(Browse.QrCode.size > 0, "the docs URL must produce a QR matrix");
+        compare(main.qrCodeModalTitle, "Documentation");
+        compare(main.qrCodeModalUrlText, "zaparoo.org/docs/frontend");
+        compare(ScreenManager.topModal, main.modalQrCode);
+
+        main.handleAction("cancel");
+        compare(main.qrCodeModalVisible, false);
+        compare(ScreenManager.modalCount, 0);
+        main.settingsScreen._switchPage(main.settingsScreen.pageRoot);
+        main.activeScreen = main.screenHub;
+    }
+
     function test_settings_resolution_labels_explain_automatic_and_motion(): void {
         compare(main.settingsScreen._resolutionDisplay(""), "Automatic");
         compare(main.settingsScreen._resolutionDisplay("1280x720"), "1280 × 720");
@@ -1432,22 +1468,22 @@ TestCase {
 
     function test_context_menu_games_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, false, false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub"], "Write to NFC token must be hidden when no reader is reported");
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"], "Write to NFC token must be hidden when no reader is reported");
     }
 
     function test_context_menu_games_with_reader_includes_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, true, false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_favorites_matches_games_media_entries(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, true, true, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     // Round 10: "Discover alt. versions" only appears when the row's own
@@ -1495,12 +1531,12 @@ TestCase {
     // tags (see the doc comment on RecentsModel in recents.rs).
     function test_context_menu_recents_includes_details_and_hub_shortcut(): void {
         const entries = main.buildContextMenuEntries("recents", "", false, false, false, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "qr_code", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_recents_with_reader_includes_write_card(): void {
         const entries = main.buildContextMenuEntries("recents", "", false, true, false, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "write_card", "qr_code", "add_to_hub"]);
+        compare(_idsOf(entries), ["launch_game", "more_info", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_games_favorite_label_toggles(): void {

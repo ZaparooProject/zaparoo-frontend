@@ -63,6 +63,23 @@ pub fn launchers_response() -> Value {
     })
 }
 
+/// Mirrors Core's `scrapers` result (`ScrapersResult` / `ScraperInfo`).
+/// Without this the Source picker in the Get metadata modal is always
+/// empty against mock-core and `refresh_scrapers` errors into the
+/// "Source list unavailable" modal, so the whole metadata flow is
+/// untestable off-device.
+///
+/// `supportedSystems` is left empty, which Core uses to mean "no
+/// restriction" -- the frontend only reads `id` and `name` today.
+pub fn scrapers_response() -> Value {
+    json!({
+        "scrapers": [
+            { "id": "gamelist.xml", "name": "gamelist.xml", "supportedSystems": [] },
+            { "id": "screenscraper", "name": "ScreenScraper", "supportedSystems": [] }
+        ]
+    })
+}
+
 pub fn settings_response() -> Value {
     let defaults = system_defaults()
         .lock()

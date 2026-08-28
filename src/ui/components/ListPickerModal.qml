@@ -127,7 +127,23 @@ Item {
     readonly property int _swatchGap: Sizing.pctW(0.6)
     readonly property int _swatchLabelGap: Sizing.pctW(2)
     readonly property int _swatchBandWidth: modal._hasSwatchPreview ? 3 * modal._swatchBoxSize + 2 * modal._swatchGap : 0
-    readonly property int _desiredPanelWidth: Math.max(modal._widestEntryLabelWidth + (modal._hasSwatchPreview ? modal._swatchBandWidth + modal._swatchLabelGap : 0) + 2 * modal._rowHorizontalPadding, modal._titleWidth) + 2 * modal._contentHorizontalMargin
+    // Breathing room between the widest row's text box and the width the row
+    // actually has, deliberately generous rather than a pixel-exact fit.
+    //
+    // `_widestEntryLabelWidth` and the row's own `_textWidth` below apply the
+    // *same* `Sizing.stroke(2)` hinting allowance, so they cancel: without a
+    // term here the widest entry is handed exactly its measured width and not
+    // one pixel more, and `Text` elides it wherever the hinted integer glyph
+    // advances paint wider than `advanceWidth()`'s fractional, unhinted total.
+    // Chasing that difference exactly is a losing game -- it varies by font
+    // build, weight synthesis and hinting, so a panel tuned until one label
+    // fits just truncates the next label someone adds. An em and a half of
+    // slack scales with the text being measured (the error scales with glyph
+    // size, not with the screen) and costs a slightly wider panel, which is
+    // the cheap side of this trade: a picker is a list of names, and a name
+    // that reads in full matters more than a snug panel.
+    readonly property int _labelClearance: Sizing.px(Sizing.fontBody * 1.5)
+    readonly property int _desiredPanelWidth: Math.max(modal._widestEntryLabelWidth + (modal._hasSwatchPreview ? modal._swatchBandWidth + modal._swatchLabelGap : 0) + 2 * modal._rowHorizontalPadding, modal._titleWidth) + 2 * modal._contentHorizontalMargin + modal._labelClearance
     // Degenerate-case floor only, matching Modal.qml's own floor.
     readonly property int _minPanelWidth: Sizing.pctW(30)
 

@@ -27,6 +27,12 @@ Item {
     property string errorMessage: ""
     property int count: 0
     property string emptyText: qsTr("Nothing here")
+    // Optional second line for the empty state, mirroring `errorText`'s
+    // role for errors. Carbon's empty-state anatomy is title plus a body
+    // that names the next step; a caller that has nothing useful to add
+    // leaves this empty and the detail line stays hidden, exactly as
+    // before this property existed.
+    property string emptyDetailText: ""
     property string loadingText: qsTr("Loading…")
     property string errorText: qsTr("Check Zaparoo Core and try again.")
     property int loadingDelayMs: 300
@@ -86,14 +92,22 @@ Item {
             font.family: Theme.fontUi
             font.pixelSize: Sizing.fontSection
             color: Theme.textPrimary
+            wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
+            // Shares the detail line's measure below. Without a width this
+            // laid out at natural width, so a long title ran off-screen
+            // rather than wrapping -- the Hub's old single-line empty text
+            // overflowed a 320px 240p frame outright.
+            width: Sizing.px(overlay.width * 0.7)
             renderType: Text.NativeRendering
         }
 
         Text {
+            readonly property string _detail: overlay.viewState === "error" ? overlay.errorText : (overlay.viewState === "empty" ? overlay.emptyDetailText : "")
+
             anchors.horizontalCenter: parent.horizontalCenter
-            visible: overlay.viewState === "error" && overlay.errorText !== ""
-            text: overlay.errorText
+            visible: _detail !== ""
+            text: _detail
             font.family: Theme.fontUi
             font.pixelSize: Sizing.fontCaption
             color: Theme.textPrimary

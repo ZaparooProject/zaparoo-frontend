@@ -348,7 +348,7 @@ TestCase {
             "mediaActivityEnabled": true
         });
         verify(line !== null);
-        compare(line._label, "Scraping: Super Nintendo");
+        compare(line._label, "Importing: Super Nintendo");
 
         const track = findChild(line, "statusLineTrack");
         verify(track !== null);
@@ -382,7 +382,7 @@ TestCase {
                 setup: function () {
                     Browse.MediaStatus.scraping = true;
                 },
-                expected: "Scraping…"
+                expected: "Importing…"
             }
         ];
     }
@@ -405,7 +405,7 @@ TestCase {
             "mediaActivityEnabled": true
         });
         verify(line !== null);
-        compare(line._label, "Scraping paused: game running");
+        compare(line._label, "Importing paused: game running");
     }
 
     // The track is the rightmost element and a short label shrink-wraps
@@ -504,7 +504,7 @@ TestCase {
         Browse.MediaStatus.scraping = true;
         Browse.MediaStatus.scraping = false;
 
-        compare(line._terminalMessage, "Scrape failed: disk full");
+        compare(line._terminalMessage, "Import failed: disk full");
     }
 
     function test_new_task_clears_a_pending_terminal_message(): void {

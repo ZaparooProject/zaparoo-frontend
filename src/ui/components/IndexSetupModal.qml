@@ -38,6 +38,12 @@ Item {
     readonly property int _rowSystems: 0
     readonly property int _rowStart: 1
 
+    // Accept-button verb for the help bar, mirroring SettingsScreen's
+    // `focusedActionLabel`. The bar describes the press, not the feature,
+    // so it names what A does to the focused row rather than repeating
+    // the modal's title.
+    readonly property string focusedActionLabel: modal.currentIndex === modal._rowStart ? qsTr("Start") : qsTr("Change")
+
     // Same display convention as ScrapeSetupModal's identical property —
     // see Main.qml's `_buildSystemScopeEntries` for the sentinel scheme.
     readonly property string _selectedSystemScopeName: {
