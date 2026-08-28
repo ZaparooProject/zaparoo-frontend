@@ -34,6 +34,7 @@ TestCase {
         compare(screen._fieldControl("showHidden"), "toggle");
         compare(screen._fieldControl("reduceMotion"), "toggle");
         compare(screen._fieldControl("aboutLicense"), "navigate");
+        compare(screen._fieldControl("documentation"), "navigate");
         compare(screen._fieldControl("crtCalibration"), "navigate");
         compare(screen._fieldControl("pageDisplayInterface"), "navigate");
         compare(screen._fieldControl("updateMediaDb"), "action");
@@ -41,6 +42,43 @@ TestCase {
         compare(screen._fieldControl("uploadLog"), "action");
         compare(screen._fieldControl("resolution"), "picker");
         compare(screen._fieldControl("colorScheme"), "picker");
+    }
+
+    // The Documentation row shipped with a `requestAccept("documentation")`
+    // handler in Main.qml but no branch in `fieldCommit.onDeferred` to emit
+    // it, so Accept fell through to `_openPickerForField`, which has no
+    // "documentation" case and returns silently. `focusedFieldIsAction`
+    // already listed the id, so the help bar promised "Open" on a row that
+    // did nothing. Drive the real Accept path rather than the signal
+    // directly — the dead branch was in the dispatch, not in the router.
+    function test_documentation_accept_emits_the_router_payload(): void {
+        screen._switchPage(screen.pageSupportAbout);
+        const fields = screen.fields;
+        let idx = -1;
+        for (let i = 0; i < fields.length; i++) {
+            if (fields[i].id === "documentation") {
+                idx = i;
+                break;
+            }
+        }
+        verify(idx >= 0, "documentation field not found on the Support & About page");
+        screen.currentIndex = idx;
+        compare(screen.focusedActionLabel, "Open");
+
+        acceptSpy.clear();
+        screen.handleAction("accept");
+        // The dispatch is deferred behind the row's push-in cue.
+        acceptSpy.wait();
+        compare(acceptSpy.count, 1);
+        compare(acceptSpy.signalArguments[0][0], "documentation");
+        screen._switchPage(screen.pageRoot);
+    }
+
+    SignalSpy {
+        id: acceptSpy
+
+        target: screen
+        signalName: "requestAccept"
     }
 
     // `colorScheme` is a picker (left/right is a no-op, Accept opens the

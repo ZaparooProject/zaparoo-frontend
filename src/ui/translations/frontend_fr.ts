@@ -2151,7 +2151,7 @@ Français - Wilfried</translation>
         <translation>NTSC (60 Hz)</translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1911"/>
+        <location filename="../screens/SettingsScreen.qml" line="1913"/>
         <source>Loading settings…</source>
         <translation>Chargement des réglages…</translation>
     </message>
@@ -2481,7 +2481,7 @@ Français - Wilfried</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1893"/>
+        <location filename="../screens/SettingsScreen.qml" line="1895"/>
         <source>No settings available on this platform</source>
         <translation>Aucun réglage disponible sur cette plateforme</translation>
     </message>

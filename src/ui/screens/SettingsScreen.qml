@@ -488,7 +488,7 @@ Item {
     function _fieldControl(id: string): string {
         if (id === "mouseEnabled" || id === "showHidden" || id === "showOriginalFilenames" || id === "debugLogging" || id === "reduceMotion" || id === "crtEnabled" || id === "swapConfirmCancel" || id === "swapOptionsView")
             return "toggle";
-        if (id === "aboutLicense" || id === "pageAppearance" || id === "pageDisplayInterface" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration")
+        if (id === "aboutLicense" || id === "documentation" || id === "pageAppearance" || id === "pageDisplayInterface" || id === "pageLanguage" || id === "pageControlsInput" || id === "pageLibraryData" || id === "pageSupportAbout" || id === "crtCalibration")
             return "navigate";
         if (id === "updateMediaDb" || id === "runScraper" || id === "uploadLog")
             return "action";
@@ -1383,6 +1383,8 @@ Item {
                 settings.requestAccept("uploadLog");
             else if (id === "aboutLicense")
                 settings.requestAccept("aboutLicense");
+            else if (id === "documentation")
+                settings.requestAccept("documentation");
             else if (id === "crtCalibration")
                 settings.requestAccept("crtCalibration");
             else

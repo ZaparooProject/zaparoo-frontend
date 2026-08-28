@@ -2146,7 +2146,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1911"/>
+        <location filename="../screens/SettingsScreen.qml" line="1913"/>
         <source>Loading settings…</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2466,7 +2466,7 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../screens/SettingsScreen.qml" line="1893"/>
+        <location filename="../screens/SettingsScreen.qml" line="1895"/>
         <source>No settings available on this platform</source>
         <translation>Ez dago ezarpenik plataforma honetan</translation>
     </message>
