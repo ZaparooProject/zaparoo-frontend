@@ -38,6 +38,10 @@ QtObject {
     readonly property color textLabel: _palette.textLabel
     readonly property color textVariant: _palette.textVariant
     readonly property color accent: _palette.accent
+    // Fill behind text on a selected row (SelectionBar and anything painting
+    // on top of it). The accent's own hue and lightness with chroma pulled
+    // down -- see ColorSchemes' `_selectionFillFor`. Focus rings keep `accent`.
+    readonly property color selectionFill: _palette.selectionFill
     // Semantic tier — see ColorSchemes.qml. Body text/glyphs/control fills
     // sitting on an accent-filled surface, and their subordinate variant.
     readonly property color onAccent: _palette.onAccent

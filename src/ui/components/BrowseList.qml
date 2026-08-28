@@ -246,7 +246,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Sizing.pctH(3.2)
                 height: width
-                source: row._highlightVisible ? Resources.coverUrl("icons/Heart", Theme.onAccent, Theme.onAccent, Theme.accent) : Resources.coverUrl("icons/Heart", Theme.marker, Theme.marker, Theme.markerOutline)
+                source: row._highlightVisible ? Resources.coverUrl("icons/Heart", Theme.onAccent, Theme.onAccent, Theme.selectionFill) : Resources.coverUrl("icons/Heart", Theme.marker, Theme.marker, Theme.markerOutline)
                 sourceSize.width: Sizing.px(width)
                 sourceSize.height: Sizing.px(height)
                 fillMode: Image.PreserveAspectFit

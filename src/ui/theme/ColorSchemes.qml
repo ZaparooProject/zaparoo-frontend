@@ -371,6 +371,30 @@ QtObject {
     // clears 4.5:1. This is `SelectionBar.contentColor` (previously a flat
     // `Theme.bgDeep`) and the favorite heart's on-accent fill (the variant
     // drawn over a selected `SelectionBar` row).
+    // The fill behind text on a selected row — settings rows, context menus,
+    // list pickers, modals, browse list rows. All of them go through
+    // `SelectionBar`, so this is the one role that changes.
+    //
+    // Same hue and same OKLCh lightness as `accent`, with chroma pulled down.
+    // Chroma is the right lever and lightness is the wrong one: measured
+    // across the catalog, every preset's accent is bright (relative luminance
+    // 0.11-0.57) and its dark-pole text already sits at 5-11:1, so the
+    // harshness is saturation, not a contrast shortfall. Darkening instead
+    // would have to be drastic to flip the text to the light pole -- Game
+    // Boy's accent would need to lose two thirds of its luminance, which is
+    // no longer a Game Boy theme -- and any partial move lands in a valley
+    // where BOTH poles drop under 4.5:1. Reducing chroma at fixed lightness
+    // moves contrast by less than 0.4 on every preset and improves it on
+    // most, so this is close to free.
+    //
+    // Focus rings keep the raw `accent` (`PressableSurface`, `Tile`,
+    // `PagedGrid`): nothing renders text on those, and focus should stay the
+    // most saturated thing on screen.
+    function _selectionFillFor(accent: color, chromaFactor: real): color {
+        const lch = _toLch(_srgbToOklab(accent));
+        return _gamutFit(lch.L, lch.C * chromaFactor, lch.h);
+    }
+
     function _onAccentFor(accent: color, primary: color, text: color): color {
         const primaryContrast = _contrastRatio(primary, accent);
         const textContrast = _contrastRatio(text, accent);
@@ -561,11 +585,13 @@ QtObject {
     readonly property var _intensities: ({
             "subtle": {
                 "edgeChroma": 1.0,
-                "edgeCap": 1.0
+                "edgeCap": 1.0,
+                "selectionChroma": 0.7
             },
             "vivid": {
                 "edgeChroma": 1.8,
-                "edgeCap": 2.2
+                "edgeCap": 2.2,
+                "selectionChroma": 0.9
             }
         })
 
@@ -605,7 +631,14 @@ QtObject {
         const variant = _mix(_mix(primary, text, 0.58), accent, 0.14);
 
         // Semantic tier — see the derivation functions above.
-        const onAccent = _onAccentFor(accent, primary, text);
+        const selectionFill = _selectionFillFor(accent, scale.selectionChroma);
+        // Derived from the FILL, not from `accent`: every place that renders
+        // content on an accent-colored ground now renders it on the selection
+        // fill (SelectionBar's own text, the settings toggle knob's border,
+        // the favorite heart on a highlighted row). Deriving from the raw
+        // accent would leave the guaranteed 4.5:1 measured against a color
+        // nothing actually sits on.
+        const onAccent = _onAccentFor(selectionFill, primary, text);
         const onAccentMuted = _onAccentMutedFor(onAccent, accent);
         const marker = _markerFor(accent, card);
 
@@ -641,6 +674,7 @@ QtObject {
             "textLabel": _mix(primary, text, 0.62),
             "textVariant": variant,
             "accent": accent,
+            "selectionFill": selectionFill,
             "onAccent": onAccent,
             "onAccentMuted": onAccentMuted,
             "logoShadow": _greyAt(Math.max(0.26, accentLch.L - 0.28)),

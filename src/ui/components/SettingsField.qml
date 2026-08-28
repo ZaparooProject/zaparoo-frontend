@@ -241,7 +241,10 @@ Item {
             // for the selected one) — so the knob keeps a visible silhouette
             // with no new color derivation needed. See docs/style.md ->
             // "Toggle rows".
-            color: bar.active ? Theme.accent : Theme.surfaceCard
+            // Must track the bar's own fill, not the raw accent: the point of
+            // this fill is to be invisible against the row behind it (see the
+            // comment above), and the bar desaturates.
+            color: bar.active ? Theme.selectionFill : Theme.surfaceCard
             border.color: bar.active ? Theme.onAccent : Theme.accent
             border.width: Sizing.cardBorderWidth
 

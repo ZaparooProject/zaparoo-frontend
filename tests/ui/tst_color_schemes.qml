@@ -10,7 +10,7 @@ TestCase {
     name: "ColorSchemes"
     when: windowShown
 
-    readonly property var requiredRoles: ["bgDeep", "bgPanel", "bgBar", "surfaceCard", "tileEdge", "controlEdge", "scrim", "borderSubtle", "borderMid", "textPrimary", "textLabel", "textVariant", "accent", "onAccent", "onAccentMuted", "logoPrimary", "logoSecondary", "logoShadow", "logoFocusPrimary", "logoFocusSecondary", "logoFocusShadow", "marker", "markerOutline", "errorHex", "qrLight", "qrDark"]
+    readonly property var requiredRoles: ["bgDeep", "bgPanel", "bgBar", "surfaceCard", "tileEdge", "controlEdge", "scrim", "borderSubtle", "borderMid", "textPrimary", "textLabel", "textVariant", "accent", "selectionFill", "onAccent", "onAccentMuted", "logoPrimary", "logoSecondary", "logoShadow", "logoFocusPrimary", "logoFocusSecondary", "logoFocusShadow", "marker", "markerOutline", "errorHex", "qrLight", "qrDark"]
 
     function _linearChannel(value: real): real {
         return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
@@ -304,11 +304,38 @@ TestCase {
     // selected row); `marker` is the fixed-hue state-marker role (favorite
     // heart, Hidden badge) kept independent of `accent` so it can't blend
     // into the focus ring.
+    // Measured against `selectionFill`, not `accent`: the fill is the ground
+    // every piece of on-accent content actually sits on (SelectionBar's text,
+    // the settings toggle knob border, the favorite heart on a highlighted
+    // row). Focus rings use the raw accent but never render text on it.
+    // Checked at both intensities, since the fill's chroma is what the
+    // Color intensity setting scales.
     function test_on_accent_clears_body_text_contrast(): void {
+        const intensities = ["subtle", "vivid"];
+        for (let n = 0; n < intensities.length; n++) {
+            for (let i = 0; i < ColorSchemes.ids.length; i++) {
+                const id = ColorSchemes.ids[i];
+                const palette = ColorSchemes.palette(id, intensities[n]);
+                verify(_contrastRatio(palette.onAccent, palette.selectionFill) >= 4.5, id + " " + intensities[n] + " onAccent/selectionFill must clear body-text contrast");
+            }
+        }
+    }
+
+    // The selection fill keeps the accent's hue and lightness and only drops
+    // chroma, so a selected row still reads as the accent colour rather than
+    // as grey, and its lightness (which is what carries the contrast) does not
+    // drift. Subtle pulls harder than Vivid -- that is the whole point of
+    // tying it to the setting.
+    function test_selection_fill_desaturates_without_shifting_lightness(): void {
         for (let i = 0; i < ColorSchemes.ids.length; i++) {
             const id = ColorSchemes.ids[i];
-            const palette = ColorSchemes.palette(id);
-            verify(_contrastRatio(palette.onAccent, palette.accent) >= 4.5, id + " onAccent/accent must clear body-text contrast");
+            const subtle = ColorSchemes.palette(id, "subtle");
+            const vivid = ColorSchemes.palette(id, "vivid");
+            const accentL = ColorSchemes._toLch(ColorSchemes._srgbToOklab(subtle.accent)).L;
+            const fillL = ColorSchemes._toLch(ColorSchemes._srgbToOklab(subtle.selectionFill)).L;
+            verify(Math.abs(fillL - accentL) < 0.02, id + " selection fill must keep the accent's lightness");
+            verify(_chroma(subtle.selectionFill) < _chroma(subtle.accent), id + " selection fill must be less chromatic than the accent");
+            verify(_chroma(subtle.selectionFill) < _chroma(vivid.selectionFill), id + " Subtle must desaturate the fill further than Vivid");
         }
     }
 
