@@ -1107,7 +1107,13 @@ Item {
                     // item it loads, so the component below reads these via
                     // `parent.X`, mirroring how `Tile.qml` reads
                     // `TileLoader`'s properties.
-                    property bool cardPressed: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.cardPressed : false
+                    // `?? false`: only `Tile.qml` declares `cardPressed`.
+                    // `EmptySlot` (any `emptyDelegate`) is a face-less Item
+                    // with no press state, and reading a property it doesn't
+                    // have yields `undefined`, which QML refuses to assign
+                    // into a `bool` -- one warning per blank cell on every
+                    // boot (the Hub's bootstrap page pads to a full grid).
+                    property bool cardPressed: tileLoader.status === Loader.Ready && tileLoader.item ? (tileLoader.item.cardPressed ?? false) : false
                     property real tileOpacity: tileLoader.status === Loader.Ready && tileLoader.item ? tileLoader.item.opacity : 1
                     property bool ringVisible: cellItem.isSelected && root.focused && root.focusReady && (root.rapidRenderMode || tileLoader.status !== Loader.Ready)
                     property bool cellIsEmpty: cellItem.isEmpty

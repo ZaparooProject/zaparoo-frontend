@@ -1775,17 +1775,16 @@ Item {
                         width: form.width
                         implicitHeight: row.isHeader ? header.implicitHeight : field.implicitHeight
 
-                        SettingsSectionHeader {
+                        SectionHeader {
                             id: header
                             visible: row.isHeader
-                            // No cardPadding margin here (unlike every
-                            // other row) — the header's own filled band
-                            // spans the card edge-to-edge; contentInset
-                            // makes up the difference for the label
-                            // alone. See SettingsSectionHeader.qml.
+                            // Same card padding as every field row: the
+                            // heading's label lines up with the field
+                            // labels and its rule runs the row width.
                             anchors.left: parent.left
+                            anchors.leftMargin: flickable.cardPadding
                             anchors.right: parent.right
-                            contentInset: flickable.cardPadding
+                            anchors.rightMargin: flickable.cardPadding
                             label: row.modelData.label
                         }
 

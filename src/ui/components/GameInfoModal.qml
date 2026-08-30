@@ -112,6 +112,7 @@ Item {
             Text {
                 id: titleText
 
+                objectName: "gameInfoTitle"
                 anchors.left: parent.left
                 anchors.leftMargin: Sizing.pctW(4)
                 anchors.right: parent.right
@@ -121,30 +122,18 @@ Item {
                 text: Browse.GameInfo.title
                 color: Theme.textPrimary
                 font.family: Theme.fontUi
-                font.pixelSize: Sizing.fontSize(3.4)
-                font.weight: Font.Medium
+                // `Sizing.fontTitle`, the same rung `Modal.qml`'s shell gives
+                // every other modal title, rather than a bespoke `fontSize(3.4)`
+                // that sits off the ladder. `Font.Medium` is gone with it: the
+                // shell sets no weight, and weight is a no-op in bitmap mode
+                // anyway (one face, see docs/style.md -> "Settings section
+                // headers"), so it was a signal that silently disappeared at
+                // the CRT and 240p tiers.
+                font.pixelSize: Sizing.fontTitle
                 elide: Text.ElideRight
                 maximumLineCount: 1
                 horizontalAlignment: Text.AlignLeft
                 renderType: Text.NativeRendering
-            }
-
-            // Header divider — matches SettingsSectionHeader's "a color
-            // step survives every render tier" reasoning (docs/style.md
-            // -> "Settings section headers"): the title now reads as a
-            // proper header band boundary instead of floating text ahead
-            // of a bare gap.
-            Rectangle {
-                id: titleDivider
-                objectName: "gameInfoTitleDivider"
-                anchors.left: parent.left
-                anchors.leftMargin: Sizing.pctW(4)
-                anchors.right: parent.right
-                anchors.rightMargin: Sizing.pctW(4)
-                anchors.top: titleText.bottom
-                anchors.topMargin: Sizing.pctH(1.5)
-                height: Sizing.stroke(2)
-                color: Theme.borderMid
             }
 
             LoadingIndicator {
@@ -160,7 +149,7 @@ Item {
                 anchors.leftMargin: Sizing.pctW(4)
                 anchors.right: parent.right
                 anchors.rightMargin: Sizing.pctW(4)
-                anchors.top: titleDivider.bottom
+                anchors.top: titleText.bottom
                 anchors.topMargin: Sizing.pctH(4)
                 text: qsTr("Could not load details. Check Zaparoo Core and try again.")
                 color: Theme.textPrimary
@@ -179,15 +168,14 @@ Item {
                 anchors.leftMargin: Sizing.pctW(4)
                 anchors.right: parent.right
                 anchors.rightMargin: Sizing.pctW(4)
-                anchors.top: titleDivider.bottom
+                anchors.top: titleText.bottom
                 // Must clear the up chevron, which hangs ABOVE this anchor
                 // (`gameInfoScrollUp` is `anchors.bottom: flick.top`): it needs
                 // its own `pctH(3)` height plus its `pctH(0.5)` margin, so a
-                // gap under `pctH(3.5)` puts it through the title divider. This
-                // was `pctH(2)`, which overlapped by `pctH(1.5)` whenever the
-                // body scrolled. Matches the bottom margin below, where the
-                // down chevron has always had the room it needs -- keep the two
-                // in step so the chevrons sit symmetrically.
+                // gap under `pctH(3.5)` leaves it drawing through the title.
+                // Matches the bottom margin below, where the down chevron has
+                // always had the room it needs -- keep the two in step so the
+                // chevrons sit symmetrically.
                 anchors.topMargin: Sizing.pctH(4)
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: Sizing.pctH(4)
@@ -338,12 +326,11 @@ Item {
                         }
                     }
 
-                    // Description band — its own section header (matching
-                    // SettingsSectionHeader's band idiom, same module,
-                    // no import needed) rather than just extra Column
-                    // spacing, so it reads as a distinct block from the
-                    // tag table above it.
-                    SettingsSectionHeader {
+                    // Description block -- its own section heading (the
+                    // shared SectionHeader, same module, no import needed)
+                    // rather than just extra Column spacing, so it reads as
+                    // a distinct block from the tag table above it.
+                    SectionHeader {
                         width: parent.width
                         visible: Browse.GameInfo.description !== ""
                         label: qsTr("Description")

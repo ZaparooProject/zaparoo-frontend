@@ -253,6 +253,35 @@ TestCase {
         }
     }
 
+    // sRGB lerp, the same arithmetic as ColorSchemes.qml's `_mix`,
+    // reimplemented here for the same reason `_chroma` is.
+    function _mix(from: color, to: color, amount: real): color {
+        return Qt.rgba(from.r + (to.r - from.r) * amount, from.g + (to.g - from.g) * amount, from.b + (to.b - from.b) * amount, 1);
+    }
+
+    // Vivid exists because testers missed the pre-`_edgeFor` bevel: a plain
+    // 44% step from the neutral ladder toward the accent,
+    // `_mix(_mix(primary, text, 0.06), accent, 0.44)`, which shipped through
+    // e8ff996. That bevel was both more chromatic AND lighter than what the
+    // contrast-floor solver produces, so a Vivid that only raised the
+    // chroma cap still read flatter than the original ("less vivid than it
+    // was, even with Vivid selected"). Both axes are asserted: at least the
+    // original's chroma, and a higher edge/card contrast than Subtle.
+    // Measured on the high-chroma presets, where the cap binds and the
+    // difference is what testers see.
+    function test_vivid_intensity_restores_the_original_bevel(): void {
+        const presets = ["nes", "virtual-boy", "game-boy", "synthwave-84"];
+        for (let i = 0; i < presets.length; i++) {
+            const id = presets[i];
+            const subtle = ColorSchemes.palette(id, "subtle");
+            const vivid = ColorSchemes.palette(id, "vivid");
+            const original = _mix(_mix(Qt.color(vivid.bgDeep), Qt.color(vivid.textPrimary), 0.06), Qt.color(vivid.accent), 0.44);
+            verify(_chroma(vivid.tileEdge) >= _chroma(original), id + " vivid tile edge chroma " + _chroma(vivid.tileEdge).toFixed(3) + " must reach the original bevel's " + _chroma(original).toFixed(3));
+            verify(_contrastRatio(vivid.tileEdge, vivid.surfaceCard) > _contrastRatio(subtle.tileEdge, subtle.surfaceCard), id + " vivid tile edge must sit lighter off the card than subtle");
+            verify(_contrastRatio(vivid.controlEdge, vivid.surfaceCard) > _contrastRatio(subtle.controlEdge, subtle.surfaceCard), id + " vivid control edge must sit lighter off the card than subtle");
+        }
+    }
+
     // The focused logo ramp is a gradient map, so its span is what turns an
     // antialiased glyph boundary into a rim light. Collapse the span and tinted
     // artwork goes flat. Measured in OKLCh L rather than Rec.709 relative

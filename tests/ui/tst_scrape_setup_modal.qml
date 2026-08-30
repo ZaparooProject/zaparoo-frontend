@@ -5,15 +5,17 @@
 import QtQuick
 import QtTest
 import Zaparoo.Theme
+import Zaparoo.Browse as Browse
 import Zaparoo.Ui
 
-// Round 10/11 coverage for the scrape setup modal's own state machine:
-// row navigation, the inline re-scrape toggle, and the dispatch signals
-// (requestScraperPicker, requestSystemScopePicker, closeRequested).
-// Doesn't touch Browse.MediaStatus's live scraper data -- the modal never
-// calls refresh_scrapers() itself (Main.qml's openScrapeSetupModal does
-// that), so scraper_ids/scraper_names stay empty here and every assertion
-// below is about the row/toggle state machine, not scraper content.
+// Coverage for the scrape setup modal's own state machine: row
+// navigation, the inline re-scrape toggle, the in-panel picker pages the
+// Source and Systems rows open (docs/style.md -> "Modal depth": a choice
+// made inside a modal is a page of that modal, never a second modal), and
+// closeRequested. Doesn't drive Browse.MediaStatus's live fetch -- the
+// modal never calls refresh_scrapers() itself (Main.qml's
+// openScrapeSetupModal does that) -- so scraper_ids/scraper_names are set
+// directly where a test needs sources.
 TestCase {
     id: testCase
     name: "UiScrapeSetupModal"
@@ -29,22 +31,25 @@ TestCase {
     }
 
     SignalSpy {
-        id: pickerSpy
-        target: modal
-        signalName: "requestScraperPicker"
-    }
-
-    SignalSpy {
-        id: systemScopePickerSpy
-        target: modal
-        signalName: "requestSystemScopePicker"
-    }
-
-    SignalSpy {
         id: closeSpy
         target: modal
         signalName: "closeRequested"
     }
+
+    readonly property var scopeEntries: [
+        {
+            id: "*",
+            label: "All systems"
+        },
+        {
+            id: "cat:Console",
+            label: "All Console systems"
+        },
+        {
+            id: "SNES",
+            label: "SNES"
+        }
+    ]
 
     function initTestCase(): void {
         Sizing.screenWidth = testCase.width;
@@ -57,14 +62,20 @@ TestCase {
         // `selectedSystemScope` in onOpenChanged, so a test that sets it
         // would otherwise carry its scope into every later test.
         modal.initialSystemScope = "*";
+        modal.systemScopeEntries = testCase.scopeEntries;
+        Browse.MediaStatus.scraper_ids = ["gamelist.xml", "es-media-folders"];
+        Browse.MediaStatus.scraper_names = ["Gamelist XML", "ES media folders"];
         modal.open = true;
-        pickerSpy.clear();
-        systemScopePickerSpy.clear();
         closeSpy.clear();
+    }
+
+    function _list(): var {
+        return findChild(modal, "setupPickerList");
     }
 
     function test_starts_on_the_scraper_row(): void {
         compare(modal.currentIndex, modal._rowScraper);
+        compare(modal.page, "form");
         compare(modal.selectedSystemScope, "*");
         compare(modal.rescrapeExisting, false);
     }
@@ -105,17 +116,82 @@ TestCase {
         compare(modal.rescrapeExisting, false);
     }
 
-    function test_accept_on_scraper_row_requests_the_picker(): void {
+    // Accept on Source opens the Source page: the same panel, the row's
+    // entries listed with the current selection focused. Nothing is
+    // emitted for a router to stack a picker with.
+    function test_accept_on_scraper_row_opens_the_source_page(): void {
+        modal.selectedScraperId = "es-media-folders";
         modal.currentIndex = modal._rowScraper;
         modal.handleAction("accept");
-        compare(pickerSpy.count, 1);
+        compare(modal.page, "source");
+        compare(modal.onPickerPage, true);
+        compare(modal.focusedActionLabel, qsTr("Select"));
+        const list = _list();
+        verify(list !== null);
+        compare(list.entries.length, 2);
+        compare(list.entries[1].label, "ES media folders");
+        compare(list.currentIndex, 1, "the page opens on the current selection");
+        compare(findChild(modal, "setupPickerHeader").label, qsTr("Source"));
     }
 
-    function test_accept_on_systems_row_requests_the_system_scope_picker(): void {
+    // Up/down on a page move the list, not the form; the form's own row
+    // is untouched until the page closes.
+    function test_page_navigation_moves_the_list_not_the_form(): void {
+        modal.selectedScraperId = "gamelist.xml";
+        modal.currentIndex = modal._rowScraper;
+        modal.handleAction("accept");
+        const list = _list();
+        compare(list.currentIndex, 0);
+        modal.handleAction("down");
+        compare(list.currentIndex, 1);
+        compare(modal.currentIndex, modal._rowScraper, "the form row must not move while a page is open");
+        modal.handleAction("up");
+        compare(list.currentIndex, 0);
+    }
+
+    // Accept on an entry applies it, returns to the form, and leaves focus
+    // on the row that opened the page.
+    function test_accepting_a_source_applies_it_and_returns_to_the_form(): void {
+        modal.selectedScraperId = "gamelist.xml";
+        modal.currentIndex = modal._rowScraper;
+        modal.handleAction("accept");
+        modal.handleAction("down");
+        modal.handleAction("accept");
+        // The list's accept is deferred behind the row's push cue.
+        tryCompare(modal, "page", "form");
+        compare(modal.selectedScraperId, "es-media-folders");
+        compare(modal.currentIndex, modal._rowScraper);
+        compare(modal.focusedActionLabel, qsTr("Change"));
+        compare(closeSpy.count, 0, "picking a source must not close the modal");
+    }
+
+    // Back on a page leaves the page, not the modal, and changes nothing.
+    function test_cancel_on_a_page_returns_to_the_form_unchanged(): void {
+        modal.selectedScraperId = "gamelist.xml";
+        modal.currentIndex = modal._rowScraper;
+        modal.handleAction("accept");
+        modal.handleAction("down");
+        modal.handleAction("cancel");
+        compare(modal.page, "form");
+        compare(modal.selectedScraperId, "gamelist.xml");
+        compare(modal.currentIndex, modal._rowScraper);
+        compare(closeSpy.count, 0, "Back on a page must not close the modal");
+    }
+
+    function test_accept_on_systems_row_opens_the_systems_page(): void {
+        modal.selectedSystemScope = "cat:Console";
         modal.currentIndex = modal._rowSystems;
         modal.handleAction("accept");
-        compare(systemScopePickerSpy.count, 1);
-        compare(pickerSpy.count, 0, "must not also fire the scraper-picker signal");
+        compare(modal.page, "systems");
+        const list = _list();
+        compare(list.entries.length, 3);
+        compare(list.currentIndex, 1, "the page opens on the current scope");
+        compare(findChild(modal, "setupPickerHeader").label, qsTr("Systems"));
+        modal.handleAction("down");
+        modal.handleAction("accept");
+        tryCompare(modal, "page", "form");
+        compare(modal.selectedSystemScope, "SNES");
+        compare(modal.currentIndex, modal._rowSystems);
     }
 
     function test_accept_on_toggle_row_flips_rescrape_existing(): void {
@@ -131,15 +207,17 @@ TestCase {
         compare(closeSpy.count, 1);
     }
 
-    function test_reopening_resets_row_and_toggle_state(): void {
+    function test_reopening_resets_row_toggle_and_page_state(): void {
         modal.currentIndex = modal._rowStart;
         modal.selectedSystemScope = "SNES";
         modal.rescrapeExisting = true;
+        modal.page = "systems";
         modal.open = false;
         modal.open = true;
         compare(modal.currentIndex, modal._rowScraper);
         compare(modal.selectedSystemScope, "*");
         compare(modal.rescrapeExisting, false);
+        compare(modal.page, "form", "a page left open must not survive a reopen");
     }
 
     // Round 11: the display property backing the Systems row's own
@@ -182,6 +260,33 @@ TestCase {
         modal.open = true;
         modal.selectedSystemScope = "*";
         compare(modal.selectedSystemScope, "*");
+    }
+
+    // `refresh_scrapers` clears `scrapers_loading` BEFORE it assigns
+    // `scraper_ids` (media_status.rs), so reconciliation hangs off the list
+    // changing rather than off the flag. These drive `scraper_ids` directly,
+    // which is the same signal the real fetch produces.
+    function test_scraper_selection_follows_the_reported_list(): void {
+        modal.selectedScraperId = "es-media-folders";
+        // A still-offered selection is left alone, so a refresh returning the
+        // same list does not disturb an edit in progress.
+        Browse.MediaStatus.scraper_ids = ["gamelist.xml", "es-media-folders"];
+        compare(modal.selectedScraperId, "es-media-folders");
+
+        // Dropped from the list: fall back rather than keep pointing at a
+        // scraper Core no longer offers.
+        Browse.MediaStatus.scraper_ids = ["gamelist.xml"];
+        compare(modal.selectedScraperId, "gamelist.xml");
+    }
+
+    // An empty list must clear the selection outright. `_startScrape` only
+    // guards against an empty id, so a stale one left here would let Start
+    // submit a scraper that does not exist.
+    function test_empty_scraper_list_clears_the_selection(): void {
+        Browse.MediaStatus.scraper_ids = ["gamelist.xml"];
+        compare(modal.selectedScraperId, "gamelist.xml");
+        Browse.MediaStatus.scraper_ids = [];
+        compare(modal.selectedScraperId, "", "an empty list must leave nothing selected");
     }
 
     // The help bar describes the press, not the feature, so the accept

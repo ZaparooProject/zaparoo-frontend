@@ -582,15 +582,28 @@ QtObject {
     //   * `variant` (`textVariant`) — it takes the largest cast of the
     //     ladder (0.14), but it is a TEXT role and carries the same 3:1
     //     floor described above.
+    //
+    // `edgeContrast` scales the two contrast floors `_edgeFor` solves the
+    // edge's lightness against. Chroma alone is not enough for Vivid: the
+    // solver starts at the card's own lightness and stops at the first L
+    // that clears the floors, so with the floors fixed the edge stays as
+    // dim as legally allowed no matter how much chroma it is granted, and
+    // a dark preset cannot even hold that chroma in gamut at that L. The
+    // pre-`_edgeFor` bevel (`_mix(edgeBase, accent, 0.44)`, a plain 44%
+    // step toward the raw accent) was both more saturated and lighter;
+    // testers who picked Vivid expected that look back, and
+    // `tst_color_schemes.qml` measures Vivid against it.
     readonly property var _intensities: ({
             "subtle": {
                 "edgeChroma": 1.0,
                 "edgeCap": 1.0,
+                "edgeContrast": 1.0,
                 "selectionChroma": 0.7
             },
             "vivid": {
                 "edgeChroma": 1.8,
-                "edgeCap": 2.2,
+                "edgeCap": 3.4,
+                "edgeContrast": 1.6,
                 "selectionChroma": 0.9
             }
         })
@@ -664,9 +677,10 @@ QtObject {
             // that actually binds on high-chroma presets (nes, virtual-boy,
             // game-boy, synthwave-84), which is why Vivid scales it harder.
             // Both contrast floors still solve afterwards, so the bevel reads
-            // at either setting.
-            "tileEdge": _edgeFor(accent, card, Math.min(1, 0.5 * scale.edgeChroma), 0.05 * scale.edgeCap, 1.5, primary, 1.8),
-            "controlEdge": _edgeFor(accent, card, Math.min(1, 0.6 * scale.edgeChroma), 0.06 * scale.edgeCap, 1.65, panel, 2.0),
+            // at either setting; Vivid raises the floors too, which is what
+            // actually lifts the edge (see `_intensities`).
+            "tileEdge": _edgeFor(accent, card, Math.min(1, 0.5 * scale.edgeChroma), 0.05 * scale.edgeCap, 1.5 * scale.edgeContrast, primary, 1.8 * scale.edgeContrast),
+            "controlEdge": _edgeFor(accent, card, Math.min(1, 0.6 * scale.edgeChroma), 0.06 * scale.edgeCap, 1.65 * scale.edgeContrast, panel, 2.0 * scale.edgeContrast),
             "scrim": "#cc000000",
             "borderSubtle": subtle,
             "borderMid": mid,

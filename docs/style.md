@@ -555,27 +555,34 @@ is deliberately low (`borderMid`/`surfaceCard` are both subtle near-card
 neutrals) — position, not fill color, carries that state, and the border is
 what keeps the knob's own silhouette legible regardless.
 
-### Settings section headers
+### Section headings
 
-`SettingsSectionHeader.qml` splits the Settings form into bands (e.g.
-"Analog video"). Round 5 shipped it as a bigger, bolder label
-(`Sizing.fontSection`, `Font.DemiBold`, `Theme.textPrimary`) — a treatment
-that silently stops working in bitmap mode: `Sizing.fontSize()` quantizes
-`fontSection` and `fontBody` to the same 8/16px there, and `Theme.fontUi`'s
-bitmap face ("MxPlus HP 100LX 6x8") has a single weight, so `Font.DemiBold`
-is a no-op. At `--crt` or embedded 240p the header was pixel-identical to a
-field label. Size and weight simply aren't available as signals at that
-tier, so round 6 made the break structural instead: a full-card-width
-`Rectangle` filled `Theme.borderMid`, with the label unchanged and inset by
-`contentInset + Sizing.pctW(2)` (the screen drops its usual card-padding
-margin on this one row so the band can reach the card's own edges — see
-`SettingsScreen.qml`'s mount comment). `borderMid` measures 1.6-2.3:1 off
-`surfaceCard` across the catalog (an unmistakable block on every preset) and
-`textPrimary` reads 4.1-7.7:1 on it — both a rectangle and a color step, so
-the break renders identically at 1080p and at 240p. The band stays off
-`Theme.accent`, which `SettingsField.qml` reserves for "this row is an
-action" (see "Toggle rows" above and the action-row label rule below it) —
-reusing it for a header would blur that meaning.
+`SectionHeader.qml` titles a group inside a vertical list: the Settings
+form's bands ("Analog video"), Game info's Description block, and the picker
+page inside the setup modals. It is a `Theme.textLabel` label at
+`Sizing.fontBody` (DemiBold where weight exists), inset `Sizing.pctW(2)` like
+the row labels under it, on a one-stroke `Theme.borderMid` rule that runs the
+row width. The same component, unchanged, on the settings card, in a modal
+panel and on the detail sheet — a heading is a heading wherever the list is.
+
+Colour and a rule, not size or weight. A bigger, bolder label silently
+stops working in bitmap mode: `Sizing.fontSize()` quantizes `fontSection`
+and `fontBody` to the same 8/16px there, and `Theme.fontUi`'s bitmap face
+("MxPlus HP 100LX 6x8") has a single weight, so `Font.DemiBold` is a no-op
+and the heading is pixel-identical to a field label. What survives that
+tier is a colour step (`textLabel` against `textPrimary` rows, the same
+signal the hint band below leans on) and a rectangle (the rule). `borderMid`
+measures 1.5:1+ off both `surfaceCard` and `bgPanel` across the catalog, and
+`textLabel` holds 3:1 on both. The rule stays off `Theme.accent`, which
+`SettingsField.qml` reserves for "this row is an action" (see "Toggle rows"
+above and the action-row label rule below it).
+
+An earlier version was a full-card-width `Rectangle` filled `borderMid`
+with the label inside it, mounted without the card padding so the band met
+the settings card's own frame edge to edge. That only worked where there
+was a frame to meet; inside a modal panel it was a grey block with margins,
+and it gave one job two looks. The rule-under-label heading needs no mount
+special case.
 
 #### Settings hint band
 
@@ -650,7 +657,7 @@ therefore assert chromatic separation along the accent ramp, not lightness.
 Non-interactive text may sit directly on `Theme.bgDeep`:
 
 - TopStatusStrip titles
-- Settings section headers
+- Section headings
 - global Loading cue
 - ActiveLabel selected name
 - header status line (see "Header status line" below)
@@ -951,10 +958,45 @@ QrCodeModal and round-10's `ScrapeSetupModal` (scraper choice + re-scrape
 toggle + Start, three `SettingsField` rows in a shell `Column`) are
 shell-based content. GameInfo stays bespoke — its near-full-height,
 scrolling panel doesn't fit the shell's content-driven sizing — but uses
-the same panel radius, and round 10 gave its internal chrome
-`SettingsSectionHeader`-band dividers (header, cover card, description)
-instead of bare `Column` spacing, borrowing the Settings vocabulary rather
-than inventing new bespoke chrome for those breaks.
+the same panel radius, and round 10 gave its internal breaks the shared
+`SectionHeader` heading (see "Section headings") instead of bare `Column`
+spacing, borrowing the Settings vocabulary rather than inventing new
+bespoke chrome for them.
+
+### Modal depth
+
+One modal at a time. Every design system that states a position says the
+same thing (Apple's sheets: "display only one sheet at a time"; Material:
+"avoid opening dialogs from within a dialog"; GNOME: "avoid stacking
+dialog windows"; Fluent: "don't nest dialogs"; Carbon: "one modal should
+never trigger another"; WinUI throws), and on a d-pad UI with no visible
+back button two identical cards on two scrims give the user no cue of how
+deep they are or how many Back presses get out. The rules:
+
+1. A modal never opens another modal. `ScreenManager.modalStack` is depth
+   1 in normal operation, and `pushModal` warns when anything but an alert
+   lands on an open modal (tests fail on that warning).
+2. A choice made inside a modal is made inside that modal. The panel swaps
+   its content to the option list and back: a *page* of the same panel,
+   the modal title unchanged, the row's own name as a section header over
+   the list. A picks and returns; Back returns without changing, with
+   focus on the row that opened the page. One level of pages only. See
+   `ScrapeSetupModal.qml`'s `page` and the shared `PickerList.qml` body it
+   hosts (the same rows `ListPickerModal` draws).
+3. A modal task that needs more than one such page, or a decision that
+   needs information the panel can't show, is a screen (a Settings
+   sub-page), not a modal.
+4. The only thing that may appear over a modal is an `action_error` alert:
+   a system interruption. It paints above everything
+   (`actionErrorModalLoader` is declared last, `z: 320`), owns the help
+   bar, and opens nothing itself. Two alerts never stack; the FIFO queue
+   in `Main.qml` handles that.
+5. `ContextMenu` is an anchored transient, not a card. It closes before
+   anything it triggers opens, and its own submenus (alternate versions)
+   are in-place entry swaps.
+6. A screen may open a modal (Settings rows open `ListPickerModal`); a
+   modal that closes and *then* opens another (View menu -> letter jump,
+   error -> retry) is a sequence, not a stack, and is fine.
 
 Panel width is content-driven for the four prebaked kinds
 (`action_error`/`transient`/`confirm`/the toggle), mirroring [ContextMenu

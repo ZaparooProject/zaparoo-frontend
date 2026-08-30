@@ -315,6 +315,16 @@ pub struct GamesModelRust {
     // user requests another pick before prior RPC settles.
     random_error: QString,
     random_seq: Arc<AtomicU64>,
+    // "Add to Hub" on a single-game folder resolves the folder's child file
+    // off the Qt thread (`resolve_hub_target_at`) and publishes it here.
+    // `hub_target_sequence` is written last so QML adds the item on that
+    // edge; `hub_target_seq` drops a resolution overtaken by a newer press.
+    hub_target_system: QString,
+    hub_target_path: QString,
+    hub_target_script: QString,
+    hub_target_name: QString,
+    hub_target_sequence: i32,
+    hub_target_seq: Arc<AtomicU64>,
 }
 
 impl Default for GamesModelRust {
@@ -370,6 +380,12 @@ impl Default for GamesModelRust {
             letter_index_seq: Arc::new(AtomicU64::new(0)),
             random_error: QString::default(),
             random_seq: Arc::new(AtomicU64::new(0)),
+            hub_target_system: QString::default(),
+            hub_target_path: QString::default(),
+            hub_target_script: QString::default(),
+            hub_target_name: QString::default(),
+            hub_target_sequence: 0,
+            hub_target_seq: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -428,6 +444,11 @@ pub mod ffi {
         #[qproperty(QString, letter_index_json)]
         #[qproperty(QString, letter_index_scheme)]
         #[qproperty(QString, random_error)]
+        #[qproperty(QString, hub_target_system)]
+        #[qproperty(QString, hub_target_path)]
+        #[qproperty(QString, hub_target_script)]
+        #[qproperty(QString, hub_target_name)]
+        #[qproperty(i32, hub_target_sequence)]
         type GamesModel = super::GamesModelRust;
 
         #[qinvokable]
@@ -471,6 +492,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn launch_at(self: Pin<&mut GamesModel>, index: i32);
+
+        #[qinvokable]
+        fn resolve_hub_target_at(self: Pin<&mut GamesModel>, index: i32);
 
         #[qinvokable]
         fn launch_text_at(self: &GamesModel, index: i32) -> QString;
@@ -1006,6 +1030,77 @@ impl ffi::GamesModel {
                 warn!("run failed for {name}: {}", e.message);
                 report_action_error("launch", name);
             }
+        });
+    }
+
+    /// "Add to Hub" on a single-game folder (a media-capable directory).
+    /// The Hub tile must carry the child file, not the container: a
+    /// `zapscript` item launches `script` verbatim and resolves its cover
+    /// by `(system, path)`, and `launch_at` already refuses to run a
+    /// container path. The child is resolved exactly as a launch resolves
+    /// it, off the Qt thread, then published through `hub_target_*` with
+    /// `hub_target_sequence` written last so QML adds the item on that edge
+    /// (`Main.qml`'s `onHub_target_sequenceChanged`). Plain media rows never
+    /// come here; QML pins those synchronously from `launch_text_at`.
+    ///
+    /// No container-path fallback, unlike `launch_at`: a launch that falls
+    /// back fails loudly once, but a Hub tile is persisted, so pinning the
+    /// folder path would bake in a shortcut that can never launch.
+    fn resolve_hub_target_at(self: Pin<&mut Self>, index: i32) {
+        if index < 0 || index >= self.count {
+            return;
+        }
+        let entry = self.entries[index as usize].clone();
+        if !media_capable_directory_needs_child_resolution(&entry) {
+            return;
+        }
+        let params = singleton_directory_needs_launch_resolution(&entry)
+            .then(|| meta_params_for_entry(&entry))
+            .flatten();
+        let browse_params = media_capable_directory_browse_params(&entry);
+        let name = entry.name.clone();
+        let system_id = hub_target_system_id(&entry, &self.current_system_id.to_string());
+        // A second press before the first resolves must not pin the tile
+        // twice. A scope change in between is fine: the child belongs to
+        // the folder the user chose, wherever they have browsed to since.
+        let seq = self.rust().hub_target_seq.clone();
+        let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
+        let qt_thread = self.qt_thread();
+        let store = global_store();
+        global_handle().spawn(async move {
+            let client = store.client();
+            let resolved = resolve_media_capable_directory_run_text(
+                client.as_ref(),
+                &entry,
+                params,
+                browse_params,
+                None,
+            )
+            .await;
+            let Some(child) = resolved else {
+                warn!("no launchable child resolved for {name}; not adding the container path to the Hub");
+                report_action_error("add_to_hub", name);
+                return;
+            };
+            let _ = qt_thread.queue(move |mut model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                model
+                    .as_mut()
+                    .set_hub_target_system(QString::from(system_id.as_str()));
+                model
+                    .as_mut()
+                    .set_hub_target_path(QString::from(child.as_str()));
+                model
+                    .as_mut()
+                    .set_hub_target_script(QString::from(child.as_str()));
+                model
+                    .as_mut()
+                    .set_hub_target_name(QString::from(name.as_str()));
+                let next = model.hub_target_sequence.wrapping_add(1);
+                model.as_mut().set_hub_target_sequence(next);
+            });
         });
     }
 
@@ -1674,6 +1769,18 @@ fn entry_system_id(entry: &BrowseEntry) -> String {
         return entry.system_id.clone();
     }
     entry.system_ids.first().cloned().unwrap_or_default()
+}
+
+/// System hint for a Hub tile pinned from a games row: the row's own system
+/// when Core reported one, else the system being browsed (what the
+/// synchronous "Add to Hub" branches in `Main.qml` use). A `zapscript` tile
+/// with no system can only fall back to a generic icon.
+fn hub_target_system_id(entry: &BrowseEntry, current_system_id: &str) -> String {
+    let own = entry_system_id(entry);
+    if !own.trim().is_empty() {
+        return own;
+    }
+    current_system_id.to_string()
 }
 
 /// A `root` row that addresses a real filesystem folder — one of a system's
@@ -3771,9 +3878,10 @@ mod tests {
         cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
         detail_cover_key_for_entry, detail_image_keys_from_meta, detail_tags_from_tags,
         display_name, display_title_for_entry, entry_system_id, favorites_tags,
-        games_random_launch_text, initial_row_replacement, is_filesystem_root_entry,
-        is_media_capable_entry, is_strict_ancestor_path, jump_fetch_limit,
-        media_capable_directory_browse_params, media_key_for, meta_cache_key_for_entry,
+        games_random_launch_text, hub_target_system_id, initial_row_replacement,
+        is_filesystem_root_entry, is_media_capable_entry, is_strict_ancestor_path,
+        jump_fetch_limit, media_capable_directory_browse_params,
+        media_capable_directory_needs_child_resolution, media_key_for, meta_cache_key_for_entry,
         meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
         prefetch_around_plan, prefetch_cursor_window_plan, project_status, result_total_dirs,
         root_distinguishers, run_text_for_entry, seeded_refetch_pagination_state,
@@ -4620,6 +4728,23 @@ mod tests {
         let key = media_key_for(&media("smb", "/p/smb", "NES")).expect("ok");
         assert_eq!(key.system_id.as_ref(), "NES");
         assert_eq!(key.path.as_ref(), "/p/smb");
+    }
+
+    #[test]
+    fn hub_target_system_id_prefers_the_row_then_the_browsed_system() {
+        let mut entry = BrowseEntry {
+            media_id: Some(7),
+            name: "Game".into(),
+            path: "/roms/PSX/Game".into(),
+            entry_type: "directory".into(),
+            ..BrowseEntry::default()
+        };
+        assert_eq!(hub_target_system_id(&entry, "PSX"), "PSX");
+        entry.system_ids = vec!["SNES".into()];
+        assert_eq!(hub_target_system_id(&entry, "PSX"), "SNES");
+        entry.system_id = "PSXJP".into();
+        assert_eq!(hub_target_system_id(&entry, "PSX"), "PSXJP");
+        assert!(media_capable_directory_needs_child_resolution(&entry));
     }
 
     #[test]

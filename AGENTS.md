@@ -132,6 +132,11 @@ raw cargo as the default path; the justfile carries the expected environment.
   ≤22 entries, colocated `MiSTer` only, and self-healing — a stale path just
   fails to open and falls through to a normal Core request. Do not extend
   this carve-out to any other cache without discussing it first.
+- Do not open a modal from a modal. A choice made inside a modal is a page
+  of that modal's own panel (`PickerList` hosted by the modal, see
+  `ScrapeSetupModal.qml`'s `page`); only an `action_error` alert may sit
+  above an open modal, and `ScreenManager.pushModal` warns on anything else.
+  See `docs/style.md` → "Modal depth".
 - Do not add `.git/` rerun-if triggers or `ZAPAROO_BUILD_*` provenance baking
   to `rust/frontend/build.rs`. Provenance lives in the `rust/build-info` leaf
   crate precisely so commits don't re-run the cxx-qt codegen. See

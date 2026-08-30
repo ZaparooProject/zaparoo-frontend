@@ -447,6 +447,49 @@ TestCase {
         }
     }
 
+    // "Add to Hub" on a single-game folder completes asynchronously: the
+    // model resolves the folder's child file and publishes it through
+    // `hub_target_*`, bumping `hub_target_sequence` last, and the router
+    // pins a `zapscript` item on that edge (a beta tester got a folder tile
+    // for a .chd in its own folder, because the synchronous branch keyed on
+    // `entry_type` alone). Drives the properties directly, the same edge
+    // the real resolution produces, and asserts the tile is a game: child
+    // path as both script and cover key, never the folder icon.
+    // try/finally for the same reason as the shortcut tests above.
+    function test_resolved_single_game_folder_pins_a_game_shortcut(): void {
+        const child = "/media/fat/games/PSX/Game/Game.chd";
+        Browse.GamesModel.hub_target_system = "PSX";
+        Browse.GamesModel.hub_target_path = child;
+        Browse.GamesModel.hub_target_script = child;
+        Browse.GamesModel.hub_target_name = "Game";
+        Browse.GamesModel.hub_target_sequence = Browse.GamesModel.hub_target_sequence + 1;
+        const idx = main.hubScreen._itemIndexForId("zapscript", child);
+        const hubIndex = idx >= 0 ? main.hubScreen.items[idx].hubIndex : -1;
+        try {
+            verify(idx >= 0, "the resolved child must land as a zapscript item");
+            const entry = main.hubScreen.items[idx];
+            compare(entry.name, "Game", "the tile keeps the row's title");
+            compare(entry.script, child, "the tile launches the child file, not the container");
+            compare(entry.coverKey, Browse.HubLayout.resolve_media_cover_key("PSX", child), "cover resolves by (system, child path) like any game shortcut");
+            verify(entry.coverKey !== "icons/Folder", "a game shortcut must not draw the folder icon");
+            compare(main.hubScreen._itemIndexForId("folder", "/media/fat/games/PSX/Game"), -1, "no folder tile must be pinned alongside");
+        } finally {
+            if (hubIndex >= 0)
+                Browse.HubLayout.remove_item(hubIndex);
+        }
+    }
+
+    // A resolution that failed never reaches the sequence edge (the model
+    // reports an action error instead), but the router still guards the
+    // empty-script case so a bare sequence bump cannot pin a blank tile.
+    function test_hub_target_edge_with_no_script_pins_nothing(): void {
+        const before = Browse.HubLayout.items_snapshot();
+        Browse.GamesModel.hub_target_script = "";
+        Browse.GamesModel.hub_target_path = "";
+        Browse.GamesModel.hub_target_sequence = Browse.GamesModel.hub_target_sequence + 1;
+        compare(Browse.HubLayout.items_snapshot(), before, "an empty script must not add a Hub item");
+    }
+
     // Down on hub moves focus between the categories row and the
     // actions row (Favorites / Recently Played / optional Update /
     // Settings); it must never flip off-screen to systems. Accept is
@@ -1770,6 +1813,90 @@ TestCase {
         compare(main.actionErrorModalVisible, false);
         main.handleAction("accept");
         compare(testCase._actionErrorCallbackCount, 1, "dismissed modal cannot repeat callback");
+    }
+
+    // "Modal depth" (docs/style.md): a modal never opens a modal. The
+    // Get-metadata dialog used to push the shared list picker on top of
+    // itself for its Source row; now its own panel swaps to the list and
+    // back. Drives the real router path with the ScreenManager guard armed,
+    // so any push over the open dialog fails the test through the warning.
+    function test_scrape_setup_source_pick_stays_at_depth_one(): void {
+        failOnWarning(/pushed over/);
+        Browse.MediaStatus.scraper_ids = ["gamelist.xml", "es-media-folders"];
+        Browse.MediaStatus.scraper_names = ["Gamelist XML", "ES media folders"];
+        main.showScrapeSetupModal("*");
+        try {
+            compare(ScreenManager.modalCount, 1);
+            compare(ScreenManager.topModal, main.modalScrapeSetup);
+            const modal = main.scrapeSetupModal;
+            verify(modal !== null);
+            modal.selectedScraperId = "gamelist.xml";
+            compare(modal.currentIndex, modal._rowScraper);
+            main.handleAction("accept");
+            compare(modal.page, "source", "accept on Source opens the page, not a modal");
+            compare(ScreenManager.modalCount, 1, "no second modal");
+            compare(main.listPickerModalVisible, false);
+            compare(main.helpEntries[1].label, qsTr("Select"), "the help bar reads the page's verb");
+            main.handleAction("down");
+            main.handleAction("accept");
+            tryCompare(modal, "page", "form");
+            compare(modal.selectedScraperId, "es-media-folders");
+            compare(modal.currentIndex, modal._rowScraper, "focus returns to the row that opened the page");
+            compare(ScreenManager.modalCount, 1);
+        } finally {
+            main.closeScrapeSetupModal();
+        }
+        compare(ScreenManager.modalCount, 0);
+    }
+
+    // The one thing allowed above a modal is an alert, and it must paint
+    // above the dialog it interrupts and own the help bar. Loader z used to
+    // tie at 300 and resolve by declaration order, which put the alert
+    // behind the dialog while it owned input.
+    function test_alert_over_a_modal_paints_on_top_and_owns_the_help_bar(): void {
+        main.showScrapeSetupModal("*");
+        try {
+            main.presentActionError("test:over_modal", "Over a modal", "Body", "OK", null);
+            compare(ScreenManager.modalCount, 2);
+            compare(ScreenManager.topModal, main.modalActionError);
+            const alertLoader = main.actionErrorModal.parent;
+            const dialogLoader = main.scrapeSetupModal.parent;
+            verify(alertLoader.z > dialogLoader.z, "alert Loader z (" + alertLoader.z + ") must beat the dialog's (" + dialogLoader.z + ")");
+            compare(main.helpEntries[0].label, main.actionErrorButtonLabel, "help bar advertises the alert, not the dialog");
+        } finally {
+            if (main.actionErrorModalVisible)
+                main.closeActionErrorModal(false);
+            main.closeScrapeSetupModal();
+        }
+    }
+
+    // A failed alternate-versions discovery lands while the context menu
+    // is holding its "Searching…" row. The alert must not stack on the
+    // menu: the menu closes first, so the alert is at depth 1 and Back
+    // returns to the screen.
+    function test_discover_failure_alert_closes_the_context_menu_first(): void {
+        main.contextMenuEntries = [
+            {
+                id: "discover_loading",
+                label: "Searching…"
+            }
+        ];
+        main.contextMenuOwner = "games";
+        main.contextMenuVisible = true;
+        main._discoverMenuPending = true;
+        ScreenManager.pushModal(main.modalContextMenu);
+        try {
+            main._presentReportedActionError("alternate_discovery", "Some game");
+            compare(main.contextMenuVisible, false, "the menu closes before the alert opens");
+            compare(main.actionErrorModalVisible, true);
+            compare(ScreenManager.modalCount, 1);
+            compare(ScreenManager.topModal, main.modalActionError);
+        } finally {
+            if (main.actionErrorModalVisible)
+                main.closeActionErrorModal(false);
+            if (main.contextMenuVisible)
+                main.closeContextMenu();
+        }
     }
 
     function test_action_error_rust_bridge_delivers_all_events(): void {

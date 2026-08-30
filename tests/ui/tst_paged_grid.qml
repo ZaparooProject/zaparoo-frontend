@@ -1631,6 +1631,40 @@ TestCase {
         verify(findChild(emptyAwareDefaultProbe, "emptyAwareRealCell-pad-2") !== null, "isEmpty must fall through to the ordinary delegate when emptyDelegate is null");
     }
 
+    // Same shape as `emptyAwareProbe`, but created inside the test so the
+    // warning filter below is armed before the delegates instantiate; the
+    // grids declared at TestCase level are built before any test runs.
+    Component {
+        id: facelessDelegateProbe
+        PagedGrid {
+            model: emptyAwareModel
+            delegate: emptyAwareRealDelegate
+            emptyDelegate: emptyAwareEmptyDelegate
+            columnsOverride: 3
+            rowsOverride: 1
+            width: 300
+            height: 100
+        }
+    }
+
+    // Regression: the skeleton Loader mirrors `cardPressed` off the loaded
+    // delegate, and only Tile.qml declares that property. `EmptySlot` (and
+    // the bare Items above) don't, so the read yielded `undefined`, which
+    // QML refused to assign into `property bool cardPressed` -- one
+    // "Unable to assign [undefined] to bool" per blank cell on every boot
+    // (11 for the Hub's padded bootstrap page in a beta tester's log).
+    function test_skeleton_tolerates_a_delegate_without_cardPressed(): void {
+        failOnWarning(/Unable to assign \[undefined\] to bool/);
+        const probe = createTemporaryObject(facelessDelegateProbe, testCase);
+        verify(probe !== null);
+        waitForRendering(probe);
+        verify(findChild(probe, "emptyAwareEmptyCell-pad-2") !== null, "the isEmpty row must still render through emptyDelegate");
+        // `cardPressed` lives on the skeleton's Loader, the loaded card's
+        // parent (a Loader never forwards its properties onto its item).
+        compare(findChild(probe, "pagedGridPlaceholderCard-0").parent.cardPressed, false, "a delegate with no press state reads as unpressed");
+        compare(findChild(probe, "pagedGridPlaceholderCard-2").parent.cardPressed, false, "the blank cell reads as unpressed too");
+    }
+
     // Regression: the always-on card-shaped skeleton PagedGrid paints behind
     // every cell (PagedGrid.qml's `placeholderCard`) assumes the loaded
     // delegate ends up fully opaque on top of it. `EmptySlot` deliberately

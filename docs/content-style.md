@@ -22,10 +22,12 @@ list by this priority, top to bottom:
    metadata) — always last. These start a background job the user waits
    on; they are never what most people open the menu to do.
 
-A destructive or permanent action (Delete) is never first, and sits with
-the other organizational actions rather than at the very bottom next to
+A destructive or permanent action is never first, and sits with the
+other organizational actions rather than at the very bottom next to
 maintenance — permanence and slowness are different kinds of "be careful
-here" and shouldn't be conflated into one junk-drawer tail.
+here" and shouldn't be conflated into one junk-drawer tail. Taking a
+shortcut off the Hub is `Remove`, not `Delete`: nothing on disk changes,
+and `Delete` reads as deleting the game.
 
 This mirrors both established guidance and this app's own constraints:
 GNOME's HIG says order items "by importance, task order, or expected
@@ -65,7 +67,7 @@ Nord, SNES, N64, …).
 
 Per GNOME's HIG: commands are verbs, settings are adjectives or nouns.
 
-- Commands: `Launch`, `Write`, `Add`, `Scrape`, `Move`, `Hide`, `Delete`.
+- Commands: `Launch`, `Write`, `Add`, `Scrape`, `Move`, `Hide`, `Remove`.
 - Settings: `Reduce motion`, `Debug logging`, `Mouse support` — not
   `Reduce the motion` or `Enable debug logging`.
 
@@ -129,7 +131,7 @@ tracks the single widest entry in the open menu, so one long label widens
 the whole panel. Treat anything near the length of `Show original
 filenames` as a signal to either shorten the label or move the
 explanation into a Settings description line (see `docs/style.md` →
-"Settings section headers" and this file's checklist below) rather than
+"Section headings" and this file's checklist below) rather than
 lengthening a menu row further.
 
 ## Adding a menu entry — checklist

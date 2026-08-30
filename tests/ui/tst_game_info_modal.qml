@@ -66,21 +66,23 @@ TestCase {
     // Both chevrons hang OUTSIDE the flickable — the up one above
     // `flick.top`, the down one below `flick.bottom` — so each needs its own
     // height plus its margin of clear space on that side. The up chevron's gap
-    // was `pctH(2)` against a `pctH(3.5)` requirement, so it drew through the
-    // title divider whenever the body scrolled. Anchors resolve regardless of
+    // was `pctH(2)` against a `pctH(3.5)` requirement, so it drew through what
+    // sat above the flickable whenever the body scrolled. Anchors resolve regardless of
     // `visible`, so this is checkable without driving Browse.GameInfo's live
     // data, matching how the rest of this file works.
     function test_scroll_chevrons_do_not_overlap_their_neighbours(): void {
         const up = findChild(modal, "gameInfoScrollUp");
         const down = findChild(modal, "gameInfoScrollDown");
-        const divider = findChild(modal, "gameInfoTitleDivider");
+        const title = findChild(modal, "gameInfoTitle");
         verify(up !== null);
         verify(down !== null);
-        verify(divider !== null, "title divider needs an objectName for this assertion");
+        verify(title !== null, "title needs an objectName for this assertion");
         verify(up.height > 0, "chevron must have resolved geometry");
-        verify(up.y >= divider.y + divider.height, "up chevron (" + up.y + ") must clear the title divider (" + (divider.y + divider.height) + ")");
-        // The down chevron has the room already; assert it so a future change
-        // to the bottom margin cannot quietly take it away.
-        verify(down.y + down.height <= modal.height, "down chevron must stay inside the card");
+        verify(up.y >= title.y + title.height, "up chevron (" + up.y + ") must clear the title (" + (title.y + title.height) + ")");
+        // Against the PANEL, not the modal: both chevrons are children of the
+        // panel, so their `y` is panel-relative, while `modal.height` is the
+        // full-screen height. Comparing to the latter would pass even for a
+        // chevron hanging below the card.
+        verify(down.y + down.height <= down.parent.height, "down chevron (" + (down.y + down.height) + ") must stay inside the card (" + down.parent.height + ")");
     }
 }

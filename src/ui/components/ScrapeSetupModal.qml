@@ -25,7 +25,7 @@ import Zaparoo.Browse as Browse
 // (`pkg/ui/tui/generatedb.go`): source choice + system scope + replace
 // toggle + Start, dropping the TUI's per-system multi-select widget in
 // favor of the same flat "All systems / All <Category> systems / one
-// system" picker `IndexSetupModal` uses.
+// system" list `IndexSetupModal` uses.
 //
 // Naming: entry points say "Get metadata" because the mechanism is a
 // property of the chosen source, not of the action. Inside, once a
@@ -35,17 +35,15 @@ import Zaparoo.Browse as Browse
 // resolved on the frontend as a presentation concern; Core needs no
 // kind field on `ScraperInfo` for that.
 //
-// Four keyboard-navigable rows (`currentIndex` 0-3): Source (opens a
-// nested ListPickerModal via Main.qml — see `requestScraperPicker`),
-// Systems (opens the same nested picker via `requestSystemScopePicker`),
-// Replace existing (inline toggle), Start import (action). Chrome comes
-// from the shared `Modal` shell, same as LogUploadModal.
+// Four keyboard-navigable rows (`currentIndex` 0-3): Source and Systems
+// (each opens a picker *page* of this same panel — see `page`), Replace
+// existing (inline toggle), Start import (action). Chrome comes from the
+// shared `Modal` shell, same as LogUploadModal.
 Item {
     id: modal
 
     property bool open: false
-    // Written back directly by Main.qml's list-picker accept handler
-    // (`fieldId === "scraperChoice"`) rather than a Browse.Settings
+    // Written back by the Source page's accept rather than a Browse.Settings
     // setter — the choice isn't persisted until Start is pressed, at which
     // point `start_scrape_with_scraper` records it (see media_status.rs's
     // `persist_selected_scraper_id`). Seeded from that persisted value below
@@ -61,9 +59,22 @@ Item {
     // was invoked from; the Settings row leaves it at "*". Read once in
     // `onOpenChanged` so the user can still widen or narrow it afterwards.
     property string initialSystemScope: "*"
+    // Flat "All systems / All <Category> systems / one system" list for the
+    // Systems page, handed over by Main.qml on open (`_buildSystemScopeEntries`)
+    // so the sentinel scheme lives in one place.
+    property var systemScopeEntries: []
     property bool rescrapeExisting: false
     property int currentIndex: 0
     property bool _pressed: false
+
+    // Which face the panel shows. "form" is the four rows; "source" and
+    // "systems" swap the panel's content to that row's option list and
+    // back — the same panel, never a second modal on top of this one (see
+    // docs/style.md -> "Modal depth"). Back on a page returns to the form
+    // with `currentIndex` untouched, so focus lands on the row that opened
+    // it. `onOpenChanged` resets to "form".
+    property string page: "form"
+    readonly property bool onPickerPage: modal.page !== "form"
 
     readonly property int _rowScraper: 0
     readonly property int _rowSystems: 1
@@ -73,8 +84,22 @@ Item {
     // Accept-button verb for the help bar, mirroring SettingsScreen's
     // `focusedActionLabel`. The bar describes the press, not the feature,
     // so it names what A does to the focused row rather than repeating
-    // the modal's title.
-    readonly property string focusedActionLabel: modal.currentIndex === modal._rowStart ? qsTr("Start") : (modal.currentIndex === modal._rowToggle ? qsTr("Toggle") : qsTr("Change"))
+    // the modal's title. On a picker page A picks the focused entry.
+    readonly property string focusedActionLabel: modal.onPickerPage ? qsTr("Select") : (modal.currentIndex === modal._rowStart ? qsTr("Start") : (modal.currentIndex === modal._rowToggle ? qsTr("Toggle") : qsTr("Change")))
+
+    // `{ id, label }` rows for the Source page, straight from the list Core
+    // reports; a source with no display name shows its id.
+    readonly property var scraperEntries: {
+        const ids = Browse.MediaStatus.scraper_ids;
+        const names = Browse.MediaStatus.scraper_names;
+        const entries = [];
+        for (let i = 0; i < ids.length; i++)
+            entries.push({
+                id: ids[i],
+                label: names[i] !== undefined && names[i] !== "" ? names[i] : ids[i]
+            });
+        return entries;
+    }
 
     readonly property string _selectedScraperName: {
         const ids = Browse.MediaStatus.scraper_ids;
@@ -98,17 +123,13 @@ Item {
     }
 
     signal closeRequested
-    // Bubbled to Main.qml (see MainLayout.qml's Loader wiring) — this
-    // modal can't instantiate a second top-level modal itself; the
-    // router stacks the shared ListPickerModal on top instead.
-    signal requestScraperPicker
-    signal requestSystemScopePicker
 
     visible: modal.open
     anchors.fill: parent
     z: 300
 
     onOpenChanged: {
+        modal.page = "form";
         if (!modal.open) {
             startCommit.stop();
             modal._pressed = false;
@@ -121,51 +142,65 @@ Item {
         // Re-seed from the scraper actually in force on every open, so a pick
         // made and then abandoned (changed the row, then backed out without
         // pressing Start) doesn't persist visually as though it had applied.
-        // Falls through to the Connections below when the list hasn't landed.
-        //
-        // When the persisted id is NOT in Core's list -- it was removed, or
-        // Core was reconfigured -- clear the selection rather than leaving the
-        // previous session's pick sitting there. Holding a stale-but-valid id
-        // would make the Connections below early-return on it and show a
-        // scraper that is not the one in force. Clearing hands the choice back
-        // to that handler, which prefers the persisted id and falls back to
-        // `ids[0]`. Safe to blank: `openScrapeSetupModal` calls
-        // `refresh_scrapers()` before opening, so the handler always runs, and
-        // the scraper row is replaced by a loading indicator until it does.
-        const ids = Browse.MediaStatus.scraper_ids;
-        const persisted = Browse.Settings.current_metadata_scraper;
-        if (ids.length > 0)
-            modal.selectedScraperId = ids.indexOf(persisted) >= 0 ? persisted : "";
+        modal._reseedScraperSelection(true);
     }
 
-    // Seed the selection once the scraper list lands, if nothing is
-    // chosen yet (first open) or the previous choice fell out of the
-    // list (a stale id from a prior session/Core reconfiguration).
+    // Resolve `selectedScraperId` against the list Core currently reports.
     //
-    // Preference order: whatever is already selected in this open modal, then
-    // the persisted choice, then Core's first scraper. The middle rung is
-    // what makes the persisted id user-visible — without it the modal would
-    // keep proposing `ids[0]` while a different scraper was the one actually
-    // running. This is also the only place a stale persisted id gets
-    // reconciled: `normalize_metadata_scraper` deliberately can't check
-    // membership, because Core reports its scrapers at runtime and this list
-    // is the only view of them.
+    // `force` is for the open path, which discards an abandoned pick outright.
+    // Otherwise a selection that is still offered is left alone, so a refresh
+    // that returns the same list doesn't disturb the user mid-edit.
+    //
+    // An empty list clears the selection. `_startScrape` only guards against
+    // an empty id, so leaving a stale one there would let Start submit a
+    // scraper Core no longer offers.
+    //
+    // This is also the only place a stale persisted id gets reconciled:
+    // `normalize_metadata_scraper` deliberately can't check membership,
+    // because Core reports its scrapers at runtime and this list is the only
+    // view of them.
+    function _reseedScraperSelection(force: bool): void {
+        const ids = Browse.MediaStatus.scraper_ids;
+        if (ids.length === 0) {
+            modal.selectedScraperId = "";
+            return;
+        }
+        if (!force && modal.selectedScraperId !== "" && ids.indexOf(modal.selectedScraperId) >= 0)
+            return;
+        const persisted = Browse.Settings.current_metadata_scraper;
+        modal.selectedScraperId = ids.indexOf(persisted) >= 0 ? persisted : ids[0];
+    }
+
+    // Reconcile on the LIST changing, not on the loading flag. `refresh_scrapers`
+    // clears `scrapers_loading` before it writes `scraper_ids`
+    // (media_status.rs), so a handler hung off the flag alone reads the
+    // previous list -- it would validate the selection against stale data on
+    // every refresh, and would miss an empty result entirely because that
+    // write arrives after the flag has already settled.
     Connections {
         target: Browse.MediaStatus
+        function onScraper_idsChanged(): void {
+            modal._reseedScraperSelection(false);
+        }
+        // The error path never assigns `scraper_ids` at all, so the signal
+        // above never fires there. Catch the settle so a failed refresh still
+        // reconciles against whatever list is currently held.
         function onScrapers_loadingChanged(): void {
-            if (Browse.MediaStatus.scrapers_loading)
-                return;
-            const ids = Browse.MediaStatus.scraper_ids;
-            if (ids.length === 0)
-                return;
-            if (modal.selectedScraperId !== "" && ids.indexOf(modal.selectedScraperId) >= 0)
-                return;
-            const persisted = Browse.Settings.current_metadata_scraper;
-            modal.selectedScraperId = ids.indexOf(persisted) >= 0 ? persisted : ids[0];
+            if (!Browse.MediaStatus.scrapers_loading)
+                modal._reseedScraperSelection(false);
         }
     }
 
     function handleAction(action: string): void {
+        if (modal.onPickerPage) {
+            // Back leaves the page, not the modal; up/down/accept drive the
+            // list. Left/right have nothing to do on a list.
+            if (action === "cancel")
+                modal.page = "form";
+            else if (action === "up" || action === "down" || action === "accept")
+                pickerList.handleAction(action);
+            return;
+        }
         if (action === "cancel")
             modal.closeRequested();
         else if (action === "up")
@@ -177,14 +212,32 @@ Item {
                 modal.rescrapeExisting = !modal.rescrapeExisting;
         } else if (action === "accept") {
             if (modal.currentIndex === modal._rowScraper)
-                modal.requestScraperPicker();
+                modal._openPage("source");
             else if (modal.currentIndex === modal._rowSystems)
-                modal.requestSystemScopePicker();
+                modal._openPage("systems");
             else if (modal.currentIndex === modal._rowToggle)
                 modal.rescrapeExisting = !modal.rescrapeExisting;
             else if (modal.currentIndex === modal._rowStart)
                 modal._startScrape();
         }
+    }
+
+    // Entries and the initial focus are assigned, not bound, so both are in
+    // place before `active` flips and the list re-applies them: the order
+    // three bindings re-evaluate on one `page` change is not something to
+    // lean on.
+    function _openPage(target: string): void {
+        pickerList.entries = target === "source" ? modal.scraperEntries : modal.systemScopeEntries;
+        pickerList.initialId = target === "source" ? modal.selectedScraperId : modal.selectedSystemScope;
+        modal.page = target;
+    }
+
+    function _pickFromPage(id: string): void {
+        if (modal.page === "source")
+            modal.selectedScraperId = id;
+        else if (modal.page === "systems")
+            modal.selectedSystemScope = id;
+        modal.page = "form";
     }
 
     // Resolves `selectedSystemScope`'s "*"/"cat:<Category>"/<system id>
@@ -230,6 +283,27 @@ Item {
             width: parent.width
             spacing: Sizing.pctH(1.5)
 
+            // Picker page: the row's own name as a section heading over the
+            // list, under the unchanged modal title, so the dialog reads as
+            // the same place with one row opened up rather than a new one.
+            SectionHeader {
+                objectName: "setupPickerHeader"
+                width: parent.width
+                visible: modal.onPickerPage
+                label: modal.page === "source" ? qsTr("Source") : qsTr("Systems")
+            }
+
+            PickerList {
+                id: pickerList
+
+                objectName: "setupPickerList"
+                width: parent.width
+                visible: modal.onPickerPage
+                active: modal.onPickerPage
+                onAccepted: id => modal._pickFromPage(id)
+                onCloseRequested: modal.page = "form"
+            }
+
             // Labeled pointer rather than a paragraph explaining what the
             // sources do: the panel already carries four rows, and at 240p
             // every line above them is a line the Start row can't have. The
@@ -239,6 +313,7 @@ Item {
             // scannable one.
             Text {
                 width: parent.width
+                visible: !modal.onPickerPage
                 text: qsTr("Documentation: %1").arg("zaparoo.org/docs/frontend/scraping")
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontCaption
@@ -251,7 +326,7 @@ Item {
             Item {
                 width: parent.width
                 height: Sizing.pctH(6)
-                visible: Browse.MediaStatus.scrapers_loading
+                visible: !modal.onPickerPage && Browse.MediaStatus.scrapers_loading
 
                 LoadingIndicator {
                     anchors.centerIn: parent
@@ -262,7 +337,7 @@ Item {
             Column {
                 width: parent.width
                 spacing: Sizing.pctH(1.5)
-                visible: !Browse.MediaStatus.scrapers_loading
+                visible: !modal.onPickerPage && !Browse.MediaStatus.scrapers_loading
 
                 SettingsField {
                     width: parent.width
@@ -273,7 +348,7 @@ Item {
                     onHovered: modal.currentIndex = modal._rowScraper
                     onAccepted: {
                         modal.currentIndex = modal._rowScraper;
-                        modal.requestScraperPicker();
+                        modal._openPage("source");
                     }
                 }
 
@@ -286,7 +361,7 @@ Item {
                     onHovered: modal.currentIndex = modal._rowSystems
                     onAccepted: {
                         modal.currentIndex = modal._rowSystems;
-                        modal.requestSystemScopePicker();
+                        modal._openPage("systems");
                     }
                 }
 

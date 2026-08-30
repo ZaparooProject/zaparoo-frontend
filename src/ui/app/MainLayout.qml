@@ -372,6 +372,9 @@ ApplicationWindow {
     property var crtCalibrationModal: crtCalibrationModalLoader.item
     property var scrapeSetupModal: scrapeSetupModalLoader.item
     property var indexSetupModal: indexSetupModalLoader.item
+    // The help bar's resolved rows, for tests that assert which surface
+    // the bar is describing (it branches on the modal flags above).
+    readonly property var helpEntries: instructionsBar.helpEntries
     property alias headerBar: headerBar
     property alias screensaverOverlay: screensaverOverlay
     // Exposed so Main.qml binds Sizing.screenWidth/Height to the
@@ -557,17 +560,6 @@ ApplicationWindow {
     signal closeLogUploadRequested
     signal closeScrapeSetupRequested
     signal closeIndexSetupRequested
-    // Bubbled from ScrapeSetupModal's own scraper-picker row -- Main.qml
-    // owns opening the shared ListPickerModal (the modal itself can't
-    // instantiate a second top-level modal directly; see the Loader
-    // pattern every other modal-with-nested-picker interaction uses).
-    signal requestScraperPicker
-    // Bubbled from either ScrapeSetupModal's or IndexSetupModal's own
-    // Systems row -- shared because the two modals are mutually
-    // exclusive (only one Settings Accept path opens either at a time),
-    // so Main.qml's handler tells them apart by which one is currently
-    // visible rather than needing two identical signals.
-    signal requestSystemScopePicker
     signal closeQuitConfirmRequested
     signal quitConfirmAccepted
     signal listPickerAccepted(string fieldId, string selectedId)
@@ -954,23 +946,6 @@ ApplicationWindow {
             }
 
             Loader {
-                id: actionErrorModalLoader
-                anchors.fill: parent
-                z: 300
-                active: root.actionErrorModalRequested
-                sourceComponent: Component {
-                    Modal {
-                        open: root.actionErrorModalVisible
-                        kind: "action_error"
-                        title: root.actionErrorTitle
-                        body: root.actionErrorBody
-                        buttonLabel: root.actionErrorButtonLabel
-                        onAccepted: root.actionErrorAccepted()
-                    }
-                }
-            }
-
-            Loader {
                 id: contextMenuLoader
                 anchors.fill: parent
                 z: 300
@@ -1070,8 +1045,6 @@ ApplicationWindow {
                         anchors.fill: parent
                         open: root.scrapeSetupModalVisible
                         onCloseRequested: root.closeScrapeSetupRequested()
-                        onRequestScraperPicker: root.requestScraperPicker()
-                        onRequestSystemScopePicker: root.requestSystemScopePicker()
                     }
                 }
             }
@@ -1090,7 +1063,6 @@ ApplicationWindow {
                         anchors.fill: parent
                         open: root.indexSetupModalVisible
                         onCloseRequested: root.closeIndexSetupRequested()
-                        onRequestSystemScopePicker: root.requestSystemScopePicker()
                     }
                 }
             }
@@ -1158,6 +1130,30 @@ ApplicationWindow {
                         loading: root.letterJumpLoading
                         onAccepted: offset => root.letterJumpAccepted(offset)
                         onCloseRequested: root.letterJumpCloseRequested()
+                    }
+                }
+            }
+
+            // Action-error alert. The one surface allowed above another
+            // modal (docs/style.md -> "Modal depth"): an async failure can
+            // land while a dialog or the context menu is open, so this
+            // Loader is declared after every other modal Loader and sits
+            // above the commercial notice's 310. Sibling `z` ties resolve by
+            // declaration order, which used to leave this alert painted
+            // behind the dialog it interrupted while owning input.
+            Loader {
+                id: actionErrorModalLoader
+                anchors.fill: parent
+                z: 320
+                active: root.actionErrorModalRequested
+                sourceComponent: Component {
+                    Modal {
+                        open: root.actionErrorModalVisible
+                        kind: "action_error"
+                        title: root.actionErrorTitle
+                        body: root.actionErrorBody
+                        buttonLabel: root.actionErrorButtonLabel
+                        onAccepted: root.actionErrorAccepted()
                     }
                 }
             }
@@ -1283,6 +1279,20 @@ ApplicationWindow {
                 // (see HubScreen.qml's routing comment). Sentence case
                 // throughout.
                 readonly property var helpEntries: {
+                    // First: an alert can sit above any other modal and it
+                    // owns input while it does, so its row must win over the
+                    // surface underneath it.
+                    if (root.actionErrorModalVisible)
+                        return [
+                            {
+                                button: "ButtonA",
+                                label: root.actionErrorButtonLabel
+                            },
+                            {
+                                button: "ButtonB",
+                                label: qsTr("Close")
+                            }
+                        ];
                     if (root.contextMenuVisible)
                         return [
                             {
@@ -1353,17 +1363,6 @@ ApplicationWindow {
                                 label: qsTr("I understand")
                             }
                         ];
-                    if (root.actionErrorModalVisible)
-                        return [
-                            {
-                                button: "ButtonA",
-                                label: root.actionErrorButtonLabel
-                            },
-                            {
-                                button: "ButtonB",
-                                label: qsTr("Close")
-                            }
-                        ];
                     if (root.coreVersionModalVisible || root.randomFailedModalVisible)
                         return [
                             {
@@ -1397,12 +1396,12 @@ ApplicationWindow {
                                 label: qsTr("Cancel")
                             }
                         ];
-                    // Below the list-picker branch above deliberately: both
-                    // setup modals stay mounted while their nested picker
-                    // is open, so the picker's own row has to win first.
-                    // Without this branch the bar fell through to the
-                    // Settings screen underneath and advertised its rows
-                    // while a modal owned input.
+                    // The setup modals' own row: A is the focused row's verb
+                    // ("Select" on their in-panel picker page, see
+                    // ScrapeSetupModal.qml's `page`), B backs out one level
+                    // (page -> form -> closed). Without this branch the bar
+                    // fell through to the Settings screen underneath and
+                    // advertised its rows while a modal owned input.
                     if (root.indexSetupModalVisible || root.scrapeSetupModalVisible) {
                         const setupModal = root.indexSetupModalVisible ? root.indexSetupModal : root.scrapeSetupModal;
                         return [

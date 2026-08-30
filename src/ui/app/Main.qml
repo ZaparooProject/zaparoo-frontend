@@ -2475,7 +2475,7 @@ MainLayout {
         return entries;
     }
 
-    // Universal Move/Hide-or-Delete, appended to every Hub-owned menu below
+    // Universal Move/Hide-or-Remove, appended to every Hub-owned menu below
     // — empty (no menu) for an entry with no real `Browse.HubLayout`
     // backing yet (the bootstrap placeholder window; see HubScreen.qml's
     // `_blankEntry` doc comment). `kind` is never `"empty"` here — a blank
@@ -2483,13 +2483,15 @@ MainLayout {
     // guard. The remove label depends on `kind`: category/action stay
     // tracked in `known` (see hub_layout.rs) and come straight back via
     // View -> Add item…, so "Hide" is accurate — nothing is lost.
-    // system/folder/zapscript aren't tracked at all, so removing one
-    // really is permanent; "Delete" says so rather than implying a
-    // reversibility that isn't there.
+    // system/folder/zapscript aren't tracked, so the shortcut has to be
+    // re-added from its own Options menu; it is still only a shortcut.
+    // "Remove" pairs with "Add to Hub" and "Remove from favorites". A beta
+    // tester read the earlier "Delete" as deleting the game file itself,
+    // and nothing on disk is ever touched here.
     function _hubMoveRemoveEntries(hubIndex: int, kind: string): var {
         if (hubIndex < 0)
             return [];
-        const removeLabel = kind === "category" || kind === "action" ? qsTr("Hide") : qsTr("Delete");
+        const removeLabel = kind === "category" || kind === "action" ? qsTr("Hide") : qsTr("Remove");
         return [
             {
                 id: "hub_move",
@@ -2854,6 +2856,17 @@ MainLayout {
         if (owner === "games") {
             const entryType = Browse.GamesModel.entry_type_at(index);
             const systemId = Browse.GamesModel.current_system_id;
+            // A single-game folder (a `directory` Core resolved to one
+            // playable item) shows as a game everywhere else -- cover,
+            // Launch, Details, the Options menu -- so its shortcut must be
+            // the game, not the folder. The child file is only known
+            // asynchronously (the same `media.meta`/folder-browse
+            // resolution `launch_at` uses), so the add completes in
+            // `onHub_target_sequenceChanged` below.
+            if (entryType === "directory" && Browse.GamesModel.is_media_capable_at(index)) {
+                Browse.GamesModel.resolve_hub_target_at(index);
+                return;
+            }
             // A filesystem `root` is one of the system's configured game
             // directories -- addressed by path exactly like a `directory`, so
             // it pins as the same `folder` item. `is_filesystem_root_at`
@@ -3163,6 +3176,13 @@ MainLayout {
     }
 
     function _presentReportedActionError(kind: string, context: string): void {
+        // An alert is the one thing allowed above a modal (docs/style.md ->
+        // "Modal depth"), but a failed discovery arrives while the context
+        // menu is holding its "Searching…" row: close the menu first so the
+        // alert lands at depth 1 and Back returns to the screen, not to a
+        // menu whose row can never resolve.
+        if (kind === "alternate_discovery" && root.contextMenuVisible)
+            root.closeContextMenu();
         let title = qsTr("Action failed");
         let body = qsTr("The action could not be completed. Check Zaparoo Core and try again.");
         if (kind === "launch") {
@@ -3171,6 +3191,9 @@ MainLayout {
         } else if (kind === "favorite") {
             title = qsTr("Favorite update failed");
             body = qsTr("Could not update this favorite. Check Zaparoo Core and try again.");
+        } else if (kind === "add_to_hub") {
+            title = qsTr("Add to Hub failed");
+            body = context !== "" ? qsTr("Could not add %1 to the Hub. Check Zaparoo Core and try again.").arg(context) : qsTr("Could not add this item to the Hub. Check Zaparoo Core and try again.");
         } else if (kind === "media_index") {
             title = qsTr("Media update failed");
             body = qsTr("Could not start the media database update. Check Zaparoo Core and try again.");
@@ -3220,6 +3243,18 @@ MainLayout {
         function onRandom_errorChanged(): void {
             if ((Browse.GamesModel.random_error ?? "") !== "")
                 root.openRandomFailedModal();
+        }
+        // Second half of "Add to Hub" on a single-game folder (see
+        // `_addToHub`): the resolved child file lands as an ordinary game
+        // shortcut, path and script both the child, so the tile launches
+        // and finds its cover exactly like a row added from inside the
+        // folder. The sequence edge is the trigger; the model only bumps
+        // it after the other four properties are set.
+        function onHub_target_sequenceChanged(): void {
+            const script = Browse.GamesModel.hub_target_script;
+            if (script === "")
+                return;
+            Browse.HubLayout.add_target_item("zapscript", "", Browse.GamesModel.hub_target_path, script, Browse.GamesModel.hub_target_name, "", Browse.GamesModel.hub_target_system);
         }
     }
 
@@ -3271,13 +3306,22 @@ MainLayout {
     // list on open via `Browse.MediaStatus.refresh_scrapers()`.
     function openScrapeSetupModal(scope: string): void {
         Browse.MediaStatus.refresh_scrapers();
+        root.showScrapeSetupModal(scope);
+    }
+
+    // Mount and push without the source refresh. `openScrapeSetupModal` is
+    // the user-facing entry; tests drive this one so no Core call is in
+    // flight behind their assertions.
+    function showScrapeSetupModal(scope: string): void {
         // `_requestModal` activates the Loader, and a sourceComponent
         // Loader instantiates synchronously, so the item exists by the
         // next line even on the very first open. Seed the scope before
         // flipping `visible`, since `onOpenChanged` is what reads it.
         root._requestModal(root.modalScrapeSetup);
-        if (root.scrapeSetupModal !== null)
+        if (root.scrapeSetupModal !== null) {
             root.scrapeSetupModal.initialSystemScope = scope !== "" ? scope : root._systemScopeAll;
+            root.scrapeSetupModal.systemScopeEntries = root._buildSystemScopeEntries();
+        }
         root.scrapeSetupModalVisible = true;
         if (ScreenManager.topModal !== root.modalScrapeSetup)
             ScreenManager.pushModal(root.modalScrapeSetup);
@@ -3297,6 +3341,8 @@ MainLayout {
     // full index has neither.
     function openIndexSetupModal(): void {
         root._requestModal(root.modalIndexSetup);
+        if (root.indexSetupModal !== null)
+            root.indexSetupModal.systemScopeEntries = root._buildSystemScopeEntries();
         root.indexSetupModalVisible = true;
         if (ScreenManager.topModal !== root.modalIndexSetup)
             ScreenManager.pushModal(root.modalIndexSetup);
@@ -3310,32 +3356,10 @@ MainLayout {
 
     onCloseIndexSetupRequested: root.closeIndexSetupModal()
 
-    // Nested picker for the scraper-choice row inside ScrapeSetupModal —
-    // stacks a second modal on top (ScreenManager.pushModal appends, so
-    // the picker becomes topModal and correctly receives input while the
-    // setup modal stays mounted underneath it). The picker's own accept
-    // writes back to `scrapeSetupModal.selectedScraperId` directly (see
-    // the `fieldId === "scraperChoice"` branch in `onListPickerAccepted`)
-    // rather than a Browse.Settings setter, since the choice isn't
-    // persisted until Start is pressed.
-    function openScraperChoicePicker(): void {
-        if (root.scrapeSetupModal === null)
-            return;
-        const ids = Browse.MediaStatus.scraper_ids;
-        const names = Browse.MediaStatus.scraper_names;
-        const entries = [];
-        for (let i = 0; i < ids.length; i++)
-            entries.push({
-                id: ids[i],
-                label: names[i] !== undefined && names[i] !== "" ? names[i] : ids[i]
-            });
-        root.openListPickerModal(qsTr("Source"), entries, root.scrapeSetupModal.selectedScraperId, "scraperChoice");
-    }
-
-    onRequestScraperPicker: root.openScraperChoicePicker()
-
     // Flat "All systems / All <Category> systems / one system" entry list
-    // shared by both media job modals' Systems row. "cat:" ids resolve to
+    // handed to both media job modals on open for their Systems page (the
+    // page is a face of the modal's own panel, never a second modal -- see
+    // docs/style.md -> "Modal depth"). "cat:" ids resolve to
     // `system_ids_for_category` at Start; the individual-system entries
     // resolve straight to their own id. Categories with zero indexable
     // systems are skipped, same gate the systems/categories context menu
@@ -3365,28 +3389,6 @@ MainLayout {
             });
         return entries;
     }
-
-    // Nested picker for the Systems row, shared by ScrapeSetupModal and
-    // IndexSetupModal (see `requestSystemScopePicker`'s doc comment in
-    // MainLayout.qml for why one signal covers both). The two modals are
-    // mutually exclusive, so whichever one is currently visible is the
-    // request's source and the accept target.
-    function _activeSystemScopeModal(): var {
-        if (root.scrapeSetupModalVisible)
-            return root.scrapeSetupModal;
-        if (root.indexSetupModalVisible)
-            return root.indexSetupModal;
-        return null;
-    }
-
-    function openSystemScopePicker(): void {
-        const target = root._activeSystemScopeModal();
-        if (target === null)
-            return;
-        root.openListPickerModal(qsTr("Systems"), root._buildSystemScopeEntries(), target.selectedSystemScope, "systemScope");
-    }
-
-    onRequestSystemScopePicker: root.openSystemScopePicker()
 
     function handleLogUploadError(): void {
         // LogUpload state 3 is terminal failure; full detail is already logged
@@ -4009,29 +4011,6 @@ MainLayout {
             if (separatorIndex < 0)
                 return;
             root.beginGameLauncherUpdate(rest.slice(0, separatorIndex), rest.slice(separatorIndex + 1), selectedId);
-            return;
-        }
-        // Round 10: nested picker opened by ScrapeSetupModal itself
-        // (see its own `requestScraperPicker` signal below) -- writes
-        // straight back to the modal's own local `selectedScraperId`
-        // rather than a Browse.Settings setter, since the choice isn't
-        // persisted until "Start" is pressed. Only pops the picker; the
-        // scrape setup modal underneath stays open.
-        if (fieldId === "scraperChoice") {
-            root.closeListPickerModal();
-            if (root.scrapeSetupModal !== null)
-                root.scrapeSetupModal.selectedScraperId = selectedId;
-            return;
-        }
-        // Round 11: nested Systems-row picker shared by ScrapeSetupModal
-        // and IndexSetupModal (see `openSystemScopePicker`/
-        // `_activeSystemScopeModal` above) -- same "write straight back to
-        // the still-open modal underneath" pattern as `scraperChoice`.
-        if (fieldId === "systemScope") {
-            root.closeListPickerModal();
-            const target = root._activeSystemScopeModal();
-            if (target !== null)
-                target.selectedSystemScope = selectedId;
             return;
         }
         if (fieldId === "resolution") {

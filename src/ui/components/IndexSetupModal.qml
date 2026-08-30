@@ -20,10 +20,10 @@ import Zaparoo.Browse as Browse
 // picker and Start, since a full index has no scraper choice or re-scrape
 // toggle to make.
 //
-// Two keyboard-navigable rows (`currentIndex` 0-1): Systems (opens the
-// shared ListPickerModal via Main.qml — see `requestSystemScopePicker`),
-// Start update (action). Chrome comes from the shared `Modal` shell, same
-// as ScrapeSetupModal/LogUploadModal.
+// Two keyboard-navigable rows (`currentIndex` 0-1): Systems (opens a
+// picker *page* of this same panel — see `page`), Start update (action).
+// Chrome comes from the shared `Modal` shell, same as
+// ScrapeSetupModal/LogUploadModal.
 Item {
     id: modal
 
@@ -32,8 +32,19 @@ Item {
     // sentinel convention as ScrapeSetupModal — see Main.qml's
     // `_systemScopeAll`/`_buildSystemScopeEntries`.
     property string selectedSystemScope: "*"
+    // Flat "All systems / All <Category> systems / one system" list for the
+    // Systems page, handed over by Main.qml on open (`_buildSystemScopeEntries`)
+    // so the sentinel scheme lives in one place.
+    property var systemScopeEntries: []
     property int currentIndex: 0
     property bool _pressed: false
+
+    // "form" or "systems": the Systems row swaps this panel's content to
+    // its option list and back rather than opening a second modal (see
+    // docs/style.md -> "Modal depth"). Back on the page returns to the form
+    // with `currentIndex` untouched. `onOpenChanged` resets to "form".
+    property string page: "form"
+    readonly property bool onPickerPage: modal.page !== "form"
 
     readonly property int _rowSystems: 0
     readonly property int _rowStart: 1
@@ -41,8 +52,8 @@ Item {
     // Accept-button verb for the help bar, mirroring SettingsScreen's
     // `focusedActionLabel`. The bar describes the press, not the feature,
     // so it names what A does to the focused row rather than repeating
-    // the modal's title.
-    readonly property string focusedActionLabel: modal.currentIndex === modal._rowStart ? qsTr("Start") : qsTr("Change")
+    // the modal's title. On the picker page A picks the focused entry.
+    readonly property string focusedActionLabel: modal.onPickerPage ? qsTr("Select") : (modal.currentIndex === modal._rowStart ? qsTr("Start") : qsTr("Change"))
 
     // Same display convention as ScrapeSetupModal's identical property —
     // see Main.qml's `_buildSystemScopeEntries` for the sentinel scheme.
@@ -56,16 +67,13 @@ Item {
     }
 
     signal closeRequested
-    // Bubbled to Main.qml (see MainLayout.qml's Loader wiring) — this
-    // modal can't instantiate a second top-level modal itself; the
-    // router stacks the shared ListPickerModal on top instead.
-    signal requestSystemScopePicker
 
     visible: modal.open
     anchors.fill: parent
     z: 300
 
     onOpenChanged: {
+        modal.page = "form";
         if (!modal.open) {
             startCommit.stop();
             modal._pressed = false;
@@ -77,6 +85,15 @@ Item {
     }
 
     function handleAction(action: string): void {
+        if (modal.onPickerPage) {
+            // Back leaves the page, not the modal; up/down/accept drive the
+            // list.
+            if (action === "cancel")
+                modal.page = "form";
+            else if (action === "up" || action === "down" || action === "accept")
+                pickerList.handleAction(action);
+            return;
+        }
         if (action === "cancel")
             modal.closeRequested();
         else if (action === "up")
@@ -85,10 +102,24 @@ Item {
             modal.currentIndex = Math.min(modal._rowStart, modal.currentIndex + 1);
         else if (action === "accept") {
             if (modal.currentIndex === modal._rowSystems)
-                modal.requestSystemScopePicker();
+                modal._openPage("systems");
             else if (modal.currentIndex === modal._rowStart)
                 modal._startIndex();
         }
+    }
+
+    // Entries and the initial focus are assigned, not bound, so both are in
+    // place before `active` flips and the list re-applies them (see
+    // ScrapeSetupModal's identical helper).
+    function _openPage(target: string): void {
+        pickerList.entries = modal.systemScopeEntries;
+        pickerList.initialId = modal.selectedSystemScope;
+        modal.page = target;
+    }
+
+    function _pickFromPage(id: string): void {
+        modal.selectedSystemScope = id;
+        modal.page = "form";
     }
 
     function _startIndex(): void {
@@ -125,8 +156,29 @@ Item {
             width: parent.width
             spacing: Sizing.pctH(1.5)
 
+            // Picker page: the row's own name as a section heading over the
+            // list, under the unchanged modal title.
+            SectionHeader {
+                objectName: "setupPickerHeader"
+                width: parent.width
+                visible: modal.onPickerPage
+                label: qsTr("Systems")
+            }
+
+            PickerList {
+                id: pickerList
+
+                objectName: "setupPickerList"
+                width: parent.width
+                visible: modal.onPickerPage
+                active: modal.onPickerPage
+                onAccepted: id => modal._pickFromPage(id)
+                onCloseRequested: modal.page = "form"
+            }
+
             SettingsField {
                 width: parent.width
+                visible: !modal.onPickerPage
                 label: qsTr("Systems")
                 value: modal._selectedSystemScopeName
                 control: "picker"
@@ -134,12 +186,13 @@ Item {
                 onHovered: modal.currentIndex = modal._rowSystems
                 onAccepted: {
                     modal.currentIndex = modal._rowSystems;
-                    modal.requestSystemScopePicker();
+                    modal._openPage("systems");
                 }
             }
 
             SettingsField {
                 width: parent.width
+                visible: !modal.onPickerPage
                 label: qsTr("Start update")
                 value: ""
                 control: "action"
