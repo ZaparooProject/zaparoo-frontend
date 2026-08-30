@@ -7,8 +7,8 @@ import QtTest
 import Zaparoo.Theme
 import Zaparoo.Ui
 
-// Direct SectionHeader coverage. A heading is a metadata-coloured label on
-// a hairline rule -- colour and a rectangle, the two signals that survive
+// Direct SectionHeader coverage. A heading is a metadata-colored label on
+// a hairline rule -- color and a rectangle, the two signals that survive
 // bitmap mode (--crt, embedded 240p), where fontSection/fontBody quantize
 // to the same 8px strike and the bitmap face has one weight. It has to
 // read the same on the settings card and inside a modal panel, so the
@@ -56,7 +56,7 @@ TestCase {
         compare(rule.color.toString(), Theme.borderMid.toString());
     }
 
-    function test_label_is_metadata_coloured_and_inset_like_a_field_label(): void {
+    function test_label_is_metadata_colored_and_inset_like_a_field_label(): void {
         const label = findChild(header, "sectionHeaderLabel");
         verify(label !== null);
         compare(label.text, "Analog video");

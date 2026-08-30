@@ -7,20 +7,20 @@ import Zaparoo.Theme
 
 // Non-focusable group heading for a vertical list: the Settings form's
 // bands (General / Library / Advanced), Game info's Description block, and
-// the picker page inside the setup modals. A metadata-coloured label on a
+// the picker page inside the setup modals. A metadata-colored label on a
 // hairline rule, inset like the row labels under it, so a group reads the
 // same on the settings card, in a modal panel, and on the detail sheet.
 // The host's navigation skips it; it never takes focus.
 //
-// Colour and a rule, not size or weight: in bitmap mode (--crt, embedded
+// Color and a rule, not size or weight: in bitmap mode (--crt, embedded
 // 240p) `Sizing.fontSize()` quantizes fontSection and fontBody to the same
 // 8px strike and `Theme.fontUi`'s bitmap face has one weight, so a bigger
 // or bolder label is pixel-identical to a row label there. `Theme.textLabel`
-// against `textPrimary` rows is the colour step the settings hint band
+// against `textPrimary` rows is the color step the settings hint band
 // already leans on for the same reason, and a one-stroke rule is a
 // rectangle that renders at any tier. The earlier filled `borderMid` band
 // only worked where it met the settings card's own frame edge to edge;
-// inside a modal panel it was a grey block with margins. See
+// inside a modal panel it was a gray block with margins. See
 // docs/style.md -> "Section headings".
 //
 // Software-renderer safe: one Text and one Rectangle.
@@ -50,7 +50,7 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: root._topGap
         // Sentence case (docs/content-style.md); DemiBold still reads as a
-        // heading wherever weight applies, the colour carries it where it
+        // heading wherever weight applies, the color carries it where it
         // doesn't.
         text: root.label
         color: Theme.textLabel
@@ -69,7 +69,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         height: Sizing.stroke(1)
-        // The card frame's own colour: 1.5:1+ off surfaceCard on every
+        // The card frame's own color: 1.5:1+ off surfaceCard on every
         // preset, so the break is visible at 240p; stays off Theme.accent,
         // which SettingsField reserves for "this row is an action".
         color: Theme.borderMid

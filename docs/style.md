@@ -565,12 +565,12 @@ the row labels under it, on a one-stroke `Theme.borderMid` rule that runs the
 row width. The same component, unchanged, on the settings card, in a modal
 panel and on the detail sheet — a heading is a heading wherever the list is.
 
-Colour and a rule, not size or weight. A bigger, bolder label silently
+Color and a rule, not size or weight. A bigger, bolder label silently
 stops working in bitmap mode: `Sizing.fontSize()` quantizes `fontSection`
 and `fontBody` to the same 8/16px there, and `Theme.fontUi`'s bitmap face
 ("MxPlus HP 100LX 6x8") has a single weight, so `Font.DemiBold` is a no-op
 and the heading is pixel-identical to a field label. What survives that
-tier is a colour step (`textLabel` against `textPrimary` rows, the same
+tier is a color step (`textLabel` against `textPrimary` rows, the same
 signal the hint band below leans on) and a rectangle (the rule). `borderMid`
 measures 1.5:1+ off both `surfaceCard` and `bgPanel` across the catalog, and
 `textLabel` holds 3:1 on both. The rule stays off `Theme.accent`, which
@@ -580,7 +580,7 @@ above and the action-row label rule below it).
 An earlier version was a full-card-width `Rectangle` filled `borderMid`
 with the label inside it, mounted without the card padding so the band met
 the settings card's own frame edge to edge. That only worked where there
-was a frame to meet; inside a modal panel it was a grey block with margins,
+was a frame to meet; inside a modal panel it was a gray block with margins,
 and it gave one job two looks. The rule-under-label heading needs no mount
 special case.
 

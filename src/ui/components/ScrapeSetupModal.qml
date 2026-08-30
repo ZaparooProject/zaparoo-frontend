@@ -181,6 +181,12 @@ Item {
         target: Browse.MediaStatus
         function onScraper_idsChanged(): void {
             modal._reseedScraperSelection(false);
+            modal._refreshSourcePage();
+        }
+        // Names land in a separate write after the ids; refresh the page's
+        // labels once they do.
+        function onScraper_namesChanged(): void {
+            modal._refreshSourcePage();
         }
         // The error path never assigns `scraper_ids` at all, so the signal
         // above never fires there. Catch the settle so a failed refresh still
@@ -230,6 +236,23 @@ Item {
         pickerList.entries = target === "source" ? modal.scraperEntries : modal.systemScopeEntries;
         pickerList.initialId = target === "source" ? modal.selectedScraperId : modal.selectedSystemScope;
         modal.page = target;
+    }
+
+    // The Source page copies the list when it opens, and `refresh_scrapers`
+    // (fired by the router on open) can land after that: a page opened
+    // early shows the previous list, and a scraper Core dropped would still
+    // be pickable. Re-seed the open page from the reported list, focus on
+    // the reconciled selection; no sources left means no page to be on.
+    function _refreshSourcePage(): void {
+        if (modal.page !== "source")
+            return;
+        const entries = modal.scraperEntries;
+        if (entries.length === 0) {
+            modal.page = "form";
+            return;
+        }
+        pickerList.initialId = modal.selectedScraperId;
+        pickerList.entries = entries;
     }
 
     function _pickFromPage(id: string): void {

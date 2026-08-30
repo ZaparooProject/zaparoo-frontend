@@ -1539,33 +1539,33 @@ Français - Wilfried</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="279"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="302"/>
         <source>Get metadata</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="317"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="340"/>
         <source>Documentation: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="333"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="356"/>
         <source>Loading sources…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="293"/>
-        <location filename="../components/ScrapeSetupModal.qml" line="344"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="316"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="367"/>
         <source>Source</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="370"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="393"/>
         <source>Replace existing</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="384"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="407"/>
         <source>Start import</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1574,8 +1574,8 @@ Français - Wilfried</source>
         <translation type="obsolete">抓取元数据</translation>
     </message>
     <message>
-        <location filename="../components/ScrapeSetupModal.qml" line="293"/>
-        <location filename="../components/ScrapeSetupModal.qml" line="357"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="316"/>
+        <location filename="../components/ScrapeSetupModal.qml" line="380"/>
         <source>Systems</source>
         <translation type="unfinished"></translation>
     </message>

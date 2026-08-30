@@ -178,6 +178,29 @@ TestCase {
         compare(closeSpy.count, 0, "Back on a page must not close the modal");
     }
 
+    // `refresh_scrapers` is fired by the router on open and can land after
+    // the user has already opened the Source page: the page must follow the
+    // reported list (a dropped scraper must not stay pickable), and with no
+    // sources left there is no page to be on.
+    function test_source_page_follows_the_reported_list(): void {
+        modal.selectedScraperId = "es-media-folders";
+        modal.currentIndex = modal._rowScraper;
+        modal.handleAction("accept");
+        const list = _list();
+        compare(list.entries.length, 2);
+
+        Browse.MediaStatus.scraper_ids = ["gamelist.xml"];
+        Browse.MediaStatus.scraper_names = ["Gamelist XML"];
+        compare(modal.page, "source", "a non-empty list keeps the page open");
+        compare(list.entries.length, 1, "the page lists the new sources");
+        compare(modal.selectedScraperId, "gamelist.xml", "the selection reconciles to an offered source");
+        compare(list.currentIndex, 0, "focus follows the reconciled selection");
+
+        Browse.MediaStatus.scraper_ids = [];
+        compare(modal.page, "form", "no sources means no Source page");
+        compare(modal.selectedScraperId, "");
+    }
+
     function test_accept_on_systems_row_opens_the_systems_page(): void {
         modal.selectedSystemScope = "cat:Console";
         modal.currentIndex = modal._rowSystems;
