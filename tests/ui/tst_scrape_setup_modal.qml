@@ -63,6 +63,7 @@ TestCase {
         // would otherwise carry its scope into every later test.
         modal.initialSystemScope = "*";
         modal.systemScopeEntries = testCase.scopeEntries;
+        Browse.MediaStatus.scrapers_loading = false;
         Browse.MediaStatus.scraper_ids = ["gamelist.xml", "es-media-folders"];
         Browse.MediaStatus.scraper_names = ["Gamelist XML", "ES media folders"];
         modal.open = true;
@@ -78,6 +79,22 @@ TestCase {
         compare(modal.page, "form");
         compare(modal.selectedSystemScope, "*");
         compare(modal.rescrapeExisting, false);
+    }
+
+    function test_source_refresh_keeps_form_visible(): void {
+        const form = findChild(modal, "setupForm");
+        verify(form !== null);
+        compare(form.visible, true);
+        Browse.MediaStatus.scrapers_loading = true;
+        compare(form.visible, true, "source refresh must not replace form with a loading flash");
+        compare(modal.page, "form");
+    }
+
+    function test_empty_source_list_does_not_open_empty_page(): void {
+        Browse.MediaStatus.scraper_ids = [];
+        modal.currentIndex = modal._rowScraper;
+        modal.handleAction("accept");
+        compare(modal.page, "form");
     }
 
     function test_down_advances_through_all_four_rows_and_clamps(): void {

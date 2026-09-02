@@ -555,6 +555,20 @@ TestCase {
         compare(main.pendingTransition, "favorites");
     }
 
+    function test_entering_favorite_system_persists_resume_scope(): void {
+        const originalPath = Browse.FavoriteSystemsState.selected_path;
+        try {
+            Browse.FavoriteSystemsState.selected_path = "";
+            main._navigateToFavorites("SNES");
+            compare(Browse.FavoriteSystemsState.selected_path, "SNES", "route payload must survive launch-time frontend restart");
+            compare(main.favoritesSystemId, "SNES");
+        } finally {
+            main.pendingTransition = "";
+            main._setFavoritesSystem("");
+            Browse.FavoriteSystemsState.selected_path = originalPath;
+        }
+    }
+
     function test_scoped_favorites_back_routes_through_favorite_systems(): void {
         Browse.Settings.set_favorites_grouping("system");
         main._setFavoritesSystem("SNES");
@@ -1353,6 +1367,7 @@ TestCase {
         main._armRepeat("down", Qt.Key_Down);
         compare(main._heldAction, "down");
         compare(main._heldKey, Qt.Key_Down);
+        verify(main._heldStartedAt > 0, "Repeat arm must record when uninterrupted hold began");
         compare(main._repeatPending, true, "Initial-delay timer must be running after _armRepeat");
         compare(main._repeatTicking, false, "Steady tick must not start before the initial delay");
     }
@@ -1370,6 +1385,7 @@ TestCase {
         main._stopRepeat();
         compare(main._heldAction, "");
         compare(main._heldKey, 0);
+        compare(main._heldStartedAt, 0);
         compare(main._repeatPending, false);
         compare(main._repeatTicking, false);
     }
@@ -1403,16 +1419,14 @@ TestCase {
         compare(main._repeatPending, true, "Re-arm restarts the initial-delay timer");
     }
 
-    function test_rapid_navigation_taps_require_sustained_same_direction(): void {
-        for (let i = 1; i < main._rapidNavigationTapThreshold; ++i) {
+    function test_rapid_navigation_same_direction_taps_never_activate(): void {
+        for (let i = 0; i < 8; ++i) {
             main._noteRapidNavigationAction("down", false);
             compare(main.rapidNavigationActive, false, "ordinary repeated taps stay out of rapid mode");
+            compare(main.rapidNavigationIndicatorActive, false);
         }
-        main._noteRapidNavigationAction("down", false);
-        compare(main.rapidNavigationActive, true, "fourth same-direction tap inside quiet window enters rapid mode");
-        compare(main.rapidNavigationIndicatorActive, true);
         wait(main._rapidNavigationQuietMs + 40);
-        compare(main.rapidNavigationActive, false, "rapid mode clears after quiet window");
+        compare(main.rapidNavigationActive, false);
         compare(main.rapidNavigationAction, "", "quiet reset clears rapid action");
     }
 
@@ -1437,11 +1451,17 @@ TestCase {
         compare(main.rapidNavigationIndicatorActive, false, "single page tap should not flash rapid indicator");
     }
 
-    function test_repeat_tick_forces_rapid_navigation_active(): void {
+    function test_repeat_tick_requires_full_hold_before_rapid_navigation(): void {
         main._armRepeat("page_next", Qt.Key_R);
+        main._heldStartedAt = Date.now() - main._rapidNavigationHoldMs + 1;
         main._handleRepeatAction();
-        compare(main.rapidNavigationActive, true, "held page action should enter rapid mode on first repeat tick");
-        compare(main.rapidNavigationIndicatorActive, true, "held page action should show rapid indicator on first repeat tick");
+        compare(main.rapidNavigationActive, false, "repeat before hold threshold must keep live presentation");
+        compare(main.rapidNavigationIndicatorActive, false);
+
+        main._heldStartedAt = Date.now() - main._rapidNavigationHoldMs - 1;
+        main._handleRepeatAction();
+        compare(main.rapidNavigationActive, true, "sustained hold should enter rapid mode");
+        compare(main.rapidNavigationIndicatorActive, true, "sustained hold should show rapid indicator");
         main._stopRepeat();
         wait(main._rapidNavigationQuietMs + 40);
         compare(main.rapidNavigationActive, false);

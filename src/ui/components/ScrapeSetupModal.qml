@@ -242,6 +242,10 @@ Item {
     // three bindings re-evaluate on one `page` change is not something to
     // lean on.
     function _openPage(target: string): void {
+        // Source refresh is intentionally silent: keep the stable form on
+        // screen, but do not open an empty picker during a first-load stall.
+        if (target === "source" && modal.scraperEntries.length === 0)
+            return;
         pickerList.entries = target === "source" ? modal.scraperEntries : modal.systemScopeEntries;
         pickerList.initialId = target === "source" ? modal.selectedScraperId : modal.selectedSystemScope;
         modal.page = target;
@@ -355,21 +359,15 @@ Item {
                 renderType: Text.NativeRendering
             }
 
-            Item {
-                width: parent.width
-                height: Sizing.pctH(6)
-                visible: !modal.onPickerPage && Browse.MediaStatus.scrapers_loading
-
-                LoadingIndicator {
-                    anchors.centerIn: parent
-                    text: qsTr("Loading sources…")
-                }
-            }
-
+            // Source discovery normally completes within one frame and can
+            // reuse the last reported list on later opens. Keep this form
+            // mounted while refresh runs instead of replacing it with a
+            // full-panel loading state that only flashes.
             Column {
+                objectName: "setupForm"
                 width: parent.width
                 spacing: Sizing.pctH(1.5)
-                visible: !modal.onPickerPage && !Browse.MediaStatus.scrapers_loading
+                visible: !modal.onPickerPage
 
                 SettingsField {
                     width: parent.width

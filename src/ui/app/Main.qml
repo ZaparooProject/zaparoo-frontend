@@ -1226,7 +1226,15 @@ MainLayout {
     }
 
     function _navigateToFavorites(systemId): void {
-        root._setFavoritesSystem(systemId);
+        const normalized = systemId === undefined || systemId === null ? "" : String(systemId);
+        // Accepting the initially focused favorite-system row may not change
+        // its grid index, so MediaListScreen's change-driven persistence never
+        // fires. Commit the route payload before leaving: startup restores a
+        // system-scoped Favorites screen from this exact value after a game
+        // launch kills and relaunches the frontend.
+        if (normalized !== "")
+            Browse.FavoriteSystemsState.selected_path = normalized;
+        root._setFavoritesSystem(normalized);
         root.pendingTransition = "favorites";
         favoritesTransitionTimer.restart();
     }
@@ -4407,10 +4415,12 @@ MainLayout {
     readonly property int _repeatInitialMs: 350
     readonly property int _repeatTickMs: 90
     readonly property int _rapidNavigationQuietMs: 260
-    // Tap-only entry is deliberately difficult: normal alternating navigation
-    // must not suspend covers or show the letter overlay. A held direction
-    // bypasses this threshold on its first controlled repeat tick.
-    readonly property int _rapidNavigationTapThreshold: 4
+    // Rapid presentation is a press-and-hold affordance, not a reward for
+    // tapping quickly. Qt's own pressAndHold gesture uses 800 ms; keeping that
+    // threshold separate from the earlier repeat handoff lets ordinary held
+    // navigation start promptly without replacing the live grid until intent
+    // is unambiguous.
+    readonly property int _rapidNavigationHoldMs: 800
     // Window for collapsing a second delivery of the same key into one
     // press — hardware contact bounce or input-stack double send. Far
     // below _repeatInitialMs and the repeat tick so it never touches
@@ -4419,10 +4429,10 @@ MainLayout {
     property int _lastPressedKey: 0
     property string _heldAction: ""
     property int _heldKey: 0
+    property double _heldStartedAt: 0
     property bool rapidNavigationActive: false
     property bool rapidNavigationIndicatorActive: false
     property string rapidNavigationAction: ""
-    property int _rapidNavigationTapCount: 0
     // Aliased so tst_navigation.qml can observe the repeat state machine
     // — child Timer ids are file-scoped and aren't reachable otherwise.
     property alias _repeatPending: repeatInitial.running
@@ -4435,6 +4445,7 @@ MainLayout {
         repeatTick.stop();
         root._heldAction = "";
         root._heldKey = 0;
+        root._heldStartedAt = 0;
         // Hold-release commits whatever cell the user landed on. Games
         // screen debounces its `set_selected_at_top` writes (one atomic
         // disk write per move would batter MiSTer's SD card on a Down-
@@ -4522,23 +4533,15 @@ MainLayout {
         return action === "up" || action === "down" || action === "page_prev" || action === "page_next";
     }
 
-    function _noteRapidNavigationAction(action: string, forceActive: bool): void {
+    function _noteRapidNavigationAction(action: string, heldLongEnough: bool): void {
         if (!root._isRapidNavigationAction(action))
             return;
-        const sameBurst = rapidNavigationQuiet.running && root.rapidNavigationAction === action;
-        root._rapidNavigationTapCount = sameBurst ? root._rapidNavigationTapCount + 1 : 1;
         root.rapidNavigationAction = action;
-        // Direction changes cancel tap-driven rapid mode immediately. Only a
-        // sustained hold (forceActive from repeat timer) or four consecutive
-        // same-direction taps inside the quiet window can enter it.
-        if (!sameBurst && !forceActive) {
-            root.rapidNavigationActive = false;
-            root.rapidNavigationIndicatorActive = false;
-        }
-        if (forceActive || root._rapidNavigationTapCount >= root._rapidNavigationTapThreshold) {
-            root.rapidNavigationActive = true;
-            root.rapidNavigationIndicatorActive = true;
-        }
+        // Only one uninterrupted physical hold may replace the live grid with
+        // rapid presentation. Fresh taps always keep (or restore) the live
+        // grid, even when several arrive inside the quiet-tail window.
+        root.rapidNavigationActive = heldLongEnough;
+        root.rapidNavigationIndicatorActive = heldLongEnough;
         rapidNavigationQuiet.restart();
     }
 
@@ -4547,7 +4550,6 @@ MainLayout {
         root.rapidNavigationActive = false;
         root.rapidNavigationIndicatorActive = false;
         root.rapidNavigationAction = "";
-        root._rapidNavigationTapCount = 0;
     }
 
     function _isRepeatableAction(action: string): bool {
@@ -4590,6 +4592,7 @@ MainLayout {
         root._startupTrace("input/qml repeat arm", "action=" + action, "key=" + key, "previousAction=" + root._heldAction, "previousKey=" + root._heldKey);
         root._heldAction = action;
         root._heldKey = key;
+        root._heldStartedAt = Date.now();
         repeatTick.stop();
         root._prepareRapidNavigationSnapshot(action);
         repeatInitial.restart();
@@ -4785,9 +4788,15 @@ MainLayout {
         // the-scrim grid popped its freeze-frame in and out on every
         // repeat tick -- the reported "background visibly re-lays-out"
         // while scrolling the details dialog.
-        if (!ScreenManager.hasModal)
-            root._noteRapidNavigationAction(root._heldAction, true);
+        const rootScreenOwnsInput = !ScreenManager.hasModal;
         root.handleAction(root._heldAction);
+        // handleAction records this dispatch as a normal navigation action.
+        // Override that fresh-press state only after dispatch when this repeat
+        // belongs to a sufficiently long uninterrupted hold.
+        if (rootScreenOwnsInput) {
+            const heldLongEnough = root._heldStartedAt > 0 && Date.now() - root._heldStartedAt >= root._rapidNavigationHoldMs;
+            root._noteRapidNavigationAction(root._heldAction, heldLongEnough);
+        }
     }
 
     Timer {
@@ -4805,7 +4814,6 @@ MainLayout {
             root.rapidNavigationActive = false;
             root.rapidNavigationIndicatorActive = false;
             root.rapidNavigationAction = "";
-            root._rapidNavigationTapCount = 0;
         }
     }
 

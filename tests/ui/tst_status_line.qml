@@ -248,11 +248,9 @@ TestCase {
     }
 
     // Optimize/vacuum has no step count Core reports (mirrors
-    // ProgressTrack's own indeterminate mode) -- the percentage slot
-    // renders blank rather than a misleading number, but stays reserved
-    // at its full width so the track's position doesn't shift the moment
-    // a run passes through this phase.
-    function test_percentage_blank_but_reserved_during_optimize(): void {
+    // ProgressTrack's own indeterminate mode). Hide and collapse the
+    // percentage slot instead of leaving a blank hole between label and track.
+    function test_percentage_blank_and_collapsed_during_optimize(): void {
         Browse.MediaStatus.optimizing = true;
 
         const line = createTemporaryObject(statusLineComponent, testCase, {
@@ -264,14 +262,14 @@ TestCase {
         compare(line._percentText, "");
 
         const percent = findChild(line, "statusLinePercent");
+        const label = findChild(line, "statusLineLabel");
+        const track = findChild(line, "statusLineTrack");
         verify(percent !== null);
-        compare(percent.text, "");
-        // The reserve must equal the slot's own fixed width (which does
-        // NOT depend on text content, same as `track.width` per
-        // `_trackReserve`'s doc comment) plus one gap -- i.e. the blank
-        // slot claims exactly the room a populated one would, not a
-        // collapsed 0.
-        compare(line._percentReserve, percent.width + line._cellsSpacing, "a blank slot must reserve the same room a populated one would");
+        verify(label !== null);
+        verify(track !== null);
+        compare(percent.visible, false);
+        compare(line._percentReserve, 0, "unknown percentage must reserve no width");
+        compare(label.x + label.width + line._cellsSpacing, track.x, "label must sit one normal gap from track");
     }
 
     // Mirrors ProgressTrack's own test_track_width_is_invariant_across_states:
