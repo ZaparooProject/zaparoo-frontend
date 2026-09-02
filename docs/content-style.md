@@ -169,6 +169,8 @@ lengthening a menu row further.
    the bottom of the settings card (see `docs/style.md` → "Settings hint
    band"), not on the row itself — write to a **two-line budget**: it wraps
    and elides past that, and the band's width is the card's own width
-   minus its side padding, narrower again at the 240p/CRT tier.
+   minus its side padding, narrower again at the 240p tier. English source
+   descriptions must stay at or below 64 characters; hardware measurement
+   puts the 240p cutoff at roughly 66, leaving a small wrapping margin.
 4. Sentence case, and reuse an existing picker's value vocabulary
    (`Automatic`, not a new synonym) wherever the same concept recurs.

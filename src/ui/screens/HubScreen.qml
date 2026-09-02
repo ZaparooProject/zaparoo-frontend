@@ -232,7 +232,10 @@ Item {
     // OUTER gaps equal to each other (a side effect of centering), never to
     // the fixed inner one — visibly uneven. Solving for one gap size and
     // using it in all three places replaces that.
-    readonly property int _activeLabelHeight: Sizing.pctH(7)
+    // Low-resolution footer matches Systems: compact 8px row pinned directly
+    // above the help bar. Larger tiers retain the roomier proportional row.
+    readonly property bool _compactFooter: Sizing.tier === "240"
+    readonly property int _activeLabelHeight: Sizing._hubActiveLabelHeight
     // The band between the HeaderBar bottom and the help bar top,
     // independent of pagedGrid.height (used both as the cell-fit ceiling
     // below and, once the grid's real height is known, to solve for the
@@ -240,18 +243,17 @@ Item {
     readonly property int _verticalBand: Math.max(0, hub.height - Sizing.headerBottom - Sizing.pctH(6))
     // Ceiling fed to pagedGrid's `heightBudget` (see that property's doc
     // comment for why the grid needs a ceiling distinct from its own
-    // `height`) — reserves activeLabel's height plus a nominal minimum gap
-    // allowance on each side so the grid can't grow to consume the whole
-    // band. Computed independent of `pagedGrid.height` (which is itself
-    // derived FROM the fitted cell size below — reading it here would be
-    // circular); the real, equal gap is solved afterward from the grid's
-    // actual resolved height.
-    readonly property int _gridHeightBudget: Math.max(0, hub._verticalBand - hub._activeLabelHeight - 3 * Sizing.pctH(2))
+    // `height`). At 240p it mirrors Systems' structure: one top offset, then
+    // the grid's own internal insets, with the footer immediately below.
+    // Larger tiers retain three equal external gaps. Computed independent of
+    // `pagedGrid.height`, which is itself derived from the fitted cell size.
+    readonly property int _gridHeightBudget: Math.max(0, hub._compactFooter ? hub._verticalBand - hub._activeLabelHeight - Sizing.pctH(1) : hub._verticalBand - hub._activeLabelHeight - 3 * Sizing.pctH(2))
     // The actual equal gap, now that pagedGrid.height is resolved: whatever
     // room the band has left after the grid's real height and the label's
     // fixed height, split three ways.
     readonly property int _verticalGap: Math.max(0, Math.round((hub._verticalBand - pagedGrid.height - hub._activeLabelHeight) / 3))
-    readonly property int _blockY: Sizing.headerBottom + hub._verticalGap
+    readonly property int _footerY: hub.height - Sizing.pctH(6) - hub._activeLabelHeight
+    readonly property int _blockY: Sizing.headerBottom + (hub._compactFooter ? Sizing.pctH(1) : hub._verticalGap)
 
     readonly property bool resumeKnownUnavailable: hub.resumeModelEnabled && !Browse.RecentsModel.resume_loading && !Browse.RecentsModel.resume_available && Browse.AppStatus.connection_state === 2
     readonly property bool resumeActionVisible: !hub.resumeKnownUnavailable
@@ -1423,14 +1425,13 @@ Item {
     PagedGrid {
         id: pagedGrid
 
-        // Square cells (docs/style.md -> "Tile aspect and grid blocks":
-        // "Hub rows remain square"), fit against BOTH axes of the Hub's own
-        // reserved band — `squareCells` clamps cellWidth/cellHeight to the
-        // smaller of the two independent fits. `heightBudget` (rather than
-        // this item's own `height`) is what the height half of that fit
-        // reads, because `height` below is itself derived FROM the fitted
-        // cell size; fitting against `height` directly would be circular.
-        squareCells: true
+        // Larger tiers stay square. Four-column 240/288-line pages use each
+        // axis' independent fit so their narrow width does not force short
+        // tiles and leave oversized gaps above and below the two rows.
+        // `heightBudget` (rather than this item's own `height`) is what the
+        // height fit reads, because `height` below is itself derived from the
+        // fitted cell height; fitting against `height` would be circular.
+        squareCells: !hub._compactFooter
         heightBudget: hub._gridHeightBudget
 
         anchors.horizontalCenter: parent.horizontalCenter
@@ -1521,8 +1522,7 @@ Item {
         id: activeLabel
         objectName: "hubActiveLabel"
 
-        anchors.top: pagedGrid.bottom
-        anchors.topMargin: hub._verticalGap
+        y: hub._compactFooter ? hub._footerY : pagedGrid.y + pagedGrid.height + hub._verticalGap
         anchors.left: parent.left
         anchors.right: parent.right
         height: hub._activeLabelHeight
@@ -1533,7 +1533,7 @@ Item {
         // (see ActiveLabel.qml), so the same inset is paid on the left
         // even though nothing sits there on Hub -- see the PageIndicator
         // comment below.
-        sideInset: Sizing.px(hubPageIndicator.width) + Sizing.pctW(3) + Sizing.pctW(1.5)
+        sideInset: Sizing.px(hubPageIndicator.width) + pagedGrid.rightInset
         text: {
             // currentIndex can briefly outrun items.length during cold
             // launch, before HubState is clamped to it. Guard the lookup so
@@ -1575,7 +1575,7 @@ Item {
         objectName: "hubPageIndicator"
 
         anchors.right: parent.right
-        anchors.rightMargin: Sizing.pctW(3)
+        anchors.rightMargin: pagedGrid.rightInset
         anchors.verticalCenter: activeLabel.verticalCenter
         currentPage: pagedGrid.currentPage
         totalPages: pagedGrid.totalPageCount

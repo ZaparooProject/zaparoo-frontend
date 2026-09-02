@@ -152,7 +152,6 @@ Item {
     property int activeLabelHeight: Sizing.pctH(7)
     property int bottomStatusLeftMargin: 0
     property int bottomStatusRightMargin: 0
-    property int pageLoadingLeftMargin: 0
     readonly property int _gridViewportWidth: Math.max(1, root.width)
     readonly property int _gridViewportHeight: Math.max(1, root.height - (topStrip.y + topStrip.height) - root.gridBottomMargin)
     readonly property var _gridViewportShape: Sizing.gamesGridShape(root._gridViewportWidth, root._gridViewportHeight)
@@ -226,10 +225,10 @@ Item {
     // the right PageIndicator) instead of reserving a flat third of the
     // screen for each — see SystemsScreen.qml's identical treatment and
     // ActiveLabel.qml's own name/tags measurement for the same idiom.
-    readonly property int _bottomStatusLeftTextWidth: Math.ceil(Math.max(bottomTotalTextMetrics.advanceWidth, bottomTotalTextMetrics.boundingRect.width) + (Theme.crtNativePath ? 0 : Sizing.px(2)))
+    readonly property int _bottomStatusLeftTextWidth: Math.ceil(Math.max(bottomTotalTextMetrics.advanceWidth, bottomTotalTextMetrics.boundingRect.width) + (Sizing.tier === "240" ? 0 : Sizing.px(2)))
     readonly property int _footerLeftInset: root._bottomStatusLeftTextWidth + root.bottomStatusLeftMargin
-    readonly property int _footerRightInset: footerPageIndicator.width + root.bottomStatusRightMargin
-    readonly property bool _crtListStrip: Theme.crtNativePath && root._listLayout
+    readonly property int _resolvedBottomStatusRightMargin: root._footerProfile ? root._footerProfile.bottomStatusRightMargin : root.bottomStatusRightMargin
+    readonly property int _footerRightInset: footerPageIndicator.width + root._resolvedBottomStatusRightMargin
     readonly property int _listOverlayBottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.overlayBottomMargin : Sizing.pctH(15)
     // Hide list/grid content as soon as the model enters Loading, but
     // let ScreenStateOverlay keep delaying the centered cue. Keep the
@@ -380,15 +379,15 @@ Item {
     function restoreSelection(): void {
         if (root._count() <= 0)
             return;
-        // The model is loaded; the selection is now finalized (either the
-        // saved path below or the default index 0). Let the tiles/rows render.
-        root._restoreDone = true;
         const path = typeof root.restoreSelectionPath === "function" ? (root.restoreSelectionPath() ?? "") : (root.mediaState !== null ? (root.mediaState.selected_path ?? "") : "");
-        if (path === "")
-            return;
-        const idx = root.mediaModel.index_for_path(path);
-        if (idx >= 0 && idx !== mediaGrid.currentIndex)
-            mediaGrid.currentIndex = idx;
+        const idx = path !== "" ? root.mediaModel.index_for_path(path) : -1;
+        // A saved path can disappear or belong to an unloaded/changed scope.
+        // Never leave its old numeric index behind: seat focus on the first
+        // visible item unless the saved item exists in the current model.
+        mediaGrid.setCurrentIndexImmediate(idx >= 0 ? idx : 0);
+        // Selection is finalized; let tiles/rows render focus only after the
+        // valid index above has landed.
+        root._restoreDone = true;
     }
 
     function _persistFocus(): void {
@@ -678,6 +677,7 @@ Item {
         currentIndex: mediaGrid.currentIndex
         focusReady: root._focusReady
         detailTitle: listCard.currentName
+        detailIdentity: focusedDetail.currentIdentity
         // Detail pane is not painted in grid layout. Withholding its source
         // avoids a hidden width-constrained decode competing with visible
         // height-constrained tile covers.
@@ -773,7 +773,7 @@ Item {
     // now.
     ActiveLabel {
         id: activeLabel
-        visible: !root._gateHide && !root._listLayout && root.renderGridLayout
+        visible: !root._gateHide && !root._listLayout && root.renderGridLayout && !root.pageLoadingVisible
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: root.activeLabelAtBottom ? undefined : mediaGrid.bottom
@@ -824,7 +824,7 @@ Item {
         objectName: "mediaListFooterPageIndicator"
         visible: !root._gateHide && root._pageCueInFooter && (root._listLayout || root.renderGridLayout)
         anchors.right: parent.right
-        anchors.rightMargin: root.bottomStatusRightMargin
+        anchors.rightMargin: root._resolvedBottomStatusRightMargin
         anchors.verticalCenter: activeLabel.verticalCenter
         chevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
         currentPage: root._listLayout ? root._listCurrentPage : mediaGrid.currentPage
@@ -835,11 +835,22 @@ Item {
         onPageRequested: delta => root._performPage(delta)
     }
 
-    LoadingIndicator {
-        visible: !root._gateHide && !root._listLayout && root.pageLoadingVisible
-        anchors.left: activeLabel.left
-        anchors.leftMargin: root.pageLoadingLeftMargin
+    // Pagination loading replaces the focused name instead of painting beside
+    // or over it. The wrapper uses the same symmetric safe slot ActiveLabel
+    // does, keeping the cue clear of count and page chrome.
+    Item {
+        visible: !root._gateHide && root.pageLoadingVisible
+        anchors.left: parent.left
+        anchors.leftMargin: activeLabel.sideInset
+        anchors.right: parent.right
+        anchors.rightMargin: activeLabel.sideInset
         anchors.verticalCenter: activeLabel.verticalCenter
+        height: activeLabel.height
+        clip: true
+
+        LoadingIndicator {
+            anchors.centerIn: parent
+        }
     }
 
     // Frozen rapid-navigation presentation. The live grid is hidden while this

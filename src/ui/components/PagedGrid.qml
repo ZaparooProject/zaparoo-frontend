@@ -332,12 +332,12 @@ Item {
     // grids are paged, not scrolled; the page cue lives in the host
     // screen's footer (see PageIndicator.qml) and never affects this
     // component's geometry.
-    readonly property int leftInset: root._gridProfile ? root._gridProfile.leftInset : Sizing.pctW(3)
-    readonly property int rightInset: root._gridProfile ? root._gridProfile.rightInset : Sizing.pctW(3)
-    readonly property int topInset: root._gridProfile ? root._gridProfile.topInset : Sizing.pctH(2)
-    readonly property int bottomInset: root._gridProfile ? root._gridProfile.bottomInset : Sizing.pctH(2)
-    readonly property int cellSpacingX: root._gridProfile ? root._gridProfile.columnGap : Sizing.pctW(2)
-    readonly property int cellSpacingY: root._gridProfile ? root._gridProfile.rowGap : Sizing.pctH(4)
+    readonly property int leftInset: root._gridProfile ? root._gridProfile.leftInset : (Sizing.tier === "240" ? Sizing.headerSideMargin : Sizing.pctW(3))
+    readonly property int rightInset: root._gridProfile ? root._gridProfile.rightInset : (Sizing.tier === "240" ? Sizing.headerSideMargin : Sizing.pctW(3))
+    readonly property int topInset: root._gridProfile ? root._gridProfile.topInset : (Sizing.tier === "240" ? 2 : Sizing.pctH(2))
+    readonly property int bottomInset: root._gridProfile ? root._gridProfile.bottomInset : (Sizing.tier === "240" ? 4 : Sizing.pctH(2))
+    readonly property int cellSpacingX: root._gridProfile ? root._gridProfile.columnGap : (Sizing.tier === "240" ? 4 : Sizing.pctW(2))
+    readonly property int cellSpacingY: root._gridProfile ? root._gridProfile.rowGap : (Sizing.tier === "240" ? 4 : Sizing.pctH(4))
     readonly property int _contentWidth: root.columns * root.cellWidth + (root.columns - 1) * root.cellSpacingX
     readonly property int _contentHeight: root.rows * root.cellHeight + (root.rows - 1) * root.cellSpacingY
     // Cell block always centers against the full inset-to-inset width.
@@ -910,11 +910,8 @@ Item {
         const sourceCountRetained = root.model && root.model.count >= root._previousItemCount;
         if (root.itemCount < root._previousItemCount && !sourceCountRetained) {
             // Model shed rows (reset, system change, path change). The
-            // pending-target context no longer applies — drop it before
-            // the row-count check below moves currentIndex.
+            // pending-target context no longer applies.
             root._clearPendingTarget();
-            if (root.currentIndex >= root.itemCount)
-                root.currentIndex = Math.max(0, root.itemCount - 1);
         } else if (root.itemCount > root._previousItemCount) {
             // Pages were appended. If a wrap-target jump is pending,
             // try to commit it now; the helper chains another
@@ -923,6 +920,13 @@ Item {
             // says no more pages are coming.
             root._commitPendingTarget();
         }
+        // Universal loaded-page invariant: whenever rows exist, currentIndex
+        // points at one of them. Model replacement can invalidate a persisted
+        // numeric index without taking the ordinary shrink branch (notably a
+        // zero-to-populated reset); directional input used to repair this only
+        // after the page had already painted with no focused item.
+        if (root.itemCount > 0 && (root.currentIndex < 0 || root.currentIndex >= root.itemCount))
+            root.currentIndex = 0;
         root._previousItemCount = root.itemCount;
     }
 
@@ -1161,7 +1165,7 @@ Item {
                             anchors.margins: Sizing.pctH(0.4)
                             color: Theme.accent
                             radius: Math.max(0, root._cardRadius - Sizing.pctH(0.4))
-                            antialiasing: true
+                            antialiasing: Sizing.cornerAntialiasing
                             visible: placeholderCard._ringVisible
                         }
 
@@ -1170,7 +1174,7 @@ Item {
                             anchors.margins: Sizing.focusRingWidth
                             color: placeholderCard.faceColor
                             radius: Math.max(0, placeholderFocusRingOuter.radius - Sizing.focusRingWidth)
-                            antialiasing: true
+                            antialiasing: Sizing.cornerAntialiasing
                             visible: placeholderFocusRingOuter.visible
                         }
                     }

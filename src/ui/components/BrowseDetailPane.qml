@@ -10,6 +10,10 @@ Item {
     id: root
 
     property string title: ""
+    // Stable identity for the focused row. Cover holding is scoped to this
+    // identity so an async decode from the previous row can never flash under
+    // the newly focused title.
+    property string identity: ""
     property string coverKey: ""
     property string description: ""
     property bool showDescription: true
@@ -78,7 +82,8 @@ Item {
     // decodes; a row that's never had art just stays blank, matching how
     // the grid tiles behave (Tile.qml's `_coverPending` swallows the same
     // sentinel to an empty source).
-    readonly property url _coverSource: _coverPending ? _lastGoodCoverSource : Resources.coverUrl(coverKey, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
+    readonly property bool _hasCurrentHeldCover: root.identity !== "" && root._lastGoodCoverIdentity === root.identity && root._lastGoodCoverSource !== ""
+    readonly property url _coverSource: _coverPending && root._hasCurrentHeldCover ? root._lastGoodCoverSource : (_coverPending ? "" : Resources.coverUrl(coverKey, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow))
     // True whenever the cover Image is in flight (model pending, Qt async
     // decode, or any non-media-image provider still loading).
     readonly property bool _coverMediaImagePending: coverKey.startsWith("media-image/") && cover.status !== Image.Ready && cover.status !== Image.Error
@@ -141,6 +146,7 @@ Item {
     // Holds the last resolved cover URL so the area does not blank while a
     // new one decodes -- see `_coverSource`/`coverHold` above.
     property url _lastGoodCoverSource: ""
+    property string _lastGoodCoverIdentity: ""
     // The detail table tracks the focused row's metadata directly. The model
     // keeps `current_detail_tags` identity-correct on every move — an immediate
     // peek shows cached/local rows or a clean blank, never the previous row's
@@ -219,6 +225,7 @@ Item {
         border.width: Sizing.cardBorderWidth
         border.color: Theme.borderMid
         radius: root._cardRadius
+        antialiasing: Sizing.cornerAntialiasing
         visible: root.showChrome
     }
 
@@ -295,7 +302,7 @@ Item {
                     smooth: true
                     asynchronous: false
                     cache: true
-                    visible: root._lastGoodCoverSource !== "" && root._lastGoodCoverSource !== root._coverSource && cover.status !== Image.Ready && !root.detailSuppressed && !root._isSystemCover
+                    visible: root._hasCurrentHeldCover && root._lastGoodCoverSource !== root._coverSource && cover.status !== Image.Ready && !root.detailSuppressed && !root._isSystemCover
                 }
 
                 Image {
@@ -344,8 +351,10 @@ Item {
                     // while the next cover async-decodes after a d-pad move.
                     onStatusChanged: {
                         cover.updateReveal();
-                        if (status === Image.Ready)
+                        if (status === Image.Ready && root.identity !== "") {
                             root._lastGoodCoverSource = source;
+                            root._lastGoodCoverIdentity = root.identity;
+                        }
                     }
                 }
 
@@ -370,7 +379,7 @@ Item {
                     // (coverHold/nothing), same as the grid tiles. Only a
                     // *confirmed* no-cover state (empty resolved source, or a
                     // terminal decode error) shows the File chip.
-                    visible: !root.detailSuppressed && !root._isSystemCover && !root._coverBusy && (root._coverSource === "" || cover.status === Image.Error)
+                    visible: !root.detailSuppressed && !root._isSystemCover && !root._coverBusy && !root._hasCurrentHeldCover && (root._coverSource === "" || cover.status === Image.Error)
                 }
 
                 // Wordmark fallback for system entries with no curated logo SVG.

@@ -983,15 +983,15 @@ TestCase {
         compare(grid.currentIndex, 0);
     }
 
-    function test_item_count_clamp_keeps_current_in_bounds(): void {
-        // Shrink the model directly (without an intermediate clear)
-        // so the clamp at PagedGrid.onItemCountChanged is exercised
-        // with a stale-but-valid currentIndex (not just 0).
+    function test_item_count_reset_falls_back_to_first_item(): void {
+        // Shrink the model directly (without an intermediate clear) so the
+        // stale index path is exercised. A populated replacement always seats
+        // focus on its first valid item rather than retaining an unrelated tail.
         fillModel(20);
         grid.setCurrentIndexImmediate(19);
         model.remove(10, 10);
         tryCompare(grid, "itemCount", 10);
-        compare(grid.currentIndex, 9);
+        compare(grid.currentIndex, 0);
     }
 
     // ── pageBy (L/R shoulder shortcut, unchanged) ────────────────────────

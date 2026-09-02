@@ -61,15 +61,13 @@ Item {
     property bool totalKnown: true
     property int currentStep: 0
     property int totalSteps: 0
-    property int cellCount: Theme.crtNativePath ? 8 : 12
-    // Matches `Sizing.fontSmall` -- the same token StatusLine.qml's label
-    // uses for `font.pixelSize` -- so the track reads as the same visual
-    // weight as the text sitting next to it instead of a noticeably
-    // shorter strip underneath it.
+    property int cellCount: Sizing.tier === "240" ? 8 : 12
+    // Match the status text's pixel height at every tier. Low-resolution
+    // width remains compact independently through `cellWidth` below.
     property int cellHeight: Sizing.fontSmall
     property int cellGap: Sizing.pctW(0.3)
 
-    readonly property int cellWidth: Math.max(Sizing.stroke(2), Sizing.px(root.cellHeight * 1.6))
+    readonly property int cellWidth: Sizing.tier === "240" ? Sizing.px(4) : Math.max(Sizing.stroke(2), Sizing.px(root.cellHeight * 1.6))
     readonly property int _filledCells: {
         if (!root.active || !root.totalKnown || root.totalSteps <= 0)
             return 0;
@@ -129,6 +127,7 @@ Item {
                 width: root.cellWidth
                 height: root.cellHeight
                 radius: Sizing.radiusSm
+                antialiasing: Sizing.cornerAntialiasing
                 // No Behavior on color anywhere in this delegate -- every
                 // state change here, blink included, is an instant cut.
                 color: cell._isPulseCell ? (root._blinkOn ? Theme.accent : Theme.borderSubtle) : (cell._isFilled ? Theme.accent : Theme.borderSubtle)

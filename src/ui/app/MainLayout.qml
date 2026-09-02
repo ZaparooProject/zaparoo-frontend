@@ -505,24 +505,13 @@ ApplicationWindow {
             return root._gamesBrowseListLayout ? (root._gamesBrowseTateListLayout ? "gamesListTate" : "gamesList") : "gamesGrid";
         return "gamesGrid";
     }
-    // Whichever of the two layout preferences the CURRENT active screen's
-    // family follows -- for callers like `browseHeaderTitle` below that
-    // need "is the active screen in list layout" without re-deriving
-    // `_browseViewId`'s own family branch.
-    readonly property bool _activeBrowseListLayout: {
-        if (root.activeScreen === root.screenSystems || root.activeScreen === root.screenFavoriteSystems)
-            return root._systemsBrowseListLayout;
-        if (root.activeScreen === root.screenGames || root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents)
-            return root._gamesBrowseListLayout;
-        return false;
-    }
     readonly property string _browseThemeId: BrowseLayouts.currentThemeId
     readonly property var _browseViewProfile: BrowseLayouts.themeProfile(root._browseThemeId, root._browseViewId)
     // Same resolution as GamesScreen's own `_systemDisplayName` -- see the
     // comment there for why the category-scoped `index_for_system_id` lookup
     // this used to do disagreed with the Systems grid, and why the two `void`
     // reads are load-bearing.
-    readonly property string _crtGamesHeaderTitle: {
+    readonly property string _gamesHeaderTitle: {
         if (root.activeScreen !== root.screenGames)
             return "";
         const sid = Browse.GamesModel.current_system_id;
@@ -534,14 +523,14 @@ ApplicationWindow {
         return resolved !== "" ? resolved : sid;
     }
     readonly property string browseHeaderTitle: {
-        if (!root.crtNativePath)
+        if (!root._browseViewProfile || !root._browseViewProfile.header || !root._browseViewProfile.header.titleInHeader)
             return "";
-        if (root._activeBrowseListLayout)
-            return "";
+        if (root.activeScreen === root.screenSettings)
+            return settingsScreenLoader.item ? settingsScreenLoader.item.pageTitle : qsTr("Settings");
         if (root.activeScreen === root.screenSystems)
             return CategoryIds.displayName(Browse.SystemsModel.current_category);
         if (root.activeScreen === root.screenGames)
-            return root._crtGamesHeaderTitle;
+            return root._gamesHeaderTitle;
         if (root.activeScreen === root.screenFavorites)
             return qsTr("Favorites");
         if (root.activeScreen === root.screenFavoriteSystems)

@@ -348,6 +348,7 @@ Item {
         height: menu.panelHeight
         color: Theme.bgPanel
         radius: menu.panelRadius
+        antialiasing: Sizing.cornerAntialiasing
         // Safety net for a menu taller than the space the anchor leaves:
         // rows past `panelHeight` are cut off cleanly instead of painting
         // past the panel's rounded corners. A menu that fits never reaches

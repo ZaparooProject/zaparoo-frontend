@@ -145,6 +145,7 @@ Item {
             height: Sizing.px(Math.min(panel._maxHeight, panel._chromeHeight + contentColumn.height))
             color: Theme.bgPanel
             radius: Sizing.radiusMd
+            antialiasing: Sizing.cornerAntialiasing
 
             MouseArea {
                 anchors.fill: parent

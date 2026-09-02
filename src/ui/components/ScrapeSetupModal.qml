@@ -348,9 +348,10 @@ Item {
             // from a couch would not fit here; Settings > About carries the
             // scannable one.
             Text {
+                objectName: "setupDocumentation"
                 width: parent.width
                 visible: !modal.onPickerPage
-                text: qsTr("Documentation: %1").arg("zaparoo.org/docs/frontend/scraping")
+                text: Theme.crtNativePath ? qsTr("Documentation:") + "\n" + "zaparoo.org/docs/frontend/scraping" : qsTr("Documentation: %1").arg("zaparoo.org/docs/frontend/scraping")
                 font.family: Theme.fontUi
                 font.pixelSize: Sizing.fontCaption
                 color: Theme.textLabel

@@ -96,5 +96,6 @@ Item {
         visible: root.active
         color: root.barColor
         radius: root.radius
+        antialiasing: Sizing.cornerAntialiasing
     }
 }

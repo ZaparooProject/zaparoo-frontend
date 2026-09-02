@@ -71,8 +71,10 @@ TestCase {
         pane.loadingDelayMs = 150;
         pane.title = "";
         pane.detailTags = "";
+        pane.identity = "";
         pane.coverKey = "";
         pane._lastGoodCoverSource = "";
+        pane._lastGoodCoverIdentity = "";
         wait(1);
     }
 
@@ -115,6 +117,27 @@ TestCase {
         wait(pane.loadingDelayMs + 50);
         verify(!findChild(pane, "detailPlaceholderIcon").visible, "no hourglass while pending, even after a delay");
         verify(!findChild(pane, "detailCoverImage").visible, "no cover image paints from an empty pending source");
+    }
+
+    function test_held_cover_never_crosses_focused_identity(): void {
+        pane.identity = "Arcade\nold-game";
+        pane._lastGoodCoverIdentity = pane.identity;
+        pane._lastGoodCoverSource = "image://media-image/old-cover";
+        pane.coverKey = "icons/Loading";
+        compare(String(pane._coverSource), "image://media-image/old-cover");
+
+        pane.identity = "Arcade\nnew-game";
+        compare(String(pane._coverSource), "", "new row must not inherit previous row cover");
+        verify(!findChild(pane, "detailCoverHold").visible, "previous row cover hold must stop immediately");
+        verify(!findChild(pane, "detailPlaceholderIcon").visible, "pending row remains blank rather than flashing stale art or placeholder");
+    }
+
+    function test_current_held_cover_is_not_overpainted_by_placeholder(): void {
+        pane.identity = "Arcade\nsame-game";
+        pane._lastGoodCoverIdentity = pane.identity;
+        pane._lastGoodCoverSource = "image://media-image/held-cover";
+        pane.coverKey = "";
+        verify(!findChild(pane, "detailPlaceholderIcon").visible);
     }
 
     // A cover key that resolves to a terminal decode error (the harness's

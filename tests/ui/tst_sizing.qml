@@ -242,8 +242,7 @@ TestCase {
     // Resources.cornerCutUrl() silently returns "" outside that band, so a
     // ladder change that pushes radiusMd/radiusSm past 16 would quietly
     // stop rounding the scrim hole instead of failing loudly. Covers every
-    // resolution tier, including "crt" which the semantic-tier table above
-    // doesn't exercise.
+    // resolution tier plus CRT safe-area sizing.
     function test_radius_ladder_stays_within_baked_corner_mask_range(): void {
         const resolutions = [[320, 240], [640, 480], [960, 540], [1280, 720], [1920, 1080]];
         for (const [w, h] of resolutions) {
@@ -254,9 +253,9 @@ TestCase {
 
         main.crtNativePath = true;
         setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
-        compare(Sizing.tier, "crt");
-        verify(Sizing.radiusMd >= 1 && Sizing.radiusMd <= 16, "radiusMd out of baked corner mask range on crt tier");
-        verify(Sizing.radiusSm >= 1 && Sizing.radiusSm <= 16, "radiusSm out of baked corner mask range on crt tier");
+        compare(Sizing.tier, "240");
+        verify(Sizing.radiusMd >= 1 && Sizing.radiusMd <= 16, "radiusMd out of baked corner mask range on 240p CRT");
+        verify(Sizing.radiusSm >= 1 && Sizing.radiusSm <= 16, "radiusSm out of baked corner mask range on 240p CRT");
         main.crtNativePath = false;
     }
 
@@ -266,7 +265,7 @@ TestCase {
                 "w": 320,
                 "h": 240,
                 "systems": [2, 2],
-                "games": [2, 2]
+                "games": [3, 2]
             },
             {
                 "w": 640,
@@ -321,7 +320,7 @@ TestCase {
             {
                 "w": 320,
                 "h": 240,
-                "columns": 3,
+                "columns": 4,
                 "rows": 2
             },
             {
@@ -400,7 +399,7 @@ TestCase {
         main.crtNativePath = true;
         main.bitmapType = true;
         setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
-        compare(Sizing.tier, "crt");
+        compare(Sizing.tier, "240");
         compare(Sizing.fontHero, Sizing.fontSize(4.0));
         compare(Sizing.fontTitle, Sizing.fontSize(3.2));
         compare(Sizing.fontSection, Sizing.fontSize(2.9));
@@ -409,21 +408,32 @@ TestCase {
         compare(Sizing.fontSmall, Sizing.fontSize(2.2));
         compare(Sizing.systemsGridColumns, 3);
         compare(Sizing.systemsGridRows, 3);
-        compare(Sizing.hubGridColumns, 3);
+        compare(Sizing.hubGridColumns, 4);
         compare(Sizing.hubGridRows, 2);
         compare(Sizing.swapPercentageAxes, false);
         compare(Sizing.screenHeight, crtSafeHeight(240));
         const declaredGames = Sizing._declaredGridShape("games");
-        compare(declaredGames.columns, 2);
+        compare(declaredGames.columns, 3);
         let games = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
-        compare(games.columns, 2);
+        compare(games.columns, 3);
         compare(games.rows, 2);
 
         setResolutionExpect(352, 288, crtSafeWidth(352), crtSafeHeight(288));
+        compare(Sizing.tier, "240");
+        compare(Sizing.hubGridColumns, 4);
+        compare(Sizing.hubGridRows, 2);
         compare(Sizing.systemsGridColumns, 3);
         compare(Sizing.systemsGridRows, 3);
         games = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
         compare(games.columns, 3);
         compare(games.rows, 2);
+
+        // CRT is a rendering path, not a geometry tier. Safe-area reduction
+        // must not demote a future 540-line mode into the 480 tier.
+        setResolutionExpect(960, 540, crtSafeWidth(960), crtSafeHeight(540));
+        compare(Sizing.resolutionHeight, 540);
+        compare(Sizing.tier, "540");
+        compare(Sizing.hubGridColumns, 7);
+        compare(Sizing.hubGridRows, 3);
     }
 }

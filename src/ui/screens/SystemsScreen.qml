@@ -61,8 +61,6 @@ Item {
     property bool _restoreDone: false
     readonly property bool _focusReady: systems._focusArmed || systems._restoreDone
     readonly property bool _listLayout: Browse.Settings.current_systems_browse_layout === "list"
-    readonly property bool _crtGridLayout: Theme.crtNativePath && !systems._listLayout
-    readonly property bool _crtListStrip: Theme.crtNativePath && systems._listLayout
     readonly property bool _tateListLayout: systems._listLayout && Browse.Settings.current_orientation !== "horizontal"
     readonly property string _viewId: systems._listLayout ? (systems._tateListLayout ? "systemsListTate" : "systemsList") : "systemsGrid"
     readonly property string _browseThemeId: BrowseLayouts.currentThemeId
@@ -70,11 +68,8 @@ Item {
     readonly property var _viewProfile: BrowseLayouts.themeProfile(systems._browseThemeId, systems._viewId)
     readonly property var _statusProfile: systems._viewProfile && systems._viewProfile.status ? systems._viewProfile.status : null
     readonly property var _footerProfile: systems._gridProfile && systems._gridProfile.footer ? systems._gridProfile.footer : null
-    // CRT keeps the count + page cue in the footer (its top strip is
-    // hidden entirely, `status.topStripVisible: false`); every other
-    // theme hosts it up on the title line instead, alongside the count
-    // badge -- see TopStatusStrip.qml's `pageIndicatorMode` and
-    // BrowseLayouts.qml's `footer.pageCueInFooter`.
+    // Compact 240p layouts keep count and page cue in footer and hide top
+    // strip entirely. Larger layouts host both on title line instead.
     readonly property bool _pageCueInFooter: !!(systems._footerProfile && systems._footerProfile.pageCueInFooter)
     readonly property bool _showGridPageCue: !systems._listLayout && !systems._pageCueInFooter
     // Round 11: list layout gets the same interactive chevron+"N / M"
@@ -99,8 +94,8 @@ Item {
     // PageIndicator (right) — regardless of how wide either one actually
     // is. Measure them instead, same idiom ActiveLabel itself uses for its
     // own name/tags block (TextMetrics + a couple px of slack).
-    readonly property string _footerCountText: qsTr("%1 systems").arg(Browse.SystemsModel.count)
-    readonly property int _footerCountTextWidth: Math.ceil(Math.max(footerCountMetrics.advanceWidth, footerCountMetrics.boundingRect.width) + (Theme.crtNativePath ? 0 : Sizing.px(2)))
+    readonly property string _footerCountText: Sizing.tier === "240" ? Format.count(Browse.SystemsModel.count) : qsTr("%1 systems").arg(Format.count(Browse.SystemsModel.count))
+    readonly property int _footerCountTextWidth: Math.ceil(Math.max(footerCountMetrics.advanceWidth, footerCountMetrics.boundingRect.width) + (Sizing.tier === "240" ? 0 : Sizing.px(2)))
     readonly property int _footerLeftInset: systems._footerCountTextWidth + (systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0)
     readonly property int _footerRightInset: footerPageIndicator.width + (systems._footerProfile ? systems._footerProfile.bottomStatusRightMargin : 0)
     readonly property var _listProfile: systems._viewProfile && systems._viewProfile.list ? systems._viewProfile.list : null
@@ -286,7 +281,7 @@ Item {
         totalPages: systems._listLayout ? systems._listTotalPageCount : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
         totalText: {
             if (systems._listLayout)
-                return !Theme.crtNativePath && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "";
+                return Sizing.tier !== "240" && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "";
             return systems._showGridPageCue && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "";
         }
         // Round 11: list layout now mounts the same interactive
@@ -322,6 +317,7 @@ Item {
         screenSettling: !systems.active
         layoutProfile: systems._viewProfile
         detailTitle: listCard.currentName
+        detailIdentity: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_id_at(systemsGrid.currentIndex) : ""
         detailCoverKey: listCard.currentCoverKey
         detailTags: Browse.SystemsModel.count > 0 ? Browse.SystemsModel.detail_tags_at(systemsGrid.currentIndex) : ""
         onItemHovered: index => systems._focusIndex(index)

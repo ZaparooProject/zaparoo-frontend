@@ -57,6 +57,7 @@ TestCase {
     }
 
     function init(): void {
+        Theme.crtNativePath = false;
         modal.open = false;
         // Reset before reopening: `initialSystemScope` seeds
         // `selectedSystemScope` in onOpenChanged, so a test that sets it
@@ -68,6 +69,10 @@ TestCase {
         Browse.MediaStatus.scraper_names = ["Gamelist XML", "ES media folders"];
         modal.open = true;
         closeSpy.clear();
+    }
+
+    function cleanup(): void {
+        Theme.crtNativePath = false;
     }
 
     function _list(): var {
@@ -88,6 +93,15 @@ TestCase {
         Browse.MediaStatus.scrapers_loading = true;
         compare(form.visible, true, "source refresh must not replace form with a loading flash");
         compare(modal.page, "form");
+    }
+
+    function test_crt_documentation_url_uses_own_line(): void {
+        const documentation = findChild(modal, "setupDocumentation");
+        verify(documentation !== null);
+        verify(documentation.text.indexOf("\n") < 0);
+
+        Theme.crtNativePath = true;
+        compare(documentation.text, qsTr("Documentation:") + "\n" + "zaparoo.org/docs/frontend/scraping");
     }
 
     function test_empty_source_list_does_not_open_empty_page(): void {

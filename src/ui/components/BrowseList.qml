@@ -110,6 +110,7 @@ Item {
         border.width: Sizing.cardBorderWidth
         border.color: Theme.borderMid
         radius: root._cardRadius
+        antialiasing: Sizing.cornerAntialiasing
         visible: root.showChrome
     }
 
@@ -216,6 +217,7 @@ Item {
                 releasePulse: root.releasePulse
                 screenSettling: root.screenSettling
                 radius: root._selectionRadius
+                antialiasing: Sizing.cornerAntialiasing
             }
 
             // Row title carrying the inline dim token suffix. ScrollingCaption

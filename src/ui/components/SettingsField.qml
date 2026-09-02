@@ -208,7 +208,7 @@ Item {
         // pctW(8) (~3.7× height on a 16:9 panel) painted.
         height: Sizing.pctH(3.8)
         width: Sizing.px(height * 1.85)
-        readonly property int _knobInset: Sizing.tier === "crt" || Sizing.tier === "240" ? Sizing.cardBorderWidth : 2 * Sizing.cardBorderWidth
+        readonly property int _knobInset: Sizing.tier === "240" ? Sizing.cardBorderWidth : 2 * Sizing.cardBorderWidth
 
         Rectangle {
             objectName: "settingsToggleTrack"

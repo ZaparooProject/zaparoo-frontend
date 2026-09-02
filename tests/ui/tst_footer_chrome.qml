@@ -8,7 +8,7 @@ import Zaparoo.Theme
 import Zaparoo.Ui
 
 // Covers the two small building blocks the "kill the scrollbars" round
-// introduced: PageIndicator (the footer's up/down + "N / M" page cue that
+// introduced: PageIndicator (the footer's up/down + "N/M" page cue that
 // replaced PagedGrid's right-gutter scroll indicator) and ActiveLabel's
 // new `sideInset`, which keeps a long focused-item name from running
 // under the footer's reserved corner slots. See PagedGrid.qml's
@@ -95,7 +95,7 @@ TestCase {
         compare(pageRequestedSpy.count, 1, "the down chevron must become visible and clickable once there is another page");
     }
 
-    // A "1 / 1" or bare "1" readout next to two chevrons that are also
+    // A "1/1" or bare "1" readout next to two chevrons that are also
     // both hidden says nothing a user needs -- see PageIndicator.qml's
     // `_hasMultiplePages` doc comment. Covers both the known-total case
     // (totalPages stays 1) and the unknown-total case (a cursor list with
@@ -123,7 +123,7 @@ TestCase {
         indicator.pageTotalKnown = true;
         indicator.currentPage = 1;
         indicator.totalPages = 5;
-        compare(indicator.pageText, "2 / 5");
+        compare(indicator.pageText, "2/5");
     }
 
     // Cursor-paginated lists (Favorites/Recents/Games) cannot know their
@@ -157,7 +157,7 @@ TestCase {
 
     // The chevron pair must read as one control: the anchor gap between
     // them is strictly tighter than the gap the pair keeps from the
-    // trailing "N / M" text. See PageIndicator.qml's doc comment on
+    // trailing "N/M" text. See PageIndicator.qml's doc comment on
     // `chevronSpacing` for the glyph-bearing measurement behind this.
     function test_chevron_pair_spacing_is_tighter_than_text_spacing(): void {
         verify(indicator.chevronSpacing < indicator.itemSpacing);

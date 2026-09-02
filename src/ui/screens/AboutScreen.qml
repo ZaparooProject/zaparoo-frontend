@@ -99,6 +99,7 @@ Item {
         width: Math.min(parent.width - Sizing.pctW(10), Sizing.pctW(50))
         color: Theme.surfaceCard
         radius: Sizing.radiusMd
+        antialiasing: Sizing.cornerAntialiasing
         border.color: Theme.borderMid
         border.width: Sizing.cardBorderWidth
 

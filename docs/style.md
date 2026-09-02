@@ -846,8 +846,10 @@ monolithic `logo.png` any more — every call site goes through the ladder.
 
 ## Resolution tiers
 
-Shape/type tier uses effective unrotated scene height. TATE swaps axes before
-tier selection; CRT always uses `crt` despite safe-area reduction.
+Shape/type tier uses unrotated output resolution height. TATE swaps axes before
+tier selection. CRT scenes reconstruct that axis before safe-area reduction;
+bitmap type and browse profiles use their dedicated flags. Rendering path does
+not affect geometry tier.
 
 | Tier | Effective height |
 |---|---|
@@ -856,7 +858,6 @@ tier selection; CRT always uses `crt` despite safe-area reduction.
 | `540` | 520–659 |
 | `720` | 660–899 |
 | `1080` | 900+ |
-| `crt` | any CRT-native scene |
 
 Thickness scales with resolution. Shape and hierarchy use discrete tiers.
 

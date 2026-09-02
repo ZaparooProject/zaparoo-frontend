@@ -116,6 +116,7 @@ Item {
             topRightRadius: 0
             bottomLeftRadius: root.radius
             bottomRightRadius: root.radius
+            antialiasing: Sizing.cornerAntialiasing
         }
     }
 
@@ -132,6 +133,7 @@ Item {
         height: Math.max(0, root.height - root._pressDepth)
         color: root.faceColor
         radius: root.radius
+        antialiasing: Sizing.cornerAntialiasing
         border.color: Theme.borderMid
         border.width: Sizing.cardBorderWidth
 
@@ -151,7 +153,7 @@ Item {
             anchors.margins: root._ringGap
             color: Theme.accent
             radius: Math.max(0, face.radius - root._ringGap)
-            antialiasing: true
+            antialiasing: Sizing.cornerAntialiasing
             visible: root.focused
         }
 
@@ -161,7 +163,7 @@ Item {
             anchors.margins: root._ringWidth
             color: root.faceColor
             radius: Math.max(0, focusRingOuter.radius - root._ringWidth)
-            antialiasing: true
+            antialiasing: Sizing.cornerAntialiasing
             visible: root.focused
         }
 

@@ -39,7 +39,6 @@ MediaListScreen {
     readonly property int _gridColumns: games._gridShape.columns
     readonly property int _gridRows: games._gridShape.rows
     readonly property int _browsePageSize: games._listLayout ? Math.max(1, games.listCard.visibleRowCount) : games.gamesGrid.pageSize
-    readonly property bool _crtGridLayout: Theme.crtNativePath && !games._listLayout
     readonly property bool _tateListLayout: games._tateOrientation
     readonly property string _gridViewId: "gamesGrid"
     readonly property string _listViewId: "gamesList"
@@ -262,14 +261,8 @@ MediaListScreen {
     // the count via `topStripTotalTextProvider` above instead. Computed
     // unconditionally regardless of which slot is visible; cheap and
     // keeps this binding simple.
-    bottomStatusLeftText: Browse.GamesModel.total_files > 0 ? qsTr("%1 games").arg(Format.count(Browse.GamesModel.total_files)) : ""
-    pageLoadingVisible: !games._listLayout && Browse.GamesModel.loading_more && games.gamesGrid.hasPendingTarget
-    // Only reserve the badge's width/3 when the footer is actually
-    // showing it (CRT, `_pageCueInFooter`) -- on every other theme the
-    // badge lives up in the top strip instead, so the footer's own count
-    // slot is empty and indenting the loading cue for it would leave a
-    // stray gap.
-    pageLoadingLeftMargin: games._pageCueInFooter && games.bottomStatusLeftText !== "" ? Sizing.px(games.width / 3) : games.gamesGrid.leftInset
+    bottomStatusLeftText: Browse.GamesModel.total_files > 0 ? (Sizing.tier === "240" ? Format.count(Browse.GamesModel.total_files) : qsTr("%1 games").arg(Format.count(Browse.GamesModel.total_files))) : ""
+    pageLoadingVisible: Browse.GamesModel.loading_more && (games._listLayout ? games.gamesGrid.itemCount > 0 : games.gamesGrid.hasPendingTarget)
 
     Binding {
         target: Browse.GamesModel

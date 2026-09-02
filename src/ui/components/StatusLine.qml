@@ -243,7 +243,10 @@ Item {
     // progress signal for the Zaparoo mobile app) -- a normalised
     // percentage is the correct way to surface that signal, not the
     // ordinals themselves.
-    readonly property bool _percentKnown: root._taskTotalKnown && root._taskTotalSteps > 0
+    // MediaStatus retains its last task counters across a dropped connection.
+    // Gate the percentage on the resolved active-task tier, not stale counters,
+    // so Disconnected owns the whole right edge with no orphaned percent slot.
+    readonly property bool _percentKnown: root._taskActive && root._taskTotalKnown && root._taskTotalSteps > 0
     readonly property int _percentValue: Math.round(Math.max(0, Math.min(1, root._taskCurrentStep / Math.max(1, root._taskTotalSteps))) * 100)
     readonly property string _percentText: root._percentKnown ? qsTr("%1%").arg(root._percentValue) : ""
     // Fixed-width slot sized once to "100%" (`percentMetrics` below), not

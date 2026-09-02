@@ -187,6 +187,8 @@ TestCase {
     function test_connection_problem_outranks_active_task(): void {
         Browse.AppStatus.link_state = 4; // UNREACHABLE
         Browse.MediaStatus.indexing = true;
+        Browse.MediaStatus.current_step = 3;
+        Browse.MediaStatus.total_steps = 10;
 
         const line = createTemporaryObject(statusLineComponent, testCase, {
             "mediaActivityEnabled": true
@@ -194,6 +196,12 @@ TestCase {
         verify(line !== null);
         compare(line._label, "Disconnected");
         compare(line._showTrack, false, "a connection problem must suppress the task track too");
+        compare(line._percentKnown, false, "stale task counters must not keep percentage visible");
+        compare(line._percentReserve, 0, "stale percentage must reserve no trailing width");
+
+        const label = findChild(line, "statusLineLabel");
+        verify(label !== null);
+        compare(label.x + label.width, line.width, "Disconnected must remain flush right");
     }
 
     function test_core_error_includes_last_error_detail(): void {
