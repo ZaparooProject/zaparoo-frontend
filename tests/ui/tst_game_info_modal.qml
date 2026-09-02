@@ -6,6 +6,7 @@ import QtQuick
 import QtTest
 import Zaparoo.Theme
 import Zaparoo.Ui
+import Zaparoo.Browse as Browse
 
 // Round 10 coverage: the fixed tag-label column (replacing the old
 // accumulate-forever `_labelColumnWidth`) and the scroll-chevron
@@ -32,11 +33,9 @@ TestCase {
         Sizing.screenHeight = testCase.height;
     }
 
-    // Fixed against the known ordered-tag vocabulary in
-    // game_info.rs's `detail_tags_from_meta`/`display_label` (System,
-    // Platform, Year, Release date, Genre, Players, Play mode,
-    // Cooperative, Developer, Publisher, Rating, Filename) — a pure
-    // function of that fixed list and the caption font metrics, not of
+    // Fixed against the known ordered tag *types* in game_info.rs's
+    // `ORDERED_TAG_TYPES`, resolved to labels through Format — a pure
+    // function of that fixed list and the body font metrics, not of
     // whatever tags the currently-loaded game happens to carry.
     function test_label_column_width_is_positive_and_fixed(): void {
         verify(modal._labelColumnWidth > 0);
@@ -84,5 +83,74 @@ TestCase {
         // full-screen height. Comparing to the latter would pass even for a
         // chevron hanging below the card.
         verify(down.y + down.height <= down.parent.height, "down chevron (" + (down.y + down.height) + ") must stay inside the card (" + down.parent.height + ")");
+    }
+
+    // Every label in the table has to come from Format, so it goes through
+    // qsTr(). game_info.rs used to emit title-cased English labels itself,
+    // which meant the whole details table shipped untranslated no matter
+    // what the interface language was set to.
+    function test_tag_labels_resolve_through_the_shared_vocabulary(): void {
+        compare(Format.metadataLabel("release_date"), Format.metadataLabel("Release date"), "canonical type and legacy label must resolve to one label");
+        compare(Format.metadataLabel("play-mode"), Format.metadataLabel("play_mode"), "dashes and underscores are the same key");
+        verify(Format.metadataLabel("rating").length > 0);
+        // An unknown passthrough type still reads as a label rather than
+        // disappearing or rendering raw.
+        compare(Format.metadataLabel("cheevos"), "Cheevos");
+        compare(Format.metadataLabel(""), "");
+    }
+
+    // The column is measured off translated labels, so it has to track the
+    // vocabulary rather than a hardcoded English list.
+    function test_label_column_measures_the_translated_vocabulary(): void {
+        let widest = 0;
+        for (let i = 0; i < modal._knownTagTypes.length; i++)
+            widest = Math.max(widest, Format.metadataLabel(modal._knownTagTypes[i]).length);
+        verify(widest > 0, "the known vocabulary must resolve to non-empty labels");
+        verify(modal._labelColumnWidth > 0);
+    }
+
+    // docs/style.md's card recipe describes a *selectable* surface. The
+    // cover is neither selectable nor on a background needing contrast
+    // help, and a full-width plate behind PreserveAspectFit art framed
+    // every portrait cover in gutters that read as a border.
+    function test_cover_slot_has_no_card_plate_or_border(): void {
+        const slot = findChild(modal, "gameInfoCoverSlot");
+        verify(slot !== null, "cover slot needs an objectName for this assertion");
+        verify(!(slot instanceof Rectangle), "the cover slot must not be a filled/bordered card");
+    }
+
+    // Panel sizes to content, capped. It used to be pinned to
+    // `parent.height - pctH(16)` regardless, so a game with a cover and a
+    // few tags got ~84% of the screen as mostly empty panel while every
+    // other modal in the app sizes to what it holds.
+    function test_panel_height_tracks_content_under_a_cap(): void {
+        const panel = findChild(modal, "gameInfoPanel");
+        verify(panel !== null, "panel needs an objectName for this assertion");
+        verify(panel.height > 0);
+        verify(panel.height <= panel._maxHeight, "panel must never exceed its cap");
+        // Idle GameInfo has no cover, tags or description, so the panel
+        // must collapse well short of the cap rather than sitting on it.
+        compare(Browse.GameInfo.detail_tags, "", "precondition: no tag data loaded");
+        verify(panel.height < panel._maxHeight, "an empty details panel must not claim the full cap");
+    }
+
+    // Same 92% ceiling Modal.qml clamps every other modal to; this one used
+    // to sit at ~94%, wider than any other modal is allowed to be.
+    function test_panel_width_respects_the_shared_ceiling(): void {
+        const panel = findChild(modal, "gameInfoPanel");
+        verify(panel !== null);
+        verify(panel.width <= Math.ceil(modal.width * 0.92), "panel (" + panel.width + ") must stay within 92% of " + modal.width);
+    }
+
+    // Centered by item position with the glyphs left-aligned, never
+    // Text.AlignHCenter: a centered glyph run straddles a half pixel and
+    // softens, which CLAUDE.md rules out on user-visible text.
+    function test_title_is_centered_by_item_position(): void {
+        const title = findChild(modal, "gameInfoTitle");
+        verify(title !== null);
+        compare(title.horizontalAlignment, Text.AlignLeft, "glyphs stay left-aligned inside a positioned box");
+        compare(title.x, Math.floor(title.x), "the title box must land on an integer pixel");
+        if (modal._titleFits)
+            compare(title.x, Sizing.center(title.parent.width, title.width), "a fitting title centers by item position");
     }
 }

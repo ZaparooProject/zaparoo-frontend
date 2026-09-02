@@ -83,6 +83,24 @@ pub struct MediaSearchParams {
     pub sort: Option<String>,
 }
 
+/// Image types Core's `media.image` endpoint can actually serve.
+///
+/// A media row's `availableImageTypes` (and its `property:image-*` keys) can
+/// name types Core stores but will not hand back as bytes. Any carousel built
+/// from that list has to be filtered to this set, or left/right lands on a
+/// slot whose fetch always misses and the viewer sits on a loading cue that
+/// never resolves.
+pub const CORE_SERVEABLE_IMAGE_TYPES: &[&str] = &[
+    "image",
+    "boxart",
+    "screenshot",
+    "wheel",
+    "titleshot",
+    "map",
+    "marquee",
+    "fanart",
+];
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct TagInfo {
     pub tag: String,

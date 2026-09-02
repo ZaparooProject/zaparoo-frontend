@@ -40,7 +40,8 @@ use crate::media_meta_cache::{
 use crate::models::action_error::report_action_error;
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::{
-    disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
+    disambiguating_tag_labels, favorite_tags_after_toggle, is_favorite_tag,
+    sibling_disambiguation_displays, tag_display_value,
 };
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
@@ -63,6 +64,7 @@ use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::media_types::{
     merged_root_view, BrowseEntry, MediaBrowseIndexParams, MediaBrowseParams, MediaBrowseResult,
     MediaMeta, MediaMetaParams, MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
+    CORE_SERVEABLE_IMAGE_TYPES,
 };
 use zaparoo_core::platform::{self, Platform};
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -99,20 +101,6 @@ const IS_EMPTY_ROLE: i32 = 256 + 13;
 // PagedGrid's `cellItem.disabled` delegate contract (round 11 follow-up —
 // see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
 const DISABLED_ROLE: i32 = 256 + 14;
-
-// Image types that Core's `media.image` endpoint can serve (per the API
-// docs). The carousel tail is filtered to this set so left/right never
-// lands on a type that would always return "no image".
-const CORE_SERVEABLE_IMAGE_TYPES: &[&str] = &[
-    "image",
-    "boxart",
-    "screenshot",
-    "wheel",
-    "titleshot",
-    "map",
-    "marquee",
-    "fanart",
-];
 
 // Default API page size before QML binds the model's `page_size` to the
 // grid's `pageSize`. 15 = 5 columns × 3 rows, the desktop default. The
@@ -1218,7 +1206,7 @@ impl ffi::GamesModel {
         });
     }
 
-    fn toggle_favorite_at(self: Pin<&mut Self>, index: i32) {
+    fn toggle_favorite_at(mut self: Pin<&mut Self>, index: i32) {
         if index < 0 || index >= self.count {
             return;
         }
@@ -1226,7 +1214,8 @@ impl ffi::GamesModel {
         if !is_media_capable_entry(entry) {
             return;
         }
-        let Some(params) = favorite_params_for_entry(entry, !has_favorite_tag(&entry.tags)) else {
+        let want_favorite = !has_favorite_tag(&entry.tags);
+        let Some(params) = favorite_params_for_entry(entry, want_favorite) else {
             warn!(
                 "favorite update skipped: missing media identity for {}",
                 entry.name
@@ -1238,6 +1227,28 @@ impl ffi::GamesModel {
         let media_id = entry.media_id;
         let system_id = entry_system_id(entry);
         let path = entry.path.clone();
+        let previous_tags = entry.tags.clone();
+
+        // Paint the heart now, reconcile with Core's answer later.
+        //
+        // A favorite toggle is a one-bit local edit the user has already
+        // decided on; making them watch a WebSocket round-trip (plus Core's
+        // own DB write) before the tile changes is what made this read as
+        // sluggish. `apply_favorite_tags` is reused verbatim so the
+        // optimistic write goes through the same identity re-check and the
+        // same `dataChanged(FAVORITE_ROLE)` emit as the authoritative one.
+        //
+        // Deliberately skipped when the flip would REMOVE the row (see
+        // `apply_favorite_tags`'s `favorites_only` branch): reverting a
+        // removal needs a re-insert at the original index, and a wrong
+        // optimistic removal is worse than a slow correct one. That path
+        // keeps waiting for Core.
+        let optimistic = !self.favorites_only || want_favorite;
+        if optimistic {
+            let next_tags = favorite_tags_after_toggle(&previous_tags, want_favorite);
+            apply_favorite_tags(self.as_mut(), index, media_id, &system_id, &path, next_tags);
+        }
+
         let store = global_store();
         let qt_thread = self.qt_thread();
         global_handle().spawn(async move {
@@ -1256,6 +1267,20 @@ impl ffi::GamesModel {
                 }
                 Err(e) => {
                     warn!("favorite update failed for {name}: {}", e.message);
+                    if optimistic {
+                        // Put the row back the way the user found it. The
+                        // action-error alert below explains why.
+                        let _ = qt_thread.queue(move |mut model| {
+                            apply_favorite_tags(
+                                model.as_mut(),
+                                index,
+                                media_id,
+                                &system_id,
+                                &path,
+                                previous_tags,
+                            );
+                        });
+                    }
                     report_action_error("favorite", name);
                 }
             }
@@ -2717,8 +2742,7 @@ fn prefetch_cursor_window(model: &ffi::GamesModel, index: i32) {
 }
 
 fn has_favorite_tag(tags: &[TagInfo]) -> bool {
-    tags.iter()
-        .any(|tag| tag.tag_type == "user" && tag.tag == "favorite")
+    tags.iter().any(is_favorite_tag)
 }
 
 fn favorite_role_value(tags: &[TagInfo]) -> i32 {

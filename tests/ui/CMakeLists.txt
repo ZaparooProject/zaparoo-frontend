@@ -45,6 +45,7 @@ set(_TST_UI_QML_FILES
     tst_deferred_action.qml
     tst_tile_cover_sync.qml
     tst_game_info_modal.qml
+    tst_qr_matrix.qml
     tst_scrape_setup_modal.qml
     tst_index_setup_modal.qml
 )

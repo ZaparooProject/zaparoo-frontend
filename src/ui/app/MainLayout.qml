@@ -1031,7 +1031,7 @@ ApplicationWindow {
             }
 
             // Scrape setup modal (round 10). Pushed by Main.qml when the
-            // user triggers the "Scrape metadata" action in Settings while
+            // user triggers the "Update metadata" action in Settings while
             // idle. Scraper choice + re-scrape toggle + Start, replacing
             // the hardcoded "gamelist.xml" every other scrape call site
             // still uses.
@@ -1315,13 +1315,40 @@ ApplicationWindow {
                                 label: qsTr("Cancel")
                             }
                         ];
-                    if (root.qrCodeModalVisible || root.gameInfoModalVisible)
+                    if (root.qrCodeModalVisible)
                         return [
                             {
                                 button: "ButtonB",
                                 label: qsTr("Close")
                             }
                         ];
+                    // The details modal used to share the QR modal's row
+                    // above, which advertises Close and nothing else -- but
+                    // GameInfoModal's `handleAction` scrolls on up/down and
+                    // page keys AND cycles the artwork on left/right, so
+                    // the carousel was undiscoverable and the scroll only
+                    // findable by trying it. Both cues are conditional on
+                    // there being somewhere to go, matching how the modal's
+                    // own chevrons and nav arrows gate themselves.
+                    if (root.gameInfoModalVisible) {
+                        const details = root.gameInfoModal;
+                        const entries = [];
+                        if (details !== null && details._scrollable)
+                            entries.push({
+                                button: "Dpad",
+                                label: qsTr("Scroll")
+                            });
+                        if (Browse.GameInfo.image_count > 1)
+                            entries.push({
+                                buttons: ["DpadLeft", "DpadRight"],
+                                label: qsTr("Image")
+                            });
+                        entries.push({
+                            button: "ButtonB",
+                            label: qsTr("Close")
+                        });
+                        return entries;
+                    }
                     if (root.logUploadModalVisible) {
                         const phase = root.logUploadModal ? root.logUploadModal.phase : "";
                         const success = root.logUploadModal ? root.logUploadModal._stateSuccess : "__none__";

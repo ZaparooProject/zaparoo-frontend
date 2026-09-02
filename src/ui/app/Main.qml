@@ -1125,16 +1125,28 @@ MainLayout {
             root._goto(root.screenHub);
     }
 
-    // Fire the actual resume launch and arm the desktop safety-clear. The
-    // "Loading game…" cue (pendingTransition === "resume") stays up through
-    // the launch: on MiSTer the process is replaced by the game before the
-    // timer fires, so the cue covers the core swap; on desktop nothing
-    // replaces us, so resumeLaunchCueTimer clears the cue and restores input.
-    // Started only here, at dispatch — never while still waiting on the
-    // connection — so a slow coalesce keeps the cue for as long as it needs.
+    // Fire the resume launch and drop the cue in the same tick.
+    //
+    // The cue's only job is to cover a genuine wait: the resume row not
+    // fetched yet, or Core not connected. Once the launch is dispatched
+    // there is nothing left to wait for on this side, so Resume ends the
+    // same way every other launch does -- `GamesModel.launch_at` from a
+    // tile press paints no cue at all, on the same hardware, and the
+    // "Loading game…" overlay additionally blanks the Hub grid
+    // (HubScreen's `transitioning`) and gates every input
+    // (`handleAction`'s pendingTransition guard).
+    //
+    // This used to arm an 8 s `resumeLaunchCueTimer` instead, on the
+    // reasoning that the cue covered MiSTer's core swap and only desktop
+    // needed the safety-clear. The cost landed on the common path: with
+    // Core connected and the resume row long since cached, pressing
+    // Resume dispatched immediately and then sat on a dead, input-locked
+    // "Loading game…" screen for a full 8 s regardless.
     function _dispatchResumeLaunch(): void {
         Browse.RecentsModel.launch_resume();
-        resumeLaunchCueTimer.restart();
+        root._pendingResumeLaunch = false;
+        if (root.pendingTransition === "resume")
+            root.pendingTransition = "";
     }
 
     function _maybeCompletePendingResumeLaunch(): void {
@@ -1143,7 +1155,9 @@ MainLayout {
         if (Browse.RecentsModel.resume_loading)
             return;
         if (Browse.RecentsModel.resume_available) {
-            root._pendingResumeLaunch = false;
+            // `_dispatchResumeLaunch` owns clearing `_pendingResumeLaunch`
+            // and the cue, so the wait path and the fast path in
+            // `_navigateResumeFromHub` tear down identically.
             root._dispatchResumeLaunch();
             return;
         }
@@ -1159,10 +1173,16 @@ MainLayout {
     }
 
     function _navigateResumeFromHub(): void {
-        // Optimistic loader, same contract as the other Hub actions: paint
-        // the "Loading game…" cue (and hide the ghost-Hub tiles / gate input)
-        // immediately, before we know whether the launch can proceed.
-        // _cancelResumeLaunch clears it on the no-resumable-game branch.
+        // Same set-then-resolve contract as the other Hub actions: arm the
+        // cue up front, before we know whether the launch can proceed, then
+        // let whichever branch resolves clear it. On the common path (Core
+        // connected, resume row already cached) `_dispatchResumeLaunch`
+        // clears it in this same tick, so the 300 ms
+        // `DelayedLoadingIndicator` never fires and the press reads as
+        // instant -- exactly how `_ensureCategory`/`_ensureSystem`'s
+        // synchronous callbacks keep an already-loaded forward nav
+        // cue-free. `_cancelResumeLaunch` clears it on the
+        // no-resumable-game branch.
         root.pendingTransition = "resume";
         if (!Browse.RecentsModel.resume_loading && Browse.RecentsModel.resume_available) {
             root._dispatchResumeLaunch();
@@ -2198,7 +2218,7 @@ MainLayout {
                     label: qsTr("Update media database")
                 }, {
                     id: "scrape_system",
-                    label: qsTr("Get metadata")
+                    label: qsTr("Update metadata")
                 });
             }
             return entries;
@@ -2233,7 +2253,7 @@ MainLayout {
                     label: qsTr("Update media database")
                 }, {
                     id: "scrape_category",
-                    label: qsTr("Get metadata")
+                    label: qsTr("Update metadata")
                 });
             }
             return entries;
@@ -2263,11 +2283,18 @@ MainLayout {
             // No favorite-toggle here -- see the module doc comment on
             // rust/frontend/src/models/recents.rs for why (Core's
             // media.history carries no tags).
+            //
+            // No `Launch game` either, on any game grid. Accept on the
+            // tile already launches (MediaListScreen's `launch_at`, and
+            // GamesScreen's), and the menu entry dispatched to the exact
+            // same invokable with less bookkeeping -- no selection
+            // persist, no press cue. It cost the menu's top row to
+            // duplicate a press the user had already walked past. See
+            // docs/content-style.md's menu-ordering rule 1, which carries
+            // the carve-out: the primary action leads unless Accept on
+            // the anchor already performs it. `Launch system` stays first
+            // on the systems menu, where Accept navigates in instead.
             const entries = [
-                {
-                    id: "launch_game",
-                    label: qsTr("Launch game")
-                },
                 {
                     id: "more_info",
                     label: qsTr("Details")
@@ -2303,7 +2330,7 @@ MainLayout {
             if (!(Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping))
                 entries.push({
                     id: "scrape_game",
-                    label: qsTr("Get metadata")
+                    label: qsTr("Update metadata")
                 });
             return entries;
         }
@@ -2332,10 +2359,6 @@ MainLayout {
                 ] : [];
             }
             const entries = [
-                {
-                    id: "launch_game",
-                    label: qsTr("Launch game")
-                },
                 {
                     id: "more_info",
                     label: qsTr("Details")
@@ -2382,7 +2405,7 @@ MainLayout {
             if (!(Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping))
                 entries.push({
                     id: "scrape_game",
-                    label: qsTr("Get metadata")
+                    label: qsTr("Update metadata")
                 });
             return entries;
         }
@@ -2793,13 +2816,6 @@ MainLayout {
             // game once Core grows a media/path filter.
             const gameSystemId = owner === "favorites" ? Browse.FavoritesModel.system_id_at(targetIndex) : (owner === "recents" ? Browse.RecentsModel.system_id_at(targetIndex) : Browse.GamesModel.system_id_at(targetIndex));
             root.openScrapeSetupModal(gameSystemId !== "" ? gameSystemId : root._systemScopeAll);
-        } else if (id === "launch_game") {
-            if (owner === "favorites")
-                Browse.FavoritesModel.launch_at(targetIndex);
-            else if (owner === "recents")
-                Browse.RecentsModel.launch_at(targetIndex);
-            else
-                Browse.GamesModel.launch_at(targetIndex);
         } else if (id === "toggle_favorite") {
             if (owner === "games")
                 Browse.GamesModel.toggle_favorite_at(targetIndex);
@@ -3198,8 +3214,8 @@ MainLayout {
             title = qsTr("Media update failed");
             body = qsTr("Could not start the media database update. Check Zaparoo Core and try again.");
         } else if (kind === "media_scrape") {
-            title = qsTr("Get metadata failed");
-            body = qsTr("Could not start getting metadata. Check Zaparoo Core and try again.");
+            title = qsTr("Update metadata failed");
+            body = qsTr("Could not start updating metadata. Check Zaparoo Core and try again.");
         } else if (kind === "media_scrapers") {
             title = qsTr("Source list unavailable");
             body = qsTr("Could not load the list of metadata sources. Check Zaparoo Core and try again.");
@@ -3295,7 +3311,7 @@ MainLayout {
             ScreenManager.popModal();
     }
 
-    // "Get metadata" setup modal lifecycle. Every entry point routes here
+    // "Update metadata" setup modal lifecycle. Every entry point routes here
     // — the Settings > Library row and the system/category/game
     // context-menu entries — so the chosen source, scope and replace flag
     // are always the user's rather than hardcoded. `scope` uses the same
@@ -4948,20 +4964,6 @@ MainLayout {
         interval: 50
         repeat: false
         onTriggered: root._startResumeLaunch()
-    }
-
-    // Desktop safety-clear for the resume "Loading game…" cue. On MiSTer the
-    // launch replaces this process before this fires, so it never triggers and
-    // the cue covers the core swap. On desktop nothing replaces us, so clear
-    // the cue (and ungate input) once the launch has had time to take.
-    Timer {
-        id: resumeLaunchCueTimer
-        interval: 8000
-        repeat: false
-        onTriggered: {
-            if (root.pendingTransition === "resume")
-                root.pendingTransition = "";
-        }
     }
 
     Timer {

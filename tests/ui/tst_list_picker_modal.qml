@@ -665,5 +665,4 @@ TestCase {
         Sizing.screenWidth = testCase.width;
         Sizing.screenHeight = testCase.height;
     }
-
 }

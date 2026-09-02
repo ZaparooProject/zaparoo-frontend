@@ -13,6 +13,39 @@ pub fn tag_display_value(tag: &TagInfo) -> String {
     }
 }
 
+/// Core's canonical favorite marker: type `user`, value `favorite`.
+pub const FAVORITE_TAG_TYPE: &str = "user";
+pub const FAVORITE_TAG_VALUE: &str = "favorite";
+
+pub fn is_favorite_tag(tag: &TagInfo) -> bool {
+    tag.tag_type == FAVORITE_TAG_TYPE && tag.tag == FAVORITE_TAG_VALUE
+}
+
+/// The tag list a row should carry the instant a favorite toggle is pressed,
+/// before Core has answered.
+///
+/// Both browse models paint this optimistically and then overwrite it with
+/// Core's authoritative reply (or revert to the previous list on failure), so
+/// it has to agree with what Core will send back: the same single marker tag,
+/// added or removed, with every other tag on the row untouched. Idempotent in
+/// both directions, so a double-apply (optimistic write followed by an
+/// identical server reply) is a no-op rather than a duplicate tag.
+pub fn favorite_tags_after_toggle(previous: &[TagInfo], want_favorite: bool) -> Vec<TagInfo> {
+    let mut next: Vec<TagInfo> = previous
+        .iter()
+        .filter(|tag| !is_favorite_tag(tag))
+        .cloned()
+        .collect();
+    if want_favorite {
+        next.push(TagInfo {
+            tag: FAVORITE_TAG_VALUE.to_string(),
+            tag_type: FAVORITE_TAG_TYPE.to_string(),
+            label: String::new(),
+        });
+    }
+    next
+}
+
 /// Maximum number of variant tokens surfaced per item. Core orders tags by
 /// display priority and only emits types that actually differ across siblings,
 /// so the leading few differentiate; this is a defensive cap so a pathological
@@ -241,7 +274,50 @@ fn join_trimmed(words: &[String], seps: &[char], lead: usize, trail: usize) -> S
 
 #[cfg(test)]
 mod tests {
-    use super::{disambiguating_tag_labels, sibling_disambiguation_displays, TagInfo};
+    #[test]
+    fn favorite_toggle_adds_the_marker_and_keeps_other_tags() {
+        let previous = vec![tag("us", "region"), tag("1", "disc")];
+        let next = favorite_tags_after_toggle(&previous, true);
+        assert_eq!(next.len(), 3);
+        assert!(next.iter().any(is_favorite_tag));
+        assert!(next.iter().any(|t| t.tag_type == "region" && t.tag == "us"));
+        assert!(next.iter().any(|t| t.tag_type == "disc" && t.tag == "1"));
+    }
+
+    #[test]
+    fn favorite_toggle_removes_only_the_marker() {
+        let previous = vec![tag("us", "region"), tag("favorite", "user")];
+        let next = favorite_tags_after_toggle(&previous, false);
+        assert_eq!(next.len(), 1);
+        assert!(!next.iter().any(is_favorite_tag));
+        assert!(next.iter().any(|t| t.tag_type == "region"));
+    }
+
+    /// The optimistic write and Core's own reply both land on the row, so
+    /// applying the same intent twice must not double the marker.
+    #[test]
+    fn favorite_toggle_is_idempotent_in_both_directions() {
+        let previous = vec![tag("favorite", "user")];
+        let added = favorite_tags_after_toggle(&previous, true);
+        assert_eq!(added.iter().filter(|t| is_favorite_tag(t)).count(), 1);
+        let removed = favorite_tags_after_toggle(&[], false);
+        assert!(removed.is_empty());
+    }
+
+    /// A `user` tag that is not the favorite marker must survive a toggle;
+    /// matching on the type alone would silently drop it.
+    #[test]
+    fn favorite_toggle_leaves_other_user_tags_alone() {
+        let previous = vec![tag("hidden", "user"), tag("favorite", "user")];
+        let next = favorite_tags_after_toggle(&previous, false);
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].tag, "hidden");
+    }
+
+    use super::{
+        disambiguating_tag_labels, favorite_tags_after_toggle, is_favorite_tag,
+        sibling_disambiguation_displays, TagInfo,
+    };
 
     fn tag(value: &str, tag_type: &str) -> TagInfo {
         TagInfo {

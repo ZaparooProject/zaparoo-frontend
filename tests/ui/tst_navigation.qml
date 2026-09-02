@@ -1274,6 +1274,49 @@ TestCase {
 
     // resetFocus is the test-harness reset and the cold-launch state — it
     // must always land on Resume regardless of where focus was before.
+    // Resume is a launch, not a navigation, so it must end like every
+    // other launch: `GamesModel.launch_at` from a tile press paints no
+    // "Loading game…" cue at all. Resume used to arm an 8 s
+    // `resumeLaunchCueTimer` at dispatch, so the common path -- Core
+    // connected, resume row long since cached -- dispatched instantly and
+    // then sat on a dead, input-locked cue for the full 8 s. The cue is
+    // now reserved for a genuine wait.
+    function test_resume_with_cached_row_clears_the_cue_in_the_same_tick(): void {
+        const wasLoading = Browse.RecentsModel.resume_loading;
+        const wasAvailable = Browse.RecentsModel.resume_available;
+        Browse.RecentsModel.resume_loading = false;
+        Browse.RecentsModel.resume_available = true;
+        try {
+            main._navigateResumeFromHub();
+            compare(main.pendingTransition, "", "a ready resume must not leave the loading cue armed");
+            compare(main._pendingResumeLaunch, false, "and must not leave a pending launch behind");
+        } finally {
+            Browse.RecentsModel.resume_loading = wasLoading;
+            Browse.RecentsModel.resume_available = wasAvailable;
+            main.pendingTransition = "";
+            main._pendingResumeLaunch = false;
+        }
+    }
+
+    // The other half of the same rule: while the resume row genuinely
+    // hasn't landed, the cue stays up. Dropping it here would leave a
+    // dead Hub press with no feedback at all.
+    function test_resume_while_still_fetching_keeps_the_cue(): void {
+        const wasLoading = Browse.RecentsModel.resume_loading;
+        const wasAvailable = Browse.RecentsModel.resume_available;
+        Browse.RecentsModel.resume_loading = true;
+        Browse.RecentsModel.resume_available = false;
+        try {
+            main._navigateResumeFromHub();
+            compare(main.pendingTransition, "resume", "a resume still waiting on its row must hold the cue");
+        } finally {
+            Browse.RecentsModel.resume_loading = wasLoading;
+            Browse.RecentsModel.resume_available = wasAvailable;
+            main.pendingTransition = "";
+            main._pendingResumeLaunch = false;
+        }
+    }
+
     function test_reset_focus_seats_on_resume(): void {
         main.hubScreen.currentIndex = 2;
         main.hubScreen.resetFocus();
@@ -1460,7 +1503,7 @@ TestCase {
         verify(entries[2].label.length > 0, "Add to Hub label is set");
         verify(entries[3].label.length > 0, "Hide label is set");
         verify(entries[4].label.length > 0, "Update media database label is set");
-        verify(entries[5].label.length > 0, "Scrape metadata label is set");
+        verify(entries[5].label.length > 0, "Update metadata label is set");
     }
 
     function test_context_menu_systems_has_nfc_does_not_add_entries(): void {
@@ -1528,22 +1571,22 @@ TestCase {
 
     function test_context_menu_games_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, false, false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"], "Write to NFC token must be hidden when no reader is reported");
+        compare(_idsOf(entries), ["more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"], "Write to NFC token must be hidden when no reader is reported");
     }
 
     function test_context_menu_games_with_reader_includes_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, true, false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
+        compare(_idsOf(entries), ["more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_favorites_matches_games_media_entries(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, true, true, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
+        compare(_idsOf(entries), ["more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"]);
+        compare(_idsOf(entries), ["more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     // Round 10: "Discover alt. versions" only appears when the row's own
@@ -1591,22 +1634,44 @@ TestCase {
     // tags (see the doc comment on RecentsModel in recents.rs).
     function test_context_menu_recents_includes_details_and_hub_shortcut(): void {
         const entries = main.buildContextMenuEntries("recents", "", false, false, false, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "qr_code", "add_to_hub", "scrape_game"]);
+        compare(_idsOf(entries), ["more_info", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_recents_with_reader_includes_write_card(): void {
         const entries = main.buildContextMenuEntries("recents", "", false, true, false, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
+        compare(_idsOf(entries), ["more_info", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
+    // Looked up by id rather than by a hardcoded index: the entry list is
+    // ordered by docs/content-style.md's priority rule, so any future
+    // ordering change (dropping `launch_game` was one) would otherwise
+    // silently retarget this at a different row.
     function test_context_menu_games_favorite_label_toggles(): void {
         const addEntries = main.buildContextMenuEntries("games", "media", true, false, false, "");
         const removeEntries = main.buildContextMenuEntries("games", "media", true, false, true, "");
-        compare(addEntries[2].id, "toggle_favorite");
-        compare(removeEntries[2].id, "toggle_favorite");
-        verify(addEntries[2].label.length > 0);
-        verify(removeEntries[2].label.length > 0);
-        verify(addEntries[2].label !== removeEntries[2].label);
+        const added = addEntries.find(entry => entry.id === "toggle_favorite");
+        const removed = removeEntries.find(entry => entry.id === "toggle_favorite");
+        verify(added !== undefined, "an unfavorited game must offer the favorite toggle");
+        verify(removed !== undefined, "a favorited game must offer the favorite toggle");
+        verify(added.label.length > 0);
+        verify(removed.label.length > 0);
+        verify(added.label !== removed.label);
+    }
+
+    // Accept on a game tile already launches, so the menu must not spend
+    // its top row duplicating that press. Systems are the counter-case:
+    // Accept there navigates into the system, so `launch_system` is not a
+    // duplicate and stays first. See docs/content-style.md's ordering
+    // rule 1 carve-out.
+    function test_context_menu_game_owners_omit_a_launch_entry(): void {
+        const owners = [main.buildContextMenuEntries("games", "media", true, true, false, ""), main.buildContextMenuEntries("favorites", "", true, true, true, "", false, ""), main.buildContextMenuEntries("recents", "", false, true, false, "", false, "")];
+        for (let i = 0; i < owners.length; i++) {
+            const ids = _idsOf(owners[i]);
+            verify(!ids.includes("launch_game"), "Accept already launches on this grid, so the menu must not repeat it");
+            compare(ids[0], "more_info", "Details is the primary action once the duplicate launch row is gone");
+        }
+        const systems = _idsOf(main.buildContextMenuEntries("systems", "", false, false, false, "", false));
+        compare(systems[0], "launch_system", "Accept navigates into a system, so its launch entry is not a duplicate");
     }
 
     function test_context_menu_unknown_owner_returns_empty(): void {

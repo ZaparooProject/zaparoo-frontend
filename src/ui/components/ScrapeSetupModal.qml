@@ -13,7 +13,7 @@ import Zaparoo.Browse as Browse
 // suppress the compiler category file-wide.
 // qmllint disable compiler
 
-// "Get metadata" setup modal. Every entry point routes here — the
+// "Update metadata" setup modal. Every entry point routes here — the
 // Settings > Library row, and the system/category/game context-menu
 // entries, which previously bypassed this modal and started a scrape
 // with a hardcoded "gamelist.xml" scraper and `force: false`. Callers
@@ -27,13 +27,22 @@ import Zaparoo.Browse as Browse
 // favor of the same flat "All systems / All <Category> systems / one
 // system" list `IndexSetupModal` uses.
 //
-// Naming: entry points say "Get metadata" because the mechanism is a
+// Naming: entry points say "Update metadata" because the mechanism is a
 // property of the chosen source, not of the action. Inside, once a
-// source is picked, the button can be accurate — today every built-in
+// source is picked, the button can be accurate: today every built-in
 // source imports local files, so it reads "Start import". When real
 // network scrapers land the verb becomes conditional on the source,
 // resolved on the frontend as a presentation concern; Core needs no
 // kind field on `ScraperInfo` for that.
+//
+// The entry-point verb has moved twice. "Scrape" named a mechanism that
+// is wrong for every source shipped so far (they import scrapes that
+// already exist on disk). "Get" fixed that but reads wrong for a re-run,
+// which is what most runs are: re-pointing an already-populated library
+// at a different source is not "getting" anything it lacks. "Update" is
+// mechanism-neutral like "Get", accurate for the repeat case, and still
+// reads correctly when there is nothing there yet. One label at every
+// entry point, per docs/content-style.md's one-term-per-concept rule.
 //
 // Four keyboard-navigable rows (`currentIndex` 0-3): Source and Systems
 // (each opens a picker *page* of this same panel — see `page`), Replace
@@ -299,7 +308,7 @@ Item {
 
         open: modal.open
         kind: "shell"
-        title: qsTr("Get metadata")
+        title: qsTr("Update metadata")
         panelMaxWidth: Sizing.pctH(110)
 
         Column {

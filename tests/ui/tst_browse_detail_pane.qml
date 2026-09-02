@@ -318,4 +318,47 @@ TestCase {
         const metadataSlotHeight = table.parent.parent.parent.height;
         verify(pane._compactMetadataHeight <= metadataSlotHeight, "compact metadata height (" + pane._compactMetadataHeight + ") must not exceed the real metadata slot (" + metadataSlotHeight + ")");
     }
+
+    // The pane and the details modal render the same tag types, so they
+    // must resolve to the same strings. The vocabulary used to be a
+    // private ladder in this file, which is why the modal shipped its own
+    // untranslated labels for the same data.
+    function test_tag_labels_come_from_the_shared_vocabulary(): void {
+        pane.detailTags = "Year\t1994\nrelease_date\t1994-03-19\ncheevos\tyes";
+        const rows = pane._detailRows;
+        compare(rows.length, 3);
+        compare(rows[0].measureLabel, Format.metadataLabel("year"), "the legacy English label must resolve to the shared label");
+        compare(rows[1].measureLabel, Format.metadataLabel("release_date"), "the canonical type must resolve to the same label");
+        compare(rows[2].measureLabel, "Cheevos", "an unknown passthrough type still reads as a label");
+        pane.detailTags = "";
+    }
+
+    // U+009C is Qt's alternative-text separator: an eliding Text renders
+    // the short form rather than truncating the long one. Types with no
+    // abbreviation must pack nothing so they elide normally.
+    function test_short_labels_are_packed_for_narrow_columns(): void {
+        pane.detailTags = "Year\t1994\ncheevos\tyes";
+        const rows = pane._detailRows;
+        compare(rows[0].label, Format.metadataLabel("year") + "\u009C" + Format.metadataShortLabel("year"));
+        verify(Format.metadataShortLabel("year").length > 0);
+        compare(rows[1].label, "Cheevos", "a type with no short form packs nothing");
+        compare(Format.metadataShortLabel("cheevos"), "");
+        pane.detailTags = "";
+    }
+
+    // The column used to be a session-long `Math.max` with no reset, so
+    // browsing a systems table (which carries `Manufacturer`) and then a
+    // media table left the narrower table paying for a width no label in
+    // it needs. It now tracks the rows actually on screen.
+    function test_label_column_shrinks_back_for_a_narrower_table(): void {
+        pane.detailTags = "Manufacturer\tNintendo";
+        const wide = pane._labelColumnNaturalWidth;
+        verify(wide > 0);
+        pane.detailTags = "Yr\t1994";
+        const narrow = pane._labelColumnNaturalWidth;
+        verify(narrow > 0);
+        verify(narrow < wide, "a narrower label set (" + narrow + ") must not keep the wider column (" + wide + ")");
+        pane.detailTags = "";
+        compare(pane._labelColumnNaturalWidth, 0, "no rows means no column");
+    }
 }

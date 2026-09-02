@@ -31,7 +31,13 @@ Item {
 
     // Same left inset as `SettingsField` labels so headings and field
     // labels share a vertical baseline; the rule runs the full row width.
-    readonly property int _labelInset: Sizing.pctW(2)
+    //
+    // Settable, because the invariant is "share the baseline with the rows
+    // under it", not the literal value: a host whose rows sit flush at
+    // x: 0 (GameInfoModal's tag table and description) has to zero this or
+    // the heading floats indented relative to everything it heads.
+    property int labelInset: Sizing.pctW(2)
+    readonly property int _labelInset: root.labelInset
     // Room above the label so a heading separates from the group before it
     // as well as titling the one below.
     readonly property int _topGap: Sizing.pctH(1.5)
