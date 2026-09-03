@@ -30,6 +30,8 @@ qt_add_qml_module(
         Format.qml
         GameInfoModal.qml
         HeaderBar.qml
+        HelpBarEntry.qml
+        HelpRow.qml
         IndexSetupModal.qml
         LetterJumpModal.qml
         LoadingIndicator.qml

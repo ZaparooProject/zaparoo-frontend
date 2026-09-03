@@ -1197,18 +1197,18 @@ gutter, so a grid's geometry is identical regardless of page count.
 
 The "where am I" cue is a count badge plus `PageIndicator` (up/down chevrons —
 `ScrollUp`/`ScrollDown`, the same glyphs the old gutter used — plus "N / M").
-The "N / M" text (and the "N" it falls back to when the total isn't known
-yet) only paints once there's actually somewhere else to page to —
-`PageIndicator._hasMultiplePages` — since a single page never needs a "1 / 1"
-readout. Round 9 changed the chevrons' own no-direction state from hidden to
+Paged grids pass page numbers; detailed lists pass focused-item and total-item
+counts. The text only paints once there's actually somewhere else to navigate
+to — `PageIndicator._hasNavigationRange` — since a single page or item never
+needs a "1 / 1" readout. Round 9 changed the chevrons' own no-direction state from hidden to
 dimmed (`Theme.textLabel` instead of `Theme.textPrimary`) so a bare glance
 could tell "there is scroll chrome here" even mid-grid, and only the
 still-live direction reads as actionable — a colour swap, not an opacity
 one: a translucent node would repaint everything it overlaps on every frame
 under software rendering (see CLAUDE.md's animation-cost rules), while a
 static colour costs nothing extra. Round 10 added the missing case: when
-there's only **one** page total, both chevrons hide entirely
-(`_hasMultiplePages`, the same gate the "N / M" text already used) rather
+there's only **one** page or item total, both chevrons hide entirely
+(`_hasNavigationRange`, the same gate the "N / M" text already used) rather
 than painting two permanently-dim arrows that will never do anything —
 dimming is for "this direction specifically has nothing," not for "nothing
 here scrolls at all." It sits alongside `TopStatusStrip`'s title,
@@ -1242,9 +1242,10 @@ must not shift the "N / M" text next to it) and for `chevronSpacing`, a
 tighter gap between the two chevrons than between the pair and the text —
 Gestalt proximity: the chevrons are one control, the text is a separate
 readout, and the glyphs' own baked-in side bearing already makes an *equal*
-gap read backwards. List layouts (Settings-style vertical lists, `BrowseList`)
-are unaffected by any of this; they use a fixed chevron-band reserved by
-margin, unrelated to paged grids entirely.
+gap read backwards. Detailed `BrowseList` layouts use this same cue for
+single-item movement and omit the separate left-side total. Settings-style
+vertical lists keep their fixed chevron band because they do not share browse
+screen chrome.
 
 ### Empty slots
 

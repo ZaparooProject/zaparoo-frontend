@@ -6,11 +6,13 @@ import QtQuick
 import QtTest
 import Zaparoo.Theme
 import Zaparoo.App
+import Zaparoo.Browse as Browse
 
 // Resolution-agnostic sizing contract: pctH/pctW/fontSize must scale with the
 // Main window's screenWidth/screenHeight, and visibleCovers must honour the
 // 240p special-case (3 covers instead of 5).
 TestCase {
+    id: testCase
     name: "UiSizing"
     when: windowShown
 
@@ -21,11 +23,28 @@ TestCase {
         height: 720
     }
 
+    property string _originalOrientation: "horizontal"
+
+    Component.onCompleted: {
+        testCase._originalOrientation = Browse.Settings.current_orientation;
+    }
+
+    function init(): void {
+        Browse.Settings.current_orientation = "horizontal";
+        tryCompare(Sizing, "swapPercentageAxes", false);
+    }
+
     function cleanup(): void {
         main.debugCrtSafeAreaOverlay = false;
         main.crtNativePath = false;
         main.bitmapType = false;
+        Browse.Settings.current_orientation = "horizontal";
+        tryCompare(Sizing, "swapPercentageAxes", false);
         setResolution(1280, 720);
+    }
+
+    function cleanupTestCase(): void {
+        Browse.Settings.current_orientation = testCase._originalOrientation;
     }
 
     function setResolution(w: int, h: int): void {
@@ -306,6 +325,57 @@ TestCase {
             compare(systems.rows, entry.systems[1]);
             compare(games.columns, entry.games[0]);
             compare(games.rows, entry.games[1]);
+        }
+    }
+
+    function test_rotated_common_grids_transpose_rows_and_columns(): void {
+        const cases = [[320, 240], [640, 480], [960, 540], [1280, 720], [1366, 768], [1920, 1080]];
+        for (const [width, height] of cases) {
+            Browse.Settings.current_orientation = "horizontal";
+            tryCompare(Sizing, "swapPercentageAxes", false);
+            setResolution(width, height);
+            const hub = [Sizing.hubGridColumns, Sizing.hubGridRows];
+            const games = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
+
+            for (const orientation of ["cw", "ccw"]) {
+                Browse.Settings.current_orientation = orientation;
+                tryCompare(Sizing, "swapPercentageAxes", true);
+                tryCompare(Sizing, "screenWidth", height);
+                tryCompare(Sizing, "screenHeight", width);
+                compare(Sizing.hubGridColumns, hub[1], orientation + " Hub columns at " + width + "x" + height);
+                compare(Sizing.hubGridRows, hub[0], orientation + " Hub rows at " + width + "x" + height);
+                const rotatedSystems = Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight);
+                compare(rotatedSystems.columns, 2, orientation + " Systems columns at " + width + "x" + height);
+                compare(rotatedSystems.rows, 3, orientation + " Systems rows at " + width + "x" + height);
+                const rotatedGames = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
+                compare(rotatedGames.columns, games.rows, orientation + " Games columns at " + width + "x" + height);
+                compare(rotatedGames.rows, games.columns, orientation + " Games rows at " + width + "x" + height);
+
+                Browse.Settings.current_orientation = "horizontal";
+                tryCompare(Sizing, "swapPercentageAxes", false);
+            }
+        }
+    }
+
+    function test_rotated_crt_grids_transpose_rows_and_columns(): void {
+        main.crtNativePath = true;
+        main.bitmapType = true;
+        setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
+
+        for (const orientation of ["cw", "ccw"]) {
+            Browse.Settings.current_orientation = orientation;
+            tryCompare(Sizing, "swapPercentageAxes", true);
+            tryCompare(Sizing, "screenWidth", crtSafeHeight(240));
+            tryCompare(Sizing, "screenHeight", crtSafeWidth(352));
+            compare(Sizing.hubGridColumns, 2);
+            compare(Sizing.hubGridRows, 4);
+            compare(Sizing.systemsGridColumns, 2);
+            compare(Sizing.systemsGridRows, 3);
+            compare(Sizing.gamesGridColumns, 2);
+            compare(Sizing.gamesGridRows, 3);
+
+            Browse.Settings.current_orientation = "horizontal";
+            tryCompare(Sizing, "swapPercentageAxes", false);
         }
     }
 

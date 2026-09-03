@@ -237,7 +237,7 @@ Item {
     // rows count), so `currentPage(0) < pageCount(1) - 1` is false, and the
     // known-total branch of the old OR term never even looked at
     // `hasMorePages`. The chevrons and "N / M" readout (both gated on this
-    // flag -- see PageIndicator.qml's `_hasMultiplePages`) then stayed
+    // flag -- see PageIndicator.qml's `_hasNavigationRange`) then stayed
     // hidden until the first d-pad move triggered `loadMoreRequested` and
     // grew `itemCount` past a second page. The count itself was always
     // right (it reads the model's own authoritative total, not this flag);

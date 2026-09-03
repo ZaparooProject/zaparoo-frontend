@@ -29,9 +29,11 @@ TestCase {
     }
 
     property string _originalBrowseLayout: "grid"
+    property string _originalOrientation: "horizontal"
 
     Component.onCompleted: {
         _originalBrowseLayout = Browse.Settings.current_systems_browse_layout;
+        _originalOrientation = Browse.Settings.current_orientation;
     }
 
     function init(): void {
@@ -44,6 +46,7 @@ TestCase {
         main.activeScreen = main.screenSystems;
         main.crtNativePath = false;
         Browse.Settings.current_systems_browse_layout = "grid";
+        Browse.Settings.current_orientation = "horizontal";
     }
 
     function cleanup(): void {
@@ -53,6 +56,11 @@ TestCase {
         Sizing.screenHeight = 720;
         main.crtNativePath = false;
         Browse.Settings.current_systems_browse_layout = _originalBrowseLayout;
+        Browse.Settings.current_orientation = "horizontal";
+    }
+
+    function cleanupTestCase(): void {
+        Browse.Settings.current_orientation = _originalOrientation;
     }
 
     function _use240p(): void {
@@ -60,6 +68,20 @@ TestCase {
         main.height = 240;
         Sizing.screenWidth = 640;
         Sizing.screenHeight = 240;
+    }
+
+    function test_settings_root_grid_transposes_in_both_rotations(): void {
+        main.settingsScreenRequested = true;
+        main.activeScreen = main.screenSettings;
+        verify(main.settingsScreen !== null);
+        compare(main.settingsScreen.rootGridColumns, 3);
+        compare(main.settingsScreen.rootGridRows, 2);
+
+        for (const orientation of ["cw", "ccw"]) {
+            Browse.Settings.current_orientation = orientation;
+            compare(main.settingsScreen.rootGridColumns, 2, orientation + " columns");
+            compare(main.settingsScreen.rootGridRows, 3, orientation + " rows");
+        }
     }
 
     function test_compact_profile_follows_resolution_not_crt_flag(): void {

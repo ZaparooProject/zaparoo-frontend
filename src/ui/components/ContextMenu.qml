@@ -35,7 +35,7 @@ Item {
     // dynamic per-owner menus silently re-shuffled the index/action map.
     property var entries: []
     property int currentIndex: 0
-    property int bottomUnsafeHeight: Sizing.pctH(6) + Sizing.pctH(2)
+    property int bottomUnsafeHeight: Sizing.helpBarClearance
 
     property int _activatePulse: 0
     property string _pendingId: ""

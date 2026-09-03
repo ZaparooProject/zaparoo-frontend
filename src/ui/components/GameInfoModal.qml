@@ -142,7 +142,8 @@ Item {
             // the two fixed bands the content sits between.
             readonly property int _chromeHeight: titleText.y + titleText.height + Sizing.pctH(4) + Sizing.pctH(4)
             readonly property int _maxHeight: Sizing.px(parent.height - Sizing.pctH(16))
-            height: Sizing.px(Math.min(panel._maxHeight, panel._chromeHeight + contentColumn.height))
+            readonly property int _bodyHeight: errorText.visible ? errorText.height : contentColumn.height
+            height: Sizing.px(Math.min(panel._maxHeight, panel._chromeHeight + panel._bodyHeight))
             color: Theme.bgPanel
             radius: Sizing.radiusMd
             antialiasing: Sizing.cornerAntialiasing
@@ -193,6 +194,9 @@ Item {
             }
 
             Text {
+                id: errorText
+
+                objectName: "gameInfoError"
                 visible: !Browse.GameInfo.loading && Browse.GameInfo.error_message !== ""
                 anchors.left: parent.left
                 anchors.leftMargin: Sizing.pctW(4)

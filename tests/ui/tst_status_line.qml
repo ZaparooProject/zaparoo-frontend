@@ -199,6 +199,10 @@ TestCase {
         compare(line._percentKnown, false, "stale task counters must not keep percentage visible");
         compare(line._percentReserve, 0, "stale percentage must reserve no trailing width");
 
+        const percent = findChild(line, "statusLinePercent");
+        verify(percent !== null);
+        compare(percent.visible, false, "connection status must not display a stale task percentage");
+
         const label = findChild(line, "statusLineLabel");
         verify(label !== null);
         compare(label.x + label.width, line.width, "Disconnected must remain flush right");

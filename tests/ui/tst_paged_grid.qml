@@ -1056,7 +1056,7 @@ TestCase {
     // known-total branch never looked at `hasMorePages` at all
     // (`currentPage(0) < pageCount(1) - 1` is false, and the OR term was
     // gated `!paginationTotalKnown &&`), so `hasPagesBelow` read false and
-    // the footer's chevrons/"N / M" readout (PageIndicator._hasMultiplePages)
+    // the footer's chevrons/"N / M" readout (PageIndicator._hasNavigationRange)
     // stayed hidden on entry despite the model plainly having more rows --
     // only the first d-pad move (which grows `itemCount` past a second
     // page) made them appear. A model reporting more rows must always

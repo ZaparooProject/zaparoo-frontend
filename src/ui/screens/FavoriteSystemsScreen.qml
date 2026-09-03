@@ -31,12 +31,8 @@ MediaListScreen {
     gridBottomMargin: Sizing.pctH(8) + Sizing.pctH(7)
     topStripTitleProvider: () => qsTr("Favorites")
     topStripTotalTextProvider: () => favoriteSystems.mediaGrid.itemCount > 0 ? qsTr("%n system(s) with favorites", "", Browse.FavoriteSystemsModel.count) : ""
-    // Round 11: list layout's right slot now hosts the same interactive
-    // PageIndicator grid layout has (see MediaListScreen's
-    // `pageIndicatorMode`) instead of the old item-position "N / M"
-    // counter -- FavoriteSystemsModel has no background-fetch signal
-    // worth surfacing here the way GamesScreen's "Loading more…" is, so
-    // this screen no longer needs its own `topStripRightTextProvider`.
+    // Shared list chrome shows focused-item/total-items on the right;
+    // FavoriteSystems needs no text override there.
     activeLabelTextProvider: () => favoriteSystems.mediaGrid.itemCount > 0 ? Browse.FavoriteSystemsModel.name_at(favoriteSystems.mediaGrid.currentIndex) : ""
     activeLabelTagsProvider: () => {
         // Reads Browse.FavoriteSystemsModel.media_counts_revision explicitly

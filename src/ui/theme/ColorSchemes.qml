@@ -550,13 +550,13 @@ QtObject {
     }
 
     // The two intensity settings, as multipliers on the ambient-accent
-    // terms below. `subtle` is 1.0 by construction — it must reproduce the
-    // shipped palette byte for byte, so an install that never touches the
-    // setting sees no change.
+    // terms below. `subtle` keeps the original edge derivation and is the
+    // default, so an install that never touches the setting keeps those edges.
     //
-    // Only the resting front edges (`tileEdge`/`controlEdge`) scale — the
-    // one ambient, purely decorative place the accent is painted, and the
-    // one testers actually reported both directions on.
+    // The resting front edges (`tileEdge`/`controlEdge`) scale because they
+    // are ambient, decorative accent surfaces. `selectionChroma` also scales
+    // `selectionFill`; `onAccent` and `onAccentMuted` derive from that fill,
+    // so the on-accent pair moves with it.
     //
     // The neutral ladder's accent cast (`panel`/`card`/`subtle`/`mid`) was
     // tried here too and pulled back out. It cannot scale safely: `card` is
@@ -614,9 +614,8 @@ QtObject {
         return _intensities[name] ?? _intensities[defaultIntensity];
     }
 
-    // `intensity` is optional so the 13 existing `palette(id)` call sites
-    // (Theme plus the color-scheme and pressable-surface suites) keep
-    // resolving the shipped look without a signature change at each one.
+    // `intensity` is optional so existing `palette(id)` call sites resolve
+    // the default Subtle look without a signature change at each one.
     function palette(id: string, intensity: string): var {
         const scale = _intensity(intensity ?? defaultIntensity);
         const source = _sources[effectiveId(id)];

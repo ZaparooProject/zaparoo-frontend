@@ -197,11 +197,8 @@ Item {
     // BrowseLayouts.qml's `footer.pageCueInFooter`.
     readonly property bool _pageCueInFooter: !!(root._footerProfile && root._footerProfile.pageCueInFooter)
     readonly property bool _showGridPageCue: !root._listLayout && root.renderGridLayout && !root._pageCueInFooter
-    // Round 11: list layout gets the same interactive chevron+"N / M"
-    // PageIndicator grid layout already had, instead of a plain "Page N /
-    // M" text or (on Games) an item-position counter with no chevrons at
-    // all. Sibling to `_showGridPageCue` rather than folded into it so
-    // that property's three existing (grid-only) use sites are untouched.
+    // Detailed lists use the same compact chevron component, but its number
+    // is focused-item/total-items rather than a synthetic page count.
     readonly property bool _showListPageCue: root._listLayout && !root._pageCueInFooter
     // Whichever layout is active, is its page cue hosted in the top strip.
     readonly property bool _showTopPageCue: root._showGridPageCue || root._showListPageCue
@@ -221,6 +218,8 @@ Item {
     readonly property int _listCurrentPage: Math.floor(mediaGrid.currentIndex / root._listVisiblePageSize)
     readonly property bool _listHasPagesAbove: root._listCurrentPage > 0
     readonly property bool _listHasPagesBelow: root._listCurrentPage < root._listTotalPageCount - 1 || root.gridHasMorePages
+    readonly property bool _listHasItemsAbove: mediaGrid.currentIndex > 0
+    readonly property bool _listHasItemsBelow: mediaGrid.currentIndex < root._listTotalItems - 1 || root.gridHasMorePages
     // Round 11: measure the footer's corner occupants (the left count text,
     // the right PageIndicator) instead of reserving a flat third of the
     // screen for each — see SystemsScreen.qml's identical treatment and
@@ -628,22 +627,9 @@ Item {
         currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : (root._listLayout ? root._listCurrentPage : mediaGrid.currentPage)
         totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : (root._listLayout ? root._listTotalPageCount : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize)))
         pageTotalKnown: root.paginationTotalKnown
-        // List layout keeps each screen's own provider (or the generic
-        // fallback) exactly as before. Grid layout shows the same count
-        // here too now, UNLESS the theme keeps it in the footer instead
-        // (`_pageCueInFooter` -- CRT, whose top strip is hidden entirely
-        // anyway).
-        // Generic fallback must guard on `paginationTotalKnown` same as
-        // `rightTextOverride` below does -- `_count()` is rows-loaded-so-far
-        // for a cursor-paginated model (Recents/Favorites), not a stable
-        // total, and would otherwise grow visibly as the user scrolls.
-        // Screens with a real total (Games/Favorite Systems) supply their
-        // own `topStripTotalTextProvider` and never reach this branch.
-        totalText: (root._listLayout || root._showGridPageCue) ? (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root.paginationTotalKnown && root._count() > 0 ? qsTr("%1 games").arg(root._count()) : "")) : ""
-        // Round 11: list layout now mounts the same interactive
-        // PageIndicator grid layout does (`pageIndicatorMode` below), so a
-        // per-screen provider returning the old "N / M items" position
-        // counter would just never be shown -- those screens dropped it.
+        // Grid layout keeps its total badge. Detailed list layout omits it;
+        // focused-item/total-items on the right already carries the total.
+        totalText: !root._listLayout && root._showGridPageCue ? (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root.paginationTotalKnown && root._count() > 0 ? qsTr("%1 games").arg(root._count()) : "")) : ""
         // A provider returning something else (GamesScreen's transient
         // "Loading more…" while a background fetch fills in scrolled-past
         // rows) still needs to be seen, though, so `pageIndicatorMode`
@@ -652,10 +638,13 @@ Item {
         rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : ""
         showPageCounter: root._listLayout || root._showGridPageCue
         pageIndicatorMode: root._showTopPageCue && topStrip.rightTextOverride === ""
+        itemPositionMode: root._listLayout
+        currentItem: mediaGrid.currentIndex
+        totalItems: root._listTotalItems
         pageIndicatorChevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
-        hasPagesAbove: root._listLayout ? root._listHasPagesAbove : mediaGrid.hasPagesAbove
-        hasPagesBelow: root._listLayout ? root._listHasPagesBelow : mediaGrid.hasPagesBelow
-        onPageRequested: delta => root._performPage(delta)
+        hasPagesAbove: root._listLayout ? root._listHasItemsAbove : mediaGrid.hasPagesAbove
+        hasPagesBelow: root._listLayout ? root._listHasItemsBelow : mediaGrid.hasPagesBelow
+        onPageRequested: delta => root._listLayout ? root._performLinearMove(delta) : root._performPage(delta)
     }
 
     BrowseListDetailView {
@@ -669,7 +658,7 @@ Item {
         anchors.top: topStrip.bottom
         anchors.topMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardTopMargin : Sizing.pctH(2)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardBottomMargin : Sizing.pctH(8)
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight + (root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardBottomMargin - Sizing.pctH(6) : Sizing.pctH(2)) : (root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardBottomMargin : Sizing.pctH(8))
         layoutProfile: root._listLayoutProfile
         model: root.mediaModel
         totalItemsOverride: root.totalItemsOverride
@@ -714,7 +703,7 @@ Item {
         anchors.right: parent.right
         anchors.top: topStrip.bottom
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.gridBottomMargin
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight + root.activeLabelHeight : root.gridBottomMargin
         focused: root.gridFocused
         screenSettling: !root.active
         focusReady: root._focusReady
@@ -778,7 +767,7 @@ Item {
         anchors.right: parent.right
         anchors.top: root.activeLabelAtBottom ? undefined : mediaGrid.bottom
         anchors.bottom: root.activeLabelAtBottom ? parent.bottom : undefined
-        anchors.bottomMargin: root.activeLabelAtBottom ? root.activeLabelBottomMargin : 0
+        anchors.bottomMargin: root.activeLabelAtBottom ? (Sizing.tier === "240" ? Sizing.helpBarHeight : root.activeLabelBottomMargin) : 0
         height: root.activeLabelHeight
         sideInset: root._pageCueInFooter ? Math.max(root._footerLeftInset, root._footerRightInset) : Sizing.pctW(3)
         text: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
@@ -795,15 +784,13 @@ Item {
         font.pixelSize: Sizing.fontSection
     }
 
-    // Round 11: both this and `footerPageIndicator` below used to be
-    // grid-only (`!root._listLayout`). On the CRT profile (`_pageCueInFooter`,
-    // top strip hidden entirely) that left list layout with no page cue
-    // anywhere at all. `bottomStatusLeftText` is already layout-agnostic
-    // content (a screen's own total-count text, e.g. GamesScreen's "%1
-    // games"), so showing it for list layout too needs no new plumbing.
+    // Detailed lists omit this duplicate total; their right-side position cue
+    // already shows focused-item/total-items.
     Text {
         id: bottomTotalText
-        visible: !root._gateHide && root._pageCueInFooter && root.bottomStatusLeftText !== ""
+
+        objectName: "mediaListFooterCount"
+        visible: !root._gateHide && !root._listLayout && root._pageCueInFooter && root.bottomStatusLeftText !== ""
         anchors.left: parent.left
         anchors.leftMargin: root.bottomStatusLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
@@ -829,10 +816,13 @@ Item {
         chevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
         currentPage: root._listLayout ? root._listCurrentPage : mediaGrid.currentPage
         totalPages: root._listLayout ? root._listTotalPageCount : mediaGrid.totalPageCount
+        itemPositionMode: root._listLayout
+        currentItem: mediaGrid.currentIndex
+        totalItems: root._listTotalItems
         pageTotalKnown: root.paginationTotalKnown
-        hasPagesAbove: root._listLayout ? root._listHasPagesAbove : mediaGrid.hasPagesAbove
-        hasPagesBelow: root._listLayout ? root._listHasPagesBelow : mediaGrid.hasPagesBelow
-        onPageRequested: delta => root._performPage(delta)
+        hasPagesAbove: root._listLayout ? root._listHasItemsAbove : mediaGrid.hasPagesAbove
+        hasPagesBelow: root._listLayout ? root._listHasItemsBelow : mediaGrid.hasPagesBelow
+        onPageRequested: delta => root._listLayout ? root._performLinearMove(delta) : root._performPage(delta)
     }
 
     // Pagination loading replaces the focused name instead of painting beside

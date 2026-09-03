@@ -84,6 +84,8 @@ TestCase {
     function cleanup(): void {
         Browse.Settings.current_games_browse_layout = _originalBrowseLayout;
         screen.optimisticLoading = false;
+        Sizing.screenWidth = testCase.width;
+        Sizing.screenHeight = testCase.height;
     }
 
     // Left/Right in list layout must land exactly where page_prev /
@@ -174,6 +176,37 @@ TestCase {
         screen.handleAction("right");
         compare(screen._listCurrentPage, Math.floor(screen.mediaGrid.currentIndex / screen._listVisiblePageSize));
         compare(screen._listHasPagesAbove, screen._listCurrentPage > 0);
+    }
+
+    function test_list_chrome_shows_item_position_without_left_total(): void {
+        Browse.Settings.current_games_browse_layout = "list";
+        screen.mediaGrid.setCurrentIndexImmediate(5);
+
+        compare(screen.topStrip.totalText, "", "detailed list must not duplicate total count on left");
+        compare(screen.topStrip.itemPositionMode, true);
+        compare(screen.topStrip.currentItem, 5);
+        compare(screen.topStrip.totalItems, mediaModel.count);
+        const indicator = findChild(screen.topStrip, "topStatusPageIndicator");
+        verify(indicator !== null);
+        compare(indicator.pageText, "6/30");
+    }
+
+    function test_240p_list_footer_hides_left_total_and_shows_item_position(): void {
+        Sizing.screenWidth = 640;
+        Sizing.screenHeight = 240;
+        Browse.Settings.current_games_browse_layout = "list";
+        screen.bottomStatusLeftText = "30 games";
+        screen.mediaGrid.setCurrentIndexImmediate(5);
+
+        const count = findChild(screen, "mediaListFooterCount");
+        const indicator = findChild(screen, "mediaListFooterPageIndicator");
+        verify(count !== null);
+        verify(indicator !== null);
+        compare(count.visible, false);
+        compare(indicator.itemPositionMode, true);
+        compare(indicator.pageText, "6/30");
+
+        screen.bottomStatusLeftText = "";
     }
 
     // Grid layout must keep Left/Right as one-column selection moves;

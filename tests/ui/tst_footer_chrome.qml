@@ -47,6 +47,9 @@ TestCase {
         indicator.currentPage = 0;
         indicator.totalPages = 1;
         indicator.pageTotalKnown = true;
+        indicator.itemPositionMode = false;
+        indicator.currentItem = 0;
+        indicator.totalItems = 0;
         indicator.hasPagesAbove = false;
         indicator.hasPagesBelow = false;
         pageRequestedSpy.clear();
@@ -74,7 +77,7 @@ TestCase {
 
     // Round 10: the chevrons themselves must hide entirely (not just dim)
     // on a single page -- two permanently-dim arrows pointing at nothing
-    // to page to said nothing useful. Same `_hasMultiplePages` gate the
+    // to page to said nothing useful. Same `_hasNavigationRange` gate the
     // page-count text already used before this round.
     function test_chevrons_hide_entirely_on_a_single_page(): void {
         indicator.pageTotalKnown = true;
@@ -97,7 +100,7 @@ TestCase {
 
     // A "1/1" or bare "1" readout next to two chevrons that are also
     // both hidden says nothing a user needs -- see PageIndicator.qml's
-    // `_hasMultiplePages` doc comment. Covers both the known-total case
+    // `_hasNavigationRange` doc comment. Covers both the known-total case
     // (totalPages stays 1) and the unknown-total case (a cursor list with
     // nothing above or below to fetch), since both mean "only one page."
     function test_page_text_hides_when_there_is_only_one_page(): void {
@@ -126,7 +129,16 @@ TestCase {
         compare(indicator.pageText, "2/5");
     }
 
-    // Cursor-paginated lists (Favorites/Recents/Games) cannot know their
+    function test_item_position_mode_shows_focused_item_over_total(): void {
+        indicator.itemPositionMode = true;
+        indicator.currentItem = 300;
+        indicator.totalItems = 1057;
+        indicator.hasPagesAbove = true;
+        indicator.hasPagesBelow = true;
+        compare(indicator.pageText, "301/1057");
+    }
+
+    // Cursor-paginated grids (Favorites/Recents/Games) cannot know their
     // final page until the cursor is exhausted — a denominator here would
     // grow as more rows arrive. Mirrors TopStatusStrip's own known/unknown
     // split, just without the "Page" word (see PageIndicator.qml's doc

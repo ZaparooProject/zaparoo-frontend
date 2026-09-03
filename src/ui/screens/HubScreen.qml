@@ -240,7 +240,7 @@ Item {
     // independent of pagedGrid.height (used both as the cell-fit ceiling
     // below and, once the grid's real height is known, to solve for the
     // gap).
-    readonly property int _verticalBand: Math.max(0, hub.height - Sizing.headerBottom - Sizing.pctH(6))
+    readonly property int _verticalBand: Math.max(0, hub.height - Sizing.headerBottom - Sizing.helpBarHeight)
     // Ceiling fed to pagedGrid's `heightBudget` (see that property's doc
     // comment for why the grid needs a ceiling distinct from its own
     // `height`). At 240p it mirrors Systems' structure: one top offset, then
@@ -252,7 +252,7 @@ Item {
     // room the band has left after the grid's real height and the label's
     // fixed height, split three ways.
     readonly property int _verticalGap: Math.max(0, Math.round((hub._verticalBand - pagedGrid.height - hub._activeLabelHeight) / 3))
-    readonly property int _footerY: hub.height - Sizing.pctH(6) - hub._activeLabelHeight
+    readonly property int _footerY: hub.height - Sizing.helpBarHeight - hub._activeLabelHeight
     readonly property int _blockY: Sizing.headerBottom + (hub._compactFooter ? Sizing.pctH(1) : hub._verticalGap)
 
     readonly property bool resumeKnownUnavailable: hub.resumeModelEnabled && !Browse.RecentsModel.resume_loading && !Browse.RecentsModel.resume_available && Browse.AppStatus.connection_state === 2

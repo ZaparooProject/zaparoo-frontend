@@ -945,7 +945,7 @@ ApplicationWindow {
                         anchorRect: root.contextMenuAnchor
                         anchorRadius: root.contextMenuAnchorRadius
                         entries: root.contextMenuEntries
-                        bottomUnsafeHeight: BrowseLayouts.numberValue(root._browseViewProfile, "footer.bottomUnsafeHeight", Sizing.pctH(6) + Sizing.pctH(2))
+                        bottomUnsafeHeight: Math.max(BrowseLayouts.numberValue(root._browseViewProfile, "footer.bottomUnsafeHeight", Sizing.helpBarClearance), Sizing.helpBarClearance)
                         onAccepted: id => root.contextMenuAccepted(id)
                         onCloseRequested: root.contextMenuCloseRequested()
                     }
@@ -1204,7 +1204,7 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: Sizing.pctH(6)
+                height: Sizing.helpBarHeight
                 // Sits above every modal scrim (modals max out at z: 310 — see
                 // CommercialNoticeModal) so the help cue stays readable while a
                 // dialog is open. The bar's content is already modal-aware
@@ -1788,64 +1788,13 @@ ApplicationWindow {
                     return fallback;
                 }
 
-                Row {
-                    x: Sizing.center(parent.width, width)
-                    // A small downward bias off dead-center — arithmetic
-                    // centering here has no dependency on the bar's own
-                    // border (it never had a bottom border of its own; see
-                    // the two full-bleed fill/keyline Rectangles above),
-                    // this is purely a feel adjustment. Trimmed 0.4 -> 0.3
-                    // (round 6, item 5), then 0.3 -> 0.2 (round 6 follow-up)
-                    // — still read a pixel too far down at 1080p/720p.
-                    y: Sizing.center(parent.height, height) + Sizing.pctH(0.2)
-                    spacing: Sizing.pctW(2)
-
-                    Repeater {
-                        model: instructionsBar.helpEntries
-
-                        // Each entry is either a single-glyph cue
-                        // (`{ button: "ButtonA", label: "Open" }`) or a
-                        // multi-glyph cue rendered as N icons in a row before
-                        // the label (`{ buttons: ["DpadLeft", "DpadRight"],
-                        // label: "Change" }`). The Settings screen uses the
-                        // multi-glyph form to disambiguate "left/right cycles
-                        // the value" from "up/down moves between fields".
-                        delegate: Row {
-                            id: helpEntry
-                            required property var modelData
-                            spacing: Sizing.pctW(0.6)
-
-                            // A status-only entry (e.g. "Saving…" while a
-                            // pending save locks the list picker, below)
-                            // supplies neither `button` nor `buttons` --
-                            // renders as a bare label with no icon.
-                            readonly property var buttonList: helpEntry.modelData.buttons !== undefined ? helpEntry.modelData.buttons : (helpEntry.modelData.button !== undefined ? [helpEntry.modelData.button] : [])
-
-                            Repeater {
-                                model: helpEntry.buttonList
-                                delegate: Image {
-                                    required property string modelData
-                                    anchors.verticalCenter: helpEntry.verticalCenter
-                                    height: Sizing.pctH(4)
-                                    width: height
-                                    fillMode: Image.PreserveAspectFit
-                                    sourceSize.height: Sizing.px(height)
-                                    sourceSize.width: Sizing.px(width)
-                                    source: Resources.iconUrl(modelData, Theme.textPrimary)
-                                    smooth: true
-                                }
-                            }
-
-                            Text {
-                                anchors.verticalCenter: helpEntry.verticalCenter
-                                text: helpEntry.modelData.label
-                                font.family: Theme.fontUi
-                                font.pixelSize: Sizing.fontBody
-                                color: Theme.textPrimary
-                                renderType: Text.NativeRendering
-                            }
-                        }
-                    }
+                // At 240p the available safe width can be narrower than the
+                // full control vocabulary. Wrap between atomic glyph+label
+                // groups so no label becomes detached from its button.
+                HelpRow {
+                    objectName: "instructionsHelpRow"
+                    anchors.fill: parent
+                    entries: instructionsBar.helpEntries
                 }
             }
 

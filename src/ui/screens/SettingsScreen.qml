@@ -573,15 +573,13 @@ Item {
         return from;
     }
 
-    readonly property int rootGridRows: 2
-    // Columns track the (fixed) category count so the menu auto-balances into
-    // `rootGridRows` rows (six categories -> 3x2) instead of a hardcoded count.
-    // This is chrome with a known small item set, not content that should
-    // reflow with screen width; the cell geometry below is already
-    // sizing-driven (pctW/pctH, capped at the Hub's own resolved tile size),
-    // so the cells shrink to fit any screen while the layout stays a
-    // deliberate balanced grid.
-    readonly property int rootGridColumns: Math.ceil(settings.categoryFields.length / settings.rootGridRows)
+    readonly property int _rootGridLandscapeRows: 2
+    readonly property int _rootGridLandscapeColumns: Math.ceil(settings.categoryFields.length / settings._rootGridLandscapeRows)
+    readonly property bool _rootGridRotated: Browse.Settings.current_orientation !== "horizontal"
+    // Keep the known category grid balanced, then transpose it with the scene.
+    // Six categories therefore render 3x2 horizontally and 2x3 in CW/CCW.
+    readonly property int rootGridColumns: settings._rootGridRotated ? settings._rootGridLandscapeRows : settings._rootGridLandscapeColumns
+    readonly property int rootGridRows: settings._rootGridRotated ? settings._rootGridLandscapeColumns : settings._rootGridLandscapeRows
 
     function _moveRootGrid(dx: int, dy: int): void {
         if (settings.fieldCount <= 0)
@@ -1521,7 +1519,7 @@ Item {
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.tier === "240" ? Sizing.pctH(1) : Sizing.pctH(2)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.pctH(6) + Sizing._hubActiveLabelHeight : Sizing.pctH(15)
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight + Sizing._hubActiveLabelHeight : Sizing.pctH(15)
 
         readonly property int columns: settings.rootGridColumns
         readonly property int rows: settings.rootGridRows
@@ -1611,7 +1609,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.pctH(6) : Sizing.pctH(8)
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight : Sizing.pctH(8)
         height: Sizing.tier === "240" ? Sizing._hubActiveLabelHeight : Sizing.pctH(7)
         text: settings.showingRootGrid && settings._isField(settings.currentIndex) ? settings.fields[settings.currentIndex].label : ""
         visible: !settings.optimisticLoading && settings.showingRootGrid && settings.fieldCount > 0
@@ -1622,7 +1620,7 @@ Item {
     // edges are never scrollable content now, so they can't be scrolled
     // out of view — see docs/style.md's Settings hint-band note. Width
     // capped so the rows don't stretch edge-to-edge on widescreen; bottom
-    // margin clears the help bar (pctH(6)) plus a small gap.
+    // margin clears the help bar plus a small gap.
     Item {
         id: settingsCard
         visible: !settings.optimisticLoading && !settings.showingRootGrid
@@ -1630,11 +1628,11 @@ Item {
         // topMargin and bottomMargin are sized to leave a clear band for
         // the scroll chevrons to sit outside the card (chevron pctH(3) +
         // breathing room). bottomMargin also has to clear the help bar
-        // (pctH(6)) plus a small gap.
+        // plus a small gap.
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(4)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.pctH(10)
+        anchors.bottomMargin: Sizing.helpBarHeight + Sizing.pctH(4)
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(parent.width - Sizing.pctW(6), Sizing.pctW(70))
 

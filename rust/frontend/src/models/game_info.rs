@@ -291,7 +291,10 @@ fn detail_tags_from_meta(meta: &MediaMeta, path: &str) -> String {
         rows.push(("filename".to_string(), filename));
     }
     rows.into_iter()
-        .map(|(tag_type, value)| format!("{tag_type}\t{value}"))
+        .map(|(tag_type, value)| {
+            let value = value.replace(['\t', '\r', '\n'], " ");
+            format!("{tag_type}\t{value}")
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -572,6 +575,27 @@ mod tests {
         assert!(
             !detail.contains("image"),
             "image payload keys belong to the carousel, not the table"
+        );
+    }
+
+    #[test]
+    fn multiline_property_values_stay_within_one_row() {
+        let mut meta = MediaMeta::default();
+        meta.title.properties = HashMap::from([(
+            "property:developer".to_string(),
+            property("First line\nSecond\tfield\rThird line"),
+        )]);
+        let detail = detail_tags_from_meta(&meta, "/games/SNES/game.sfc");
+        assert_eq!(
+            value_for(&detail, "developer").as_deref(),
+            Some("First line Second field Third line")
+        );
+        assert_eq!(
+            rows(&detail)
+                .iter()
+                .filter(|(key, _)| key == "developer")
+                .count(),
+            1
         );
     }
 

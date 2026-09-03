@@ -57,6 +57,11 @@ QtObject {
     readonly property int focusRingWidth: stroke(pctH(0.6))
     readonly property int pressEdgeHeight: stroke(pctH(0.8))
 
+    // Compact screens may need two atomic icon+label help groups. Reserve two
+    // rows at 240p; larger tiers keep the single-line footer.
+    readonly property int helpBarHeight: tier === "240" ? pctH(10) : pctH(6)
+    readonly property int helpBarClearance: helpBarHeight + pctH(2)
+
     // Visible tile-row covers: fewer at very low resolution to avoid crowding.
     readonly property int visibleCovers: effectiveHeight < 300 ? 3 : 5
 
@@ -103,10 +108,8 @@ QtObject {
     // 240p and PAL 288p resolve to the `240` tier and have room for 4x2.
     // This keys page geometry to resolution, not CRT mode, so future
     // higher-resolution CRT modes scale normally.
-    readonly property var hubGridShape: ({
-            "columns": tier === "240" || tier === "480" ? 4 : 7,
-            "rows": tier === "240" || tier === "480" ? 2 : 3
-        })
+    readonly property var _hubGridBaseShape: root._gridShape(tier === "240" || tier === "480" ? 4 : 7, tier === "240" || tier === "480" ? 2 : 3)
+    readonly property var hubGridShape: swapPercentageAxes ? root._gridShape(_hubGridBaseShape.rows, _hubGridBaseShape.columns) : _hubGridBaseShape
     readonly property int hubGridColumns: hubGridShape.columns
     readonly property int hubGridRows: hubGridShape.rows
 
@@ -117,7 +120,7 @@ QtObject {
     // sync with PagedGrid's per-axis fits and HubScreen's band math.
     readonly property int _hubActiveLabelHeight: tier === "240" ? 8 : pctH(7)
     readonly property int _hubGridTopMargin: tier === "240" ? pctH(1) : 0
-    readonly property int _hubGridHeightBudget: Math.max(0, tier === "240" ? screenHeight - headerBottom - pctH(6) - _hubActiveLabelHeight - _hubGridTopMargin : screenHeight - headerBottom - pctH(6) - _hubActiveLabelHeight - 3 * pctH(2))
+    readonly property int _hubGridHeightBudget: Math.max(0, tier === "240" ? screenHeight - headerBottom - helpBarHeight - _hubActiveLabelHeight - _hubGridTopMargin : screenHeight - headerBottom - helpBarHeight - _hubActiveLabelHeight - 3 * pctH(2))
     readonly property int _hubGridSideInset: tier === "240" ? headerSideMargin : pctW(3)
     readonly property int _hubGridColumnGap: tier === "240" ? 4 : pctW(2)
     readonly property int _hubGridTopInset: tier === "240" ? 2 : pctH(2)
@@ -325,21 +328,22 @@ QtObject {
     }
 
     function systemsGridShape(viewportWidth: int, viewportHeight: int): var {
+        // System logos need more vertical capacity than the compact 240p
+        // landscape grid provides. Both rotated layouts use a fixed 2x3 page.
+        if (root.swapPercentageAxes)
+            return root._gridShape(2, 3);
         const declared = root._declaredGridShape("systems");
         return declared === null ? root._selectGridShape(viewportWidth, viewportHeight, root._systemsGridConfig) : declared;
     }
 
-    // Common horizontal framebuffer sizes have declared page geometry. This
-    // prevents a few pixels of header or safe-area drift from changing the
-    // whole page shape. Rotated and arbitrary desktop scenes retain the
-    // adaptive scorer below.
+    // Common framebuffer sizes have declared page geometry. Rotated games
+    // transpose the horizontal shape; systems use the explicit portrait shape
+    // above.
     function _declaredGridShape(kind: string): var {
-        if (root.swapPercentageAxes)
-            return null;
         if (root.crtNativePath) {
             if (kind === "systems")
-                return root._gridShape(3, 3);
-            return root._gridShape(3, 2);
+                return root._orientedGridShape(3, 3);
+            return root._orientedGridShape(3, 2);
         }
 
         const common = root._commonDigitalScene();
@@ -347,16 +351,20 @@ QtObject {
             return null;
         if (kind === "systems") {
             if (common === "240")
-                return root._gridShape(2, 2);
+                return root._orientedGridShape(2, 2);
             if (common === "480")
-                return root._gridShape(3, 3);
-            return root._gridShape(4, 3);
+                return root._orientedGridShape(3, 3);
+            return root._orientedGridShape(4, 3);
         }
         if (common === "240")
-            return root._gridShape(3, 2);
+            return root._orientedGridShape(3, 2);
         if (common === "480")
-            return root._gridShape(4, 2);
-        return root._gridShape(5, 2);
+            return root._orientedGridShape(4, 2);
+        return root._orientedGridShape(5, 2);
+    }
+
+    function _orientedGridShape(columns: int, rows: int): var {
+        return root.swapPercentageAxes ? root._gridShape(rows, columns) : root._gridShape(columns, rows);
     }
 
     function _gridShape(columns: int, rows: int): var {
@@ -368,17 +376,19 @@ QtObject {
 
     function _commonDigitalScene(): string {
         const close = (actual, expected) => Math.abs(actual - expected) <= 2;
-        if (close(root.screenWidth, 320) && close(root.screenHeight, 240))
+        const width = root.swapPercentageAxes ? root.screenHeight : root.screenWidth;
+        const height = root.swapPercentageAxes ? root.screenWidth : root.screenHeight;
+        if (close(width, 320) && close(height, 240))
             return "240";
-        if (close(root.screenWidth, 640) && close(root.screenHeight, 480))
+        if (close(width, 640) && close(height, 480))
             return "480";
-        if (close(root.screenWidth, 960) && close(root.screenHeight, 540))
+        if (close(width, 960) && close(height, 540))
             return "540";
-        if (close(root.screenWidth, 1280) && close(root.screenHeight, 720))
+        if (close(width, 1280) && close(height, 720))
             return "720";
-        if (close(root.screenWidth, 1366) && close(root.screenHeight, 768))
+        if (close(width, 1366) && close(height, 768))
             return "720";
-        if (close(root.screenWidth, 1920) && close(root.screenHeight, 1080))
+        if (close(width, 1920) && close(height, 1080))
             return "1080";
         return "";
     }

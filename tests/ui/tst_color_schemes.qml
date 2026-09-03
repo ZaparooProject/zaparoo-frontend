@@ -178,19 +178,16 @@ TestCase {
         }
     }
 
-    // "Color intensity" ships defaulted to Subtle precisely so that adding
-    // the setting changes nothing for an install that never touches it. That
-    // promise is only worth anything if it's checked: every role, every
-    // preset, byte for byte against the no-argument call every other test
-    // here (and Theme, before the setting existed) makes.
-    function test_subtle_intensity_reproduces_the_shipped_palette(): void {
+    // The no-argument API used by callers without an intensity setting must
+    // resolve exactly like an explicit Subtle choice for every role and preset.
+    function test_omitted_intensity_defaults_to_subtle(): void {
         for (let i = 0; i < ColorSchemes.ids.length; i++) {
             const id = ColorSchemes.ids[i];
             const shipped = ColorSchemes.palette(id);
             const subtle = ColorSchemes.palette(id, "subtle");
             for (let r = 0; r < requiredRoles.length; r++) {
                 const role = requiredRoles[r];
-                compare(Qt.color(subtle[role]), Qt.color(shipped[role]), id + " " + role + " must be unchanged at Subtle");
+                compare(Qt.color(subtle[role]), Qt.color(shipped[role]), id + " " + role + " must default to Subtle");
             }
         }
     }

@@ -25,6 +25,7 @@ set(_TST_UI_QML_FILES
     tst_persistence.qml
     tst_paged_grid.qml
     tst_footer_chrome.qml
+    tst_help_row.qml
     tst_status_line.qml
     tst_format.qml
     tst_pressable_surface.qml

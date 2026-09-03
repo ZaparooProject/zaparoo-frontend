@@ -72,10 +72,8 @@ Item {
     // strip entirely. Larger layouts host both on title line instead.
     readonly property bool _pageCueInFooter: !!(systems._footerProfile && systems._footerProfile.pageCueInFooter)
     readonly property bool _showGridPageCue: !systems._listLayout && !systems._pageCueInFooter
-    // Round 11: list layout gets the same interactive chevron+"N / M"
-    // PageIndicator grid layout already had. Sibling to `_showGridPageCue`
-    // rather than folded into it so that property's existing grid-only
-    // meaning stays intact.
+    // Detailed list layout uses the same chevron component with a focused-
+    // item/total-items readout instead of page numbers.
     readonly property bool _showListPageCue: systems._listLayout && !systems._pageCueInFooter
     readonly property bool _showTopPageCue: systems._showGridPageCue || systems._showListPageCue
     // List layout's own page size for paging math -- the number of rows
@@ -89,6 +87,8 @@ Item {
     readonly property int _listCurrentPage: Math.floor(systemsGrid.currentIndex / systems._listVisiblePageSize)
     readonly property bool _listHasPagesAbove: systems._listCurrentPage > 0
     readonly property bool _listHasPagesBelow: systems._listCurrentPage < systems._listTotalPageCount - 1
+    readonly property bool _listHasItemsAbove: systemsGrid.currentIndex > 0
+    readonly property bool _listHasItemsBelow: systemsGrid.currentIndex < Browse.SystemsModel.count - 1
     // Round 11: the footer label's sideInset used to reserve a flat third
     // of the screen on each side to clear the count text (left) and the
     // PageIndicator (right) — regardless of how wide either one actually
@@ -258,11 +258,10 @@ Item {
         }
     }
 
-    // Top status strip — category title (center), count badge (left), and
-    // chevron page cue (right, `pageIndicatorMode`) for both grid and list
-    // layout (round 11 gave list layout the same treatment grid already
-    // had, replacing a plain item-position counter with no chevrons at
-    // all) -- UNLESS the theme keeps them in the footer instead
+    // Top status strip — category title (center), grid count badge (left),
+    // and chevron position cue (right). Grids show pages; detailed lists show
+    // focused-item/total-items and omit the duplicate left count. The theme
+    // can keep the cue in the footer instead
     // (`_pageCueInFooter` -- CRT, whose top strip is hidden entirely
     // anyway).
     //
@@ -279,23 +278,17 @@ Item {
         title: CategoryIds.displayName(Browse.SystemsModel.current_category)
         currentPage: systems._listLayout ? systems._listCurrentPage : systemsGrid.currentPage
         totalPages: systems._listLayout ? systems._listTotalPageCount : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
-        totalText: {
-            if (systems._listLayout)
-                return Sizing.tier !== "240" && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "";
-            return systems._showGridPageCue && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : "";
-        }
-        // Round 11: list layout now mounts the same interactive
-        // PageIndicator grid layout has (`pageIndicatorMode` below) instead
-        // of an item-position "N / M" counter -- the catalog loads fully
-        // upfront (no background-fetch signal worth surfacing here the way
-        // GamesScreen's "Loading more…" is), so this is always empty now.
+        totalText: !systems._listLayout && systems._showGridPageCue && Browse.SystemsModel.count > 0 ? qsTr("%1 systems").arg(Browse.SystemsModel.count) : ""
         rightTextOverride: ""
         showPageCounter: systems._listLayout || systems._showGridPageCue
         pageIndicatorMode: systems._showTopPageCue
+        itemPositionMode: systems._listLayout
+        currentItem: systemsGrid.currentIndex
+        totalItems: Browse.SystemsModel.count
         pageIndicatorChevronSize: systems._gridProfile && systems._gridProfile.grid ? systems._gridProfile.grid.pageChevronSize : Sizing.pctH(4)
-        hasPagesAbove: systems._listLayout ? systems._listHasPagesAbove : systemsGrid.hasPagesAbove
-        hasPagesBelow: systems._listLayout ? systems._listHasPagesBelow : systemsGrid.hasPagesBelow
-        onPageRequested: delta => systems._performPage(delta)
+        hasPagesAbove: systems._listLayout ? systems._listHasItemsAbove : systemsGrid.hasPagesAbove
+        hasPagesBelow: systems._listLayout ? systems._listHasItemsBelow : systemsGrid.hasPagesBelow
+        onPageRequested: delta => systems._listLayout ? systems._performLinearMove(delta) : systems._performPage(delta)
         visible: !systems._gateHide && (!systems._statusProfile || systems._statusProfile.topStripVisible)
     }
 
@@ -310,7 +303,7 @@ Item {
         anchors.top: topStrip.bottom
         anchors.topMargin: systems._listProfile ? systems._listProfile.cardTopMargin : Sizing.pctH(2)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: systems._listProfile ? systems._listProfile.cardBottomMargin : Sizing.pctH(8)
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight + (systems._listProfile ? systems._listProfile.cardBottomMargin - Sizing.pctH(6) : Sizing.pctH(2)) : (systems._listProfile ? systems._listProfile.cardBottomMargin : Sizing.pctH(8))
         model: Browse.SystemsModel
         currentIndex: systemsGrid.currentIndex
         focusReady: systems._focusReady
@@ -343,7 +336,7 @@ Item {
         anchors.right: parent.right
         anchors.top: topStrip.bottom
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.gridBottomMargin : (Sizing.pctH(8) + Sizing.pctH(7))
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight + (systems._footerProfile ? systems._footerProfile.activeLabelHeight : Sizing.pctH(7)) : (systems._footerProfile ? systems._footerProfile.gridBottomMargin : (Sizing.pctH(8) + Sizing.pctH(7)))
         focused: systems.gridFocused
         screenSettling: !systems.active
         focusReady: systems._focusReady
@@ -395,7 +388,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: systems._footerProfile ? systems._footerProfile.activeLabelBottomMargin : Sizing.pctH(8)
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight : (systems._footerProfile ? systems._footerProfile.activeLabelBottomMargin : Sizing.pctH(8))
         height: systems._footerProfile ? systems._footerProfile.activeLabelHeight : Sizing.pctH(7)
         sideInset: systems._pageCueInFooter ? Math.max(systems._footerLeftInset, systems._footerRightInset) : Sizing.pctW(3)
         text: systemsGrid.itemCount > 0 ? Browse.SystemsModel.system_name_at(systemsGrid.currentIndex) : ""
@@ -421,11 +414,8 @@ Item {
     Text {
         id: footerCount
         objectName: "systemsFooterCount"
-        // Round 11: the count text is layout-agnostic (just "%1 systems"),
-        // so it now shows in the footer for list layout on CRT too --
-        // previously grid-only, leaving list layout with no page cue
-        // anywhere on that profile.
-        visible: !systems._gateHide && systems._pageCueInFooter && Browse.SystemsModel.count > 0
+        // Detailed list position already includes the total on the right.
+        visible: !systems._gateHide && !systems._listLayout && systems._pageCueInFooter && Browse.SystemsModel.count > 0
         anchors.left: parent.left
         anchors.leftMargin: systems._footerProfile ? systems._footerProfile.bottomStatusLeftMargin : 0
         anchors.verticalCenter: activeLabel.verticalCenter
@@ -451,9 +441,12 @@ Item {
         chevronSize: systems._gridProfile && systems._gridProfile.grid ? systems._gridProfile.grid.pageChevronSize : Sizing.pctH(4)
         currentPage: systems._listLayout ? systems._listCurrentPage : systemsGrid.currentPage
         totalPages: systems._listLayout ? systems._listTotalPageCount : Math.max(1, Math.ceil(Browse.SystemsModel.count / systemsGrid.pageSize))
-        hasPagesAbove: systems._listLayout ? systems._listHasPagesAbove : systemsGrid.hasPagesAbove
-        hasPagesBelow: systems._listLayout ? systems._listHasPagesBelow : systemsGrid.hasPagesBelow
-        onPageRequested: delta => systems._performPage(delta)
+        itemPositionMode: systems._listLayout
+        currentItem: systemsGrid.currentIndex
+        totalItems: Browse.SystemsModel.count
+        hasPagesAbove: systems._listLayout ? systems._listHasItemsAbove : systemsGrid.hasPagesAbove
+        hasPagesBelow: systems._listLayout ? systems._listHasItemsBelow : systemsGrid.hasPagesBelow
+        onPageRequested: delta => systems._listLayout ? systems._performLinearMove(delta) : systems._performPage(delta)
     }
 
     ScreenStateOverlay {

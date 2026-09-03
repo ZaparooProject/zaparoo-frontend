@@ -1579,6 +1579,12 @@ TestCase {
         compare(_idsOf(entries), ["add_to_hub"], "A system's game folder pins like any other folder");
     }
 
+    function test_filesystem_root_pin_uses_the_row_system(): void {
+        compare(main._folderShortcutSystemId(true, "DOS", "AO486"), "DOS", "a merged root keeps its owning system");
+        compare(main._folderShortcutSystemId(true, "", "AO486"), "AO486", "a root without a row system falls back to the active browse system");
+        compare(main._folderShortcutSystemId(false, "DOS", "AO486"), "AO486", "an ordinary directory belongs to the active browse system");
+    }
+
     // Virtual-scheme routes (mame-arcade://) are still refused: Core never
     // merges them, they remain in merged listings, and a Hub folder tile is
     // addressed by filesystem path so there is nothing to pin.

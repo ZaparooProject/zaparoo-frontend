@@ -177,11 +177,9 @@ MediaListScreen {
     // cue would be redundant; the same total still surfaces in the footer
     // on CRT via `bottomStatusLeftText`.
     topStripTotalTextProvider: () => games._listLayout ? "" : (Browse.GamesModel.total_files > 0 ? qsTr("%1 games").arg(Format.count(Browse.GamesModel.total_files)) : "")
-    // Round 11: list layout's right slot now normally hosts the same
-    // interactive PageIndicator grid layout has (see MediaListScreen's
-    // `pageIndicatorMode`) instead of an item-position "N / M" counter --
-    // that counter is gone. The one thing still worth surfacing here is a
-    // transient "Loading more…" cue while a background fetch is filling in
+    // Detailed list layout normally shows focused-item/total-items on the
+    // right. Temporarily replace it with “Loading more…” while a background
+    // fetch is filling in
     // rows the user has scrolled past the end of; MediaListScreen yields
     // the slot back to this plain text for as long as it's non-empty.
     topStripRightTextProvider: () => games._listLayout && Browse.GamesModel.loading_more && games.gamesGrid.itemCount > 0 ? qsTr("Loading more…") : ""

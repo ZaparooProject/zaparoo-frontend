@@ -134,6 +134,23 @@ TestCase {
         verify(panel.height < panel._maxHeight, "an empty details panel must not claim the full cap");
     }
 
+    // Error state replaces the flickable, so its wrapped text must contribute
+    // to the content-driven panel height instead of painting below the card.
+    function test_panel_height_contains_error_message(): void {
+        const panel = findChild(modal, "gameInfoPanel");
+        const error = findChild(modal, "gameInfoError");
+        verify(panel !== null);
+        verify(error !== null);
+
+        Browse.GameInfo.loading = false;
+        Browse.GameInfo.error_message = "connection failed";
+        tryCompare(error, "visible", true);
+        compare(panel._bodyHeight, error.height);
+        verify(error.y + error.height + Sizing.pctH(4) <= panel.height, "error text and bottom margin must stay inside the card");
+
+        Browse.GameInfo.clear();
+    }
+
     // Same 92% ceiling Modal.qml clamps every other modal to; this one used
     // to sit at ~94%, wider than any other modal is allowed to be.
     function test_panel_width_respects_the_shared_ceiling(): void {

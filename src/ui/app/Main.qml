@@ -2859,6 +2859,10 @@ MainLayout {
         }
     }
 
+    function _folderShortcutSystemId(filesystemRoot: bool, rowSystemId: string, currentSystemId: string): string {
+        return filesystemRoot && rowSystemId !== "" ? rowSystemId : currentSystemId;
+    }
+
     // "Add to Hub" — creates a `system`/`folder`/`zapscript` shortcut from a
     // Systems/Games/Favorites/Recents row via `Browse.HubLayout.add_target_item`.
     // `owner === "games"` covers both a plain directory (folder shortcut)
@@ -2896,10 +2900,12 @@ MainLayout {
             // it pins as the same `folder` item. `is_filesystem_root_at`
             // already excluded virtual-scheme routes, which have no
             // filesystem path to pin.
-            if (entryType === "directory" || Browse.GamesModel.is_filesystem_root_at(index)) {
+            const filesystemRoot = Browse.GamesModel.is_filesystem_root_at(index);
+            if (entryType === "directory" || filesystemRoot) {
                 const path = Browse.GamesModel.path_at(index);
+                const folderSystemId = root._folderShortcutSystemId(filesystemRoot, Browse.GamesModel.system_id_at(index), systemId);
                 if (path !== "")
-                    Browse.HubLayout.add_target_item("folder", "", path, "", "", "", systemId);
+                    Browse.HubLayout.add_target_item("folder", "", path, "", "", "", folderSystemId);
                 return;
             }
             const path = Browse.GamesModel.path_at(index);
