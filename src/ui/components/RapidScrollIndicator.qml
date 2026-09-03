@@ -22,6 +22,7 @@ Item {
         border.color: Theme.borderMid
         border.width: Sizing.cardBorderWidth
         radius: Sizing.radiusSm
+        antialiasing: Sizing.cornerAntialiasing
     }
 
     Text {

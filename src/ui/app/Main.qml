@@ -136,6 +136,14 @@ MainLayout {
         value: Browse.Settings.current_color_scheme
     }
 
+    // Applies live for the same reason the preset above does — both only feed
+    // ColorSchemes.palette(), so every dependent binding recomputes on change.
+    Binding {
+        target: Theme
+        property: "colorIntensityId"
+        value: Browse.Settings.current_color_intensity
+    }
+
     // Feed the Motion singleton's master switch from persisted preference and
     // MiSTer's effective render budget. Native 1080p remains available as an
     // explicit quality override, but animation would repeatedly dirty its much
@@ -1117,16 +1125,28 @@ MainLayout {
             root._goto(root.screenHub);
     }
 
-    // Fire the actual resume launch and arm the desktop safety-clear. The
-    // "Loading game…" cue (pendingTransition === "resume") stays up through
-    // the launch: on MiSTer the process is replaced by the game before the
-    // timer fires, so the cue covers the core swap; on desktop nothing
-    // replaces us, so resumeLaunchCueTimer clears the cue and restores input.
-    // Started only here, at dispatch — never while still waiting on the
-    // connection — so a slow coalesce keeps the cue for as long as it needs.
+    // Fire the resume launch and drop the cue in the same tick.
+    //
+    // The cue's only job is to cover a genuine wait: the resume row not
+    // fetched yet, or Core not connected. Once the launch is dispatched
+    // there is nothing left to wait for on this side, so Resume ends the
+    // same way every other launch does -- `GamesModel.launch_at` from a
+    // tile press paints no cue at all, on the same hardware, and the
+    // "Loading game…" overlay additionally blanks the Hub grid
+    // (HubScreen's `transitioning`) and gates every input
+    // (`handleAction`'s pendingTransition guard).
+    //
+    // This used to arm an 8 s `resumeLaunchCueTimer` instead, on the
+    // reasoning that the cue covered MiSTer's core swap and only desktop
+    // needed the safety-clear. The cost landed on the common path: with
+    // Core connected and the resume row long since cached, pressing
+    // Resume dispatched immediately and then sat on a dead, input-locked
+    // "Loading game…" screen for a full 8 s regardless.
     function _dispatchResumeLaunch(): void {
         Browse.RecentsModel.launch_resume();
-        resumeLaunchCueTimer.restart();
+        root._pendingResumeLaunch = false;
+        if (root.pendingTransition === "resume")
+            root.pendingTransition = "";
     }
 
     function _maybeCompletePendingResumeLaunch(): void {
@@ -1135,7 +1155,9 @@ MainLayout {
         if (Browse.RecentsModel.resume_loading)
             return;
         if (Browse.RecentsModel.resume_available) {
-            root._pendingResumeLaunch = false;
+            // `_dispatchResumeLaunch` owns clearing `_pendingResumeLaunch`
+            // and the cue, so the wait path and the fast path in
+            // `_navigateResumeFromHub` tear down identically.
             root._dispatchResumeLaunch();
             return;
         }
@@ -1151,10 +1173,16 @@ MainLayout {
     }
 
     function _navigateResumeFromHub(): void {
-        // Optimistic loader, same contract as the other Hub actions: paint
-        // the "Loading game…" cue (and hide the ghost-Hub tiles / gate input)
-        // immediately, before we know whether the launch can proceed.
-        // _cancelResumeLaunch clears it on the no-resumable-game branch.
+        // Same set-then-resolve contract as the other Hub actions: arm the
+        // cue up front, before we know whether the launch can proceed, then
+        // let whichever branch resolves clear it. On the common path (Core
+        // connected, resume row already cached) `_dispatchResumeLaunch`
+        // clears it in this same tick, so the 300 ms
+        // `DelayedLoadingIndicator` never fires and the press reads as
+        // instant -- exactly how `_ensureCategory`/`_ensureSystem`'s
+        // synchronous callbacks keep an already-loaded forward nav
+        // cue-free. `_cancelResumeLaunch` clears it on the
+        // no-resumable-game branch.
         root.pendingTransition = "resume";
         if (!Browse.RecentsModel.resume_loading && Browse.RecentsModel.resume_available) {
             root._dispatchResumeLaunch();
@@ -1198,7 +1226,15 @@ MainLayout {
     }
 
     function _navigateToFavorites(systemId): void {
-        root._setFavoritesSystem(systemId);
+        const normalized = systemId === undefined || systemId === null ? "" : String(systemId);
+        // Accepting the initially focused favorite-system row may not change
+        // its grid index, so MediaListScreen's change-driven persistence never
+        // fires. Commit the route payload before leaving: startup restores a
+        // system-scoped Favorites screen from this exact value after a game
+        // launch kills and relaunches the frontend.
+        if (normalized !== "")
+            Browse.FavoriteSystemsState.selected_path = normalized;
+        root._setFavoritesSystem(normalized);
         root.pendingTransition = "favorites";
         favoritesTransitionTimer.restart();
     }
@@ -2147,7 +2183,12 @@ MainLayout {
     // primary action first, then frequent actions, then organizational
     // actions (Move/Add to Hub/Hide), then long-running maintenance
     // (index/scrape) last.
-    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool, category: string) {
+    // `pinnableRoot` is trailing and optional: only the games branch reads it,
+    // and every other caller (the hub_action path above, the tests) simply
+    // omits it and gets `undefined`, which is falsy. Kept as its own argument
+    // rather than folded into `entryType` so the type stays what Core actually
+    // said the row was.
+    function buildContextMenuEntries(owner: string, entryType: string, mediaCapable: bool, hasNfc: bool, isFavorite: bool, systemId: string, isHidden: bool, category: string, pinnableRoot: bool) {
         if (owner === "systems") {
             const entries = [
                 {
@@ -2185,7 +2226,7 @@ MainLayout {
                     label: qsTr("Update media database")
                 }, {
                     id: "scrape_system",
-                    label: qsTr("Get metadata")
+                    label: qsTr("Update metadata")
                 });
             }
             return entries;
@@ -2220,7 +2261,7 @@ MainLayout {
                     label: qsTr("Update media database")
                 }, {
                     id: "scrape_category",
-                    label: qsTr("Get metadata")
+                    label: qsTr("Update metadata")
                 });
             }
             return entries;
@@ -2250,11 +2291,18 @@ MainLayout {
             // No favorite-toggle here -- see the module doc comment on
             // rust/frontend/src/models/recents.rs for why (Core's
             // media.history carries no tags).
+            //
+            // No `Launch game` either, on any game grid. Accept on the
+            // tile already launches (MediaListScreen's `launch_at`, and
+            // GamesScreen's), and the menu entry dispatched to the exact
+            // same invokable with less bookkeeping -- no selection
+            // persist, no press cue. It cost the menu's top row to
+            // duplicate a press the user had already walked past. See
+            // docs/content-style.md's menu-ordering rule 1, which carries
+            // the carve-out: the primary action leads unless Accept on
+            // the anchor already performs it. `Launch system` stays first
+            // on the systems menu, where Accept navigates in instead.
             const entries = [
-                {
-                    id: "launch_game",
-                    label: qsTr("Launch game")
-                },
                 {
                     id: "more_info",
                     label: qsTr("Details")
@@ -2290,14 +2338,19 @@ MainLayout {
             if (!(Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping))
                 entries.push({
                     id: "scrape_game",
-                    label: qsTr("Get metadata")
+                    label: qsTr("Update metadata")
                 });
             return entries;
         }
         if (owner === "games" || owner === "favorites") {
-            if (entryType === "root" && !mediaCapable)
+            // A root addressing a real filesystem folder is one of the
+            // system's configured game directories -- pinnable, exactly like
+            // a plain directory, so it falls through to the same branch.
+            // A virtual-scheme root (`mame-arcade://`, never merged by Core)
+            // still gets no menu: nothing here can act on it.
+            if (entryType === "root" && !mediaCapable && !pinnableRoot)
                 return [];
-            if (entryType === "directory" && !mediaCapable) {
+            if ((entryType === "directory" || entryType === "root") && !mediaCapable) {
                 // A plain browsable folder has no media-scoped actions of
                 // its own, and Favorites never contains a directory row (it
                 // is a flat list of games) -- only Games can reach this
@@ -2314,10 +2367,6 @@ MainLayout {
                 ] : [];
             }
             const entries = [
-                {
-                    id: "launch_game",
-                    label: qsTr("Launch game")
-                },
                 {
                     id: "more_info",
                     label: qsTr("Details")
@@ -2364,7 +2413,7 @@ MainLayout {
             if (!(Browse.MediaStatus.indexing || Browse.MediaStatus.optimizing || Browse.MediaStatus.scraping))
                 entries.push({
                     id: "scrape_game",
-                    label: qsTr("Get metadata")
+                    label: qsTr("Update metadata")
                 });
             return entries;
         }
@@ -2420,9 +2469,9 @@ MainLayout {
     // Cancel from doing anything, while pending.
     function _relabelPickerEntry(entries: var, targetId: string, nextLabel: string): var {
         return entries.map(entry => entry.id === targetId ? {
-            id: entry.id,
-            label: nextLabel
-        } : entry);
+                id: entry.id,
+                label: nextLabel
+            } : entry);
     }
 
     function _replaceContextMenuEntryLabel(targetId: string, nextLabel: string, nextId: string): void {
@@ -2457,7 +2506,7 @@ MainLayout {
         return entries;
     }
 
-    // Universal Move/Hide-or-Delete, appended to every Hub-owned menu below
+    // Universal Move/Hide-or-Remove, appended to every Hub-owned menu below
     // — empty (no menu) for an entry with no real `Browse.HubLayout`
     // backing yet (the bootstrap placeholder window; see HubScreen.qml's
     // `_blankEntry` doc comment). `kind` is never `"empty"` here — a blank
@@ -2465,13 +2514,15 @@ MainLayout {
     // guard. The remove label depends on `kind`: category/action stay
     // tracked in `known` (see hub_layout.rs) and come straight back via
     // View -> Add item…, so "Hide" is accurate — nothing is lost.
-    // system/folder/zapscript aren't tracked at all, so removing one
-    // really is permanent; "Delete" says so rather than implying a
-    // reversibility that isn't there.
+    // system/folder/zapscript aren't tracked, so the shortcut has to be
+    // re-added from its own Options menu; it is still only a shortcut.
+    // "Remove" pairs with "Add to Hub" and "Remove from favorites". A beta
+    // tester read the earlier "Delete" as deleting the game file itself,
+    // and nothing on disk is ever touched here.
     function _hubMoveRemoveEntries(hubIndex: int, kind: string): var {
         if (hubIndex < 0)
             return [];
-        const removeLabel = kind === "category" || kind === "action" ? qsTr("Hide") : qsTr("Delete");
+        const removeLabel = kind === "category" || kind === "action" ? qsTr("Hide") : qsTr("Remove");
         return [
             {
                 id: "hub_move",
@@ -2534,6 +2585,7 @@ MainLayout {
         let isFavorite = false;
         let systemId = "";
         let mediaCapable = false;
+        let pinnableRoot = false;
         let isHidden = false;
         let category = "";
         if (owner === "systems") {
@@ -2551,6 +2603,7 @@ MainLayout {
                 return;
             entryType = Browse.GamesModel.entry_type_at(index);
             mediaCapable = Browse.GamesModel.is_media_capable_at(index);
+            pinnableRoot = Browse.GamesModel.is_filesystem_root_at(index);
             isFavorite = Browse.GamesModel.is_favorite_at(index);
             systemId = Browse.GamesModel.system_id_at(index);
         } else if (owner === "favorites") {
@@ -2568,7 +2621,7 @@ MainLayout {
                 return;
             systemId = Browse.RecentsModel.system_id_at(index);
         }
-        let entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category);
+        let entries = root.buildContextMenuEntries(owner, entryType, mediaCapable, Browse.SystemStatus.has_nfc, isFavorite, systemId, isHidden, category, pinnableRoot);
         // "categories" is exclusively Hub-owned (only HubScreen ever opens
         // it) — splice the universal Move/Hide in here, keyed off the Hub
         // flat index the caller stashed in `_hubItemIndex` (NOT `index`,
@@ -2771,13 +2824,6 @@ MainLayout {
             // game once Core grows a media/path filter.
             const gameSystemId = owner === "favorites" ? Browse.FavoritesModel.system_id_at(targetIndex) : (owner === "recents" ? Browse.RecentsModel.system_id_at(targetIndex) : Browse.GamesModel.system_id_at(targetIndex));
             root.openScrapeSetupModal(gameSystemId !== "" ? gameSystemId : root._systemScopeAll);
-        } else if (id === "launch_game") {
-            if (owner === "favorites")
-                Browse.FavoritesModel.launch_at(targetIndex);
-            else if (owner === "recents")
-                Browse.RecentsModel.launch_at(targetIndex);
-            else
-                Browse.GamesModel.launch_at(targetIndex);
         } else if (id === "toggle_favorite") {
             if (owner === "games")
                 Browse.GamesModel.toggle_favorite_at(targetIndex);
@@ -2813,6 +2859,10 @@ MainLayout {
         }
     }
 
+    function _folderShortcutSystemId(filesystemRoot: bool, rowSystemId: string, currentSystemId: string): string {
+        return filesystemRoot && rowSystemId !== "" ? rowSystemId : currentSystemId;
+    }
+
     // "Add to Hub" — creates a `system`/`folder`/`zapscript` shortcut from a
     // Systems/Games/Favorites/Recents row via `Browse.HubLayout.add_target_item`.
     // `owner === "games"` covers both a plain directory (folder shortcut)
@@ -2834,10 +2884,28 @@ MainLayout {
         if (owner === "games") {
             const entryType = Browse.GamesModel.entry_type_at(index);
             const systemId = Browse.GamesModel.current_system_id;
-            if (entryType === "directory") {
+            // A single-game folder (a `directory` Core resolved to one
+            // playable item) shows as a game everywhere else -- cover,
+            // Launch, Details, the Options menu -- so its shortcut must be
+            // the game, not the folder. The child file is only known
+            // asynchronously (the same `media.meta`/folder-browse
+            // resolution `launch_at` uses), so the add completes in
+            // `onHub_target_sequenceChanged` below.
+            if (entryType === "directory" && Browse.GamesModel.is_media_capable_at(index)) {
+                Browse.GamesModel.resolve_hub_target_at(index);
+                return;
+            }
+            // A filesystem `root` is one of the system's configured game
+            // directories -- addressed by path exactly like a `directory`, so
+            // it pins as the same `folder` item. `is_filesystem_root_at`
+            // already excluded virtual-scheme routes, which have no
+            // filesystem path to pin.
+            const filesystemRoot = Browse.GamesModel.is_filesystem_root_at(index);
+            if (entryType === "directory" || filesystemRoot) {
                 const path = Browse.GamesModel.path_at(index);
+                const folderSystemId = root._folderShortcutSystemId(filesystemRoot, Browse.GamesModel.system_id_at(index), systemId);
                 if (path !== "")
-                    Browse.HubLayout.add_target_item("folder", "", path, "", "", "", systemId);
+                    Browse.HubLayout.add_target_item("folder", "", path, "", "", "", folderSystemId);
                 return;
             }
             const path = Browse.GamesModel.path_at(index);
@@ -3138,6 +3206,13 @@ MainLayout {
     }
 
     function _presentReportedActionError(kind: string, context: string): void {
+        // An alert is the one thing allowed above a modal (docs/style.md ->
+        // "Modal depth"), but a failed discovery arrives while the context
+        // menu is holding its "Searching…" row: close the menu first so the
+        // alert lands at depth 1 and Back returns to the screen, not to a
+        // menu whose row can never resolve.
+        if (kind === "alternate_discovery" && root.contextMenuVisible)
+            root.closeContextMenu();
         let title = qsTr("Action failed");
         let body = qsTr("The action could not be completed. Check Zaparoo Core and try again.");
         if (kind === "launch") {
@@ -3146,12 +3221,15 @@ MainLayout {
         } else if (kind === "favorite") {
             title = qsTr("Favorite update failed");
             body = qsTr("Could not update this favorite. Check Zaparoo Core and try again.");
+        } else if (kind === "add_to_hub") {
+            title = qsTr("Add to Hub failed");
+            body = context !== "" ? qsTr("Could not add %1 to the Hub. Check Zaparoo Core and try again.").arg(context) : qsTr("Could not add this item to the Hub. Check Zaparoo Core and try again.");
         } else if (kind === "media_index") {
             title = qsTr("Media update failed");
             body = qsTr("Could not start the media database update. Check Zaparoo Core and try again.");
         } else if (kind === "media_scrape") {
-            title = qsTr("Get metadata failed");
-            body = qsTr("Could not start getting metadata. Check Zaparoo Core and try again.");
+            title = qsTr("Update metadata failed");
+            body = qsTr("Could not start updating metadata. Check Zaparoo Core and try again.");
         } else if (kind === "media_scrapers") {
             title = qsTr("Source list unavailable");
             body = qsTr("Could not load the list of metadata sources. Check Zaparoo Core and try again.");
@@ -3196,6 +3274,18 @@ MainLayout {
             if ((Browse.GamesModel.random_error ?? "") !== "")
                 root.openRandomFailedModal();
         }
+        // Second half of "Add to Hub" on a single-game folder (see
+        // `_addToHub`): the resolved child file lands as an ordinary game
+        // shortcut, path and script both the child, so the tile launches
+        // and finds its cover exactly like a row added from inside the
+        // folder. The sequence edge is the trigger; the model only bumps
+        // it after the other four properties are set.
+        function onHub_target_sequenceChanged(): void {
+            const script = Browse.GamesModel.hub_target_script;
+            if (script === "")
+                return;
+            Browse.HubLayout.add_target_item("zapscript", "", Browse.GamesModel.hub_target_path, script, Browse.GamesModel.hub_target_name, "", Browse.GamesModel.hub_target_system);
+        }
     }
 
     Connections {
@@ -3235,7 +3325,7 @@ MainLayout {
             ScreenManager.popModal();
     }
 
-    // "Get metadata" setup modal lifecycle. Every entry point routes here
+    // "Update metadata" setup modal lifecycle. Every entry point routes here
     // — the Settings > Library row and the system/category/game
     // context-menu entries — so the chosen source, scope and replace flag
     // are always the user's rather than hardcoded. `scope` uses the same
@@ -3246,13 +3336,22 @@ MainLayout {
     // list on open via `Browse.MediaStatus.refresh_scrapers()`.
     function openScrapeSetupModal(scope: string): void {
         Browse.MediaStatus.refresh_scrapers();
+        root.showScrapeSetupModal(scope);
+    }
+
+    // Mount and push without the source refresh. `openScrapeSetupModal` is
+    // the user-facing entry; tests drive this one so no Core call is in
+    // flight behind their assertions.
+    function showScrapeSetupModal(scope: string): void {
         // `_requestModal` activates the Loader, and a sourceComponent
         // Loader instantiates synchronously, so the item exists by the
         // next line even on the very first open. Seed the scope before
         // flipping `visible`, since `onOpenChanged` is what reads it.
         root._requestModal(root.modalScrapeSetup);
-        if (root.scrapeSetupModal !== null)
+        if (root.scrapeSetupModal !== null) {
             root.scrapeSetupModal.initialSystemScope = scope !== "" ? scope : root._systemScopeAll;
+            root.scrapeSetupModal.systemScopeEntries = root._buildSystemScopeEntries();
+        }
         root.scrapeSetupModalVisible = true;
         if (ScreenManager.topModal !== root.modalScrapeSetup)
             ScreenManager.pushModal(root.modalScrapeSetup);
@@ -3272,6 +3371,8 @@ MainLayout {
     // full index has neither.
     function openIndexSetupModal(): void {
         root._requestModal(root.modalIndexSetup);
+        if (root.indexSetupModal !== null)
+            root.indexSetupModal.systemScopeEntries = root._buildSystemScopeEntries();
         root.indexSetupModalVisible = true;
         if (ScreenManager.topModal !== root.modalIndexSetup)
             ScreenManager.pushModal(root.modalIndexSetup);
@@ -3285,32 +3386,10 @@ MainLayout {
 
     onCloseIndexSetupRequested: root.closeIndexSetupModal()
 
-    // Nested picker for the scraper-choice row inside ScrapeSetupModal —
-    // stacks a second modal on top (ScreenManager.pushModal appends, so
-    // the picker becomes topModal and correctly receives input while the
-    // setup modal stays mounted underneath it). The picker's own accept
-    // writes back to `scrapeSetupModal.selectedScraperId` directly (see
-    // the `fieldId === "scraperChoice"` branch in `onListPickerAccepted`)
-    // rather than a Browse.Settings setter, since the choice isn't
-    // persisted until Start is pressed.
-    function openScraperChoicePicker(): void {
-        if (root.scrapeSetupModal === null)
-            return;
-        const ids = Browse.MediaStatus.scraper_ids;
-        const names = Browse.MediaStatus.scraper_names;
-        const entries = [];
-        for (let i = 0; i < ids.length; i++)
-            entries.push({
-                id: ids[i],
-                label: names[i] !== undefined && names[i] !== "" ? names[i] : ids[i]
-            });
-        root.openListPickerModal(qsTr("Source"), entries, root.scrapeSetupModal.selectedScraperId, "scraperChoice");
-    }
-
-    onRequestScraperPicker: root.openScraperChoicePicker()
-
     // Flat "All systems / All <Category> systems / one system" entry list
-    // shared by both media job modals' Systems row. "cat:" ids resolve to
+    // handed to both media job modals on open for their Systems page (the
+    // page is a face of the modal's own panel, never a second modal -- see
+    // docs/style.md -> "Modal depth"). "cat:" ids resolve to
     // `system_ids_for_category` at Start; the individual-system entries
     // resolve straight to their own id. Categories with zero indexable
     // systems are skipped, same gate the systems/categories context menu
@@ -3340,28 +3419,6 @@ MainLayout {
             });
         return entries;
     }
-
-    // Nested picker for the Systems row, shared by ScrapeSetupModal and
-    // IndexSetupModal (see `requestSystemScopePicker`'s doc comment in
-    // MainLayout.qml for why one signal covers both). The two modals are
-    // mutually exclusive, so whichever one is currently visible is the
-    // request's source and the accept target.
-    function _activeSystemScopeModal(): var {
-        if (root.scrapeSetupModalVisible)
-            return root.scrapeSetupModal;
-        if (root.indexSetupModalVisible)
-            return root.indexSetupModal;
-        return null;
-    }
-
-    function openSystemScopePicker(): void {
-        const target = root._activeSystemScopeModal();
-        if (target === null)
-            return;
-        root.openListPickerModal(qsTr("Systems"), root._buildSystemScopeEntries(), target.selectedSystemScope, "systemScope");
-    }
-
-    onRequestSystemScopePicker: root.openSystemScopePicker()
 
     function handleLogUploadError(): void {
         // LogUpload state 3 is terminal failure; full detail is already logged
@@ -3925,14 +3982,15 @@ MainLayout {
             const cursorEntry = root.hubScreen !== null ? root.hubScreen.items[root.hubScreen.currentIndex] : null;
             const target = cursorEntry ? cursorEntry.hubIndex : -1;
             const beforeCount = root.hubScreen !== null ? Browse.HubLayout.item_count() : 0;
+            // Every entry this picker can produce is a `kind:id` pair from
+            // `available_known()`. There is no "blank" case to handle:
+            // buildAddEntries deliberately offers no "Blank space" row (see
+            // its doc comment -- a gap is not something the user creates as a
+            // first-class choice), so a branch for it was unreachable.
             let added = false;
-            if (selectedId === "blank")
-                added = Browse.HubLayout.add_item("blank", "", target);
-            else {
-                const sep = selectedId.indexOf(":");
-                if (sep > 0)
-                    added = Browse.HubLayout.add_item(selectedId.slice(0, sep), selectedId.slice(sep + 1), target);
-            }
+            const sep = selectedId.indexOf(":");
+            if (sep > 0)
+                added = Browse.HubLayout.add_item(selectedId.slice(0, sep), selectedId.slice(sep + 1), target);
             // Hand the newly placed item straight to Move so it can be
             // positioned immediately instead of just sitting wherever
             // append/target left it — see HubScreen.qml's
@@ -3985,29 +4043,6 @@ MainLayout {
             root.beginGameLauncherUpdate(rest.slice(0, separatorIndex), rest.slice(separatorIndex + 1), selectedId);
             return;
         }
-        // Round 10: nested picker opened by ScrapeSetupModal itself
-        // (see its own `requestScraperPicker` signal below) -- writes
-        // straight back to the modal's own local `selectedScraperId`
-        // rather than a Browse.Settings setter, since the choice isn't
-        // persisted until "Start" is pressed. Only pops the picker; the
-        // scrape setup modal underneath stays open.
-        if (fieldId === "scraperChoice") {
-            root.closeListPickerModal();
-            if (root.scrapeSetupModal !== null)
-                root.scrapeSetupModal.selectedScraperId = selectedId;
-            return;
-        }
-        // Round 11: nested Systems-row picker shared by ScrapeSetupModal
-        // and IndexSetupModal (see `openSystemScopePicker`/
-        // `_activeSystemScopeModal` above) -- same "write straight back to
-        // the still-open modal underneath" pattern as `scraperChoice`.
-        if (fieldId === "systemScope") {
-            root.closeListPickerModal();
-            const target = root._activeSystemScopeModal();
-            if (target !== null)
-                target.selectedSystemScope = selectedId;
-            return;
-        }
         if (fieldId === "resolution") {
             root.closeListPickerModal();
             if (selectedId !== Browse.Settings.current_resolution)
@@ -4018,6 +4053,8 @@ MainLayout {
             if (selectedId !== Browse.Settings.current_language)
                 root.stageSettingRestart(fieldId, selectedId);
             return;
+        } else if (fieldId === "interfaceProfile") {
+            Browse.Settings.set_interface_profile(selectedId);
         } else if (fieldId === "orientation") {
             Browse.Settings.set_orientation(selectedId);
         } else if (fieldId === "clockFormat")
@@ -4034,6 +4071,8 @@ MainLayout {
             Browse.Settings.set_system_logo_style(selectedId);
         else if (fieldId === "colorScheme")
             Browse.Settings.set_color_scheme(selectedId);
+        else if (fieldId === "colorIntensity")
+            Browse.Settings.set_color_intensity(selectedId);
         else if (fieldId === "buttonLayout")
             Browse.Settings.set_button_layout(selectedId);
         else if (fieldId === "screensaverTimeout")
@@ -4384,10 +4423,12 @@ MainLayout {
     readonly property int _repeatInitialMs: 350
     readonly property int _repeatTickMs: 90
     readonly property int _rapidNavigationQuietMs: 260
-    // Tap-only entry is deliberately difficult: normal alternating navigation
-    // must not suspend covers or show the letter overlay. A held direction
-    // bypasses this threshold on its first controlled repeat tick.
-    readonly property int _rapidNavigationTapThreshold: 4
+    // Rapid presentation is a press-and-hold affordance, not a reward for
+    // tapping quickly. Qt's own pressAndHold gesture uses 800 ms; keeping that
+    // threshold separate from the earlier repeat handoff lets ordinary held
+    // navigation start promptly without replacing the live grid until intent
+    // is unambiguous.
+    readonly property int _rapidNavigationHoldMs: 800
     // Window for collapsing a second delivery of the same key into one
     // press — hardware contact bounce or input-stack double send. Far
     // below _repeatInitialMs and the repeat tick so it never touches
@@ -4396,10 +4437,10 @@ MainLayout {
     property int _lastPressedKey: 0
     property string _heldAction: ""
     property int _heldKey: 0
+    property double _heldStartedAt: 0
     property bool rapidNavigationActive: false
     property bool rapidNavigationIndicatorActive: false
     property string rapidNavigationAction: ""
-    property int _rapidNavigationTapCount: 0
     // Aliased so tst_navigation.qml can observe the repeat state machine
     // — child Timer ids are file-scoped and aren't reachable otherwise.
     property alias _repeatPending: repeatInitial.running
@@ -4412,6 +4453,7 @@ MainLayout {
         repeatTick.stop();
         root._heldAction = "";
         root._heldKey = 0;
+        root._heldStartedAt = 0;
         // Hold-release commits whatever cell the user landed on. Games
         // screen debounces its `set_selected_at_top` writes (one atomic
         // disk write per move would batter MiSTer's SD card on a Down-
@@ -4499,23 +4541,15 @@ MainLayout {
         return action === "up" || action === "down" || action === "page_prev" || action === "page_next";
     }
 
-    function _noteRapidNavigationAction(action: string, forceActive: bool): void {
+    function _noteRapidNavigationAction(action: string, heldLongEnough: bool): void {
         if (!root._isRapidNavigationAction(action))
             return;
-        const sameBurst = rapidNavigationQuiet.running && root.rapidNavigationAction === action;
-        root._rapidNavigationTapCount = sameBurst ? root._rapidNavigationTapCount + 1 : 1;
         root.rapidNavigationAction = action;
-        // Direction changes cancel tap-driven rapid mode immediately. Only a
-        // sustained hold (forceActive from repeat timer) or four consecutive
-        // same-direction taps inside the quiet window can enter it.
-        if (!sameBurst && !forceActive) {
-            root.rapidNavigationActive = false;
-            root.rapidNavigationIndicatorActive = false;
-        }
-        if (forceActive || root._rapidNavigationTapCount >= root._rapidNavigationTapThreshold) {
-            root.rapidNavigationActive = true;
-            root.rapidNavigationIndicatorActive = true;
-        }
+        // Only one uninterrupted physical hold may replace the live grid with
+        // rapid presentation. Fresh taps always keep (or restore) the live
+        // grid, even when several arrive inside the quiet-tail window.
+        root.rapidNavigationActive = heldLongEnough;
+        root.rapidNavigationIndicatorActive = heldLongEnough;
         rapidNavigationQuiet.restart();
     }
 
@@ -4524,7 +4558,6 @@ MainLayout {
         root.rapidNavigationActive = false;
         root.rapidNavigationIndicatorActive = false;
         root.rapidNavigationAction = "";
-        root._rapidNavigationTapCount = 0;
     }
 
     function _isRepeatableAction(action: string): bool {
@@ -4567,6 +4600,7 @@ MainLayout {
         root._startupTrace("input/qml repeat arm", "action=" + action, "key=" + key, "previousAction=" + root._heldAction, "previousKey=" + root._heldKey);
         root._heldAction = action;
         root._heldKey = key;
+        root._heldStartedAt = Date.now();
         repeatTick.stop();
         root._prepareRapidNavigationSnapshot(action);
         repeatInitial.restart();
@@ -4762,9 +4796,15 @@ MainLayout {
         // the-scrim grid popped its freeze-frame in and out on every
         // repeat tick -- the reported "background visibly re-lays-out"
         // while scrolling the details dialog.
-        if (!ScreenManager.hasModal)
-            root._noteRapidNavigationAction(root._heldAction, true);
+        const rootScreenOwnsInput = !ScreenManager.hasModal;
         root.handleAction(root._heldAction);
+        // handleAction records this dispatch as a normal navigation action.
+        // Override that fresh-press state only after dispatch when this repeat
+        // belongs to a sufficiently long uninterrupted hold.
+        if (rootScreenOwnsInput) {
+            const heldLongEnough = root._heldStartedAt > 0 && Date.now() - root._heldStartedAt >= root._rapidNavigationHoldMs;
+            root._noteRapidNavigationAction(root._heldAction, heldLongEnough);
+        }
     }
 
     Timer {
@@ -4782,7 +4822,6 @@ MainLayout {
             root.rapidNavigationActive = false;
             root.rapidNavigationIndicatorActive = false;
             root.rapidNavigationAction = "";
-            root._rapidNavigationTapCount = 0;
         }
     }
 
@@ -4901,6 +4940,12 @@ MainLayout {
                 case "systems":
                     return qsTr("Loading systems…");
                 case "games":
+                // Backing out to a parent folder whose page isn't cached.
+                // Always a games browse, so it gets the same cue as a
+                // forward one rather than falling through to the generic
+                // default -- which is what it did before, making the one
+                // transition users hit most often the least specific.
+                case "folder_back":
                     return qsTr("Loading games…");
                 case "resume":
                     return qsTr("Loading game…");
@@ -4935,20 +4980,6 @@ MainLayout {
         interval: 50
         repeat: false
         onTriggered: root._startResumeLaunch()
-    }
-
-    // Desktop safety-clear for the resume "Loading game…" cue. On MiSTer the
-    // launch replaces this process before this fires, so it never triggers and
-    // the cue covers the core swap. On desktop nothing replaces us, so clear
-    // the cue (and ungate input) once the launch has had time to take.
-    Timer {
-        id: resumeLaunchCueTimer
-        interval: 8000
-        repeat: false
-        onTriggered: {
-            if (root.pendingTransition === "resume")
-                root.pendingTransition = "";
-        }
     }
 
     Timer {

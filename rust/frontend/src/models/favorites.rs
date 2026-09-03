@@ -21,7 +21,8 @@ use crate::media_meta_cache::{
 use crate::models::action_error::report_action_error;
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::{
-    disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
+    disambiguating_tag_labels, favorite_tags_after_toggle, is_favorite_tag,
+    sibling_disambiguation_displays, tag_display_value,
 };
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
@@ -765,14 +766,15 @@ impl ffi::FavoritesModel {
         });
     }
 
-    fn toggle_favorite_at(self: Pin<&mut Self>, index: i32) {
+    fn toggle_favorite_at(mut self: Pin<&mut Self>, index: i32) {
         let Ok(entry_index) = usize::try_from(index) else {
             return;
         };
         let Some(entry) = self.entries.get(entry_index) else {
             return;
         };
-        let Some(params) = favorite_params_for_entry(entry, !has_favorite_tag(&entry.tags)) else {
+        let want_favorite = !has_favorite_tag(&entry.tags);
+        let Some(params) = favorite_params_for_entry(entry, want_favorite) else {
             warn!(
                 "favorite update skipped: missing media identity for {}",
                 entry.name
@@ -784,6 +786,24 @@ impl ffi::FavoritesModel {
         let media_id = entry.media_id;
         let system_id = entry.system.id.clone();
         let path = entry.path.clone();
+        let previous_tags = entry.tags.clone();
+
+        // Paint the heart now, reconcile with Core's answer later. Same
+        // reasoning as `GamesModel::toggle_favorite_at`, and unconditional
+        // here: this model's `apply_favorite_tags` only rewrites tags and
+        // emits `dataChanged`, it never removes the row, so there is no
+        // removal to have to undo. An un-favorited row leaves this screen
+        // when the endpoint invalidation's refetch lands, exactly as before.
+        let next_tags = favorite_tags_after_toggle(&previous_tags, want_favorite);
+        apply_favorite_tags(
+            self.as_mut(),
+            entry_index,
+            media_id,
+            &system_id,
+            &path,
+            next_tags,
+        );
+
         let store = global_store();
         let qt_thread = self.qt_thread();
         global_handle().spawn(async move {
@@ -802,6 +822,18 @@ impl ffi::FavoritesModel {
                 }
                 Err(e) => {
                     warn!("favorite update failed for {name}: {}", e.message);
+                    // Put the row back the way the user found it; the
+                    // action-error alert below explains why.
+                    let _ = qt_thread.queue(move |mut model| {
+                        apply_favorite_tags(
+                            model.as_mut(),
+                            entry_index,
+                            media_id,
+                            &system_id,
+                            &path,
+                            previous_tags,
+                        );
+                    });
                     report_action_error("favorite", name);
                 }
             }
@@ -1152,8 +1184,7 @@ fn media_key_for(entry: &MediaItem) -> Option<MediaKey> {
 }
 
 fn has_favorite_tag(tags: &[TagInfo]) -> bool {
-    tags.iter()
-        .any(|tag| tag.tag_type == "user" && tag.tag == "favorite")
+    tags.iter().any(is_favorite_tag)
 }
 
 fn favorite_role_value(tags: &[TagInfo]) -> i32 {

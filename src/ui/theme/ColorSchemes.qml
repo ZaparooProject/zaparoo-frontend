@@ -371,6 +371,30 @@ QtObject {
     // clears 4.5:1. This is `SelectionBar.contentColor` (previously a flat
     // `Theme.bgDeep`) and the favorite heart's on-accent fill (the variant
     // drawn over a selected `SelectionBar` row).
+    // The fill behind text on a selected row — settings rows, context menus,
+    // list pickers, modals, browse list rows. All of them go through
+    // `SelectionBar`, so this is the one role that changes.
+    //
+    // Same hue and same OKLCh lightness as `accent`, with chroma pulled down.
+    // Chroma is the right lever and lightness is the wrong one: measured
+    // across the catalog, every preset's accent is bright (relative luminance
+    // 0.11-0.57) and its dark-pole text already sits at 5-11:1, so the
+    // harshness is saturation, not a contrast shortfall. Darkening instead
+    // would have to be drastic to flip the text to the light pole -- Game
+    // Boy's accent would need to lose two thirds of its luminance, which is
+    // no longer a Game Boy theme -- and any partial move lands in a valley
+    // where BOTH poles drop under 4.5:1. Reducing chroma at fixed lightness
+    // moves contrast by less than 0.4 on every preset and improves it on
+    // most, so this is close to free.
+    //
+    // Focus rings keep the raw `accent` (`PressableSurface`, `Tile`,
+    // `PagedGrid`): nothing renders text on those, and focus should stay the
+    // most saturated thing on screen.
+    function _selectionFillFor(accent: color, chromaFactor: real): color {
+        const lch = _toLch(_srgbToOklab(accent));
+        return _gamutFit(lch.L, lch.C * chromaFactor, lch.h);
+    }
+
     function _onAccentFor(accent: color, primary: color, text: color): color {
         const primaryContrast = _contrastRatio(primary, accent);
         const textContrast = _contrastRatio(text, accent);
@@ -525,7 +549,75 @@ QtObject {
         return candidate;
     }
 
-    function palette(id: string): var {
+    // The two intensity settings, as multipliers on the ambient-accent
+    // terms below. `subtle` keeps the original edge derivation and is the
+    // default, so an install that never touches the setting keeps those edges.
+    //
+    // The resting front edges (`tileEdge`/`controlEdge`) scale because they
+    // are ambient, decorative accent surfaces. `selectionChroma` also scales
+    // `selectionFill`; `onAccent` and `onAccentMuted` derive from that fill,
+    // so the on-accent pair moves with it.
+    //
+    // The neutral ladder's accent cast (`panel`/`card`/`subtle`/`mid`) was
+    // tried here too and pulled back out. It cannot scale safely: `card` is
+    // the surface `textLabel` and `textVariant` are floored against at 3:1
+    // by `tst_color_schemes.qml`, nothing in this file SOLVES that floor
+    // (it is asserted, not enforced), and on presets whose text and accent
+    // share a hue — `game-boy` (green on green), `virtual-boy` (red on red)
+    // — casting the card further toward the accent walks it straight into
+    // the text. Both 2.0x and 1.5x broke one of those two. The cast is 0.03
+    // to 0.05 anyway, so there was little to gain against a real legibility
+    // risk on exactly the vivid presets this setting exists to serve.
+    //
+    // Also deliberately excluded, in the order someone is most likely to
+    // try adding them:
+    //   * `accent` itself and the logo focus ramp — a focus affordance whose
+    //     contrast `_clampAccent` already solves for. Scaling it makes focus
+    //     louder or quieter, which is an accessibility change, not a taste one.
+    //   * the resting logo ramp (`_greyAt`) — grey on purpose, so an
+    //     unfocused grid reads plain and focus visibly GAINS color. Tinting
+    //     it collapses that distinction.
+    //   * `marker` — hue-rotated AWAY from the accent by `_markerFor` so
+    //     favorites read the same red under every preset.
+    //   * `variant` (`textVariant`) — it takes the largest cast of the
+    //     ladder (0.14), but it is a TEXT role and carries the same 3:1
+    //     floor described above.
+    //
+    // `edgeContrast` scales the two contrast floors `_edgeFor` solves the
+    // edge's lightness against. Chroma alone is not enough for Vivid: the
+    // solver starts at the card's own lightness and stops at the first L
+    // that clears the floors, so with the floors fixed the edge stays as
+    // dim as legally allowed no matter how much chroma it is granted, and
+    // a dark preset cannot even hold that chroma in gamut at that L. The
+    // pre-`_edgeFor` bevel (`_mix(edgeBase, accent, 0.44)`, a plain 44%
+    // step toward the raw accent) was both more saturated and lighter;
+    // testers who picked Vivid expected that look back, and
+    // `tst_color_schemes.qml` measures Vivid against it.
+    readonly property var _intensities: ({
+            "subtle": {
+                "edgeChroma": 1.0,
+                "edgeCap": 1.0,
+                "edgeContrast": 1.0,
+                "selectionChroma": 0.7
+            },
+            "vivid": {
+                "edgeChroma": 1.8,
+                "edgeCap": 3.4,
+                "edgeContrast": 1.6,
+                "selectionChroma": 0.9
+            }
+        })
+
+    readonly property string defaultIntensity: "subtle"
+
+    function _intensity(name: string): var {
+        return _intensities[name] ?? _intensities[defaultIntensity];
+    }
+
+    // `intensity` is optional so existing `palette(id)` call sites resolve
+    // the default Subtle look without a signature change at each one.
+    function palette(id: string, intensity: string): var {
+        const scale = _intensity(intensity ?? defaultIntensity);
         const source = _sources[effectiveId(id)];
         const primary = Qt.color(source.primary);
         const text = Qt.color(source.text);
@@ -551,7 +643,14 @@ QtObject {
         const variant = _mix(_mix(primary, text, 0.58), accent, 0.14);
 
         // Semantic tier — see the derivation functions above.
-        const onAccent = _onAccentFor(accent, primary, text);
+        const selectionFill = _selectionFillFor(accent, scale.selectionChroma);
+        // Derived from the FILL, not from `accent`: every place that renders
+        // content on an accent-colored ground now renders it on the selection
+        // fill (SelectionBar's own text, the settings toggle knob's border,
+        // the favorite heart on a highlighted row). Deriving from the raw
+        // accent would leave the guaranteed 4.5:1 measured against a color
+        // nothing actually sits on.
+        const onAccent = _onAccentFor(selectionFill, primary, text);
         const onAccentMuted = _onAccentMutedFor(onAccent, accent);
         const marker = _markerFor(accent, card);
 
@@ -571,8 +670,16 @@ QtObject {
             "bgPanel": panel,
             "bgBar": _mix(primary, ink, 0.35),
             "surfaceCard": card,
-            "tileEdge": _edgeFor(accent, card, 0.5, 0.05, 1.5, primary, 1.8),
-            "controlEdge": _edgeFor(accent, card, 0.6, 0.06, 1.65, panel, 2.0),
+            // Chroma factor clamps at 1.0 — "use all of the accent's own
+            // chroma" is the ceiling; past that the edge would be more
+            // saturated than the accent it derives from. The cap is the term
+            // that actually binds on high-chroma presets (nes, virtual-boy,
+            // game-boy, synthwave-84), which is why Vivid scales it harder.
+            // Both contrast floors still solve afterwards, so the bevel reads
+            // at either setting; Vivid raises the floors too, which is what
+            // actually lifts the edge (see `_intensities`).
+            "tileEdge": _edgeFor(accent, card, Math.min(1, 0.5 * scale.edgeChroma), 0.05 * scale.edgeCap, 1.5 * scale.edgeContrast, primary, 1.8 * scale.edgeContrast),
+            "controlEdge": _edgeFor(accent, card, Math.min(1, 0.6 * scale.edgeChroma), 0.06 * scale.edgeCap, 1.65 * scale.edgeContrast, panel, 2.0 * scale.edgeContrast),
             "scrim": "#cc000000",
             "borderSubtle": subtle,
             "borderMid": mid,
@@ -580,6 +687,7 @@ QtObject {
             "textLabel": _mix(primary, text, 0.62),
             "textVariant": variant,
             "accent": accent,
+            "selectionFill": selectionFill,
             "onAccent": onAccent,
             "onAccentMuted": onAccentMuted,
             "logoShadow": _greyAt(Math.max(0.26, accentLch.L - 0.28)),

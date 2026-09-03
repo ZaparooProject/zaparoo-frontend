@@ -25,6 +25,8 @@ Item {
     property bool clearOnDisable: true
     property bool rapidScrollActive: false
 
+    readonly property string currentIdentity: root._identityAt(root.currentIndex)
+
     property string _requestedKey: ""
     property string _pendingKey: ""
     property int _pendingIndex: -1

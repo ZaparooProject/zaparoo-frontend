@@ -9,7 +9,7 @@ import Zaparoo.Theme
 // on runtime file loading. Values are semantic view tokens, resolved into
 // integer geometry through Sizing.
 QtObject {
-    readonly property string currentThemeId: Theme.crtNativePath ? "crt" : "default"
+    readonly property string currentThemeId: Sizing.tier === "240" ? "crt" : "default"
     readonly property var _themes: _builtInThemes()
 
     function _builtInThemes(): var {
@@ -384,8 +384,8 @@ QtObject {
                         "topMargin": "pctH:1"
                     },
                     "grid": {
-                        "leftInset": 4,
-                        "rightInset": 4,
+                        "leftInset": "headerSideMargin",
+                        "rightInset": "headerSideMargin",
                         "columnGap": 4,
                         "topInset": 2,
                         "bottomInset": 4,
@@ -396,8 +396,8 @@ QtObject {
                         "pageCueInFooter": true,
                         "activeLabelHeight": 8,
                         "activeLabelBottomMargin": "pctH:6",
-                        "bottomStatusLeftMargin": 4,
-                        "bottomStatusRightMargin": "pctW:5",
+                        "bottomStatusLeftMargin": "headerSideMargin",
+                        "bottomStatusRightMargin": "headerSideMargin",
                         "gridBottomMargin": "sum(pctH:6,8)",
                         "bottomUnsafeHeight": 16
                     },
@@ -413,8 +413,8 @@ QtObject {
                         "statusPillPinnedTop": true
                     },
                     "status": {
-                        "topStripVisible": true,
-                        "stripHeight": 8,
+                        "topStripVisible": false,
+                        "stripHeight": 0,
                         "slotMargin": "headerSideMargin",
                         "topMargin": "pctH:1"
                     },
@@ -424,9 +424,9 @@ QtObject {
                         "detailShare": 1,
                         "dividerWidth": 1,
                         "dividerMargin": -16,
-                        "cardSideMargin": 4,
-                        "cardTopMargin": "pctH:2",
-                        "cardBottomMargin": "pctH:8",
+                        "cardSideMargin": "headerSideMargin",
+                        "cardTopMargin": 2,
+                        "cardBottomMargin": "sum(pctH:6,12)",
                         "cardPaddingLeft": 3,
                         "cardPaddingRight": 2,
                         "cardPaddingTop": 3,
@@ -485,8 +485,8 @@ QtObject {
                         "statusPillPinnedTop": true
                     },
                     "status": {
-                        "topStripVisible": true,
-                        "stripHeight": 8,
+                        "topStripVisible": false,
+                        "stripHeight": 0,
                         "slotMargin": "headerSideMargin",
                         "topMargin": "pctH:1"
                     },
@@ -496,9 +496,9 @@ QtObject {
                         "detailShare": 5,
                         "dividerWidth": 1,
                         "dividerMargin": 0,
-                        "cardSideMargin": 4,
-                        "cardTopMargin": "pctH:2",
-                        "cardBottomMargin": "pctH:8",
+                        "cardSideMargin": "headerSideMargin",
+                        "cardTopMargin": 2,
+                        "cardBottomMargin": "sum(pctH:6,12)",
                         "cardPaddingLeft": 3,
                         "cardPaddingRight": 2,
                         "cardPaddingTop": 3,
@@ -562,8 +562,8 @@ QtObject {
                         "topMargin": "pctH:1"
                     },
                     "grid": {
-                        "leftInset": 4,
-                        "rightInset": 4,
+                        "leftInset": "headerSideMargin",
+                        "rightInset": "headerSideMargin",
                         "columnGap": 4,
                         "topInset": 2,
                         "bottomInset": 4,
@@ -574,8 +574,8 @@ QtObject {
                         "pageCueInFooter": true,
                         "activeLabelHeight": 8,
                         "activeLabelBottomMargin": "pctH:6",
-                        "bottomStatusLeftMargin": 4,
-                        "bottomStatusRightMargin": "pctW:5",
+                        "bottomStatusLeftMargin": "headerSideMargin",
+                        "bottomStatusRightMargin": "headerSideMargin",
                         "gridBottomMargin": "sum(pctH:6,8)",
                         "bottomUnsafeHeight": 16
                     },
@@ -591,8 +591,8 @@ QtObject {
                         "statusPillPinnedTop": true
                     },
                     "status": {
-                        "topStripVisible": true,
-                        "stripHeight": 8,
+                        "topStripVisible": false,
+                        "stripHeight": 0,
                         "slotMargin": "headerSideMargin",
                         "topMargin": "pctH:1"
                     },
@@ -602,9 +602,9 @@ QtObject {
                         "detailShare": 1,
                         "dividerWidth": 1,
                         "dividerMargin": -16,
-                        "cardSideMargin": 4,
-                        "cardTopMargin": "pctH:2",
-                        "cardBottomMargin": "pctH:8",
+                        "cardSideMargin": "headerSideMargin",
+                        "cardTopMargin": 2,
+                        "cardBottomMargin": "sum(pctH:6,12)",
                         "cardPaddingLeft": 3,
                         "cardPaddingRight": 2,
                         "cardPaddingTop": 3,
@@ -663,8 +663,8 @@ QtObject {
                         "statusPillPinnedTop": true
                     },
                     "status": {
-                        "topStripVisible": true,
-                        "stripHeight": 8,
+                        "topStripVisible": false,
+                        "stripHeight": 0,
                         "slotMargin": "headerSideMargin",
                         "topMargin": "pctH:1"
                     },
@@ -674,9 +674,9 @@ QtObject {
                         "detailShare": 5,
                         "dividerWidth": 1,
                         "dividerMargin": 0,
-                        "cardSideMargin": 4,
-                        "cardTopMargin": "pctH:2",
-                        "cardBottomMargin": "pctH:8",
+                        "cardSideMargin": "headerSideMargin",
+                        "cardTopMargin": 2,
+                        "cardBottomMargin": "sum(pctH:6,12)",
                         "cardPaddingLeft": 3,
                         "cardPaddingRight": 2,
                         "cardPaddingTop": 3,

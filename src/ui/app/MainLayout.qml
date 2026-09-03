@@ -51,6 +51,10 @@ ApplicationWindow {
     // CRT region (visible as a whole-frame size snap on first paint).
     // Desktop preview sets fullScreen=false via initialProperties.
     property bool fullScreen: true
+    // Build-selected default used while Interface layout is "Device default".
+    // Generic builds use Standard; device vendors may compile Handheld.
+    property string defaultInterfaceProfile: "standard"
+    readonly property string effectiveInterfaceProfile: Browse.Settings.current_interface_profile === "device" ? root.defaultInterfaceProfile : Browse.Settings.current_interface_profile
     property bool crtNativePath: false
     property bool bitmapType: false
     property bool debugCrtSafeAreaOverlay: false
@@ -344,6 +348,12 @@ ApplicationWindow {
         value: root._sceneRotated
     }
 
+    Binding {
+        target: Sizing
+        property: "interfaceProfile"
+        value: root.effectiveInterfaceProfile
+    }
+
     // Screen plumbing exposed for Main.qml's orchestration. Anything
     // inside the screens (categories row, systems/games grids) is
     // reached via root.hubScreen.* / root.systemsScreen.* /
@@ -372,6 +382,9 @@ ApplicationWindow {
     property var crtCalibrationModal: crtCalibrationModalLoader.item
     property var scrapeSetupModal: scrapeSetupModalLoader.item
     property var indexSetupModal: indexSetupModalLoader.item
+    // The help bar's resolved rows, for tests that assert which surface
+    // the bar is describing (it branches on the modal flags above).
+    readonly property var helpEntries: instructionsBar.helpEntries
     property alias headerBar: headerBar
     property alias screensaverOverlay: screensaverOverlay
     // Exposed so Main.qml binds Sizing.screenWidth/Height to the
@@ -502,37 +515,32 @@ ApplicationWindow {
             return root._gamesBrowseListLayout ? (root._gamesBrowseTateListLayout ? "gamesListTate" : "gamesList") : "gamesGrid";
         return "gamesGrid";
     }
-    // Whichever of the two layout preferences the CURRENT active screen's
-    // family follows -- for callers like `browseHeaderTitle` below that
-    // need "is the active screen in list layout" without re-deriving
-    // `_browseViewId`'s own family branch.
-    readonly property bool _activeBrowseListLayout: {
-        if (root.activeScreen === root.screenSystems || root.activeScreen === root.screenFavoriteSystems)
-            return root._systemsBrowseListLayout;
-        if (root.activeScreen === root.screenGames || root.activeScreen === root.screenFavorites || root.activeScreen === root.screenRecents)
-            return root._gamesBrowseListLayout;
-        return false;
-    }
     readonly property string _browseThemeId: BrowseLayouts.currentThemeId
     readonly property var _browseViewProfile: BrowseLayouts.themeProfile(root._browseThemeId, root._browseViewId)
-    readonly property string _crtGamesHeaderTitle: {
+    // Same resolution as GamesScreen's own `_systemDisplayName` -- see the
+    // comment there for why the category-scoped `index_for_system_id` lookup
+    // this used to do disagreed with the Systems grid, and why the two `void`
+    // reads are load-bearing.
+    readonly property string _gamesHeaderTitle: {
         if (root.activeScreen !== root.screenGames)
             return "";
         const sid = Browse.GamesModel.current_system_id;
         if (sid === "")
             return "";
-        const idx = Browse.SystemsModel.index_for_system_id(sid);
-        return idx >= 0 ? Browse.SystemsModel.system_name_at(idx) : sid;
+        void Browse.SystemsModel.count;
+        void Browse.Settings.current_region;
+        const resolved = Browse.SystemsModel.system_name_for_id(sid);
+        return resolved !== "" ? resolved : sid;
     }
     readonly property string browseHeaderTitle: {
-        if (!root.crtNativePath)
+        if (!root._browseViewProfile || !root._browseViewProfile.header || !root._browseViewProfile.header.titleInHeader)
             return "";
-        if (root._activeBrowseListLayout)
-            return "";
+        if (root.activeScreen === root.screenSettings)
+            return settingsScreenLoader.item ? settingsScreenLoader.item.pageTitle : qsTr("Settings");
         if (root.activeScreen === root.screenSystems)
             return CategoryIds.displayName(Browse.SystemsModel.current_category);
         if (root.activeScreen === root.screenGames)
-            return root._crtGamesHeaderTitle;
+            return root._gamesHeaderTitle;
         if (root.activeScreen === root.screenFavorites)
             return qsTr("Favorites");
         if (root.activeScreen === root.screenFavoriteSystems)
@@ -551,17 +559,6 @@ ApplicationWindow {
     signal closeLogUploadRequested
     signal closeScrapeSetupRequested
     signal closeIndexSetupRequested
-    // Bubbled from ScrapeSetupModal's own scraper-picker row -- Main.qml
-    // owns opening the shared ListPickerModal (the modal itself can't
-    // instantiate a second top-level modal directly; see the Loader
-    // pattern every other modal-with-nested-picker interaction uses).
-    signal requestScraperPicker
-    // Bubbled from either ScrapeSetupModal's or IndexSetupModal's own
-    // Systems row -- shared because the two modals are mutually
-    // exclusive (only one Settings Accept path opens either at a time),
-    // so Main.qml's handler tells them apart by which one is currently
-    // visible rather than needing two identical signals.
-    signal requestSystemScopePicker
     signal closeQuitConfirmRequested
     signal quitConfirmAccepted
     signal listPickerAccepted(string fieldId, string selectedId)
@@ -948,23 +945,6 @@ ApplicationWindow {
             }
 
             Loader {
-                id: actionErrorModalLoader
-                anchors.fill: parent
-                z: 300
-                active: root.actionErrorModalRequested
-                sourceComponent: Component {
-                    Modal {
-                        open: root.actionErrorModalVisible
-                        kind: "action_error"
-                        title: root.actionErrorTitle
-                        body: root.actionErrorBody
-                        buttonLabel: root.actionErrorButtonLabel
-                        onAccepted: root.actionErrorAccepted()
-                    }
-                }
-            }
-
-            Loader {
                 id: contextMenuLoader
                 anchors.fill: parent
                 z: 300
@@ -975,7 +955,7 @@ ApplicationWindow {
                         anchorRect: root.contextMenuAnchor
                         anchorRadius: root.contextMenuAnchorRadius
                         entries: root.contextMenuEntries
-                        bottomUnsafeHeight: BrowseLayouts.numberValue(root._browseViewProfile, "footer.bottomUnsafeHeight", Sizing.pctH(6) + Sizing.pctH(2))
+                        bottomUnsafeHeight: Math.max(BrowseLayouts.numberValue(root._browseViewProfile, "footer.bottomUnsafeHeight", Sizing.helpBarClearance), Sizing.helpBarClearance)
                         onAccepted: id => root.contextMenuAccepted(id)
                         onCloseRequested: root.contextMenuCloseRequested()
                     }
@@ -1050,7 +1030,7 @@ ApplicationWindow {
             }
 
             // Scrape setup modal (round 10). Pushed by Main.qml when the
-            // user triggers the "Scrape metadata" action in Settings while
+            // user triggers the "Update metadata" action in Settings while
             // idle. Scraper choice + re-scrape toggle + Start, replacing
             // the hardcoded "gamelist.xml" every other scrape call site
             // still uses.
@@ -1064,8 +1044,6 @@ ApplicationWindow {
                         anchors.fill: parent
                         open: root.scrapeSetupModalVisible
                         onCloseRequested: root.closeScrapeSetupRequested()
-                        onRequestScraperPicker: root.requestScraperPicker()
-                        onRequestSystemScopePicker: root.requestSystemScopePicker()
                     }
                 }
             }
@@ -1084,7 +1062,6 @@ ApplicationWindow {
                         anchors.fill: parent
                         open: root.indexSetupModalVisible
                         onCloseRequested: root.closeIndexSetupRequested()
-                        onRequestSystemScopePicker: root.requestSystemScopePicker()
                     }
                 }
             }
@@ -1156,6 +1133,30 @@ ApplicationWindow {
                 }
             }
 
+            // Action-error alert. The one surface allowed above another
+            // modal (docs/style.md -> "Modal depth"): an async failure can
+            // land while a dialog or the context menu is open, so this
+            // Loader is declared after every other modal Loader and sits
+            // above the commercial notice's 310. Sibling `z` ties resolve by
+            // declaration order, which used to leave this alert painted
+            // behind the dialog it interrupted while owning input.
+            Loader {
+                id: actionErrorModalLoader
+                anchors.fill: parent
+                z: 320
+                active: root.actionErrorModalRequested
+                sourceComponent: Component {
+                    Modal {
+                        open: root.actionErrorModalVisible
+                        kind: "action_error"
+                        title: root.actionErrorTitle
+                        body: root.actionErrorBody
+                        buttonLabel: root.actionErrorButtonLabel
+                        onAccepted: root.actionErrorAccepted()
+                    }
+                }
+            }
+
             // Modal scrim backstop for the CRT overscan band. Modal
             // scrims fill `scene`, which is inset by the safe area, so
             // the full-bleed background would otherwise glow undimmed
@@ -1213,7 +1214,7 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: Sizing.pctH(6)
+                height: Sizing.helpBarHeight
                 // Sits above every modal scrim (modals max out at z: 310 — see
                 // CommercialNoticeModal) so the help cue stays readable while a
                 // dialog is open. The bar's content is already modal-aware
@@ -1277,6 +1278,20 @@ ApplicationWindow {
                 // (see HubScreen.qml's routing comment). Sentence case
                 // throughout.
                 readonly property var helpEntries: {
+                    // First: an alert can sit above any other modal and it
+                    // owns input while it does, so its row must win over the
+                    // surface underneath it.
+                    if (root.actionErrorModalVisible)
+                        return [
+                            {
+                                button: "ButtonA",
+                                label: root.actionErrorButtonLabel
+                            },
+                            {
+                                button: "ButtonB",
+                                label: qsTr("Close")
+                            }
+                        ];
                     if (root.contextMenuVisible)
                         return [
                             {
@@ -1299,13 +1314,40 @@ ApplicationWindow {
                                 label: qsTr("Cancel")
                             }
                         ];
-                    if (root.qrCodeModalVisible || root.gameInfoModalVisible)
+                    if (root.qrCodeModalVisible)
                         return [
                             {
                                 button: "ButtonB",
                                 label: qsTr("Close")
                             }
                         ];
+                    // The details modal used to share the QR modal's row
+                    // above, which advertises Close and nothing else -- but
+                    // GameInfoModal's `handleAction` scrolls on up/down and
+                    // page keys AND cycles the artwork on left/right, so
+                    // the carousel was undiscoverable and the scroll only
+                    // findable by trying it. Both cues are conditional on
+                    // there being somewhere to go, matching how the modal's
+                    // own chevrons and nav arrows gate themselves.
+                    if (root.gameInfoModalVisible) {
+                        const details = root.gameInfoModal;
+                        const entries = [];
+                        if (details !== null && details._scrollable)
+                            entries.push({
+                                button: "Dpad",
+                                label: qsTr("Scroll")
+                            });
+                        if (Browse.GameInfo.image_count > 1)
+                            entries.push({
+                                buttons: ["DpadLeft", "DpadRight"],
+                                label: qsTr("Image")
+                            });
+                        entries.push({
+                            button: "ButtonB",
+                            label: qsTr("Close")
+                        });
+                        return entries;
+                    }
                     if (root.logUploadModalVisible) {
                         const phase = root.logUploadModal ? root.logUploadModal.phase : "";
                         const success = root.logUploadModal ? root.logUploadModal._stateSuccess : "__none__";
@@ -1347,17 +1389,6 @@ ApplicationWindow {
                                 label: qsTr("I understand")
                             }
                         ];
-                    if (root.actionErrorModalVisible)
-                        return [
-                            {
-                                button: "ButtonA",
-                                label: root.actionErrorButtonLabel
-                            },
-                            {
-                                button: "ButtonB",
-                                label: qsTr("Close")
-                            }
-                        ];
                     if (root.coreVersionModalVisible || root.randomFailedModalVisible)
                         return [
                             {
@@ -1391,12 +1422,12 @@ ApplicationWindow {
                                 label: qsTr("Cancel")
                             }
                         ];
-                    // Below the list-picker branch above deliberately: both
-                    // setup modals stay mounted while their nested picker
-                    // is open, so the picker's own row has to win first.
-                    // Without this branch the bar fell through to the
-                    // Settings screen underneath and advertised its rows
-                    // while a modal owned input.
+                    // The setup modals' own row: A is the focused row's verb
+                    // ("Select" on their in-panel picker page, see
+                    // ScrapeSetupModal.qml's `page`), B backs out one level
+                    // (page -> form -> closed). Without this branch the bar
+                    // fell through to the Settings screen underneath and
+                    // advertised its rows while a modal owned input.
                     if (root.indexSetupModalVisible || root.scrapeSetupModalVisible) {
                         const setupModal = root.indexSetupModalVisible ? root.indexSetupModal : root.scrapeSetupModal;
                         return [
@@ -1706,11 +1737,16 @@ ApplicationWindow {
                             return [];
                         const pages = root.gamesScreen.gamesGrid.pageCount;
                         // Mirror the real context-menu gate used by
-                        // GamesScreen/openContextMenu. Singleton folders
-                        // with media identity can launch and be favorited,
-                        // so they should advertise Options too.
+                        // GamesScreen's `contextMenuEnabledAt`. Singleton
+                        // folders with media identity can launch and be
+                        // favorited; a plain directory and a filesystem `root`
+                        // both get the folder shortcut action. All of them
+                        // open a menu, so all of them must advertise Options
+                        // -- this used to test media capability alone, which
+                        // left every folder row with a working Options button
+                        // and no cue saying so. Keep the two in step.
                         const idx = root.gamesScreen.gamesGrid.currentIndex;
-                        const mediaCapable = Browse.GamesModel.is_media_capable_at(idx);
+                        const hasContextMenu = Browse.GamesModel.is_media_capable_at(idx) || Browse.GamesModel.entry_type_at(idx) === "directory" || Browse.GamesModel.is_filesystem_root_at(idx);
                         // D-pad moves; L/R shoulders page-jump. Folded into one
                         // "Move" cue; shoulder glyphs appear only with a second
                         // page.
@@ -1724,7 +1760,7 @@ ApplicationWindow {
                             button: "ButtonA",
                             label: qsTr("Open")
                         });
-                        if (mediaCapable)
+                        if (hasContextMenu)
                             row.push({
                                 button: "ButtonX",
                                 label: qsTr("Options")
@@ -1762,64 +1798,13 @@ ApplicationWindow {
                     return fallback;
                 }
 
-                Row {
-                    x: Sizing.center(parent.width, width)
-                    // A small downward bias off dead-center — arithmetic
-                    // centering here has no dependency on the bar's own
-                    // border (it never had a bottom border of its own; see
-                    // the two full-bleed fill/keyline Rectangles above),
-                    // this is purely a feel adjustment. Trimmed 0.4 -> 0.3
-                    // (round 6, item 5), then 0.3 -> 0.2 (round 6 follow-up)
-                    // — still read a pixel too far down at 1080p/720p.
-                    y: Sizing.center(parent.height, height) + Sizing.pctH(0.2)
-                    spacing: Sizing.pctW(2)
-
-                    Repeater {
-                        model: instructionsBar.helpEntries
-
-                        // Each entry is either a single-glyph cue
-                        // (`{ button: "ButtonA", label: "Open" }`) or a
-                        // multi-glyph cue rendered as N icons in a row before
-                        // the label (`{ buttons: ["DpadLeft", "DpadRight"],
-                        // label: "Change" }`). The Settings screen uses the
-                        // multi-glyph form to disambiguate "left/right cycles
-                        // the value" from "up/down moves between fields".
-                        delegate: Row {
-                            id: helpEntry
-                            required property var modelData
-                            spacing: Sizing.pctW(0.6)
-
-                            // A status-only entry (e.g. "Saving…" while a
-                            // pending save locks the list picker, below)
-                            // supplies neither `button` nor `buttons` --
-                            // renders as a bare label with no icon.
-                            readonly property var buttonList: helpEntry.modelData.buttons !== undefined ? helpEntry.modelData.buttons : (helpEntry.modelData.button !== undefined ? [helpEntry.modelData.button] : [])
-
-                            Repeater {
-                                model: helpEntry.buttonList
-                                delegate: Image {
-                                    required property string modelData
-                                    anchors.verticalCenter: helpEntry.verticalCenter
-                                    height: Sizing.pctH(4)
-                                    width: height
-                                    fillMode: Image.PreserveAspectFit
-                                    sourceSize.height: Sizing.px(height)
-                                    sourceSize.width: Sizing.px(width)
-                                    source: Resources.iconUrl(modelData, Theme.textPrimary)
-                                    smooth: true
-                                }
-                            }
-
-                            Text {
-                                anchors.verticalCenter: helpEntry.verticalCenter
-                                text: helpEntry.modelData.label
-                                font.family: Theme.fontUi
-                                font.pixelSize: Sizing.fontBody
-                                color: Theme.textPrimary
-                                renderType: Text.NativeRendering
-                            }
-                        }
-                    }
+                // At 240p the available safe width can be narrower than the
+                // full control vocabulary. Wrap between atomic glyph+label
+                // groups so no label becomes detached from its button.
+                HelpRow {
+                    objectName: "instructionsHelpRow"
+                    anchors.fill: parent
+                    entries: instructionsBar.helpEntries
                 }
             }
 

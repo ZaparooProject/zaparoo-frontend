@@ -226,6 +226,7 @@ Item {
             height: contentColumn.height + Sizing.pctH(8)
             color: Theme.bgPanel
             radius: Sizing.radiusMd
+            antialiasing: Sizing.cornerAntialiasing
 
             Column {
                 id: contentColumn

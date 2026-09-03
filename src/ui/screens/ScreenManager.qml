@@ -41,7 +41,14 @@ QtObject {
         manager.activeScreen = screen;
     }
 
+    // One modal at a time. The only thing allowed above an open modal is an
+    // `action_error` alert (docs/style.md -> "Modal depth"); a modal that
+    // needs a choice made swaps its own panel to the list instead. Anything
+    // else stacking here is a bug, so say so where the frontend log shows
+    // it and where a test's `failOnWarning` can catch it.
     function pushModal(name: string): void {
+        if (manager.modalStack.length > 0 && name !== "action_error")
+            console.warn("ScreenManager: modal '" + name + "' pushed over '" + manager.topModal + "' (see docs/style.md, Modal depth)");
         manager.modalStack = manager.modalStack.concat([name]);
     }
 

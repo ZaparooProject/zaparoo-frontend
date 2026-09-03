@@ -30,6 +30,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 use tokio::sync::watch;
+use tracing::debug;
 
 /// Icon style resolved from `Main_MiSTer`'s `glyph_profile` field, mapped
 /// onto this frontend's existing neutral `style_a`/`style_b`/`style_c`/
@@ -243,13 +244,65 @@ fn poll_once(path: &Path, last_mtime: &mut Option<SystemTime>, last_read_ok: &mu
 /// `Browse.ControllerReport` then stays at its no-report fallback. The
 /// `ZAPAROO_INPUT_REPORT_FILE` override forces the watcher on regardless, so
 /// the feature can be exercised on desktop against a fixture file.
-pub fn spawn_watcher() {
+/// Returns whether the watcher actually started. Callers log against this
+/// rather than assuming it did: a skipped watcher and a running one that has
+/// simply never seen a report both leave `Browse.ControllerReport` at the same
+/// neutral fallback, which is the ambiguity that made "Automatic isn't picking
+/// up my controller" reports untriageable from a log. Both paths now also emit
+/// their own `debug!`, so a debug-logging run distinguishes them without the
+/// caller having to.
+pub fn spawn_watcher() -> bool {
     let forced = std::env::var_os("ZAPAROO_INPUT_REPORT_FILE").is_some_and(|v| !v.is_empty());
     if !runtime::current().is_mister() && !forced {
-        return;
+        debug!("controller report: not MiSTer and no override, watcher not started");
+        return false;
     }
     let path = launcher_input_report_path();
-    publish_if_changed(read_and_parse(&path));
+    // Read and parse inline rather than through `read_and_parse` so the three
+    // ways this can come up empty stay distinguishable in the log. They mean
+    // very different things to whoever is triaging: a missing file is the
+    // normal case on a Main_MiSTer without the launcher-input feature, an
+    // unreadable one is a permissions or IO problem worth chasing, and a
+    // present-but-unparseable one means Main wrote a shape this build does not
+    // understand. Every branch still falls back to the same neutral glyphs.
+    let seed = match std::fs::read(&path) {
+        Ok(bytes) => {
+            let parsed = parse_report(&bytes);
+            if parsed.is_none() {
+                debug!(
+                    ?path,
+                    bytes = bytes.len(),
+                    "controller report: file present but not parseable, using neutral fallback",
+                );
+            }
+            parsed
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            debug!(
+                ?path,
+                "controller report: no report file, using neutral fallback",
+            );
+            None
+        }
+        Err(e) => {
+            debug!(
+                ?path,
+                error = %e,
+                "controller report: report file unreadable, using neutral fallback",
+            );
+            None
+        }
+    };
+    if let Some(glyphs) = &seed {
+        debug!(
+            ?path,
+            layout = glyphs.layout,
+            accept = glyphs.accept_button,
+            cancel = glyphs.cancel_button,
+            "controller report: seeded from report",
+        );
+    }
+    publish_if_changed(seed);
     std::thread::spawn(move || {
         let mut last_mtime: Option<SystemTime> = None;
         let mut last_read_ok = true;
@@ -258,6 +311,7 @@ pub fn spawn_watcher() {
             std::thread::sleep(POLL_INTERVAL);
         }
     });
+    true
 }
 
 #[cfg(test)]

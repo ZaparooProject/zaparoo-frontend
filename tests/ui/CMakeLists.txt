@@ -25,6 +25,7 @@ set(_TST_UI_QML_FILES
     tst_persistence.qml
     tst_paged_grid.qml
     tst_footer_chrome.qml
+    tst_help_row.qml
     tst_status_line.qml
     tst_format.qml
     tst_pressable_surface.qml
@@ -36,14 +37,16 @@ set(_TST_UI_QML_FILES
     tst_browse_detail_pane.qml
     tst_media_list_titles.qml
     tst_media_list_paging.qml
+    tst_media_list_persist.qml
     tst_list_picker_modal.qml
     tst_letter_jump_modal.qml
     tst_settings_field_control.qml
-    tst_settings_section_header.qml
+    tst_section_header.qml
     tst_motion.qml
     tst_deferred_action.qml
     tst_tile_cover_sync.qml
     tst_game_info_modal.qml
+    tst_qr_matrix.qml
     tst_scrape_setup_modal.qml
     tst_index_setup_modal.qml
 )

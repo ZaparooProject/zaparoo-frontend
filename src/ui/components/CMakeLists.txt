@@ -30,6 +30,8 @@ qt_add_qml_module(
         Format.qml
         GameInfoModal.qml
         HeaderBar.qml
+        HelpBarEntry.qml
+        HelpRow.qml
         IndexSetupModal.qml
         LetterJumpModal.qml
         LoadingIndicator.qml
@@ -38,6 +40,7 @@ qt_add_qml_module(
         Modal.qml
         PagedGrid.qml
         PageIndicator.qml
+        PickerList.qml
         PressableSurface.qml
         ProgressTrack.qml
         QrCodeModal.qml
@@ -49,7 +52,7 @@ qt_add_qml_module(
         ScrollingCaption.qml
         SelectionBar.qml
         SettingsField.qml
-        SettingsSectionHeader.qml
+        SectionHeader.qml
         StatusIcon.qml
         StatusLine.qml
         Tile.qml

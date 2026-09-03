@@ -11,6 +11,7 @@ import QtQuick
 import QtTest
 import Zaparoo.App
 import Zaparoo.Browse as Browse
+import Zaparoo.Theme
 
 // Verifies that browse screens route geometry through the shared
 // BrowseLayouts profiles instead of inlining CRT-specific numbers in
@@ -28,45 +29,85 @@ TestCase {
     }
 
     property string _originalBrowseLayout: "grid"
+    property string _originalOrientation: "horizontal"
 
     Component.onCompleted: {
         _originalBrowseLayout = Browse.Settings.current_systems_browse_layout;
+        _originalOrientation = Browse.Settings.current_orientation;
     }
 
     function init(): void {
+        main.width = 1280;
+        main.height = 720;
+        Sizing.screenWidth = 1280;
+        Sizing.screenHeight = 720;
         main.bootComplete = true;
         main.systemsScreenRequested = true;
         main.activeScreen = main.screenSystems;
         main.crtNativePath = false;
         Browse.Settings.current_systems_browse_layout = "grid";
+        Browse.Settings.current_orientation = "horizontal";
     }
 
     function cleanup(): void {
+        main.width = 1280;
+        main.height = 720;
+        Sizing.screenWidth = 1280;
+        Sizing.screenHeight = 720;
         main.crtNativePath = false;
         Browse.Settings.current_systems_browse_layout = _originalBrowseLayout;
+        Browse.Settings.current_orientation = "horizontal";
     }
 
-    function test_crt_grid_uses_crt_tile_profile(): void {
+    function cleanupTestCase(): void {
+        Browse.Settings.current_orientation = _originalOrientation;
+    }
+
+    function _use240p(): void {
+        main.width = 640;
+        main.height = 240;
+        Sizing.screenWidth = 640;
+        Sizing.screenHeight = 240;
+    }
+
+    function test_settings_root_grid_transposes_in_both_rotations(): void {
+        main.settingsScreenRequested = true;
+        main.activeScreen = main.screenSettings;
+        verify(main.settingsScreen !== null);
+        compare(main.settingsScreen.rootGridColumns, 3);
+        compare(main.settingsScreen.rootGridRows, 2);
+
+        for (const orientation of ["cw", "ccw"]) {
+            Browse.Settings.current_orientation = orientation;
+            compare(main.settingsScreen.rootGridColumns, 2, orientation + " columns");
+            compare(main.settingsScreen.rootGridRows, 3, orientation + " rows");
+        }
+    }
+
+    function test_compact_profile_follows_resolution_not_crt_flag(): void {
+        compare(BrowseLayouts.currentThemeId, "default");
         main.crtNativePath = true;
+        compare(BrowseLayouts.currentThemeId, "default");
+        main.crtNativePath = false;
+        _use240p();
+        compare(BrowseLayouts.currentThemeId, "crt");
+    }
+
+    function test_240p_grid_uses_compact_tile_profile(): void {
+        _use240p();
         Browse.Settings.current_systems_browse_layout = "grid";
 
         compare(main.headerBar.layoutProfile.header.titleInHeader, true);
-        compare(main.systemsScreen.systemsGrid.layoutProfile.surface.cardRadius, 2);
-        compare(main.systemsScreen.systemsGrid.layoutProfile.surface.rowRadius, 1);
-        compare(main.systemsScreen.systemsGrid.leftInset, 4);
-        compare(main.systemsScreen.systemsGrid.rightInset, 4);
+        compare(main.systemsScreen.systemsGrid.layoutProfile.surface.cardRadius, Sizing.radiusMd);
+        compare(main.systemsScreen.systemsGrid.layoutProfile.surface.rowRadius, Sizing.radiusSm);
+        compare(main.systemsScreen.systemsGrid.leftInset, Sizing.headerSideMargin);
+        compare(main.systemsScreen.systemsGrid.rightInset, Sizing.headerSideMargin);
         compare(main.systemsScreen.systemsGrid.layoutProfile.grid.pageChevronSize, 8);
     }
 
-    // Non-CRT hosts the count badge and page cue on the top strip's title
-    // line (`pageIndicatorMode`); CRT's top strip is hidden entirely
-    // (`status.topStripVisible: false`), so it keeps them in the footer
-    // instead, unchanged from before this round --
-    // `footer.pageCueInFooter` is the profile flag both screens key off
-    // (BrowseLayouts.qml). Asserts the profile-derived flags directly
-    // rather than final `.visible` (which also folds in this harness's
-    // own loading-gate state, unrelated to what's under test here).
-    function test_default_grid_shows_page_cue_at_top_crt_shows_it_in_footer(): void {
+    // Larger layouts host count and page cue on top strip. Compact 240p
+    // layout keeps one cue in footer and removes top-strip duplicate.
+    function test_240p_keeps_only_footer_page_cue(): void {
         compare(main.systemsScreen._pageCueInFooter, false);
         compare(main.systemsScreen.topStrip.pageIndicatorMode, true);
         const footerCount = findChild(main.systemsScreen, "systemsFooterCount");
@@ -74,18 +115,31 @@ TestCase {
         verify(footerCount !== null);
         verify(footerIndicator !== null);
 
-        main.crtNativePath = true;
+        _use240p();
+        Browse.Settings.current_systems_browse_layout = "list";
         compare(main.systemsScreen._pageCueInFooter, true);
+        compare(main.systemsScreen.topStrip.visible, false);
         compare(main.systemsScreen.topStrip.pageIndicatorMode, false);
     }
 
-    function test_crt_list_uses_crt_header_and_profile(): void {
-        main.crtNativePath = true;
+    function test_240p_list_aligns_with_grid_rails(): void {
+        _use240p();
         Browse.Settings.current_systems_browse_layout = "list";
 
+        const profile = main.systemsScreen.listCard.layoutProfile;
         compare(main.headerBar.layoutProfile.header.titleInHeader, true);
-        compare(main.systemsScreen.listCard.layoutProfile.surface.cardRadius, 2);
-        compare(main.systemsScreen.listCard.layoutProfile.surface.rowRadius, 1);
-        compare(main.systemsScreen.listCard.layoutProfile.list.rowHeight, 12);
+        compare(profile.surface.cardRadius, Sizing.radiusMd);
+        compare(profile.surface.rowRadius, Sizing.radiusSm);
+        compare(profile.list.rowHeight, 12);
+        compare(profile.list.cardSideMargin, Sizing.headerSideMargin);
+        compare(profile.list.cardTopMargin, 2);
+        compare(profile.list.cardBottomMargin, Sizing.pctH(6) + 12);
+        compare(profile.status.topStripVisible, false);
+
+        const gamesProfile = BrowseLayouts.themeProfile(BrowseLayouts.currentThemeId, "gamesList");
+        compare(gamesProfile.list.cardSideMargin, Sizing.headerSideMargin);
+        compare(gamesProfile.list.cardTopMargin, 2);
+        compare(gamesProfile.list.cardBottomMargin, Sizing.pctH(6) + 12);
+        compare(gamesProfile.status.topStripVisible, false);
     }
 }

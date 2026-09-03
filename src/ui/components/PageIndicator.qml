@@ -6,11 +6,10 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Zaparoo.Theme
 
-// Compact "where am I" page cue for a paged grid: an up/down chevron pair
-// (the same ScrollUp/ScrollDown glyphs PagedGrid's old right-gutter used)
-// plus "N / M", meant to sit in a screen's footer row. Replaces the
-// gutter entirely -- grids are paged, not scrolled, so a proportional
-// scrollbar thumb was never the right metaphor here; see docs/style.md ->
+// Compact "where am I" cue: an up/down chevron pair plus "N/M". Paged
+// grids pass page numbers; detailed lists enable `itemPositionMode` and pass
+// focused-item/total-item counts because those views scroll continuously.
+// Replaces the old proportional scrollbar gutter; see docs/style.md ->
 // "Tile aspect and grid blocks".
 //
 // Reserves its full width unconditionally: each chevron anchors off a
@@ -49,13 +48,16 @@ Item {
 
     property int currentPage: 0
     property int totalPages: 1
+    property bool itemPositionMode: false
+    property int currentItem: 0
+    property int totalItems: 0
     // False for cursor-paginated lists whose final page is unknown until
     // exhaustion (Favorites/Recents/Games). Shows bare "N" instead of a
     // denominator that would grow as more rows arrive.
     //
     // Mirrors TopStatusStrip's own known/unknown split (see that
     // component's `pageText`) rather than sharing an implementation with
-    // it: this is a compact "N / M" with no "Page" word -- a different
+    // it: this is a compact "N/M" with no "Page" word -- a different
     // string for a different context, since the chevrons alongside it
     // already establish "this is paging". The one thing that must never
     // drift between the two is the conditional itself -- never print a
@@ -71,16 +73,10 @@ Item {
 
     signal pageRequested(int delta)
 
-    // True the instant there's anywhere else to page to, in either
-    // direction. Equivalent to `totalPages > 1` when `pageTotalKnown`, but
-    // also covers the unknown-total case (a cursor list with nothing above
-    // and nothing more to fetch below) the same way -- both mean "there is
-    // only one page," and a "1 / 1" or bare "1" readout in that state says
-    // nothing a user needs, just adds a number next to chevrons that were
-    // never going to do anything. Text hides; the chevrons already hide
-    // themselves off the same two properties, so nothing new to gate there.
-    readonly property bool _hasMultiplePages: root.hasPagesAbove || root.hasPagesBelow
-    readonly property string pageText: root.pageTotalKnown ? qsTr("%1 / %2").arg(root.currentPage + 1).arg(Math.max(1, root.totalPages)) : qsTr("%1").arg(root.currentPage + 1)
+    // True whenever another page or list item is reachable. A single-position
+    // readout says nothing useful, so text and chevrons hide together.
+    readonly property bool _hasNavigationRange: root.hasPagesAbove || root.hasPagesBelow
+    readonly property string pageText: root.itemPositionMode ? qsTr("%1/%2").arg(Math.min(Math.max(0, root.currentItem), Math.max(0, root.totalItems - 1)) + 1).arg(Math.max(1, root.totalItems)) : (root.pageTotalKnown ? qsTr("%1/%2").arg(root.currentPage + 1).arg(Math.max(1, root.totalPages)) : qsTr("%1").arg(root.currentPage + 1))
     // `NativeRendering` paints wider than `TextMetrics` reports -- see
     // ActiveLabel.qml's/TopStatusStrip.qml's identical `_slack` correction.
     readonly property int _slack: Theme.crtNativePath ? 0 : Sizing.px(2)
@@ -113,7 +109,7 @@ Item {
     // just animated ones. Round 10: both chevrons now also hide entirely
     // (not just dim) when there's only one page total — two permanently
     // dim arrows pointing at nothing to page to said nothing useful,
-    // same reasoning `pageCountText`'s own `_hasMultiplePages` gate
+    // same reasoning `pageCountText`'s own `_hasNavigationRange` gate
     // below already applies to the "N / M" text. `visible: false` here
     // only stops painting; the anchors are position-based, not
     // size-based-on-visibility, so the unconditionally-reserved width
@@ -129,7 +125,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         fillMode: Image.PreserveAspectFit
         smooth: true
-        visible: root._hasMultiplePages
+        visible: root._hasNavigationRange
 
         MouseArea {
             anchors.fill: parent
@@ -152,7 +148,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         fillMode: Image.PreserveAspectFit
         smooth: true
-        visible: root._hasMultiplePages
+        visible: root._hasNavigationRange
 
         MouseArea {
             anchors.fill: parent
@@ -175,7 +171,7 @@ Item {
         // reserved `width` and left this Text sized to its own raw
         // implicitWidth instead.
         width: root._textWidth
-        visible: root._hasMultiplePages
+        visible: root._hasNavigationRange
         elide: Text.ElideRight
         text: root.pageText
         font.family: Theme.fontUi

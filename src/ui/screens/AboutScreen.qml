@@ -81,7 +81,7 @@ Item {
     // is capped tighter than Settings's pctW(70) — prose reads better
     // at narrow line lengths, and the cap also keeps the logo from
     // having to scale up past its 600px native width on widescreen.
-    // Bottom margin clears the help bar (pctH(6)) plus a small gap.
+    // Bottom margin clears the help bar plus a small gap.
     //
     // Card stays put; the Flickable sits inside the card and content
     // scrolls within it. Putting the Flickable outside the card would
@@ -94,11 +94,12 @@ Item {
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(2)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.pctH(8)
+        anchors.bottomMargin: Sizing.helpBarClearance
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(parent.width - Sizing.pctW(10), Sizing.pctW(50))
         color: Theme.surfaceCard
         radius: Sizing.radiusMd
+        antialiasing: Sizing.cornerAntialiasing
         border.color: Theme.borderMid
         border.width: Sizing.cardBorderWidth
 

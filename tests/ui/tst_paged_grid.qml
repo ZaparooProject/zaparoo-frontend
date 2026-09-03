@@ -983,15 +983,15 @@ TestCase {
         compare(grid.currentIndex, 0);
     }
 
-    function test_item_count_clamp_keeps_current_in_bounds(): void {
-        // Shrink the model directly (without an intermediate clear)
-        // so the clamp at PagedGrid.onItemCountChanged is exercised
-        // with a stale-but-valid currentIndex (not just 0).
+    function test_item_count_reset_falls_back_to_first_item(): void {
+        // Shrink the model directly (without an intermediate clear) so the
+        // stale index path is exercised. A populated replacement always seats
+        // focus on its first valid item rather than retaining an unrelated tail.
         fillModel(20);
         grid.setCurrentIndexImmediate(19);
         model.remove(10, 10);
         tryCompare(grid, "itemCount", 10);
-        compare(grid.currentIndex, 9);
+        compare(grid.currentIndex, 0);
     }
 
     // ── pageBy (L/R shoulder shortcut, unchanged) ────────────────────────
@@ -1056,7 +1056,7 @@ TestCase {
     // known-total branch never looked at `hasMorePages` at all
     // (`currentPage(0) < pageCount(1) - 1` is false, and the OR term was
     // gated `!paginationTotalKnown &&`), so `hasPagesBelow` read false and
-    // the footer's chevrons/"N / M" readout (PageIndicator._hasMultiplePages)
+    // the footer's chevrons/"N / M" readout (PageIndicator._hasNavigationRange)
     // stayed hidden on entry despite the model plainly having more rows --
     // only the first d-pad move (which grows `itemCount` past a second
     // page) made them appear. A model reporting more rows must always
@@ -1629,6 +1629,40 @@ TestCase {
         verify(findChild(emptyAwareDefaultProbe, "emptyAwareRealCell-real-0") !== null);
         verify(findChild(emptyAwareDefaultProbe, "emptyAwareRealCell-real-1") !== null);
         verify(findChild(emptyAwareDefaultProbe, "emptyAwareRealCell-pad-2") !== null, "isEmpty must fall through to the ordinary delegate when emptyDelegate is null");
+    }
+
+    // Same shape as `emptyAwareProbe`, but created inside the test so the
+    // warning filter below is armed before the delegates instantiate; the
+    // grids declared at TestCase level are built before any test runs.
+    Component {
+        id: facelessDelegateProbe
+        PagedGrid {
+            model: emptyAwareModel
+            delegate: emptyAwareRealDelegate
+            emptyDelegate: emptyAwareEmptyDelegate
+            columnsOverride: 3
+            rowsOverride: 1
+            width: 300
+            height: 100
+        }
+    }
+
+    // Regression: the skeleton Loader mirrors `cardPressed` off the loaded
+    // delegate, and only Tile.qml declares that property. `EmptySlot` (and
+    // the bare Items above) don't, so the read yielded `undefined`, which
+    // QML refused to assign into `property bool cardPressed` -- one
+    // "Unable to assign [undefined] to bool" per blank cell on every boot
+    // (11 for the Hub's padded bootstrap page in a beta tester's log).
+    function test_skeleton_tolerates_a_delegate_without_cardPressed(): void {
+        failOnWarning(/Unable to assign \[undefined\] to bool/);
+        const probe = createTemporaryObject(facelessDelegateProbe, testCase);
+        verify(probe !== null);
+        waitForRendering(probe);
+        verify(findChild(probe, "emptyAwareEmptyCell-pad-2") !== null, "the isEmpty row must still render through emptyDelegate");
+        // `cardPressed` lives on the skeleton's Loader, the loaded card's
+        // parent (a Loader never forwards its properties onto its item).
+        compare(findChild(probe, "pagedGridPlaceholderCard-0").parent.cardPressed, false, "a delegate with no press state reads as unpressed");
+        compare(findChild(probe, "pagedGridPlaceholderCard-2").parent.cardPressed, false, "the blank cell reads as unpressed too");
     }
 
     // Regression: the always-on card-shaped skeleton PagedGrid paints behind

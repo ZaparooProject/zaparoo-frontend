@@ -248,17 +248,22 @@ TestCase {
         // the geometry test above. The knob's own border still separates
         // it from its fill regardless.
 
+        // Focused: the knob fill is the SELECTED ROW's own background, which
+        // is `selectionFill` (the desaturated accent SelectionBar paints), not
+        // the raw accent. That is the whole point of the fill -- it is a hole
+        // cut through the track, so it has to track whatever the row behind it
+        // is actually painted with.
         field.isFocused = true;
         field.checked = true;
         compare(track.color, Theme.onAccent);
-        compare(knob.color, Theme.accent);
+        compare(knob.color, Theme.selectionFill);
         compare(knob.border.color, Theme.onAccent);
         verify(_contrastRatio(knob.color, track.color) >= 3.0);
         verify(_contrastRatio(knob.border.color, knob.color) >= 3.0);
 
         field.checked = false;
         compare(track.color, Theme.onAccentMuted);
-        compare(knob.color, Theme.accent);
+        compare(knob.color, Theme.selectionFill);
         compare(knob.border.color, Theme.onAccent);
         verify(_contrastRatio(knob.color, track.color) >= 3.0);
         verify(_contrastRatio(knob.border.color, knob.color) >= 3.0);

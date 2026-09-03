@@ -199,7 +199,7 @@ embedding the whole application shell.
 
 ```
 ScreenManager.activeScreen:    "hub" | "systems" | "games"
-ScreenManager.modalStack:      list<string>      // top-of-stack receives input
+ScreenManager.modalStack:      list<string>      // top-of-stack receives input; depth 1, only an action_error alert may sit above (docs/style.md -> Modal depth)
 MainLayout.pendingTransition:  "" | "systems" | "games"   // owned by Main.qml
 ```
 

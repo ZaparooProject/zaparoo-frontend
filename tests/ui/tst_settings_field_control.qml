@@ -185,8 +185,8 @@ TestCase {
         Sizing.screenHeight = testCase.height;
     }
 
-    // Same guard as `test_no_settings_description_is_truncated`, but at the
-    // CRT tier: bitmap-quantized fonts (8/16px only, see Sizing.fontSize())
+    // Same guard as `test_no_settings_description_is_truncated`, but on a
+    // 240p CRT: bitmap-quantized fonts (8/16px only, see Sizing.fontSize())
     // and a ~316x216 safe-area canvas (352x240 raw minus Main.qml's 5%/side
     // CRT overscan inset -- see tst_sizing.qml's crtSafeWidth/crtSafeHeight)
     // change both the font metrics and the available width, so passing at
@@ -195,12 +195,12 @@ TestCase {
     // rows reachable through `fields` (see the comment above); `crtEnabled`/
     // `crtVideoStandard`/`crtCalibration` can't be exercised through this
     // screen in a non-MiSTer process.
-    function test_no_settings_description_is_truncated_at_crt_tier(): void {
+    function test_no_settings_description_is_truncated_at_240p_crt(): void {
         Sizing.crtNativePath = true;
         Sizing.bitmapType = true;
         Sizing.screenWidth = 316;
         Sizing.screenHeight = 216;
-        compare(Sizing.tier, "crt");
+        compare(Sizing.tier, "240");
 
         const pages = [screen.pageAppearance, screen.pageDisplayInterface, screen.pageLanguage, screen.pageControlsInput, screen.pageLibraryData, screen.pageSupportAbout];
         const hint = findChild(screen, "settingsHintText");
@@ -214,7 +214,7 @@ TestCase {
                     continue;
                 screen.currentIndex = i;
                 compare(hint.text, fields[i].description);
-                verify(!hint.truncated, "CRT tier " + pages[p] + "." + fields[i].id + ": \"" + fields[i].description + "\" must not elide");
+                verify(!hint.truncated, "240p CRT " + pages[p] + "." + fields[i].id + ": \"" + fields[i].description + "\" must not elide");
                 checked++;
             }
             screen._switchPage(screen.pageRoot);

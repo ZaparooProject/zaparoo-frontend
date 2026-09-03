@@ -617,4 +617,52 @@ TestCase {
             verify(!swatchLabel.truncated, "label '" + labels[i] + "' must not elide when the panel is content-sized");
         }
     }
+    // Panel width is measured through FontMetrics method calls, and the
+    // metrics' own `font.pixelSize` is invalidated by the same tier change
+    // that invalidates the width binding. QML does not order those, so the
+    // width could be computed against the previous tier's type and cached
+    // with nothing left to invalidate it.
+    //
+    // This reproduces the real startup sequence: `Sizing` holds its 640x480
+    // defaults (tier `480`, fontBody 16px) while components are created, and
+    // Main.qml binds the actual scene size afterwards. At the 540 tier the
+    // stale measurement is 16 vs 17px and hides; at 1080 it is 16 vs 28px and
+    // every label in the panel elides.
+    function test_panel_width_follows_a_tier_change_after_creation(): void {
+        Sizing.screenWidth = 640;
+        Sizing.screenHeight = 480;
+        const labels = ["Emulation Station media folders", "Gamelist XML", "Screenscraper"];
+        picker.entries = labels.map((label, index) => ({
+                    id: "entry" + index,
+                    label: label
+                }));
+        picker.open = true;
+        const widthAt480 = picker._desiredPanelWidth;
+        verify(widthAt480 > 0);
+
+        // Tier 480 -> 1080, exactly what the real Sizing binding does once
+        // the scene reports its size. The host grows with it: Main.qml binds
+        // Sizing to the scene, so the two are never out of step in the real
+        // app, and growing only Sizing would cap the panel at the old width
+        // and elide for a reason that has nothing to do with measurement.
+        testCase.width = 1920;
+        testCase.height = 1080;
+        Sizing.screenWidth = 1920;
+        Sizing.screenHeight = 1080;
+
+        verify(picker._desiredPanelWidth > widthAt480, "panel must re-measure against the new tier's type (was " + widthAt480 + ", now " + picker._desiredPanelWidth + ")");
+        for (let i = 0; i < labels.length; ++i) {
+            const row = findChild(picker, "listPickerRow-" + i);
+            verify(row !== null, "row " + i + " must exist");
+            const label = findChild(row, "listPickerRowLabelCentered");
+            verify(label !== null, "row " + i + " must expose its label");
+            verify(!label.truncated, "label '" + labels[i] + "' must not elide after the tier change");
+        }
+
+        picker.open = false;
+        testCase.width = 640;
+        testCase.height = 480;
+        Sizing.screenWidth = testCase.width;
+        Sizing.screenHeight = testCase.height;
+    }
 }

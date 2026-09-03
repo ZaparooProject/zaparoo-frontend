@@ -20,6 +20,7 @@ Item {
     property var layoutProfile: null
 
     property alias detailTitle: detailPane.title
+    property alias detailIdentity: detailPane.identity
     property alias detailCoverKey: detailPane.coverKey
     property alias detailDescription: detailPane.description
     property alias detailShowDescription: detailPane.showDescription
@@ -68,6 +69,7 @@ Item {
         border.width: Sizing.cardBorderWidth
         border.color: Theme.borderMid
         radius: root._cardRadius
+        antialiasing: Sizing.cornerAntialiasing
     }
 
     BrowseList {

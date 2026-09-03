@@ -61,6 +61,11 @@ Item {
     property var contextMenuEnabledAt: null
     property var restoreSelectionPath: null
     property var persistSelectionPath: null
+    // Counterpart to `persistSelectionPath` for screens that debounce their
+    // writes: drop anything already scheduled without committing it. Called
+    // when a model replacement starts, where the grid's index-0 snap is
+    // bookkeeping rather than a real selection -- see `_replacingModel`.
+    property var discardSelectionPersist: null
     property var topStripTitleProvider: null
     property var topStripCurrentPageProvider: null
     property var topStripTotalPagesProvider: null
@@ -135,12 +140,18 @@ Item {
     property bool showTopStrip: true
     property bool activeLabelAtBottom: false
     property bool suppressSelectionPersist: false
+    // True for the duration of `prepareForModelReplacement()`. That call snaps
+    // `currentIndex` to 0 synchronously, which fires `onCurrentIndexChanged` ->
+    // `_persistFocus()` while the model still holds the OUTGOING rows -- so the
+    // path read back is the previous scope's row 0, aimed at the incoming
+    // scope's slot. `suppressSelectionPersist` can't cover this: the router
+    // only sets it once rows have landed, several frames later.
+    property bool _replacingModel: false
     property int gridBottomMargin: Sizing.pctH(15)
     property int activeLabelBottomMargin: 0
     property int activeLabelHeight: Sizing.pctH(7)
     property int bottomStatusLeftMargin: 0
     property int bottomStatusRightMargin: 0
-    property int pageLoadingLeftMargin: 0
     readonly property int _gridViewportWidth: Math.max(1, root.width)
     readonly property int _gridViewportHeight: Math.max(1, root.height - (topStrip.y + topStrip.height) - root.gridBottomMargin)
     readonly property var _gridViewportShape: Sizing.gamesGridShape(root._gridViewportWidth, root._gridViewportHeight)
@@ -186,11 +197,8 @@ Item {
     // BrowseLayouts.qml's `footer.pageCueInFooter`.
     readonly property bool _pageCueInFooter: !!(root._footerProfile && root._footerProfile.pageCueInFooter)
     readonly property bool _showGridPageCue: !root._listLayout && root.renderGridLayout && !root._pageCueInFooter
-    // Round 11: list layout gets the same interactive chevron+"N / M"
-    // PageIndicator grid layout already had, instead of a plain "Page N /
-    // M" text or (on Games) an item-position counter with no chevrons at
-    // all. Sibling to `_showGridPageCue` rather than folded into it so
-    // that property's three existing (grid-only) use sites are untouched.
+    // Detailed lists use the same compact chevron component, but its number
+    // is focused-item/total-items rather than a synthetic page count.
     readonly property bool _showListPageCue: root._listLayout && !root._pageCueInFooter
     // Whichever layout is active, is its page cue hosted in the top strip.
     readonly property bool _showTopPageCue: root._showGridPageCue || root._showListPageCue
@@ -210,14 +218,16 @@ Item {
     readonly property int _listCurrentPage: Math.floor(mediaGrid.currentIndex / root._listVisiblePageSize)
     readonly property bool _listHasPagesAbove: root._listCurrentPage > 0
     readonly property bool _listHasPagesBelow: root._listCurrentPage < root._listTotalPageCount - 1 || root.gridHasMorePages
+    readonly property bool _listHasItemsAbove: mediaGrid.currentIndex > 0
+    readonly property bool _listHasItemsBelow: mediaGrid.currentIndex < root._listTotalItems - 1 || root.gridHasMorePages
     // Round 11: measure the footer's corner occupants (the left count text,
     // the right PageIndicator) instead of reserving a flat third of the
     // screen for each — see SystemsScreen.qml's identical treatment and
     // ActiveLabel.qml's own name/tags measurement for the same idiom.
-    readonly property int _bottomStatusLeftTextWidth: Math.ceil(Math.max(bottomTotalTextMetrics.advanceWidth, bottomTotalTextMetrics.boundingRect.width) + (Theme.crtNativePath ? 0 : Sizing.px(2)))
+    readonly property int _bottomStatusLeftTextWidth: Math.ceil(Math.max(bottomTotalTextMetrics.advanceWidth, bottomTotalTextMetrics.boundingRect.width) + (Sizing.tier === "240" ? 0 : Sizing.px(2)))
     readonly property int _footerLeftInset: root._bottomStatusLeftTextWidth + root.bottomStatusLeftMargin
-    readonly property int _footerRightInset: footerPageIndicator.width + root.bottomStatusRightMargin
-    readonly property bool _crtListStrip: Theme.crtNativePath && root._listLayout
+    readonly property int _resolvedBottomStatusRightMargin: root._footerProfile ? root._footerProfile.bottomStatusRightMargin : root.bottomStatusRightMargin
+    readonly property int _footerRightInset: footerPageIndicator.width + root._resolvedBottomStatusRightMargin
     readonly property int _listOverlayBottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.overlayBottomMargin : Sizing.pctH(15)
     // Hide list/grid content as soon as the model enters Loading, but
     // let ScreenStateOverlay keep delaying the centered cue. Keep the
@@ -237,8 +247,18 @@ Item {
         target: root.mediaModel
 
         function onLoadingChanged(): void {
-            if (root.mediaModel && root.mediaModel.loading)
-                mediaGrid.prepareForModelReplacement();
+            if (!root.mediaModel || !root.mediaModel.loading)
+                return;
+            // Drop any write already scheduled for the outgoing scope's slot
+            // before the index snap can queue another one. Both halves matter:
+            // a debounce armed by the user's last move is still in flight on
+            // the Accept/Cancel paths that don't flush, and the snap itself
+            // would arm a fresh one from stale rows.
+            if (typeof root.discardSelectionPersist === "function")
+                root.discardSelectionPersist();
+            root._replacingModel = true;
+            mediaGrid.prepareForModelReplacement();
+            root._replacingModel = false;
         }
     }
 
@@ -318,6 +338,16 @@ Item {
     function _defaultActiveLabelTags(): string {
         if (mediaGrid.itemCount <= 0 || root.mediaModel === null)
             return "";
+        // Same dependency the text provider needs and for the same reason (see
+        // GamesScreen's `activeLabelTextProvider`): all three lookups below are
+        // #[qinvokable] methods, so a folder swap that replaces rows in place
+        // and lands on the same index with the same count changes nothing this
+        // binding tracks. The name half was fixed and this half was not, which
+        // left the new folder's name rendering beside the old folder's item
+        // count. Guarded because only GamesModel carries a revision counter --
+        // Favorites/Recents and the plain ListModels in tests do not.
+        if (root.mediaModel.rows_revision !== undefined)
+            void root.mediaModel.rows_revision;
         const index = mediaGrid.currentIndex;
         const tags = typeof root.mediaModel.disambiguating_tags_at === "function" ? root.mediaModel.disambiguating_tags_at(index) : "";
         const entryType = typeof root.mediaModel.entry_type_at === "function" ? root.mediaModel.entry_type_at(index) : "media";
@@ -348,19 +378,19 @@ Item {
     function restoreSelection(): void {
         if (root._count() <= 0)
             return;
-        // The model is loaded; the selection is now finalized (either the
-        // saved path below or the default index 0). Let the tiles/rows render.
-        root._restoreDone = true;
         const path = typeof root.restoreSelectionPath === "function" ? (root.restoreSelectionPath() ?? "") : (root.mediaState !== null ? (root.mediaState.selected_path ?? "") : "");
-        if (path === "")
-            return;
-        const idx = root.mediaModel.index_for_path(path);
-        if (idx >= 0 && idx !== mediaGrid.currentIndex)
-            mediaGrid.currentIndex = idx;
+        const idx = path !== "" ? root.mediaModel.index_for_path(path) : -1;
+        // A saved path can disappear or belong to an unloaded/changed scope.
+        // Never leave its old numeric index behind: seat focus on the first
+        // visible item unless the saved item exists in the current model.
+        mediaGrid.setCurrentIndexImmediate(idx >= 0 ? idx : 0);
+        // Selection is finalized; let tiles/rows render focus only after the
+        // valid index above has landed.
+        root._restoreDone = true;
     }
 
     function _persistFocus(): void {
-        if (root.suppressSelectionPersist || root.mediaModel === null)
+        if (root.suppressSelectionPersist || root._replacingModel || root.mediaModel === null)
             return;
         const idx = mediaGrid.currentIndex;
         if (idx < 0)
@@ -597,22 +627,9 @@ Item {
         currentPage: typeof root.topStripCurrentPageProvider === "function" ? root.topStripCurrentPageProvider() : (root._listLayout ? root._listCurrentPage : mediaGrid.currentPage)
         totalPages: typeof root.topStripTotalPagesProvider === "function" ? root.topStripTotalPagesProvider() : (root._listLayout ? root._listTotalPageCount : Math.max(1, Math.ceil(root._count() / mediaGrid.pageSize)))
         pageTotalKnown: root.paginationTotalKnown
-        // List layout keeps each screen's own provider (or the generic
-        // fallback) exactly as before. Grid layout shows the same count
-        // here too now, UNLESS the theme keeps it in the footer instead
-        // (`_pageCueInFooter` -- CRT, whose top strip is hidden entirely
-        // anyway).
-        // Generic fallback must guard on `paginationTotalKnown` same as
-        // `rightTextOverride` below does -- `_count()` is rows-loaded-so-far
-        // for a cursor-paginated model (Recents/Favorites), not a stable
-        // total, and would otherwise grow visibly as the user scrolls.
-        // Screens with a real total (Games/Favorite Systems) supply their
-        // own `topStripTotalTextProvider` and never reach this branch.
-        totalText: (root._listLayout || root._showGridPageCue) ? (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root.paginationTotalKnown && root._count() > 0 ? qsTr("%1 games").arg(root._count()) : "")) : ""
-        // Round 11: list layout now mounts the same interactive
-        // PageIndicator grid layout does (`pageIndicatorMode` below), so a
-        // per-screen provider returning the old "N / M items" position
-        // counter would just never be shown -- those screens dropped it.
+        // Grid layout keeps its total badge. Detailed list layout omits it;
+        // focused-item/total-items on the right already carries the total.
+        totalText: !root._listLayout && root._showGridPageCue ? (typeof root.topStripTotalTextProvider === "function" ? root.topStripTotalTextProvider() : (root.paginationTotalKnown && root._count() > 0 ? qsTr("%1 games").arg(root._count()) : "")) : ""
         // A provider returning something else (GamesScreen's transient
         // "Loading more…" while a background fetch fills in scrolled-past
         // rows) still needs to be seen, though, so `pageIndicatorMode`
@@ -621,10 +638,13 @@ Item {
         rightTextOverride: typeof root.topStripRightTextProvider === "function" ? root.topStripRightTextProvider() : ""
         showPageCounter: root._listLayout || root._showGridPageCue
         pageIndicatorMode: root._showTopPageCue && topStrip.rightTextOverride === ""
+        itemPositionMode: root._listLayout
+        currentItem: mediaGrid.currentIndex
+        totalItems: root._listTotalItems
         pageIndicatorChevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
-        hasPagesAbove: root._listLayout ? root._listHasPagesAbove : mediaGrid.hasPagesAbove
-        hasPagesBelow: root._listLayout ? root._listHasPagesBelow : mediaGrid.hasPagesBelow
-        onPageRequested: delta => root._performPage(delta)
+        hasPagesAbove: root._listLayout ? root._listHasItemsAbove : mediaGrid.hasPagesAbove
+        hasPagesBelow: root._listLayout ? root._listHasItemsBelow : mediaGrid.hasPagesBelow
+        onPageRequested: delta => root._listLayout ? root._performLinearMove(delta) : root._performPage(delta)
     }
 
     BrowseListDetailView {
@@ -638,7 +658,7 @@ Item {
         anchors.top: topStrip.bottom
         anchors.topMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardTopMargin : Sizing.pctH(2)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardBottomMargin : Sizing.pctH(8)
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight + (root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardBottomMargin - Sizing.pctH(6) : Sizing.pctH(2)) : (root._listLayoutProfile && root._listLayoutProfile.list ? root._listLayoutProfile.list.cardBottomMargin : Sizing.pctH(8))
         layoutProfile: root._listLayoutProfile
         model: root.mediaModel
         totalItemsOverride: root.totalItemsOverride
@@ -646,6 +666,7 @@ Item {
         currentIndex: mediaGrid.currentIndex
         focusReady: root._focusReady
         detailTitle: listCard.currentName
+        detailIdentity: focusedDetail.currentIdentity
         // Detail pane is not painted in grid layout. Withholding its source
         // avoids a hidden width-constrained decode competing with visible
         // height-constrained tile covers.
@@ -682,7 +703,7 @@ Item {
         anchors.right: parent.right
         anchors.top: topStrip.bottom
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.gridBottomMargin
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight + root.activeLabelHeight : root.gridBottomMargin
         focused: root.gridFocused
         screenSettling: !root.active
         focusReady: root._focusReady
@@ -741,12 +762,12 @@ Item {
     // now.
     ActiveLabel {
         id: activeLabel
-        visible: !root._gateHide && !root._listLayout && root.renderGridLayout
+        visible: !root._gateHide && !root._listLayout && root.renderGridLayout && !root.pageLoadingVisible
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: root.activeLabelAtBottom ? undefined : mediaGrid.bottom
         anchors.bottom: root.activeLabelAtBottom ? parent.bottom : undefined
-        anchors.bottomMargin: root.activeLabelAtBottom ? root.activeLabelBottomMargin : 0
+        anchors.bottomMargin: root.activeLabelAtBottom ? (Sizing.tier === "240" ? Sizing.helpBarHeight : root.activeLabelBottomMargin) : 0
         height: root.activeLabelHeight
         sideInset: root._pageCueInFooter ? Math.max(root._footerLeftInset, root._footerRightInset) : Sizing.pctW(3)
         text: typeof root.activeLabelTextProvider === "function" ? root.activeLabelTextProvider() : (mediaGrid.itemCount > 0 ? root.mediaModel.name_at(mediaGrid.currentIndex) : "")
@@ -763,15 +784,13 @@ Item {
         font.pixelSize: Sizing.fontSection
     }
 
-    // Round 11: both this and `footerPageIndicator` below used to be
-    // grid-only (`!root._listLayout`). On the CRT profile (`_pageCueInFooter`,
-    // top strip hidden entirely) that left list layout with no page cue
-    // anywhere at all. `bottomStatusLeftText` is already layout-agnostic
-    // content (a screen's own total-count text, e.g. GamesScreen's "%1
-    // games"), so showing it for list layout too needs no new plumbing.
+    // Detailed lists omit this duplicate total; their right-side position cue
+    // already shows focused-item/total-items.
     Text {
         id: bottomTotalText
-        visible: !root._gateHide && root._pageCueInFooter && root.bottomStatusLeftText !== ""
+
+        objectName: "mediaListFooterCount"
+        visible: !root._gateHide && !root._listLayout && root._pageCueInFooter && root.bottomStatusLeftText !== ""
         anchors.left: parent.left
         anchors.leftMargin: root.bottomStatusLeftMargin
         anchors.verticalCenter: activeLabel.verticalCenter
@@ -792,22 +811,36 @@ Item {
         objectName: "mediaListFooterPageIndicator"
         visible: !root._gateHide && root._pageCueInFooter && (root._listLayout || root.renderGridLayout)
         anchors.right: parent.right
-        anchors.rightMargin: root.bottomStatusRightMargin
+        anchors.rightMargin: root._resolvedBottomStatusRightMargin
         anchors.verticalCenter: activeLabel.verticalCenter
         chevronSize: root._gridLayoutProfile && root._gridLayoutProfile.grid ? root._gridLayoutProfile.grid.pageChevronSize : Sizing.pctH(4)
         currentPage: root._listLayout ? root._listCurrentPage : mediaGrid.currentPage
         totalPages: root._listLayout ? root._listTotalPageCount : mediaGrid.totalPageCount
+        itemPositionMode: root._listLayout
+        currentItem: mediaGrid.currentIndex
+        totalItems: root._listTotalItems
         pageTotalKnown: root.paginationTotalKnown
-        hasPagesAbove: root._listLayout ? root._listHasPagesAbove : mediaGrid.hasPagesAbove
-        hasPagesBelow: root._listLayout ? root._listHasPagesBelow : mediaGrid.hasPagesBelow
-        onPageRequested: delta => root._performPage(delta)
+        hasPagesAbove: root._listLayout ? root._listHasItemsAbove : mediaGrid.hasPagesAbove
+        hasPagesBelow: root._listLayout ? root._listHasItemsBelow : mediaGrid.hasPagesBelow
+        onPageRequested: delta => root._listLayout ? root._performLinearMove(delta) : root._performPage(delta)
     }
 
-    LoadingIndicator {
-        visible: !root._gateHide && !root._listLayout && root.pageLoadingVisible
-        anchors.left: activeLabel.left
-        anchors.leftMargin: root.pageLoadingLeftMargin
+    // Pagination loading replaces the focused name instead of painting beside
+    // or over it. The wrapper uses the same symmetric safe slot ActiveLabel
+    // does, keeping the cue clear of count and page chrome.
+    Item {
+        visible: !root._gateHide && root.pageLoadingVisible
+        anchors.left: parent.left
+        anchors.leftMargin: activeLabel.sideInset
+        anchors.right: parent.right
+        anchors.rightMargin: activeLabel.sideInset
         anchors.verticalCenter: activeLabel.verticalCenter
+        height: activeLabel.height
+        clip: true
+
+        LoadingIndicator {
+            anchors.centerIn: parent
+        }
     }
 
     // Frozen rapid-navigation presentation. The live grid is hidden while this

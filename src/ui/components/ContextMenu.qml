@@ -35,7 +35,7 @@ Item {
     // dynamic per-owner menus silently re-shuffled the index/action map.
     property var entries: []
     property int currentIndex: 0
-    property int bottomUnsafeHeight: Sizing.pctH(6) + Sizing.pctH(2)
+    property int bottomUnsafeHeight: Sizing.helpBarClearance
 
     property int _activatePulse: 0
     property string _pendingId: ""
@@ -348,6 +348,7 @@ Item {
         height: menu.panelHeight
         color: Theme.bgPanel
         radius: menu.panelRadius
+        antialiasing: Sizing.cornerAntialiasing
         // Safety net for a menu taller than the space the anchor leaves:
         // rows past `panelHeight` are cut off cleanly instead of painting
         // past the panel's rounded corners. A menu that fits never reaches

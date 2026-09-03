@@ -443,7 +443,7 @@ Item {
             anchors.margins: root._outlineGap
             color: Theme.accent
             radius: Math.max(0, root._tileCornerRadius - root._outlineGap)
-            antialiasing: true
+            antialiasing: Sizing.cornerAntialiasing
             visible: root._focusedSelection
         }
 
@@ -457,7 +457,7 @@ Item {
             // outer radius) collapse to a sharp inner mask rather than
             // negative-radius garbage.
             radius: Math.max(0, focusRingOuter.radius - root._outlineWidth)
-            antialiasing: true
+            antialiasing: Sizing.cornerAntialiasing
             visible: root._focusedSelection
         }
 

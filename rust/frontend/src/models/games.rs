@@ -40,7 +40,8 @@ use crate::media_meta_cache::{
 use crate::models::action_error::report_action_error;
 use crate::models::nav_timing::NavTiming;
 use crate::models::tag_utils::{
-    disambiguating_tag_labels, sibling_disambiguation_displays, tag_display_value,
+    disambiguating_tag_labels, favorite_tags_after_toggle, is_favorite_tag,
+    sibling_disambiguation_displays, tag_display_value,
 };
 use crate::models::{global_handle, global_store};
 use cxx_qt::{CxxQtType, Threading};
@@ -63,6 +64,7 @@ use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::media_types::{
     merged_root_view, BrowseEntry, MediaBrowseIndexParams, MediaBrowseParams, MediaBrowseResult,
     MediaMeta, MediaMetaParams, MediaTagsUpdateParams, ReadersWriteParams, RunParams, TagInfo,
+    CORE_SERVEABLE_IMAGE_TYPES,
 };
 use zaparoo_core::platform::{self, Platform};
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -99,20 +101,6 @@ const IS_EMPTY_ROLE: i32 = 256 + 13;
 // PagedGrid's `cellItem.disabled` delegate contract (round 11 follow-up —
 // see PagedGrid.qml) is satisfied by direct QAbstractListModel callers.
 const DISABLED_ROLE: i32 = 256 + 14;
-
-// Image types that Core's `media.image` endpoint can serve (per the API
-// docs). The carousel tail is filtered to this set so left/right never
-// lands on a type that would always return "no image".
-const CORE_SERVEABLE_IMAGE_TYPES: &[&str] = &[
-    "image",
-    "boxart",
-    "screenshot",
-    "wheel",
-    "titleshot",
-    "map",
-    "marquee",
-    "fanart",
-];
 
 // Default API page size before QML binds the model's `page_size` to the
 // grid's `pageSize`. 15 = 5 columns × 3 rows, the desktop default. The
@@ -315,6 +303,16 @@ pub struct GamesModelRust {
     // user requests another pick before prior RPC settles.
     random_error: QString,
     random_seq: Arc<AtomicU64>,
+    // "Add to Hub" on a single-game folder resolves the folder's child file
+    // off the Qt thread (`resolve_hub_target_at`) and publishes it here.
+    // `hub_target_sequence` is written last so QML adds the item on that
+    // edge; `hub_target_seq` drops a resolution overtaken by a newer press.
+    hub_target_system: QString,
+    hub_target_path: QString,
+    hub_target_script: QString,
+    hub_target_name: QString,
+    hub_target_sequence: i32,
+    hub_target_seq: Arc<AtomicU64>,
 }
 
 impl Default for GamesModelRust {
@@ -370,6 +368,12 @@ impl Default for GamesModelRust {
             letter_index_seq: Arc::new(AtomicU64::new(0)),
             random_error: QString::default(),
             random_seq: Arc::new(AtomicU64::new(0)),
+            hub_target_system: QString::default(),
+            hub_target_path: QString::default(),
+            hub_target_script: QString::default(),
+            hub_target_name: QString::default(),
+            hub_target_sequence: 0,
+            hub_target_seq: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -428,6 +432,11 @@ pub mod ffi {
         #[qproperty(QString, letter_index_json)]
         #[qproperty(QString, letter_index_scheme)]
         #[qproperty(QString, random_error)]
+        #[qproperty(QString, hub_target_system)]
+        #[qproperty(QString, hub_target_path)]
+        #[qproperty(QString, hub_target_script)]
+        #[qproperty(QString, hub_target_name)]
+        #[qproperty(i32, hub_target_sequence)]
         type GamesModel = super::GamesModelRust;
 
         #[qinvokable]
@@ -471,6 +480,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn launch_at(self: Pin<&mut GamesModel>, index: i32);
+
+        #[qinvokable]
+        fn resolve_hub_target_at(self: Pin<&mut GamesModel>, index: i32);
 
         #[qinvokable]
         fn launch_text_at(self: &GamesModel, index: i32) -> QString;
@@ -535,6 +547,14 @@ pub mod ffi {
 
         #[qinvokable]
         fn is_media_capable_at(self: &GamesModel, index: i32) -> bool;
+
+        /// True when the row at `index` is a `root` addressing a real
+        /// filesystem folder, as opposed to a virtual-scheme route. Gates the
+        /// games context menu's "Add to Hub" on root rows — see
+        /// `is_filesystem_root_entry` for why roots were refused outright
+        /// before, and why scheme routes still are.
+        #[qinvokable]
+        fn is_filesystem_root_at(self: &GamesModel, index: i32) -> bool;
 
         #[qinvokable]
         fn index_for_game_path(self: &GamesModel, path: &QString) -> i32;
@@ -1001,6 +1021,77 @@ impl ffi::GamesModel {
         });
     }
 
+    /// "Add to Hub" on a single-game folder (a media-capable directory).
+    /// The Hub tile must carry the child file, not the container: a
+    /// `zapscript` item launches `script` verbatim and resolves its cover
+    /// by `(system, path)`, and `launch_at` already refuses to run a
+    /// container path. The child is resolved exactly as a launch resolves
+    /// it, off the Qt thread, then published through `hub_target_*` with
+    /// `hub_target_sequence` written last so QML adds the item on that edge
+    /// (`Main.qml`'s `onHub_target_sequenceChanged`). Plain media rows never
+    /// come here; QML pins those synchronously from `launch_text_at`.
+    ///
+    /// No container-path fallback, unlike `launch_at`: a launch that falls
+    /// back fails loudly once, but a Hub tile is persisted, so pinning the
+    /// folder path would bake in a shortcut that can never launch.
+    fn resolve_hub_target_at(self: Pin<&mut Self>, index: i32) {
+        if index < 0 || index >= self.count {
+            return;
+        }
+        let entry = self.entries[index as usize].clone();
+        if !media_capable_directory_needs_child_resolution(&entry) {
+            return;
+        }
+        let params = singleton_directory_needs_launch_resolution(&entry)
+            .then(|| meta_params_for_entry(&entry))
+            .flatten();
+        let browse_params = media_capable_directory_browse_params(&entry);
+        let name = entry.name.clone();
+        let system_id = hub_target_system_id(&entry, &self.current_system_id.to_string());
+        // A second press before the first resolves must not pin the tile
+        // twice. A scope change in between is fine: the child belongs to
+        // the folder the user chose, wherever they have browsed to since.
+        let seq = self.rust().hub_target_seq.clone();
+        let ticket = seq.fetch_add(1, Ordering::SeqCst) + 1;
+        let qt_thread = self.qt_thread();
+        let store = global_store();
+        global_handle().spawn(async move {
+            let client = store.client();
+            let resolved = resolve_media_capable_directory_run_text(
+                client.as_ref(),
+                &entry,
+                params,
+                browse_params,
+                None,
+            )
+            .await;
+            let Some(child) = resolved else {
+                warn!("no launchable child resolved for {name}; not adding the container path to the Hub");
+                report_action_error("add_to_hub", name);
+                return;
+            };
+            let _ = qt_thread.queue(move |mut model| {
+                if seq.load(Ordering::SeqCst) != ticket {
+                    return;
+                }
+                model
+                    .as_mut()
+                    .set_hub_target_system(QString::from(system_id.as_str()));
+                model
+                    .as_mut()
+                    .set_hub_target_path(QString::from(child.as_str()));
+                model
+                    .as_mut()
+                    .set_hub_target_script(QString::from(child.as_str()));
+                model
+                    .as_mut()
+                    .set_hub_target_name(QString::from(name.as_str()));
+                let next = model.hub_target_sequence.wrapping_add(1);
+                model.as_mut().set_hub_target_sequence(next);
+            });
+        });
+    }
+
     fn launch_text_at(&self, index: i32) -> QString {
         if index < 0 || index >= self.count {
             return QString::default();
@@ -1115,7 +1206,7 @@ impl ffi::GamesModel {
         });
     }
 
-    fn toggle_favorite_at(self: Pin<&mut Self>, index: i32) {
+    fn toggle_favorite_at(mut self: Pin<&mut Self>, index: i32) {
         if index < 0 || index >= self.count {
             return;
         }
@@ -1123,7 +1214,8 @@ impl ffi::GamesModel {
         if !is_media_capable_entry(entry) {
             return;
         }
-        let Some(params) = favorite_params_for_entry(entry, !has_favorite_tag(&entry.tags)) else {
+        let want_favorite = !has_favorite_tag(&entry.tags);
+        let Some(params) = favorite_params_for_entry(entry, want_favorite) else {
             warn!(
                 "favorite update skipped: missing media identity for {}",
                 entry.name
@@ -1135,6 +1227,28 @@ impl ffi::GamesModel {
         let media_id = entry.media_id;
         let system_id = entry_system_id(entry);
         let path = entry.path.clone();
+        let previous_tags = entry.tags.clone();
+
+        // Paint the heart now, reconcile with Core's answer later.
+        //
+        // A favorite toggle is a one-bit local edit the user has already
+        // decided on; making them watch a WebSocket round-trip (plus Core's
+        // own DB write) before the tile changes is what made this read as
+        // sluggish. `apply_favorite_tags` is reused verbatim so the
+        // optimistic write goes through the same identity re-check and the
+        // same `dataChanged(FAVORITE_ROLE)` emit as the authoritative one.
+        //
+        // Deliberately skipped when the flip would REMOVE the row (see
+        // `apply_favorite_tags`'s `favorites_only` branch): reverting a
+        // removal needs a re-insert at the original index, and a wrong
+        // optimistic removal is worse than a slow correct one. That path
+        // keeps waiting for Core.
+        let optimistic = !self.favorites_only || want_favorite;
+        if optimistic {
+            let next_tags = favorite_tags_after_toggle(&previous_tags, want_favorite);
+            apply_favorite_tags(self.as_mut(), index, media_id, &system_id, &path, next_tags);
+        }
+
         let store = global_store();
         let qt_thread = self.qt_thread();
         global_handle().spawn(async move {
@@ -1153,6 +1267,20 @@ impl ffi::GamesModel {
                 }
                 Err(e) => {
                     warn!("favorite update failed for {name}: {}", e.message);
+                    if optimistic {
+                        // Put the row back the way the user found it. The
+                        // action-error alert below explains why.
+                        let _ = qt_thread.queue(move |mut model| {
+                            apply_favorite_tags(
+                                model.as_mut(),
+                                index,
+                                media_id,
+                                &system_id,
+                                &path,
+                                previous_tags,
+                            );
+                        });
+                    }
                     report_action_error("favorite", name);
                 }
             }
@@ -1483,6 +1611,13 @@ impl ffi::GamesModel {
         is_media_capable_entry(&self.entries[index as usize])
     }
 
+    fn is_filesystem_root_at(&self, index: i32) -> bool {
+        if index < 0 || index >= self.count {
+            return false;
+        }
+        is_filesystem_root_entry(&self.entries[index as usize])
+    }
+
     fn index_for_game_path(&self, path: &QString) -> i32 {
         position_of_game_path(&self.entries, &path.to_string())
     }
@@ -1659,6 +1794,39 @@ fn entry_system_id(entry: &BrowseEntry) -> String {
         return entry.system_id.clone();
     }
     entry.system_ids.first().cloned().unwrap_or_default()
+}
+
+/// System hint for a Hub tile pinned from a games row: the row's own system
+/// when Core reported one, else the system being browsed (what the
+/// synchronous "Add to Hub" branches in `Main.qml` use). A `zapscript` tile
+/// with no system can only fall back to a generic icon.
+fn hub_target_system_id(entry: &BrowseEntry, current_system_id: &str) -> String {
+    let own = entry_system_id(entry);
+    if !own.trim().is_empty() {
+        return own;
+    }
+    current_system_id.to_string()
+}
+
+/// A `root` row that addresses a real filesystem folder — one of a system's
+/// configured game directories, the shape Core returns when it hasn't merged
+/// them (`rootView: "contents"` needs a Core new enough, an empty path, and
+/// exactly one system; see `merged_root_view`).
+///
+/// Exists so the games context menu can offer "Add to Hub" on those rows. It
+/// used to refuse every `root`, on the stated grounds that they were a
+/// `..`/scope pseudo-entry — but nothing synthesizes such a row; Back is the
+/// cancel button, not a list entry. Every `root` here is a real, browsable
+/// Core route, and refusing them is why a system with several game folders
+/// could not have those folders pinned.
+///
+/// Virtual-scheme routes are deliberately excluded. Core never merges them
+/// (`MiSTer` Arcade's `mame-arcade://` is the in-tree example) and they are
+/// still prepended to merged listings, but a Hub `folder` tile is addressed
+/// by filesystem path — pointing one at a scheme URL is untried, and the
+/// reported gap was about real directories.
+fn is_filesystem_root_entry(entry: &BrowseEntry) -> bool {
+    entry.entry_type == "root" && !entry.path.is_empty() && !entry.path.contains("://")
 }
 
 fn is_media_capable_entry(entry: &BrowseEntry) -> bool {
@@ -2574,8 +2742,7 @@ fn prefetch_cursor_window(model: &ffi::GamesModel, index: i32) {
 }
 
 fn has_favorite_tag(tags: &[TagInfo]) -> bool {
-    tags.iter()
-        .any(|tag| tag.tag_type == "user" && tag.tag == "favorite")
+    tags.iter().any(is_favorite_tag)
 }
 
 fn favorite_role_value(tags: &[TagInfo]) -> i32 {
@@ -3735,13 +3902,15 @@ mod tests {
         cover_key_for_with, cover_placeholder_for, decide_initial, dedup_roots_drop_ancestors,
         detail_cover_key_for_entry, detail_image_keys_from_meta, detail_tags_from_tags,
         display_name, display_title_for_entry, entry_system_id, favorites_tags,
-        games_random_launch_text, initial_row_replacement, is_media_capable_entry,
-        is_strict_ancestor_path, jump_fetch_limit, media_capable_directory_browse_params,
-        media_key_for, meta_cache_key_for_entry, meta_params_for_entry, ordered_detail_image_keys,
-        position_of_game_path, prefetch_around_plan, prefetch_cursor_window_plan, project_status,
-        result_total_dirs, root_distinguishers, run_text_for_entry,
-        seeded_refetch_pagination_state, singleton_directory_needs_launch_resolution,
-        transform_entries, InitialAction, InitialRowReplacement, Projection,
+        games_random_launch_text, hub_target_system_id, initial_row_replacement,
+        is_filesystem_root_entry, is_media_capable_entry, is_strict_ancestor_path,
+        jump_fetch_limit, media_capable_directory_browse_params,
+        media_capable_directory_needs_child_resolution, media_key_for, meta_cache_key_for_entry,
+        meta_params_for_entry, ordered_detail_image_keys, position_of_game_path,
+        prefetch_around_plan, prefetch_cursor_window_plan, project_status, result_total_dirs,
+        root_distinguishers, run_text_for_entry, seeded_refetch_pagination_state,
+        singleton_directory_needs_launch_resolution, transform_entries, InitialAction,
+        InitialRowReplacement, Projection,
     };
     use super::{FETCH_MORE_RAPID_CHUNK_SIZE, JUMP_FETCH_CHUNK_SIZE};
     use crate::media_image_cache::{MediaImageCache, MediaKey};
@@ -4195,6 +4364,41 @@ mod tests {
         assert_eq!(display_title_for_entry(&entry).as_ref(), "D (Disc 2)");
     }
 
+    /// The games context menu refused every `root` row, so a system with
+    /// several configured game folders had no way to pin any of them. The
+    /// stated reason was that roots were a `..`/scope pseudo-entry; nothing
+    /// creates such a row. These pin down which roots are now eligible.
+    #[test]
+    fn filesystem_roots_are_pinnable_but_scheme_routes_are_not() {
+        assert!(is_filesystem_root_entry(&root(
+            "MS-DOS",
+            "/media/fat/games/AO486",
+            "MSDOS"
+        )));
+        assert!(is_filesystem_root_entry(&root(
+            "MS-DOS",
+            "/media/fat/games/_DOS Games",
+            "MSDOS"
+        )));
+        // Virtual-scheme routes: Core never merges these and they are still
+        // prepended to a merged listing, but a Hub folder tile is addressed
+        // by filesystem path, so there is nothing to pin.
+        assert!(!is_filesystem_root_entry(&root(
+            "Arcade",
+            "mame-arcade://",
+            "Arcade"
+        )));
+        // An empty path is the shape `dedup_roots_drop_ancestors` already
+        // guards against; it addresses nothing.
+        assert!(!is_filesystem_root_entry(&root("Empty", "", "NES")));
+        // Only `root` rows -- a directory takes the existing branch, and a
+        // media row is never a folder.
+        assert!(!is_filesystem_root_entry(&folder(
+            "Sub",
+            "/media/fat/games/NES/Sub"
+        )));
+    }
+
     #[test]
     fn display_name_strips_single_leading_underscore_on_mister() {
         assert_eq!(
@@ -4548,6 +4752,23 @@ mod tests {
         let key = media_key_for(&media("smb", "/p/smb", "NES")).expect("ok");
         assert_eq!(key.system_id.as_ref(), "NES");
         assert_eq!(key.path.as_ref(), "/p/smb");
+    }
+
+    #[test]
+    fn hub_target_system_id_prefers_the_row_then_the_browsed_system() {
+        let mut entry = BrowseEntry {
+            media_id: Some(7),
+            name: "Game".into(),
+            path: "/roms/PSX/Game".into(),
+            entry_type: "directory".into(),
+            ..BrowseEntry::default()
+        };
+        assert_eq!(hub_target_system_id(&entry, "PSX"), "PSX");
+        entry.system_ids = vec!["SNES".into()];
+        assert_eq!(hub_target_system_id(&entry, "PSX"), "SNES");
+        entry.system_id = "PSXJP".into();
+        assert_eq!(hub_target_system_id(&entry, "PSX"), "PSXJP");
+        assert!(media_capable_directory_needs_child_resolution(&entry));
     }
 
     #[test]

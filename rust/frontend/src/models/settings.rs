@@ -24,6 +24,9 @@
 //     override.
 //   * `current_clock_format` — READ + NOTIFY, persisted. Defaults to
 //     `auto` so existing installs keep locale-driven behavior.
+//   * `available_interface_profiles` / `current_interface_profile` —
+//     persisted layout-density preference. `device` follows the build's
+//     configured default; explicit `standard`/`handheld` choices override it.
 //   * `available_orientations` — CONSTANT. Three display transforms:
 //     horizontal (default), rotated clockwise, rotated counter-clockwise.
 //   * `current_orientation` — READ + NOTIFY, persisted. Applied live by
@@ -50,6 +53,12 @@
 //   * `available_color_schemes` / `current_color_scheme` — curated live color
 //     presets. Missing and unknown values normalize to "zaparoo-dark"; the
 //     setting is mirrored into state.toml and frontend.toml.
+//   * `available_color_intensities` / `current_color_intensity` — how much of
+//     the preset's accent reaches resting chrome and surfaces: "subtle" (the
+//     shipped look, and the default so no existing install shifts) or "vivid".
+//     Focus, selection, the favorite marker and the logo ramps are unaffected
+//     at either value — see `ColorSchemes.qml`'s `_intensities` for why the
+//     line is drawn there. Applies live, same as the preset above.
 //   * `available_button_layouts` — CONSTANT. `auto` plus the neutral style
 //     ids used to compose resources/images/buttons/<id>/*.svg:
 //     `style_a`/`style_b`/`style_c`/`style_d`/`style_e`. User-facing labels
@@ -154,6 +163,8 @@ const CLOCK_FORMATS: &[&str] = &["auto", "12h", "24h"];
 const DEFAULT_CLOCK_FORMAT: &str = "auto";
 const REGIONS: &[&str] = &["auto", "us", "eu", "jp"];
 const DEFAULT_REGION: &str = "auto";
+const INTERFACE_PROFILES: &[&str] = &["device", "standard", "handheld"];
+const DEFAULT_INTERFACE_PROFILE: &str = "device";
 const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
 const DEFAULT_ORIENTATION: &str = "horizontal";
 const BROWSE_LAYOUTS: &[&str] = &["grid", "list"];
@@ -188,6 +199,19 @@ const COLOR_SCHEMES: &[&str] = &[
     "solarized-light",
 ];
 const DEFAULT_COLOR_SCHEME: &str = "zaparoo-dark";
+
+/// How much of the preset's accent shows in resting chrome and surfaces.
+/// Ambient accent only — focus, selection, the favorite marker and the logo
+/// ramps are fixed at either value. See `ColorSchemes.qml`'s `_intensities`
+/// for the exact boundary and the reasoning behind it.
+const COLOR_INTENSITIES: &[&str] = &["subtle", "vivid"];
+/// The shipped look, so adding this setting changes no existing install.
+const DEFAULT_COLOR_INTENSITY: &str = "subtle";
+
+/// Core ships `gamelist.xml` in-tree and it supports every system, so it is
+/// the fallback when nothing has been chosen. Not a curated list — see
+/// `normalize_metadata_scraper`.
+const DEFAULT_METADATA_SCRAPER: &str = "gamelist.xml";
 // "auto" detects the connected controller via Browse.ControllerReport and
 // picks the style id at runtime; a fixed id pins the artwork. "auto" leads
 // so it's the default; "style_e" is a style too, auto-selected when the
@@ -244,6 +268,8 @@ pub struct SettingsRust {
     current_language: QString,
     available_clock_formats: QStringList,
     current_clock_format: QString,
+    available_interface_profiles: QStringList,
+    current_interface_profile: QString,
     available_orientations: QStringList,
     current_orientation: QString,
     available_browse_layouts: QStringList,
@@ -254,6 +280,9 @@ pub struct SettingsRust {
     current_system_logo_style: QString,
     available_color_schemes: QStringList,
     current_color_scheme: QString,
+    available_color_intensities: QStringList,
+    current_color_intensity: QString,
+    current_metadata_scraper: QString,
     available_button_layouts: QStringList,
     current_button_layout: QString,
     current_mouse_enabled: bool,
@@ -294,6 +323,8 @@ pub mod ffi {
         #[qproperty(QString, current_language, READ, WRITE = set_language, NOTIFY)]
         #[qproperty(QStringList, available_clock_formats, READ, CONSTANT)]
         #[qproperty(QString, current_clock_format, READ, WRITE = set_clock_format, NOTIFY)]
+        #[qproperty(QStringList, available_interface_profiles, READ, CONSTANT)]
+        #[qproperty(QString, current_interface_profile, READ, WRITE = set_interface_profile, NOTIFY)]
         #[qproperty(QStringList, available_orientations, READ, CONSTANT)]
         #[qproperty(QString, current_orientation, READ, WRITE = set_orientation, NOTIFY)]
         #[qproperty(QStringList, available_browse_layouts, READ, CONSTANT)]
@@ -304,6 +335,9 @@ pub mod ffi {
         #[qproperty(QString, current_system_logo_style, READ, WRITE = set_system_logo_style, NOTIFY)]
         #[qproperty(QStringList, available_color_schemes, READ, CONSTANT)]
         #[qproperty(QString, current_color_scheme, READ, WRITE = set_color_scheme, NOTIFY)]
+        #[qproperty(QStringList, available_color_intensities, READ, CONSTANT)]
+        #[qproperty(QString, current_color_intensity, READ, WRITE = set_color_intensity, NOTIFY)]
+        #[qproperty(QString, current_metadata_scraper, READ, WRITE = set_metadata_scraper, NOTIFY)]
         #[qproperty(QStringList, available_button_layouts, READ, CONSTANT)]
         #[qproperty(QString, current_button_layout, READ, WRITE = set_button_layout, NOTIFY)]
         #[qproperty(bool, current_mouse_enabled, READ, WRITE = set_mouse_enabled, NOTIFY)]
@@ -343,6 +377,9 @@ pub mod ffi {
         fn set_clock_format(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
+        fn set_interface_profile(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
         fn set_orientation(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
@@ -359,6 +396,12 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_color_scheme(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_color_intensity(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_metadata_scraper(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_button_layout(self: Pin<&mut Settings>, value: QString);
@@ -428,6 +471,9 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().current_language = QString::from(merged.language.as_str());
         self.as_mut().rust_mut().available_clock_formats = clock_formats();
         self.as_mut().rust_mut().current_clock_format = QString::from(merged.clock_format.as_str());
+        self.as_mut().rust_mut().available_interface_profiles = interface_profiles();
+        self.as_mut().rust_mut().current_interface_profile =
+            QString::from(merged.interface_profile.as_str());
         self.as_mut().rust_mut().available_orientations = orientations();
         self.as_mut().rust_mut().current_orientation = QString::from(merged.orientation.as_str());
         self.as_mut().rust_mut().available_browse_layouts = browse_layouts();
@@ -442,6 +488,11 @@ impl Initialize for ffi::Settings {
             QString::from(merged.system_logo_style.as_str());
         self.as_mut().rust_mut().available_color_schemes = color_schemes();
         self.as_mut().rust_mut().current_color_scheme = QString::from(merged.color_scheme.as_str());
+        self.as_mut().rust_mut().available_color_intensities = color_intensities();
+        self.as_mut().rust_mut().current_color_intensity =
+            QString::from(merged.color_intensity.as_str());
+        self.as_mut().rust_mut().current_metadata_scraper =
+            QString::from(merged.metadata_scraper.as_str());
         self.as_mut().rust_mut().available_button_layouts = button_layouts();
         self.as_mut().rust_mut().current_button_layout =
             QString::from(merged.button_layout.as_str());
@@ -563,6 +614,21 @@ impl ffi::Settings {
         clippy::needless_pass_by_value,
         reason = "cxx-qt qinvokable signature requires QString by value"
     )]
+    fn set_interface_profile(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_interface_profile(&value.to_string()).to_string();
+        if self.current_interface_profile.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.interface_profile.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_interface_profile = QString::from(value_str.as_str());
+        self.as_mut().current_interface_profile_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
     fn set_orientation(mut self: Pin<&mut Self>, value: QString) {
         let value_str = normalize_orientation(&value.to_string()).to_string();
         if self.current_orientation.to_string() == value_str {
@@ -647,6 +713,36 @@ impl ffi::Settings {
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
         self.as_mut().rust_mut().current_color_scheme = QString::from(value_str.as_str());
         self.as_mut().current_color_scheme_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_color_intensity(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_color_intensity(&value.to_string()).to_string();
+        if self.current_color_intensity.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.color_intensity.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_color_intensity = QString::from(value_str.as_str());
+        self.as_mut().current_color_intensity_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_metadata_scraper(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_metadata_scraper(&value.to_string());
+        if self.current_metadata_scraper.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.metadata_scraper.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_metadata_scraper = QString::from(value_str.as_str());
+        self.as_mut().current_metadata_scraper_changed();
     }
 
     #[allow(
@@ -811,12 +907,15 @@ fn save_settings_to_config(
         SettingsMirror {
             resolution: settings.resolution.as_str(),
             language: settings.language.as_str(),
+            interface_profile: settings.interface_profile.as_str(),
             orientation: settings.orientation.as_str(),
             clock_format: settings.clock_format.as_str(),
             systems_browse_layout: settings.systems_browse_layout.as_str(),
             games_browse_layout: settings.games_browse_layout.as_str(),
             system_logo_style: settings.system_logo_style.as_str(),
             color_scheme: settings.color_scheme.as_str(),
+            color_intensity: settings.color_intensity.as_str(),
+            metadata_scraper: settings.metadata_scraper.as_str(),
             button_layout: settings.button_layout.as_str(),
             mouse_enabled: settings.mouse_enabled,
             reduce_motion: settings.reduce_motion,
@@ -904,6 +1003,14 @@ fn merge_settings(
     SettingsState {
         resolution: configured_resolution,
         language: normalize_language(&config.language).to_string(),
+        interface_profile: normalize_interface_profile(
+            config
+                .settings
+                .interface_profile
+                .as_deref()
+                .unwrap_or(snapshot.interface_profile.as_str()),
+        )
+        .to_string(),
         orientation: normalize_orientation(
             config
                 .settings
@@ -967,6 +1074,21 @@ fn merge_settings(
                 .unwrap_or(snapshot.color_scheme.as_str()),
         )
         .to_string(),
+        color_intensity: normalize_color_intensity(
+            config
+                .settings
+                .color_intensity
+                .as_deref()
+                .unwrap_or(snapshot.color_intensity.as_str()),
+        )
+        .to_string(),
+        metadata_scraper: normalize_metadata_scraper(
+            config
+                .settings
+                .metadata_scraper
+                .as_deref()
+                .unwrap_or(snapshot.metadata_scraper.as_str()),
+        ),
         button_layout: normalize_button_layout(
             config
                 .settings
@@ -1047,6 +1169,14 @@ fn color_schemes() -> QStringList {
     list
 }
 
+fn color_intensities() -> QStringList {
+    let mut list = QStringList::default();
+    for intensity in COLOR_INTENSITIES {
+        list.append(QString::from(*intensity));
+    }
+    list
+}
+
 fn button_layouts() -> QStringList {
     let mut list = QStringList::default();
     for layout in BUTTON_LAYOUTS {
@@ -1067,6 +1197,14 @@ fn browse_layouts() -> QStringList {
     let mut list = QStringList::default();
     for layout in BROWSE_LAYOUTS {
         list.append(QString::from(*layout));
+    }
+    list
+}
+
+fn interface_profiles() -> QStringList {
+    let mut list = QStringList::default();
+    for profile in INTERFACE_PROFILES {
+        list.append(QString::from(*profile));
     }
     list
 }
@@ -1150,6 +1288,15 @@ fn normalize_clock_format(value: &str) -> &'static str {
         .unwrap_or(DEFAULT_CLOCK_FORMAT)
 }
 
+fn normalize_interface_profile(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    INTERFACE_PROFILES
+        .iter()
+        .copied()
+        .find(|profile| *profile == trimmed)
+        .unwrap_or(DEFAULT_INTERFACE_PROFILE)
+}
+
 fn normalize_orientation(value: &str) -> &'static str {
     let trimmed = value.trim();
     ORIENTATIONS
@@ -1193,6 +1340,29 @@ fn normalize_color_scheme(value: &str) -> &'static str {
         .copied()
         .find(|scheme| *scheme == trimmed)
         .unwrap_or(DEFAULT_COLOR_SCHEME)
+}
+
+fn normalize_color_intensity(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    COLOR_INTENSITIES
+        .iter()
+        .copied()
+        .find(|intensity| *intensity == trimmed)
+        .unwrap_or(DEFAULT_COLOR_INTENSITY)
+}
+
+/// Unlike every other normalizer here this cannot check membership: Core
+/// reports its scrapers at runtime (`scrapers` RPC), so the valid set isn't
+/// known to this build. Trim and fall back only when empty; a stale id is
+/// reconciled in `ScrapeSetupModal` against `MediaStatus.scraper_ids`, which
+/// is the only place the real list exists.
+fn normalize_metadata_scraper(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        DEFAULT_METADATA_SCRAPER.to_owned()
+    } else {
+        trimmed.to_owned()
+    }
 }
 
 fn normalize_screensaver_timeout(value: &str) -> &'static str {
@@ -1259,14 +1429,16 @@ fn normalize_button_layout(value: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        browse_layouts, button_layouts, clock_formats, color_schemes, curated_resolutions,
-        languages, normalize_browse_layout, normalize_button_layout, normalize_clock_format,
-        normalize_color_scheme, normalize_favorites_grouping, normalize_language,
-        normalize_orientation, normalize_region, normalize_system_logo_style, orientations,
-        regions, system_logo_styles, BROWSE_LAYOUTS, BUTTON_LAYOUTS, CLOCK_FORMATS, COLOR_SCHEMES,
-        DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT, DEFAULT_COLOR_SCHEME,
-        DEFAULT_LANGUAGE, DEFAULT_ORIENTATION, DEFAULT_REGION, DEFAULT_SYSTEM_LOGO_STYLE,
-        ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
+        browse_layouts, button_layouts, clock_formats, color_intensities, color_schemes,
+        curated_resolutions, interface_profiles, languages, normalize_browse_layout,
+        normalize_button_layout, normalize_clock_format, normalize_color_intensity,
+        normalize_color_scheme, normalize_favorites_grouping, normalize_interface_profile,
+        normalize_language, normalize_metadata_scraper, normalize_orientation, normalize_region,
+        normalize_system_logo_style, orientations, regions, system_logo_styles, BROWSE_LAYOUTS,
+        BUTTON_LAYOUTS, CLOCK_FORMATS, COLOR_SCHEMES, DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT,
+        DEFAULT_CLOCK_FORMAT, DEFAULT_COLOR_INTENSITY, DEFAULT_COLOR_SCHEME, DEFAULT_LANGUAGE,
+        DEFAULT_METADATA_SCRAPER, DEFAULT_ORIENTATION, DEFAULT_REGION, DEFAULT_SYSTEM_LOGO_STYLE,
+        INTERFACE_PROFILES, ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
     };
 
     #[test]
@@ -1378,6 +1550,35 @@ mod tests {
     }
 
     #[test]
+    fn color_intensities_are_exactly_subtle_and_vivid() {
+        let collected: Vec<String> = color_intensities().iter().map(String::from).collect();
+        assert_eq!(collected, vec!["subtle".to_string(), "vivid".to_string()]);
+        assert_eq!(normalize_color_intensity(" vivid "), "vivid");
+        assert_eq!(normalize_color_intensity("subtle"), "subtle");
+        // Anything else must land on the shipped look, never on a broken
+        // palette — a hand-edited config or a value written by a newer build.
+        assert_eq!(normalize_color_intensity("bold"), DEFAULT_COLOR_INTENSITY);
+        assert_eq!(normalize_color_intensity(""), "subtle");
+    }
+
+    /// Unlike every other normalizer, this one must NOT reject unknown values:
+    /// Core reports its scrapers at runtime, so the valid set isn't knowable
+    /// here. Rejecting an unrecognized id would silently drop whatever the
+    /// user picked and send us back to the bug this setting exists to fix —
+    /// every context-menu scrape quietly reverting to `gamelist.xml`.
+    #[test]
+    fn metadata_scraper_keeps_unknown_ids_and_only_defaults_when_empty() {
+        assert_eq!(normalize_metadata_scraper("screenscraper"), "screenscraper");
+        assert_eq!(
+            normalize_metadata_scraper(" es-media-folders "),
+            "es-media-folders"
+        );
+        assert_eq!(normalize_metadata_scraper("gamelist.xml"), "gamelist.xml");
+        assert_eq!(normalize_metadata_scraper(""), DEFAULT_METADATA_SCRAPER);
+        assert_eq!(normalize_metadata_scraper("   "), "gamelist.xml");
+    }
+
+    #[test]
     fn color_schemes_preserve_order_and_default_unknown_values() {
         let list = color_schemes();
         let collected: Vec<String> = list.iter().map(String::from).collect();
@@ -1428,6 +1629,37 @@ mod tests {
         let collected: Vec<String> = list.iter().map(String::from).collect();
         let expected: Vec<String> = CLOCK_FORMATS.iter().map(|s| (*s).to_string()).collect();
         assert_eq!(collected, expected);
+    }
+
+    #[test]
+    fn interface_profiles_preserve_order_and_default_unknown_values() {
+        let list = interface_profiles();
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        let expected: Vec<String> = INTERFACE_PROFILES
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        assert_eq!(collected, expected);
+        assert_eq!(normalize_interface_profile("standard"), "standard");
+        assert_eq!(normalize_interface_profile("handheld"), "handheld");
+        assert_eq!(normalize_interface_profile("unknown"), "device");
+    }
+
+    #[test]
+    fn merge_prefers_configured_interface_profile() {
+        let snapshot = zaparoo_core::persist::SettingsState {
+            interface_profile: "standard".into(),
+            ..zaparoo_core::persist::SettingsState::default()
+        };
+        let config = zaparoo_core::config::Config {
+            settings: zaparoo_core::config::SettingsConfig {
+                interface_profile: Some("handheld".into()),
+                ..zaparoo_core::config::SettingsConfig::default()
+            },
+            ..zaparoo_core::config::Config::default()
+        };
+        let merged = super::merge_settings(&snapshot, &config, false, None, None);
+        assert_eq!(merged.interface_profile, "handheld");
     }
 
     #[test]

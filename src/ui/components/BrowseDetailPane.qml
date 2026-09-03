@@ -10,6 +10,10 @@ Item {
     id: root
 
     property string title: ""
+    // Stable identity for the focused row. Cover holding is scoped to this
+    // identity so an async decode from the previous row can never flash under
+    // the newly focused title.
+    property string identity: ""
     property string coverKey: ""
     property string description: ""
     property bool showDescription: true
@@ -78,7 +82,8 @@ Item {
     // decodes; a row that's never had art just stays blank, matching how
     // the grid tiles behave (Tile.qml's `_coverPending` swallows the same
     // sentinel to an empty source).
-    readonly property url _coverSource: _coverPending ? _lastGoodCoverSource : Resources.coverUrl(coverKey, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
+    readonly property bool _hasCurrentHeldCover: root.identity !== "" && root._lastGoodCoverIdentity === root.identity && root._lastGoodCoverSource !== ""
+    readonly property url _coverSource: _coverPending && root._hasCurrentHeldCover ? root._lastGoodCoverSource : (_coverPending ? "" : Resources.coverUrl(coverKey, Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow))
     // True whenever the cover Image is in flight (model pending, Qt async
     // decode, or any non-media-image provider still loading).
     readonly property bool _coverMediaImagePending: coverKey.startsWith("media-image/") && cover.status !== Image.Ready && cover.status !== Image.Error
@@ -113,11 +118,35 @@ Item {
     // instead of the generic File chip when no logo SVG exists.
     readonly property bool _isSystemCover: root.coverKey.startsWith("systems/")
 
-    property int _labelColumnNaturalWidth: 0
+    // Measured from the rows actually on screen, not accumulated across the
+    // session. The old form was a `Math.max` fed by every delegate's
+    // `Component.onCompleted` and `onAdvanceWidthChanged`, with nothing that
+    // ever reset it -- safe only while the label set never varied. It does
+    // vary: a systems row's table carries `Manufacturer`, a media row's does
+    // not, so browsing Systems and then Games left the games table paying
+    // for a column width no label in it needs. Same union-plus-slack figure
+    // as before, just derived rather than remembered.
+    readonly property int _labelColumnNaturalWidth: {
+        let widest = 0;
+        const rows = root._displayRows;
+        for (let i = 0; i < rows.length; i++) {
+            const text = rows[i].measureLabel ?? "";
+            if (text === "")
+                continue;
+            widest = Math.max(widest, Math.ceil(Math.max(labelColumnMetrics.advanceWidth(text), labelColumnMetrics.boundingRect(text).width) + root._labelSlack));
+        }
+        return widest;
+    }
+    // advanceWidth measures cursor movement, not painted pixels: under
+    // NativeRendering a fully hinted run can paint a px or two wider. Same
+    // slack every other measurement site in the codebase carries
+    // (ScrollingCaption, PageIndicator, TopStatusStrip, ContextMenu).
+    readonly property int _labelSlack: Theme.crtNativePath ? 0 : Sizing.px(2)
     property bool _paneLoadingDelayElapsed: false
     // Holds the last resolved cover URL so the area does not blank while a
     // new one decodes -- see `_coverSource`/`coverHold` above.
     property url _lastGoodCoverSource: ""
+    property string _lastGoodCoverIdentity: ""
     // The detail table tracks the focused row's metadata directly. The model
     // keeps `current_detail_tags` identity-correct on every move — an immediate
     // peek shows cached/local rows or a clean blank, never the previous row's
@@ -148,51 +177,26 @@ Item {
         paneLoadingDelayTimer.restart();
     }
 
-    function _tagLabel(fullLabel: string, shortLabel: string): var {
-        return {
-            "label": fullLabel + "\u009C" + shortLabel,
-            "measureLabel": fullLabel
-        };
-    }
-
-    function _localizedTagLabel(label: string): var {
-        if (label === "System")
-            return root._tagLabel(qsTr("System"), qsTr("Sys", "Short metadata label for System; keep 2-4 characters if possible"));
-        if (label === "Year")
-            return root._tagLabel(qsTr("Year"), qsTr("Yr", "Short metadata label for Year; keep 2-4 characters if possible"));
-        if (label === "Genre")
-            return root._tagLabel(qsTr("Genre"), qsTr("Gen", "Short metadata label for Genre; keep 2-4 characters if possible"));
-        if (label === "Players")
-            return root._tagLabel(qsTr("Players"), qsTr("Plyr", "Short metadata label for Players; keep 2-4 characters if possible"));
-        if (label === "Developer")
-            return root._tagLabel(qsTr("Developer"), qsTr("Dev", "Short metadata label for Developer; keep 2-4 characters if possible"));
-        if (label === "Publisher")
-            return root._tagLabel(qsTr("Publisher"), qsTr("Pub", "Short metadata label for Publisher; keep 2-4 characters if possible"));
-        if (label === "Rating")
-            return root._tagLabel(qsTr("Rating"), qsTr("Rtg", "Short metadata label for Rating; keep 2-4 characters if possible"));
-        if (label === "Category")
-            return root._tagLabel(qsTr("Category"), qsTr("Cat", "Short metadata label for Category; keep 2-4 characters if possible"));
-        if (label === "Release date")
-            return root._tagLabel(qsTr("Release date"), qsTr("Date", "Short metadata label for Release date; keep 2-4 characters if possible"));
-        if (label === "Manufacturer")
-            return root._tagLabel(qsTr("Manufacturer"), qsTr("Mfr", "Short metadata label for Manufacturer; keep 2-4 characters if possible"));
-        return {
-            "label": label,
-            "measureLabel": label
-        };
-    }
-
+    // Label vocabulary lives in `Format` so this pane and the details
+    // modal render one set of strings for one set of tag types. It used to
+    // live here as a private ten-entry ladder, which is why the modal
+    // (which never had access to it) shipped its own untranslated labels.
+    //
+    // `Format.metadataElidableLabel` packs the full label and its short
+    // form behind U+009C, Qt's alternative-text separator: an eliding
+    // `Text` renders the short form rather than truncating the long one
+    // when the column is narrow. `metadataLabel` alone is what the column
+    // is measured against, so the width tracks the full label.
     function _parseDetailTags(tags: string): var {
         if (tags === "")
             return [];
         return tags.split("\n").map(row => {
             const parts = row.split("\t");
             const rawLabel = parts.length > 0 ? parts[0] : "";
-            const label = root._localizedTagLabel(rawLabel);
             return {
                 "rawLabel": rawLabel,
-                "label": label.label,
-                "measureLabel": label.measureLabel,
+                "label": Format.metadataElidableLabel(rawLabel),
+                "measureLabel": Format.metadataLabel(rawLabel),
                 "value": parts.length > 1 ? parts[1] : ""
             };
         });
@@ -205,12 +209,23 @@ Item {
         font.pixelSize: root._tagTextSize
     }
 
+    // Backs `_labelColumnNaturalWidth`. Measuring N fixed strings through
+    // one FontMetrics is safe (and is what GameInfoModal does for the same
+    // job); the round-8/9 pitfall documented in ContextMenu.qml is a *live
+    // per-row weight*, which nothing here has.
+    FontMetrics {
+        id: labelColumnMetrics
+        font.family: Theme.fontUi
+        font.pixelSize: root._tagTextSize
+    }
+
     Rectangle {
         anchors.fill: parent
         color: Theme.surfaceCard
         border.width: Sizing.cardBorderWidth
         border.color: Theme.borderMid
         radius: root._cardRadius
+        antialiasing: Sizing.cornerAntialiasing
         visible: root.showChrome
     }
 
@@ -287,7 +302,7 @@ Item {
                     smooth: true
                     asynchronous: false
                     cache: true
-                    visible: root._lastGoodCoverSource !== "" && root._lastGoodCoverSource !== root._coverSource && cover.status !== Image.Ready && !root.detailSuppressed && !root._isSystemCover
+                    visible: root._hasCurrentHeldCover && root._lastGoodCoverSource !== root._coverSource && cover.status !== Image.Ready && !root.detailSuppressed && !root._isSystemCover
                 }
 
                 Image {
@@ -336,8 +351,10 @@ Item {
                     // while the next cover async-decodes after a d-pad move.
                     onStatusChanged: {
                         cover.updateReveal();
-                        if (status === Image.Ready)
+                        if (status === Image.Ready && root.identity !== "") {
                             root._lastGoodCoverSource = source;
+                            root._lastGoodCoverIdentity = root.identity;
+                        }
                     }
                 }
 
@@ -349,7 +366,7 @@ Item {
                     y: Sizing.center(parent.height, height)
                     // Size the chip to ~50% of the cover-slot width so it reads
                     // as a modest accent rather than a large placeholder icon.
-                    width: Math.round(parent.width * 0.5)
+                    width: Sizing.px(parent.width * 0.5)
                     height: width
                     source: Resources.coverUrl("icons/File", Theme.logoFocusPrimary, Theme.logoFocusSecondary, Theme.logoFocusShadow)
                     sourceSize.width: Sizing.px(width)
@@ -362,7 +379,7 @@ Item {
                     // (coverHold/nothing), same as the grid tiles. Only a
                     // *confirmed* no-cover state (empty resolved source, or a
                     // terminal decode error) shows the File chip.
-                    visible: !root.detailSuppressed && !root._isSystemCover && !root._coverBusy && (root._coverSource === "" || cover.status === Image.Error)
+                    visible: !root.detailSuppressed && !root._isSystemCover && !root._coverBusy && !root._hasCurrentHeldCover && (root._coverSource === "" || cover.status === Image.Error)
                 }
 
                 // Wordmark fallback for system entries with no curated logo SVG.
@@ -503,27 +520,6 @@ Item {
                                 readonly property string measureLabel: modelData.measureLabel ?? tagRow.label
                                 readonly property string value: modelData.value ?? ""
 
-                                // Union with boundingRect and a couple px of
-                                // slack, same as every other measurement
-                                // site in the codebase (ScrollingCaption.qml,
-                                // PageIndicator.qml, TopStatusStrip.qml) —
-                                // advanceWidth alone measures cursor
-                                // movement, not every painted pixel, and can
-                                // under-measure a fully hinted glyph run by a
-                                // px or two under NativeRendering.
-                                readonly property int _labelSlack: Theme.crtNativePath ? 0 : Sizing.px(2)
-
-                                TextMetrics {
-                                    id: labelMetrics
-
-                                    text: tagRow.measureLabel
-                                    font.family: Theme.fontUi
-                                    font.pixelSize: root._tagTextSize
-                                    onAdvanceWidthChanged: root._labelColumnNaturalWidth = Math.max(root._labelColumnNaturalWidth, Math.ceil(Math.max(advanceWidth, boundingRect.width) + tagRow._labelSlack))
-                                }
-
-                                Component.onCompleted: root._labelColumnNaturalWidth = Math.max(root._labelColumnNaturalWidth, Math.ceil(Math.max(labelMetrics.advanceWidth, labelMetrics.boundingRect.width) + tagRow._labelSlack))
-
                                 Text {
                                     anchors.left: parent.left
                                     height: parent.height
@@ -545,6 +541,13 @@ Item {
                                     anchors.right: parent.right
                                     height: parent.height
                                     text: tagRow.value
+                                    // Core data straight from a scraper.
+                                    // The label above has always been
+                                    // PlainText; the value, which is the
+                                    // field that actually carries
+                                    // third-party text, did not, so a
+                                    // stray `<` or `&` rendered as markup.
+                                    textFormat: Text.PlainText
                                     color: Theme.textPrimary
                                     font.family: Theme.fontUi
                                     font.pixelSize: root._tagTextSize

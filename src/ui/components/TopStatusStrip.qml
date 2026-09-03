@@ -2,16 +2,15 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 // Three-slot top strip shared by the Systems and Games screens. Owns
-// layout only — callers compute and pass `title`, `currentPage`,
-// `totalPages`, and `totalText` from their own model. Each slot is
+// layout only — callers pass title, count, and either page or focused-item
+// position state from their own model. Each slot is
 // capped at one third of the parent width with `elide: ElideRight` so
 // long strings (3-digit page counts, 5-digit file totals, multi-word
 // titles) can't collide on a 240p MiSTer screen.
 // Slots:
 //   left   — total-count badge (visible when `totalText !== ""`)
 //   center — screen title (category / system name)
-//   right  — "Page N / M" for bounded results, or "Page N" when final
-//            page count is unknown
+//   right  — page position for grids; focused-item/total-items for lists
 
 import QtQuick
 import Zaparoo.Theme
@@ -30,18 +29,17 @@ Item {
     property string totalText: "" // formatted; empty hides the slot
     property string rightTextOverride: "" // formatted; non-empty replaces page text
     // False hides this slot entirely (both the plain page text and the
-    // chevron PageIndicator below). Both grid and list layout show a page
-    // cue here, alongside the count badge, on every theme except CRT
+    // chevron PageIndicator below). Grid and list layouts show a position
+    // cue here on every theme except CRT
     // (`footer.pageCueInFooter`, BrowseLayouts.qml, keeps it in the footer
     // instead -- see `pageIndicatorMode`).
     property bool showPageCounter: true
-    // True mounts a `PageIndicator` (chevrons + "N / M") in the right slot
-    // instead of the plain page-count Text. Round 9 relocated this here
-    // from the footer for grid layout; round 11 gave list layout the same
-    // treatment (it used to show a plain item-position counter with no
-    // chevrons at all) -- see SystemsScreen.qml / MediaListScreen.qml for
-    // the callers.
+    // True mounts a `PageIndicator` (chevrons + "N/M") in the right slot
+    // instead of plain page text. Callers select page or item-position mode.
     property bool pageIndicatorMode: false
+    property bool itemPositionMode: false
+    property int currentItem: 0
+    property int totalItems: 0
     property bool hasPagesAbove: false
     property bool hasPagesBelow: false
     property int pageIndicatorChevronSize: Sizing.pctH(4)
@@ -131,6 +129,7 @@ Item {
     PageIndicator {
         id: pageIndicatorRight
 
+        objectName: "topStatusPageIndicator"
         visible: status.pageIndicatorMode && status.showPageCounter
         anchors.right: parent.right
         anchors.rightMargin: status.slotMargin
@@ -138,6 +137,9 @@ Item {
         chevronSize: status.pageIndicatorChevronSize
         currentPage: status.currentPage
         totalPages: status.totalPages
+        itemPositionMode: status.itemPositionMode
+        currentItem: status.currentItem
+        totalItems: status.totalItems
         pageTotalKnown: status.pageTotalKnown
         hasPagesAbove: status.hasPagesAbove
         hasPagesBelow: status.hasPagesBelow

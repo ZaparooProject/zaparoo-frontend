@@ -6,11 +6,13 @@ import QtQuick
 import QtTest
 import Zaparoo.Theme
 import Zaparoo.App
+import Zaparoo.Browse as Browse
 
 // Resolution-agnostic sizing contract: pctH/pctW/fontSize must scale with the
 // Main window's screenWidth/screenHeight, and visibleCovers must honour the
 // 240p special-case (3 covers instead of 5).
 TestCase {
+    id: testCase
     name: "UiSizing"
     when: windowShown
 
@@ -21,11 +23,37 @@ TestCase {
         height: 720
     }
 
+    property string _originalOrientation: "horizontal"
+    property string _originalInterfaceProfile: "device"
+
+    Component.onCompleted: {
+        testCase._originalOrientation = Browse.Settings.current_orientation;
+        testCase._originalInterfaceProfile = Browse.Settings.current_interface_profile;
+    }
+
+    function init(): void {
+        main.defaultInterfaceProfile = "standard";
+        Browse.Settings.current_interface_profile = "device";
+        Browse.Settings.current_orientation = "horizontal";
+        tryCompare(Sizing, "interfaceProfile", "standard");
+        tryCompare(Sizing, "swapPercentageAxes", false);
+    }
+
     function cleanup(): void {
         main.debugCrtSafeAreaOverlay = false;
         main.crtNativePath = false;
         main.bitmapType = false;
+        main.defaultInterfaceProfile = "standard";
+        Browse.Settings.current_interface_profile = "device";
+        Browse.Settings.current_orientation = "horizontal";
+        tryCompare(Sizing, "interfaceProfile", "standard");
+        tryCompare(Sizing, "swapPercentageAxes", false);
         setResolution(1280, 720);
+    }
+
+    function cleanupTestCase(): void {
+        Browse.Settings.current_interface_profile = testCase._originalInterfaceProfile;
+        Browse.Settings.current_orientation = testCase._originalOrientation;
     }
 
     function setResolution(w: int, h: int): void {
@@ -46,6 +74,40 @@ TestCase {
 
     function crtSafeHeight(h: int): int {
         return h - 2 * Math.round(h * 0.05);
+    }
+
+    function test_handheld_profile_uses_compiled_default_and_user_override(): void {
+        compare(main.effectiveInterfaceProfile, "standard");
+
+        main.defaultInterfaceProfile = "handheld";
+        tryCompare(main, "effectiveInterfaceProfile", "handheld");
+        tryCompare(Sizing, "interfaceProfile", "handheld");
+
+        Browse.Settings.current_interface_profile = "standard";
+        tryCompare(main, "effectiveInterfaceProfile", "standard");
+        tryCompare(Sizing, "interfaceProfile", "standard");
+
+        main.defaultInterfaceProfile = "standard";
+        Browse.Settings.current_interface_profile = "handheld";
+        tryCompare(main, "effectiveInterfaceProfile", "handheld");
+        tryCompare(Sizing, "interfaceProfile", "handheld");
+    }
+
+    function test_handheld_profile_reduces_700_square_hub_density(): void {
+        setResolution(700, 700);
+        compare(Sizing.hubGridColumns, 7);
+        compare(Sizing.hubGridRows, 3);
+        const standardTileWidth = Sizing.hubTileWidth;
+
+        Browse.Settings.current_interface_profile = "handheld";
+        tryCompare(Sizing, "interfaceProfile", "handheld");
+        compare(Sizing.hubGridColumns, 4);
+        compare(Sizing.hubGridRows, 3);
+        verify(Sizing.hubTileWidth > standardTileWidth);
+
+        setResolution(320, 240);
+        compare(Sizing.hubGridColumns, 4);
+        compare(Sizing.hubGridRows, 2);
     }
 
     function test_pct_helpers_scale_with_window_size(): void {
@@ -242,8 +304,7 @@ TestCase {
     // Resources.cornerCutUrl() silently returns "" outside that band, so a
     // ladder change that pushes radiusMd/radiusSm past 16 would quietly
     // stop rounding the scrim hole instead of failing loudly. Covers every
-    // resolution tier, including "crt" which the semantic-tier table above
-    // doesn't exercise.
+    // resolution tier plus CRT safe-area sizing.
     function test_radius_ladder_stays_within_baked_corner_mask_range(): void {
         const resolutions = [[320, 240], [640, 480], [960, 540], [1280, 720], [1920, 1080]];
         for (const [w, h] of resolutions) {
@@ -254,9 +315,9 @@ TestCase {
 
         main.crtNativePath = true;
         setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
-        compare(Sizing.tier, "crt");
-        verify(Sizing.radiusMd >= 1 && Sizing.radiusMd <= 16, "radiusMd out of baked corner mask range on crt tier");
-        verify(Sizing.radiusSm >= 1 && Sizing.radiusSm <= 16, "radiusSm out of baked corner mask range on crt tier");
+        compare(Sizing.tier, "240");
+        verify(Sizing.radiusMd >= 1 && Sizing.radiusMd <= 16, "radiusMd out of baked corner mask range on 240p CRT");
+        verify(Sizing.radiusSm >= 1 && Sizing.radiusSm <= 16, "radiusSm out of baked corner mask range on 240p CRT");
         main.crtNativePath = false;
     }
 
@@ -266,7 +327,7 @@ TestCase {
                 "w": 320,
                 "h": 240,
                 "systems": [2, 2],
-                "games": [2, 2]
+                "games": [3, 2]
             },
             {
                 "w": 640,
@@ -310,6 +371,57 @@ TestCase {
         }
     }
 
+    function test_rotated_common_grids_transpose_rows_and_columns(): void {
+        const cases = [[320, 240], [640, 480], [960, 540], [1280, 720], [1366, 768], [1920, 1080]];
+        for (const [width, height] of cases) {
+            Browse.Settings.current_orientation = "horizontal";
+            tryCompare(Sizing, "swapPercentageAxes", false);
+            setResolution(width, height);
+            const hub = [Sizing.hubGridColumns, Sizing.hubGridRows];
+            const games = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
+
+            for (const orientation of ["cw", "ccw"]) {
+                Browse.Settings.current_orientation = orientation;
+                tryCompare(Sizing, "swapPercentageAxes", true);
+                tryCompare(Sizing, "screenWidth", height);
+                tryCompare(Sizing, "screenHeight", width);
+                compare(Sizing.hubGridColumns, hub[1], orientation + " Hub columns at " + width + "x" + height);
+                compare(Sizing.hubGridRows, hub[0], orientation + " Hub rows at " + width + "x" + height);
+                const rotatedSystems = Sizing.systemsGridShape(Sizing.screenWidth, Sizing.screenHeight);
+                compare(rotatedSystems.columns, 2, orientation + " Systems columns at " + width + "x" + height);
+                compare(rotatedSystems.rows, 3, orientation + " Systems rows at " + width + "x" + height);
+                const rotatedGames = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
+                compare(rotatedGames.columns, games.rows, orientation + " Games columns at " + width + "x" + height);
+                compare(rotatedGames.rows, games.columns, orientation + " Games rows at " + width + "x" + height);
+
+                Browse.Settings.current_orientation = "horizontal";
+                tryCompare(Sizing, "swapPercentageAxes", false);
+            }
+        }
+    }
+
+    function test_rotated_crt_grids_transpose_rows_and_columns(): void {
+        main.crtNativePath = true;
+        main.bitmapType = true;
+        setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
+
+        for (const orientation of ["cw", "ccw"]) {
+            Browse.Settings.current_orientation = orientation;
+            tryCompare(Sizing, "swapPercentageAxes", true);
+            tryCompare(Sizing, "screenWidth", crtSafeHeight(240));
+            tryCompare(Sizing, "screenHeight", crtSafeWidth(352));
+            compare(Sizing.hubGridColumns, 2);
+            compare(Sizing.hubGridRows, 4);
+            compare(Sizing.systemsGridColumns, 2);
+            compare(Sizing.systemsGridRows, 3);
+            compare(Sizing.gamesGridColumns, 2);
+            compare(Sizing.gamesGridRows, 3);
+
+            Browse.Settings.current_orientation = "horizontal";
+            tryCompare(Sizing, "swapPercentageAxes", false);
+        }
+    }
+
     // Hub grid shape (round 6, item 7; row count corrected in the round 6
     // follow-up — see Sizing.qml's `hubGridShape` comment) — a fixed
     // per-tier table, unlike systemsGridShape/gamesGridShape above.
@@ -321,7 +433,7 @@ TestCase {
             {
                 "w": 320,
                 "h": 240,
-                "columns": 3,
+                "columns": 4,
                 "rows": 2
             },
             {
@@ -400,7 +512,7 @@ TestCase {
         main.crtNativePath = true;
         main.bitmapType = true;
         setResolutionExpect(352, 240, crtSafeWidth(352), crtSafeHeight(240));
-        compare(Sizing.tier, "crt");
+        compare(Sizing.tier, "240");
         compare(Sizing.fontHero, Sizing.fontSize(4.0));
         compare(Sizing.fontTitle, Sizing.fontSize(3.2));
         compare(Sizing.fontSection, Sizing.fontSize(2.9));
@@ -409,21 +521,32 @@ TestCase {
         compare(Sizing.fontSmall, Sizing.fontSize(2.2));
         compare(Sizing.systemsGridColumns, 3);
         compare(Sizing.systemsGridRows, 3);
-        compare(Sizing.hubGridColumns, 3);
+        compare(Sizing.hubGridColumns, 4);
         compare(Sizing.hubGridRows, 2);
         compare(Sizing.swapPercentageAxes, false);
         compare(Sizing.screenHeight, crtSafeHeight(240));
         const declaredGames = Sizing._declaredGridShape("games");
-        compare(declaredGames.columns, 2);
+        compare(declaredGames.columns, 3);
         let games = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
-        compare(games.columns, 2);
+        compare(games.columns, 3);
         compare(games.rows, 2);
 
         setResolutionExpect(352, 288, crtSafeWidth(352), crtSafeHeight(288));
+        compare(Sizing.tier, "240");
+        compare(Sizing.hubGridColumns, 4);
+        compare(Sizing.hubGridRows, 2);
         compare(Sizing.systemsGridColumns, 3);
         compare(Sizing.systemsGridRows, 3);
         games = Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight);
         compare(games.columns, 3);
         compare(games.rows, 2);
+
+        // CRT is a rendering path, not a geometry tier. Safe-area reduction
+        // must not demote a future 540-line mode into the 480 tier.
+        setResolutionExpect(960, 540, crtSafeWidth(960), crtSafeHeight(540));
+        compare(Sizing.resolutionHeight, 540);
+        compare(Sizing.tier, "540");
+        compare(Sizing.hubGridColumns, 7);
+        compare(Sizing.hubGridRows, 3);
     }
 }

@@ -447,6 +447,49 @@ TestCase {
         }
     }
 
+    // "Add to Hub" on a single-game folder completes asynchronously: the
+    // model resolves the folder's child file and publishes it through
+    // `hub_target_*`, bumping `hub_target_sequence` last, and the router
+    // pins a `zapscript` item on that edge (a beta tester got a folder tile
+    // for a .chd in its own folder, because the synchronous branch keyed on
+    // `entry_type` alone). Drives the properties directly, the same edge
+    // the real resolution produces, and asserts the tile is a game: child
+    // path as both script and cover key, never the folder icon.
+    // try/finally for the same reason as the shortcut tests above.
+    function test_resolved_single_game_folder_pins_a_game_shortcut(): void {
+        const child = "/media/fat/games/PSX/Game/Game.chd";
+        Browse.GamesModel.hub_target_system = "PSX";
+        Browse.GamesModel.hub_target_path = child;
+        Browse.GamesModel.hub_target_script = child;
+        Browse.GamesModel.hub_target_name = "Game";
+        Browse.GamesModel.hub_target_sequence = Browse.GamesModel.hub_target_sequence + 1;
+        const idx = main.hubScreen._itemIndexForId("zapscript", child);
+        const hubIndex = idx >= 0 ? main.hubScreen.items[idx].hubIndex : -1;
+        try {
+            verify(idx >= 0, "the resolved child must land as a zapscript item");
+            const entry = main.hubScreen.items[idx];
+            compare(entry.name, "Game", "the tile keeps the row's title");
+            compare(entry.script, child, "the tile launches the child file, not the container");
+            compare(entry.coverKey, Browse.HubLayout.resolve_media_cover_key("PSX", child), "cover resolves by (system, child path) like any game shortcut");
+            verify(entry.coverKey !== "icons/Folder", "a game shortcut must not draw the folder icon");
+            compare(main.hubScreen._itemIndexForId("folder", "/media/fat/games/PSX/Game"), -1, "no folder tile must be pinned alongside");
+        } finally {
+            if (hubIndex >= 0)
+                Browse.HubLayout.remove_item(hubIndex);
+        }
+    }
+
+    // A resolution that failed never reaches the sequence edge (the model
+    // reports an action error instead), but the router still guards the
+    // empty-script case so a bare sequence bump cannot pin a blank tile.
+    function test_hub_target_edge_with_no_script_pins_nothing(): void {
+        const before = Browse.HubLayout.items_snapshot();
+        Browse.GamesModel.hub_target_script = "";
+        Browse.GamesModel.hub_target_path = "";
+        Browse.GamesModel.hub_target_sequence = Browse.GamesModel.hub_target_sequence + 1;
+        compare(Browse.HubLayout.items_snapshot(), before, "an empty script must not add a Hub item");
+    }
+
     // Down on hub moves focus between the categories row and the
     // actions row (Favorites / Recently Played / optional Update /
     // Settings); it must never flip off-screen to systems. Accept is
@@ -510,6 +553,20 @@ TestCase {
         main.hubScreen.currentIndex = main.hubScreen._actionIndexForId("favorites");
         main.handleKey(Qt.Key_Return);
         compare(main.pendingTransition, "favorites");
+    }
+
+    function test_entering_favorite_system_persists_resume_scope(): void {
+        const originalPath = Browse.FavoriteSystemsState.selected_path;
+        try {
+            Browse.FavoriteSystemsState.selected_path = "";
+            main._navigateToFavorites("SNES");
+            compare(Browse.FavoriteSystemsState.selected_path, "SNES", "route payload must survive launch-time frontend restart");
+            compare(main.favoritesSystemId, "SNES");
+        } finally {
+            main.pendingTransition = "";
+            main._setFavoritesSystem("");
+            Browse.FavoriteSystemsState.selected_path = originalPath;
+        }
     }
 
     function test_scoped_favorites_back_routes_through_favorite_systems(): void {
@@ -1231,6 +1288,49 @@ TestCase {
 
     // resetFocus is the test-harness reset and the cold-launch state — it
     // must always land on Resume regardless of where focus was before.
+    // Resume is a launch, not a navigation, so it must end like every
+    // other launch: `GamesModel.launch_at` from a tile press paints no
+    // "Loading game…" cue at all. Resume used to arm an 8 s
+    // `resumeLaunchCueTimer` at dispatch, so the common path -- Core
+    // connected, resume row long since cached -- dispatched instantly and
+    // then sat on a dead, input-locked cue for the full 8 s. The cue is
+    // now reserved for a genuine wait.
+    function test_resume_with_cached_row_clears_the_cue_in_the_same_tick(): void {
+        const wasLoading = Browse.RecentsModel.resume_loading;
+        const wasAvailable = Browse.RecentsModel.resume_available;
+        Browse.RecentsModel.resume_loading = false;
+        Browse.RecentsModel.resume_available = true;
+        try {
+            main._navigateResumeFromHub();
+            compare(main.pendingTransition, "", "a ready resume must not leave the loading cue armed");
+            compare(main._pendingResumeLaunch, false, "and must not leave a pending launch behind");
+        } finally {
+            Browse.RecentsModel.resume_loading = wasLoading;
+            Browse.RecentsModel.resume_available = wasAvailable;
+            main.pendingTransition = "";
+            main._pendingResumeLaunch = false;
+        }
+    }
+
+    // The other half of the same rule: while the resume row genuinely
+    // hasn't landed, the cue stays up. Dropping it here would leave a
+    // dead Hub press with no feedback at all.
+    function test_resume_while_still_fetching_keeps_the_cue(): void {
+        const wasLoading = Browse.RecentsModel.resume_loading;
+        const wasAvailable = Browse.RecentsModel.resume_available;
+        Browse.RecentsModel.resume_loading = true;
+        Browse.RecentsModel.resume_available = false;
+        try {
+            main._navigateResumeFromHub();
+            compare(main.pendingTransition, "resume", "a resume still waiting on its row must hold the cue");
+        } finally {
+            Browse.RecentsModel.resume_loading = wasLoading;
+            Browse.RecentsModel.resume_available = wasAvailable;
+            main.pendingTransition = "";
+            main._pendingResumeLaunch = false;
+        }
+    }
+
     function test_reset_focus_seats_on_resume(): void {
         main.hubScreen.currentIndex = 2;
         main.hubScreen.resetFocus();
@@ -1267,6 +1367,7 @@ TestCase {
         main._armRepeat("down", Qt.Key_Down);
         compare(main._heldAction, "down");
         compare(main._heldKey, Qt.Key_Down);
+        verify(main._heldStartedAt > 0, "Repeat arm must record when uninterrupted hold began");
         compare(main._repeatPending, true, "Initial-delay timer must be running after _armRepeat");
         compare(main._repeatTicking, false, "Steady tick must not start before the initial delay");
     }
@@ -1284,6 +1385,7 @@ TestCase {
         main._stopRepeat();
         compare(main._heldAction, "");
         compare(main._heldKey, 0);
+        compare(main._heldStartedAt, 0);
         compare(main._repeatPending, false);
         compare(main._repeatTicking, false);
     }
@@ -1317,16 +1419,14 @@ TestCase {
         compare(main._repeatPending, true, "Re-arm restarts the initial-delay timer");
     }
 
-    function test_rapid_navigation_taps_require_sustained_same_direction(): void {
-        for (let i = 1; i < main._rapidNavigationTapThreshold; ++i) {
+    function test_rapid_navigation_same_direction_taps_never_activate(): void {
+        for (let i = 0; i < 8; ++i) {
             main._noteRapidNavigationAction("down", false);
             compare(main.rapidNavigationActive, false, "ordinary repeated taps stay out of rapid mode");
+            compare(main.rapidNavigationIndicatorActive, false);
         }
-        main._noteRapidNavigationAction("down", false);
-        compare(main.rapidNavigationActive, true, "fourth same-direction tap inside quiet window enters rapid mode");
-        compare(main.rapidNavigationIndicatorActive, true);
         wait(main._rapidNavigationQuietMs + 40);
-        compare(main.rapidNavigationActive, false, "rapid mode clears after quiet window");
+        compare(main.rapidNavigationActive, false);
         compare(main.rapidNavigationAction, "", "quiet reset clears rapid action");
     }
 
@@ -1351,11 +1451,17 @@ TestCase {
         compare(main.rapidNavigationIndicatorActive, false, "single page tap should not flash rapid indicator");
     }
 
-    function test_repeat_tick_forces_rapid_navigation_active(): void {
+    function test_repeat_tick_requires_full_hold_before_rapid_navigation(): void {
         main._armRepeat("page_next", Qt.Key_R);
+        main._heldStartedAt = Date.now() - main._rapidNavigationHoldMs + 1;
         main._handleRepeatAction();
-        compare(main.rapidNavigationActive, true, "held page action should enter rapid mode on first repeat tick");
-        compare(main.rapidNavigationIndicatorActive, true, "held page action should show rapid indicator on first repeat tick");
+        compare(main.rapidNavigationActive, false, "repeat before hold threshold must keep live presentation");
+        compare(main.rapidNavigationIndicatorActive, false);
+
+        main._heldStartedAt = Date.now() - main._rapidNavigationHoldMs - 1;
+        main._handleRepeatAction();
+        compare(main.rapidNavigationActive, true, "sustained hold should enter rapid mode");
+        compare(main.rapidNavigationIndicatorActive, true, "sustained hold should show rapid indicator");
         main._stopRepeat();
         wait(main._rapidNavigationQuietMs + 40);
         compare(main.rapidNavigationActive, false);
@@ -1417,7 +1523,7 @@ TestCase {
         verify(entries[2].label.length > 0, "Add to Hub label is set");
         verify(entries[3].label.length > 0, "Hide label is set");
         verify(entries[4].label.length > 0, "Update media database label is set");
-        verify(entries[5].label.length > 0, "Scrape metadata label is set");
+        verify(entries[5].label.length > 0, "Update metadata label is set");
     }
 
     function test_context_menu_systems_has_nfc_does_not_add_entries(): void {
@@ -1462,28 +1568,51 @@ TestCase {
         compare(main.buildContextMenuEntries("favorites", "directory", false, true, false, ""), [], "Favorites rows never offer Add to Hub");
     }
 
-    function test_context_menu_games_root_returns_empty(): void {
-        compare(main.buildContextMenuEntries("games", "root", false, true, false, ""), []);
+    // A `root` addressing a real filesystem folder is one of the system's
+    // configured game directories, so it pins exactly like a plain folder.
+    // Refusing every root was why a multi-folder system (the reported case
+    // was MS-DOS with an AO486 and a _DOS Games directory) had no way to pin
+    // any of them. `pinnableRoot` is the trailing argument;
+    // `GamesModel.is_filesystem_root_at` decides it for the real call site.
+    function test_context_menu_games_filesystem_root_offers_add_to_hub(): void {
+        const entries = main.buildContextMenuEntries("games", "root", false, true, false, "", false, "", true);
+        compare(_idsOf(entries), ["add_to_hub"], "A system's game folder pins like any other folder");
+    }
+
+    function test_filesystem_root_pin_uses_the_row_system(): void {
+        compare(main._folderShortcutSystemId(true, "DOS", "AO486"), "DOS", "a merged root keeps its owning system");
+        compare(main._folderShortcutSystemId(true, "", "AO486"), "AO486", "a root without a row system falls back to the active browse system");
+        compare(main._folderShortcutSystemId(false, "DOS", "AO486"), "AO486", "an ordinary directory belongs to the active browse system");
+    }
+
+    // Virtual-scheme routes (mame-arcade://) are still refused: Core never
+    // merges them, they remain in merged listings, and a Hub folder tile is
+    // addressed by filesystem path so there is nothing to pin.
+    function test_context_menu_games_scheme_root_returns_empty(): void {
+        compare(main.buildContextMenuEntries("games", "root", false, true, false, "", false, "", false), [], "A scheme route offers no actions");
+        // Omitting the argument entirely must behave as before this existed —
+        // that is what every non-games caller does.
+        compare(main.buildContextMenuEntries("games", "root", false, true, false, ""), [], "Absent pinnableRoot stays refused");
     }
 
     function test_context_menu_games_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, false, false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"], "Write to NFC token must be hidden when no reader is reported");
+        compare(_idsOf(entries), ["more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"], "Write to NFC token must be hidden when no reader is reported");
     }
 
     function test_context_menu_games_with_reader_includes_write_card(): void {
         const entries = main.buildContextMenuEntries("games", "media", true, true, false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
+        compare(_idsOf(entries), ["more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_favorites_matches_games_media_entries(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, true, true, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
+        compare(_idsOf(entries), ["more_info", "toggle_favorite", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_favorites_no_reader_omits_write_card(): void {
         const entries = main.buildContextMenuEntries("favorites", "", true, false, true, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"]);
+        compare(_idsOf(entries), ["more_info", "toggle_favorite", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     // Round 10: "Discover alt. versions" only appears when the row's own
@@ -1531,22 +1660,44 @@ TestCase {
     // tags (see the doc comment on RecentsModel in recents.rs).
     function test_context_menu_recents_includes_details_and_hub_shortcut(): void {
         const entries = main.buildContextMenuEntries("recents", "", false, false, false, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "qr_code", "add_to_hub", "scrape_game"]);
+        compare(_idsOf(entries), ["more_info", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
     function test_context_menu_recents_with_reader_includes_write_card(): void {
         const entries = main.buildContextMenuEntries("recents", "", false, true, false, "", false, "");
-        compare(_idsOf(entries), ["launch_game", "more_info", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
+        compare(_idsOf(entries), ["more_info", "write_card", "qr_code", "add_to_hub", "scrape_game"]);
     }
 
+    // Looked up by id rather than by a hardcoded index: the entry list is
+    // ordered by docs/content-style.md's priority rule, so any future
+    // ordering change (dropping `launch_game` was one) would otherwise
+    // silently retarget this at a different row.
     function test_context_menu_games_favorite_label_toggles(): void {
         const addEntries = main.buildContextMenuEntries("games", "media", true, false, false, "");
         const removeEntries = main.buildContextMenuEntries("games", "media", true, false, true, "");
-        compare(addEntries[2].id, "toggle_favorite");
-        compare(removeEntries[2].id, "toggle_favorite");
-        verify(addEntries[2].label.length > 0);
-        verify(removeEntries[2].label.length > 0);
-        verify(addEntries[2].label !== removeEntries[2].label);
+        const added = addEntries.find(entry => entry.id === "toggle_favorite");
+        const removed = removeEntries.find(entry => entry.id === "toggle_favorite");
+        verify(added !== undefined, "an unfavorited game must offer the favorite toggle");
+        verify(removed !== undefined, "a favorited game must offer the favorite toggle");
+        verify(added.label.length > 0);
+        verify(removed.label.length > 0);
+        verify(added.label !== removed.label);
+    }
+
+    // Accept on a game tile already launches, so the menu must not spend
+    // its top row duplicating that press. Systems are the counter-case:
+    // Accept there navigates into the system, so `launch_system` is not a
+    // duplicate and stays first. See docs/content-style.md's ordering
+    // rule 1 carve-out.
+    function test_context_menu_game_owners_omit_a_launch_entry(): void {
+        const owners = [main.buildContextMenuEntries("games", "media", true, true, false, ""), main.buildContextMenuEntries("favorites", "", true, true, true, "", false, ""), main.buildContextMenuEntries("recents", "", false, true, false, "", false, "")];
+        for (let i = 0; i < owners.length; i++) {
+            const ids = _idsOf(owners[i]);
+            verify(!ids.includes("launch_game"), "Accept already launches on this grid, so the menu must not repeat it");
+            compare(ids[0], "more_info", "Details is the primary action once the duplicate launch row is gone");
+        }
+        const systems = _idsOf(main.buildContextMenuEntries("systems", "", false, false, false, "", false));
+        compare(systems[0], "launch_system", "Accept navigates into a system, so its launch entry is not a duplicate");
     }
 
     function test_context_menu_unknown_owner_returns_empty(): void {
@@ -1753,6 +1904,90 @@ TestCase {
         compare(main.actionErrorModalVisible, false);
         main.handleAction("accept");
         compare(testCase._actionErrorCallbackCount, 1, "dismissed modal cannot repeat callback");
+    }
+
+    // "Modal depth" (docs/style.md): a modal never opens a modal. The
+    // Get-metadata dialog used to push the shared list picker on top of
+    // itself for its Source row; now its own panel swaps to the list and
+    // back. Drives the real router path with the ScreenManager guard armed,
+    // so any push over the open dialog fails the test through the warning.
+    function test_scrape_setup_source_pick_stays_at_depth_one(): void {
+        failOnWarning(/pushed over/);
+        Browse.MediaStatus.scraper_ids = ["gamelist.xml", "es-media-folders"];
+        Browse.MediaStatus.scraper_names = ["Gamelist XML", "ES media folders"];
+        main.showScrapeSetupModal("*");
+        try {
+            compare(ScreenManager.modalCount, 1);
+            compare(ScreenManager.topModal, main.modalScrapeSetup);
+            const modal = main.scrapeSetupModal;
+            verify(modal !== null);
+            modal.selectedScraperId = "gamelist.xml";
+            compare(modal.currentIndex, modal._rowScraper);
+            main.handleAction("accept");
+            compare(modal.page, "source", "accept on Source opens the page, not a modal");
+            compare(ScreenManager.modalCount, 1, "no second modal");
+            compare(main.listPickerModalVisible, false);
+            compare(main.helpEntries[1].label, qsTr("Select"), "the help bar reads the page's verb");
+            main.handleAction("down");
+            main.handleAction("accept");
+            tryCompare(modal, "page", "form");
+            compare(modal.selectedScraperId, "es-media-folders");
+            compare(modal.currentIndex, modal._rowScraper, "focus returns to the row that opened the page");
+            compare(ScreenManager.modalCount, 1);
+        } finally {
+            main.closeScrapeSetupModal();
+        }
+        compare(ScreenManager.modalCount, 0);
+    }
+
+    // The one thing allowed above a modal is an alert, and it must paint
+    // above the dialog it interrupts and own the help bar. Loader z used to
+    // tie at 300 and resolve by declaration order, which put the alert
+    // behind the dialog while it owned input.
+    function test_alert_over_a_modal_paints_on_top_and_owns_the_help_bar(): void {
+        main.showScrapeSetupModal("*");
+        try {
+            main.presentActionError("test:over_modal", "Over a modal", "Body", "OK", null);
+            compare(ScreenManager.modalCount, 2);
+            compare(ScreenManager.topModal, main.modalActionError);
+            const alertLoader = main.actionErrorModal.parent;
+            const dialogLoader = main.scrapeSetupModal.parent;
+            verify(alertLoader.z > dialogLoader.z, "alert Loader z (" + alertLoader.z + ") must beat the dialog's (" + dialogLoader.z + ")");
+            compare(main.helpEntries[0].label, main.actionErrorButtonLabel, "help bar advertises the alert, not the dialog");
+        } finally {
+            if (main.actionErrorModalVisible)
+                main.closeActionErrorModal(false);
+            main.closeScrapeSetupModal();
+        }
+    }
+
+    // A failed alternate-versions discovery lands while the context menu
+    // is holding its "Searching…" row. The alert must not stack on the
+    // menu: the menu closes first, so the alert is at depth 1 and Back
+    // returns to the screen.
+    function test_discover_failure_alert_closes_the_context_menu_first(): void {
+        main.contextMenuEntries = [
+            {
+                id: "discover_loading",
+                label: "Searching…"
+            }
+        ];
+        main.contextMenuOwner = "games";
+        main.contextMenuVisible = true;
+        main._discoverMenuPending = true;
+        ScreenManager.pushModal(main.modalContextMenu);
+        try {
+            main._presentReportedActionError("alternate_discovery", "Some game");
+            compare(main.contextMenuVisible, false, "the menu closes before the alert opens");
+            compare(main.actionErrorModalVisible, true);
+            compare(ScreenManager.modalCount, 1);
+            compare(ScreenManager.topModal, main.modalActionError);
+        } finally {
+            if (main.actionErrorModalVisible)
+                main.closeActionErrorModal(false);
+            if (main.contextMenuVisible)
+                main.closeContextMenu();
+        }
     }
 
     function test_action_error_rust_bridge_delivers_all_events(): void {

@@ -41,6 +41,114 @@ QtObject {
         return Number(n).toLocaleString(root.locale(), "f", 0);
     }
 
+    // Metadata tag-label vocabulary, shared by every surface that renders a
+    // game's or system's detail table: `BrowseDetailPane` (the list-view
+    // sidebar) and `GameInfoModal` (the details modal).
+    //
+    // It lives here because the labels are user-visible strings and the Rust
+    // side must not own them. `game_info.rs` used to emit its table with
+    // title-cased English labels baked in (`display_label()`), so the whole
+    // details table shipped untranslated regardless of the UI language --
+    // CLAUDE.md requires every user-visible string to go through
+    // `qsTr()`/`tr()`, and a label built in Rust cannot. The models now emit a
+    // tag *type* and the label is chosen here.
+    //
+    // `_metadataKey` normalizes both spellings a producer might send: the
+    // canonical type (`release_date`, straight off Core's tag) and the older
+    // English label some models still emit (`Release date`). That is what
+    // lets one vocabulary serve every producer without rewriting all four of
+    // them in the same pass.
+    function _metadataKey(label: string): string {
+        return label.trim().toLowerCase().replace(/[ \-]/g, "_");
+    }
+
+    // Full label. Unknown types (Core passes through whatever a scraper
+    // wrote) fall back to the producer's own string with its first letter
+    // capitalized, so a novel tag still reads as a label rather than
+    // vanishing.
+    function metadataLabel(label: string): string {
+        const key = root._metadataKey(label);
+        if (key === "system")
+            return qsTr("System");
+        if (key === "platform")
+            return qsTr("Platform");
+        if (key === "category")
+            return qsTr("Category");
+        if (key === "year")
+            return qsTr("Year");
+        if (key === "release_date")
+            return qsTr("Release date");
+        if (key === "genre")
+            return qsTr("Genre");
+        if (key === "players")
+            return qsTr("Players");
+        if (key === "play_mode")
+            return qsTr("Play mode");
+        if (key === "cooperative")
+            return qsTr("Cooperative");
+        if (key === "developer")
+            return qsTr("Developer");
+        if (key === "publisher")
+            return qsTr("Publisher");
+        if (key === "manufacturer")
+            return qsTr("Manufacturer");
+        if (key === "rating")
+            return qsTr("Rating");
+        if (key === "filename")
+            return qsTr("Filename");
+        if (label === "")
+            return "";
+        return label.charAt(0).toUpperCase() + label.slice(1);
+    }
+
+    // Short form for narrow hosts. Empty when a type has no abbreviation, so
+    // callers fall back to the full label rather than inventing one.
+    function metadataShortLabel(label: string): string {
+        const key = root._metadataKey(label);
+        if (key === "system")
+            return qsTr("Sys", "Short metadata label for System; keep 2-4 characters if possible");
+        if (key === "platform")
+            return qsTr("Plat", "Short metadata label for Platform; keep 2-4 characters if possible");
+        if (key === "category")
+            return qsTr("Cat", "Short metadata label for Category; keep 2-4 characters if possible");
+        if (key === "year")
+            return qsTr("Yr", "Short metadata label for Year; keep 2-4 characters if possible");
+        if (key === "release_date")
+            return qsTr("Date", "Short metadata label for Release date; keep 2-4 characters if possible");
+        if (key === "genre")
+            return qsTr("Gen", "Short metadata label for Genre; keep 2-4 characters if possible");
+        if (key === "players")
+            return qsTr("Plyr", "Short metadata label for Players; keep 2-4 characters if possible");
+        if (key === "play_mode")
+            return qsTr("Mode", "Short metadata label for Play mode; keep 2-4 characters if possible");
+        if (key === "cooperative")
+            return qsTr("Co-op", "Short metadata label for Cooperative; keep 2-5 characters if possible");
+        if (key === "developer")
+            return qsTr("Dev", "Short metadata label for Developer; keep 2-4 characters if possible");
+        if (key === "publisher")
+            return qsTr("Pub", "Short metadata label for Publisher; keep 2-4 characters if possible");
+        if (key === "manufacturer")
+            return qsTr("Mfr", "Short metadata label for Manufacturer; keep 2-4 characters if possible");
+        if (key === "rating")
+            return qsTr("Rtg", "Short metadata label for Rating; keep 2-4 characters if possible");
+        if (key === "filename")
+            return qsTr("File", "Short metadata label for Filename; keep 2-4 characters if possible");
+        return "";
+    }
+
+    // Full label packed with its short form behind U+009C, Qt's alternative-
+    // text separator: `Text` with `elide` set renders the short form instead
+    // of eliding the long one when the box is too narrow. Types with no
+    // abbreviation pack nothing, so they elide normally.
+    function metadataElidableLabel(label: string): string {
+        const full = root.metadataLabel(label);
+        // Not `short`: it is a reserved word, and while the desktop QML
+        // runtime tolerates it, the AOT `qmlcachegen` pass the static
+        // MiSTer build uses rejects the file outright.
+        const abbreviated = root.metadataShortLabel(label);
+        return abbreviated === "" ? full : full + "\u009C" + abbreviated;
+    }
+
     // The dim suffix for a folder/root row -- the row's distinguisher (see
     // games.rs's `root_distinguishers`, which overlays a sibling-diffed
     // distinguisher onto the same `disambiguatingTags` channel a folder

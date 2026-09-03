@@ -28,6 +28,10 @@ Item {
     property alias logoItem: logo
     property var layoutProfile: null
     readonly property var _headerProfile: header.layoutProfile && header.layoutProfile.header ? header.layoutProfile.header : null
+    // At 240p the CRT profile puts status on the upper 8px row and HUD/title
+    // on the lower row. The logo wordmark starts below that upper row; only
+    // the kangaroo tip occupies it, so status can use the remaining span.
+    readonly property bool _compactStatusHeader: Sizing.tier === "240" && header._headerProfile && header._headerProfile.statusPillPinnedTop
     property string browseTitle: ""
     property bool statusIconsEnabled: false
     property bool mediaActivityEnabled: false
@@ -44,15 +48,16 @@ Item {
     // snaps this up to the smallest pre-sized rung that covers it, so Qt's
     // own sourceSize decode below only ever does a small final scale
     // instead of bilinearly downscaling a 600px texture at paint time.
-    readonly property real _logoPaintedWidth: Sizing.px(Sizing.headerHeight * header._logoAspect)
+    readonly property int _logoHeight: header._compactStatusHeader ? Math.max(1, Sizing.headerHeight - 1) : Sizing.headerHeight
+    readonly property real _logoPaintedWidth: Sizing.px(header._logoHeight * header._logoAspect)
 
     Image {
         id: logo
 
         anchors.left: parent.left
         anchors.leftMargin: Sizing.headerSideMargin
-        anchors.top: parent.top
         anchors.bottom: parent.bottom
+        height: header._logoHeight
         // PreserveAspectFit caps width by the logo's intrinsic aspect,
         // so the brand mark never stretches even though the Image
         // element fills the full header height.
@@ -295,8 +300,10 @@ Item {
     // surrounding layout don't shift.
     StatusLine {
         anchors.top: header._headerProfile && header._headerProfile.statusPillPinnedTop ? parent.top : topHud.bottom
-        anchors.left: logo.right
-        anchors.leftMargin: Sizing.pctW(1)
+        // Compact 240p header overlaps the status row with the logo's empty
+        // upper wordmark area. Reserve only the kangaroo tip at that height.
+        anchors.left: header._compactStatusHeader ? parent.left : logo.right
+        anchors.leftMargin: header._compactStatusHeader ? Sizing.headerSideMargin + Sizing.px(header._logoPaintedWidth * 0.14) : Sizing.pctW(1)
         anchors.right: parent.right
         anchors.rightMargin: Sizing.headerSideMargin
         anchors.topMargin: header._headerProfile && header._headerProfile.statusPillPinnedTop ? 0 : Sizing.headerStackGap

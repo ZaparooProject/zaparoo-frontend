@@ -16,17 +16,30 @@ QtObject {
     property bool crtNativePath: false
     property bool bitmapType: false
     property bool swapPercentageAxes: false
+    property string interfaceProfile: "standard"
+    readonly property bool handheldProfile: interfaceProfile === "handheld"
 
     // Shape and type hierarchy use discrete logical-resolution tiers. In TATE
     // the scene dimensions are swapped, so read the original framebuffer's
     // height axis rather than promoting 720p portrait to the 1080 tier.
     readonly property int effectiveHeight: swapPercentageAxes ? screenWidth : screenHeight
-    readonly property string tier: crtNativePath ? "crt" : effectiveHeight >= 900 ? "1080" : effectiveHeight >= 660 ? "720" : effectiveHeight >= 520 ? "540" : effectiveHeight >= 400 ? "480" : "240"
+    // CRT scenes expose the action-safe canvas after 5% has been removed
+    // from each edge. Recover the framebuffer's resolution axis before tier
+    // selection so rendering path cannot demote future 540p/720p CRT modes.
+    readonly property int resolutionHeight: crtNativePath ? Math.round(effectiveHeight / 0.9) : effectiveHeight
+    // Resolution tier is independent of output/rendering path. CRT-specific
+    // safe areas, bitmap type, and browse profiles key off crtNativePath or
+    // bitmapType directly.
+    readonly property string tier: resolutionHeight >= 900 ? "1080" : resolutionHeight >= 660 ? "720" : resolutionHeight >= 520 ? "540" : resolutionHeight >= 400 ? "480" : "240"
 
     // Discrete shape tokens. Rounded-square geometry is deliberately not a
     // percentage: resolution changes thickness, not the design's silhouette.
     readonly property int radiusMd: tier === "1080" ? 8 : tier === "720" ? 6 : tier === "540" ? 4 : tier === "480" ? 3 : 2
     readonly property int radiusSm: Math.max(1, half(radiusMd))
+    // At 240p these radii represent a deliberate one-pixel corner cut.
+    // Coverage antialiasing softens adjacent pixels without adding useful
+    // shape information, so rounded-square surfaces use crisp raster edges.
+    readonly property bool cornerAntialiasing: tier !== "240"
 
     // Six semantic text roles. Bitmap type (CRT, or embedded 240p without
     // --crt) keeps the bitmap face's existing 8/16px quantization by
@@ -46,6 +59,11 @@ QtObject {
     readonly property int focusRingWidth: stroke(pctH(0.6))
     readonly property int pressEdgeHeight: stroke(pctH(0.8))
 
+    // Compact screens may need two atomic icon+label help groups. Reserve two
+    // rows at 240p; larger tiers keep the single-line footer.
+    readonly property int helpBarHeight: tier === "240" ? pctH(10) : pctH(6)
+    readonly property int helpBarClearance: helpBarHeight + pctH(2)
+
     // Visible tile-row covers: fewer at very low resolution to avoid crowding.
     readonly property int visibleCovers: effectiveHeight < 300 ? 3 : 5
 
@@ -61,15 +79,15 @@ QtObject {
     // over the old two-row design's *visual shape* unexamined, not what
     // actually fits — checked against real content (5 categories + up to 5
     // actions = 10 items today), `1080`/`720`/`540` at 5x2 already have zero
-    // headroom for one more item, and `480`/`crt`/`240` already overflow a
-    // single page. Hub tiles carry no embedded caption text (HubScreen's
-    // delegate is a bare `Tile{}`; the selected item's name only ever shows
-    // in `ActiveLabel` below the grid), so they don't need to hold
+    // headroom for one more item, and `480`/`240` already overflow a single
+    // page. Hub tiles carry no embedded caption text (HubScreen's delegate
+    // is a bare `Tile{}`; the selected item's name only ever shows in
+    // `ActiveLabel` below the grid), so they don't need to hold
     // Systems/Games' 160px minimum cell width — closer to the 72px floor
-    // Systems/Games themselves accept at the CRT tier. 3 rows clears that
-    // relaxed floor comfortably at `1080`/`720`/`540` (224/150/112px);
-    // `480`/`crt`/`240` stay at 2 rows (`crt`/`240`'s 3-row cell would be
-    // 49px, under even the CRT floor). Pagination (PagedGrid already pages
+    // Systems/Games themselves accept on low-resolution CRT layouts. 3 rows
+    // clears that relaxed floor comfortably at `1080`/`720`/`540`
+    // (224/150/112px); `480`/`240` stay at 2 rows (a 3-row 240p cell would
+    // be 49px, under even the CRT floor). Pagination (PagedGrid already pages
     // for free) is the intended overflow path at every tier, not a
     // fallback — see HubScreen.qml's `items` construction.
     //
@@ -87,34 +105,41 @@ QtObject {
     // Rows stay at 3: unlike columns, rows have zero slack by construction
     // — `heightFit(rows)` already divides the full vertical budget, so
     // going to 4 rows shrinks the cell directly, which is exactly the
-    // "scaling them" this table exists to avoid. `480`/`crt`/`240` are
-    // unrelated tiers (2 rows, tighter budget) and keep their own counts.
-    readonly property var hubGridShape: ({
-            "columns": tier === "crt" || tier === "240" ? 3 : tier === "480" ? 4 : 7,
-            "rows": tier === "480" || tier === "crt" || tier === "240" ? 2 : 3
-        })
+    // "scaling them" this table exists to avoid. `480`/`240` are unrelated
+    // tiers (2 rows, tighter budget) and keep their own counts. Both NTSC
+    // 240p and PAL 288p resolve to the `240` tier and have room for 4x2.
+    // This keys page geometry to resolution, not CRT mode, so future
+    // higher-resolution CRT modes scale normally.
+    // Handheld changes page density, not persisted order: the same linear Hub
+    // slots reflow into fewer columns without resetting user arrangements.
+    // Low-resolution tiers already use the compact 4x2 shape.
+    readonly property var _hubGridBaseShape: root.handheldProfile && tier !== "240" && tier !== "480" ? root._gridShape(4, 3) : root._gridShape(tier === "240" || tier === "480" ? 4 : 7, tier === "240" || tier === "480" ? 2 : 3)
+    readonly property var hubGridShape: swapPercentageAxes ? root._gridShape(_hubGridBaseShape.rows, _hubGridBaseShape.columns) : _hubGridBaseShape
     readonly property int hubGridColumns: hubGridShape.columns
     readonly property int hubGridRows: hubGridShape.rows
 
-    // Hub tile cell size — the resolved pixel size PagedGrid.squareCells fits
-    // hubGridColumns x hubGridRows into, given the Hub's own reserved
-    // vertical band (header + the label strip below the grid + minimum gap
-    // allowance). A pure function of screenWidth/screenHeight/tier: every
-    // screen fills the whole window, so this needs no HubScreen instance to
-    // compute. Settings' own category grid reads this directly
-    // (SettingsScreen.qml) instead of fitting against its own (smaller)
-    // column count, so its tiles read as the same physical object as the
-    // Hub's rather than an independently-sized one -- see docs/style.md
-    // "Tile aspect and grid blocks". Keep in sync with PagedGrid.qml's
-    // squareCells fit (`_widthFit`/`_heightFit`/`cellWidth`) and
-    // HubScreen.qml's own band math (`_activeLabelHeight`/`_verticalBand`/
-    // `_gridHeightBudget`) if either changes -- this duplicates both rather
-    // than reading a live HubScreen property so the value is available even
-    // when HubScreen isn't the active screen.
-    readonly property int _hubGridHeightBudget: Math.max(0, screenHeight - headerBottom - pctH(6) - pctH(7) - 3 * pctH(2))
-    readonly property int _hubGridWidthFit: Math.max(0, Math.floor((screenWidth - 2 * pctW(3) - (hubGridColumns - 1) * pctW(2)) / hubGridColumns))
-    readonly property int _hubGridHeightFit: Math.max(0, Math.floor((_hubGridHeightBudget - 2 * pctH(2) - (hubGridRows - 1) * pctH(4)) / hubGridRows))
+    // Hub tile dimensions resolved from its column/row fits and reserved
+    // vertical band (header + label strip + minimum gaps). Pure functions of
+    // screenWidth/screenHeight/tier let Settings reuse them without a live
+    // HubScreen, keeping both grids visually matched. Keep these formulas in
+    // sync with PagedGrid's per-axis fits and HubScreen's band math.
+    readonly property int _hubActiveLabelHeight: tier === "240" ? 8 : pctH(7)
+    readonly property int _hubGridTopMargin: tier === "240" ? pctH(1) : 0
+    readonly property int _hubGridHeightBudget: Math.max(0, tier === "240" ? screenHeight - headerBottom - helpBarHeight - _hubActiveLabelHeight - _hubGridTopMargin : screenHeight - headerBottom - helpBarHeight - _hubActiveLabelHeight - 3 * pctH(2))
+    readonly property int _hubGridSideInset: tier === "240" ? headerSideMargin : pctW(3)
+    readonly property int _hubGridColumnGap: tier === "240" ? 4 : pctW(2)
+    readonly property int _hubGridTopInset: tier === "240" ? 2 : pctH(2)
+    readonly property int _hubGridBottomInset: tier === "240" ? 4 : pctH(2)
+    readonly property int _hubGridRowGap: tier === "240" ? 4 : pctH(4)
+    readonly property int _hubGridWidthFit: Math.max(0, Math.floor((screenWidth - 2 * _hubGridSideInset - (hubGridColumns - 1) * _hubGridColumnGap) / hubGridColumns))
+    readonly property int _hubGridHeightFit: Math.max(0, Math.floor((_hubGridHeightBudget - _hubGridTopInset - _hubGridBottomInset - (hubGridRows - 1) * _hubGridRowGap) / hubGridRows))
     readonly property int hubTileSize: Math.min(_hubGridWidthFit, _hubGridHeightFit)
+    // Four-column low-resolution Hub pages are width-bound. Let tile height
+    // use its independent fit so top/inter-row/bottom gaps stay balanced;
+    // Settings consumes these same resolved dimensions below. Larger tiers
+    // keep the established square tile.
+    readonly property int hubTileWidth: tier === "240" ? _hubGridWidthFit : hubTileSize
+    readonly property int hubTileHeight: tier === "240" ? _hubGridHeightFit : hubTileSize
 
     // Shared browse-grid bounds. Systems and games both solve the same
     // viewport-fit problem now, so the common limits live here and the
@@ -308,23 +333,22 @@ QtObject {
     }
 
     function systemsGridShape(viewportWidth: int, viewportHeight: int): var {
+        // System logos need more vertical capacity than the compact 240p
+        // landscape grid provides. Both rotated layouts use a fixed 2x3 page.
+        if (root.swapPercentageAxes)
+            return root._gridShape(2, 3);
         const declared = root._declaredGridShape("systems");
         return declared === null ? root._selectGridShape(viewportWidth, viewportHeight, root._systemsGridConfig) : declared;
     }
 
-    // Common horizontal framebuffer sizes have declared page geometry. This
-    // prevents a few pixels of header or safe-area drift from changing the
-    // whole page shape. Rotated and arbitrary desktop scenes retain the
-    // adaptive scorer below.
+    // Common framebuffer sizes have declared page geometry. Rotated games
+    // transpose the horizontal shape; systems use the explicit portrait shape
+    // above.
     function _declaredGridShape(kind: string): var {
-        if (root.swapPercentageAxes)
-            return null;
         if (root.crtNativePath) {
             if (kind === "systems")
-                return root._gridShape(3, 3);
-            if (root.screenHeight <= 240)
-                return root._gridShape(2, 2);
-            return root._gridShape(3, 2);
+                return root._orientedGridShape(3, 3);
+            return root._orientedGridShape(3, 2);
         }
 
         const common = root._commonDigitalScene();
@@ -332,16 +356,20 @@ QtObject {
             return null;
         if (kind === "systems") {
             if (common === "240")
-                return root._gridShape(2, 2);
+                return root._orientedGridShape(2, 2);
             if (common === "480")
-                return root._gridShape(3, 3);
-            return root._gridShape(4, 3);
+                return root._orientedGridShape(3, 3);
+            return root._orientedGridShape(4, 3);
         }
         if (common === "240")
-            return root._gridShape(2, 2);
+            return root._orientedGridShape(3, 2);
         if (common === "480")
-            return root._gridShape(4, 2);
-        return root._gridShape(5, 2);
+            return root._orientedGridShape(4, 2);
+        return root._orientedGridShape(5, 2);
+    }
+
+    function _orientedGridShape(columns: int, rows: int): var {
+        return root.swapPercentageAxes ? root._gridShape(rows, columns) : root._gridShape(columns, rows);
     }
 
     function _gridShape(columns: int, rows: int): var {
@@ -353,17 +381,19 @@ QtObject {
 
     function _commonDigitalScene(): string {
         const close = (actual, expected) => Math.abs(actual - expected) <= 2;
-        if (close(root.screenWidth, 320) && close(root.screenHeight, 240))
+        const width = root.swapPercentageAxes ? root.screenHeight : root.screenWidth;
+        const height = root.swapPercentageAxes ? root.screenWidth : root.screenHeight;
+        if (close(width, 320) && close(height, 240))
             return "240";
-        if (close(root.screenWidth, 640) && close(root.screenHeight, 480))
+        if (close(width, 640) && close(height, 480))
             return "480";
-        if (close(root.screenWidth, 960) && close(root.screenHeight, 540))
+        if (close(width, 960) && close(height, 540))
             return "540";
-        if (close(root.screenWidth, 1280) && close(root.screenHeight, 720))
+        if (close(width, 1280) && close(height, 720))
             return "720";
-        if (close(root.screenWidth, 1366) && close(root.screenHeight, 768))
+        if (close(width, 1366) && close(height, 768))
             return "720";
-        if (close(root.screenWidth, 1920) && close(root.screenHeight, 1080))
+        if (close(width, 1920) && close(height, 1080))
             return "1080";
         return "";
     }

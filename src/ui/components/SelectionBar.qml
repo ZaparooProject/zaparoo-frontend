@@ -34,8 +34,8 @@ Item {
     property int radius: Sizing.radiusSm
 
     readonly property bool flashing: root._flashing
-    readonly property color barColor: root._flashing ? Theme.onAccent : Theme.accent
-    readonly property color contentColor: root._flashing ? Theme.accent : Theme.onAccent
+    readonly property color barColor: root._flashing ? Theme.onAccent : Theme.selectionFill
+    readonly property color contentColor: root._flashing ? Theme.selectionFill : Theme.onAccent
     // Selected-row text weight. Dark-on-light (inverted) text suffers
     // irradiation — it reads as thinner than light-on-dark text at the
     // identical weight — so a selected row steps up one notch to read at
@@ -96,5 +96,6 @@ Item {
         visible: root.active
         color: root.barColor
         radius: root.radius
+        antialiasing: Sizing.cornerAntialiasing
     }
 }

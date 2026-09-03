@@ -34,9 +34,9 @@ import Zaparoo.Theme
 // and cut both times: a variable-width number cell kept adding layout
 // complexity -- a reserved-width void when the number was absent, a
 // shifting anchor point when it wasn't. The percentage here is not that
-// same mistake a third time: its slot is fixed-width, measured once from
-// "100%" and reserved whenever the track itself is shown (see
-// `_percentReserve`), so neither failure mode reproduces. It also isn't
+// same mistake a third time: when present, its slot is fixed-width and
+// measured once from "100%" (see `_percentReserve`), so its changing value
+// cannot move either neighbor. When absent, its whole slot collapses. It also isn't
 // a re-display of the same information the 12-cell track already shows
 // -- the track quantises whatever Core's real step count is down to 12
 // visible states, the percentage keeps the underlying resolution. A
@@ -243,19 +243,18 @@ Item {
     // progress signal for the Zaparoo mobile app) -- a normalised
     // percentage is the correct way to surface that signal, not the
     // ordinals themselves.
-    readonly property bool _percentKnown: root._taskTotalKnown && root._taskTotalSteps > 0
+    // MediaStatus retains its last task counters across a dropped connection.
+    // Gate the percentage on the resolved active-task tier, not stale counters,
+    // so Disconnected owns the whole right edge with no orphaned percent slot.
+    readonly property bool _percentKnown: root._taskActive && root._taskTotalKnown && root._taskTotalSteps > 0
     readonly property int _percentValue: Math.round(Math.max(0, Math.min(1, root._taskCurrentStep / Math.max(1, root._taskTotalSteps))) * 100)
     readonly property string _percentText: root._percentKnown ? qsTr("%1%").arg(root._percentValue) : ""
     // Fixed-width slot sized once to "100%" (`percentMetrics` below), not
-    // to whatever the current text measures -- a trailing count next to
-    // this track was tried twice before and cut twice for exactly the
-    // reflow a variable-width slot causes (see this file's own doc
-    // comment): a reserved-width void when the number was absent, a
-    // shifting anchor point when it wasn't. Reserved whenever the track
-    // itself is shown, even during the one phase with no percentage to
-    // display (optimize/vacuum -- `_percentKnown` false), so the track's
-    // own position never moves as a run passes through that phase.
-    readonly property int _percentReserve: root._showTrack ? Sizing.px(percentMetrics.advanceWidth) + root._cellsSpacing : 0
+    // to whatever the current text measures -- so values from 1% to 100%
+    // cannot reflow either neighbor. Collapse the entire slot when Core has
+    // no determinate total (optimize/vacuum); the track remains right-anchored
+    // and the label then needs only its normal one-gap track reserve.
+    readonly property int _percentReserve: root._percentKnown ? Sizing.px(percentMetrics.advanceWidth) + root._cellsSpacing : 0
     readonly property int _labelNaturalWidth: Math.ceil(Math.max(labelMetrics.advanceWidth, labelMetrics.boundingRect.width))
     readonly property int _labelWidth: Math.min(root._labelNaturalWidth, Math.max(0, root.width - root._trackReserve - root._percentReserve))
 
@@ -300,7 +299,7 @@ Item {
         anchors.rightMargin: root._cellsSpacing
         anchors.verticalCenter: parent.verticalCenter
         width: Sizing.px(percentMetrics.advanceWidth)
-        visible: root._showTrack
+        visible: root._percentKnown
         horizontalAlignment: Text.AlignRight
         text: root._percentText
         font.family: Theme.fontUi

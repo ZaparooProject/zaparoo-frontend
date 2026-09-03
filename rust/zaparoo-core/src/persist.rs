@@ -140,6 +140,8 @@ pub struct SettingsState {
     pub language: String,
     #[serde(default = "default_clock_format")]
     pub clock_format: String,
+    #[serde(default = "default_interface_profile")]
+    pub interface_profile: String,
     #[serde(default = "default_orientation")]
     pub orientation: String,
     // Round 10: split into `systems_browse_layout`/`games_browse_layout`
@@ -159,6 +161,21 @@ pub struct SettingsState {
     pub system_logo_style: String,
     #[serde(default = "default_color_scheme")]
     pub color_scheme: String,
+    /// How strongly the preset's accent shows in resting chrome and surfaces
+    /// — `subtle` (the shipped look) or `vivid`. Only ambient accent scales;
+    /// focus, selection, the favorite marker and the logo ramps are fixed.
+    /// See `ColorSchemes.qml`'s `_intensities`.
+    #[serde(default = "default_color_intensity")]
+    pub color_intensity: String,
+    /// Which of Core's scrapers metadata imports run with. Persisted so the
+    /// choice made in `ScrapeSetupModal` is the one every later "Get
+    /// metadata" action uses — those used to hardcode `gamelist.xml`, which
+    /// silently reverted the user's pick on every context-menu scrape.
+    /// Not validated against a fixed list: Core reports its scrapers at
+    /// runtime, so a stale id is reconciled by the modal against
+    /// `MediaStatus.scraper_ids` instead.
+    #[serde(default = "default_metadata_scraper")]
+    pub metadata_scraper: String,
     #[serde(default = "default_button_layout")]
     pub button_layout: String,
     #[serde(default = "default_mouse_enabled")]
@@ -223,6 +240,7 @@ impl Default for SettingsState {
             resolution: String::new(),
             language: String::new(),
             clock_format: default_clock_format(),
+            interface_profile: default_interface_profile(),
             orientation: default_orientation(),
             browse_layout: default_browse_layout(),
             systems_browse_layout: default_browse_layout(),
@@ -230,6 +248,8 @@ impl Default for SettingsState {
             favorites_grouping: default_favorites_grouping(),
             system_logo_style: default_system_logo_style(),
             color_scheme: default_color_scheme(),
+            color_intensity: default_color_intensity(),
+            metadata_scraper: default_metadata_scraper(),
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
             reduce_motion: false,
@@ -246,6 +266,10 @@ impl Default for SettingsState {
             crt_v_offset: 0,
         }
     }
+}
+
+fn default_interface_profile() -> String {
+    "device".into()
 }
 
 fn default_region() -> String {
@@ -278,6 +302,19 @@ fn default_system_logo_style() -> String {
 
 fn default_color_scheme() -> String {
     "zaparoo-dark".into()
+}
+
+/// Matches `ColorSchemes.defaultIntensity`. Deliberately the shipped look, so
+/// an existing install's appearance is unchanged by the upgrade that adds
+/// this key.
+fn default_color_intensity() -> String {
+    "subtle".into()
+}
+
+/// Core ships this scraper in-tree and it supports every system, so it stays
+/// the fallback whenever nothing has been chosen yet.
+fn default_metadata_scraper() -> String {
+    "gamelist.xml".into()
 }
 
 fn default_button_layout() -> String {
@@ -459,6 +496,7 @@ mod tests {
                 resolution: "1920x1080".into(),
                 language: "it_IT".into(),
                 clock_format: "24h".into(),
+                interface_profile: "handheld".into(),
                 orientation: "cw".into(),
                 browse_layout: "list".into(),
                 systems_browse_layout: "list".into(),
@@ -466,6 +504,8 @@ mod tests {
                 favorites_grouping: "system".into(),
                 system_logo_style: "color".into(),
                 color_scheme: "classic-purple".into(),
+                color_intensity: "subtle".into(),
+                metadata_scraper: "gamelist.xml".into(),
                 button_layout: "b".into(),
                 mouse_enabled: false,
                 reduce_motion: true,

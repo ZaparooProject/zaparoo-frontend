@@ -22,7 +22,15 @@ import Zaparoo.Browse as Browse
 // Renders the single shared `Browse.QrCode` matrix at whatever pixel
 // budget the caller passes via `maxQrPixels`. Callers must call
 // `Browse.QrCode.generate(...)` themselves before opening; this component
-// only reads `Browse.QrCode.size` / `row_at()`.
+// only reads `Browse.QrCode.size` / `Browse.QrCode.rows`.
+//
+// `rows` must stay a notifying property, never an invokable. Binding a
+// delegate's bits to a `row_at(row)` call made the delegate's own index
+// the binding's only dependency, so a regenerate that landed on the same
+// QR version (same `size`, no `Repeater` rebuild) painted the previous
+// payload's matrix forever -- the documentation code leaking into the
+// log-upload modal, and one game's "Write with App" code showing for
+// another. See qr_code.rs's `rows` doc comment.
 //
 // `qrLight` (quiet zone + background) and `qrDark` (modules) never invert
 // regardless of whether the active preset itself is light or dark —
@@ -68,7 +76,7 @@ Item {
                     required property int index
 
                     readonly property int row: index
-                    readonly property string bits: Browse.QrCode.row_at(row)
+                    readonly property string bits: Browse.QrCode.rows[rowDelegate.row] ?? ""
 
                     x: 0
                     y: row * root.moduleSize

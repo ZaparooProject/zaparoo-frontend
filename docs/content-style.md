@@ -15,17 +15,25 @@ Order every `ContextMenu` ("Options") and `ListPickerModal` ("View") entry
 list by this priority, top to bottom:
 
 1. The primary action — what most users came to this menu to do (usually
-   `Launch game` / `Launch system`).
+   `Launch game` / `Launch system`) — **unless Accept on the anchor
+   already does it**. A game tile launches on Accept, so its menu omits
+   `Launch game` rather than spending the top row on a duplicate the user
+   has already walked past; `Details` becomes that menu's first entry. A
+   system tile navigates *into* the system on Accept, so `Launch system`
+   is not a duplicate and stays first. Apply the test to the anchor, not
+   to the verb.
 2. Frequent secondary actions (favorite, write a token, details).
 3. Organizational actions (Move, Add to Hub, Hide).
-4. Long-running maintenance actions (Update media database, Scrape
+4. Long-running maintenance actions (Update media database, Update
    metadata) — always last. These start a background job the user waits
    on; they are never what most people open the menu to do.
 
-A destructive or permanent action (Delete) is never first, and sits with
-the other organizational actions rather than at the very bottom next to
+A destructive or permanent action is never first, and sits with the
+other organizational actions rather than at the very bottom next to
 maintenance — permanence and slowness are different kinds of "be careful
-here" and shouldn't be conflated into one junk-drawer tail.
+here" and shouldn't be conflated into one junk-drawer tail. Taking a
+shortcut off the Hub is `Remove`, not `Delete`: nothing on disk changes,
+and `Delete` reads as deleting the game.
 
 This mirrors both established guidance and this app's own constraints:
 GNOME's HIG says order items "by importance, task order, or expected
@@ -65,7 +73,7 @@ Nord, SNES, N64, …).
 
 Per GNOME's HIG: commands are verbs, settings are adjectives or nouns.
 
-- Commands: `Launch`, `Write`, `Add`, `Scrape`, `Move`, `Hide`, `Delete`.
+- Commands: `Launch`, `Write`, `Add`, `Update`, `Move`, `Hide`, `Remove`.
 - Settings: `Reduce motion`, `Debug logging`, `Mouse support` — not
   `Reduce the motion` or `Enable debug logging`.
 
@@ -114,6 +122,7 @@ One term per concept, matching the vocabulary Zaparoo's own docs
 | **Hub** | home, main menu | The frontend's root screen |
 | **Core** | server, backend | The Zaparoo Core service this frontend talks to — never used for an FPGA/emulator core, which is a **launcher** |
 | **media database** | library, index (as a noun) | The scanned catalog of games; "Update media database" is always spelled out, never bare "Update" |
+| **Update metadata** | Scrape metadata, Get metadata, Import metadata | Filling in artwork and details for already-indexed games. One label at every entry point (Settings > Library, and the system/category/game context menus). The verb deliberately does not name the mechanism: today's sources import scrapes already on disk, future ones may fetch, and only the setup modal's own button resolves that ("Start import"). "Scrape" named the wrong mechanism; "Get" read wrong for the re-runs that make up most uses |
 | **App** | phone, mobile app | The companion Zaparoo App used to scan a QR code and write a token |
 | **Automatic** | Auto | The default/no-preference picker choice, spelled out everywhere it appears (resolution, language, region, clock, artwork) |
 
@@ -129,7 +138,7 @@ tracks the single widest entry in the open menu, so one long label widens
 the whole panel. Treat anything near the length of `Show original
 filenames` as a signal to either shorten the label or move the
 explanation into a Settings description line (see `docs/style.md` →
-"Settings section headers" and this file's checklist below) rather than
+"Section headings" and this file's checklist below) rather than
 lengthening a menu row further.
 
 ## Adding a menu entry — checklist
@@ -160,6 +169,8 @@ lengthening a menu row further.
    the bottom of the settings card (see `docs/style.md` → "Settings hint
    band"), not on the row itself — write to a **two-line budget**: it wraps
    and elides past that, and the band's width is the card's own width
-   minus its side padding, narrower again at the 240p/CRT tier.
+   minus its side padding, narrower again at the 240p tier. English source
+   descriptions must stay at or below 64 characters; hardware measurement
+   puts the 240p cutoff at roughly 66, leaving a small wrapping margin.
 4. Sentence case, and reuse an existing picker's value vocabulary
    (`Automatic`, not a new synonym) wherever the same concept recurs.

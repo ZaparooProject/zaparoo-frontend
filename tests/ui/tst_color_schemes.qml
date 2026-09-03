@@ -10,7 +10,7 @@ TestCase {
     name: "ColorSchemes"
     when: windowShown
 
-    readonly property var requiredRoles: ["bgDeep", "bgPanel", "bgBar", "surfaceCard", "tileEdge", "controlEdge", "scrim", "borderSubtle", "borderMid", "textPrimary", "textLabel", "textVariant", "accent", "onAccent", "onAccentMuted", "logoPrimary", "logoSecondary", "logoShadow", "logoFocusPrimary", "logoFocusSecondary", "logoFocusShadow", "marker", "markerOutline", "errorHex", "qrLight", "qrDark"]
+    readonly property var requiredRoles: ["bgDeep", "bgPanel", "bgBar", "surfaceCard", "tileEdge", "controlEdge", "scrim", "borderSubtle", "borderMid", "textPrimary", "textLabel", "textVariant", "accent", "selectionFill", "onAccent", "onAccentMuted", "logoPrimary", "logoSecondary", "logoShadow", "logoFocusPrimary", "logoFocusSecondary", "logoFocusShadow", "marker", "markerOutline", "errorHex", "qrLight", "qrDark"]
 
     function _linearChannel(value: real): real {
         return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
@@ -178,6 +178,107 @@ TestCase {
         }
     }
 
+    // The no-argument API used by callers without an intensity setting must
+    // resolve exactly like an explicit Subtle choice for every role and preset.
+    function test_omitted_intensity_defaults_to_subtle(): void {
+        for (let i = 0; i < ColorSchemes.ids.length; i++) {
+            const id = ColorSchemes.ids[i];
+            const shipped = ColorSchemes.palette(id);
+            const subtle = ColorSchemes.palette(id, "subtle");
+            for (let r = 0; r < requiredRoles.length; r++) {
+                const role = requiredRoles[r];
+                compare(Qt.color(subtle[role]), Qt.color(shipped[role]), id + " " + role + " must default to Subtle");
+            }
+        }
+    }
+
+    // An unknown or empty value must land on Subtle, not on a broken palette
+    // — a state.toml hand-edited to a typo, or written by a newer build with
+    // a third intensity, still has to render.
+    function test_unknown_intensity_falls_back_to_subtle(): void {
+        const subtle = ColorSchemes.palette("nes", "subtle");
+        compare(Qt.color(ColorSchemes.palette("nes", "not-an-intensity").tileEdge), Qt.color(subtle.tileEdge));
+        compare(Qt.color(ColorSchemes.palette("nes", "").tileEdge), Qt.color(subtle.tileEdge));
+        compare(ColorSchemes.defaultIntensity, "subtle");
+    }
+
+    // The whole point of Vivid is that the accent actually reaches the
+    // resting chrome, so assert it moved rather than only that it stayed
+    // legal. Measured on the high-chroma presets, which are the ones the
+    // chroma cap binds hardest and the ones testers picked expecting vivid
+    // color ("I liked the red underlines on the NES theme").
+    function test_vivid_intensity_raises_ambient_accent(): void {
+        const presets = ["nes", "virtual-boy", "game-boy", "synthwave-84"];
+        for (let i = 0; i < presets.length; i++) {
+            const id = presets[i];
+            const subtle = ColorSchemes.palette(id, "subtle");
+            const vivid = ColorSchemes.palette(id, "vivid");
+            verify(_chroma(vivid.tileEdge) > _chroma(subtle.tileEdge), id + " vivid tile edge must be more chromatic than subtle");
+            verify(_chroma(vivid.controlEdge) > _chroma(subtle.controlEdge), id + " vivid control edge must be more chromatic than subtle");
+            // Surfaces are NOT part of the setting -- see `_intensities`.
+            // Asserted rather than left implicit so a future attempt to
+            // scale the ladder cast has to come back through that comment.
+            compare(Qt.color(vivid.surfaceCard), Qt.color(subtle.surfaceCard), id + " card must not change with intensity");
+            compare(Qt.color(vivid.textVariant), Qt.color(subtle.textVariant), id + " variant text must not change with intensity");
+            compare(Qt.color(vivid.accent), Qt.color(subtle.accent), id + " accent must not change with intensity");
+            compare(Qt.color(vivid.marker), Qt.color(subtle.marker), id + " marker must not change with intensity");
+        }
+    }
+
+    // Vivid scales the inputs to the same solvers, so every floor the shipped
+    // palette clears must still clear. Mirrors the assertions in
+    // `test_edge_reads_as_a_lit_bevel` and
+    // `test_presets_keep_content_and_focus_legible`, run against the other
+    // intensity — a scale factor tuned too far up is exactly the regression
+    // this catches, and it would otherwise ship invisible because every other
+    // test in this file only ever exercises Subtle.
+    function test_vivid_intensity_holds_every_contrast_floor(): void {
+        for (let i = 0; i < ColorSchemes.ids.length; i++) {
+            const id = ColorSchemes.ids[i];
+            const palette = ColorSchemes.palette(id, "vivid");
+            verify(_contrastRatio(palette.tileEdge, palette.surfaceCard) >= 1.5, id + " vivid tile edge/card separation");
+            verify(_contrastRatio(palette.controlEdge, palette.surfaceCard) >= 1.5, id + " vivid control edge/card separation");
+            verify(_chroma(palette.tileEdge) > _chroma(palette.surfaceCard), id + " vivid tile edge must be more chromatic than the card");
+            verify(_chroma(palette.controlEdge) > _chroma(palette.surfaceCard), id + " vivid control edge must be more chromatic than the card");
+            // Surfaces do not scale, so these should be untouched — kept
+            // as a guardrail against a change that starts moving them.
+            verify(_contrastRatio(palette.textPrimary, palette.surfaceCard) >= 4.5, id + " vivid primary text/card");
+            verify(_contrastRatio(palette.textLabel, palette.surfaceCard) >= 3.0, id + " vivid label/card");
+            verify(_contrastRatio(palette.textVariant, palette.surfaceCard) >= 3.0, id + " vivid variant/card");
+            verify(_contrastRatio(palette.textPrimary, palette.bgPanel) >= 4.5, id + " vivid primary text/panel");
+            verify(_contrastRatio(palette.borderMid, palette.surfaceCard) >= 1.2, id + " vivid borderMid/card");
+        }
+    }
+
+    // sRGB lerp, the same arithmetic as ColorSchemes.qml's `_mix`,
+    // reimplemented here for the same reason `_chroma` is.
+    function _mix(from: color, to: color, amount: real): color {
+        return Qt.rgba(from.r + (to.r - from.r) * amount, from.g + (to.g - from.g) * amount, from.b + (to.b - from.b) * amount, 1);
+    }
+
+    // Vivid exists because testers missed the pre-`_edgeFor` bevel: a plain
+    // 44% step from the neutral ladder toward the accent,
+    // `_mix(_mix(primary, text, 0.06), accent, 0.44)`, which shipped through
+    // e8ff996. That bevel was both more chromatic AND lighter than what the
+    // contrast-floor solver produces, so a Vivid that only raised the
+    // chroma cap still read flatter than the original ("less vivid than it
+    // was, even with Vivid selected"). Both axes are asserted: at least the
+    // original's chroma, and a higher edge/card contrast than Subtle.
+    // Measured on the high-chroma presets, where the cap binds and the
+    // difference is what testers see.
+    function test_vivid_intensity_restores_the_original_bevel(): void {
+        const presets = ["nes", "virtual-boy", "game-boy", "synthwave-84"];
+        for (let i = 0; i < presets.length; i++) {
+            const id = presets[i];
+            const subtle = ColorSchemes.palette(id, "subtle");
+            const vivid = ColorSchemes.palette(id, "vivid");
+            const original = _mix(_mix(Qt.color(vivid.bgDeep), Qt.color(vivid.textPrimary), 0.06), Qt.color(vivid.accent), 0.44);
+            verify(_chroma(vivid.tileEdge) >= _chroma(original), id + " vivid tile edge chroma " + _chroma(vivid.tileEdge).toFixed(3) + " must reach the original bevel's " + _chroma(original).toFixed(3));
+            verify(_contrastRatio(vivid.tileEdge, vivid.surfaceCard) > _contrastRatio(subtle.tileEdge, subtle.surfaceCard), id + " vivid tile edge must sit lighter off the card than subtle");
+            verify(_contrastRatio(vivid.controlEdge, vivid.surfaceCard) > _contrastRatio(subtle.controlEdge, subtle.surfaceCard), id + " vivid control edge must sit lighter off the card than subtle");
+        }
+    }
+
     // The focused logo ramp is a gradient map, so its span is what turns an
     // antialiased glyph boundary into a rim light. Collapse the span and tinted
     // artwork goes flat. Measured in OKLCh L rather than Rec.709 relative
@@ -229,11 +330,38 @@ TestCase {
     // selected row); `marker` is the fixed-hue state-marker role (favorite
     // heart, Hidden badge) kept independent of `accent` so it can't blend
     // into the focus ring.
+    // Measured against `selectionFill`, not `accent`: the fill is the ground
+    // every piece of on-accent content actually sits on (SelectionBar's text,
+    // the settings toggle knob border, the favorite heart on a highlighted
+    // row). Focus rings use the raw accent but never render text on it.
+    // Checked at both intensities, since the fill's chroma is what the
+    // Color intensity setting scales.
     function test_on_accent_clears_body_text_contrast(): void {
+        const intensities = ["subtle", "vivid"];
+        for (let n = 0; n < intensities.length; n++) {
+            for (let i = 0; i < ColorSchemes.ids.length; i++) {
+                const id = ColorSchemes.ids[i];
+                const palette = ColorSchemes.palette(id, intensities[n]);
+                verify(_contrastRatio(palette.onAccent, palette.selectionFill) >= 4.5, id + " " + intensities[n] + " onAccent/selectionFill must clear body-text contrast");
+            }
+        }
+    }
+
+    // The selection fill keeps the accent's hue and lightness and only drops
+    // chroma, so a selected row still reads as the accent colour rather than
+    // as grey, and its lightness (which is what carries the contrast) does not
+    // drift. Subtle pulls harder than Vivid -- that is the whole point of
+    // tying it to the setting.
+    function test_selection_fill_desaturates_without_shifting_lightness(): void {
         for (let i = 0; i < ColorSchemes.ids.length; i++) {
             const id = ColorSchemes.ids[i];
-            const palette = ColorSchemes.palette(id);
-            verify(_contrastRatio(palette.onAccent, palette.accent) >= 4.5, id + " onAccent/accent must clear body-text contrast");
+            const subtle = ColorSchemes.palette(id, "subtle");
+            const vivid = ColorSchemes.palette(id, "vivid");
+            const accentL = ColorSchemes._toLch(ColorSchemes._srgbToOklab(subtle.accent)).L;
+            const fillL = ColorSchemes._toLch(ColorSchemes._srgbToOklab(subtle.selectionFill)).L;
+            verify(Math.abs(fillL - accentL) < 0.02, id + " selection fill must keep the accent's lightness");
+            verify(_chroma(subtle.selectionFill) < _chroma(subtle.accent), id + " selection fill must be less chromatic than the accent");
+            verify(_chroma(subtle.selectionFill) < _chroma(vivid.selectionFill), id + " Subtle must desaturate the fill further than Vivid");
         }
     }
 

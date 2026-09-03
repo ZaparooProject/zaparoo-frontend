@@ -55,6 +55,7 @@ pub struct Config {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SettingsConfig {
+    pub interface_profile: Option<String>,
     pub orientation: Option<String>,
     pub clock_format: Option<String>,
     // Round 10: split into per-screen fields below.
@@ -66,6 +67,8 @@ pub struct SettingsConfig {
     pub favorites_sort: Option<String>,
     pub system_logo_style: Option<String>,
     pub color_scheme: Option<String>,
+    pub color_intensity: Option<String>,
+    pub metadata_scraper: Option<String>,
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
     pub reduce_motion: Option<bool>,
@@ -101,12 +104,15 @@ pub struct SettingsConfig {
 pub struct SettingsMirror<'a> {
     pub resolution: &'a str,
     pub language: &'a str,
+    pub interface_profile: &'a str,
     pub orientation: &'a str,
     pub clock_format: &'a str,
     pub systems_browse_layout: &'a str,
     pub games_browse_layout: &'a str,
     pub system_logo_style: &'a str,
     pub color_scheme: &'a str,
+    pub color_intensity: &'a str,
+    pub metadata_scraper: &'a str,
     pub button_layout: &'a str,
     pub mouse_enabled: bool,
     pub reduce_motion: bool,
@@ -196,6 +202,7 @@ struct RawInput {
 
 #[derive(Deserialize, Default)]
 struct RawSettings {
+    interface_profile: Option<String>,
     orientation: Option<String>,
     clock_format: Option<String>,
     // Round 10: pre-round-10 config files only have this key. Kept for
@@ -208,6 +215,8 @@ struct RawSettings {
     favorites_sort: Option<String>,
     system_logo_style: Option<String>,
     color_scheme: Option<String>,
+    color_intensity: Option<String>,
+    metadata_scraper: Option<String>,
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
     reduce_motion: Option<bool>,
@@ -337,6 +346,7 @@ fn normalize_string_list(values: Vec<String>) -> Vec<String> {
 
 fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
     SettingsConfig {
+        interface_profile: trim_opt(raw.interface_profile),
         orientation: trim_opt(raw.orientation),
         clock_format: trim_opt(raw.clock_format),
         // Round 10: prefer the new per-screen key; fall back to the
@@ -350,6 +360,8 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         favorites_sort: trim_opt(raw.favorites_sort),
         system_logo_style: trim_opt(raw.system_logo_style),
         color_scheme: trim_opt(raw.color_scheme),
+        color_intensity: trim_opt(raw.color_intensity),
+        metadata_scraper: trim_opt(raw.metadata_scraper),
         button_layout: trim_opt(raw.button_layout),
         mouse_enabled: raw.mouse_enabled,
         reduce_motion: raw.reduce_motion,
@@ -493,6 +505,11 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     }
 
     let settings = section_mut(&mut doc, "settings", path)?;
+    set_str(
+        settings,
+        "interface_profile",
+        mirror.interface_profile.trim(),
+    );
     set_str(settings, "orientation", mirror.orientation.trim());
     set_str(settings, "clock_format", mirror.clock_format.trim());
     // Round 10: retire the legacy single key the same way
@@ -516,6 +533,8 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         mirror.system_logo_style.trim(),
     );
     set_str(settings, "color_scheme", mirror.color_scheme.trim());
+    set_str(settings, "color_intensity", mirror.color_intensity.trim());
+    set_str(settings, "metadata_scraper", mirror.metadata_scraper.trim());
     set_str(settings, "button_layout", mirror.button_layout.trim());
     set_bool(settings, "mouse_enabled", mirror.mouse_enabled);
     set_bool(settings, "reduce_motion", mirror.reduce_motion);
@@ -763,12 +782,15 @@ mod tests {
         SettingsMirror {
             resolution: "1280x720",
             language: "en",
+            interface_profile: "device",
             orientation: "horizontal",
             clock_format: "auto",
             systems_browse_layout: "grid",
             games_browse_layout: "grid",
             system_logo_style: "tinted",
             color_scheme: "zaparoo-dark",
+            color_intensity: "subtle",
+            metadata_scraper: "gamelist.xml",
             button_layout: "a",
             mouse_enabled: true,
             reduce_motion: false,
@@ -1294,12 +1316,15 @@ mod tests {
             SettingsMirror {
                 resolution: "1280x720",
                 language: "it_IT",
+                interface_profile: "handheld",
                 orientation: "cw",
                 clock_format: "24h",
                 systems_browse_layout: "list",
                 games_browse_layout: "grid",
                 system_logo_style: "color",
                 color_scheme: "classic-purple",
+                color_intensity: "subtle",
+                metadata_scraper: "gamelist.xml",
                 button_layout: "b",
                 mouse_enabled: false,
                 reduce_motion: true,
@@ -1323,6 +1348,7 @@ mod tests {
         assert_eq!(cfg.video_width, 1280);
         assert_eq!(cfg.video_height, 720);
         assert!(cfg.video_explicit);
+        assert_eq!(cfg.settings.interface_profile.as_deref(), Some("handheld"));
         assert_eq!(cfg.settings.orientation.as_deref(), Some("cw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("24h"));
         assert_eq!(cfg.settings.systems_browse_layout.as_deref(), Some("list"));
@@ -1356,12 +1382,15 @@ mod tests {
             SettingsMirror {
                 resolution: "1280x720",
                 language: "en",
+                interface_profile: "device",
                 orientation: "horizontal",
                 clock_format: "auto",
                 systems_browse_layout: "grid",
                 games_browse_layout: "grid",
                 system_logo_style: "tinted",
                 color_scheme: "zaparoo-dark",
+                color_intensity: "subtle",
+                metadata_scraper: "gamelist.xml",
                 button_layout: "a",
                 mouse_enabled: true,
                 reduce_motion: false,
@@ -1409,12 +1438,15 @@ mod tests {
         let mirror = SettingsMirror {
             resolution: "",
             language: "",
+            interface_profile: "standard",
             orientation: "ccw",
             clock_format: "12h",
             systems_browse_layout: "list",
             games_browse_layout: "list",
             system_logo_style: "color",
             color_scheme: "classic-purple",
+            color_intensity: "subtle",
+            metadata_scraper: "gamelist.xml",
             button_layout: "c",
             mouse_enabled: false,
             reduce_motion: false,
@@ -1436,6 +1468,7 @@ mod tests {
         save_settings_mirror(f.path(), mirror).expect("save");
         let written = std::fs::read_to_string(f.path()).expect("read");
         assert!(written.contains("language = \"auto\""));
+        assert!(written.contains("interface_profile = \"standard\""));
         assert!(written.contains("orientation = \"ccw\""));
         assert!(written.contains("clock_format = \"12h\""));
         assert!(

@@ -127,13 +127,19 @@ Item {
             kind: "field",
             id: "colorScheme",
             label: qsTr("Color scheme"),
-            description: qsTr("Changes the colors used across every screen: backgrounds, text, and highlights.")
+            description: qsTr("Changes colors across screens, including text and highlights.")
+        },
+        {
+            kind: "field",
+            id: "colorIntensity",
+            label: qsTr("Color intensity"),
+            description: qsTr("Controls how strongly accent colors tint tiles and backgrounds.")
         },
         {
             kind: "field",
             id: "systemLogoStyle",
             label: qsTr("System logos"),
-            description: qsTr("Draw system logos in their original colors, or tinted to match the color scheme.")
+            description: qsTr("Shows system logos in original colors or tinted to match colors.")
         },
         {
             kind: "field",
@@ -145,7 +151,7 @@ Item {
             kind: "field",
             id: "screensaverTimeout",
             label: qsTr("Screensaver"),
-            description: qsTr("How long the frontend sits idle before the screensaver starts. Set to Off to never start it.")
+            description: qsTr("Sets idle time before the screensaver starts. Off disables it.")
         }
     ]
     // Display = video output geometry — resolution, orientation, analog video.
@@ -161,9 +167,15 @@ Item {
         }
         out.push({
             kind: "field",
+            id: "interfaceProfile",
+            label: qsTr("Interface layout"),
+            description: qsTr("Adjusts layout density for standard and handheld screens.")
+        });
+        out.push({
+            kind: "field",
             id: "orientation",
             label: qsTr("Orientation"),
-            description: qsTr("Rotates the whole interface for a screen mounted sideways, as in a tate cabinet.")
+            description: qsTr("Rotates the interface for a sideways screen or tate cabinet.")
         });
         if (Browse.Settings.is_mister) {
             // Native CRT video path (Menu fork DDR writer). The toggle is
@@ -178,20 +190,20 @@ Item {
                 kind: "field",
                 id: "crtEnabled",
                 label: qsTr("CRT mode"),
-                description: qsTr("Outputs a 15 kHz analog signal for a CRT through the MiSTer's video out. Restarts the frontend.")
+                description: qsTr("Outputs 15 kHz analog video through MiSTer. Restarts frontend.")
             });
             if (Browse.CrtVideo.crt_enabled) {
                 out.push({
                     kind: "field",
                     id: "crtVideoStandard",
                     label: qsTr("Video standard"),
-                    description: qsTr("Match the analog output to your TV: NTSC or PAL. Restarts the frontend.")
+                    description: qsTr("Matches analog output to NTSC or PAL. Restarts the frontend.")
                 });
                 out.push({
                     kind: "field",
                     id: "crtCalibration",
                     label: qsTr("Screen position"),
-                    description: qsTr("Opens a test pattern. Use the arrows to nudge the analog picture into place, then press any button.")
+                    description: qsTr("Opens a test pattern to position the analog picture with arrows.")
                 });
             }
         }
@@ -209,7 +221,7 @@ Item {
             kind: "field",
             id: "region",
             label: qsTr("Region"),
-            description: qsTr("Which regional naming to prefer for systems and games, such as Mega Drive or Genesis.")
+            description: qsTr("Selects regional system and game names, such as Mega Drive.")
         },
         {
             kind: "field",
@@ -223,7 +235,7 @@ Item {
             kind: "field",
             id: "buttonLayout",
             label: qsTr("Button style"),
-            description: qsTr("Which button icons the on-screen prompts use, to match your controller.")
+            description: qsTr("Matches on-screen prompt icons to your controller.")
         },
         {
             kind: "field",
@@ -235,7 +247,7 @@ Item {
             kind: "field",
             id: "swapOptionsView",
             label: qsTr("Swap controller options/view"),
-            description: qsTr("Flips which controller button opens Options and which opens View.")
+            description: qsTr("Swaps which controller button opens Options and View.")
         },
         {
             kind: "field",
@@ -261,13 +273,13 @@ Item {
             kind: "field",
             id: "updateMediaDb",
             label: qsTr("Update media database"),
-            description: qsTr("Rescans your game folders to pick up added or removed files. Choose which systems to scan.")
+            description: qsTr("Rescans game folders for added or removed files. Choose systems.")
         },
         {
             kind: "field",
             id: "runScraper",
-            label: qsTr("Get metadata"),
-            description: qsTr("Imports artwork and details from files you already have. Zaparoo does not download them.")
+            label: qsTr("Update metadata"),
+            description: qsTr("Imports artwork and details from your files. Downloads nothing.")
         },
         {
             kind: "header",
@@ -277,31 +289,31 @@ Item {
             kind: "field",
             id: "systemsLayout",
             label: qsTr("Systems layout"),
-            description: qsTr("Show systems as a grid of covers, or as a list with details beside it.")
+            description: qsTr("Shows systems as a cover grid or a list with details.")
         },
         {
             kind: "field",
             id: "gamesLayout",
             label: qsTr("Games layout"),
-            description: qsTr("Show games as a grid of covers, or as a list with details beside it. Also covers Favorites and Recents.")
+            description: qsTr("Sets grid or list layout for Games, Favorites, and Recents.")
         },
         {
             kind: "field",
             id: "mediaImageType",
             label: qsTr("Preferred artwork"),
-            description: qsTr("Which artwork to prefer when a game has more than one image, such as box art or a thumbnail.")
+            description: qsTr("Prefers an artwork type when games have multiple images.")
         },
         {
             kind: "field",
             id: "showHidden",
             label: qsTr("Show hidden items"),
-            description: qsTr("Shows hidden systems and categories, marked as hidden, so you can unhide them.")
+            description: qsTr("Shows hidden systems and categories so you can unhide them.")
         },
         {
             kind: "field",
             id: "showOriginalFilenames",
             label: qsTr("Show original filenames"),
-            description: qsTr("Shows each file's real name instead of the cleaned-up display title.")
+            description: qsTr("Shows real filenames instead of cleaned-up display titles.")
         }
     ]
     readonly property var supportAboutFields: [
@@ -309,25 +321,25 @@ Item {
             kind: "field",
             id: "aboutLicense",
             label: qsTr("About / License"),
-            description: qsTr("Version, build date, license terms, and the people who made this.")
+            description: qsTr("Version, build date, license terms, and contributors.")
         },
         {
             kind: "field",
             id: "documentation",
             label: qsTr("Documentation"),
-            description: qsTr("Shows a code you can scan to open the Zaparoo Frontend guide on your phone.")
+            description: qsTr("Shows a code for opening the Frontend guide on your phone.")
         },
         {
             kind: "field",
             id: "debugLogging",
             label: qsTr("Debug logging"),
-            description: qsTr("Writes extra detail to the log file to help track down a problem. Restarts the frontend.")
+            description: qsTr("Adds troubleshooting detail to logs. Restarts the frontend.")
         },
         {
             kind: "field",
             id: "uploadLog",
             label: qsTr("Upload log file"),
-            description: qsTr("Uploads the log file and gives you a link to share when reporting a problem.")
+            description: qsTr("Uploads the log and provides a link for problem reports.")
         }
     ]
     readonly property var fields: {
@@ -460,6 +472,8 @@ Item {
             return settings._resolutionDisplay(Browse.Settings.current_resolution);
         if (id === "language")
             return settings._languageDisplay(Browse.Settings.current_language);
+        if (id === "interfaceProfile")
+            return settings._interfaceProfileDisplay(Browse.Settings.current_interface_profile);
         if (id === "orientation")
             return settings._orientationDisplay(Browse.Settings.current_orientation);
         if (id === "systemsLayout")
@@ -470,6 +484,8 @@ Item {
             return settings._systemLogoStyleDisplay(Browse.Settings.current_system_logo_style);
         if (id === "colorScheme")
             return settings._colorSchemeDisplay(Browse.Settings.current_color_scheme);
+        if (id === "colorIntensity")
+            return settings._colorIntensityDisplay(Browse.Settings.current_color_intensity);
         if (id === "buttonLayout")
             return settings._buttonLayoutDisplay(Browse.Settings.current_button_layout);
         if (id === "screensaverTimeout")
@@ -565,15 +581,13 @@ Item {
         return from;
     }
 
-    readonly property int rootGridRows: 2
-    // Columns track the (fixed) category count so the menu auto-balances into
-    // `rootGridRows` rows (six categories -> 3x2) instead of a hardcoded count.
-    // This is chrome with a known small item set, not content that should
-    // reflow with screen width; the cell geometry below is already
-    // sizing-driven (pctW/pctH, capped at the Hub's own resolved tile size),
-    // so the cells shrink to fit any screen while the layout stays a
-    // deliberate balanced grid.
-    readonly property int rootGridColumns: Math.ceil(settings.categoryFields.length / settings.rootGridRows)
+    readonly property int _rootGridLandscapeRows: 2
+    readonly property int _rootGridLandscapeColumns: Math.ceil(settings.categoryFields.length / settings._rootGridLandscapeRows)
+    readonly property bool _rootGridRotated: Browse.Settings.current_orientation !== "horizontal"
+    // Keep the known category grid balanced, then transpose it with the scene.
+    // Six categories therefore render 3x2 horizontally and 2x3 in CW/CCW.
+    readonly property int rootGridColumns: settings._rootGridRotated ? settings._rootGridLandscapeRows : settings._rootGridLandscapeColumns
+    readonly property int rootGridRows: settings._rootGridRotated ? settings._rootGridLandscapeColumns : settings._rootGridLandscapeRows
 
     function _moveRootGrid(dx: int, dy: int): void {
         if (settings.fieldCount <= 0)
@@ -623,7 +637,7 @@ Item {
         if (!settings._isField(settings.currentIndex))
             return false;
         const id = settings.fields[settings.currentIndex].id;
-        return id === "resolution" || id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "systemsLayout" || id === "gamesLayout" || id === "systemLogoStyle" || id === "colorScheme" || id === "buttonLayout" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
+        return id === "resolution" || id === "language" || id === "clockFormat" || id === "region" || id === "orientation" || id === "systemsLayout" || id === "gamesLayout" || id === "systemLogoStyle" || id === "colorScheme" || id === "colorIntensity" || id === "buttonLayout" || id === "screensaverTimeout" || id === "mediaImageType" || id === "crtVideoStandard";
     }
     // True when focused row accepts A without left/right cycling:
     // pickers, jobs, modal/navigation rows, and root category rows.
@@ -723,6 +737,11 @@ Item {
         return raw === undefined || raw === null ? [] : raw;
     }
 
+    function _colorIntensityList(): list<string> {
+        const raw = Browse.Settings.available_color_intensities;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
     function _buttonLayoutList(): list<string> {
         const raw = Browse.Settings.available_button_layouts;
         return raw === undefined || raw === null ? [] : raw;
@@ -745,6 +764,11 @@ Item {
 
     function _clockFormatList(): list<string> {
         const raw = Browse.Settings.available_clock_formats;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
+    function _interfaceProfileList(): list<string> {
+        const raw = Browse.Settings.available_interface_profiles;
         return raw === undefined || raw === null ? [] : raw;
     }
 
@@ -816,6 +840,14 @@ Item {
         return qsTr("Automatic");
     }
 
+    function _interfaceProfileDisplay(value: string): string {
+        if (value === "standard")
+            return qsTr("Standard");
+        if (value === "handheld")
+            return qsTr("Handheld");
+        return qsTr("Device default");
+    }
+
     function _orientationDisplay(value: string): string {
         if (value === "cw")
             return qsTr("Rotated CW");
@@ -867,6 +899,18 @@ Item {
             "solarized-light": qsTr("Solarized Light")
         };
         return names[value] !== undefined ? names[value] : names["zaparoo-dark"];
+    }
+
+    // Two values only. "Subtle" is what ships and what every existing
+    // install already sees; "Vivid" lets the high-chroma presets (NES,
+    // Virtual Boy, Game Boy, Synthwave '84) read as vividly as their name
+    // suggests. A middle rung was considered and dropped -- the difference
+    // is too soft to perceive reliably, and it would triple what has to be
+    // checked across 19 presets.
+    function _colorIntensityDisplay(value: string): string {
+        if (value === "vivid")
+            return qsTr("Vivid");
+        return qsTr("Subtle");
     }
 
     function _buttonLayoutDisplay(value: string): string {
@@ -1001,6 +1045,15 @@ Item {
                     label: settings._regionDisplay(list[i])
                 });
             initialId = Browse.Settings.current_region;
+        } else if (id === "interfaceProfile") {
+            title = qsTr("Interface layout");
+            const list = settings._interfaceProfileList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._interfaceProfileDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_interface_profile;
         } else if (id === "orientation") {
             title = qsTr("Orientation");
             const list = settings._orientationList();
@@ -1053,6 +1106,15 @@ Item {
                     swatch: ColorSchemes.previewColors(list[i])
                 });
             initialId = Browse.Settings.current_color_scheme;
+        } else if (id === "colorIntensity") {
+            title = qsTr("Color intensity");
+            const list = settings._colorIntensityList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._colorIntensityDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_color_intensity;
         } else if (id === "buttonLayout") {
             title = qsTr("Button style");
             const list = settings._buttonLayoutList();
@@ -1400,12 +1462,12 @@ Item {
 
     TopStatusStrip {
         id: topStrip
-        visible: !settings.optimisticLoading
+        visible: !settings.optimisticLoading && Sizing.tier !== "240"
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.topMargin: Sizing.headerBottom
-        height: Sizing.pctH(7)
+        height: Sizing.tier === "240" ? 0 : Sizing.pctH(7)
         title: settings.pageTitle
         currentPage: 0
         totalPages: 0
@@ -1485,34 +1547,32 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: topStrip.bottom
-        anchors.topMargin: Sizing.pctH(2)
+        anchors.topMargin: Sizing.tier === "240" ? Sizing.pctH(1) : Sizing.pctH(2)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.pctH(15)
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight + Sizing._hubActiveLabelHeight : Sizing.pctH(15)
 
         readonly property int columns: settings.rootGridColumns
         readonly property int rows: settings.rootGridRows
-        readonly property int leftInset: Sizing.pctW(3)
-        readonly property int rightInset: Sizing.pctW(3)
-        readonly property int topInset: Sizing.pctH(2)
-        readonly property int bottomInset: Sizing.pctH(2)
-        readonly property int cellSpacingX: Sizing.pctW(3)
-        readonly property int cellSpacingY: Sizing.pctH(4)
+        readonly property int leftInset: Sizing._hubGridSideInset
+        readonly property int rightInset: Sizing._hubGridSideInset
+        readonly property int topInset: Sizing._hubGridTopInset
+        readonly property int bottomInset: Sizing._hubGridBottomInset
+        readonly property int cellSpacingX: Sizing._hubGridColumnGap
+        readonly property int cellSpacingY: Sizing._hubGridRowGap
         readonly property int _availableWidth: Math.max(0, width - leftInset - rightInset)
         readonly property int _availableHeight: Math.max(0, height - topInset - bottomInset)
-        // Matches the Hub's own resolved tile size (Sizing.hubTileSize) so
-        // Settings tiles read as the same physical object as the Hub's,
-        // rather than an independently-sized one -- see docs/style.md "Tile
-        // aspect and grid blocks". Settings' own width/height fit stays as a
-        // safety ceiling underneath it (CRT/TATE bands smaller than what the
-        // Hub's 7-column fit assumes), not as the primary size the way the
-        // old `maxCellSize: Sizing.pctH(22)` cap was.
-        readonly property int cellSize: Math.max(0, Math.min(Sizing.hubTileSize, Math.floor((_availableWidth - (columns - 1) * cellSpacingX) / columns), Math.floor((_availableHeight - (rows - 1) * cellSpacingY) / rows)))
+        // Matches the Hub's resolved tile dimensions so Settings tiles read
+        // as the same physical object. Low-resolution Hub tiles are slightly
+        // taller than wide to fill their two-row band; larger tiers remain
+        // square. Settings' own fits stay as safety ceilings.
+        readonly property int cellWidth: Math.max(0, Math.min(Sizing.hubTileWidth, Math.floor((_availableWidth - (columns - 1) * cellSpacingX) / columns)))
+        readonly property int cellHeight: Math.max(0, Math.min(Sizing.hubTileHeight, Math.floor((_availableHeight - (rows - 1) * cellSpacingY) / rows)))
         readonly property int visibleColumns: Math.max(1, Math.min(columns, settings.fieldCount))
         readonly property int visibleRows: Math.min(rows, Math.max(1, Math.ceil(settings.fieldCount / columns)))
-        readonly property int contentWidth: visibleColumns * cellSize + (visibleColumns - 1) * cellSpacingX
-        readonly property int contentHeight: visibleRows * cellSize + (visibleRows - 1) * cellSpacingY
-        readonly property int originX: Sizing.center(width, contentWidth)
-        readonly property int originY: Sizing.center(height, contentHeight)
+        readonly property int contentWidth: visibleColumns * cellWidth + (visibleColumns - 1) * cellSpacingX
+        readonly property int contentHeight: visibleRows * cellHeight + (visibleRows - 1) * cellSpacingY
+        readonly property int originX: leftInset + Sizing.center(_availableWidth, contentWidth)
+        readonly property int originY: topInset + Sizing.center(_availableHeight, contentHeight)
 
         Component {
             id: categoryTileDelegate
@@ -1539,10 +1599,10 @@ Item {
                 readonly property int cellCol: index % categoryGrid.columns
                 readonly property bool isSelected: index === settings.currentIndex
 
-                x: categoryGrid.originX + cellCol * (categoryGrid.cellSize + categoryGrid.cellSpacingX)
-                y: categoryGrid.originY + cellRow * (categoryGrid.cellSize + categoryGrid.cellSpacingY)
-                width: categoryGrid.cellSize
-                height: categoryGrid.cellSize
+                x: categoryGrid.originX + cellCol * (categoryGrid.cellWidth + categoryGrid.cellSpacingX)
+                y: categoryGrid.originY + cellRow * (categoryGrid.cellHeight + categoryGrid.cellSpacingY)
+                width: categoryGrid.cellWidth
+                height: categoryGrid.cellHeight
                 z: isSelected ? 1 : 0
 
                 TileLoader {
@@ -1579,8 +1639,8 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.pctH(8)
-        height: Sizing.pctH(7)
+        anchors.bottomMargin: Sizing.tier === "240" ? Sizing.helpBarHeight : Sizing.pctH(8)
+        height: Sizing.tier === "240" ? Sizing._hubActiveLabelHeight : Sizing.pctH(7)
         text: settings.showingRootGrid && settings._isField(settings.currentIndex) ? settings.fields[settings.currentIndex].label : ""
         visible: !settings.optimisticLoading && settings.showingRootGrid && settings.fieldCount > 0
     }
@@ -1590,7 +1650,7 @@ Item {
     // edges are never scrollable content now, so they can't be scrolled
     // out of view — see docs/style.md's Settings hint-band note. Width
     // capped so the rows don't stretch edge-to-edge on widescreen; bottom
-    // margin clears the help bar (pctH(6)) plus a small gap.
+    // margin clears the help bar plus a small gap.
     Item {
         id: settingsCard
         visible: !settings.optimisticLoading && !settings.showingRootGrid
@@ -1598,11 +1658,11 @@ Item {
         // topMargin and bottomMargin are sized to leave a clear band for
         // the scroll chevrons to sit outside the card (chevron pctH(3) +
         // breathing room). bottomMargin also has to clear the help bar
-        // (pctH(6)) plus a small gap.
+        // plus a small gap.
         anchors.top: topStrip.bottom
         anchors.topMargin: Sizing.pctH(4)
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Sizing.pctH(10)
+        anchors.bottomMargin: Sizing.helpBarHeight + Sizing.pctH(4)
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(parent.width - Sizing.pctW(6), Sizing.pctW(70))
 
@@ -1642,6 +1702,7 @@ Item {
             border.width: Sizing.cardBorderWidth
             border.color: Theme.borderMid
             radius: Sizing.radiusMd
+            antialiasing: Sizing.cornerAntialiasing
         }
 
         // Focused-row description, replacing the old per-row description
@@ -1741,17 +1802,16 @@ Item {
                         width: form.width
                         implicitHeight: row.isHeader ? header.implicitHeight : field.implicitHeight
 
-                        SettingsSectionHeader {
+                        SectionHeader {
                             id: header
                             visible: row.isHeader
-                            // No cardPadding margin here (unlike every
-                            // other row) — the header's own filled band
-                            // spans the card edge-to-edge; contentInset
-                            // makes up the difference for the label
-                            // alone. See SettingsSectionHeader.qml.
+                            // Same card padding as every field row: the
+                            // heading's label lines up with the field
+                            // labels and its rule runs the row width.
                             anchors.left: parent.left
+                            anchors.leftMargin: flickable.cardPadding
                             anchors.right: parent.right
-                            contentInset: flickable.cardPadding
+                            anchors.rightMargin: flickable.cardPadding
                             label: row.modelData.label
                         }
 
