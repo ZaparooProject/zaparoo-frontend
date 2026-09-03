@@ -55,6 +55,7 @@ pub struct Config {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SettingsConfig {
+    pub interface_profile: Option<String>,
     pub orientation: Option<String>,
     pub clock_format: Option<String>,
     // Round 10: split into per-screen fields below.
@@ -103,6 +104,7 @@ pub struct SettingsConfig {
 pub struct SettingsMirror<'a> {
     pub resolution: &'a str,
     pub language: &'a str,
+    pub interface_profile: &'a str,
     pub orientation: &'a str,
     pub clock_format: &'a str,
     pub systems_browse_layout: &'a str,
@@ -200,6 +202,7 @@ struct RawInput {
 
 #[derive(Deserialize, Default)]
 struct RawSettings {
+    interface_profile: Option<String>,
     orientation: Option<String>,
     clock_format: Option<String>,
     // Round 10: pre-round-10 config files only have this key. Kept for
@@ -343,6 +346,7 @@ fn normalize_string_list(values: Vec<String>) -> Vec<String> {
 
 fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
     SettingsConfig {
+        interface_profile: trim_opt(raw.interface_profile),
         orientation: trim_opt(raw.orientation),
         clock_format: trim_opt(raw.clock_format),
         // Round 10: prefer the new per-screen key; fall back to the
@@ -501,6 +505,11 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     }
 
     let settings = section_mut(&mut doc, "settings", path)?;
+    set_str(
+        settings,
+        "interface_profile",
+        mirror.interface_profile.trim(),
+    );
     set_str(settings, "orientation", mirror.orientation.trim());
     set_str(settings, "clock_format", mirror.clock_format.trim());
     // Round 10: retire the legacy single key the same way
@@ -773,6 +782,7 @@ mod tests {
         SettingsMirror {
             resolution: "1280x720",
             language: "en",
+            interface_profile: "device",
             orientation: "horizontal",
             clock_format: "auto",
             systems_browse_layout: "grid",
@@ -1306,6 +1316,7 @@ mod tests {
             SettingsMirror {
                 resolution: "1280x720",
                 language: "it_IT",
+                interface_profile: "handheld",
                 orientation: "cw",
                 clock_format: "24h",
                 systems_browse_layout: "list",
@@ -1337,6 +1348,7 @@ mod tests {
         assert_eq!(cfg.video_width, 1280);
         assert_eq!(cfg.video_height, 720);
         assert!(cfg.video_explicit);
+        assert_eq!(cfg.settings.interface_profile.as_deref(), Some("handheld"));
         assert_eq!(cfg.settings.orientation.as_deref(), Some("cw"));
         assert_eq!(cfg.settings.clock_format.as_deref(), Some("24h"));
         assert_eq!(cfg.settings.systems_browse_layout.as_deref(), Some("list"));
@@ -1370,6 +1382,7 @@ mod tests {
             SettingsMirror {
                 resolution: "1280x720",
                 language: "en",
+                interface_profile: "device",
                 orientation: "horizontal",
                 clock_format: "auto",
                 systems_browse_layout: "grid",
@@ -1425,6 +1438,7 @@ mod tests {
         let mirror = SettingsMirror {
             resolution: "",
             language: "",
+            interface_profile: "standard",
             orientation: "ccw",
             clock_format: "12h",
             systems_browse_layout: "list",
@@ -1454,6 +1468,7 @@ mod tests {
         save_settings_mirror(f.path(), mirror).expect("save");
         let written = std::fs::read_to_string(f.path()).expect("read");
         assert!(written.contains("language = \"auto\""));
+        assert!(written.contains("interface_profile = \"standard\""));
         assert!(written.contains("orientation = \"ccw\""));
         assert!(written.contains("clock_format = \"12h\""));
         assert!(

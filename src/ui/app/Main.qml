@@ -4053,6 +4053,8 @@ MainLayout {
             if (selectedId !== Browse.Settings.current_language)
                 root.stageSettingRestart(fieldId, selectedId);
             return;
+        } else if (fieldId === "interfaceProfile") {
+            Browse.Settings.set_interface_profile(selectedId);
         } else if (fieldId === "orientation") {
             Browse.Settings.set_orientation(selectedId);
         } else if (fieldId === "clockFormat")

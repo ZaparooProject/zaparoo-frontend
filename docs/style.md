@@ -1175,13 +1175,14 @@ change to either ring token can't silently close the gap again.
 Systems tiles are a separate, viewport-fitted grid and stay on the default
 padding; only Hub and Settings' category grid opt in.
 
-Two other levers were considered and set aside rather than folded into
-this pass: fewer Hub columns (`hubGridShape` is deliberately fixed, not
-viewport-fitted — see above — specifically so a hand-arranged Hub layout
-can't get scrambled by a display change; fewer columns reopens that), and
-`Image.PreserveAspectCrop` for game covers (a bigger visual gain, but
-crops the top/bottom of every cover, where title art often sits — worth a
-follow-up look against real covers, not bundled into a padding change).
+The Standard profile keeps Hub columns fixed by resolution tier rather than
+viewport fitting, so a window resize cannot scramble a hand-arranged layout.
+The Handheld profile deliberately lowers the high-resolution Hub shape to
+4×3. It reflows the same persisted linear slot order without resetting it;
+switching profiles changes pagination, not ownership or ordering. Low-resolution
+tiers already use the compact 4×2 shape and remain unchanged. A separate lever,
+`Image.PreserveAspectCrop` for game covers, remains set aside: it enlarges art
+but crops the top and bottom, where title art often sits.
 
 ### No scrollbars — grids are paged, not scrolled
 

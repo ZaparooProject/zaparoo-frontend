@@ -167,6 +167,12 @@ Item {
         }
         out.push({
             kind: "field",
+            id: "interfaceProfile",
+            label: qsTr("Interface layout"),
+            description: qsTr("Adjusts layout density for standard and handheld screens.")
+        });
+        out.push({
+            kind: "field",
             id: "orientation",
             label: qsTr("Orientation"),
             description: qsTr("Rotates the interface for a sideways screen or tate cabinet.")
@@ -466,6 +472,8 @@ Item {
             return settings._resolutionDisplay(Browse.Settings.current_resolution);
         if (id === "language")
             return settings._languageDisplay(Browse.Settings.current_language);
+        if (id === "interfaceProfile")
+            return settings._interfaceProfileDisplay(Browse.Settings.current_interface_profile);
         if (id === "orientation")
             return settings._orientationDisplay(Browse.Settings.current_orientation);
         if (id === "systemsLayout")
@@ -759,6 +767,11 @@ Item {
         return raw === undefined || raw === null ? [] : raw;
     }
 
+    function _interfaceProfileList(): list<string> {
+        const raw = Browse.Settings.available_interface_profiles;
+        return raw === undefined || raw === null ? [] : raw;
+    }
+
     function _orientationList(): list<string> {
         const raw = Browse.Settings.available_orientations;
         return raw === undefined || raw === null ? [] : raw;
@@ -825,6 +838,14 @@ Item {
         if (value === "jp")
             return qsTr("Japan");
         return qsTr("Automatic");
+    }
+
+    function _interfaceProfileDisplay(value: string): string {
+        if (value === "standard")
+            return qsTr("Standard");
+        if (value === "handheld")
+            return qsTr("Handheld");
+        return qsTr("Device default");
     }
 
     function _orientationDisplay(value: string): string {
@@ -1024,6 +1045,15 @@ Item {
                     label: settings._regionDisplay(list[i])
                 });
             initialId = Browse.Settings.current_region;
+        } else if (id === "interfaceProfile") {
+            title = qsTr("Interface layout");
+            const list = settings._interfaceProfileList();
+            for (let i = 0; i < list.length; i++)
+                entries.push({
+                    id: list[i],
+                    label: settings._interfaceProfileDisplay(list[i])
+                });
+            initialId = Browse.Settings.current_interface_profile;
         } else if (id === "orientation") {
             title = qsTr("Orientation");
             const list = settings._orientationList();

@@ -24,13 +24,18 @@ TestCase {
     }
 
     property string _originalOrientation: "horizontal"
+    property string _originalInterfaceProfile: "device"
 
     Component.onCompleted: {
         testCase._originalOrientation = Browse.Settings.current_orientation;
+        testCase._originalInterfaceProfile = Browse.Settings.current_interface_profile;
     }
 
     function init(): void {
+        main.defaultInterfaceProfile = "standard";
+        Browse.Settings.current_interface_profile = "device";
         Browse.Settings.current_orientation = "horizontal";
+        tryCompare(Sizing, "interfaceProfile", "standard");
         tryCompare(Sizing, "swapPercentageAxes", false);
     }
 
@@ -38,12 +43,16 @@ TestCase {
         main.debugCrtSafeAreaOverlay = false;
         main.crtNativePath = false;
         main.bitmapType = false;
+        main.defaultInterfaceProfile = "standard";
+        Browse.Settings.current_interface_profile = "device";
         Browse.Settings.current_orientation = "horizontal";
+        tryCompare(Sizing, "interfaceProfile", "standard");
         tryCompare(Sizing, "swapPercentageAxes", false);
         setResolution(1280, 720);
     }
 
     function cleanupTestCase(): void {
+        Browse.Settings.current_interface_profile = testCase._originalInterfaceProfile;
         Browse.Settings.current_orientation = testCase._originalOrientation;
     }
 
@@ -65,6 +74,40 @@ TestCase {
 
     function crtSafeHeight(h: int): int {
         return h - 2 * Math.round(h * 0.05);
+    }
+
+    function test_handheld_profile_uses_compiled_default_and_user_override(): void {
+        compare(main.effectiveInterfaceProfile, "standard");
+
+        main.defaultInterfaceProfile = "handheld";
+        tryCompare(main, "effectiveInterfaceProfile", "handheld");
+        tryCompare(Sizing, "interfaceProfile", "handheld");
+
+        Browse.Settings.current_interface_profile = "standard";
+        tryCompare(main, "effectiveInterfaceProfile", "standard");
+        tryCompare(Sizing, "interfaceProfile", "standard");
+
+        main.defaultInterfaceProfile = "standard";
+        Browse.Settings.current_interface_profile = "handheld";
+        tryCompare(main, "effectiveInterfaceProfile", "handheld");
+        tryCompare(Sizing, "interfaceProfile", "handheld");
+    }
+
+    function test_handheld_profile_reduces_700_square_hub_density(): void {
+        setResolution(700, 700);
+        compare(Sizing.hubGridColumns, 7);
+        compare(Sizing.hubGridRows, 3);
+        const standardTileWidth = Sizing.hubTileWidth;
+
+        Browse.Settings.current_interface_profile = "handheld";
+        tryCompare(Sizing, "interfaceProfile", "handheld");
+        compare(Sizing.hubGridColumns, 4);
+        compare(Sizing.hubGridRows, 3);
+        verify(Sizing.hubTileWidth > standardTileWidth);
+
+        setResolution(320, 240);
+        compare(Sizing.hubGridColumns, 4);
+        compare(Sizing.hubGridRows, 2);
     }
 
     function test_pct_helpers_scale_with_window_size(): void {

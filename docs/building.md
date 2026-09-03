@@ -90,6 +90,21 @@ cmake --preset desktop-debug -DZAPAROO_BUILD_TESTS=OFF
 cmake --build --preset desktop-debug
 ```
 
+### Device-default interface profile
+
+Generic builds default to the Standard interface layout. Device vendors can
+make Handheld the initial layout without maintaining a UI fork:
+
+```bash
+cmake --preset desktop-debug -DZAPAROO_DEFAULT_INTERFACE_PROFILE=handheld
+cmake --build --preset desktop-debug
+```
+
+Accepted values are `standard` and `handheld`; configure fails on anything
+else. This selects only the value behind Settings → Display → Interface
+layout → Device default. Users can still choose Standard or Handheld,
+and that explicit choice persists in `frontend.toml`.
+
 ## MiSTer ARM32 cross-build
 
 The default path uses the official prebuilt toolchain image published by this

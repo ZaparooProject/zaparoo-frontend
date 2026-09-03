@@ -23,6 +23,17 @@ option(ZAPAROO_BUILD_TESTS "Build unit/smoke tests" ON)
 option(ZAPAROO_DEV "Development mode: windowed window and dev core endpoint" OFF)
 option(ZAPAROO_EMBEDDED "Embedded device build (MiSTer): default fullscreen, no window chrome" OFF)
 option(ZAPAROO_WITH_UPDATE "Build with zaparoo-update integration" ON)
+set(ZAPAROO_DEFAULT_INTERFACE_PROFILE
+    "standard"
+    CACHE STRING "Default interface profile: standard or handheld"
+)
+set_property(CACHE ZAPAROO_DEFAULT_INTERFACE_PROFILE PROPERTY STRINGS standard handheld)
+if(NOT ZAPAROO_DEFAULT_INTERFACE_PROFILE MATCHES "^(standard|handheld)$")
+    message(
+        FATAL_ERROR
+            "ZAPAROO_DEFAULT_INTERFACE_PROFILE must be 'standard' or 'handheld', got '${ZAPAROO_DEFAULT_INTERFACE_PROFILE}'"
+    )
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 

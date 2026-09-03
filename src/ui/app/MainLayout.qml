@@ -51,6 +51,10 @@ ApplicationWindow {
     // CRT region (visible as a whole-frame size snap on first paint).
     // Desktop preview sets fullScreen=false via initialProperties.
     property bool fullScreen: true
+    // Build-selected default used while Interface layout is "Device default".
+    // Generic builds use Standard; device vendors may compile Handheld.
+    property string defaultInterfaceProfile: "standard"
+    readonly property string effectiveInterfaceProfile: Browse.Settings.current_interface_profile === "device" ? root.defaultInterfaceProfile : Browse.Settings.current_interface_profile
     property bool crtNativePath: false
     property bool bitmapType: false
     property bool debugCrtSafeAreaOverlay: false
@@ -342,6 +346,12 @@ ApplicationWindow {
         target: Sizing
         property: "swapPercentageAxes"
         value: root._sceneRotated
+    }
+
+    Binding {
+        target: Sizing
+        property: "interfaceProfile"
+        value: root.effectiveInterfaceProfile
     }
 
     // Screen plumbing exposed for Main.qml's orchestration. Anything

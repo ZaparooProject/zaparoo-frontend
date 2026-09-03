@@ -469,6 +469,8 @@ int main(int argc, char* argv[]) // NOLINT
                              static_cast<int>(zaparoo_rust_video_width()));
     initialProperties.insert(QStringLiteral("videoHeight"),
                              static_cast<int>(zaparoo_rust_video_height()));
+    initialProperties.insert(QStringLiteral("defaultInterfaceProfile"),
+                             QStringLiteral(ZAPAROO_DEFAULT_INTERFACE_PROFILE));
     engine.setInitialProperties(initialProperties);
     startupTrace("cpp:QML initial properties set");
 

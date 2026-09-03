@@ -105,7 +105,10 @@ target_include_directories(
     PRIVATE "${CMAKE_SOURCE_DIR}/src/app"
 )
 
-target_compile_definitions(frontend PRIVATE ZAPAROO_VERSION="${CMAKE_PROJECT_VERSION}")
+target_compile_definitions(
+    frontend PRIVATE ZAPAROO_VERSION="${CMAKE_PROJECT_VERSION}"
+                     ZAPAROO_DEFAULT_INTERFACE_PROFILE="${ZAPAROO_DEFAULT_INTERFACE_PROFILE}"
+)
 
 # For static Qt (ARM32): define QT_STATIC so main.cpp's #ifdef fires. Qt itself defines this in its
 # headers, but the compiler may not see it before the first #include unless we make it explicit here

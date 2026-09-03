@@ -140,6 +140,8 @@ pub struct SettingsState {
     pub language: String,
     #[serde(default = "default_clock_format")]
     pub clock_format: String,
+    #[serde(default = "default_interface_profile")]
+    pub interface_profile: String,
     #[serde(default = "default_orientation")]
     pub orientation: String,
     // Round 10: split into `systems_browse_layout`/`games_browse_layout`
@@ -238,6 +240,7 @@ impl Default for SettingsState {
             resolution: String::new(),
             language: String::new(),
             clock_format: default_clock_format(),
+            interface_profile: default_interface_profile(),
             orientation: default_orientation(),
             browse_layout: default_browse_layout(),
             systems_browse_layout: default_browse_layout(),
@@ -263,6 +266,10 @@ impl Default for SettingsState {
             crt_v_offset: 0,
         }
     }
+}
+
+fn default_interface_profile() -> String {
+    "device".into()
 }
 
 fn default_region() -> String {
@@ -489,6 +496,7 @@ mod tests {
                 resolution: "1920x1080".into(),
                 language: "it_IT".into(),
                 clock_format: "24h".into(),
+                interface_profile: "handheld".into(),
                 orientation: "cw".into(),
                 browse_layout: "list".into(),
                 systems_browse_layout: "list".into(),

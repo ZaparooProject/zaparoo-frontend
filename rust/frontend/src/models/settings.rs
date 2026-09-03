@@ -24,6 +24,9 @@
 //     override.
 //   * `current_clock_format` — READ + NOTIFY, persisted. Defaults to
 //     `auto` so existing installs keep locale-driven behavior.
+//   * `available_interface_profiles` / `current_interface_profile` —
+//     persisted layout-density preference. `device` follows the build's
+//     configured default; explicit `standard`/`handheld` choices override it.
 //   * `available_orientations` — CONSTANT. Three display transforms:
 //     horizontal (default), rotated clockwise, rotated counter-clockwise.
 //   * `current_orientation` — READ + NOTIFY, persisted. Applied live by
@@ -160,6 +163,8 @@ const CLOCK_FORMATS: &[&str] = &["auto", "12h", "24h"];
 const DEFAULT_CLOCK_FORMAT: &str = "auto";
 const REGIONS: &[&str] = &["auto", "us", "eu", "jp"];
 const DEFAULT_REGION: &str = "auto";
+const INTERFACE_PROFILES: &[&str] = &["device", "standard", "handheld"];
+const DEFAULT_INTERFACE_PROFILE: &str = "device";
 const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
 const DEFAULT_ORIENTATION: &str = "horizontal";
 const BROWSE_LAYOUTS: &[&str] = &["grid", "list"];
@@ -263,6 +268,8 @@ pub struct SettingsRust {
     current_language: QString,
     available_clock_formats: QStringList,
     current_clock_format: QString,
+    available_interface_profiles: QStringList,
+    current_interface_profile: QString,
     available_orientations: QStringList,
     current_orientation: QString,
     available_browse_layouts: QStringList,
@@ -316,6 +323,8 @@ pub mod ffi {
         #[qproperty(QString, current_language, READ, WRITE = set_language, NOTIFY)]
         #[qproperty(QStringList, available_clock_formats, READ, CONSTANT)]
         #[qproperty(QString, current_clock_format, READ, WRITE = set_clock_format, NOTIFY)]
+        #[qproperty(QStringList, available_interface_profiles, READ, CONSTANT)]
+        #[qproperty(QString, current_interface_profile, READ, WRITE = set_interface_profile, NOTIFY)]
         #[qproperty(QStringList, available_orientations, READ, CONSTANT)]
         #[qproperty(QString, current_orientation, READ, WRITE = set_orientation, NOTIFY)]
         #[qproperty(QStringList, available_browse_layouts, READ, CONSTANT)]
@@ -366,6 +375,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn set_clock_format(self: Pin<&mut Settings>, value: QString);
+
+        #[qinvokable]
+        fn set_interface_profile(self: Pin<&mut Settings>, value: QString);
 
         #[qinvokable]
         fn set_orientation(self: Pin<&mut Settings>, value: QString);
@@ -459,6 +471,9 @@ impl Initialize for ffi::Settings {
         self.as_mut().rust_mut().current_language = QString::from(merged.language.as_str());
         self.as_mut().rust_mut().available_clock_formats = clock_formats();
         self.as_mut().rust_mut().current_clock_format = QString::from(merged.clock_format.as_str());
+        self.as_mut().rust_mut().available_interface_profiles = interface_profiles();
+        self.as_mut().rust_mut().current_interface_profile =
+            QString::from(merged.interface_profile.as_str());
         self.as_mut().rust_mut().available_orientations = orientations();
         self.as_mut().rust_mut().current_orientation = QString::from(merged.orientation.as_str());
         self.as_mut().rust_mut().available_browse_layouts = browse_layouts();
@@ -593,6 +608,21 @@ impl ffi::Settings {
         mirror_settings_to_config(&config_file_path(), &snapshot.settings);
         self.as_mut().rust_mut().current_clock_format = QString::from(value_str.as_str());
         self.as_mut().current_clock_format_changed();
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "cxx-qt qinvokable signature requires QString by value"
+    )]
+    fn set_interface_profile(mut self: Pin<&mut Self>, value: QString) {
+        let value_str = normalize_interface_profile(&value.to_string()).to_string();
+        if self.current_interface_profile.to_string() == value_str {
+            return;
+        }
+        let snapshot = persist_settings(|s| s.interface_profile.clone_from(&value_str));
+        mirror_settings_to_config(&config_file_path(), &snapshot.settings);
+        self.as_mut().rust_mut().current_interface_profile = QString::from(value_str.as_str());
+        self.as_mut().current_interface_profile_changed();
     }
 
     #[allow(
@@ -877,6 +907,7 @@ fn save_settings_to_config(
         SettingsMirror {
             resolution: settings.resolution.as_str(),
             language: settings.language.as_str(),
+            interface_profile: settings.interface_profile.as_str(),
             orientation: settings.orientation.as_str(),
             clock_format: settings.clock_format.as_str(),
             systems_browse_layout: settings.systems_browse_layout.as_str(),
@@ -972,6 +1003,14 @@ fn merge_settings(
     SettingsState {
         resolution: configured_resolution,
         language: normalize_language(&config.language).to_string(),
+        interface_profile: normalize_interface_profile(
+            config
+                .settings
+                .interface_profile
+                .as_deref()
+                .unwrap_or(snapshot.interface_profile.as_str()),
+        )
+        .to_string(),
         orientation: normalize_orientation(
             config
                 .settings
@@ -1162,6 +1201,14 @@ fn browse_layouts() -> QStringList {
     list
 }
 
+fn interface_profiles() -> QStringList {
+    let mut list = QStringList::default();
+    for profile in INTERFACE_PROFILES {
+        list.append(QString::from(*profile));
+    }
+    list
+}
+
 fn orientations() -> QStringList {
     let mut list = QStringList::default();
     for orientation in ORIENTATIONS {
@@ -1239,6 +1286,15 @@ fn normalize_clock_format(value: &str) -> &'static str {
         .copied()
         .find(|format| *format == trimmed)
         .unwrap_or(DEFAULT_CLOCK_FORMAT)
+}
+
+fn normalize_interface_profile(value: &str) -> &'static str {
+    let trimmed = value.trim();
+    INTERFACE_PROFILES
+        .iter()
+        .copied()
+        .find(|profile| *profile == trimmed)
+        .unwrap_or(DEFAULT_INTERFACE_PROFILE)
 }
 
 fn normalize_orientation(value: &str) -> &'static str {
@@ -1374,15 +1430,15 @@ fn normalize_button_layout(value: &str) -> &'static str {
 mod tests {
     use super::{
         browse_layouts, button_layouts, clock_formats, color_intensities, color_schemes,
-        curated_resolutions, languages, normalize_browse_layout, normalize_button_layout,
-        normalize_clock_format, normalize_color_intensity, normalize_color_scheme,
-        normalize_favorites_grouping, normalize_language, normalize_metadata_scraper,
-        normalize_orientation, normalize_region, normalize_system_logo_style, orientations,
-        regions, system_logo_styles, BROWSE_LAYOUTS, BUTTON_LAYOUTS, CLOCK_FORMATS, COLOR_SCHEMES,
-        DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT, DEFAULT_CLOCK_FORMAT,
-        DEFAULT_COLOR_INTENSITY, DEFAULT_COLOR_SCHEME, DEFAULT_LANGUAGE, DEFAULT_METADATA_SCRAPER,
-        DEFAULT_ORIENTATION, DEFAULT_REGION, DEFAULT_SYSTEM_LOGO_STYLE, ORIENTATIONS, REGIONS,
-        SYSTEM_LOGO_STYLES,
+        curated_resolutions, interface_profiles, languages, normalize_browse_layout,
+        normalize_button_layout, normalize_clock_format, normalize_color_intensity,
+        normalize_color_scheme, normalize_favorites_grouping, normalize_interface_profile,
+        normalize_language, normalize_metadata_scraper, normalize_orientation, normalize_region,
+        normalize_system_logo_style, orientations, regions, system_logo_styles, BROWSE_LAYOUTS,
+        BUTTON_LAYOUTS, CLOCK_FORMATS, COLOR_SCHEMES, DEFAULT_BROWSE_LAYOUT, DEFAULT_BUTTON_LAYOUT,
+        DEFAULT_CLOCK_FORMAT, DEFAULT_COLOR_INTENSITY, DEFAULT_COLOR_SCHEME, DEFAULT_LANGUAGE,
+        DEFAULT_METADATA_SCRAPER, DEFAULT_ORIENTATION, DEFAULT_REGION, DEFAULT_SYSTEM_LOGO_STYLE,
+        INTERFACE_PROFILES, ORIENTATIONS, REGIONS, SYSTEM_LOGO_STYLES,
     };
 
     #[test]
@@ -1573,6 +1629,37 @@ mod tests {
         let collected: Vec<String> = list.iter().map(String::from).collect();
         let expected: Vec<String> = CLOCK_FORMATS.iter().map(|s| (*s).to_string()).collect();
         assert_eq!(collected, expected);
+    }
+
+    #[test]
+    fn interface_profiles_preserve_order_and_default_unknown_values() {
+        let list = interface_profiles();
+        let collected: Vec<String> = list.iter().map(String::from).collect();
+        let expected: Vec<String> = INTERFACE_PROFILES
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        assert_eq!(collected, expected);
+        assert_eq!(normalize_interface_profile("standard"), "standard");
+        assert_eq!(normalize_interface_profile("handheld"), "handheld");
+        assert_eq!(normalize_interface_profile("unknown"), "device");
+    }
+
+    #[test]
+    fn merge_prefers_configured_interface_profile() {
+        let snapshot = zaparoo_core::persist::SettingsState {
+            interface_profile: "standard".into(),
+            ..zaparoo_core::persist::SettingsState::default()
+        };
+        let config = zaparoo_core::config::Config {
+            settings: zaparoo_core::config::SettingsConfig {
+                interface_profile: Some("handheld".into()),
+                ..zaparoo_core::config::SettingsConfig::default()
+            },
+            ..zaparoo_core::config::Config::default()
+        };
+        let merged = super::merge_settings(&snapshot, &config, false, None, None);
+        assert_eq!(merged.interface_profile, "handheld");
     }
 
     #[test]

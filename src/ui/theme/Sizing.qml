@@ -16,6 +16,8 @@ QtObject {
     property bool crtNativePath: false
     property bool bitmapType: false
     property bool swapPercentageAxes: false
+    property string interfaceProfile: "standard"
+    readonly property bool handheldProfile: interfaceProfile === "handheld"
 
     // Shape and type hierarchy use discrete logical-resolution tiers. In TATE
     // the scene dimensions are swapped, so read the original framebuffer's
@@ -108,7 +110,10 @@ QtObject {
     // 240p and PAL 288p resolve to the `240` tier and have room for 4x2.
     // This keys page geometry to resolution, not CRT mode, so future
     // higher-resolution CRT modes scale normally.
-    readonly property var _hubGridBaseShape: root._gridShape(tier === "240" || tier === "480" ? 4 : 7, tier === "240" || tier === "480" ? 2 : 3)
+    // Handheld changes page density, not persisted order: the same linear Hub
+    // slots reflow into fewer columns without resetting user arrangements.
+    // Low-resolution tiers already use the compact 4x2 shape.
+    readonly property var _hubGridBaseShape: root.handheldProfile && tier !== "240" && tier !== "480" ? root._gridShape(4, 3) : root._gridShape(tier === "240" || tier === "480" ? 4 : 7, tier === "240" || tier === "480" ? 2 : 3)
     readonly property var hubGridShape: swapPercentageAxes ? root._gridShape(_hubGridBaseShape.rows, _hubGridBaseShape.columns) : _hubGridBaseShape
     readonly property int hubGridColumns: hubGridShape.columns
     readonly property int hubGridRows: hubGridShape.rows
