@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-FRONTEND="${PROJECT_ROOT}/build/bin/frontend"
+FRONTEND="${PROJECT_ROOT}/build-macos/bin/frontend"
 
 if [ ! -x "${FRONTEND}" ]; then
     echo "Error: macOS frontend not found or not executable: ${FRONTEND}" >&2
@@ -15,7 +15,7 @@ if [ ! -x "${FRONTEND}" ]; then
     exit 1
 fi
 
-export ZAPAROO_CORE_ENDPOINT="ws://192.168.1.143:7497/api/v0.1"
+export ZAPAROO_CORE_ENDPOINT="ws://192.168.1.176:7497/api/v0.1"
 export ZAPAROO_CRT_PREVIEW_SCALE=3
 exec "${FRONTEND}"
 # exec "${FRONTEND}" --crt
