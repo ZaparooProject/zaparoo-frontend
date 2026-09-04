@@ -54,6 +54,7 @@ pub mod recents;
 pub mod recents_state;
 pub mod runtime;
 pub mod settings;
+pub mod sizing;
 pub mod status_events;
 pub mod system_launchers;
 pub mod system_status;

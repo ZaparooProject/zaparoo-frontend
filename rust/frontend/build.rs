@@ -37,6 +37,7 @@ const MODEL_FILES: &[&str] = &[
     "src/models/recents_state.rs",
     "src/models/runtime.rs",
     "src/models/settings.rs",
+    "src/models/sizing.rs",
     "src/models/status_events.rs",
     "src/models/system_launchers.rs",
     "src/models/system_status.rs",

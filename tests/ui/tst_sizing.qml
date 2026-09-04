@@ -23,6 +23,30 @@ TestCase {
         height: 720
     }
 
+    // Standing guard on the QML-to-Rust split. `Sizing`'s derived values come
+    // from `Browse.SizingRules` as NOTIFY properties, and its percentage
+    // helpers stay QML JavaScript. Both kinds have to keep bindings alive: a
+    // cxx-qt *invokable* registers no dependency, so a derived value exposed
+    // that way would silently freeze at its startup value on the next resize
+    // or rotation. Nothing else in this suite reads Sizing through a binding,
+    // so nothing else would catch it.
+    QtObject {
+        id: bindingProbe
+
+        // Rust-backed property.
+        readonly property int rustProperty: Sizing.hubGridColumns
+        // QML helper with a literal argument, the ~510-call-site case.
+        readonly property int qmlHelper: Sizing.pctH(10)
+        // Rust invokable reached through the facade wrapper, which reads the
+        // config inputs first so the dependency is still captured.
+        readonly property int rustInvokable: Sizing.gamesGridShape(Sizing.screenWidth, Sizing.screenHeight).columns
+        // The hard case: constant arguments, so the only thing that can keep
+        // this binding alive is the facade wrapper reading `crtNativePath`
+        // before it delegates. Drop that read and this freezes while every
+        // other probe here still passes.
+        readonly property int constantArgs: Sizing.gamesGridShape(640, 480).columns
+    }
+
     property string _originalOrientation: "horizontal"
     property string _originalInterfaceProfile: "device"
 
@@ -497,12 +521,62 @@ TestCase {
         compare(Sizing.hubTileSize, Math.min(widthFit, heightFit));
     }
 
+    // A scene that is not one of the common framebuffer sizes has no declared
+    // page geometry, so the adaptive scorer resolves it. Previously this
+    // compared gamesGridShape against Sizing._selectGridShape called directly;
+    // both now come from zaparoo_app::sizing, which would make that comparison
+    // tautological. Assert the distinguishing fact instead (no declared shape)
+    // and pin the scored result, whose value comes from
+    // tests/fixtures/sizing_golden.txt.
+    function test_bindings_track_resize_and_rotation(): void {
+        setResolution(1920, 1080);
+        compare(bindingProbe.rustProperty, 7);
+        compare(bindingProbe.qmlHelper, 108);
+        compare(bindingProbe.rustInvokable, 5);
+
+        setResolution(320, 240);
+        compare(bindingProbe.rustProperty, 4, "Rust-backed property must follow the resize");
+        compare(bindingProbe.qmlHelper, 24, "QML helper must follow the resize");
+        compare(bindingProbe.rustInvokable, 3, "facade invokable must follow the resize");
+
+        // Rotation moves the grid shapes without moving the resolution, so it
+        // exercises a different input than the resize above.
+        setResolution(1920, 1080);
+        Browse.Settings.current_orientation = "cw";
+        tryCompare(Sizing, "swapPercentageAxes", true);
+        compare(bindingProbe.rustProperty, 3, "Rust-backed property must follow the rotation");
+        compare(bindingProbe.rustInvokable, 2, "facade invokable must follow the rotation");
+
+        Browse.Settings.current_orientation = "horizontal";
+        tryCompare(Sizing, "swapPercentageAxes", false);
+        compare(bindingProbe.rustProperty, 7);
+        compare(bindingProbe.rustInvokable, 5);
+
+        // Constant arguments: the declared page geometry still depends on the
+        // rendering path, which only the facade wrapper's read can report.
+        compare(bindingProbe.constantArgs, 5);
+        main.crtNativePath = true;
+        tryCompare(Sizing, "crtNativePath", true);
+        compare(bindingProbe.constantArgs, 3, "constant-argument binding must follow the rendering path");
+        main.crtNativePath = false;
+        tryCompare(Sizing, "crtNativePath", false);
+        compare(bindingProbe.constantArgs, 5);
+    }
+
     function test_nonstandard_scene_uses_adaptive_grid_scorer(): void {
         setResolution(1000, 600);
+        compare(Sizing._declaredGridShape("games"), null, "1000x600 must not be a declared common scene");
         const shape = Sizing.gamesGridShape(1000, 405);
-        const scored = Sizing._selectGridShape(1000, 405, Sizing._gamesGridConfig);
-        compare(shape.columns, scored.columns);
-        compare(shape.rows, scored.rows);
+        compare(shape.columns, 5);
+        compare(shape.rows, 2);
+
+        // A common scene at the same tier does have one, so the null above is
+        // the scene's doing and not a broken lookup.
+        setResolution(960, 540);
+        const declared = Sizing._declaredGridShape("games");
+        verify(declared !== null, "960x540 is a declared common scene");
+        compare(declared.columns, 5);
+        compare(declared.rows, 2);
     }
 
     function test_crt_fonts_and_declared_grid_shapes(): void {

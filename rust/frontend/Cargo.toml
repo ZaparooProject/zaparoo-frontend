@@ -25,6 +25,7 @@ update  = ["dep:zaparoo-update"]
 
 [dependencies]
 zaparoo-core       = { path = "../zaparoo-core" }
+zaparoo-app        = { path = "../zaparoo-app" }
 zaparoo-build-info = { path = "../build-info" }
 zaparoo-update = { version = "1.0.1", optional = true }
 cxx          = { workspace = true }

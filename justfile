@@ -148,11 +148,13 @@ _lint-translations-internal:
     test -f build-docker/build.ninja || cmake --preset desktop-docker-debug
     bash scripts/check-translations-updated.sh build-docker
 
-# Container-internal: the rust lint surface (fmt --check + clippy + deny).
+# Container-internal: the rust lint surface (fmt --check + clippy + deny), plus
+# the guard that keeps `zaparoo-app` free of any UI toolkit.
 _lint-rust-internal:
     cd rust && cargo fmt --all --check
     cd rust && cargo clippy --workspace --all-targets -- -D warnings
     cd rust && cargo deny check
+    bash scripts/check-toolkit-free.sh
 
 # Container-internal: fail if the committed icon atlas no longer matches the
 # SVGs in the tree. Pure coreutils, so it costs nothing on every lint run;
