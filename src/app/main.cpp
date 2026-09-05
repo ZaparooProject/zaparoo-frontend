@@ -151,31 +151,14 @@ int main(int argc, char* argv[]) // NOLINT
             Qt::HighDpiScaleFactorRoundingPolicy::Floor);
     }
 
-    // Qt Quick's own decoded-pixmap cache (QQuickPixmapStore) has no
-    // documented default cap tuned for this app, and every cover `Image`
-    // in Tile.qml deliberately leaves `cache: true` (see that file's
-    // doc comment -- a constant `sourceSize` needs the pixmap cache so a
-    // reload short-circuits to it instead of re-decoding). That cache
-    // sits on top of, not instead of, the Rust-side media_image_cache's
-    // own 128 MiB encoded-bytes budget: a decoded RGBA cover is several
-    // times its encoded size, so an unbounded pixmap cache can make the
-    // real image-memory ceiling far exceed what CACHE_CAP_BYTES's own
-    // sizing math assumed (see that constant's doc comment -- it was
-    // sized as if it were the only image-memory consumer). On MiSTer's
-    // swap-free ~492 MiB this reads as a gradual system-wide slowdown
-    // (page cache eviction), not an OOM, which is easy to miss without
-    // an explicit cap to point at. 32 MiB is a conservative starting
-    // point -- room for a full grid page or two of decoded tiles without
-    // competing heavily with the encoded-bytes budget or the rest of
-    // what MiSTer needs (Core, the FPGA wrapper, the active core); tune
-    // with a real long-session capture (ZAPAROO_DEBUG=1) rather than
-    // guessing further from here. QML_PIXMAP_CACHE_LIMIT is in
-    // kilobytes and must be set before the QML engine's first image
-    // decode, so this has to happen this early, ahead of both
-    // QGuiApplication and QQmlApplicationEngine construction.
+    // QQuickPixmapStore retains decoded images independently of both media
+    // image caches. Keep its Qt 6.7 default explicit: raising this to 32 MiB
+    // can exhaust MiSTer's swap-free 492 MiB when the other caches fill and
+    // make Core a kernel OOM victim. QML_PIXMAP_CACHE_LIMIT is in KiB and must be
+    // set before the first image decode. Preserve an operator override.
     if (qEnvironmentVariableIsEmpty("QML_PIXMAP_CACHE_LIMIT"))
     {
-        qputenv("QML_PIXMAP_CACHE_LIMIT", QByteArrayLiteral("32768"));
+        qputenv("QML_PIXMAP_CACHE_LIMIT", QByteArrayLiteral("2048"));
     }
 
     QGuiApplication::setApplicationName("Zaparoo Frontend");

@@ -326,11 +326,11 @@ void MediaImageResponse::run()
     emit finished();
 }
 
-// 64 MB cap: a scaled 374×512 ARGB grid cover is ~765 KB, so this holds ~85
-// decoded covers — most of a large system's worth — while leaving SD page
-// cache room inside MiSTer's measured ~307 MB available. Tune after re-measuring
-// against a real browse session.
-static constexpr int kDecodedCacheMaxBytes = 64 * 1024 * 1024;
+// Decoded images share MiSTer's memory budget with the encoded-byte cache and
+// Qt Quick's pixmap cache. A scaled 374×512 ARGB cover is about 765 KiB, so
+// 32 MiB retains one full grid page while preserving headroom for Core, Main,
+// and transient decode copies on the swap-free 492 MiB system.
+static constexpr int kDecodedCacheMaxBytes = 32 * 1024 * 1024;
 
 MediaImageProvider::MediaImageProvider() : m_decodedCache(kDecodedCacheMaxBytes)
 {

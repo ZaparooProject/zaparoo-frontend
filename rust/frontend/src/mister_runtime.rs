@@ -586,6 +586,23 @@ fn acquire_resource_lease() {
 }
 
 #[cfg(any(zaparoo_runtime = "mister", test))]
+fn set_oom_score_adj(path: &std::path::Path) -> std::io::Result<()> {
+    std::fs::write(path, b"500")
+}
+
+#[cfg(zaparoo_runtime = "mister")]
+fn prefer_frontend_as_oom_victim() {
+    // Frontend is supervised by Main and restarts with empty caches; Core owns
+    // device services and durable operations. Prefer sacrificing frontend
+    // under MiSTer's swap-free memory pressure instead of silently losing Core.
+    let path = std::path::Path::new("/proc/self/oom_score_adj");
+    match set_oom_score_adj(path) {
+        Ok(()) => tracing::info!("set frontend OOM priority above Core"),
+        Err(error) => tracing::warn!("failed to set frontend OOM priority: {error}"),
+    }
+}
+
+#[cfg(any(zaparoo_runtime = "mister", test))]
 fn core_service_start_command() -> std::process::Command {
     let mut command = std::process::Command::new("/usr/bin/taskset");
     command.args([
@@ -605,6 +622,7 @@ pub fn ensure_core_service_running() {
     #[cfg(zaparoo_runtime = "mister")]
     {
         use tracing::{info, warn};
+        prefer_frontend_as_oom_victim();
         acquire_resource_lease();
         info!("spawning core service wrapper with CPU affinity 0-1");
         if let Err(e) = core_service_start_command().spawn() {
@@ -615,10 +633,16 @@ pub fn ensure_core_service_running() {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::expect_used,
+        clippy::unwrap_used,
+        reason = "tests should fail-fast on unexpected errors"
+    )]
+
     use super::{
         automatic_render_size, configured_render_size_supported, core_service_start_command,
         debounce_output_change, infer_full_size_from_half, parse_fb_mode, parse_virtual_size,
-        scale_probe_verified, selectable_render_sizes, vmode_resolution_command,
+        scale_probe_verified, selectable_render_sizes, set_oom_score_adj, vmode_resolution_command,
         vmode_result_accepted, vmode_result_timed_out, vmode_scale_command, VmodeOutcome,
     };
 
@@ -792,6 +816,13 @@ mod tests {
         ));
         assert!(!vmode_result_accepted(Some(2), b"", b""));
         assert!(!vmode_result_accepted(None, b"", b"terminated"));
+    }
+
+    #[test]
+    fn writes_frontend_oom_score_adjustment() {
+        let file = tempfile::NamedTempFile::new().expect("create score file");
+        set_oom_score_adj(file.path()).expect("write score");
+        assert_eq!(std::fs::read_to_string(file.path()).unwrap(), "500");
     }
 
     #[test]

@@ -63,15 +63,12 @@ const KEY_SEPARATOR: u8 = 0x1F;
 /// `system_id/path` pair (~64 B) → roughly 400 KiB worst-case.
 const NEGATIVE_MEMO_CAP: usize = 4096;
 
-/// Hard cap on cached image bytes. Sized to hold several pages of
-/// full-resolution tiles while leaving headroom for Core, the FPGA
-/// wrapper, and a loaded game core. On `MiSTer` (492 MiB total, no swap)
-/// measured free RAM with the frontend running was ~367 MiB, so 128 MiB
-/// leaves ~239 MiB for the rest of the system. When `max_cover_size` is
-/// set (resized covers average ~30 KB), this cap holds thousands of
-/// tiles rather than the ~110 full-resolution SNES covers that fit at
-/// 64 MiB.
-const CACHE_CAP_BYTES: usize = 128 * 1024 * 1024;
+/// Hard cap on encoded image bytes. This is one part of a process-wide image
+/// budget: decoded images and Qt Quick pixmaps have separate caps. `MiSTer` has
+/// 492 MiB total and no swap, so this cache must leave enough headroom for
+/// those caches, Core, Main, and transient image decoding. At roughly 30 KiB
+/// per resized cover, 64 MiB still retains more than 2,000 thumbnails.
+const CACHE_CAP_BYTES: usize = 64 * 1024 * 1024;
 /// Core's `localPath` response is a resized thumbnail, never an arbitrary
 /// source image. Bound one file well below total cache capacity so a corrupt,
 /// replaced, or remote-host path cannot allocate `MiSTer`'s remaining RAM.
@@ -825,10 +822,9 @@ impl CacheState {
     /// `BTreeMap`'s first element is its smallest key, i.e. the oldest
     /// `last_used`). Replaces an old O(N) linear scan over `map` per
     /// evicted entry — fine at the "a few hundred entries" the cache was
-    /// originally sized for, but the cap comment on `CACHE_CAP_BYTES`
-    /// says 128 MiB holds "thousands of tiles" once `max_cover_size` is
-    /// set, and `get_bytes` takes the cache's write lock too, so every
-    /// cover paint was serialising against an eviction pass whose cost
+    /// originally sized for, but resized covers let the bounded cache hold
+    /// thousands of tiles. Since `get_bytes` takes the cache's write lock too,
+    /// every cover paint was serialising against an eviction pass whose cost
     /// scaled with total cache size once the cache was actually full.
     fn evict_until_fits(&mut self, cap_bytes: usize) {
         while self.total_bytes > cap_bytes {
