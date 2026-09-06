@@ -129,6 +129,11 @@ impl MediaCache {
         hit
     }
 
+    /// Core answered "no image" for this key earlier in the process.
+    pub fn is_negative(&self, key: &MediaKey) -> bool {
+        lock_inner(&self.inner).negatives.contains(key)
+    }
+
     /// Queue a fetch unless the key is cached, memoized-negative, or
     /// already queued.
     pub fn enqueue(&self, key: MediaKey) {

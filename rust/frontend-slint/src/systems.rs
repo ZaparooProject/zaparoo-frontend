@@ -595,7 +595,7 @@ fn activate_current(ctx: &Ctx, app: &App) {
         };
         if let Some(system) = system {
             lock(&ctx.shared).persist.games.entered_from_hub = false;
-            crate::router::enter_games(&ctx, &app, &system);
+            crate::games::enter(&ctx, &app, &system);
             if !system.zap_script.is_empty() {
                 lock(&ctx.shared).systems_model.release_pulse += 1;
                 render(&ctx, &app);

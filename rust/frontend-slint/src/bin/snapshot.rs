@@ -40,7 +40,7 @@ use slint::ComponentHandle;
 mod generated {
     slint::include_modules!();
 }
-use generated::{App, GameTile, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
+use generated::{App, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
 #[allow(
     unused_imports,
     reason = "reached through crate:: paths from the shared sizing adapter"
@@ -188,37 +188,32 @@ fn main() {
         "Українська гра 11",
         "Example Game Title 12",
     ];
-    let games: Vec<GameTile> = (1..=12)
-        .map(|i| GameTile {
-            name: if i18n {
-                i18n_titles[i - 1].into()
-            } else {
-                format!("Example Game Title {i}").into()
-            },
-            path: format!("/g/{i}").into(),
-            cover: slint::Image::default(),
-            has_cover: false,
-            is_favorite: i == 2 || i == 7,
-            thumb: slint::Image::default(),
-            has_thumb: false,
-            tags: if i == 3 {
-                "USA Rev A".into()
-            } else {
-                "".into()
-            },
-        })
-        .collect();
-    app.global::<GamesView>()
-        .set_games(slint::ModelRc::new(slint::VecModel::from(games)));
-    app.global::<GamesView>()
-        .set_games_system("Atari Lynx".into());
-    app.global::<GamesView>().set_games_page(0);
-    app.global::<GamesView>().set_games_has_more(true);
+    let games_mode = if screen.contains("favorites") {
+        "favorites"
+    } else if screen.contains("recents") {
+        "recents"
+    } else {
+        "games"
+    };
+    fixture_games(
+        &app,
+        scene_w,
+        scene_h,
+        crt,
+        &i18n_titles,
+        i18n,
+        games_mode,
+        (screen == "context").then_some(6),
+    );
     // "context" renders the games screen with the context menu open.
     if screen == "context" {
-        app.global::<GamesView>().set_games_index(6);
         app.global::<generated::Overlays>()
             .set_context_entries(slint::ModelRc::new(slint::VecModel::from(vec![
+                MenuEntry {
+                    id: "more_info".into(),
+                    label: "Details".into(),
+                    label_key: "".into(),
+                },
                 MenuEntry {
                     id: "toggle_favorite".into(),
                     label: "Add to favorites".into(),
@@ -230,13 +225,18 @@ fn main() {
                     label_key: "".into(),
                 },
                 MenuEntry {
-                    id: "more_info".into(),
-                    label: "Game info".into(),
+                    id: "qr_code".into(),
+                    label: "Write with App".into(),
                     label_key: "".into(),
                 },
                 MenuEntry {
-                    id: "launch_game".into(),
-                    label: "Launch game".into(),
+                    id: "add_to_hub".into(),
+                    label: "Add to Hub".into(),
+                    label_key: "".into(),
+                },
+                MenuEntry {
+                    id: "scrape_game".into(),
+                    label: "Update metadata".into(),
                     label_key: "".into(),
                 },
             ])));
@@ -386,21 +386,16 @@ fn main() {
     // Detailed-list layout fixtures: windowed rows + detail pane.
     if list && !screen.contains("systems") {
         let gv = app.global::<GamesView>();
-        gv.set_games_list_layout(true);
-        let rows: Vec<GameTile> = (13..=22)
-            .map(|i| GameTile {
+        let rows: Vec<GridCell> = (13..=22)
+            .map(|i| GridCell {
                 name: format!("Example Game {i}").into(),
-                path: format!("/games/example-{i}.bin").into(),
-                cover: slint::Image::default(),
-                has_cover: false,
-                is_favorite: i == 15,
-                thumb: slint::Image::default(),
-                has_thumb: false,
+                favorite: i == 15,
                 tags: if i == 16 {
                     "Rev A · USA".into()
                 } else {
                     "".into()
                 },
+                ..Default::default()
             })
             .collect();
         gv.set_list_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
@@ -408,6 +403,11 @@ fn main() {
         gv.set_list_view_top(12);
         gv.set_list_total(64);
         gv.set_list_visible(10);
+        gv.set_current_index(15);
+        gv.set_list_page(1);
+        gv.set_list_total_pages(7);
+        gv.set_has_items_above(true);
+        gv.set_has_items_below(true);
         gv.set_detail_title("Example Game 16".into());
         gv.set_detail_path("/games/example-16.bin".into());
         gv.set_detail_has_cover(false);
@@ -432,7 +432,7 @@ fn main() {
              way BrowseDetailPane does in the Qt frontend."
                 .into(),
         );
-        gv.set_games_system("Console".into());
+        gv.set_title("Console".into());
     }
     if screen == "calibration" {
         let overlays = app.global::<generated::Overlays>();
@@ -448,6 +448,10 @@ fn main() {
         || screen.contains("games")
     {
         "games"
+    } else if screen.contains("favorites") {
+        "favorites"
+    } else if screen.contains("recents") {
+        "recents"
     } else if screen == "settings-page" || screen == "crt-settings" {
         "settings"
     } else if screen == "saver" || screen == "dialog" || screen == "calibration" {
@@ -490,7 +494,7 @@ fn main() {
     }
     if screen.contains("cached") {
         app.global::<SystemsView>().set_cached_transition(true);
-        app.global::<GamesView>().set_games_cached_transition(true);
+        app.global::<GamesView>().set_cached_transition(true);
     }
 
     let late = std::env::var("SNAPSHOT_LATE_SET").is_ok();
@@ -529,13 +533,12 @@ fn main() {
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
-        app.global::<GamesView>().set_games_index(5);
+        app.global::<GamesView>().set_selected_local(5);
         let dirty_games_idx = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after GamesView.games-index set (alias pattern): {dirty_games_idx}");
-        app.global::<GamesView>()
-            .set_games_system("Probe System".into());
+        app.global::<GamesView>().set_title("Probe System".into());
         let dirty_games_sys = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
@@ -735,6 +738,150 @@ fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize
 }
 
 /// Push a Systems page through the same geometry rules the app uses.
+/// The Games grid at its browse geometry: a page of captioned tiles with
+/// a favorite heart, a tag suffix and a folder row, page 1 of 4 with more
+/// pages loaded behind it (GamesScreen.qml's footer profile).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one knob per fixture facet the screen names select"
+)]
+fn fixture_games(
+    app: &App,
+    scene_w: f64,
+    scene_h: f64,
+    crt: bool,
+    i18n_titles: &[&str],
+    i18n: bool,
+    mode: &str,
+    anchor_index: Option<usize>,
+) {
+    use zaparoo_app::layouts::{self, Body, ThemeId, View};
+    let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let profile = layouts::profile(ThemeId::current(&inputs), View::GamesGrid, &inputs);
+    let Body::Grid { grid, footer } = profile.body else {
+        return;
+    };
+    let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
+    let flat = mode != "games";
+    let screen_h = inputs.screen_height as i32;
+    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    let label_height = if flat {
+        inputs.pct_h(7.0)
+    } else {
+        footer.active_label_height
+    };
+    let bottom = if t240 {
+        derived.help_bar_height + label_height
+    } else if flat {
+        inputs.pct_h(15.0)
+    } else {
+        footer.grid_bottom_margin
+    };
+    let grid_height = (screen_h - grid_y - bottom).max(0);
+    let label_y = if flat {
+        grid_y + grid_height
+    } else {
+        screen_h
+            - if t240 {
+                derived.help_bar_height
+            } else {
+                footer.active_label_bottom_margin
+            }
+            - label_height
+    };
+    let insets = zaparoo_app::paged_grid::Insets {
+        left: grid.left_inset,
+        right: grid.right_inset,
+        top: grid.top_inset,
+        bottom: grid.bottom_inset,
+        column_gap: grid.column_gap,
+        row_gap: grid.row_gap,
+    };
+    let (columns, rows) = (derived.games_grid_columns, derived.games_grid_rows);
+    let fit = zaparoo_app::paged_grid::fit(
+        columns,
+        rows,
+        inputs.screen_width as i32,
+        grid_height,
+        None,
+        false,
+        &insets,
+    );
+    let page_size = (columns * rows).max(1) as usize;
+    let cells: Vec<GridCell> = (1..=page_size)
+        .map(|i| GridCell {
+            name: if i18n {
+                i18n_titles[(i - 1) % i18n_titles.len()].into()
+            } else if i == 1 && !flat {
+                "Homebrew".into()
+            } else {
+                format!("Example Game Title {i}").into()
+            },
+            glyph_key: if i == 1 && !flat {
+                "icons/Folder".into()
+            } else {
+                "".into()
+            },
+            top_label: if flat {
+                ["Genesis", "Super Nintendo", "PlayStation"][i % 3].into()
+            } else {
+                "".into()
+            },
+            favorite: i == 2 || i == 7,
+            tags: if i == 3 {
+                "USA Rev A".into()
+            } else if i == 1 && !flat {
+                "42".into()
+            } else {
+                "".into()
+            },
+            ..Default::default()
+        })
+        .collect();
+    let selected = anchor_index.unwrap_or(0);
+    let label = cells[selected.min(cells.len() - 1)].clone();
+    if let Some(index) = anchor_index {
+        let rect = zaparoo_app::paged_grid::cell_rect(
+            &fit,
+            &insets,
+            (index / columns.max(1) as usize) as i32,
+            (index % columns.max(1) as usize) as i32,
+        );
+        let overlays = app.global::<generated::Overlays>();
+        overlays.set_context_anchor_x(rect.x as f32);
+        overlays.set_context_anchor_y((grid_y + rect.y) as f32);
+        overlays.set_context_anchor_w(rect.width as f32);
+        overlays.set_context_anchor_h(rect.height as f32);
+    }
+    let view = app.global::<GamesView>();
+    view.set_mode(mode.into());
+    view.set_title("Atari Lynx".into());
+    view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
+    view.set_count(48);
+    view.set_total_items(48);
+    view.set_total_files(if flat { 0 } else { 47 });
+    view.set_total_known(!flat);
+    view.set_has_more(true);
+    view.set_page(0);
+    view.set_total_pages(4);
+    view.set_has_pages_below(true);
+    view.set_selected_local(i32::try_from(selected).unwrap_or(0));
+    view.set_label_name(label.name);
+    view.set_label_tags(label.tags);
+    view.set_focus_ready(true);
+    view.set_columns(columns);
+    view.set_rows(rows);
+    view.set_cell_width(fit.cell_width as f32);
+    view.set_cell_height(fit.cell_height as f32);
+    view.set_block_offset_x(fit.block_offset_x as f32);
+    view.set_block_offset_y(fit.block_offset_y as f32);
+    view.set_grid_y(grid_y as f32);
+    view.set_grid_height(grid_height as f32);
+    view.set_label_y(label_y as f32);
+    view.set_label_height(label_height as f32);
+}
+
 fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool) {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();

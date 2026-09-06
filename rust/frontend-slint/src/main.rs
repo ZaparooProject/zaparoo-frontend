@@ -16,6 +16,7 @@ mod dual_head;
 mod fonts;
 #[cfg(any(feature = "mister", test))]
 mod frame_transition;
+mod games;
 mod glyphs;
 mod hub;
 mod hub_nav;
@@ -475,9 +476,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let (media, media_rx) = media_cache::MediaCache::new();
     media.set_preferred_image_type(&persisted.settings.media_image_type);
-    router::seed_detail_ctx(client.clone(), handle.clone());
-    app.global::<GamesView>()
-        .set_games_list_layout(persisted.settings.games_browse_layout == "list");
+    games::seed_detail_ctx(client.clone(), handle.clone());
     let notice_ack = config.notice.commercial_ack;
 
     let clock_twelve_hour = Arc::new(std::sync::atomic::AtomicBool::new(clock_twelve_hour(
@@ -552,6 +551,7 @@ fn main() -> Result<(), slint::PlatformError> {
     // catalog reconciles it when Core answers.
     hub::bind_input(&ctx, &app);
     systems::bind_input(&ctx, &app);
+    games::bind_input(&ctx, &app);
     hub::rebuild(&ctx, &app);
     hub::restore(&ctx, &app);
     bind_resume(&ctx, &app, &client);
@@ -914,6 +914,7 @@ fn start_media_cache(
             let _ = weak.upgrade_in_event_loop(move |app| {
                 apply_cover(&app, &key, &image);
                 hub::cover_landed(&ctx, &app, &key);
+                games::cover_landed(&ctx, &app, &key);
             });
         },
     );
@@ -1005,56 +1006,24 @@ fn boot_text(state: &ConnectionState, unreachable_long: bool) -> String {
     }
 }
 
-/// Patch a freshly-decoded cover into the games model row that still
-/// shows the key's path, and into the game-info modal when it shows
-/// the same item. Matching is by path (not index) so a screen change
-/// between fetch and apply cannot mislabel a tile.
+/// Patch a freshly-decoded cover into the game-info modal when it shows
+/// the same item. Matching is by path so a screen change between fetch
+/// and apply cannot mislabel it; the screens repaint through their own
+/// `cover_landed` hooks.
 pub(crate) fn apply_cover(
     app: &App,
     key: &media_cache::MediaKey,
     decoded: &media_cache::DecodedImage,
 ) {
-    use slint::Model as _;
-    // The cache stores a refcounted pixel buffer; wrapping it is a
-    // refcount bump, not a copy - cheap even mid-animation.
-    let make_image = || slint::Image::from_rgba8(decoded.buffer.clone());
-    let is_thumb = key.max_size == media_cache::THUMB_TIER;
-    if !is_thumb
-        && app.global::<GameInfoView>().get_modal_open()
-        && app.global::<GameInfoView>().get_modal_path().as_str() == key.path
-    {
-        app.global::<GameInfoView>().set_modal_cover(make_image());
-        app.global::<GameInfoView>().set_modal_has_cover(true);
+    if key.max_size == media_cache::THUMB_TIER {
+        return;
     }
-    // Detail pane (list layout): the pane requested this cover when
-    // the selection moved; patch it if the selection still matches.
-    if !is_thumb
-        && app.global::<GamesView>().get_games_list_layout()
-        && app.global::<GamesView>().get_detail_path().as_str() == key.path
-    {
-        app.global::<GamesView>().set_detail_cover(make_image());
-        app.global::<GamesView>().set_detail_has_cover(true);
-    }
-    let games = app.global::<GamesView>().get_games();
-    for i in 0..games.row_count() {
-        let Some(mut row) = games.row_data(i) else {
-            continue;
-        };
-        if row.path.as_str() == key.path {
-            if is_thumb {
-                // Never regress a full cover back to its preview.
-                if !row.has_cover {
-                    row.thumb = make_image();
-                    row.has_thumb = true;
-                    games.set_row_data(i, row);
-                }
-            } else {
-                row.cover = make_image();
-                row.has_cover = true;
-                games.set_row_data(i, row);
-            }
-            return;
-        }
+    let modal = app.global::<GameInfoView>();
+    if modal.get_modal_open() && modal.get_modal_path().as_str() == key.path {
+        // The cache stores a refcounted pixel buffer; wrapping it is a
+        // refcount bump, not a copy.
+        modal.set_modal_cover(slint::Image::from_rgba8(decoded.buffer.clone()));
+        modal.set_modal_has_cover(true);
     }
 }
 
@@ -1184,11 +1153,11 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
     // pass through a category.
     match target.as_str() {
         "favorites" => {
-            router::enter_favorites(ctx, app);
+            games::enter_favorites(ctx, app);
             return;
         }
         "recents" => {
-            router::enter_recents(ctx, app);
+            games::enter_recents(ctx, app);
             return;
         }
         "settings" => {
@@ -1219,7 +1188,7 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
             // Restored entry preserves the persisted folder stack and
             // browses its top level, so a kill inside a folder resumes
             // inside that folder.
-            router::enter_games_restored(ctx, app, &sys);
+            games::enter_restored(ctx, app, &sys);
         }
     } else {
         systems::enter(ctx, app, &category, true);

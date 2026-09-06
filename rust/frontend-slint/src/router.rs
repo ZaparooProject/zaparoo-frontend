@@ -9,157 +9,19 @@
 // source remains visible under the Loading cue until destination data
 // is Ready, then cached/native route motion commits the new screen.
 
+use crate::games::GameRow;
 use crate::hub_nav;
 use crate::media_cache::{MediaCache, MediaKey};
 use crate::sizing;
-use crate::{App, GameTile, Sizing};
+use crate::{App, Sizing};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::runtime::Handle;
-use zaparoo_core::endpoints::media_browse::{BrowseArgs, MediaBrowseEndpoint};
-use zaparoo_core::endpoints::media_favorites::{FavoritesArgs, MediaFavoritesEndpoint};
-use zaparoo_core::endpoints::media_history::{HistoryArgs, MediaHistoryEndpoint};
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::input_actions::actions;
-use zaparoo_core::media_types::{BrowseEntry, MediaHistoryEntry, MediaItem, RunParams, SystemInfo};
+use zaparoo_core::media_types::{RunParams, SystemInfo};
 use zaparoo_core::persist::{self, PersistedState};
-use zaparoo_core::remote_resource::ResourceStatus;
 use zaparoo_core::store::Store;
-
-/// What the games-style grid is currently showing. Selects the back
-/// target, whether folders/pagination apply, and where the selection
-/// persists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GamesMode {
-    Browse,
-    Favorites,
-    Recents,
-}
-
-/// One row of the games-style grid, unified across `media.browse`
-/// entries, favorites (`media.search`), and history entries.
-#[derive(Debug, Clone)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "each bool is an independent row property mirrored from the Qt model roles"
-)]
-pub struct GameRow {
-    pub media_id: Option<i64>,
-    pub name: String,
-    pub path: String,
-    pub is_dir: bool,
-    pub system_id: String,
-    pub zap_script: String,
-    /// Compact disambiguation token labels (pre-sibling-diff).
-    pub tag_labels: Vec<String>,
-    /// `false` only when Core confirmed no cover exists; skips the
-    /// image request entirely.
-    pub has_cover: bool,
-    /// `user:favorite` tag present (drives the context-menu toggle).
-    pub is_favorite: bool,
-    /// Media-capable rule from the Qt model: `media` entries, and
-    /// directories that carry a media identity or zapscript.
-    pub media_capable: bool,
-}
-
-impl From<&BrowseEntry> for GameRow {
-    fn from(e: &BrowseEntry) -> Self {
-        // A directory with a media id is a singleton media container
-        // (folder- or zip-as-game, e.g. a CD game's folder): it
-        // launches and carries cover art like a game, it does not
-        // browse (the Qt model's
-        // `singleton_directory_needs_launch_resolution` rule).
-        let singleton_container = e.entry_type == "directory" && e.media_id.is_some();
-        Self {
-            media_id: e.media_id,
-            name: e.name.clone(),
-            path: e.path.clone(),
-            // A system-filtered browse of the empty path answers with
-            // the system's index roots as `root` entries; they browse
-            // like any directory.
-            is_dir: (e.entry_type == "directory" || e.entry_type == "root") && !singleton_container,
-            system_id: e.system_id.clone(),
-            zap_script: e.zap_script.clone(),
-            tag_labels: crate::tag_utils::disambiguating_tag_labels(&e.disambiguating_tags),
-            has_cover: e.has_cover,
-            is_favorite: has_favorite_tag(&e.tags),
-            media_capable: e.entry_type == "media"
-                || (e.entry_type == "directory"
-                    && (e.media_id.is_some() || !e.zap_script.is_empty())),
-        }
-    }
-}
-
-impl From<&MediaItem> for GameRow {
-    fn from(item: &MediaItem) -> Self {
-        Self {
-            media_id: item.media_id,
-            name: item.name.clone(),
-            path: item.path.clone(),
-            is_dir: false,
-            system_id: item.system.id.clone(),
-            zap_script: item.zap_script.clone(),
-            tag_labels: Vec::new(),
-            has_cover: true,
-            is_favorite: has_favorite_tag(&item.tags),
-            media_capable: true,
-        }
-    }
-}
-
-impl From<&MediaHistoryEntry> for GameRow {
-    fn from(e: &MediaHistoryEntry) -> Self {
-        Self {
-            media_id: e.media_id,
-            name: e.media_name.clone(),
-            path: e.media_path.clone(),
-            is_dir: false,
-            system_id: e.system_id.clone(),
-            zap_script: String::new(),
-            tag_labels: Vec::new(),
-            has_cover: true,
-            // History rows carry no tag data; the Recents menu offers
-            // no favorite toggle (the Qt rule), so this stays false.
-            is_favorite: false,
-            media_capable: true,
-        }
-    }
-}
-
-fn has_favorite_tag(tags: &[zaparoo_core::media_types::TagInfo]) -> bool {
-    tags.iter()
-        .any(|tag| tag.tag_type == "user" && tag.tag == "favorite")
-}
-
-/// Drop any `root`-type browse entry whose path is a strict ancestor
-/// of another root entry's path (the Qt model's
-/// `dedup_roots_drop_ancestors` rule): Core surfaces the shared parent
-/// (e.g. `/media/fat`) as a root alongside the per-system root beneath
-/// it, and the parent would browse into every other system.
-fn dedup_roots_drop_ancestors(entries: &[BrowseEntry]) -> Vec<BrowseEntry> {
-    let root_paths: Vec<&str> = entries
-        .iter()
-        .filter(|e| e.entry_type == "root" && !e.path.is_empty())
-        .map(|e| e.path.trim_end_matches('/'))
-        .collect();
-    entries
-        .iter()
-        .filter(|e| {
-            if e.entry_type != "root" || e.path.is_empty() {
-                return true;
-            }
-            let candidate = e.path.trim_end_matches('/');
-            !root_paths.iter().any(|other| {
-                !candidate.is_empty()
-                    && candidate != *other
-                    && other
-                        .strip_prefix(candidate)
-                        .is_some_and(|rest| rest.starts_with('/'))
-            })
-        })
-        .cloned()
-        .collect()
-}
 
 /// State shared between the router (Slint event loop thread) and the
 /// tokio watcher tasks. Everything UI-visible is projected into App
@@ -189,38 +51,8 @@ pub struct Shared {
     pub systems: Vec<SystemInfo>,
     /// The Systems screen: rows, cursor and swoop state.
     pub systems_model: crate::systems::SystemsModel,
-    /// What the games-style grid shows (browse / favorites / recents).
-    pub games_mode: GamesMode,
-    /// Entries currently shown on the Games screen (the active page).
-    pub games_entries: Vec<GameRow>,
-    /// All fetched pages for the current system, in order.
-    pub games_pages: Vec<Vec<GameRow>>,
-    /// Index into `games_pages` of the page on screen.
-    pub games_page: usize,
-    /// Cursor for the next unfetched page, if Core reported one.
-    pub games_next_cursor: Option<String>,
-    /// Total rows (dirs + files) Core reported for the current browse
-    /// scope; None for the non-paginated favorites/recents fills.
-    /// Drives the Qt-style "Page N / M" counter and position jumps.
-    pub games_total_rows: Option<u32>,
-    /// Leading directory count from the same totals: a letter bucket's
-    /// item offset is relative to the media sequence, which starts
-    /// after the dirs (the Qt jumpToItem rule).
-    pub games_total_dirs: u32,
-    /// Path of the browse backing the current fill: the cursor is a
-    /// continuation of THIS query, so next-page fetches must repeat
-    /// the same path or Core pages a different listing.
-    pub games_browse_path: String,
-    /// System id backing the games screen (fetches and cover keys).
-    pub games_system_id: String,
-    /// Display name of that system, for the screen title on folder
-    /// navigation (which re-browses without passing through Systems).
-    pub games_system_name: String,
-    /// True while a next-page fetch is in flight; gates re-requests.
-    pub games_fetching: bool,
-    /// Set when the fetch was triggered by a page-swoop edge press:
-    /// the arriving page slides in instead of cutting.
-    pub games_slide_on_arrival: bool,
+    /// The games-style screens: rows, cursor, fetch and cue state.
+    pub games: crate::games::GamesModel,
     /// Core reports at least one connected reader. Refreshed lazily.
     pub has_readers: bool,
     /// An NFC-class reader is present; gates the context-menu "Write
@@ -245,9 +77,6 @@ pub struct Shared {
     /// Screensaver idle ticket: every input bumps it, so an armed
     /// timer from an earlier idle stretch fires as a no-op.
     pub saver_seq: u64,
-    /// Detailed-list layout: absolute selection across every fetched
-    /// row (`games_entries` holds the flattened list in this mode).
-    pub list_index: usize,
     /// Core's launcher inventory + per-system defaults, for the
     /// "Change launcher" picker (`SystemLaunchers` model port).
     pub launchers: Vec<zaparoo_core::media_types::LauncherInfo>,
@@ -268,13 +97,6 @@ pub struct Shared {
     /// snapshot as instant completion.
     pub first_run_saw_indexing: bool,
     pub first_run_cancelling: bool,
-    /// Debounce/staleness ticket for the detail pane's media.meta
-    /// fetch (`FocusedMediaDetailController`'s 220 ms rule).
-    pub detail_seq: u64,
-    /// Rapid-paging badge: when the previous page flip happened plus
-    /// the ticket for the trailing hide timer.
-    pub rapid_last_flip: Option<std::time::Instant>,
-    pub rapid_seq: u64,
     /// Monotonic ticket for card writes: closing the menu bumps it so
     /// an in-flight write's result is ignored (the Qt cancel rule).
     pub card_write_seq: u64,
@@ -285,10 +107,6 @@ pub struct Shared {
     /// stale index response cannot fill a reopened picker.
     pub letter_seq: u64,
     pub persist: PersistedState,
-    /// Monotonic ticket for games fills: a browse response only
-    /// applies if its ticket is still current, so a stale response
-    /// from a previous system cannot fill the grid.
-    pub games_ticket: u64,
     /// True until the first catalog Ready has restored the persisted
     /// screen after a cold start.
     pub restore_pending: bool,
@@ -300,7 +118,7 @@ pub struct Shared {
 
 /// Which surface an open context menu was invoked on. Favorites and
 /// Recents share the games grid, so `Games` covers all three
-/// games-style modes (`GamesMode` disambiguates the entry set).
+/// games-style modes (`crate::games::GamesMode` disambiguates the entry set).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextOwner {
     Games,
@@ -361,20 +179,6 @@ pub struct Ctx {
     pub framebuffer_size: (u32, u32),
 }
 
-/// Current games page size: the solved grid shape, so browse batches
-/// are always a multiple of what one page shows.
-fn games_page_size(app: &App) -> u32 {
-    let cols = app
-        .global::<crate::GamesView>()
-        .get_games_grid_cols()
-        .max(1) as u32;
-    let rows = app
-        .global::<crate::GamesView>()
-        .get_games_grid_rows()
-        .max(1) as u32;
-    cols * rows
-}
-
 impl Shared {
     /// Fresh router state around the persisted snapshot; everything
     /// else starts empty and fills from Core.
@@ -394,17 +198,7 @@ impl Shared {
             show_hidden,
             systems: Vec::new(),
             systems_model: crate::systems::SystemsModel::new(),
-            games_mode: GamesMode::Browse,
-            games_entries: Vec::new(),
-            games_pages: Vec::new(),
-            games_page: 0,
-            games_next_cursor: None,
-            games_total_rows: None,
-            games_total_dirs: 0,
-            games_system_id: String::new(),
-            games_system_name: String::new(),
-            games_fetching: false,
-            games_slide_on_arrival: false,
+            games: crate::games::GamesModel::new(),
             has_readers: false,
             has_nfc: false,
             context_owner: ContextOwner::Games,
@@ -413,7 +207,6 @@ impl Shared {
             pending_restart: None,
             rescrape_existing: false,
             saver_seq: 0,
-            list_index: 0,
             launchers: Vec::new(),
             system_defaults: Vec::new(),
             notice_ack: false,
@@ -424,15 +217,10 @@ impl Shared {
             first_run: FirstRunPhase::Idle,
             first_run_saw_indexing: false,
             first_run_cancelling: false,
-            detail_seq: 0,
-            rapid_last_flip: None,
-            rapid_seq: 0,
             card_write_seq: 0,
             letter_buckets: Vec::new(),
             letter_seq: 0,
-            games_browse_path: String::new(),
             persist,
-            games_ticket: 0,
             restore_pending,
             hub: crate::hub::HubModel::new(hub_layout_path),
         }
@@ -1095,7 +883,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         "systems" => crate::systems::handle_action(ctx, app, action),
         // Favorites and Recents reuse the games-style grid; the mode
         // stored in Shared adjusts back/paging/persist behavior.
-        "games" | "favorites" | "recents" => games_action(ctx, app, action),
+        "games" | "favorites" | "recents" => crate::games::handle_action(ctx, app, action),
         "settings" => settings_action(ctx, app, action),
         "about" => about_action(ctx, app, action),
         _ => {}
@@ -1879,10 +1667,7 @@ fn settings_toggle(ctx: &Ctx, app: &App, id: &str) {
             reproject_hub(ctx, app);
             reproject_systems(ctx, app);
         }
-        "showOriginalFilenames" => {
-            let page = lock(&ctx.shared).games_page;
-            show_games_page(&ctx.shared, &ctx.media, app, page);
-        }
+        "showOriginalFilenames" => crate::games::reproject(ctx, app),
         "reduceMotion" => {
             app.global::<crate::Shell>().set_reduce_motion(value);
             app.global::<crate::Motion>().set_enabled(!value);
@@ -2032,32 +1817,12 @@ fn settings_picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
         // not after the old countdown fires into the seq guard.
         "screensaverTimeout" => reset_idle(ctx, app),
         "browseLayout" => {
-            let is_list = value == "list";
-            app.global::<crate::Shell>().set_browse_list_layout(is_list);
-            app.global::<crate::GamesView>()
-                .set_games_list_layout(is_list);
+            app.global::<crate::Shell>()
+                .set_browse_list_layout(value == "list");
             refresh_layout(app);
-            // Carry the selection into the other presentation and
-            // re-render when a games-style screen is up (settings is
-            // on screen right now, but the state must be coherent the
-            // moment the user backs out).
-            let page_size = games_page_size(app).max(1) as usize;
-            let target_page = {
-                let mut guard = lock(&ctx.shared);
-                if is_list {
-                    let grid_index =
-                        app.global::<crate::GamesView>().get_games_index().max(0) as usize;
-                    guard.list_index = guard.games_page * page_size + grid_index;
-                    0
-                } else {
-                    (guard.list_index / page_size).min(guard.games_pages.len().saturating_sub(1))
-                }
-            };
-            if is_list {
-                show_games_list(&ctx.shared, &ctx.media, app);
-            } else {
-                show_games_page(&ctx.shared, &ctx.media, app, target_page);
-            }
+            // The cursor carries into the other presentation; the state
+            // must be coherent the moment the user backs out of Settings.
+            crate::games::on_layout_changed(ctx, app);
         }
         _ => {}
     }
@@ -2089,75 +1854,6 @@ pub(crate) fn start_scrape(ctx: &Ctx, systems: Vec<String>, force: bool) {
     });
 }
 
-#[cfg(feature = "mister")]
-fn request_cached_games_page_transition(app: &App, direction: i32) -> bool {
-    let shell = app.global::<crate::Shell>();
-    let view = app.global::<crate::GamesView>();
-    if shell.get_orientation().as_str() != "horizontal" || view.get_games_list_layout() {
-        return false;
-    }
-    let sizing = app.global::<Sizing>();
-    let width = sizing.get_screen_width().round().max(0.0) as u32;
-    let height = sizing.get_screen_height().round().max(0.0) as u32;
-    let Some(geometry) = sizing::mister_browse_grid_transition_geometry(
-        width,
-        height,
-        view.get_games_grid_cols().max(0) as u32,
-        view.get_games_grid_rows().max(0) as u32,
-    ) else {
-        return false;
-    };
-    crate::mister::request_page_transition(geometry, direction)
-}
-
-#[cfg(not(feature = "mister"))]
-fn request_cached_games_page_transition(_app: &App, _direction: i32) -> bool {
-    false
-}
-
-pub fn enter_games(ctx: &Ctx, app: &App, sys: &SystemInfo) {
-    if !sys.zap_script.is_empty() {
-        // Launch-only virtual system: run its script directly, no
-        // browse. Stays on the Systems screen.
-        launch(ctx, app, sys.zap_script.clone());
-        return;
-    }
-
-    // Entering a system resets the folder stack to root level — the
-    // new system's browse always starts at the initial view (same rule
-    // as GamesState.system_id assignment in Main.qml).
-    {
-        let mut shared = lock(&ctx.shared);
-        shared.games_mode = GamesMode::Browse;
-        shared.persist.games.system_id.clone_from(&sys.id);
-        shared.persist.games.path_stack = vec![String::new()];
-        shared.persist.games.selected_at_level = vec![String::new()];
-        shared.games_system_name.clone_from(&sys.name);
-    }
-    browse_games(ctx, app, &sys.id, &sys.name, "", true);
-}
-
-/// Re-enter the games screen from a cold start, preserving the
-/// persisted folder stack: browse the stack's top level directly.
-pub fn enter_games_restored(ctx: &Ctx, app: &App, sys: &SystemInfo) {
-    if !sys.zap_script.is_empty() {
-        return;
-    }
-    let top = {
-        let mut shared = lock(&ctx.shared);
-        shared.games_mode = GamesMode::Browse;
-        shared.games_system_name.clone_from(&sys.name);
-        shared
-            .persist
-            .games
-            .path_stack
-            .last()
-            .cloned()
-            .unwrap_or_default()
-    };
-    browse_games(ctx, app, &sys.id, &sys.name, &top, true);
-}
-
 /// Shared Ready-side fill for the games-style grid: store the rows,
 /// persist the screen token, flip (or clear the light cue), show
 /// page 0. Runs on the event loop.
@@ -2165,323 +1861,6 @@ pub fn enter_games_restored(ctx: &Ctx, app: &App, sys: &SystemInfo) {
     clippy::too_many_arguments,
     reason = "internal fill plumbing shared by three list sources; a params struct would just re-name these"
 )]
-fn apply_list_fill(
-    shared: &Arc<Mutex<Shared>>,
-    media: &Arc<MediaCache>,
-    app: &App,
-    ticket: u64,
-    rows: Vec<GameRow>,
-    next_cursor: Option<String>,
-    total_rows: Option<u32>,
-    total_dirs: u32,
-    screen_token: &str,
-    title: &str,
-    flip: bool,
-) {
-    {
-        let mut guard = lock(shared);
-        if guard.games_ticket != ticket {
-            return;
-        }
-        // List layout: restore the absolute selection from the
-        // persisted path for this mode/level (fresh fill = one page).
-        if list_layout_on(&guard) {
-            let selected = match guard.games_mode {
-                GamesMode::Browse => guard
-                    .persist
-                    .games
-                    .selected_at_level
-                    .last()
-                    .cloned()
-                    .unwrap_or_default(),
-                GamesMode::Favorites => guard.persist.favorites.selected_path.clone(),
-                GamesMode::Recents => guard.persist.recents.selected_path.clone(),
-            };
-            guard.list_index = (!selected.is_empty())
-                .then(|| rows.iter().position(|e| e.path == selected))
-                .flatten()
-                .unwrap_or(0);
-        }
-        guard.games_pages = vec![rows];
-        guard.games_page = 0;
-        guard.games_next_cursor = next_cursor;
-        guard.games_total_rows = total_rows;
-        guard.games_total_dirs = total_dirs;
-        guard.games_fetching = false;
-        guard.persist.active_screen = screen_token.to_string();
-        let snapshot = guard.persist.clone();
-        drop(guard);
-        persist::save(&snapshot);
-    }
-    app.global::<crate::GamesView>()
-        .set_games_system(SharedString::from(title));
-    // ScreenStateOverlay vocabulary: a successful fill clears any
-    // terminal error and refreshes the per-mode empty copy.
-    app.global::<crate::GamesView>()
-        .set_games_error(SharedString::default());
-    app.global::<crate::GamesView>()
-        .set_games_empty_text(SharedString::from(match screen_token {
-            "favorites" => "No favorites yet",
-            "recents" => "Nothing played yet",
-            _ => "No games in this system",
-        }));
-    if flip {
-        transition_to_screen(app, screen_token, 1);
-    } else {
-        app.global::<crate::Shell>()
-            .set_status_text(SharedString::default());
-    }
-    show_games_page(shared, media, app, 0);
-}
-
-/// Terminal in-screen error (`ScreenStateOverlay`'s Error state): flip
-/// to the destination and paint "Failed to load" + the message where
-/// the grid would be, like the Qt overlay bound to the model's
-/// `error_message`. Replaces the old header-line-only surface.
-fn show_games_error(app: &App, screen_token: &str, title: &str, message: &str) {
-    let view = app.global::<crate::GamesView>();
-    view.set_games(ModelRc::new(VecModel::from(Vec::<GameTile>::new())));
-    view.set_games_error(SharedString::from(message));
-    view.set_games_total_pages(0);
-    view.set_games_has_more(false);
-    view.set_games_system(SharedString::from(title));
-    transition_to_screen(app, screen_token, 1);
-    app.global::<crate::Shell>()
-        .set_status_text(SharedString::default());
-}
-
-/// Favorites entry (Hub action): first page of media tagged
-/// `user:favorite`, deferred-flip like the games entry.
-pub fn enter_favorites(ctx: &Ctx, app: &App) {
-    app.global::<crate::Shell>().set_transitioning(true);
-    let ticket = {
-        let mut shared = lock(&ctx.shared);
-        shared.games_mode = GamesMode::Favorites;
-        shared.games_system_id = String::new();
-        shared.games_system_name = "Favorites".to_string();
-        shared.games_ticket += 1;
-        shared.games_ticket
-    };
-
-    let resource = ctx
-        .store
-        .subscribe::<MediaFavoritesEndpoint>(FavoritesArgs::new(
-            games_page_size(app),
-            None,
-            Vec::new(),
-        ));
-    let mut rx = resource.subscribe();
-    let weak = app.as_weak();
-    let shared = ctx.shared.clone();
-    let media = ctx.media.clone();
-    ctx.handle.spawn(async move {
-        loop {
-            let snapshot = rx.borrow_and_update().clone();
-            match snapshot {
-                ResourceStatus::Ready(result) => {
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        let rows: Vec<GameRow> = result.results.iter().map(GameRow::from).collect();
-                        apply_list_fill(
-                            &shared,
-                            &media,
-                            &app,
-                            ticket,
-                            rows,
-                            None,
-                            None,
-                            0,
-                            "favorites",
-                            "Favorites",
-                            true,
-                        );
-                    });
-                    return;
-                }
-                ResourceStatus::Errored { message, .. } => {
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        show_games_error(&app, "favorites", "Favorites", &message);
-                    });
-                    return;
-                }
-                ResourceStatus::Idle | ResourceStatus::Loading => {}
-            }
-            if rx.changed().await.is_err() {
-                return;
-            }
-        }
-    });
-}
-
-/// Recents entry (Hub action): recently-played history, deferred-flip.
-pub fn enter_recents(ctx: &Ctx, app: &App) {
-    app.global::<crate::Shell>().set_transitioning(true);
-    let ticket = {
-        let mut shared = lock(&ctx.shared);
-        shared.games_mode = GamesMode::Recents;
-        shared.games_system_id = String::new();
-        shared.games_system_name = "Recently Played".to_string();
-        shared.games_ticket += 1;
-        shared.games_ticket
-    };
-
-    let resource = ctx
-        .store
-        .subscribe::<MediaHistoryEndpoint>(HistoryArgs::new(Vec::new(), games_page_size(app)));
-    let mut rx = resource.subscribe();
-    let weak = app.as_weak();
-    let shared = ctx.shared.clone();
-    let media = ctx.media.clone();
-    ctx.handle.spawn(async move {
-        loop {
-            let snapshot = rx.borrow_and_update().clone();
-            match snapshot {
-                ResourceStatus::Ready(result) => {
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        let rows: Vec<GameRow> = result.entries.iter().map(GameRow::from).collect();
-                        apply_list_fill(
-                            &shared,
-                            &media,
-                            &app,
-                            ticket,
-                            rows,
-                            None,
-                            None,
-                            0,
-                            "recents",
-                            "Recently Played",
-                            true,
-                        );
-                    });
-                    return;
-                }
-                ResourceStatus::Errored { message, .. } => {
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        show_games_error(&app, "recents", "Recently Played", &message);
-                    });
-                    return;
-                }
-                ResourceStatus::Idle | ResourceStatus::Loading => {}
-            }
-            if rx.changed().await.is_err() {
-                return;
-            }
-        }
-    });
-}
-
-/// Fill the games screen from a browse of (`system_id`, `path`).
-/// `flip` selects deferred route entry (input gate + screen push on
-/// Ready); folder navigation inside the screen passes false
-/// and shows the lightweight status cue instead, mirroring Main.qml's
-/// "no pendingTransition on drill-down" rule.
-fn browse_games(ctx: &Ctx, app: &App, system_id: &str, system_name: &str, path: &str, flip: bool) {
-    if flip {
-        app.global::<crate::Shell>().set_transitioning(true);
-    } else {
-        app.global::<crate::Shell>()
-            .set_status_text(SharedString::from("Loading…"));
-    }
-    let ticket = {
-        let mut shared = lock(&ctx.shared);
-        shared.games_ticket += 1;
-        shared.games_ticket
-    };
-    save_persist(&ctx.shared);
-
-    let args = BrowseArgs::new(
-        path.to_string(),
-        vec![system_id.to_string()],
-        games_page_size(app),
-        Vec::new(),
-    );
-    let resource = ctx.store.subscribe::<MediaBrowseEndpoint>(args);
-    let mut rx = resource.subscribe();
-    let weak = app.as_weak();
-    let ctx2 = ctx.clone();
-    let shared = ctx.shared.clone();
-    let media = ctx.media.clone();
-    let system_name = system_name.to_string();
-    let system_id = system_id.to_string();
-    let browse_path = path.to_string();
-    let at_root = path.is_empty();
-    ctx.handle.spawn(async move {
-        loop {
-            let snapshot = rx.borrow_and_update().clone();
-            match snapshot {
-                ResourceStatus::Ready(result) => {
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        {
-                            let mut guard = lock(&shared);
-                            guard.games_system_id.clone_from(&system_id);
-                            guard.games_browse_path.clone_from(&browse_path);
-                        }
-                        let entries = dedup_roots_drop_ancestors(&result.entries);
-
-                        // Single-root auto-nav (the Qt model's rule):
-                        // a system whose scoped roots collapse to one
-                        // folder skips the pointless one-entry level -
-                        // the root REPLACES the stack's base so Back
-                        // still exits the screen.
-                        if at_root && entries.len() == 1 && entries[0].entry_type == "root" {
-                            let root_path = entries[0].path.clone();
-                            {
-                                let mut guard = lock(&shared);
-                                if guard.games_ticket != ticket {
-                                    return;
-                                }
-                                guard.persist.games.path_stack = vec![root_path.clone()];
-                                guard.persist.games.selected_at_level = vec![String::new()];
-                            }
-                            browse_games(&ctx2, &app, &system_id, &system_name, &root_path, flip);
-                            return;
-                        }
-
-                        let rows: Vec<GameRow> = entries.iter().map(GameRow::from).collect();
-                        let cursor = result
-                            .pagination
-                            .as_ref()
-                            .filter(|p| p.has_next_page)
-                            .and_then(|p| p.next_cursor.clone());
-                        let total_dirs = result.total_dirs.unwrap_or(0);
-                        let total_rows = Some(result.total_files + total_dirs);
-                        apply_list_fill(
-                            &shared,
-                            &media,
-                            &app,
-                            ticket,
-                            rows,
-                            cursor,
-                            total_rows,
-                            total_dirs,
-                            "games",
-                            system_name.as_str(),
-                            flip,
-                        );
-                    });
-                    return;
-                }
-                ResourceStatus::Errored { message, .. } => {
-                    let title = system_name.clone();
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        show_games_error(&app, "games", &title, &message);
-                    });
-                    return;
-                }
-                ResourceStatus::Idle | ResourceStatus::Loading => {}
-            }
-            if rx.changed().await.is_err() {
-                return;
-            }
-        }
-    });
-}
-
-/// The cover decode tier for the games grid at the current output
-/// geometry (request size == decode size).
-fn games_cover_tier(app: &App) -> u32 {
-    sizing::games_grid_cover_source_size(output_scene(app))
-}
-
 /// The scene at the current output geometry, as the sizing rules see it:
 /// the physical output size during DRS rather than the transient Slint
 /// window size, plus the rendering flags the `Sizing` global carries.
@@ -2518,900 +1897,13 @@ fn apply_clock(ctx: &Ctx, app: &App) {
     crate::push_clock(app, twelve);
 }
 
-/// Tiles for a page, with any already-cached art filled in
-/// synchronously (cache reads only, no fetches). Used for the
-/// page-swoop strip: the incoming page shows its cached covers while
-/// it slides, and the commit's `show_games_page` fetches the rest.
-/// Displayed row name: Core's cleaned title, or the on-disk filename
-/// without its extension when Show original filenames is on (the Qt
-/// `display_name_for_entry` / `file_stem_or_name` pair).
-fn display_name(e: &GameRow, show_original_filenames: bool) -> String {
-    if show_original_filenames && !e.is_dir && !e.path.is_empty() {
-        if let Some(stem) = std::path::Path::new(&e.path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-        {
-            if !stem.is_empty() {
-                return stem.to_string();
-            }
-        }
-    }
-    e.name.clone()
-}
-
-fn build_game_tiles(
-    entries: &[GameRow],
-    media: &Arc<MediaCache>,
-    system_id: &str,
-    tier: u32,
-    show_original_filenames: bool,
-) -> Vec<GameTile> {
-    let tag_rows: Vec<(String, Vec<String>)> = entries
-        .iter()
-        .map(|e| {
-            (
-                display_name(e, show_original_filenames),
-                e.tag_labels.clone(),
-            )
-        })
-        .collect();
-    let tag_displays = crate::tag_utils::sibling_disambiguation_displays(&tag_rows);
-    entries
-        .iter()
-        .zip(tag_displays.iter())
-        .map(|(e, tags)| {
-            let mut tile = GameTile {
-                name: SharedString::from(display_name(e, show_original_filenames).as_str()),
-                path: SharedString::from(e.path.as_str()),
-                cover: slint::Image::default(),
-                has_cover: false,
-                is_favorite: e.is_favorite,
-                thumb: slint::Image::default(),
-                has_thumb: false,
-                tags: SharedString::from(tags.as_str()),
-            };
-            if !e.is_dir && e.has_cover {
-                let system = if e.system_id.is_empty() {
-                    system_id.to_string()
-                } else {
-                    e.system_id.clone()
-                };
-                let mut key = MediaKey {
-                    media_id: e.media_id,
-                    system,
-                    path: e.path.clone(),
-                    max_size: tier,
-                };
-                if let Some(image) = media.get(&key) {
-                    tile.cover = slint::Image::from_rgba8(image.buffer.clone());
-                    tile.has_cover = true;
-                } else {
-                    key.max_size = crate::media_cache::THUMB_TIER;
-                    if let Some(image) = media.get(&key) {
-                        tile.thumb = slint::Image::from_rgba8(image.buffer.clone());
-                        tile.has_thumb = true;
-                    }
-                }
-            }
-            tile
-        })
-        .collect()
-}
-
-/// Animate a page flip: the incoming page's tiles slide in as one
-/// full-viewport sweep (the animation Qt's software path could never
-/// afford), then the flip commits invisibly - `show_games_page` swaps
-/// the real grid at slide end while the strip snaps back to rest with
-/// animations gated off, so the final frame's pixels are identical.
-#[allow(
-    clippy::too_many_lines,
-    reason = "page projection keeps selection, detail, and animation state atomic"
-)]
-fn slide_to_page(
-    shared: &Arc<Mutex<Shared>>,
-    media: &Arc<MediaCache>,
-    app: &App,
-    page: usize,
-    dir: i32,
-) {
-    let view = app.global::<crate::GamesView>();
-    if view.get_games_page_slide() != 0.0 || view.get_games_cached_transition() {
-        return;
-    }
-    let cols = view.get_games_grid_cols().max(1) as usize;
-    let col = (view.get_games_index().max(0) as usize) % cols;
-    let (entries, system_id, show_files, reduce_motion, target) = {
-        let mut guard = lock(shared);
-        let Some(entries) = guard.games_pages.get(page).cloned() else {
-            return;
-        };
-        if entries.is_empty() {
-            return;
-        }
-        // Focus lands on the same column, entry row (top row sliding
-        // down, bottom row sliding up); persist it now so the commit's
-        // show_games_page restores exactly there.
-        let target = if dir > 0 {
-            col.min(entries.len() - 1)
-        } else {
-            let rows = entries.len().div_ceil(cols);
-            ((rows - 1) * cols + col).min(entries.len() - 1)
-        };
-        if guard.games_mode == GamesMode::Browse {
-            if let Some(top) = guard.persist.games.selected_at_level.last_mut() {
-                top.clone_from(&entries[target].path);
-            }
-        }
-        (
-            entries,
-            guard.games_system_id.clone(),
-            guard.persist.settings.show_original_filenames,
-            guard.persist.settings.reduce_motion,
-            target,
-        )
-    };
-    save_persist(shared);
-
-    // Rapid-paging badge (RapidScrollIndicator.qml): a second flip
-    // within 600 ms shows the landing page's first letter, cleared
-    // 700 ms after the last flip by the seq-guarded timer.
-    {
-        let now = std::time::Instant::now();
-        let (rapid, ticket) = {
-            let mut guard = lock(shared);
-            let rapid = guard
-                .rapid_last_flip
-                .is_some_and(|t| now.duration_since(t).as_millis() < 600);
-            guard.rapid_last_flip = Some(now);
-            guard.rapid_seq += 1;
-            (rapid, guard.rapid_seq)
-        };
-        if rapid {
-            let letter = entries.first().map_or_else(String::new, |e| {
-                let trimmed = e.name.trim();
-                trimmed
-                    .chars()
-                    .next()
-                    .map_or("#".to_string(), |c| c.to_uppercase().to_string())
-            });
-            app.global::<crate::GamesView>()
-                .set_rapid_letter(SharedString::from(letter.as_str()));
-            let weak = app.as_weak();
-            let shared2 = shared.clone();
-            slint::Timer::single_shot(std::time::Duration::from_millis(700), move || {
-                if lock(&shared2).rapid_seq != ticket {
-                    return;
-                }
-                if let Some(app) = weak.upgrade() {
-                    app.global::<crate::GamesView>()
-                        .set_rapid_letter(SharedString::default());
-                }
-            });
-        }
-    }
-
-    view.set_games_slide_dir(dir);
-    view.set_games_transition_target_index(i32::try_from(target).unwrap_or(0));
-    if !reduce_motion && request_cached_games_page_transition(app, dir) {
-        view.set_games_slide_anim(false);
-        view.set_games_cached_transition(true);
-        view.set_games_next_page(ModelRc::default());
-        show_games_page(shared, media, app, page);
-
-        let weak = app.as_weak();
-        slint::Timer::single_shot(std::time::Duration::from_millis(260), move || {
-            if let Some(app) = weak.upgrade() {
-                let view = app.global::<crate::GamesView>();
-                view.set_games_cached_transition(false);
-                view.set_games_slide_anim(true);
-            }
-        });
-        return;
-    }
-
-    let tiles = build_game_tiles(
-        &entries,
-        media,
-        &system_id,
-        games_cover_tier(app),
-        show_files,
-    );
-    // Declare the heavy phase: the strip repaints the whole viewport
-    // every frame of the slide, so DRS drops to motion res for
-    // exactly this stretch (crate::drs). Ends at the commit. With
-    // Reduce motion on the strip cuts in one frame - nothing to mask,
-    // so no DRS switch either.
-    if !reduce_motion {
-        crate::drs::heavy_begin();
-    }
-    app.global::<crate::GamesView>().set_games_slide_anim(true);
-    app.global::<crate::GamesView>()
-        .set_games_next_page(ModelRc::new(VecModel::from(tiles)));
-    // Kick the strip: page-slide drives the animated y.
-    app.global::<crate::GamesView>()
-        .set_games_page_slide(dir as f32);
-
-    let weak = app.as_weak();
-    let shared = shared.clone();
-    let media = media.clone();
-    slint::Timer::single_shot(std::time::Duration::from_millis(260), move || {
-        // Phase over regardless of what the upgrade says - the count
-        // must never leak (and must not cancel someone else's phase
-        // when reduce-motion skipped the begin).
-        if !reduce_motion {
-            crate::drs::heavy_end();
-        }
-        let Some(app) = weak.upgrade() else {
-            return;
-        };
-        // Commit with animations off: the grid swap + snap to rest
-        // must not glide (the strip already moved these pixels).
-        app.global::<crate::GamesView>().set_games_slide_anim(false);
-        show_games_page(&shared, &media, &app, page);
-        app.global::<crate::GamesView>().set_games_page_slide(0.0);
-        app.global::<crate::GamesView>()
-            .set_games_next_page(ModelRc::new(VecModel::from(Vec::<GameTile>::new())));
-        // Re-arm animations a frame later, after the snap rendered.
-        let weak = app.as_weak();
-        slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
-            if let Some(app) = weak.upgrade() {
-                app.global::<crate::GamesView>().set_games_slide_anim(true);
-            }
-        });
-    });
-}
-
-// ---------- Detailed-list layout (BrowseListDetailView port) ----------
-
-/// Visible rows follow the original profile: portrait non-CRT list
-/// views show more rows along their long logical axis.
-const DEFAULT_LIST_VISIBLE_ROWS: usize = 10;
-const TATE_LIST_VISIBLE_ROWS: usize = 16;
-
-fn list_visible_rows(app: &App) -> usize {
-    let shell = app.global::<crate::Shell>();
-    if !shell.get_crt_enabled() && matches!(shell.get_orientation().as_str(), "cw" | "ccw") {
-        TATE_LIST_VISIBLE_ROWS
-    } else {
-        DEFAULT_LIST_VISIBLE_ROWS
-    }
-}
-
-/// The list layout is a browse-setting, not per-screen state.
-fn list_layout_on(guard: &Shared) -> bool {
-    guard.persist.settings.games_browse_layout == "list"
-}
-
-/// Client + runtime handle for the detail pane's debounced media.meta
-/// fetch. The fills that trigger a re-render run inside spawned
-/// closures that only carry `shared`/`media`, so the fetch pair lives
-/// as a seeded global (the Qt models' `global_store`/`global_handle`
-/// pattern).
-static DETAIL_CTX: std::sync::OnceLock<(Arc<zaparoo_core::client::Client>, Handle)> =
-    std::sync::OnceLock::new();
-
-pub fn seed_detail_ctx(client: Arc<zaparoo_core::client::Client>, handle: Handle) {
-    let _ = DETAIL_CTX.set((client, handle));
-}
-
-/// Detail-table rows from media.meta tags: fixed label set, values
-/// resolved through the Qt alias lists, empty rows dropped.
-fn detail_rows_from_tags(source: &[zaparoo_core::media_types::TagInfo]) -> Vec<crate::DetailRow> {
-    fn tag_display_value(tag: &zaparoo_core::media_types::TagInfo) -> String {
-        let label = tag.label.trim();
-        if label.is_empty() {
-            tag.tag.trim().to_string()
-        } else {
-            label.to_string()
-        }
-    }
-    let value_for = |aliases: &[&str]| -> String {
-        source
-            .iter()
-            .filter(|tag| {
-                aliases
-                    .iter()
-                    .any(|alias| tag.tag_type.eq_ignore_ascii_case(alias))
-                    && !tag_display_value(tag).is_empty()
-            })
-            .map(tag_display_value)
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let rows = [
-        ("Year", value_for(&["year", "release date", "release_date"])),
-        ("Genre", value_for(&["genre", "gamegenre"])),
-        ("Players", value_for(&["players"])),
-        ("Developer", value_for(&["developer"])),
-        ("Publisher", value_for(&["publisher"])),
-        ("Rating", value_for(&["rating"])),
-    ];
-    rows.into_iter()
-        .filter(|(_, value)| !value.is_empty())
-        .map(|(label, value)| crate::DetailRow {
-            label: SharedString::from(label),
-            value: SharedString::from(value.as_str()),
-        })
-        .collect()
-}
-
-/// Refresh the detail pane for the current list selection: identity
-/// fields immediately (title, cached cover), then the media.meta rows
-/// and description after the 220 ms debounce so rapid scrolling never
-/// queues a fetch per row (`FocusedMediaDetailController`'s contract).
-fn update_detail(shared: &Arc<Mutex<Shared>>, media: &Arc<MediaCache>, app: &App) {
-    let (entry, ticket, show_files, fallback_system) = {
-        let mut guard = lock(shared);
-        guard.detail_seq += 1;
-        (
-            guard.games_entries.get(guard.list_index).cloned(),
-            guard.detail_seq,
-            guard.persist.settings.show_original_filenames,
-            guard.games_system_id.clone(),
-        )
-    };
-    let view = app.global::<crate::GamesView>();
-    view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
-    view.set_detail_description(SharedString::default());
-    let Some(entry) = entry else {
-        view.set_detail_title(SharedString::default());
-        view.set_detail_path(SharedString::default());
-        view.set_detail_has_cover(false);
-        return;
-    };
-    view.set_detail_title(SharedString::from(
-        display_name(&entry, show_files).as_str(),
-    ));
-    view.set_detail_path(SharedString::from(entry.path.as_str()));
-
-    // Cover: cached bytes paint immediately, misses stream in through
-    // apply_cover's detail patch.
-    let system = if entry.system_id.is_empty() {
-        fallback_system
-    } else {
-        entry.system_id.clone()
-    };
-    let tier = sizing::detail_cover_source_size(output_scene(app));
-    let key = MediaKey {
-        media_id: entry.media_id,
-        system: system.clone(),
-        path: entry.path.clone(),
-        max_size: tier,
-    };
-    if let Some(image) = media.get(&key) {
-        view.set_detail_cover(slint::Image::from_rgba8(image.buffer.clone()));
-        view.set_detail_has_cover(true);
-    } else {
-        view.set_detail_has_cover(false);
-        if !entry.is_dir && entry.has_cover {
-            media.enqueue(key);
-        }
-    }
-    if entry.is_dir {
-        return;
-    }
-
-    let weak = app.as_weak();
-    let shared = shared.clone();
-    slint::Timer::single_shot(std::time::Duration::from_millis(220), move || {
-        if lock(&shared).detail_seq != ticket {
-            return;
-        }
-        let Some((client, handle)) = DETAIL_CTX.get().cloned() else {
-            return;
-        };
-        let params = zaparoo_core::media_types::MediaMetaParams {
-            media_id: entry.media_id,
-            system,
-            path: entry.path.clone(),
-        };
-        handle.spawn(async move {
-            let Ok(result) = client.media_meta(params).await else {
-                return;
-            };
-            let rows = detail_rows_from_tags(&result.media.tags);
-            let description = result
-                .media
-                .properties
-                .get("property:description")
-                .map(|p| p.text.clone())
-                .unwrap_or_default();
-            let _ = weak.upgrade_in_event_loop(move |app| {
-                if lock(&shared).detail_seq != ticket {
-                    return;
-                }
-                let view = app.global::<crate::GamesView>();
-                view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
-                view.set_detail_description(SharedString::from(description.as_str()));
-            });
-        });
-    });
-}
-
-/// Project the list layout: flatten every fetched page (the absolute-
-/// index invariant `games_entries` carries in this mode), window the
-/// visible slice around the centered selection slot, and refresh the
-/// detail pane.
-fn show_games_list(shared: &Arc<Mutex<Shared>>, media: &Arc<MediaCache>, app: &App) {
-    let target_visible = list_visible_rows(app);
-    let (slice, sel, view_top, total, system_id, show_files) = {
-        let mut guard = lock(shared);
-        let all: Vec<GameRow> = guard.games_pages.iter().flatten().cloned().collect();
-        let sel = guard.list_index.min(all.len().saturating_sub(1));
-        guard.list_index = sel;
-        guard.games_entries.clone_from(&all);
-        let visible = target_visible.min(all.len().max(1));
-        let center = (target_visible - 1) / 2;
-        let view_top = sel
-            .saturating_sub(center)
-            .min(all.len().saturating_sub(visible));
-        let slice: Vec<GameRow> = all.iter().skip(view_top).take(visible).cloned().collect();
-        (
-            slice,
-            sel,
-            view_top,
-            all.len(),
-            guard.games_system_id.clone(),
-            guard.persist.settings.show_original_filenames,
-        )
-    };
-    let tiles = build_game_tiles(
-        &slice,
-        media,
-        &system_id,
-        crate::media_cache::THUMB_TIER,
-        show_files,
-    );
-    let view = app.global::<crate::GamesView>();
-    view.set_list_rows(ModelRc::new(VecModel::from(tiles)));
-    view.set_list_sel(i32::try_from(sel - view_top).unwrap_or(0));
-    view.set_list_view_top(i32::try_from(view_top).unwrap_or(0));
-    view.set_list_total(i32::try_from(total).unwrap_or(0));
-    view.set_list_visible(i32::try_from(target_visible).unwrap_or(10));
-    update_detail(shared, media, app);
-}
-
-/// Project a fetched page into the grid: tiles, focus reset, page
-/// indicator, and cover fetches at the tile decode tier. In the
-/// detailed-list layout every caller delegates to the list projection
-/// instead (page arguments only mean something to the grid).
-fn show_games_page(shared: &Arc<Mutex<Shared>>, media: &Arc<MediaCache>, app: &App, page: usize) {
-    // Bound first: an inline `lock()` in the condition would hold the
-    // guard across the body while the list projection re-locks.
-    let list_mode = {
-        let guard = lock(shared);
-        list_layout_on(&guard)
-    };
-    if list_mode {
-        show_games_list(shared, media, app);
-        return;
-    }
-    let (entries, system_id, has_more, selected_path) = {
-        let mut guard = lock(shared);
-        let Some(entries) = guard.games_pages.get(page).cloned() else {
-            return;
-        };
-        guard.games_page = page;
-        guard.games_entries.clone_from(&entries);
-        let has_more = page + 1 < guard.games_pages.len() || guard.games_next_cursor.is_some();
-        let selected = match guard.games_mode {
-            GamesMode::Browse => guard
-                .persist
-                .games
-                .selected_at_level
-                .last()
-                .cloned()
-                .unwrap_or_default(),
-            GamesMode::Favorites => guard.persist.favorites.selected_path.clone(),
-            GamesMode::Recents => guard.persist.recents.selected_path.clone(),
-        };
-        (entries, guard.games_system_id.clone(), has_more, selected)
-    };
-
-    // Tiles carry any already-cached art from the start (the same
-    // builder the swoop strip uses): revisiting a page paints its
-    // covers in the very frame the grid swaps, with no thumb-to-cover
-    // replay. Only misses go through the fetch driver below.
-    let tier = games_cover_tier(app);
-    let show_files = lock(shared).persist.settings.show_original_filenames;
-    let tiles = build_game_tiles(&entries, media, &system_id, tier, show_files);
-    app.global::<crate::GamesView>()
-        .set_games(ModelRc::new(VecModel::from(tiles)));
-    // Restore focus to the persisted selection for this level when it
-    // is on the page (kill-relaunch and folder pop both land here);
-    // otherwise start at the top.
-    let restored = (!selected_path.is_empty())
-        .then(|| entries.iter().position(|e| e.path == selected_path))
-        .flatten()
-        .unwrap_or(0);
-    app.global::<crate::GamesView>()
-        .set_games_index(restored as i32);
-    app.global::<crate::GamesView>().set_games_page(page as i32);
-    app.global::<crate::GamesView>()
-        .set_games_has_more(has_more);
-    // Qt's TopStatusStrip counter: "Page N / M" from Core's totals
-    // (0 = unknown totals, hides the counter - favorites/recents).
-    let total_pages = lock(shared)
-        .games_total_rows
-        .map_or(0, |total| total.div_ceil(games_page_size(app)).max(1));
-    app.global::<crate::GamesView>()
-        .set_games_total_pages(i32::try_from(total_pages).unwrap_or(0));
-
-    request_page_covers(media, &entries, &system_id, tier);
-}
-
-/// Queue fetches for the page's MISSING cover art: cache hits are
-/// already baked into the tiles by `build_game_tiles`, so only misses
-/// reach the driver - the whole page of 32px thumbs first (every tile
-/// paints a preview within the first disk round-trips), then the full
-/// tier, each landing through the driver's `on_ready` apply.
-fn request_page_covers(media: &Arc<MediaCache>, entries: &[GameRow], system_id: &str, tier: u32) {
-    let missing: Vec<MediaKey> = entries
-        .iter()
-        .filter(|e| !e.is_dir && e.has_cover)
-        .map(|entry| {
-            let system = if entry.system_id.is_empty() {
-                system_id.to_string()
-            } else {
-                entry.system_id.clone()
-            };
-            MediaKey {
-                media_id: entry.media_id,
-                system,
-                path: entry.path.clone(),
-                max_size: tier,
-            }
-        })
-        .filter(|key| media.get(key).is_none())
-        .collect();
-    for key in &missing {
-        media.enqueue(MediaKey {
-            max_size: crate::media_cache::THUMB_TIER,
-            ..key.clone()
-        });
-    }
-    for key in missing {
-        media.enqueue(key);
-    }
-}
-
-/// Fetch the next page with the stored cursor, bypassing the endpoint
-/// cache exactly like the Qt `GamesModel::fetch_more` (each follow-up
-/// has a different cursor, so caching would pollute the key space).
-fn fetch_games_next(ctx: &Ctx, app: &App) {
-    let (cursor, system_id, browse_path, ticket) = {
-        let mut guard = lock(&ctx.shared);
-        if guard.games_fetching {
-            return;
-        }
-        let Some(cursor) = guard.games_next_cursor.clone() else {
-            return;
-        };
-        guard.games_fetching = true;
-        (
-            cursor,
-            guard.games_system_id.clone(),
-            guard.games_browse_path.clone(),
-            guard.games_ticket,
-        )
-    };
-    app.global::<crate::Shell>()
-        .set_status_text(SharedString::from("Loading more…"));
-
-    let client = ctx.store.client();
-    let page_size = games_page_size(app);
-    let weak = app.as_weak();
-    let shared = ctx.shared.clone();
-    let media = ctx.media.clone();
-    ctx.handle.spawn(async move {
-        let outcome = client
-            .media_browse(zaparoo_core::media_types::MediaBrowseParams {
-                root_view: zaparoo_core::media_types::merged_root_view(
-                    &browse_path,
-                    std::slice::from_ref(&system_id),
-                ),
-                path: browse_path,
-                systems: vec![system_id],
-                max_results: Some(page_size),
-                cursor: Some(cursor),
-                tags: Vec::new(),
-                letter: None,
-                sort: None,
-            })
-            .await;
-        let _ = weak.upgrade_in_event_loop(move |app| {
-            app.global::<crate::Shell>()
-                .set_status_text(SharedString::default());
-            let (next_page, slide) = {
-                let mut guard = lock(&shared);
-                guard.games_fetching = false;
-                let slide = std::mem::take(&mut guard.games_slide_on_arrival);
-                if guard.games_ticket != ticket {
-                    return;
-                }
-                match outcome {
-                    Ok(result) => {
-                        guard.games_next_cursor = result
-                            .pagination
-                            .as_ref()
-                            .filter(|p| p.has_next_page)
-                            .and_then(|p| p.next_cursor.clone());
-                        guard
-                            .games_pages
-                            .push(result.entries.iter().map(GameRow::from).collect());
-                        let next_page = guard.games_pages.len() - 1;
-                        // Only swoop into the page directly after the
-                        // one on screen; anything else cuts.
-                        (next_page, slide && next_page == guard.games_page + 1)
-                    }
-                    Err(e) => {
-                        app.global::<crate::Shell>()
-                            .set_status_text(SharedString::from(
-                                format!("Page fetch failed: {}", e.message).as_str(),
-                            ));
-                        return;
-                    }
-                }
-            };
-            if slide {
-                slide_to_page(&shared, &media, &app, next_page, 1);
-            } else {
-                show_games_page(&shared, &media, &app, next_page);
-            }
-        });
-    });
-}
-
-/// Advance one page with the swoop: slide immediately when the next
-/// page is already fetched, otherwise fetch it and slide on arrival.
-fn page_forward(ctx: &Ctx, app: &App) {
-    let (page, fetched, has_cursor) = {
-        let guard = lock(&ctx.shared);
-        (
-            guard.games_page,
-            guard.games_pages.len(),
-            guard.games_next_cursor.is_some(),
-        )
-    };
-    if page + 1 < fetched {
-        slide_to_page(&ctx.shared, &ctx.media, app, page + 1, 1);
-    } else if has_cursor {
-        lock(&ctx.shared).games_slide_on_arrival = true;
-        fetch_games_next(ctx, app);
-    }
-}
-
-/// Detailed-list input: linear selection over the flattened fetched
-/// rows with a centered scroll slot; Left/Right (and L/R) jump by a
-/// screenful, Down at the end streams the next Core page in.
-fn games_list_action(ctx: &Ctx, app: &App, action: &str) {
-    let (len, sel, mode, has_cursor) = {
-        let guard = lock(&ctx.shared);
-        (
-            guard.games_entries.len(),
-            guard.list_index,
-            guard.games_mode,
-            guard.games_next_cursor.is_some(),
-        )
-    };
-    let visible_rows = list_visible_rows(app);
-    let mut target: Option<usize> = None;
-    match action {
-        actions::UP => {
-            if sel > 0 {
-                target = Some(sel - 1);
-            }
-        }
-        actions::DOWN => {
-            if sel + 1 < len {
-                target = Some(sel + 1);
-            } else if has_cursor {
-                fetch_games_next(ctx, app);
-                return;
-            }
-        }
-        actions::LEFT | actions::PAGE_PREV => {
-            if sel > 0 {
-                target = Some(sel.saturating_sub(visible_rows));
-            }
-        }
-        actions::RIGHT | actions::PAGE_NEXT => {
-            if sel + visible_rows < len {
-                target = Some(sel + visible_rows);
-            } else if len > 0 && sel + 1 < len {
-                target = Some(len - 1);
-            } else if has_cursor {
-                fetch_games_next(ctx, app);
-                return;
-            }
-        }
-        actions::ACCEPT => {
-            let entry = lock(&ctx.shared).games_entries.get(sel).cloned();
-            if let Some(entry) = entry {
-                if entry.is_dir {
-                    descend_into_folder(ctx, app, &entry.path);
-                } else if !entry.zap_script.is_empty() {
-                    launch(ctx, app, entry.zap_script);
-                } else {
-                    launch(ctx, app, entry.path);
-                }
-            }
-        }
-        actions::CONTEXT_MENU => open_context_menu(ctx, app, sel),
-        actions::PAGE_MENU if mode == GamesMode::Browse => open_view_menu(ctx, app),
-        actions::CANCEL => match mode {
-            GamesMode::Browse => {
-                let popped = pop_folder_level(ctx, app);
-                if !popped {
-                    lock(&ctx.shared).persist.active_screen = "systems".to_string();
-                    save_persist(&ctx.shared);
-                    transition_to_screen(app, "systems", -1);
-                }
-            }
-            GamesMode::Favorites | GamesMode::Recents => {
-                lock(&ctx.shared).persist.active_screen = "hub".to_string();
-                save_persist(&ctx.shared);
-                transition_to_screen(app, "hub", -1);
-            }
-        },
-        _ => {}
-    }
-    if let Some(next) = target {
-        list_move_to(ctx, app, next.min(len.saturating_sub(1)));
-    }
-}
-
-/// Land the list selection on `index`: persist the per-mode path,
-/// re-window, and prefetch the next Core page when the selection is
-/// within a screenful of the fetched end.
-fn list_move_to(ctx: &Ctx, app: &App, index: usize) {
-    {
-        let mut shared = lock(&ctx.shared);
-        shared.list_index = index;
-        if let Some(entry) = shared.games_entries.get(index) {
-            let path = entry.path.clone();
-            match shared.games_mode {
-                GamesMode::Browse => {
-                    if let Some(top) = shared.persist.games.selected_at_level.last_mut() {
-                        *top = path;
-                    }
-                }
-                GamesMode::Favorites => shared.persist.favorites.selected_path = path,
-                GamesMode::Recents => shared.persist.recents.selected_path = path,
-            }
-        }
-    }
-    save_persist(&ctx.shared);
-    show_games_list(&ctx.shared, &ctx.media, app);
-    let (near_end, cursor) = {
-        let guard = lock(&ctx.shared);
-        (
-            index + list_visible_rows(app) >= guard.games_entries.len(),
-            guard.games_next_cursor.is_some(),
-        )
-    };
-    if near_end && cursor {
-        fetch_games_next(ctx, app);
-    }
-}
-
-fn games_action(ctx: &Ctx, app: &App, action: &str) {
-    let list_mode = {
-        let guard = lock(&ctx.shared);
-        list_layout_on(&guard)
-    };
-    if list_mode {
-        games_list_action(ctx, app, action);
-        return;
-    }
-    // A page transition in flight owns the grid; swallow input until
-    // either transition gate clears.
-    let view = app.global::<crate::GamesView>();
-    if view.get_games_page_slide() != 0.0 || view.get_games_cached_transition() {
-        return;
-    }
-    let len = app.global::<crate::GamesView>().get_games().row_count();
-    let index = app.global::<crate::GamesView>().get_games_index() as usize;
-    let cols = app
-        .global::<crate::GamesView>()
-        .get_games_grid_cols()
-        .max(1) as usize;
-    let mode = lock(&ctx.shared).games_mode;
-    let mut moved = None;
-    match action {
-        actions::LEFT => moved = Some(hub_nav::grid_move(index, len, cols, -1, 0)),
-        actions::RIGHT => moved = Some(hub_nav::grid_move(index, len, cols, 1, 0)),
-        actions::UP => moved = Some(hub_nav::grid_move(index, len, cols, 0, -1)),
-        actions::DOWN => moved = Some(hub_nav::grid_move(index, len, cols, 0, 1)),
-        actions::ACCEPT => {
-            let entry = lock(&ctx.shared).games_entries.get(index).cloned();
-            if let Some(entry) = entry {
-                if entry.is_dir {
-                    descend_into_folder(ctx, app, &entry.path);
-                } else if !entry.zap_script.is_empty() {
-                    launch(ctx, app, entry.zap_script);
-                } else {
-                    launch(ctx, app, entry.path);
-                }
-            }
-        }
-        actions::CONTEXT_MENU => open_context_menu(ctx, app, index),
-        actions::PAGE_MENU if mode == GamesMode::Browse => open_view_menu(ctx, app),
-        actions::PAGE_NEXT if mode == GamesMode::Browse => {
-            page_forward(ctx, app);
-        }
-        actions::PAGE_PREV if mode == GamesMode::Browse => {
-            let page = lock(&ctx.shared).games_page;
-            if page > 0 {
-                slide_to_page(&ctx.shared, &ctx.media, app, page - 1, -1);
-            }
-        }
-        actions::CANCEL => match mode {
-            GamesMode::Browse => {
-                // Inside a folder, Back pops one level; at root it
-                // leaves the screen (_navigateOutOfFolder's rule).
-                let popped = pop_folder_level(ctx, app);
-                if !popped {
-                    lock(&ctx.shared).persist.active_screen = "systems".to_string();
-                    save_persist(&ctx.shared);
-                    transition_to_screen(app, "systems", -1);
-                }
-            }
-            GamesMode::Favorites | GamesMode::Recents => {
-                lock(&ctx.shared).persist.active_screen = "hub".to_string();
-                save_persist(&ctx.shared);
-                transition_to_screen(app, "hub", -1);
-            }
-        },
-        _ => {}
-    }
-    // Vertical edge press = page swoop: Down on the bottom row slides
-    // the next page in from below, Up on the top row slides the
-    // previous page back down (Browse only, like L/R paging).
-    if mode == GamesMode::Browse && len > 0 && moved == Some(index) {
-        if action == actions::DOWN {
-            page_forward(ctx, app);
-            return;
-        }
-        if action == actions::UP && index < cols {
-            let page = lock(&ctx.shared).games_page;
-            if page > 0 {
-                slide_to_page(&ctx.shared, &ctx.media, app, page - 1, -1);
-            }
-            return;
-        }
-    }
-    if let Some(next) = moved {
-        app.global::<crate::GamesView>()
-            .set_games_index(next as i32);
-        let mut shared = lock(&ctx.shared);
-        if let Some(entry) = shared.games_entries.get(next) {
-            let path = entry.path.clone();
-            match shared.games_mode {
-                // Selection is per folder level: update the top of the
-                // stack, never flatten it (selected_at_level and
-                // path_stack stay the same length).
-                GamesMode::Browse => {
-                    if let Some(top) = shared.persist.games.selected_at_level.last_mut() {
-                        *top = path;
-                    }
-                }
-                GamesMode::Favorites => shared.persist.favorites.selected_path = path,
-                GamesMode::Recents => shared.persist.recents.selected_path = path,
-            }
-        }
-        drop(shared);
-        save_persist(&ctx.shared);
-    }
-}
-
 /// Open the West "View" menu (the page/list-scoped operations menu,
 /// counterpart to North's item-scoped Options). One entry today -
 /// Go to..., pre-focused so the common path is a fixed West-then-
 /// Accept chord. The letter facet fetch is kicked off here so the
 /// buckets are likely ready by the time the user advances into the
 /// grid (the Qt openPageMenu flow).
-fn open_view_menu(ctx: &Ctx, app: &App) {
+pub(crate) fn open_view_menu(ctx: &Ctx, app: &App) {
     fetch_letter_index(ctx, app);
     lock(&ctx.shared).list_context = ListContext::ViewMenu;
     app.global::<crate::Overlays>()
@@ -3482,8 +1974,8 @@ fn fetch_letter_index(ctx: &Ctx, app: &App) {
         guard.letter_seq += 1;
         guard.letter_buckets.clear();
         (
-            guard.games_browse_path.clone(),
-            guard.games_system_id.clone(),
+            guard.games.browse_path.clone(),
+            guard.games.system_id.clone(),
             guard.letter_seq,
         )
     };
@@ -3600,7 +2092,7 @@ fn letter_action(ctx: &Ctx, app: &App, action: &str) {
                     .sum()
             };
             close_letter_jump(ctx, app);
-            jump_to_offset(ctx, app, offset);
+            crate::games::jump_to_item(ctx, app, offset);
         }
         actions::CANCEL | actions::PAGE_MENU => close_letter_jump(ctx, app),
         _ => {}
@@ -3616,179 +2108,10 @@ fn letter_action(ctx: &Ctx, app: &App, action: &str) {
     clippy::too_many_lines,
     reason = "jump transaction keeps async fetch and selection publication together"
 )]
-fn jump_to_offset(ctx: &Ctx, app: &App, item_offset: u32) {
-    const JUMP_FETCH_CEILING: u32 = 1000;
-
-    let page_size = games_page_size(app).max(1);
-    let (absolute, target_page, ticket, already_fetched) = {
-        let guard = lock(&ctx.shared);
-        let absolute = guard.games_total_dirs + item_offset;
-        (
-            absolute,
-            (absolute / page_size) as usize,
-            guard.games_ticket,
-            guard.games_pages.len(),
-        )
-    };
-    let target_idx = (absolute % page_size) as usize;
-
-    if target_page < already_fetched {
-        land_on(ctx, app, target_page, target_idx);
-        return;
-    }
-
-    app.global::<crate::Shell>()
-        .set_status_text(SharedString::from("Loading…"));
-    let client = ctx.store.client();
-    let (system_id, browse_path) = {
-        let guard = lock(&ctx.shared);
-        (
-            guard.games_system_id.clone(),
-            guard.games_browse_path.clone(),
-        )
-    };
-    let weak = app.as_weak();
-    let shared = ctx.shared.clone();
-    let ctx2 = ctx.clone();
-    ctx.handle.spawn(async move {
-        // Fetch forward from the last loaded page until the target is
-        // covered (or the list ends). Each request is whole pages:
-        // gap rounded up, clamped to the ceiling's whole-page floor.
-        let ceiling = (JUMP_FETCH_CEILING / page_size).max(1) * page_size;
-        let landed: Result<(), String> = loop {
-            let (cursor, loaded_rows, pages_len) = {
-                let guard = lock(&shared);
-                if guard.games_ticket != ticket {
-                    return;
-                }
-                let loaded: u32 = guard.games_pages.iter().map(|p| p.len() as u32).sum();
-                (
-                    guard.games_next_cursor.clone(),
-                    loaded,
-                    guard.games_pages.len(),
-                )
-            };
-            if pages_len > (absolute / page_size) as usize {
-                break Ok(());
-            }
-            let Some(cursor) = cursor else {
-                // List ended before the target: land on what exists.
-                break Ok(());
-            };
-            let gap = (absolute + 1).saturating_sub(loaded_rows).max(1);
-            let limit = gap.div_ceil(page_size).max(1) * page_size;
-            let limit = limit.min(ceiling);
-            let outcome = client
-                .media_browse(zaparoo_core::media_types::MediaBrowseParams {
-                    root_view: zaparoo_core::media_types::merged_root_view(
-                        &browse_path,
-                        std::slice::from_ref(&system_id),
-                    ),
-                    path: browse_path.clone(),
-                    systems: vec![system_id.clone()],
-                    max_results: Some(limit),
-                    cursor: Some(cursor),
-                    tags: Vec::new(),
-                    letter: None,
-                    sort: None,
-                })
-                .await;
-            match outcome {
-                Ok(result) => {
-                    let mut guard = lock(&shared);
-                    if guard.games_ticket != ticket {
-                        return;
-                    }
-                    guard.games_next_cursor = result
-                        .pagination
-                        .as_ref()
-                        .filter(|p| p.has_next_page)
-                        .and_then(|p| p.next_cursor.clone());
-                    let rows: Vec<GameRow> = result.entries.iter().map(GameRow::from).collect();
-                    if rows.is_empty() {
-                        guard.games_next_cursor = None;
-                    }
-                    append_jump_rows(&mut guard, &rows, page_size as usize);
-                }
-                Err(e) => break Err(e.message),
-            }
-        };
-        let _ = weak.upgrade_in_event_loop(move |app| {
-            app.global::<crate::Shell>()
-                .set_status_text(SharedString::default());
-            match landed {
-                Ok(()) => {
-                    let pages_len = lock(&shared).games_pages.len();
-                    if pages_len == 0 {
-                        return;
-                    }
-                    let page = (absolute / page_size).min(pages_len as u32 - 1) as usize;
-                    land_on(&ctx2, &app, page, target_idx);
-                }
-                Err(message) => {
-                    app.global::<crate::Shell>()
-                        .set_status_text(SharedString::from(
-                            format!("Jump failed: {message}").as_str(),
-                        ));
-                }
-            }
-        });
-    });
-}
-
-/// Append jump-fetched rows in exact `page_size` chunks so page
-/// shapes stay uniform for the pager and the swoop; a short trailing
-/// page (list ended earlier) is topped up first.
-fn append_jump_rows(guard: &mut Shared, rows: &[GameRow], page_size: usize) {
-    for chunk in rows.chunks(page_size) {
-        if let Some(last) = guard.games_pages.last_mut() {
-            if last.len() < page_size {
-                let room = page_size - last.len();
-                let (fill, rest) = chunk.split_at(room.min(chunk.len()));
-                last.extend_from_slice(fill);
-                if !rest.is_empty() {
-                    guard.games_pages.push(rest.to_vec());
-                }
-                continue;
-            }
-        }
-        guard.games_pages.push(chunk.to_vec());
-    }
-}
-
-/// Focus a specific row on a specific (already fetched) page: persist
-/// the selection so `show_games_page` restores exactly there.
-fn land_on(ctx: &Ctx, app: &App, page: usize, index: usize) {
-    {
-        let mut guard = lock(&ctx.shared);
-        let Some(rows) = guard.games_pages.get(page) else {
-            return;
-        };
-        let clamped = index.min(rows.len().saturating_sub(1));
-        let path = rows
-            .get(clamped)
-            .map(|r| r.path.clone())
-            .unwrap_or_default();
-        if guard.games_mode == GamesMode::Browse {
-            if let Some(top) = guard.persist.games.selected_at_level.last_mut() {
-                top.clone_from(&path);
-            }
-        }
-        // List layout: the landing is an absolute index across the
-        // fetched pages (whole-page chunks, so summing is exact).
-        if list_layout_on(&guard) {
-            let before: usize = guard.games_pages.iter().take(page).map(Vec::len).sum();
-            guard.list_index = before + clamped;
-        }
-    }
-    save_persist(&ctx.shared);
-    show_games_page(&ctx.shared, &ctx.media, app, page);
-}
-
 /// Refresh the connected-readers flag from Core (gates the "Write to
 /// NFC token" entry). Lazy: the flag read at menu-open time may be one
 /// refresh old.
-fn refresh_readers(ctx: &Ctx) {
+pub(crate) fn refresh_readers(ctx: &Ctx) {
     let client = ctx.store.client();
     let shared = ctx.shared.clone();
     ctx.handle.spawn(async move {
@@ -3806,7 +2129,7 @@ fn refresh_readers(ctx: &Ctx) {
 /// QR write deep-link for the focused row (QrCodeModal.qml's flow):
 /// the scanning device opens zaparoo.app, which hands the zapscript
 /// back to a Core/frontend pairing.
-fn open_qr_code(app: &App, entry: &GameRow) {
+pub(crate) fn open_qr_code(app: &App, entry: &GameRow) {
     let text = if entry.zap_script.trim().is_empty() {
         entry.path.clone()
     } else {
@@ -3871,6 +2194,15 @@ pub(crate) fn present_systems_context_menu(ctx: &Ctx, app: &App, entries: Vec<cr
     present_context_menu(ctx, app, ContextOwner::Systems, 0, entries);
 }
 
+pub(crate) fn present_games_context_menu(
+    ctx: &Ctx,
+    app: &App,
+    target: usize,
+    entries: Vec<crate::MenuEntry>,
+) {
+    present_context_menu(ctx, app, ContextOwner::Games, target, entries);
+}
+
 fn present_list(
     ctx: &Ctx,
     app: &App,
@@ -3905,94 +2237,6 @@ pub(crate) fn retry_catalog(ctx: &Ctx) {
     ctx.store
         .subscribe::<zaparoo_core::endpoints::catalog::CatalogEndpoint>(())
         .refetch();
-}
-
-/// A `system` shortcut lands on Games having skipped Systems; Back then
-/// returns to the Hub.
-pub(crate) fn enter_games_from_hub(ctx: &Ctx, app: &App, sys: &SystemInfo) {
-    {
-        let mut shared = lock(&ctx.shared);
-        shared.persist.games.entered_from_hub = true;
-        shared.persist.systems.system_id.clone_from(&sys.id);
-    }
-    enter_games(ctx, app, sys);
-}
-
-/// A `folder` shortcut: establish the system, then browse the folder
-/// as one pushed level so Back climbs to the system root.
-pub(crate) fn enter_folder_from_hub(ctx: &Ctx, app: &App, system_id: &str, path: &str) {
-    if system_id.is_empty() || path.is_empty() {
-        return;
-    }
-    let system = lock(&ctx.shared)
-        .systems
-        .iter()
-        .find(|s| s.id == system_id)
-        .cloned();
-    let Some(system) = system else {
-        return;
-    };
-    {
-        let mut shared = lock(&ctx.shared);
-        shared.games_mode = GamesMode::Browse;
-        shared.persist.games.system_id.clone_from(&system.id);
-        shared.persist.games.path_stack = vec![String::new(), path.to_string()];
-        shared.persist.games.selected_at_level = vec![String::new(), String::new()];
-        shared.persist.games.entered_from_hub = true;
-        shared.persist.systems.system_id.clone_from(&system.id);
-        shared.games_system_name.clone_from(&system.name);
-    }
-    browse_games(ctx, app, &system.id, &system.name, path, true);
-}
-
-/// Open the item-scoped context menu on the focused games-style row,
-/// with the Qt entry rules: no menu on plain folders; favorite toggle
-/// on media-capable rows outside Recents; card write only with a
-/// connected reader; Game info and Launch always.
-fn open_context_menu(ctx: &Ctx, app: &App, index: usize) {
-    let (entry, mode, has_nfc) = {
-        let guard = lock(&ctx.shared);
-        (
-            guard.games_entries.get(index).cloned(),
-            guard.games_mode,
-            guard.has_nfc,
-        )
-    };
-    let Some(entry) = entry else {
-        return;
-    };
-    // Qt rule: plain folders get no menu, but media-capable directory
-    // rows (a folder Core can launch as one item) keep theirs.
-    if entry.is_dir && !entry.media_capable {
-        return;
-    }
-    let mut entries: Vec<crate::MenuEntry> = Vec::new();
-    if mode == GamesMode::Recents {
-        // Recents is launch-only in the Qt menu.
-        entries.push(menu_entry("launch_game", "Launch game"));
-    } else {
-        if entry.media_capable {
-            entries.push(menu_entry(
-                "toggle_favorite",
-                if entry.is_favorite {
-                    "Remove from favorites"
-                } else {
-                    "Add to favorites"
-                },
-            ));
-        }
-        // hasNfc, not has_readers: a connected non-NFC reader can't
-        // take a token write (the Qt gate).
-        if has_nfc {
-            entries.push(menu_entry("write_card", "Write to NFC token"));
-        }
-        entries.push(menu_entry("qr_code", "QR code"));
-        entries.push(menu_entry("more_info", "Game info"));
-        entries.push(menu_entry("launch_game", "Launch game"));
-    }
-
-    present_context_menu(ctx, app, ContextOwner::Games, index, entries);
-    refresh_readers(ctx);
 }
 
 /// Category tile menu (Hub top row): hide/unhide plus a scoped media
@@ -4065,7 +2309,10 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
 fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     let owner = lock(&ctx.shared).context_owner;
     match owner {
-        ContextOwner::Games => context_accept_games(ctx, app, id),
+        ContextOwner::Games => {
+            close_context_menu(ctx, app);
+            crate::games::context_accept(ctx, app, id);
+        }
         ContextOwner::Systems => {
             close_context_menu(ctx, app);
             crate::systems::context_accept(ctx, app, id);
@@ -4074,47 +2321,6 @@ fn context_accept(ctx: &Ctx, app: &App, id: &str) {
             close_context_menu(ctx, app);
             crate::hub::context_accept(ctx, app, id);
         }
-    }
-}
-
-fn context_accept_games(ctx: &Ctx, app: &App, id: &str) {
-    let (entry, target) = {
-        let guard = lock(&ctx.shared);
-        (
-            guard.games_entries.get(guard.context_target).cloned(),
-            guard.context_target,
-        )
-    };
-    let Some(entry) = entry else {
-        close_context_menu(ctx, app);
-        return;
-    };
-    match id {
-        "launch_game" => {
-            close_context_menu(ctx, app);
-            if entry.zap_script.is_empty() {
-                launch(ctx, app, entry.path);
-            } else {
-                launch(ctx, app, entry.zap_script);
-            }
-        }
-        "more_info" => {
-            close_context_menu(ctx, app);
-            open_game_info(ctx, app, &entry);
-        }
-        "toggle_favorite" => {
-            close_context_menu(ctx, app);
-            toggle_favorite(ctx, app, target, &entry);
-        }
-        "write_card" => {
-            close_context_menu(ctx, app);
-            begin_card_write(ctx, app, &entry);
-        }
-        "qr_code" => {
-            close_context_menu(ctx, app);
-            open_qr_code(app, &entry);
-        }
-        _ => {}
     }
 }
 
@@ -4224,91 +2430,12 @@ pub(crate) fn start_index(ctx: &Ctx, app: &App, systems: Option<Vec<String>>) {
     });
 }
 
-/// Add/remove `user:favorite` through the store mutation (which owns
-/// the favorites-endpoint invalidation), then flip the row's flag in
-/// place on success - the same optimistic-after-ack shape as the Qt
-/// `toggle_favorite_at`.
-fn toggle_favorite(ctx: &Ctx, app: &App, index: usize, entry: &GameRow) {
-    use slint::Model as _;
-    use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
-    use zaparoo_core::media_types::MediaTagsUpdateParams;
-
-    let adding = !entry.is_favorite;
-    let mut params = MediaTagsUpdateParams::default();
-    if adding {
-        params.add.push("user:favorite".to_string());
-    } else {
-        params.remove.push("user:favorite".to_string());
-    }
-    // Exclusive media ref: id when Core provided one, else the
-    // canonical (system, path) pair.
-    if let Some(media_id) = entry.media_id {
-        params.media_id = Some(media_id);
-    } else if !entry.system_id.is_empty() && !entry.path.is_empty() {
-        params.system.clone_from(&entry.system_id);
-        params.path.clone_from(&entry.path);
-    } else {
-        tracing::warn!(
-            "favorite update skipped: missing media identity for {}",
-            entry.name
-        );
-        return;
-    }
-
-    let store = ctx.store.clone();
-    let shared = ctx.shared.clone();
-    let weak = app.as_weak();
-    let path = entry.path.clone();
-    let name = entry.name.clone();
-    ctx.handle.spawn(async move {
-        let result = store.run_mutation::<MediaTagsUpdateMutation>(params).await;
-        let _ = weak.upgrade_in_event_loop(move |app| match result {
-            Ok(_) => {
-                {
-                    let mut guard = lock(&shared);
-                    let page = guard.games_page;
-                    if let Some(row) = guard
-                        .games_entries
-                        .get_mut(index)
-                        .filter(|row| row.path == path)
-                    {
-                        row.is_favorite = adding;
-                    }
-                    if let Some(row) = guard
-                        .games_pages
-                        .get_mut(page)
-                        .and_then(|rows| rows.get_mut(index))
-                        .filter(|row| row.path == path)
-                    {
-                        row.is_favorite = adding;
-                    }
-                }
-                // The heart badge on the tile IS the feedback (the Qt
-                // rule) - patch the visible row in place.
-                let games = app.global::<crate::GamesView>().get_games();
-                for i in 0..games.row_count() {
-                    if let Some(mut tile) = games.row_data(i) {
-                        if tile.path.as_str() == path {
-                            tile.is_favorite = adding;
-                            games.set_row_data(i, tile);
-                            break;
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!("favorite update failed for {name}: {}", e.message);
-            }
-        });
-    });
-}
-
 /// Card write through the Qt "transient" modal flow: the menu closes,
 /// the modal shows the tap prompt while Core waits for a token, and B
 /// cancels (result ignored via the seq ticket). Success closes the
 /// modal silently; failure swaps the title to the failure text and
 /// waits for Cancel - no toasts, exactly the Qt surfaces.
-fn begin_card_write(ctx: &Ctx, app: &App, entry: &GameRow) {
+pub(crate) fn begin_card_write(ctx: &Ctx, app: &App, entry: &GameRow) {
     use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
     use zaparoo_core::media_types::ReadersWriteParams;
 
@@ -4358,7 +2485,7 @@ fn begin_card_write(ctx: &Ctx, app: &App, entry: &GameRow) {
 /// games-style row. Shows the detail-tier cover immediately from the
 /// row data, then fills tags/description from a one-shot `media.meta`
 /// (no cache - the modal is transient, like the Qt `GameInfoModal`).
-fn open_game_info(ctx: &Ctx, app: &App, entry: &GameRow) {
+pub(crate) fn open_game_info(ctx: &Ctx, app: &App, entry: &GameRow) {
     app.global::<crate::GameInfoView>()
         .set_modal_name(SharedString::from(entry.name.as_str()));
     app.global::<crate::GameInfoView>()
@@ -4377,7 +2504,7 @@ fn open_game_info(ctx: &Ctx, app: &App, entry: &GameRow) {
     // main.rs patches the modal when the decode lands.
     let tier = sizing::detail_cover_source_size(output_scene(app));
     let system = if entry.system_id.is_empty() {
-        lock(&ctx.shared).games_system_id.clone()
+        lock(&ctx.shared).games.system_id.clone()
     } else {
         entry.system_id.clone()
     };
@@ -4441,51 +2568,6 @@ fn modal_action(_ctx: &Ctx, app: &App, action: &str) {
     }
 }
 
-/// Folder drill-down: push the level onto the persisted stack BEFORE
-/// the browse fires, so a kill mid-load still resumes inside the
-/// folder (same ordering as Main.qml's _navigateIntoFolder).
-fn descend_into_folder(ctx: &Ctx, app: &App, path: &str) {
-    if path.is_empty() {
-        return;
-    }
-    let (system_id, system_name) = {
-        let mut shared = lock(&ctx.shared);
-        shared.persist.games.path_stack.push(path.to_string());
-        shared.persist.games.selected_at_level.push(String::new());
-        (
-            shared.games_system_id.clone(),
-            shared.games_system_name.clone(),
-        )
-    };
-    browse_games(ctx, app, &system_id, &system_name, path, false);
-}
-
-/// Pop one folder level and re-browse the parent. Returns false when
-/// already at root level (stack holds only the "" sentinel).
-fn pop_folder_level(ctx: &Ctx, app: &App) -> bool {
-    let (target, system_id, system_name) = {
-        let mut shared = lock(&ctx.shared);
-        if shared.persist.games.path_stack.len() <= 1 {
-            return false;
-        }
-        shared.persist.games.path_stack.pop();
-        shared.persist.games.selected_at_level.pop();
-        (
-            shared
-                .persist
-                .games
-                .path_stack
-                .last()
-                .cloned()
-                .unwrap_or_default(),
-            shared.games_system_id.clone(),
-            shared.games_system_name.clone(),
-        )
-    };
-    browse_games(ctx, app, &system_id, &system_name, &target, false);
-    true
-}
-
 /// Update action: fire `media.generate` for all systems. Progress
 /// surfaces through the header's media-status line (the store's
 /// `MediaStatusResource` watches Core's indexing notifications), and
@@ -4540,59 +2622,5 @@ mod tests {
         let picked = systems_for_category(&all, "Other");
         assert_eq!(picked.len(), 1);
         assert_eq!(picked[0].id, "weird");
-    }
-
-    fn root_entry(path: &str) -> zaparoo_core::media_types::BrowseEntry {
-        zaparoo_core::media_types::BrowseEntry {
-            path: path.into(),
-            entry_type: "root".into(),
-            name: path.rsplit('/').next().unwrap_or_default().into(),
-            ..Default::default()
-        }
-    }
-
-    // The real Core answers a system-scoped empty-path browse with the
-    // per-system root PLUS the shared parent root (e.g. /media/fat);
-    // the parent must be dropped or it browses every other system.
-    #[test]
-    fn ancestor_roots_are_dropped() {
-        let entries = vec![
-            root_entry("/media/fat/games/SNES"),
-            root_entry("/media/fat"),
-        ];
-        let deduped = super::dedup_roots_drop_ancestors(&entries);
-        assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].path, "/media/fat/games/SNES");
-    }
-
-    #[test]
-    fn sibling_roots_survive_dedup() {
-        let entries = vec![
-            root_entry("/media/fat/games/SNES"),
-            root_entry("/media/usb0/games/SNES"),
-        ];
-        assert_eq!(super::dedup_roots_drop_ancestors(&entries).len(), 2);
-    }
-
-    #[test]
-    fn root_entries_browse_as_directories() {
-        let row = super::GameRow::from(&root_entry("/media/fat/games/SNES"));
-        assert!(row.is_dir);
-    }
-
-    // A CD game's folder: directory type + media id = launches like a
-    // game and fetches its cover, never browses.
-    #[test]
-    fn singleton_media_container_is_a_game() {
-        let entry = zaparoo_core::media_types::BrowseEntry {
-            path: "/media/fat/games/3DO/Gex".into(),
-            entry_type: "directory".into(),
-            media_id: Some(2),
-            name: "Gex".into(),
-            ..Default::default()
-        };
-        let row = super::GameRow::from(&entry);
-        assert!(!row.is_dir);
-        assert!(row.has_cover);
     }
 }

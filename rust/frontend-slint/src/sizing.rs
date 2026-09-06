@@ -75,8 +75,8 @@ pub fn apply_scene(app: &App, scene: Scene) {
     let inputs = scene.inputs();
     apply_derived(app, &rules::derive(&inputs));
     let games = games_grid_shape(scene);
-    app.global::<GamesView>().set_games_grid_cols(games.columns);
-    app.global::<GamesView>().set_games_grid_rows(games.rows);
+    app.global::<GamesView>().set_columns(games.columns);
+    app.global::<GamesView>().set_rows(games.rows);
     let systems = systems_grid_shape(scene);
     app.global::<SystemsView>().set_columns(systems.columns);
     app.global::<SystemsView>().set_rows(systems.rows);

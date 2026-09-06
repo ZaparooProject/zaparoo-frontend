@@ -566,8 +566,8 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                         _ => release_activate(ctx, app),
                     }
                 }
-                "favorites" => crate::router::enter_favorites(ctx, app),
-                "recents" => crate::router::enter_recents(ctx, app),
+                "favorites" => crate::games::enter_favorites(ctx, app),
+                "recents" => crate::games::enter_recents(ctx, app),
                 "settings" => crate::router::enter_settings(ctx, app),
                 _ => release_activate(ctx, app),
             }
@@ -583,12 +583,12 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                     crate::router::launch(ctx, app, system.zap_script.clone());
                     release_activate(ctx, app);
                 }
-                Some(system) => crate::router::enter_games_from_hub(ctx, app, &system),
+                Some(system) => crate::games::enter_from_hub(ctx, app, &system),
                 None => release_activate(ctx, app),
             }
         }
         Some(Kind::Folder) => {
-            crate::router::enter_folder_from_hub(ctx, app, &entry.system, &entry.path);
+            crate::games::enter_folder_from_hub(ctx, app, &entry.system, &entry.path);
         }
         Some(Kind::ZapScript) => {
             crate::router::launch(ctx, app, entry.script.clone());
