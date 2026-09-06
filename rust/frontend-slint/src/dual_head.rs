@@ -112,6 +112,10 @@ struct SyncState {
     clippy::too_many_lines,
     reason = "explicit property inventory makes missing mirror state reviewable"
 )]
+#[allow(
+    clippy::float_cmp,
+    reason = "the float compares are change detection on a mirrored property, not numeric equality"
+)]
 fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     let source = primary.global::<Shell>();
     let target = crt.global::<Shell>();
@@ -864,14 +868,14 @@ mod tests {
             crt.global::<SystemsView>()
                 .get_cells()
                 .row_data(0)
-                .map(|system| system.id.to_string()),
+                .map(|system| system.name.to_string()),
             Some("Old 0".to_string())
         );
         assert_eq!(
             crt.global::<SystemsView>()
                 .get_next_cells()
                 .row_data(2)
-                .map(|system| system.id.to_string()),
+                .map(|system| system.name.to_string()),
             Some("New 6".to_string())
         );
         assert!((crt.global::<SystemsView>().get_page_slide() + 1.0).abs() < f32::EPSILON);
@@ -883,7 +887,7 @@ mod tests {
             crt.global::<SystemsView>()
                 .get_cells()
                 .row_data(2)
-                .map(|system| system.id.to_string()),
+                .map(|system| system.name.to_string()),
             Some("New 6".to_string())
         );
         assert_eq!(crt.global::<SystemsView>().get_selected_local(), 2);

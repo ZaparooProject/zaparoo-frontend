@@ -17,11 +17,13 @@ mod fb0;
 mod input;
 mod latch;
 mod platform;
+mod service;
 mod transition;
 mod tty;
 mod uio;
 
 pub use platform::{install_platform, set_orientation, ResolutionPolicy};
+pub use service::ensure_core_running;
 
 const BROWSE_TRANSITION_FRAMES: u32 = 15;
 const ROUTE_TRANSITION_FRAMES: u32 = 10;

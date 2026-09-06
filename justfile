@@ -255,6 +255,9 @@ slint-run-dev *args:
 lint-slint:
     cd rust && cargo fmt -p frontend-slint -p zaparoo-app --check
     cd rust && cargo clippy -p frontend-slint -p zaparoo-app --all-targets -- -D warnings
+    # The MiSTer feature set compiles different modules (the presenters,
+    # the dual-head mirror); lint it too or their tests rot unseen.
+    cd rust && cargo clippy -p frontend-slint --no-default-features --features mister --all-targets -- -D warnings
     bash scripts/check-toolkit-free.sh
     bash scripts/check-slint-translations.sh
 
@@ -272,6 +275,9 @@ slint-tr-convert:
 # Host-side tests for the Slint crates (also part of `test-rust`).
 test-slint:
     cd rust && cargo nextest run -p frontend-slint -p zaparoo-app
+    # The MiSTer feature set has its own modules and tests (presenters,
+    # dual head); they only build under that feature.
+    cd rust && cargo nextest run -p frontend-slint --no-default-features --features mister
 
 # Static ARM32 musl MiSTer build via `cross` (Cortex-A9 tuning). Static musl
 # because the MiSTer rootfs glibc is older than cross's gnueabihf image.

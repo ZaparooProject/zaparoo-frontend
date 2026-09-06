@@ -426,6 +426,9 @@ fn main() -> Result<(), slint::PlatformError> {
             persisted.settings.crt_h_offset,
             persisted.settings.crt_v_offset,
         );
+        // Ask for Core before the window exists, so its boot overlaps
+        // ours the way the Qt build's post-init hook does.
+        mister::ensure_core_running();
         mister::prepare_video_mode(crt, dual_head, hdmi_framebuffer_size, crt_framebuffer_size);
         mister::install_platform(
             crt,
