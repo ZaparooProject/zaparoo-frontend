@@ -32,6 +32,7 @@ raw cargo as the default path; the justfile carries the expected environment.
 | Slint frontend: tests (host) | `just test-slint` |
 | Slint frontend: MiSTer ARM32 static build | `just slint-arm32` |
 | Slint frontend: deploy side by side | `just deploy-mister-slint` (`--replace` to install over Qt) |
+| Slint frontend: third-party notices | `just slint-notices` (needs `cargo install cargo-about --features cli`) |
 
 `just --list` is the source of truth. `CMakePresets.json` and
 `rust/.cargo/config.toml` are tuned for those recipes.

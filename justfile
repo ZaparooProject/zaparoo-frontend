@@ -261,6 +261,10 @@ lint-slint:
     bash scripts/check-toolkit-free.sh
     bash scripts/check-slint-translations.sh
 
+# Regenerate the Slint binary's third-party notices (needs cargo-about)
+slint-notices:
+    bash scripts/generate-slint-notices.sh
+
 # Regenerate the gettext template from the .slint files (needs
 # `cargo install slint-tr-extractor --version 1.17.1`). Run after any @tr edit.
 slint-tr-extract:
