@@ -245,6 +245,9 @@ pub struct GamesModel {
     pub total_known: bool,
     pub system_id: String,
     pub system_name: String,
+    /// Favorites scope: the system the Favorite Systems screen drilled
+    /// into, empty for the whole favorites list.
+    pub favorites_system: String,
     /// The browse path behind the rows: every follow-up fetch repeats it.
     pub browse_path: String,
     /// A fill applies only while its ticket is current.
@@ -289,6 +292,7 @@ impl GamesModel {
             total_known: true,
             system_id: String::new(),
             system_name: String::new(),
+            favorites_system: String::new(),
             browse_path: String::new(),
             ticket: 0,
             focus_armed: false,
@@ -419,6 +423,21 @@ fn list_geometry(ctx: &Ctx, app: &App, shared: &Shared) -> rules::ListGeometry {
             default_row_height: inputs.pct_h(6.0),
         },
     )
+}
+
+/// The Core sort for the favorites list: A-Z, or Core's own default.
+fn favorites_sort(shared: &Shared) -> Option<String> {
+    (shared.favorites_sort == "name").then(|| "name-asc".to_string())
+}
+
+/// The favorites list's system scope, as Core's argument list.
+fn favorites_scope(shared: &Shared) -> Vec<String> {
+    let system = shared.games.favorites_system.trim();
+    if system.is_empty() {
+        Vec::new()
+    } else {
+        vec![system.to_string()]
+    }
 }
 
 fn favorites_tags(shared: &Shared) -> Vec<String> {
@@ -562,7 +581,23 @@ fn begin_browse_mode(shared: &mut Shared, sys: &SystemInfo) {
 
 /// Favorites (Hub action): media tagged `user:favorite`.
 pub fn enter_favorites(ctx: &Ctx, app: &App) {
+    lock(&ctx.shared).games.favorites_system.clear();
     enter_flat(ctx, app, GamesMode::Favorites, true);
+}
+
+/// One system's favorites, from the Favorite Systems screen.
+pub fn enter_favorites_for_system(ctx: &Ctx, app: &App, system_id: &str) {
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.games.favorites_system = system_id.to_string();
+        shared.persist.favorite_systems.selected_path = system_id.to_string();
+    }
+    enter_flat(ctx, app, GamesMode::Favorites, true);
+}
+
+/// The sort or the grouping changed: refill the list in place.
+pub fn refresh_favorites(ctx: &Ctx, app: &App) {
+    enter_flat(ctx, app, GamesMode::Favorites, false);
 }
 
 /// Recently played (Hub action): Core's play history.
@@ -571,9 +606,11 @@ pub fn enter_recents(ctx: &Ctx, app: &App) {
 }
 
 fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
-    let (ticket, page_size) = {
+    let (ticket, page_size, sort, scope) = {
         let mut shared = lock(&ctx.shared);
         let size = page_size(ctx, app, &shared);
+        let sort = favorites_sort(&shared);
+        let scope = favorites_scope(&shared);
         let model = &mut shared.games;
         model.mode = mode;
         model.system_id.clear();
@@ -584,7 +621,7 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
         model.total_dirs = 0;
         model.focus_armed = false;
         model.restore_done = false;
-        (begin_fill(model), size)
+        (begin_fill(model), size, sort, scope)
     };
     if flip {
         app.global::<crate::Shell>().set_transitioning(true);
@@ -597,11 +634,7 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
         GamesMode::Favorites => {
             let resource = ctx
                 .store
-                .subscribe::<MediaFavoritesEndpoint>(FavoritesArgs::new(
-                    page_size,
-                    None,
-                    Vec::new(),
-                ));
+                .subscribe::<MediaFavoritesEndpoint>(FavoritesArgs::new(page_size, sort, scope));
             let mut rx = resource.subscribe();
             ctx.handle.spawn(async move {
                 loop {
@@ -924,9 +957,11 @@ fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip: bool) {
 /// cache (each follow-up has a different cursor). `bulk` pauses cover
 /// fetches until the chunk lands (jumps and restores).
 fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
-    let (mode, cursor, system_id, browse_path, tags, ticket) = {
+    let (mode, cursor, system_id, browse_path, tags, ticket, sort, scope) = {
         let mut shared = lock(&ctx.shared);
         let tags = favorites_tags(&shared);
+        let sort = favorites_sort(&shared);
+        let scope = favorites_scope(&shared);
         let model = &mut shared.games;
         if model.loading_more || model.loading {
             return;
@@ -946,6 +981,8 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
             model.browse_path.clone(),
             tags,
             model.ticket,
+            sort,
+            scope,
         )
     };
     render(ctx, app);
@@ -974,9 +1011,11 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
                 .map_err(|e| e.message),
             GamesMode::Favorites => client
                 .media_search(MediaSearchParams {
+                    systems: scope,
                     max_results: Some(limit),
                     cursor: Some(cursor),
                     tags: vec![FAVORITE_TAG.to_string()],
+                    sort,
                     ..MediaSearchParams::default()
                 })
                 .await
@@ -2062,8 +2101,13 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         actions::PAGE_MENU => {
             // Favorites scope can produce an empty folder: keep View
             // reachable so the user can clear the filter.
-            if mode == GamesMode::Browse && rules::page_menu_allowed(state, true) {
-                crate::router::open_view_menu(ctx, app);
+            if !rules::page_menu_allowed(state, true) {
+                return;
+            }
+            match mode {
+                GamesMode::Browse => crate::router::open_view_menu(ctx, app),
+                GamesMode::Favorites => crate::router::open_favorites_page_menu(ctx, app),
+                GamesMode::Recents => {}
             }
         }
         actions::ACCEPT => match state {
@@ -2231,6 +2275,10 @@ fn cancel(ctx: &Ctx, app: &App) {
             && shared.systems_model.category == ARCADE_SYSTEM_ID
             && shared.systems_model.rows.len() == 1
             && shared.games.system_id == ARCADE_SYSTEM_ID;
+        // A scoped favorites list climbs back to the systems that hold
+        // favorites, the screen it was entered from.
+        let grouped_favorites = !shared.games.favorites_system.is_empty()
+            && shared.persist.settings.favorites_grouping == "system";
         let target = match mode {
             GamesMode::Browse if arcade_bypass => "hub",
             GamesMode::Browse if shared.persist.games.entered_from_hub => {
@@ -2238,12 +2286,17 @@ fn cancel(ctx: &Ctx, app: &App) {
                 "hub"
             }
             GamesMode::Browse => "systems",
+            GamesMode::Favorites if grouped_favorites => "favorite-systems",
             GamesMode::Favorites | GamesMode::Recents => "hub",
         };
         shared.persist.active_screen = target.to_string();
         target
     };
     crate::router::save_persist(&ctx.shared);
+    if target == "favorite-systems" {
+        crate::systems::return_to_favorites(ctx, app);
+        return;
+    }
     crate::router::transition_to_screen(app, target, -1);
 }
 

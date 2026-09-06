@@ -566,7 +566,16 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                         _ => release_activate(ctx, app),
                     }
                 }
-                "favorites" => crate::games::enter_favorites(ctx, app),
+                // Group by: System stops at the systems that hold
+                // favorites; None goes straight to the flat list.
+                "favorites" => {
+                    let grouped = lock(&ctx.shared).persist.settings.favorites_grouping == "system";
+                    if grouped {
+                        crate::systems::enter_favorites(ctx, app);
+                    } else {
+                        crate::games::enter_favorites(ctx, app);
+                    }
+                }
                 "recents" => crate::games::enter_recents(ctx, app),
                 "settings" => crate::router::enter_settings(ctx, app),
                 _ => release_activate(ctx, app),

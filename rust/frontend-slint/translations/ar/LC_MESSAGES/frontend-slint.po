@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-09-06 05:29+0000\n"
+"POT-Creation-Date: 2026-09-06 05:44+0000\n"
 "Language: ar\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -36,11 +36,12 @@ msgstr ""
 msgid "Resume: {}"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:184 rust/frontend-slint/ui/app.slint:1512
+#: rust/frontend-slint/ui/app.slint:184 rust/frontend-slint/ui/app.slint:865
+#: rust/frontend-slint/ui/app.slint:1933
 msgid "Favorites"
 msgstr "المفضلة"
 
-#: rust/frontend-slint/ui/app.slint:185 rust/frontend-slint/ui/app.slint:1513
+#: rust/frontend-slint/ui/app.slint:185 rust/frontend-slint/ui/app.slint:1529
 msgid "Recently played"
 msgstr ""
 
@@ -64,198 +65,212 @@ msgstr ""
 msgid "Not available"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:507 rust/frontend-slint/ui/app.slint:1001
+#: rust/frontend-slint/ui/app.slint:515 rust/frontend-slint/ui/app.slint:1017
 msgid "Hidden"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:747
+#: rust/frontend-slint/ui/app.slint:755
 msgid "Updating the media database"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:747
+#: rust/frontend-slint/ui/app.slint:755
 msgid "No games found yet"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:749
+#: rust/frontend-slint/ui/app.slint:757
 msgid "Your games appear here as Core finds them."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:750
+#: rust/frontend-slint/ui/app.slint:758
 msgid "Update media database in Settings > Library."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:766
+#: rust/frontend-slint/ui/app.slint:774
 msgid "About / License"
 msgstr "حول / الترخيص"
 
-#: rust/frontend-slint/ui/app.slint:798
+#: rust/frontend-slint/ui/app.slint:806
 msgid "Zaparoo Frontend"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:812
+#: rust/frontend-slint/ui/app.slint:820
 msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
 msgstr "حقوق النشر 2026 لشركة Wizzo Pty Ltd والمساهمين في مشروع Zaparoo."
 
-#: rust/frontend-slint/ui/app.slint:819
+#: rust/frontend-slint/ui/app.slint:827
 msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
 msgstr "المصدر متاح بموجب ترخيص PolyForm Noncommercial 1.0.0. مجاني للاستخدام الشخصي وغير التجاري. يتطلب الاستخدام التجاري أو إعادة التوزيع ترخيصًا منفصلًا."
 
-#: rust/frontend-slint/ui/app.slint:826
+#: rust/frontend-slint/ui/app.slint:834
 msgid "Commercial licensing: legal@zaparoo.org"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:833
+#: rust/frontend-slint/ui/app.slint:841
 msgid "Project: https://zaparoo.org"
 msgstr "المشروع: https://zaparoo.org"
 
-#: rust/frontend-slint/ui/app.slint:858
+#: rust/frontend-slint/ui/app.slint:871
+msgid "{} systems with favorites"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:872
 msgid "{} systems"
 msgstr "{0} أنظمة"
 
-#: rust/frontend-slint/ui/app.slint:1040
+#: rust/frontend-slint/ui/app.slint:1016
+msgid "{} favorites"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1056 rust/frontend-slint/ui/app.slint:1781
+msgid "No favorites yet"
+msgstr "لا توجد مفضلات بعد"
+
+#: rust/frontend-slint/ui/app.slint:1056
 msgid "No systems in this category"
 msgstr "لا توجد أنظمة في هذه الفئة"
 
-#: rust/frontend-slint/ui/app.slint:1041
+#: rust/frontend-slint/ui/app.slint:1057
+msgid "Loading favorite systems…"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1057
 msgid "Loading systems…"
 msgstr "جارٍ تحميل الأنظمة…"
 
-#: rust/frontend-slint/ui/app.slint:1141
+#: rust/frontend-slint/ui/app.slint:1157
 msgid "Go to..."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1150 rust/frontend-slint/ui/app.slint:1650
-#: rust/frontend-slint/ui/app.slint:2239
+#: rust/frontend-slint/ui/app.slint:1166 rust/frontend-slint/ui/app.slint:1666
+#: rust/frontend-slint/ui/app.slint:2267
 msgid "Loading…"
 msgstr "جارٍ التحميل…"
 
-#: rust/frontend-slint/ui/app.slint:1216
+#: rust/frontend-slint/ui/app.slint:1232
 msgid "Writing failed"
 msgstr "فشلت الكتابة"
 
-#: rust/frontend-slint/ui/app.slint:1217
+#: rust/frontend-slint/ui/app.slint:1233
 msgid "Put a writable card near the reader"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1523
+#: rust/frontend-slint/ui/app.slint:1539
 msgid "{} games"
 msgstr ""
 
 #. background fetch fills rows the user scrolled past.
-#: rust/frontend-slint/ui/app.slint:1526
+#: rust/frontend-slint/ui/app.slint:1542
 msgid "Loading more…"
 msgstr "جارٍ تحميل المزيد…"
 
-#: rust/frontend-slint/ui/app.slint:1650
+#: rust/frontend-slint/ui/app.slint:1666
 msgid "Loading game…"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1765
-msgid "No favorites yet"
-msgstr "لا توجد مفضلات بعد"
-
-#: rust/frontend-slint/ui/app.slint:1766
+#: rust/frontend-slint/ui/app.slint:1782
 msgid "Nothing played yet"
 msgstr "لم يتم لعب أي شيء بعد"
 
-#: rust/frontend-slint/ui/app.slint:1766
+#: rust/frontend-slint/ui/app.slint:1782
 msgid "No games in this system"
 msgstr "لا توجد ألعاب في هذا النظام"
 
-#: rust/frontend-slint/ui/app.slint:1767
+#: rust/frontend-slint/ui/app.slint:1783
 msgid "Loading favorites…"
 msgstr "جارٍ تحميل المفضلة…"
 
-#: rust/frontend-slint/ui/app.slint:1768
+#: rust/frontend-slint/ui/app.slint:1784
 msgid "Loading recently played…"
 msgstr "جارٍ تحميل آخر ما تم لعبه…"
 
-#: rust/frontend-slint/ui/app.slint:1768
+#: rust/frontend-slint/ui/app.slint:1784
 msgid "Loading games…"
 msgstr "جارٍ تحميل الألعاب…"
 
-#: rust/frontend-slint/ui/app.slint:1852
+#: rust/frontend-slint/ui/app.slint:1868
 msgid "Arrows adjust position"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1860
+#: rust/frontend-slint/ui/app.slint:1876
 msgid "Accept or Back saves"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1945 rust/frontend-slint/ui/app.slint:1958
-#: rust/frontend-slint/ui/app.slint:1988 rust/frontend-slint/ui/app.slint:2050
-#: rust/frontend-slint/ui/app.slint:2064
+#: rust/frontend-slint/ui/app.slint:1962 rust/frontend-slint/ui/app.slint:1975
+#: rust/frontend-slint/ui/app.slint:2005 rust/frontend-slint/ui/app.slint:2078
+#: rust/frontend-slint/ui/app.slint:2092
 msgid "Move"
 msgstr "تحريك"
 
-#: rust/frontend-slint/ui/app.slint:1959 rust/frontend-slint/ui/app.slint:1970
+#: rust/frontend-slint/ui/app.slint:1976 rust/frontend-slint/ui/app.slint:1987
 msgid "Select"
 msgstr "تحديد"
 
-#: rust/frontend-slint/ui/app.slint:1960 rust/frontend-slint/ui/app.slint:1975
-#: rust/frontend-slint/ui/app.slint:2006
+#: rust/frontend-slint/ui/app.slint:1977 rust/frontend-slint/ui/app.slint:1992
+#: rust/frontend-slint/ui/app.slint:2023
 msgid "Cancel"
 msgstr "إلغاء"
 
-#: rust/frontend-slint/ui/app.slint:1964
+#: rust/frontend-slint/ui/app.slint:1981
 msgid "OK"
 msgstr "حسنًا"
 
-#: rust/frontend-slint/ui/app.slint:1971 rust/frontend-slint/ui/app.slint:1978
+#: rust/frontend-slint/ui/app.slint:1988 rust/frontend-slint/ui/app.slint:1995
 msgid "Close"
 msgstr "إغلاق"
 
-#: rust/frontend-slint/ui/app.slint:1982 rust/frontend-slint/ui/app.slint:2071
+#: rust/frontend-slint/ui/app.slint:1999 rust/frontend-slint/ui/app.slint:2099
 msgid "Scroll"
 msgstr "تمرير"
 
-#: rust/frontend-slint/ui/app.slint:1995
+#: rust/frontend-slint/ui/app.slint:2012
 msgid "Adjust"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1996
+#: rust/frontend-slint/ui/app.slint:2013
 msgid "Save"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2004
+#: rust/frontend-slint/ui/app.slint:2021
 msgid "Reposition"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2005
+#: rust/frontend-slint/ui/app.slint:2022
 msgid "Place"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2012 rust/frontend-slint/ui/app.slint:2019
-#: rust/frontend-slint/ui/app.slint:2088
+#: rust/frontend-slint/ui/app.slint:2029 rust/frontend-slint/ui/app.slint:2036
+#: rust/frontend-slint/ui/app.slint:2116
 msgid "Retry"
 msgstr "إعادة المحاولة"
 
-#: rust/frontend-slint/ui/app.slint:2012 rust/frontend-slint/ui/app.slint:2019
-#: rust/frontend-slint/ui/app.slint:2039 rust/frontend-slint/ui/app.slint:2101
+#: rust/frontend-slint/ui/app.slint:2029 rust/frontend-slint/ui/app.slint:2036
+#: rust/frontend-slint/ui/app.slint:2057 rust/frontend-slint/ui/app.slint:2072
+#: rust/frontend-slint/ui/app.slint:2135
 msgid "Open"
 msgstr "فتح"
 
-#: rust/frontend-slint/ui/app.slint:2013 rust/frontend-slint/ui/app.slint:2030
+#: rust/frontend-slint/ui/app.slint:2030 rust/frontend-slint/ui/app.slint:2050
+#: rust/frontend-slint/ui/app.slint:2136
 msgid "Options"
 msgstr "الخيارات"
 
-#: rust/frontend-slint/ui/app.slint:2014 rust/frontend-slint/ui/app.slint:2020
-#: rust/frontend-slint/ui/app.slint:2109
+#: rust/frontend-slint/ui/app.slint:2031 rust/frontend-slint/ui/app.slint:2037
+#: rust/frontend-slint/ui/app.slint:2122
 msgid "View"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2025 rust/frontend-slint/ui/app.slint:2031
-#: rust/frontend-slint/ui/app.slint:2045 rust/frontend-slint/ui/app.slint:2060
-#: rust/frontend-slint/ui/app.slint:2072 rust/frontend-slint/ui/app.slint:2082
-#: rust/frontend-slint/ui/app.slint:2095 rust/frontend-slint/ui/app.slint:2110
+#: rust/frontend-slint/ui/app.slint:2042 rust/frontend-slint/ui/app.slint:2052
+#: rust/frontend-slint/ui/app.slint:2068 rust/frontend-slint/ui/app.slint:2081
+#: rust/frontend-slint/ui/app.slint:2094 rust/frontend-slint/ui/app.slint:2105
+#: rust/frontend-slint/ui/app.slint:2117 rust/frontend-slint/ui/app.slint:2130
 msgid "Back"
 msgstr "رجوع"
 
-#: rust/frontend-slint/ui/app.slint:2051 rust/frontend-slint/ui/app.slint:2065
+#: rust/frontend-slint/ui/app.slint:2079 rust/frontend-slint/ui/app.slint:2093
 msgid "Change"
 msgstr "تغيير"
 
-#: rust/frontend-slint/ui/app.slint:2052
+#: rust/frontend-slint/ui/app.slint:2080
 msgid "Toggle"
 msgstr "تبديل"
 

@@ -47,6 +47,9 @@ pub struct Shared {
     /// "Show hidden items" setting: hidden entries reappear dimmed
     /// with the "Hidden" badge instead of being filtered out.
     pub show_hidden: bool,
+    /// Favorites list order: "name" for A-Z, empty for Core's default.
+    /// Durable in `frontend.toml`, like the hidden-browse prefs.
+    pub favorites_sort: String,
     /// Full sorted systems list from the catalog.
     pub systems: Vec<SystemInfo>,
     /// The Systems screen: rows, cursor and swoop state.
@@ -152,6 +155,11 @@ pub enum ListContext {
     HubPageMenu,
     /// The Hub's "Add item" picker.
     HubAdd,
+    /// The favorites list's West "View" menu.
+    FavoritesPageMenu,
+    /// Its "Group by" and "Sort" pages.
+    FavoritesGrouping,
+    FavoritesSort,
     /// A settings picker row; the payload is the field id.
     SettingsPicker(String),
     /// The "Change launcher" picker; the payload is the system id.
@@ -187,10 +195,12 @@ impl Shared {
         restore_pending: bool,
         hidden_categories: Vec<String>,
         hidden_system_ids: Vec<String>,
+        favorites_sort: String,
         hub_layout_path: std::path::PathBuf,
     ) -> Self {
         let show_hidden = persist.settings.show_hidden;
         Self {
+            favorites_sort,
             categories: Vec::new(),
             all_categories: Vec::new(),
             hidden_categories,
@@ -880,7 +890,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     }
     match app.global::<crate::Shell>().get_active_screen().as_str() {
         "hub" => crate::hub::handle_action(ctx, app, action),
-        "systems" => crate::systems::handle_action(ctx, app, action),
+        "systems" | "favorite-systems" => crate::systems::handle_action(ctx, app, action),
         // Favorites and Recents reuse the games-style grid; the mode
         // stored in Shared adjusts back/paging/persist behavior.
         "games" | "favorites" | "recents" => crate::games::handle_action(ctx, app, action),
@@ -1949,6 +1959,9 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                     }
                     ListContext::HubPageMenu => crate::hub::page_menu_accept(ctx, app, &id),
                     ListContext::HubAdd => crate::hub::add_picked(ctx, app, &id),
+                    ListContext::FavoritesPageMenu => favorites_page_menu_accept(ctx, app, &id),
+                    ListContext::FavoritesGrouping => favorites_grouping_picked(ctx, app, &id),
+                    ListContext::FavoritesSort => favorites_sort_picked(ctx, app, &id),
                     ListContext::SettingsPicker(field) => {
                         settings_picker_selected(ctx, app, &field, &id);
                     }
@@ -2234,6 +2247,122 @@ pub(crate) fn present_hub_page_menu(ctx: &Ctx, app: &App, entries: Vec<crate::Me
 
 pub(crate) fn present_hub_add_picker(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
     present_list(ctx, app, ListContext::HubAdd, "Add item", entries);
+}
+
+fn favorites_grouping_label(ctx: &Ctx) -> &'static str {
+    if lock(&ctx.shared).persist.settings.favorites_grouping == "system" {
+        "System"
+    } else {
+        "None"
+    }
+}
+
+fn favorites_sort_label(ctx: &Ctx) -> &'static str {
+    if lock(&ctx.shared).favorites_sort == "name" {
+        "A-Z"
+    } else {
+        "Default"
+    }
+}
+
+/// The favorites list's West "View" menu: order, grouping, a random
+/// favorite, and the way back to the Hub.
+pub(crate) fn open_favorites_page_menu(ctx: &Ctx, app: &App) {
+    let entries = vec![
+        menu_entry(
+            "favorites_sort",
+            &format!("Sort: {}", favorites_sort_label(ctx)),
+        ),
+        menu_entry(
+            "favorites_grouping",
+            &format!("Group by: {}", favorites_grouping_label(ctx)),
+        ),
+        menu_entry("launch_random_favorite", "Random favorite"),
+        menu_entry("back_to_hub", "Back to Hub"),
+    ];
+    present_list(ctx, app, ListContext::FavoritesPageMenu, "View", entries);
+}
+
+fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
+    match id {
+        "favorites_sort" => open_favorites_sort_menu(ctx, app),
+        "favorites_grouping" => open_favorites_grouping_menu(ctx, app),
+        "launch_random_favorite" => {
+            let scope = lock(&ctx.shared).games.favorites_system.clone();
+            launch(
+                ctx,
+                app,
+                zaparoo_app::systems::random_favorite_launch_text(&scope),
+            );
+        }
+        "back_to_hub" => {
+            lock(&ctx.shared).persist.active_screen = "hub".to_string();
+            save_persist(&ctx.shared);
+            transition_to_screen(app, "hub", -1);
+        }
+        _ => {}
+    }
+}
+
+/// The grouping page, reachable from either favorites screen.
+pub(crate) fn open_favorites_grouping_menu(ctx: &Ctx, app: &App) {
+    let entries = vec![menu_entry("none", "None"), menu_entry("system", "System")];
+    let current = lock(&ctx.shared)
+        .persist
+        .settings
+        .favorites_grouping
+        .clone();
+    let index = usize::from(current == "system");
+    present_list(
+        ctx,
+        app,
+        ListContext::FavoritesGrouping,
+        "Group by",
+        entries,
+    );
+    app.global::<crate::Overlays>()
+        .set_list_index(i32::try_from(index).unwrap_or(0));
+}
+
+/// Switching the grouping re-enters the favorites at the new level.
+fn favorites_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
+    if !matches!(id, "none" | "system") {
+        return;
+    }
+    {
+        let mut shared = lock(&ctx.shared);
+        if shared.persist.settings.favorites_grouping == id {
+            return;
+        }
+        shared.persist.settings.favorites_grouping = id.to_string();
+    }
+    save_settings(ctx);
+    if id == "system" {
+        crate::systems::enter_favorites(ctx, app);
+    } else {
+        crate::games::enter_favorites(ctx, app);
+    }
+}
+
+fn open_favorites_sort_menu(ctx: &Ctx, app: &App) {
+    let entries = vec![menu_entry("default", "Default"), menu_entry("name", "A-Z")];
+    let index = usize::from(lock(&ctx.shared).favorites_sort == "name");
+    present_list(ctx, app, ListContext::FavoritesSort, "Sort", entries);
+    app.global::<crate::Overlays>()
+        .set_list_index(i32::try_from(index).unwrap_or(0));
+}
+
+/// The order is a durable preference (`frontend.toml`), not screen state.
+fn favorites_sort_picked(ctx: &Ctx, app: &App, id: &str) {
+    let sort = if id == "name" { "name" } else { "" };
+    if lock(&ctx.shared).favorites_sort == sort {
+        return;
+    }
+    lock(&ctx.shared).favorites_sort = sort.to_string();
+    if let Err(e) = zaparoo_core::config::save_favorites_sort(&ctx.config_path, sort) {
+        tracing::warn!("saving the favorites sort failed: {e}");
+    }
+    crate::games::refresh_favorites(ctx, app);
 }
 
 /// A one-button alert above the current screen (Modal.qml's

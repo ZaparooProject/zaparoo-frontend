@@ -296,8 +296,10 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     let source = primary.global::<SystemsView>();
     let target = crt.global::<SystemsView>();
     copy_properties!(source, target;
+        get_mode => set_mode,
         get_category => set_category,
         get_count => set_count,
+        get_favorites_total => set_favorites_total,
         get_loading => set_loading,
         get_error => set_error,
         get_focus_ready => set_focus_ready,
@@ -305,6 +307,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_has_pages_below => set_has_pages_below,
         get_label_name => set_label_name,
         get_label_hidden => set_label_hidden,
+        get_label_count => set_label_count,
         get_activate_pulse => set_activate_pulse,
         get_release_pulse => set_release_pulse,
         get_current_index => set_current_index,

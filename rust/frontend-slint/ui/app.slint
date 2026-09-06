@@ -206,10 +206,16 @@ export global Labels {
 // and pushes the current page's cells at the geometry it resolved. The
 // page-swoop strip state is shared with the games grid.
 export global SystemsView {
+    // "systems" | "favorite-systems": the category list, or the systems
+    // that hold favorites (FavoriteSystemsScreen.qml).
+    in-out property <string> mode: "systems";
     in-out property <[GridCell]> cells: [];
     in-out property <int> selected-local: 0;
     in-out property <string> category: "";
     in-out property <int> count: 0;
+    // Favorites across every listed system; -1 when Core left any of
+    // them uncounted, so no total is shown.
+    in-out property <int> favorites-total: -1;
     in-out property <bool> loading: false;
     in-out property <string> error: "";
     in-out property <bool> focus-ready: false;
@@ -228,6 +234,8 @@ export global SystemsView {
     // Focused row caption and its hidden flag (the worded reason).
     in-out property <string> label-name: "";
     in-out property <bool> label-hidden: false;
+    // Favorites in the focused system; -1 when unknown.
+    in-out property <int> label-count: -1;
     in-out property <int> activate-pulse: 0;
     in-out property <int> release-pulse: 0;
     // Page swoop: the incoming page's cells and the strip phase.
@@ -852,10 +860,16 @@ component SystemsScreen inherits Rectangle {
     property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
     property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
     property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
-    property <string> title: Labels.hub("category:" + SystemsView.category, SystemsView.category);
-    property <string> count-text: Sizing.tier-240
-        ? Labels.count(SystemsView.count)
-        : @tr("{} systems", Labels.count(SystemsView.count));
+    property <bool> favorites: SystemsView.mode == "favorite-systems";
+    property <string> title: root.favorites
+        ? @tr("Favorites")
+        : Labels.hub("category:" + SystemsView.category, SystemsView.category);
+    property <string> count-text: SystemsView.count <= 0 ? ""
+        : (Sizing.tier-240
+            ? Labels.count(SystemsView.count)
+            : (root.favorites
+                ? @tr("{} systems with favorites", Labels.count(SystemsView.count))
+                : @tr("{} systems", Labels.count(SystemsView.count))));
 
     TopStatusStrip {
         x: 0;
@@ -866,7 +880,7 @@ component SystemsScreen inherits Rectangle {
         title: root.title;
         current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
         total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
-        total-text: !root.list-layout && root.show-grid-page-cue && SystemsView.count > 0 ? root.count-text : "";
+        total-text: !root.list-layout && root.show-grid-page-cue ? root.count-text : "";
         show-page-counter: root.list-layout || root.show-grid-page-cue;
         page-indicator-mode: root.show-top-page-cue;
         item-position-mode: root.list-layout;
@@ -917,7 +931,7 @@ component SystemsScreen inherits Rectangle {
                 focus-ready: SystemsView.focus-ready;
                 activate-pulse: SystemsView.activate-pulse;
                 release-pulse: SystemsView.release-pulse;
-                settling: Shell.active-screen != "systems";
+                settling: Shell.active-screen != SystemsView.mode;
                 card-radius: Layout.card-radius;
                 caption-for(cell) => { return cell.name; }
                 cell-hovered(i) => { SystemsInput.cell-hovered(i); }
@@ -964,7 +978,7 @@ component SystemsScreen inherits Rectangle {
         focus-ready: SystemsView.focus-ready;
         activate-pulse: SystemsView.activate-pulse;
         release-pulse: SystemsView.release-pulse;
-        settling: Shell.active-screen != "systems";
+        settling: Shell.active-screen != SystemsView.mode;
         row-height: SystemsView.list-row-height;
         detail-title: SystemsView.detail-title;
         show-title: true;
@@ -998,11 +1012,13 @@ component SystemsScreen inherits Rectangle {
         height: Layout.active-label-height;
         side-inset: root.page-cue-in-footer ? Math.max(root.footer-left-inset, root.footer-right-inset) : Sizing.pct-w(3);
         text: SystemsView.label-name;
-        tags: SystemsView.label-hidden ? @tr("Hidden") : "";
+        tags: root.favorites
+            ? (SystemsView.label-count >= 0 ? @tr("{} favorites", Labels.count(SystemsView.label-count)) : "")
+            : (SystemsView.label-hidden ? @tr("Hidden") : "");
         visible: !root.gate-hide;
     }
 
-    if !root.list-layout && root.page-cue-in-footer && SystemsView.count > 0: Text {
+    if !root.list-layout && root.page-cue-in-footer && root.count-text != "": Text {
         x: Layout.bottom-status-left-margin;
         y: root.label-y + Math.round((Layout.active-label-height - self.height) / 2px) * 1px;
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
@@ -1037,8 +1053,8 @@ component SystemsScreen inherits Rectangle {
         height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : SystemsView.grid-height;
         cue-center-y: root.height / 2 - self.y;
         state: root.state;
-        empty-text: @tr("No systems in this category");
-        loading-text: @tr("Loading systems…");
+        empty-text: root.favorites ? @tr("No favorites yet") : @tr("No systems in this category");
+        loading-text: root.favorites ? @tr("Loading favorite systems…") : @tr("Loading systems…");
     }
 }
 
@@ -1872,7 +1888,7 @@ component RouteScreen inherits Rectangle {
         height: 100%;
     }
 
-    if root.screen-token == "systems": SystemsScreen {
+    if root.screen-token == "systems" || root.screen-token == "favorite-systems": SystemsScreen {
         width: 100%;
         height: 100%;
     }
@@ -1914,6 +1930,7 @@ export component App inherits Window {
         if (!Layout.title-in-header) { return ""; }
         if (Shell.active-screen == "settings") { return SettingsView.settings-title; }
         if (Shell.active-screen == "systems") { return Labels.hub("category:" + SystemsView.category, SystemsView.category); }
+        if (Shell.active-screen == "favorite-systems") { return @tr("Favorites"); }
         if (Shell.active-screen == "games") { return GamesView.title; }
         if (Shell.active-screen == "favorites") { return @tr("Favorites"); }
         if (Shell.active-screen == "recents") { return @tr("Recently played"); }
@@ -2020,9 +2037,20 @@ export component App inherits Window {
                 { buttons: ["ButtonY"], label: @tr("View") },
             ];
         }
-        if (Shell.active-screen == "systems") {
+        if (Shell.active-screen == "systems" || Shell.active-screen == "favorite-systems") {
             if (Shell.transitioning) {
                 return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            // The favorites list adds the View menu, which carries the
+            // grouping switch.
+            if (Shell.active-screen == "favorite-systems") {
+                return [
+                    self.move-cue(SystemsView.total-pages),
+                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonX"], label: @tr("Options") },
+                    { buttons: ["ButtonY"], label: @tr("View") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
             }
             return [
                 self.move-cue(SystemsView.total-pages),

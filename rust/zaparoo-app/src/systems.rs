@@ -178,6 +178,9 @@ pub struct CatalogSystem {
     pub zap_script: String,
     pub release_date: String,
     pub manufacturer: String,
+    /// Matching media in this system, when Core scoped the catalog (the
+    /// favorites list); `None` when it did not count.
+    pub media_count: Option<u32>,
 }
 
 /// One Systems grid row.
@@ -193,6 +196,8 @@ pub struct SystemRow {
     pub zap_script: String,
     pub release_date: String,
     pub manufacturer: String,
+    /// Favorites in this system, when the catalog was scoped to them.
+    pub media_count: Option<u32>,
 }
 
 impl SystemRow {
@@ -266,9 +271,61 @@ pub fn rows_for_category(
     region: Region,
     user_name: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<SystemRow> {
+    project_rows(systems, hidden_ids, show_hidden, region, user_name, &|s| {
+        in_category(s, category)
+    })
+}
+
+/// Every system in a scoped catalog (the favorites list Core answers with
+/// its own `media_count` per system), under the same hide and name rules.
+pub fn rows_for_favorites(
+    systems: &[CatalogSystem],
+    hidden_ids: &[String],
+    show_hidden: bool,
+    region: Region,
+    user_name: &dyn Fn(&str) -> Option<String>,
+) -> Vec<SystemRow> {
+    project_rows(systems, hidden_ids, show_hidden, region, user_name, &|_| {
+        true
+    })
+}
+
+/// The favorites total across the rows; `None` when Core left any system
+/// uncounted, so the caller shows no total rather than a wrong one.
+pub fn favorites_total(rows: &[SystemRow]) -> Option<u32> {
+    rows.iter()
+        .map(|row| row.media_count)
+        .try_fold(0_u32, |sum, count| Some(sum.saturating_add(count?)))
+}
+
+/// A random favorite from one system, or from every system when the id is
+/// blank (`random_favorite_script`).
+pub fn random_favorite_launch_text(system_id: &str) -> String {
+    let scope = system_id.trim();
+    if scope.is_empty() {
+        return "**launch.random:all?tags=user:favorite".to_string();
+    }
+    let mut escaped = String::with_capacity(scope.len());
+    for ch in scope.chars() {
+        if matches!(ch, '^' | '?' | ',' | '&' | '|') {
+            escaped.push('^');
+        }
+        escaped.push(ch);
+    }
+    format!("**launch.random:{escaped}?tags=user:favorite")
+}
+
+fn project_rows(
+    systems: &[CatalogSystem],
+    hidden_ids: &[String],
+    show_hidden: bool,
+    region: Region,
+    user_name: &dyn Fn(&str) -> Option<String>,
+    keep: &dyn Fn(&CatalogSystem) -> bool,
+) -> Vec<SystemRow> {
     let mut rows: Vec<SystemRow> = systems
         .iter()
-        .filter(|s| in_category(s, category))
+        .filter(|s| keep(s))
         .filter_map(|s| {
             let hidden = hidden_ids.iter().any(|h| h == &s.id);
             if hidden && !show_hidden {
@@ -283,6 +340,7 @@ pub fn rows_for_category(
                 zap_script: s.zap_script.clone(),
                 release_date: s.release_date.clone(),
                 manufacturer: s.manufacturer.clone(),
+                media_count: s.media_count,
             })
         })
         .collect();
@@ -420,6 +478,7 @@ mod tests {
             zap_script: String::new(),
             release_date: String::new(),
             manufacturer: String::new(),
+            media_count: None,
         }
     }
 
@@ -431,6 +490,69 @@ mod tests {
             category: "Consoles".into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn favorite_rows_keep_every_system_and_total_their_counts() {
+        let mut nes = sys("NES", "NES", "Consoles");
+        nes.media_count = Some(3);
+        let mut arcade = sys("Arcade", "Arcade", "Arcade");
+        arcade.media_count = Some(4);
+        let rows = rows_for_favorites(
+            &[nes.clone(), arcade.clone()],
+            &[],
+            false,
+            Region::Us,
+            &|_| None,
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, "Arcade");
+        assert_eq!(favorites_total(&rows), Some(7));
+        // One uncounted system means no trustworthy total.
+        let mut unknown = sys("SNES", "SNES", "Consoles");
+        unknown.media_count = None;
+        let rows = rows_for_favorites(&[nes, unknown], &[], false, Region::Us, &|_| None);
+        assert_eq!(favorites_total(&rows), None);
+    }
+
+    #[test]
+    fn favorite_rows_still_hide_hidden_systems() {
+        let rows = rows_for_favorites(
+            &[
+                sys("NES", "NES", "Consoles"),
+                sys("SNES", "SNES", "Consoles"),
+            ],
+            &["NES".to_string()],
+            false,
+            Region::Us,
+            &|_| None,
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "SNES");
+        let shown = rows_for_favorites(
+            &[sys("NES", "NES", "Consoles")],
+            &["NES".to_string()],
+            true,
+            Region::Us,
+            &|_| None,
+        );
+        assert!(shown[0].hidden);
+    }
+
+    #[test]
+    fn random_favorite_scopes_to_a_system_or_everything() {
+        assert_eq!(
+            random_favorite_launch_text(""),
+            "**launch.random:all?tags=user:favorite"
+        );
+        assert_eq!(
+            random_favorite_launch_text(" NES "),
+            "**launch.random:NES?tags=user:favorite"
+        );
+        assert_eq!(
+            random_favorite_launch_text("a,b"),
+            "**launch.random:a^,b?tags=user:favorite"
+        );
     }
 
     #[test]

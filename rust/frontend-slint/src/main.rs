@@ -498,6 +498,7 @@ fn main() -> Result<(), slint::PlatformError> {
             restore_pending,
             config.settings.hidden_categories.clone(),
             config.settings.hidden_system_ids.clone(),
+            config.settings.favorites_sort.clone().unwrap_or_default(),
             platform_paths::config_file_path(),
         ))),
     });
@@ -1154,6 +1155,10 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
     match target.as_str() {
         "favorites" => {
             games::enter_favorites(ctx, app);
+            return;
+        }
+        "favorite-systems" => {
+            systems::enter_favorites(ctx, app);
             return;
         }
         "recents" => {

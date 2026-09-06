@@ -269,7 +269,13 @@ fn main() {
         .set_about_version_line("Version 1.2.2 (Slint demo)".into());
     // Systems fixtures: a paged category (page 2 of 3) with no logo
     // files on disk, so the wordmark fallback renders.
-    fixture_systems(&app, scene_w, scene_h, crt);
+    fixture_systems(
+        &app,
+        scene_w,
+        scene_h,
+        crt,
+        screen.contains("favorite-systems"),
+    );
     app.global::<Shell>()
         .set_status_keys(slint::ModelRc::new(slint::VecModel::from(vec![
             slint::SharedString::from("NFC"),
@@ -448,6 +454,8 @@ fn main() {
         || screen.contains("games")
     {
         "games"
+    } else if screen.contains("favorite-systems") {
+        "favorite-systems"
     } else if screen.contains("favorites") {
         "favorites"
     } else if screen.contains("recents") {
@@ -924,7 +932,7 @@ fn fixture_games(
     view.set_label_height(label_height as f32);
 }
 
-fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool) {
+fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: bool) {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
@@ -976,6 +984,13 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool) {
         })
         .collect();
     let view = app.global::<SystemsView>();
+    view.set_mode(if favorites {
+        "favorite-systems".into()
+    } else {
+        "systems".into()
+    });
+    view.set_favorites_total(if favorites { 87 } else { -1 });
+    view.set_label_count(if favorites { 12 } else { -1 });
     view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
     view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(list_rows)));
     view.set_list_sel(2);
