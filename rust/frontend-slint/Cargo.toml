@@ -14,6 +14,9 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 publish      = false
+# Two binaries live here (the app and the offline snapshot tool); the one
+# cargo starts by default is the app.
+default-run  = "frontend-slint"
 
 [[bin]]
 name = "frontend-slint"
