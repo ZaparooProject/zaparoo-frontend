@@ -42,6 +42,8 @@ mod generated {
 }
 use generated::{App, CategoryTile, GameTile, GlyphSource, LetterBucket, MenuEntry, Sizing};
 
+#[path = "../fonts.rs"]
+mod fonts;
 #[path = "../glyphs.rs"]
 mod glyphs;
 
@@ -74,6 +76,9 @@ fn main() {
     let screen = args.get(4).cloned().unwrap_or_else(|| "hub".to_string());
     let radius_pct: Option<f32> = args.get(5).and_then(|a| a.parse().ok());
 
+    // Same runtime font stack as the device build: the script faces must be
+    // registered before the platform exists.
+    fonts::install_font_path();
     slint::platform::set_platform(Box::new(SnapshotPlatform)).unwrap();
 
     let app = App::new().unwrap();
@@ -127,9 +132,31 @@ fn main() {
     app.global::<generated::HubView>()
         .set_categories(slint::ModelRc::new(slint::VecModel::from(tiles)));
     // Games fixtures so the grid, top strip, and page counter render.
+    // `*-i18n` screens swap the fixture titles for one string per script
+    // the catalogs ship, so shaping (Arabic, Devanagari), bidi (Hebrew,
+    // Arabic) and CJK glyph coverage can be checked offline.
+    let i18n = screen.contains("i18n");
+    let i18n_titles = [
+        "لعبة تجريبية واحد",
+        "משחק לדוגמה שתיים",
+        "उदाहरण खेल तीन",
+        "サンプルゲーム 四",
+        "예제 게임 다섯",
+        "示例游戏 六",
+        "Mixed عربي Latin 7",
+        "Ñandú Ægir Ωmega 8",
+        "Straße Ærø Łódź 9",
+        "Ελληνικά παιχνίδι 10",
+        "Українська гра 11",
+        "Example Game Title 12",
+    ];
     let games: Vec<GameTile> = (1..=12)
         .map(|i| GameTile {
-            name: format!("Example Game Title {i}").into(),
+            name: if i18n {
+                i18n_titles[i - 1].into()
+            } else {
+                format!("Example Game Title {i}").into()
+            },
             path: format!("/g/{i}").into(),
             cover: slint::Image::default(),
             has_cover: false,

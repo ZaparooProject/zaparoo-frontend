@@ -103,6 +103,12 @@ if [ -d "${ASSETS_DIR}" ]; then
     run_scp -r "${ASSETS_DIR}/systems" "root@${MISTER_IP}:${REMOTE_DIR}/slint-assets/"
 fi
 
+# Runtime fonts: the script faces load from <exe dir>/fonts (src/fonts.rs).
+FONTS_DIR="${PROJECT_ROOT}/resources/fonts/runtime"
+echo "=== Syncing fonts ==="
+run_ssh "root@${MISTER_IP}" "mkdir -p ${REMOTE_DIR}/fonts"
+run_scp "${FONTS_DIR}"/*.ttf "root@${MISTER_IP}:${REMOTE_DIR}/fonts/"
+
 if [ "${REPLACE}" -eq 1 ]; then
     echo "=== Installing as ${REMOTE_DIR}/frontend (Qt binary backed up) ==="
     # cp over the live binary fails with ETXTBSY while it is executing;

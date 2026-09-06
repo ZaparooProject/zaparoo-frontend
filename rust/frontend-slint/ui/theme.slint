@@ -46,8 +46,11 @@ export global Sizing {
     // Sizing.swapPercentageAxes contract and prevents portrait mode
     // from inflating type/vertical chrome against the long axis.
     in-out property <bool> swap-axes: false;
-    // MiSTer builds pre-render glyphs at a fixed ladder of sizes
-    // (build.rs FONT_SIZE_LADDER); every font-size must land on it.
+    // MiSTer builds snap type onto a fixed ladder (8, 12, 16, 20, 24 and
+    // their doubles). Fonts rasterize at runtime now, so the ladder is no
+    // longer a glyph-embedding constraint; it stays because the DRS
+    // pairing below needs the sharp size to be exactly twice the motion
+    // size, which plain percent rounding does not guarantee.
     in-out property <bool> bitmap-fonts: false;
 
     public pure function pct-h(p: float) -> length {

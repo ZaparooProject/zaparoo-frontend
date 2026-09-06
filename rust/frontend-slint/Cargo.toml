@@ -38,16 +38,20 @@ desktop = [
     "slint/renderer-femtovg",
     "slint/accessibility",
 ]
-# Slint is built WITHOUT its `std` feature here: that keeps the
-# runtime font stack (fontique -> fontconfig, absent on MiSTer) out of
-# the graph entirely. Glyphs are pre-rendered into the binary by
-# build.rs (EmbedForSoftwareRenderer) at the SLINT_FONT_SIZES ladder;
-# ui/theme.slint quantizes every font-size onto that ladder.
+# The MiSTer build uses Slint's `std` software renderer so text goes
+# through the runtime font stack (fontique + swash + parley): that is
+# the path with OpenType shaping and bidi, which the Arabic, Hebrew,
+# Devanagari and CJK catalogs need. The pre-rendered `no_std` glyph path
+# maps one character to one glyph and cannot shape them. fontique's
+# Linux backend wants libfontconfig; `fontconfig-dlopen` makes that a
+# runtime dlopen that simply fails on the static musl binary, leaving
+# system fonts empty, which is fine because `src/fonts.rs` registers
+# the faces we ship.
 mister = [
+    "slint/std",
     "slint/renderer-software",
-    "slint/libm",
-    "slint/unsafe-single-threaded",
     "dep:libc",
+    "dep:fontique",
 ]
 # Desktop build plus the software renderer, for the snapshot bin.
 snapshot = ["desktop", "slint/renderer-software"]
@@ -65,6 +69,9 @@ semver = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 resvg = { version = "0.47", default-features = false }
 libc = { version = "0.2", optional = true }
+# Same version Slint 1.17 resolves; only here to turn on `fontconfig-dlopen`
+# (Cargo unifies the feature onto Slint's own fontique dependency).
+fontique = { version = "0.10", optional = true, default-features = false, features = ["fontconfig-dlopen"] }
 time.workspace = true
 
 [build-dependencies]

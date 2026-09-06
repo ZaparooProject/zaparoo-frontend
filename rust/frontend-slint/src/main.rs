@@ -13,6 +13,7 @@ mod actions;
 mod drs;
 #[cfg(feature = "mister")]
 mod dual_head;
+mod fonts;
 #[cfg(any(feature = "mister", test))]
 mod frame_transition;
 mod glyphs;
@@ -303,6 +304,13 @@ fn main() -> Result<(), slint::PlatformError> {
     let config = zaparoo_core::config::load_config(&platform_paths::config_file_path());
     let _log_guard = init_demo_paths(&config);
     tracing::info!(endpoint = %config.core_endpoint, "Zaparoo Slint demo starting");
+    // Before the platform exists: Slint builds its font collection from
+    // SLINT_FONT_PATH when the platform is installed.
+    if let Some(dir) = fonts::install_font_path() {
+        tracing::info!(dir = %dir.display(), "runtime fonts");
+    } else {
+        tracing::warn!("no runtime font directory found; non-Latin scripts may not render");
+    }
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
