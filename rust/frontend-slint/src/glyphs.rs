@@ -486,6 +486,9 @@ pub fn rasterize_svg(svg: &str, px: u32) -> Option<slint::Image> {
 
 /// Rasterize `key` at `px` x `px` (every source has a square viewbox).
 pub fn render(key: &str, px: u32) -> Option<slint::Image> {
+    // One line per rasterization, not per draw: a glyph that reappears
+    // here on every frame means the cache key is moving under it.
+    tracing::trace!(key, px, "glyph raster");
     if px == 0 {
         return None;
     }
