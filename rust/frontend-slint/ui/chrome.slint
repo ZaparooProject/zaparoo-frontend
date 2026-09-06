@@ -246,11 +246,9 @@ export component StatusLine inherits Rectangle {
 
     if root.percent-known: Text {
         x: track.x - root.cells-spacing - self.width;
-        y: 0;
+        y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
         width: root.percent-slot;
-        height: parent.height;
         horizontal-alignment: right;
-        vertical-alignment: center;
         text: Status.percent-text();
         color: Theme.text-primary;
         font-size: Sizing.font-small;
@@ -258,10 +256,8 @@ export component StatusLine inherits Rectangle {
 
     Text {
         x: parent.width - root.track-reserve - root.percent-reserve - self.width;
-        y: 0;
+        y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
         width: root.label-width;
-        height: parent.height;
-        vertical-alignment: center;
         overflow: elide;
         text: root.label;
         color: Status.is-error ? Theme.error : Theme.text-primary;
@@ -372,10 +368,8 @@ export component HeaderBar inherits Rectangle {
         }
         if root.battery-label-visible: Text {
             x: root.icon-count * (root.icon-size + root.hud-spacing);
-            y: 0;
+            y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
             width: root.battery-label-width;
-            height: parent.height;
-            vertical-alignment: center;
             text: @tr("{}%", root.battery-percent);
             color: Theme.text-primary;
             font-size: Sizing.font-caption;
@@ -383,11 +377,9 @@ export component HeaderBar inherits Rectangle {
     }
     if root.clock-visible: Text {
         x: parent.width - Sizing.header-side-margin - root.clock-width;
-        y: root.hud-y;
+        y: root.hud-y + Math.round((Sizing.header-row-height - self.preferred-height) / 2px) * 1px;
         width: root.clock-width;
-        height: Sizing.header-row-height;
         horizontal-alignment: right;
-        vertical-alignment: center;
         text: root.clock-text;
         color: Theme.text-primary;
         font-size: Sizing.header-row-height;
@@ -397,11 +389,9 @@ export component HeaderBar inherits Rectangle {
     if Layout.title-in-header && root.browse-title != "": Text {
         property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
         x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: parent.height - self.height;
+        y: parent.height - Sizing.header-row-height + Math.round((Sizing.header-row-height - self.preferred-height) / 2px) * 1px;
         width: Math.min(Math.floor(parent.width / 3px) * 1px, self.natural);
-        height: Sizing.header-row-height;
         overflow: elide;
-        vertical-alignment: center;
         text: root.browse-title;
         color: Theme.text-primary;
         font-weight: 500;
@@ -502,7 +492,7 @@ export component PageIndicator inherits Rectangle {
     }
     page-count := Text {
         x: down.x + down.width + root.item-spacing;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
         width: root.text-width;
         visible: root.has-navigation-range;
         overflow: elide;
@@ -568,11 +558,13 @@ export component TopStatusStrip inherits Rectangle {
         font-size: Sizing.font-section;
     }
 
+    // The QML gives the title a font-hero tall box and lets the line box
+    // overflow it; Slint clips a Text to its height, so the natural line
+    // box sits top-aligned at the same y instead.
     Text {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: root.title-y;
         width: root.title-text-width;
-        height: Sizing.font-hero;
         overflow: elide;
         text: root.title;
         color: Theme.text-primary;
@@ -646,10 +638,8 @@ export component ActiveLabel inherits Rectangle {
 
     Text {
         x: root.block-x;
-        y: root.text-y;
+        y: root.text-y + Math.round((Sizing.font-hero - self.preferred-height) / 2px) * 1px;
         width: root.name-width;
-        height: Sizing.font-hero;
-        vertical-alignment: center;
         overflow: elide;
         text: root.text;
         color: Theme.text-primary;
@@ -658,10 +648,8 @@ export component ActiveLabel inherits Rectangle {
     }
     if root.has-tags: Text {
         x: root.block-x + root.name-width + root.gap;
-        y: root.text-y;
+        y: root.text-y + Math.round((Sizing.font-hero - self.preferred-height) / 2px) * 1px;
         width: root.tags-width;
-        height: Sizing.font-hero;
-        vertical-alignment: center;
         overflow: elide;
         text: root.tags;
         color: Theme.text-variant;
@@ -687,7 +675,6 @@ component HelpEntryView inherits HorizontalLayout {
         colorize: Theme.text-primary;
     }
     Text {
-        height: root.icon-size;
         vertical-alignment: center;
         text: root.entry.label;
         color: Theme.text-primary;
@@ -864,24 +851,90 @@ export component SelectionBar inherits Rectangle {
 // message centered over the content area, with an optional detail line.
 // `state` is "error", "empty" or "" (nothing painted).
 export component StateCue inherits Rectangle {
+    // "loading", "error", "empty" or "" (nothing painted). Loading shows
+    // the cue only after `loading-delay` and keeps it for at least
+    // `minimum-visible` once shown (DelayedLoadingIndicator.qml), so a
+    // fast fill never flashes it.
     in property <string> state: "";
     in property <string> empty-text: @tr("Nothing here");
     in property <string> empty-detail: "";
     in property <string> error-detail: @tr("Check Zaparoo Core and try again.");
+    in property <string> loading-text: @tr("Loading…");
+    in property <duration> loading-delay: 300ms;
+    in property <duration> minimum-visible: 200ms;
+    // Vertical center of the loading cue, so a content rect that starts
+    // below the header can still center the cue on the screen.
+    in property <length> cue-center-y: root.height / 2;
 
     background: transparent;
-    visible: root.state != "";
 
-    property <string> headline: root.state == "error" ? @tr("Failed to load") : root.empty-text;
-    property <string> detail: root.state == "error" ? root.error-detail : root.empty-detail;
+    property <bool> loading: root.state == "loading";
+    property <bool> loading-shown: false;
+    property <bool> hold: false;
+    changed loading => {
+        if (!self.loading && !self.hold) { self.loading-shown = false; }
+    }
+    Timer {
+        interval: root.loading-delay;
+        running: root.loading && !root.loading-shown;
+        triggered => {
+            root.loading-shown = true;
+            root.hold = true;
+        }
+    }
+    Timer {
+        interval: root.minimum-visible;
+        running: root.hold;
+        triggered => {
+            root.hold = false;
+            if (!root.loading) { root.loading-shown = false; }
+        }
+    }
+    out property <bool> loading-visible: root.loading-shown;
+    property <string> message-state: root.loading-shown ? "" : (root.loading ? "" : root.state);
+    visible: root.loading-shown || root.message-state != "";
+
+    property <string> headline: root.message-state == "error" ? @tr("Failed to load") : root.empty-text;
+    property <string> detail: root.message-state == "error" ? root.error-detail : root.empty-detail;
     property <length> text-w: Math.round(root.width * 0.7 / 1px) * 1px;
     property <length> gap: Sizing.pct-h(0.6);
     property <length> block-h: headline-text.preferred-height + (root.detail != "" ? root.gap + detail-text.preferred-height : 0px);
+
+    // Loading cue (LoadingIndicator.qml): the glyph and the text side by
+    // side, centered on `cue-center-y`.
+    if root.loading-shown: Rectangle {
+        property <length> glyph: Sizing.font-size(3);
+        property <length> spacing: Sizing.pct-w(0.6);
+        property <length> w: self.glyph + self.spacing + Math.ceil(loading-label.preferred-width / 1px) * 1px;
+        x: Math.round((parent.width - self.w) / 2px) * 1px;
+        y: Math.round((root.cue-center-y - self.glyph / 2) / 1px) * 1px;
+        width: self.w;
+        height: self.glyph;
+        background: transparent;
+        Image {
+            x: 0;
+            y: 0;
+            width: parent.glyph;
+            height: parent.glyph;
+            source: GlyphSource.glyph("icons/Loading", parent.glyph);
+            colorize: Theme.text-primary;
+        }
+        loading-label := Text {
+            x: parent.glyph + parent.spacing;
+            y: 0;
+            height: parent.glyph;
+            vertical-alignment: center;
+            text: root.loading-text;
+            color: Theme.text-primary;
+            font-size: parent.glyph;
+        }
+    }
 
     headline-text := Text {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: Math.round((parent.height - root.block-h) / 2px) * 1px;
         width: root.text-w;
+        visible: root.message-state != "";
         wrap: word-wrap;
         horizontal-alignment: center;
         text: root.headline;
@@ -892,7 +945,7 @@ export component StateCue inherits Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: headline-text.y + headline-text.preferred-height + root.gap;
         width: root.text-w;
-        visible: root.detail != "";
+        visible: root.message-state != "" && root.detail != "";
         wrap: word-wrap;
         horizontal-alignment: center;
         text: root.detail;

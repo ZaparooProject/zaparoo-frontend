@@ -6,8 +6,8 @@
 //! view-only CRT component used by `MiSTer` dual-head mode.
 
 use crate::{
-    App, Buttons, GameInfoView, GameTile, GamesView, HubView, Motion, Overlays, SettingsView,
-    Shell, Status, SystemTile, SystemsView,
+    App, Buttons, GameInfoView, GameTile, GamesView, GridCell, HubView, Motion, Overlays,
+    SettingsView, Shell, Status, SystemsView,
 };
 use slint::{ComponentHandle as _, Model as _, ModelRc, VecModel};
 
@@ -36,14 +36,18 @@ fn same_image(left: &slint::Image, right: &slint::Image) -> bool {
     left == right || (left.size().width == 0 && right.size().width == 0)
 }
 
-impl MirrorRow for SystemTile {
+impl MirrorRow for GridCell {
     fn same_content(&self, other: &Self) -> bool {
-        self.id == other.id
+        self.label_key == other.label_key
             && self.name == other.name
-            && same_image(&self.logo, &other.logo)
-            && same_image(&self.logo_focus, &other.logo_focus)
-            && self.has_logo == other.has_logo
+            && self.glyph_key == other.glyph_key
+            && same_image(&self.cover, &other.cover)
+            && same_image(&self.cover_focus, &other.cover_focus)
+            && self.has_cover == other.has_cover
             && self.hidden == other.hidden
+            && self.disabled == other.disabled
+            && self.favorite == other.favorite
+            && self.is_empty == other.is_empty
     }
 }
 
@@ -302,75 +306,138 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     let source = primary.global::<SystemsView>();
     let target = crt.global::<SystemsView>();
     copy_properties!(source, target;
-        get_systems_category => set_systems_category,
+        get_category => set_category,
+        get_count => set_count,
+        get_loading => set_loading,
+        get_error => set_error,
+        get_focus_ready => set_focus_ready,
+        get_has_pages_above => set_has_pages_above,
+        get_has_pages_below => set_has_pages_below,
+        get_label_name => set_label_name,
+        get_label_hidden => set_label_hidden,
+        get_activate_pulse => set_activate_pulse,
+        get_release_pulse => set_release_pulse,
+        get_list_rows => set_list_rows,
+        get_list_index => set_list_index,
     );
-    let capacity = target.get_systems_grid_cols() * target.get_systems_grid_rows();
-    let cached_transition = source.get_systems_cached_transition();
-    let strip_transition = source.get_systems_page_slide().abs() > f32::EPSILON;
+    {
+        // The CRT head fits its own grid shape (already pushed by its
+        // scene) inside its own layout band.
+        let sizing = crt.global::<crate::Sizing>();
+        let scene = crate::sizing::Scene::of(
+            crt,
+            f64::from(sizing.get_screen_width()),
+            f64::from(sizing.get_screen_height()),
+            true,
+        );
+        let inputs = scene.inputs();
+        let derived = zaparoo_app::sizing::derive(&inputs);
+        let profile = zaparoo_app::layouts::profile(
+            zaparoo_app::layouts::ThemeId::current(&inputs),
+            zaparoo_app::layouts::View::SystemsGrid,
+            &inputs,
+        );
+        if let zaparoo_app::layouts::Body::Grid { grid, footer } = profile.body {
+            let grid_y =
+                derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+            let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
+                derived.help_bar_height + footer.active_label_height
+            } else {
+                footer.grid_bottom_margin
+            };
+            let grid_height = (inputs.screen_height as i32 - grid_y - bottom).max(0);
+            let insets = zaparoo_app::paged_grid::Insets {
+                left: grid.left_inset,
+                right: grid.right_inset,
+                top: grid.top_inset,
+                bottom: grid.bottom_inset,
+                column_gap: grid.column_gap,
+                row_gap: grid.row_gap,
+            };
+            let fit = zaparoo_app::paged_grid::fit(
+                target.get_columns(),
+                target.get_rows(),
+                inputs.screen_width as i32,
+                grid_height,
+                None,
+                false,
+                &insets,
+            );
+            target.set_cell_width(fit.cell_width as f32);
+            target.set_cell_height(fit.cell_height as f32);
+            target.set_block_offset_x(fit.block_offset_x as f32);
+            target.set_block_offset_y(fit.block_offset_y as f32);
+            target.set_grid_y(grid_y as f32);
+            target.set_grid_height(grid_height as f32);
+        }
+    }
+    let capacity = target.get_columns() * target.get_rows();
+    let cached_transition = source.get_cached_transition();
+    let strip_transition = source.get_page_slide().abs() > f32::EPSILON;
     let transition_requested = cached_transition || strip_transition;
     if transition_requested {
         if state.systems != TransitionPhase::Active {
             let incoming = if cached_transition {
-                source.get_systems()
+                source.get_cells()
             } else {
-                source.get_systems_next_page()
+                source.get_next_cells()
             };
             let (next_page, _, _) = project_page(
                 &incoming,
                 &ModelRc::default(),
-                source.get_systems_transition_target_index(),
+                source.get_transition_target_index(),
                 capacity,
             );
-            target.set_systems_next_page(next_page.unwrap_or_default());
+            target.set_next_cells(next_page.unwrap_or_default());
             set_if_changed!(
                 target,
-                get_systems_slide_dir => set_systems_slide_dir,
-                source.get_systems_slide_dir()
+                get_slide_dir => set_slide_dir,
+                source.get_slide_dir()
             );
-            set_if_changed!(target, get_systems_slide_anim => set_systems_slide_anim, true);
-            target.set_systems_page_slide(source.get_systems_slide_dir() as f32);
+            set_if_changed!(target, get_slide_anim => set_slide_anim, true);
+            target.set_page_slide(source.get_slide_dir() as f32);
             state.systems = TransitionPhase::Active;
         }
     } else {
         if state.systems == TransitionPhase::Active {
-            target.set_systems_slide_anim(false);
+            target.set_slide_anim(false);
         }
         let (systems, index, chunks) = project_page(
-            &source.get_systems(),
-            &target.get_systems(),
-            source.get_systems_index(),
+            &source.get_cells(),
+            &target.get_cells(),
+            source.get_selected_local(),
             capacity,
         );
         if let Some(systems) = systems {
-            target.set_systems(systems);
+            target.set_cells(systems);
         }
-        set_if_changed!(target, get_systems_index => set_systems_index, index);
+        set_if_changed!(target, get_selected_local => set_selected_local, index);
         set_if_changed!(
             target,
-            get_systems_next_page => set_systems_next_page,
+            get_next_cells => set_next_cells,
             ModelRc::default()
         );
-        if target.get_systems_page_slide().abs() > f32::EPSILON {
-            target.set_systems_page_slide(0.0);
+        if target.get_page_slide().abs() > f32::EPSILON {
+            target.set_page_slide(0.0);
         }
         set_if_changed!(
             target,
-            get_systems_page => set_systems_page,
-            source.get_systems_page() * i32::try_from(chunks.max(1)).unwrap_or(1)
-                + source.get_systems_index().max(0) / capacity.max(1)
+            get_page => set_page,
+            source.get_page() * i32::try_from(chunks.max(1)).unwrap_or(1)
+                + source.get_selected_local().max(0) / capacity.max(1)
         );
         set_if_changed!(
             target,
-            get_systems_total_pages => set_systems_total_pages,
-            source.get_systems_total_pages() * i32::try_from(chunks.max(1)).unwrap_or(1)
+            get_total_pages => set_total_pages,
+            source.get_total_pages() * i32::try_from(chunks.max(1)).unwrap_or(1)
         );
         if state.systems == TransitionPhase::Active {
             state.systems = TransitionPhase::Rearm;
         } else if state.systems == TransitionPhase::Rearm {
-            target.set_systems_slide_anim(true);
+            target.set_slide_anim(true);
             state.systems = TransitionPhase::Idle;
         } else {
-            set_if_changed!(target, get_systems_slide_anim => set_systems_slide_anim, true);
+            set_if_changed!(target, get_slide_anim => set_slide_anim, true);
         }
     }
 
@@ -675,78 +742,69 @@ mod tests {
         // Cached HDMI grid motion must not force a CRT cut. The CRT keeps
         // its current page, stages the destination at its own four-item
         // capacity, animates, then commits the exact selected system.
-        crt.global::<SystemsView>().set_systems_grid_cols(2);
-        crt.global::<SystemsView>().set_systems_grid_rows(2);
+        crt.global::<SystemsView>().set_columns(2);
+        crt.global::<SystemsView>().set_rows(2);
         crt.global::<SystemsView>()
-            .set_systems(ModelRc::new(VecModel::from(
+            .set_cells(ModelRc::new(VecModel::from(
                 (0..4)
-                    .map(|i| SystemTile {
-                        id: SharedString::from(format!("Old {i}")),
-                        ..SystemTile::default()
+                    .map(|i| GridCell {
+                        name: SharedString::from(format!("Old {i}")),
+                        ..GridCell::default()
                     })
                     .collect::<Vec<_>>(),
             )));
         primary
             .global::<SystemsView>()
-            .set_systems(ModelRc::new(VecModel::from(
+            .set_cells(ModelRc::new(VecModel::from(
                 (0..8)
-                    .map(|i| SystemTile {
-                        id: SharedString::from(format!("New {i}")),
-                        ..SystemTile::default()
+                    .map(|i| GridCell {
+                        name: SharedString::from(format!("New {i}")),
+                        ..GridCell::default()
                     })
                     .collect::<Vec<_>>(),
             )));
-        primary.global::<SystemsView>().set_systems_index(6);
+        primary.global::<SystemsView>().set_selected_local(6);
         primary
             .global::<SystemsView>()
-            .set_systems_transition_target_index(6);
-        primary.global::<SystemsView>().set_systems_page(1);
-        primary.global::<SystemsView>().set_systems_total_pages(2);
-        primary.global::<SystemsView>().set_systems_slide_dir(-1);
-        primary
-            .global::<SystemsView>()
-            .set_systems_cached_transition(true);
+            .set_transition_target_index(6);
+        primary.global::<SystemsView>().set_page(1);
+        primary.global::<SystemsView>().set_total_pages(2);
+        primary.global::<SystemsView>().set_slide_dir(-1);
+        primary.global::<SystemsView>().set_cached_transition(true);
 
         sync_with_state(&primary, &crt, &mut state);
         assert_eq!(
             crt.global::<SystemsView>()
-                .get_systems()
+                .get_cells()
                 .row_data(0)
                 .map(|system| system.id.to_string()),
             Some("Old 0".to_string())
         );
         assert_eq!(
             crt.global::<SystemsView>()
-                .get_systems_next_page()
+                .get_next_cells()
                 .row_data(2)
                 .map(|system| system.id.to_string()),
             Some("New 6".to_string())
         );
-        assert!((crt.global::<SystemsView>().get_systems_page_slide() + 1.0).abs() < f32::EPSILON);
-        assert!(crt.global::<SystemsView>().get_systems_slide_anim());
+        assert!((crt.global::<SystemsView>().get_page_slide() + 1.0).abs() < f32::EPSILON);
+        assert!(crt.global::<SystemsView>().get_slide_anim());
 
-        primary
-            .global::<SystemsView>()
-            .set_systems_cached_transition(false);
+        primary.global::<SystemsView>().set_cached_transition(false);
         sync_with_state(&primary, &crt, &mut state);
         assert_eq!(
             crt.global::<SystemsView>()
-                .get_systems()
+                .get_cells()
                 .row_data(2)
                 .map(|system| system.id.to_string()),
             Some("New 6".to_string())
         );
-        assert_eq!(crt.global::<SystemsView>().get_systems_index(), 2);
-        assert!(crt.global::<SystemsView>().get_systems_page_slide().abs() < f32::EPSILON);
-        assert_eq!(
-            crt.global::<SystemsView>()
-                .get_systems_next_page()
-                .row_count(),
-            0
-        );
-        assert!(!crt.global::<SystemsView>().get_systems_slide_anim());
+        assert_eq!(crt.global::<SystemsView>().get_selected_local(), 2);
+        assert!(crt.global::<SystemsView>().get_page_slide().abs() < f32::EPSILON);
+        assert_eq!(crt.global::<SystemsView>().get_next_cells().row_count(), 0);
+        assert!(!crt.global::<SystemsView>().get_slide_anim());
         sync_with_state(&primary, &crt, &mut state);
-        assert!(crt.global::<SystemsView>().get_systems_slide_anim());
+        assert!(crt.global::<SystemsView>().get_slide_anim());
 
         // Games use the same cached-HDMI/native-CRT split. CRT still
         // chooses the destination chunk and focus from the router's

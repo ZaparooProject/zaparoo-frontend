@@ -352,14 +352,18 @@ export component Tile inherits Rectangle {
 
         // Wordmark fallback for a system without art; other tiles stay
         // blank until their art lands (the caption already names them).
+        // Qt fits the wordmark (Text.Fit down to 2.8%); Slint has no fit
+        // mode, so the size is capped to let two lines sit in the art
+        // area and the rest elides.
         if root.cell.glyph-key == "" && !root.cell.has-cover && root.system-cover && !root.show-caption: Text {
+            property <length> box-h: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
             x: root.pad + Sizing.pct-h(1);
             y: parent.art-top + Sizing.pct-h(1);
             width: Math.max(0px, parent.art-w - 2 * Sizing.pct-h(1));
-            height: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
+            height: self.box-h;
             text: root.cell.name;
             color: root.art-tint;
-            font-size: Sizing.font-size(5.8);
+            font-size: Math.max(Sizing.font-size(2.8), Math.min(Sizing.font-size(5.8), Math.floor(self.box-h / 2 / 1.362 / 1px) * 1px));
             font-weight: 600;
             wrap: word-wrap;
             overflow: elide;

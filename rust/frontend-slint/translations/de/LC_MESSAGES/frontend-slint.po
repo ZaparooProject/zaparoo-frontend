@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-09-06 04:14+0000\n"
+"POT-Creation-Date: 2026-09-06 04:35+0000\n"
 "Language: de\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -8,216 +8,224 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Generator: scripts/convert-ts-catalogs.py\n"
 
-#: rust/frontend-slint/ui/app.slint:211
+#: rust/frontend-slint/ui/app.slint:198
 msgid "Arcade"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:212
+#: rust/frontend-slint/ui/app.slint:199
 msgid "Computers"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:213
+#: rust/frontend-slint/ui/app.slint:200
 msgid "Consoles"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:214
+#: rust/frontend-slint/ui/app.slint:201
 msgid "Handhelds"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:215
+#: rust/frontend-slint/ui/app.slint:202
 msgid "Other"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:216
+#: rust/frontend-slint/ui/app.slint:203
 msgid "Resume"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:216
+#: rust/frontend-slint/ui/app.slint:203
 msgid "Resume: {}"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:217 rust/frontend-slint/ui/app.slint:2240
+#: rust/frontend-slint/ui/app.slint:204 rust/frontend-slint/ui/app.slint:2205
 msgid "Favorites"
 msgstr "Favoriten"
 
-#: rust/frontend-slint/ui/app.slint:218 rust/frontend-slint/ui/app.slint:2241
+#: rust/frontend-slint/ui/app.slint:205 rust/frontend-slint/ui/app.slint:2206
 msgid "Recently played"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:219
+#: rust/frontend-slint/ui/app.slint:206
 msgid "Update"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:220
+#: rust/frontend-slint/ui/app.slint:207
 msgid "Settings"
 msgstr "Einstellungen"
 
-#: rust/frontend-slint/ui/app.slint:224
+#: rust/frontend-slint/ui/app.slint:217
 msgid "No recent games"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:225
+#: rust/frontend-slint/ui/app.slint:218
 msgid "No internet connection"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:226
+#: rust/frontend-slint/ui/app.slint:219
 msgid "Not available"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:447 rust/frontend-slint/ui/app.slint:508
+#: rust/frontend-slint/ui/app.slint:470 rust/frontend-slint/ui/app.slint:1033
 msgid "Hidden"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:824
+#: rust/frontend-slint/ui/app.slint:786
 msgid "Updating the media database"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:824
+#: rust/frontend-slint/ui/app.slint:786
 msgid "No games found yet"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:826
+#: rust/frontend-slint/ui/app.slint:788
 msgid "Your games appear here as Core finds them."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:827
+#: rust/frontend-slint/ui/app.slint:789
 msgid "Update media database in Settings > Library."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:843
+#: rust/frontend-slint/ui/app.slint:805
 msgid "About / License"
 msgstr "Über / Lizenz"
 
-#: rust/frontend-slint/ui/app.slint:875
+#: rust/frontend-slint/ui/app.slint:837
 msgid "Zaparoo Frontend"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:889
+#: rust/frontend-slint/ui/app.slint:851
 msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
 msgstr "Copyright 2026 Wizzo Pty Ltd und die Mitwirkenden des Zaparoo-Projekts."
 
-#: rust/frontend-slint/ui/app.slint:896
+#: rust/frontend-slint/ui/app.slint:858
 msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
 msgstr "Quellcode verfügbar unter der PolyForm Noncommercial License 1.0.0. Kostenlos für den persönlichen, nicht kommerziellen Gebrauch. Kommerzielle Nutzung erfordert eine separate Lizenz."
 
-#: rust/frontend-slint/ui/app.slint:903
+#: rust/frontend-slint/ui/app.slint:865
 msgid "Commercial licensing: legal@zaparoo.org"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:910
+#: rust/frontend-slint/ui/app.slint:872
 msgid "Project: https://zaparoo.org"
 msgstr "Projekt: https://zaparoo.org"
 
-#: rust/frontend-slint/ui/app.slint:1163
+#: rust/frontend-slint/ui/app.slint:897
+msgid "{} systems"
+msgstr "{0} Systeme"
+
+#: rust/frontend-slint/ui/app.slint:1145
 msgid "No systems in this category"
 msgstr "Keine Systeme in dieser Kategorie"
 
-#: rust/frontend-slint/ui/app.slint:1179 rust/frontend-slint/ui/app.slint:2074
-msgid "Page {} / {}"
-msgstr "Seite {0} / {1}"
+#: rust/frontend-slint/ui/app.slint:1146
+msgid "Loading systems…"
+msgstr "Systeme werden geladen…"
 
-#: rust/frontend-slint/ui/app.slint:1281
+#: rust/frontend-slint/ui/app.slint:1246
 msgid "Go to..."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1290 rust/frontend-slint/ui/app.slint:2561
+#: rust/frontend-slint/ui/app.slint:1255 rust/frontend-slint/ui/app.slint:2526
 msgid "Loading…"
 msgstr "Wird geladen…"
 
-#: rust/frontend-slint/ui/app.slint:1356
+#: rust/frontend-slint/ui/app.slint:1321
 msgid "Writing failed"
 msgstr "Schreiben fehlgeschlagen"
 
-#: rust/frontend-slint/ui/app.slint:1357
+#: rust/frontend-slint/ui/app.slint:1322
 msgid "Put a writable card near the reader"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2015
+#: rust/frontend-slint/ui/app.slint:1980
 msgid "Failed to load"
 msgstr "Laden fehlgeschlagen"
 
-#: rust/frontend-slint/ui/app.slint:2174
+#: rust/frontend-slint/ui/app.slint:2039
+msgid "Page {} / {}"
+msgstr "Seite {0} / {1}"
+
+#: rust/frontend-slint/ui/app.slint:2139
 msgid "Arrows adjust position"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2182
+#: rust/frontend-slint/ui/app.slint:2147
 msgid "Accept or Back saves"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2267 rust/frontend-slint/ui/app.slint:2280
-#: rust/frontend-slint/ui/app.slint:2310 rust/frontend-slint/ui/app.slint:2372
-#: rust/frontend-slint/ui/app.slint:2386
+#: rust/frontend-slint/ui/app.slint:2232 rust/frontend-slint/ui/app.slint:2245
+#: rust/frontend-slint/ui/app.slint:2275 rust/frontend-slint/ui/app.slint:2337
+#: rust/frontend-slint/ui/app.slint:2351
 msgid "Move"
 msgstr "Bewegen"
 
-#: rust/frontend-slint/ui/app.slint:2281 rust/frontend-slint/ui/app.slint:2292
+#: rust/frontend-slint/ui/app.slint:2246 rust/frontend-slint/ui/app.slint:2257
 msgid "Select"
 msgstr "Auswählen"
 
-#: rust/frontend-slint/ui/app.slint:2282 rust/frontend-slint/ui/app.slint:2297
-#: rust/frontend-slint/ui/app.slint:2328
+#: rust/frontend-slint/ui/app.slint:2247 rust/frontend-slint/ui/app.slint:2262
+#: rust/frontend-slint/ui/app.slint:2293
 msgid "Cancel"
 msgstr "Abbrechen"
 
-#: rust/frontend-slint/ui/app.slint:2286
+#: rust/frontend-slint/ui/app.slint:2251
 msgid "OK"
 msgstr "In Ordnung"
 
-#: rust/frontend-slint/ui/app.slint:2293 rust/frontend-slint/ui/app.slint:2300
+#: rust/frontend-slint/ui/app.slint:2258 rust/frontend-slint/ui/app.slint:2265
 msgid "Close"
 msgstr "Schließen"
 
-#: rust/frontend-slint/ui/app.slint:2304 rust/frontend-slint/ui/app.slint:2393
+#: rust/frontend-slint/ui/app.slint:2269 rust/frontend-slint/ui/app.slint:2358
 msgid "Scroll"
 msgstr "Scrollen"
 
-#: rust/frontend-slint/ui/app.slint:2317
+#: rust/frontend-slint/ui/app.slint:2282
 msgid "Adjust"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2318
+#: rust/frontend-slint/ui/app.slint:2283
 msgid "Save"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2326
+#: rust/frontend-slint/ui/app.slint:2291
 msgid "Reposition"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2327
+#: rust/frontend-slint/ui/app.slint:2292
 msgid "Place"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2334 rust/frontend-slint/ui/app.slint:2341
-#: rust/frontend-slint/ui/app.slint:2410
+#: rust/frontend-slint/ui/app.slint:2299 rust/frontend-slint/ui/app.slint:2306
+#: rust/frontend-slint/ui/app.slint:2375
 msgid "Retry"
 msgstr "Wiederholen"
 
-#: rust/frontend-slint/ui/app.slint:2334 rust/frontend-slint/ui/app.slint:2341
-#: rust/frontend-slint/ui/app.slint:2361 rust/frontend-slint/ui/app.slint:2423
+#: rust/frontend-slint/ui/app.slint:2299 rust/frontend-slint/ui/app.slint:2306
+#: rust/frontend-slint/ui/app.slint:2326 rust/frontend-slint/ui/app.slint:2388
 msgid "Open"
 msgstr "Öffnen"
 
-#: rust/frontend-slint/ui/app.slint:2335 rust/frontend-slint/ui/app.slint:2352
+#: rust/frontend-slint/ui/app.slint:2300 rust/frontend-slint/ui/app.slint:2317
 msgid "Options"
 msgstr "Optionen"
 
-#: rust/frontend-slint/ui/app.slint:2336 rust/frontend-slint/ui/app.slint:2342
-#: rust/frontend-slint/ui/app.slint:2431
+#: rust/frontend-slint/ui/app.slint:2301 rust/frontend-slint/ui/app.slint:2307
+#: rust/frontend-slint/ui/app.slint:2396
 msgid "View"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2347 rust/frontend-slint/ui/app.slint:2353
-#: rust/frontend-slint/ui/app.slint:2367 rust/frontend-slint/ui/app.slint:2382
-#: rust/frontend-slint/ui/app.slint:2394 rust/frontend-slint/ui/app.slint:2404
-#: rust/frontend-slint/ui/app.slint:2417 rust/frontend-slint/ui/app.slint:2432
+#: rust/frontend-slint/ui/app.slint:2312 rust/frontend-slint/ui/app.slint:2318
+#: rust/frontend-slint/ui/app.slint:2332 rust/frontend-slint/ui/app.slint:2347
+#: rust/frontend-slint/ui/app.slint:2359 rust/frontend-slint/ui/app.slint:2369
+#: rust/frontend-slint/ui/app.slint:2382 rust/frontend-slint/ui/app.slint:2397
 msgid "Back"
 msgstr "Zurück"
 
-#: rust/frontend-slint/ui/app.slint:2373 rust/frontend-slint/ui/app.slint:2387
+#: rust/frontend-slint/ui/app.slint:2338 rust/frontend-slint/ui/app.slint:2352
 msgid "Change"
 msgstr "Ändern"
 
-#: rust/frontend-slint/ui/app.slint:2374
+#: rust/frontend-slint/ui/app.slint:2339
 msgid "Toggle"
 msgstr "Umschalten"
 
@@ -299,22 +307,22 @@ msgstr ""
 msgid "{}%"
 msgstr ""
 
-#: rust/frontend-slint/ui/chrome.slint:459
+#: rust/frontend-slint/ui/chrome.slint:449
 msgid "{}/{}"
 msgstr ""
 
-#: rust/frontend-slint/ui/chrome.slint:462
+#: rust/frontend-slint/ui/chrome.slint:452
 msgid "{}"
 msgstr ""
 
-#: rust/frontend-slint/ui/chrome.slint:545
+#: rust/frontend-slint/ui/chrome.slint:535
 msgid "Page {}"
 msgstr ""
 
-#: rust/frontend-slint/ui/chrome.slint:868
+#: rust/frontend-slint/ui/chrome.slint:859
 msgid "Nothing here"
 msgstr "Nichts hier"
 
-#: rust/frontend-slint/ui/chrome.slint:870
+#: rust/frontend-slint/ui/chrome.slint:861
 msgid "Check Zaparoo Core and try again."
 msgstr ""

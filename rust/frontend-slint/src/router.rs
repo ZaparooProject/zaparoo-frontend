@@ -12,7 +12,7 @@
 use crate::hub_nav;
 use crate::media_cache::{MediaCache, MediaKey};
 use crate::sizing;
-use crate::{App, GameTile, Sizing, SystemTile};
+use crate::{App, GameTile, Sizing};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::runtime::Handle;
@@ -187,8 +187,8 @@ pub struct Shared {
     pub show_hidden: bool,
     /// Full sorted systems list from the catalog.
     pub systems: Vec<SystemInfo>,
-    /// Systems currently shown on the Systems screen.
-    pub screen_systems: Vec<SystemInfo>,
+    /// The Systems screen: rows, cursor and swoop state.
+    pub systems_model: crate::systems::SystemsModel,
     /// What the games-style grid shows (browse / favorites / recents).
     pub games_mode: GamesMode,
     /// Entries currently shown on the Games screen (the active page).
@@ -393,7 +393,7 @@ impl Shared {
             hidden_system_ids,
             show_hidden,
             systems: Vec::new(),
-            screen_systems: Vec::new(),
+            systems_model: crate::systems::SystemsModel::new(),
             games_mode: GamesMode::Browse,
             games_entries: Vec::new(),
             games_pages: Vec::new(),
@@ -466,16 +466,6 @@ fn systems_for_category(systems: &[SystemInfo], category: &str) -> Vec<SystemInf
         .collect()
 }
 
-/// Category systems with the user-hidden projection applied: hidden
-/// systems drop out, or stay (rendered dimmed with the badge) when
-/// Show hidden items is on.
-fn projected_systems_for_category(shared: &Shared, category: &str) -> Vec<SystemInfo> {
-    systems_for_category(&shared.systems, category)
-        .into_iter()
-        .filter(|s| shared.show_hidden || !shared.hidden_system_ids.iter().any(|h| h == &s.id))
-        .collect()
-}
-
 /// Rebuild the visible category list from the master list and the
 /// hidden prefs, then re-resolve the Hub's tiles.
 pub fn reproject_hub(ctx: &Ctx, app: &App) {
@@ -492,27 +482,14 @@ pub fn reproject_hub(ctx: &Ctx, app: &App) {
     crate::hub::rebuild(ctx, app);
 }
 
-/// Re-run the Systems screen's projection after a hide/unhide or a
-/// Show-hidden flip, keeping the current page in range.
+/// Re-run the Systems screen's projection after a hide/unhide, a
+/// Show-hidden flip or a region change.
 pub fn reproject_systems(ctx: &Ctx, app: &App) {
-    let category = app
-        .global::<crate::SystemsView>()
-        .get_systems_category()
-        .to_string();
-    if category.is_empty() {
-        return;
-    }
-    let projected = {
-        let shared = lock(&ctx.shared);
-        projected_systems_for_category(&shared, &category)
-    };
-    lock(&ctx.shared).screen_systems = projected;
-    let page = app.global::<crate::SystemsView>().get_systems_page().max(0) as usize;
-    show_systems_page(ctx, app, page);
+    crate::systems::reproject(ctx, app);
 }
 
 /// Flip a system's hidden flag, persist, and reproject the grid.
-fn toggle_hidden_system(ctx: &Ctx, app: &App, id: &str) {
+pub(crate) fn toggle_hidden_system(ctx: &Ctx, app: &App, id: &str) {
     let (cats, sys) = {
         let mut shared = lock(&ctx.shared);
         if shared.hidden_system_ids.iter().any(|h| h == id) {
@@ -1009,7 +986,7 @@ fn begin_route_transition(app: &App) {
 /// Navigate one level through the screen hierarchy. Async fills currently
 /// show a Loading cue; clear it and allow two clean source frames before
 /// caching so that cue never rides out with the old page.
-fn transition_to_screen(app: &App, target: &str, direction: i32) {
+pub(crate) fn transition_to_screen(app: &App, target: &str, direction: i32) {
     let shell = app.global::<crate::Shell>();
     let current = shell.get_active_screen();
     if current.as_str() == target {
@@ -1115,7 +1092,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     }
     match app.global::<crate::Shell>().get_active_screen().as_str() {
         "hub" => crate::hub::handle_action(ctx, app, action),
-        "systems" => systems_action(ctx, app, action),
+        "systems" => crate::systems::handle_action(ctx, app, action),
         // Favorites and Recents reuse the games-style grid; the mode
         // stored in Shared adjusts back/paging/persist behavior.
         "games" | "favorites" | "recents" => games_action(ctx, app, action),
@@ -1910,6 +1887,10 @@ fn settings_toggle(ctx: &Ctx, app: &App, id: &str) {
             app.global::<crate::Shell>().set_reduce_motion(value);
             app.global::<crate::Motion>().set_enabled(!value);
         }
+        "region" => {
+            crate::systems::reproject(ctx, app);
+            reproject_hub(ctx, app);
+        }
         _ => {}
     }
     refresh_settings_fields(ctx, app);
@@ -2087,7 +2068,7 @@ fn settings_picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
 /// only shipped scraper - `scraperId` has no server-side default, so
 /// the Qt model hardcodes the same id). `force` re-scrapes existing
 /// metadata; the one-shot toggle resets when the run is kicked off.
-fn start_scrape(ctx: &Ctx, systems: Vec<String>, force: bool) {
+pub(crate) fn start_scrape(ctx: &Ctx, systems: Vec<String>, force: bool) {
     use zaparoo_core::media_types::MediaScrapeParams;
     let client = ctx.store.client();
     let shared = ctx.shared.clone();
@@ -2106,146 +2087,6 @@ fn start_scrape(ctx: &Ctx, systems: Vec<String>, force: bool) {
             Err(e) => tracing::warn!("start_scrape failed: {}", e.message),
         }
     });
-}
-
-fn systems_page_size(app: &App) -> usize {
-    let cols = app
-        .global::<crate::SystemsView>()
-        .get_systems_grid_cols()
-        .max(1) as usize;
-    let rows = app
-        .global::<crate::SystemsView>()
-        .get_systems_grid_rows()
-        .max(1) as usize;
-    cols * rows
-}
-
-fn system_tile(s: &SystemInfo, hidden: bool, logo_style: &str) -> SystemTile {
-    // Both tint variants of the Qt color-grade (rest + focus); the
-    // tile switches sources on focus, no colorize. The "color" logo
-    // style skips the grade and shows the original art in both
-    // states (Settings.qml's "Full color" option).
-    let to_image = |px: crate::system_logos::LogoPixels| {
-        slint::Image::from_rgba8(
-            slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-                &px.rgba, px.width, px.height,
-            ),
-        )
-    };
-    let (rest, focus) = if logo_style == "color" {
-        let original = crate::system_logos::logo_for(&s.id);
-        (original.clone(), original)
-    } else {
-        (
-            crate::system_logos::tinted_logo_for(&s.id, false),
-            crate::system_logos::tinted_logo_for(&s.id, true),
-        )
-    };
-    let has_logo = rest.is_some();
-    SystemTile {
-        id: SharedString::from(s.id.as_str()),
-        name: SharedString::from(s.name.as_str()),
-        logo: rest.map_or_else(slint::Image::default, to_image),
-        logo_focus: focus.map_or_else(slint::Image::default, to_image),
-        has_logo,
-        hidden,
-    }
-}
-
-/// Project one page of the category's systems into the grid (the
-/// `PagedGrid` model): page slice, counter, and focus restored to the
-/// persisted system when it sits on this page.
-fn show_systems_page(ctx: &Ctx, app: &App, page: usize) {
-    let page_size = systems_page_size(app);
-    let (tiles, total_pages, restored) = {
-        let guard = lock(&ctx.shared);
-        let total = guard.screen_systems.len();
-        let total_pages = total.div_ceil(page_size).max(1);
-        let page = page.min(total_pages - 1);
-        let slice =
-            &guard.screen_systems[page * page_size..(page * page_size + page_size).min(total)];
-        let restored = slice
-            .iter()
-            .position(|s| s.id == guard.persist.systems.system_id)
-            .unwrap_or(0);
-        (
-            slice
-                .iter()
-                .map(|s| {
-                    system_tile(
-                        s,
-                        guard.hidden_system_ids.iter().any(|h| h == &s.id),
-                        &guard.persist.settings.system_logo_style,
-                    )
-                })
-                .collect::<Vec<SystemTile>>(),
-            total_pages,
-            restored,
-        )
-    };
-    let view = app.global::<crate::SystemsView>();
-    view.set_systems(ModelRc::new(VecModel::from(tiles)));
-    view.set_systems_page(i32::try_from(page).unwrap_or(0));
-    view.set_systems_total_pages(i32::try_from(total_pages).unwrap_or(0));
-    view.set_systems_index(restored as i32);
-}
-
-fn enter_systems_with_motion(ctx: &Ctx, app: &App, category: &str, animate: bool) {
-    let page = {
-        let mut shared = lock(&ctx.shared);
-        let systems = projected_systems_for_category(&shared, category);
-        let restore_id = shared.persist.systems.system_id.clone();
-        let absolute = systems.iter().position(|s| s.id == restore_id).unwrap_or(0);
-        shared.screen_systems = systems;
-        shared.persist.hub.category = category.to_string();
-        shared.persist.active_screen = "systems".to_string();
-        absolute / systems_page_size(app)
-    };
-    save_persist(&ctx.shared);
-    show_systems_page(ctx, app, page);
-    app.global::<crate::SystemsView>()
-        .set_systems_category(SharedString::from(category));
-    if animate {
-        transition_to_screen(app, "systems", 1);
-    } else {
-        app.global::<crate::Shell>()
-            .set_active_screen(SharedString::from("systems"));
-        refresh_layout(app);
-    }
-}
-
-pub fn enter_systems(ctx: &Ctx, app: &App, category: &str) {
-    enter_systems_with_motion(ctx, app, category, true);
-}
-
-pub fn enter_systems_immediate(ctx: &Ctx, app: &App, category: &str) {
-    enter_systems_with_motion(ctx, app, category, false);
-}
-
-#[cfg(feature = "mister")]
-fn request_cached_systems_page_transition(app: &App, direction: i32) -> bool {
-    let shell = app.global::<crate::Shell>();
-    if shell.get_orientation().as_str() != "horizontal" || shell.get_browse_list_layout() {
-        return false;
-    }
-    let sizing = app.global::<Sizing>();
-    let width = sizing.get_screen_width().round().max(0.0) as u32;
-    let height = sizing.get_screen_height().round().max(0.0) as u32;
-    let view = app.global::<crate::SystemsView>();
-    let Some(geometry) = sizing::mister_browse_grid_transition_geometry(
-        width,
-        height,
-        view.get_systems_grid_cols().max(0) as u32,
-        view.get_systems_grid_rows().max(0) as u32,
-    ) else {
-        return false;
-    };
-    crate::mister::request_page_transition(geometry, direction)
-}
-
-#[cfg(not(feature = "mister"))]
-fn request_cached_systems_page_transition(_app: &App, _direction: i32) -> bool {
-    false
 }
 
 #[cfg(feature = "mister")]
@@ -2272,194 +2113,6 @@ fn request_cached_games_page_transition(app: &App, direction: i32) -> bool {
 #[cfg(not(feature = "mister"))]
 fn request_cached_games_page_transition(_app: &App, _direction: i32) -> bool {
     false
-}
-
-/// Animated page flip for the systems grid. The latch path
-/// renders the destination once and moves cached RGB565 endpoint pixels;
-/// every other backend keeps the original two-page Slint strip.
-fn slide_systems_page(ctx: &Ctx, app: &App, page: usize, dir: i32) {
-    let view = app.global::<crate::SystemsView>();
-    if view.get_systems_page_slide() != 0.0 || view.get_systems_cached_transition() {
-        return;
-    }
-    let page_size = systems_page_size(app);
-    let cols = view.get_systems_grid_cols().max(1) as usize;
-    let col = (view.get_systems_index().max(0) as usize) % cols;
-    let (tiles, target, total_pages) = {
-        let mut guard = lock(&ctx.shared);
-        let total = guard.screen_systems.len();
-        if page * page_size >= total {
-            return;
-        }
-        let total_pages = total.div_ceil(page_size).max(1);
-        let slice = guard.screen_systems
-            [page * page_size..(page * page_size + page_size).min(total)]
-            .to_vec();
-        // Focus lands same-column: top row sliding forward, bottom
-        // row sliding back; persist it for the commit's restore.
-        let target = if dir > 0 {
-            col.min(slice.len() - 1)
-        } else {
-            let rows = slice.len().div_ceil(cols);
-            ((rows - 1) * cols + col).min(slice.len() - 1)
-        };
-        guard
-            .persist
-            .systems
-            .system_id
-            .clone_from(&slice[target].id);
-        (
-            slice
-                .iter()
-                .map(|s| {
-                    system_tile(
-                        s,
-                        guard.hidden_system_ids.iter().any(|h| h == &s.id),
-                        &guard.persist.settings.system_logo_style,
-                    )
-                })
-                .collect::<Vec<SystemTile>>(),
-            target,
-            total_pages,
-        )
-    };
-    save_persist(&ctx.shared);
-
-    let reduce_motion = lock(&ctx.shared).persist.settings.reduce_motion;
-    view.set_systems_slide_dir(dir);
-    view.set_systems_transition_target_index(i32::try_from(target).unwrap_or(0));
-    if !reduce_motion && request_cached_systems_page_transition(app, dir) {
-        view.set_systems_slide_anim(false);
-        view.set_systems_cached_transition(true);
-        view.set_systems_next_page(ModelRc::new(VecModel::from(Vec::<SystemTile>::new())));
-        view.set_systems(ModelRc::new(VecModel::from(tiles)));
-        view.set_systems_page(i32::try_from(page).unwrap_or(0));
-        view.set_systems_total_pages(i32::try_from(total_pages).unwrap_or(0));
-        view.set_systems_index(i32::try_from(target).unwrap_or(0));
-
-        let weak = app.as_weak();
-        slint::Timer::single_shot(std::time::Duration::from_millis(260), move || {
-            if let Some(app) = weak.upgrade() {
-                let view = app.global::<crate::SystemsView>();
-                view.set_systems_cached_transition(false);
-                view.set_systems_slide_anim(true);
-            }
-        });
-        return;
-    }
-
-    // Fallback Slint strip retains the shared DRS phase declaration;
-    // Reduce Motion turns it into a cut.
-    if !reduce_motion {
-        crate::drs::heavy_begin();
-    }
-    view.set_systems_slide_anim(true);
-    view.set_systems_next_page(ModelRc::new(VecModel::from(tiles)));
-    view.set_systems_page_slide(dir as f32);
-
-    let weak = app.as_weak();
-    let ctx2 = ctx.clone();
-    slint::Timer::single_shot(std::time::Duration::from_millis(260), move || {
-        if !reduce_motion {
-            crate::drs::heavy_end();
-        }
-        let Some(app) = weak.upgrade() else {
-            return;
-        };
-        let view = app.global::<crate::SystemsView>();
-        view.set_systems_slide_anim(false);
-        show_systems_page(&ctx2, &app, page);
-        view.set_systems_page_slide(0.0);
-        view.set_systems_next_page(ModelRc::new(VecModel::from(Vec::<SystemTile>::new())));
-        let weak = app.as_weak();
-        slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
-            if let Some(app) = weak.upgrade() {
-                app.global::<crate::SystemsView>()
-                    .set_systems_slide_anim(true);
-            }
-        });
-    });
-}
-
-fn systems_action(ctx: &Ctx, app: &App, action: &str) {
-    let view = app.global::<crate::SystemsView>();
-    // A page transition in flight owns the grid (the games-grid gate).
-    if view.get_systems_page_slide() != 0.0 || view.get_systems_cached_transition() {
-        return;
-    }
-    let len = view.get_systems().row_count();
-    let cols = view.get_systems_grid_cols().max(1) as usize;
-    let page_size = systems_page_size(app);
-    let page = view.get_systems_page().max(0) as usize;
-    let total_pages = view.get_systems_total_pages().max(1) as usize;
-    let index = view.get_systems_index().max(0) as usize;
-    let list_layout = app.global::<crate::Shell>().get_browse_list_layout();
-    match action {
-        actions::LEFT | actions::RIGHT | actions::UP | actions::DOWN => {
-            let next = if list_layout {
-                if matches!(action, actions::LEFT | actions::RIGHT) || len == 0 {
-                    return;
-                }
-                if action == actions::UP {
-                    index.saturating_sub(1)
-                } else {
-                    (index + 1).min(len - 1)
-                }
-            } else {
-                let (dx, dy) = match action {
-                    actions::LEFT => (-1, 0),
-                    actions::RIGHT => (1, 0),
-                    actions::UP => (0, -1),
-                    _ => (0, 1),
-                };
-                hub_nav::grid_move(index, len, cols, dx, dy)
-            };
-            // Vertical edge press = page change. Grid uses a swoop;
-            // list uses the same transition machinery for consistent
-            // persistence and page ownership.
-            if next == index && len > 0 {
-                if action == actions::DOWN && page + 1 < total_pages {
-                    slide_systems_page(ctx, app, page + 1, 1);
-                    return;
-                }
-                if action == actions::UP && (list_layout || index < cols) && page > 0 {
-                    slide_systems_page(ctx, app, page - 1, -1);
-                    return;
-                }
-            }
-            view.set_systems_index(next as i32);
-            let mut shared = lock(&ctx.shared);
-            if let Some(sys) = shared.screen_systems.get(page * page_size + next).cloned() {
-                shared.persist.systems.system_id = sys.id;
-            }
-            drop(shared);
-            save_persist(&ctx.shared);
-        }
-        actions::PAGE_NEXT if page + 1 < total_pages => {
-            slide_systems_page(ctx, app, page + 1, 1);
-        }
-        actions::PAGE_PREV if page > 0 => {
-            slide_systems_page(ctx, app, page - 1, -1);
-        }
-        actions::ACCEPT => {
-            let sys = lock(&ctx.shared)
-                .screen_systems
-                .get(page * page_size + index)
-                .cloned();
-            if let Some(sys) = sys {
-                enter_games(ctx, app, &sys);
-            }
-        }
-        actions::CONTEXT_MENU => {
-            open_system_context_menu(ctx, app, page * page_size + index);
-        }
-        actions::CANCEL => {
-            lock(&ctx.shared).persist.active_screen = "hub".to_string();
-            save_persist(&ctx.shared);
-            transition_to_screen(app, "hub", -1);
-        }
-        _ => {}
-    }
 }
 
 pub fn enter_games(ctx: &Ctx, app: &App, sys: &SystemInfo) {
@@ -2844,7 +2497,7 @@ pub(crate) fn output_scene(app: &App) -> sizing::Scene {
 
 /// Re-resolve the browse layout profile for the screen now active, at
 /// the logical scene geometry (the same one `App` feeds Sizing).
-fn refresh_layout(app: &App) {
+pub(crate) fn refresh_layout(app: &App) {
     let sizing_global = app.global::<Sizing>();
     let (w, h) = (
         f64::from(sizing_global.get_screen_width()),
@@ -4214,6 +3867,10 @@ pub(crate) fn present_hub_context_menu(ctx: &Ctx, app: &App, entries: Vec<crate:
     present_context_menu(ctx, app, ContextOwner::Hub, 0, entries);
 }
 
+pub(crate) fn present_systems_context_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
+    present_context_menu(ctx, app, ContextOwner::Systems, 0, entries);
+}
+
 fn present_list(
     ctx: &Ctx,
     app: &App,
@@ -4341,36 +3998,6 @@ fn open_context_menu(ctx: &Ctx, app: &App, index: usize) {
 /// Category tile menu (Hub top row): hide/unhide plus a scoped media
 /// database rebuild when the category has indexable systems and no
 /// media job is running.
-/// System tile menu: launch, a scoped index for real (non-launchable)
-/// systems, and hide/unhide. `index` is absolute into the projected
-/// `screen_systems` list.
-fn open_system_context_menu(ctx: &Ctx, app: &App, index: usize) {
-    let (launchable, is_hidden, has_launchers) = {
-        let guard = lock(&ctx.shared);
-        let Some(system) = guard.screen_systems.get(index) else {
-            return;
-        };
-        (
-            !system.zap_script.trim().is_empty(),
-            guard.hidden_system_ids.iter().any(|h| h == &system.id),
-            guard.launchers.iter().any(|l| l.system_id == system.id),
-        )
-    };
-    let mut entries = vec![menu_entry("launch_system", "Launch core")];
-    if !launchable && has_launchers {
-        entries.push(menu_entry("change_launcher", "Change launcher"));
-    }
-    if !launchable && !media_busy(app) {
-        entries.push(menu_entry("index_system", "Update media database"));
-        entries.push(menu_entry("scrape_system", "Scrape metadata"));
-    }
-    entries.push(menu_entry(
-        "toggle_hide_system",
-        if is_hidden { "Unhide" } else { "Hide" },
-    ));
-    present_context_menu(ctx, app, ContextOwner::Systems, index, entries);
-}
-
 /// A media-database job is running; index/scrape entries drop out
 /// while it does (the Qt mediaBusy gate, read off the same status
 /// line the header shows).
@@ -4439,7 +4066,10 @@ fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     let owner = lock(&ctx.shared).context_owner;
     match owner {
         ContextOwner::Games => context_accept_games(ctx, app, id),
-        ContextOwner::Systems => context_accept_system(ctx, app, id),
+        ContextOwner::Systems => {
+            close_context_menu(ctx, app);
+            crate::systems::context_accept(ctx, app, id);
+        }
         ContextOwner::Hub => {
             close_context_menu(ctx, app);
             crate::hub::context_accept(ctx, app, id);
@@ -4488,40 +4118,11 @@ fn context_accept_games(ctx: &Ctx, app: &App, id: &str) {
     }
 }
 
-fn context_accept_system(ctx: &Ctx, app: &App, id: &str) {
-    let system = {
-        let guard = lock(&ctx.shared);
-        guard.screen_systems.get(guard.context_target).cloned()
-    };
-    close_context_menu(ctx, app);
-    let Some(system) = system else {
-        return;
-    };
-    match id {
-        "launch_system" => {
-            // Launchables run their own zaparoo:// script; normal
-            // systems use the **launch.system directive (the Qt
-            // launch_text_for rule).
-            let text = if system.zap_script.trim().is_empty() {
-                format!("**launch.system:{}", system.id)
-            } else {
-                system.zap_script.clone()
-            };
-            launch(ctx, app, text);
-        }
-        "index_system" => start_index(ctx, app, Some(vec![system.id.clone()])),
-        "scrape_system" => start_scrape(ctx, vec![system.id.clone()], false),
-        "toggle_hide_system" => toggle_hidden_system(ctx, app, &system.id),
-        "change_launcher" => open_launcher_picker(ctx, app, &system.id),
-        _ => {}
-    }
-}
-
 /// "Change launcher" picker (the `SystemLaunchers` model's
 /// `picker_entries_for_system`): Default first, the system's launchers
 /// by id, plus a "Current: x" row when the stored default no longer
 /// matches a known launcher. Focused on the current selection.
-fn open_launcher_picker(ctx: &Ctx, app: &App, system_id: &str) {
+pub(crate) fn open_launcher_picker(ctx: &Ctx, app: &App, system_id: &str) {
     const DEFAULT_LAUNCHER_ID: &str = "__default__";
     let (launchers, current) = {
         let guard = lock(&ctx.shared);
@@ -4608,7 +4209,7 @@ fn set_system_launcher(ctx: &Ctx, system_id: &str, launcher_id: &str) {
 
 /// Kick a scoped media-database rebuild; progress lands in the header
 /// via the store's media-status resource, same as the full rebuild.
-fn start_index(ctx: &Ctx, app: &App, systems: Option<Vec<String>>) {
+pub(crate) fn start_index(ctx: &Ctx, app: &App, systems: Option<Vec<String>>) {
     use zaparoo_core::media_types::MediaIndexParams;
     let client = ctx.store.client();
     let weak = app.as_weak();

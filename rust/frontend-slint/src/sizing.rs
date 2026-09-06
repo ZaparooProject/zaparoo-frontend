@@ -78,10 +78,8 @@ pub fn apply_scene(app: &App, scene: Scene) {
     app.global::<GamesView>().set_games_grid_cols(games.columns);
     app.global::<GamesView>().set_games_grid_rows(games.rows);
     let systems = systems_grid_shape(scene);
-    app.global::<SystemsView>()
-        .set_systems_grid_cols(systems.columns);
-    app.global::<SystemsView>()
-        .set_systems_grid_rows(systems.rows);
+    app.global::<SystemsView>().set_columns(systems.columns);
+    app.global::<SystemsView>().set_rows(systems.rows);
     apply_layout(app, &inputs);
 }
 

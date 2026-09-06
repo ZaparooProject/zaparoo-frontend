@@ -134,11 +134,7 @@ struct SharedResolver<'a> {
 
 impl Resolver for SharedResolver<'_> {
     fn system_name(&self, id: &str) -> String {
-        self.shared
-            .systems
-            .iter()
-            .find(|s| s.id == id)
-            .map_or_else(|| id.to_string(), |s| s.name.clone())
+        crate::systems::display_name(self.shared, id)
     }
 
     fn system_cover_key(&self, id: &str) -> String {
@@ -548,7 +544,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 crate::router::retry_catalog(ctx);
                 return;
             }
-            crate::router::enter_systems(ctx, app, &entry.id);
+            crate::systems::enter(ctx, app, &entry.id, true);
         }
         Some(Kind::Action) => {
             if entry.disabled {
@@ -927,6 +923,39 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
         })
         .collect();
     crate::router::present_hub_add_picker(ctx, app, rows);
+}
+
+/// "Add to Hub" from a browse screen: append a system, folder or
+/// `ZapScript` shortcut after the last real tile.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one argument per HubItem column, mirroring the core API"
+)]
+pub fn add_target(
+    ctx: &Ctx,
+    app: &App,
+    kind: &str,
+    id: &str,
+    path: &str,
+    script: &str,
+    name: &str,
+    icon: &str,
+    system: &str,
+) {
+    let added = {
+        let mut shared = lock(&ctx.shared);
+        let hub = &mut shared.hub;
+        let added = hub
+            .layout
+            .add_target_item(kind, id, path, script, name, icon, system);
+        if added {
+            hub.save();
+        }
+        added
+    };
+    if added {
+        rebuild(ctx, app);
+    }
 }
 
 /// Add picker accept: place the item, then hand it to the user to carry.

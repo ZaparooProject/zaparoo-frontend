@@ -26,19 +26,6 @@ import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
 export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell }
 
-export struct SystemTile {
-    id: string,
-    name: string,
-    // Pre-tinted variants from the Qt tint grade (rest / focus): the
-    // multi-tone art keeps its shading, so no colorize here.
-    logo: image,
-    logo-focus: image,
-    has-logo: bool,
-    // User-hidden system, visible only while Show hidden items is on:
-    // rendered dimmed with the "Hidden" badge.
-    hidden: bool,
-}
-
 // Settings registry row (SettingsScreen.qml's field entries). On the
 // root page the rows are the six category tiles (`value` carries the
 // glyph key); on subpages they are headers and fields.
@@ -220,6 +207,12 @@ export global Labels {
         if (key == "action:settings") { return @tr("Settings"); }
         return name;
     }
+    // Counts arrive already grouped by Rust (`zaparoo_app::format`)
+    // through `Shell.count-*`; this keeps a plain number readable when a
+    // view has only the integer.
+    public pure function count(n: int) -> string {
+        return n;
+    }
     public pure function hub-reason(reason: string) -> string {
         if (reason == "no-recent-games") { return @tr("No recent games"); }
         if (reason == "no-internet") { return @tr("No internet connection"); }
@@ -228,26 +221,59 @@ export global Labels {
     }
 }
 
+// Systems state (SystemsScreen.qml over `zaparoo_app::systems` and
+// `paged_grid`): Rust projects the category's rows, drives the cursor,
+// and pushes the current page's cells at the geometry it resolved. The
+// page-swoop strip state is shared with the games grid.
 export global SystemsView {
-    in-out property <[SystemTile]> systems: [];
-    in-out property <int> systems-index: 0;
-    in-out property <string> systems-category: "";
-    in-out property <int> systems-grid-cols: 4;
-    in-out property <int> systems-grid-rows: 3;
-    // Paging (the PagedGrid behavior): visible page slice + counter,
-    // plus the page-swoop strip state shared with the games grid.
-    in-out property <int> systems-page: 0;
-    in-out property <int> systems-total-pages: 0;
-    in-out property <[SystemTile]> systems-next-page: [];
-    in-out property <int> systems-slide-dir: 1;
-    in-out property <float> systems-page-slide: 0;
-    in-out property <bool> systems-slide-anim: true;
-    // Selection within the incoming HDMI page. Dual-head projection
+    in-out property <[GridCell]> cells: [];
+    in-out property <int> selected-local: 0;
+    in-out property <string> category: "";
+    in-out property <int> count: 0;
+    in-out property <bool> loading: false;
+    in-out property <string> error: "";
+    in-out property <bool> focus-ready: false;
+    in-out property <int> columns: 4;
+    in-out property <int> rows: 3;
+    in-out property <length> cell-width: 0px;
+    in-out property <length> cell-height: 0px;
+    in-out property <length> block-offset-x: 0px;
+    in-out property <length> block-offset-y: 0px;
+    in-out property <length> grid-y: 0px;
+    in-out property <length> grid-height: 0px;
+    in-out property <int> page: 0;
+    in-out property <int> total-pages: 1;
+    in-out property <bool> has-pages-above: false;
+    in-out property <bool> has-pages-below: false;
+    // Focused row caption and its hidden flag (the worded reason).
+    in-out property <string> label-name: "";
+    in-out property <bool> label-hidden: false;
+    in-out property <int> activate-pulse: 0;
+    in-out property <int> release-pulse: 0;
+    // Page swoop: the incoming page's cells and the strip phase.
+    in-out property <[GridCell]> next-cells: [];
+    in-out property <int> slide-dir: 1;
+    in-out property <float> page-slide: 0;
+    in-out property <bool> slide-anim: true;
+    // Selection within the incoming HDMI page; dual-head projection
     // uses it to choose the matching CRT-sized page and focused item.
-    in-out property <int> systems-transition-target-index: 0;
+    in-out property <int> transition-target-index: 0;
     // Input-only gate while the latch presenter animates cached RGB565
     // endpoints. It deliberately has no visual binding in Slint.
-    in-out property <bool> systems-cached-transition: false;
+    in-out property <bool> cached-transition: false;
+    // Detailed list layout rows (the prototype list, until the
+    // MediaList row lands): every row of the category.
+    in-out property <[GridCell]> list-rows: [];
+    in-out property <int> list-index: 0;
+}
+
+// Pointer and page-cue events from the Systems screen.
+export global SystemsInput {
+    callback cell-hovered(int);
+    callback cell-clicked(int);
+    callback cell-right-clicked(int);
+    callback page-requested(int);
+    callback wheel(int);
 }
 
 export global SettingsView {
@@ -381,70 +407,6 @@ component TileBadge inherits Rectangle {
         color: Theme.bg-bar;
         font-size: Sizing.font-size(1.8);
         font-weight: 700;
-    }
-}
-
-// System tile: tinted logo art above the caption band, mirroring
-// Tile.qml's tinted path for `systems/{id}` cover keys. Systems
-// without art fall back to the centered name.
-component SystemCard inherits Rectangle {
-    in property <string> label;
-    in property <bool> focused;
-    in property <image> logo;
-    in property <image> logo-focus;
-    in property <bool> has-logo;
-    // User-hidden entry shown under Show hidden items: art dims to
-    // 40% and the "Hidden" badge pins top-right, like Tile.qml.
-    in property <bool> entry-hidden: false;
-
-    property <length> pad: Sizing.pct-h(2);
-    property <length> caption-h: Sizing.pct-h(5.5);
-
-    background: Theme.surface-card;
-    border-radius: Sizing.radius-md;
-    // Focus is drawn by the screen's gliding ring; the card keeps its
-    // resting border so the ring has nothing to fight.
-    border-width: Sizing.stroke(0.2);
-    border-color: Theme.border-mid;
-
-    if root.has-logo: Image {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: root.pad;
-        width: parent.width - 2 * root.pad;
-        height: parent.height - 2 * root.pad - root.caption-h;
-        source: root.focused ? root.logo-focus : root.logo;
-        image-fit: contain;
-        opacity: root.entry-hidden ? 0.4 : 1.0;
-    }
-
-    if !root.has-logo: Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - root.caption-h - self.height) / 2px) * 1px;
-        width: parent.width - 2 * root.pad;
-        horizontal-alignment: center;
-        overflow: elide;
-        text: root.label;
-        color: Theme.text-label;
-        font-weight: 600;
-        font-size: Sizing.font-size(2.4);
-        opacity: root.entry-hidden ? 0.4 : 1.0;
-    }
-
-    MarqueeCaption {
-        x: root.pad;
-        y: parent.height - root.pad - root.caption-h;
-        width: parent.width - 2 * root.pad;
-        height: root.caption-h;
-        content: root.label;
-        focused: root.focused;
-    }
-
-    // Fully opaque over the dimmed art, so hidden tiles stay
-    // distinct while Show hidden items is on.
-    if root.entry-hidden: TileBadge {
-        x: parent.width - self.width - Math.round(parent.width / 12 / 1px) * 1px;
-        y: Math.round(parent.width / 12 / 1px) * 1px;
-        label: @tr("Hidden");
     }
 }
 
@@ -915,101 +877,163 @@ component AboutScreen inherits Rectangle {
     }
 }
 
+// Systems screen (SystemsScreen.qml): the three-slot top strip, the
+// paged grid of logo tiles between it and the footer caption, and the
+// state cue. Rust projects the rows and owns the cursor; the swoop
+// strip slides one page period when a page turns.
 component SystemsScreen inherits Rectangle {
-    // Data dependencies, read straight from the state globals.
-    property <[SystemTile]> systems: SystemsView.systems;
-    property <int> index: SystemsView.systems-index;
-    property <string> category-name: SystemsView.systems-category;
-    property <int> page: SystemsView.systems-page;
-    property <int> total-pages: SystemsView.systems-total-pages;
-    property <[SystemTile]> systems-next: SystemsView.systems-next-page;
-    property <int> slide-dir: SystemsView.systems-slide-dir;
-    property <float> page-slide: SystemsView.systems-page-slide;
-    property <bool> slide-anim: SystemsView.systems-slide-anim;
-    property <bool> list-layout: Shell.browse-list-layout;
+    background: transparent;
+    property <bool> list-layout: Shell.systems-list-layout;
     property <bool> tate-list: self.list-layout && Shell.orientation != "horizontal";
-    // Shape solved in Rust (src/sizing.rs systemsGridShape port).
-    property <int> columns: SystemsView.systems-grid-cols;
-    property <int> rows: SystemsView.systems-grid-rows;
-    property <length> gap: Theme.crt ? 4px : Sizing.pct-w(1.2);
-    property <length> grid-top: Theme.crt && !self.list-layout
-        ? Sizing.header-bottom + 2px
-        : Sizing.header-bottom + Sizing.pct-h(8);
-    // CRT profile reclaims the TopStrip and uses an 8px ActiveLabel;
-    // default keeps the 7% label at its 8% bottom margin.
-    property <length> grid-bottom-margin: Theme.crt ? Sizing.pct-h(6) + 8px : Sizing.pct-h(15);
-    property <length> grid-side-budget: Theme.crt ? 16px : Sizing.pct-w(8);
-    property <length> tile-w: Math.floor((self.width - self.grid-side-budget - (self.columns - 1) * self.gap) / self.columns / 1px) * 1px;
-    property <length> tile-h: Math.floor((self.height - self.grid-top - self.grid-bottom-margin - (self.rows - 1) * self.gap) / self.rows / 1px) * 1px;
+    property <string> state: SystemsView.error != "" ? "error"
+        : (SystemsView.loading ? "loading" : (SystemsView.count == 0 ? "empty" : ""));
+    property <bool> gate-hide: Shell.transitioning || SystemsView.loading || cue.loading-visible || SystemsView.error != "";
+    property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
+    property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
+    property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
+    property <string> title: Labels.hub("category:" + SystemsView.category, SystemsView.category);
+    property <string> count-text: Sizing.tier-240
+        ? Labels.count(SystemsView.count)
+        : @tr("{} systems", Labels.count(SystemsView.count));
 
-    if Layout.top-strip-visible: TopStatusStrip {
+    TopStatusStrip {
         x: 0;
         y: Sizing.header-bottom + Layout.top-margin;
         width: parent.width;
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
-        title: root.category-name;
-        current-page: root.page;
-        total-pages: root.total-pages;
-        show-page-counter: !root.list-layout;
+        title: root.title;
+        current-page: root.list-layout ? Math.floor(SystemsView.list-index / Math.max(1, list-visible-rows)) : SystemsView.page;
+        total-pages: SystemsView.total-pages;
+        total-text: !root.list-layout && root.show-grid-page-cue && SystemsView.count > 0 ? root.count-text : "";
+        show-page-counter: root.list-layout || root.show-grid-page-cue;
+        page-indicator-mode: root.show-top-page-cue;
+        item-position-mode: root.list-layout;
+        current-item: SystemsView.list-index;
+        total-items: SystemsView.count;
+        page-indicator-chevron-size: Layout.grid-page-chevron-size;
+        has-pages-above: root.list-layout ? SystemsView.list-index > 0 : SystemsView.has-pages-above;
+        has-pages-below: root.list-layout ? SystemsView.list-index + 1 < SystemsView.count : SystemsView.has-pages-below;
+        visible: !root.gate-hide && Layout.top-strip-visible;
+        page-requested(delta) => { SystemsInput.page-requested(delta); }
     }
 
-    // Profile-driven detailed list. Horizontal uses list-left/detail-
-    // right; tate uses list-top/detail-bottom with logo left of the
-    // detail title, matching systemsListTate.
-    property <length> list-card-x: Theme.crt ? 4px : Sizing.pct-w(4);
-    property <length> list-card-y: Sizing.header-bottom + (Theme.crt ? 10px : Sizing.pct-h(8));
-    property <length> list-card-w: self.width - 2 * self.list-card-x;
-    property <length> list-card-h: self.height - self.list-card-y - (Theme.crt ? 16px : Sizing.pct-h(9));
-    property <length> list-pad-x: Theme.crt ? 3px : Sizing.pct-w(2);
-    property <length> list-pad-y: Theme.crt ? 3px : Sizing.pct-h(2);
-    property <length> list-divider: Sizing.stroke(0.3);
-    property <length> list-section-w: self.tate-list ? self.list-card-w
-        : Math.floor((self.list-card-w - self.list-divider) * 2 / 3 / 1px) * 1px;
-    property <length> list-section-h: self.tate-list
-        ? Math.floor((self.list-card-h - self.list-divider) * 9 / 16 / 1px) * 1px
-        : self.list-card-h;
-    property <length> system-row-gap: Theme.crt ? 0px : Sizing.pct-h(0.4);
-    property <length> system-row-h: Theme.crt ? 12px
-        : Math.floor((self.list-section-h - 2 * self.list-pad-y
-            - Math.max(0, self.systems.length - 1) * self.system-row-gap)
-            / Math.max(1, self.systems.length) / 1px) * 1px;
+    // Page-swoop viewport: the current and the incoming page in one
+    // clipped strip that translates by a page period.
+    property <length> period: SystemsView.grid-height;
+    if !root.list-layout: Rectangle {
+        x: 0;
+        y: SystemsView.grid-y;
+        width: parent.width;
+        height: SystemsView.grid-height;
+        clip: true;
+        visible: !root.gate-hide;
 
-    if root.list-layout: Rectangle {
+        Rectangle {
+            x: 0;
+            y: -SystemsView.page-slide * root.period;
+            width: parent.width;
+            height: parent.height;
+            animate y { duration: SystemsView.slide-anim && !Shell.reduce-motion ? 240ms : 0ms; easing: ease-in-out; }
+
+            PagedGridView {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                cells: SystemsView.cells;
+                columns: SystemsView.columns;
+                cell-width: SystemsView.cell-width;
+                cell-height: SystemsView.cell-height;
+                block-offset-x: SystemsView.block-offset-x;
+                block-offset-y: SystemsView.block-offset-y;
+                left-inset: Layout.grid-left-inset;
+                top-inset: Layout.grid-top-inset;
+                column-gap: Layout.grid-column-gap;
+                row-gap: Layout.grid-row-gap;
+                selected-local: SystemsView.cached-transition || Shell.route-transitioning ? -1 : SystemsView.selected-local;
+                section-focused: !Overlays.context-open;
+                focus-ready: SystemsView.focus-ready;
+                activate-pulse: SystemsView.activate-pulse;
+                release-pulse: SystemsView.release-pulse;
+                settling: Shell.active-screen != "systems";
+                card-radius: Layout.card-radius;
+                caption-for(cell) => { return cell.name; }
+                cell-hovered(i) => { SystemsInput.cell-hovered(i); }
+                cell-clicked(i) => { SystemsInput.cell-clicked(i); }
+                cell-right-clicked(i) => { SystemsInput.cell-right-clicked(i); }
+                wheel(delta) => { SystemsInput.wheel(delta); }
+            }
+            PagedGridView {
+                x: 0;
+                y: SystemsView.slide-dir * root.period;
+                width: parent.width;
+                height: parent.height;
+                cells: SystemsView.next-cells;
+                columns: SystemsView.columns;
+                cell-width: SystemsView.cell-width;
+                cell-height: SystemsView.cell-height;
+                block-offset-x: SystemsView.block-offset-x;
+                block-offset-y: SystemsView.block-offset-y;
+                left-inset: Layout.grid-left-inset;
+                top-inset: Layout.grid-top-inset;
+                column-gap: Layout.grid-column-gap;
+                row-gap: Layout.grid-row-gap;
+                selected-local: -1;
+                focus-ready: false;
+                card-radius: Layout.card-radius;
+                caption-for(cell) => { return cell.name; }
+            }
+        }
+    }
+
+    // Detailed list (the prototype's rows until the MediaList row lands).
+    property <length> list-card-x: Layout.card-side-margin;
+    property <length> list-card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Layout.card-top-margin;
+    property <length> list-card-w: self.width - 2 * self.list-card-x;
+    property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
+    property <length> list-pad-x: Layout.card-padding-left;
+    property <length> list-pad-y: Layout.card-padding-top;
+    property <length> list-divider: Layout.divider-width;
+    property <length> list-section-w: self.tate-list ? self.list-card-w
+        : Math.floor((self.list-card-w - self.list-divider) * Layout.list-share / (Layout.list-share + Layout.detail-share) / 1px) * 1px;
+    property <length> list-section-h: self.tate-list
+        ? Math.floor((self.list-card-h - self.list-divider) * Layout.list-share / (Layout.list-share + Layout.detail-share) / 1px) * 1px
+        : self.list-card-h;
+    property <length> system-row-gap: Layout.row-spacing;
+    property <length> system-row-h: Layout.row-height > 0px ? Layout.row-height : Sizing.font-size(4.2);
+    property <int> list-visible-rows: Math.max(1, Math.floor((self.list-section-h - 2 * self.list-pad-y + self.system-row-gap) / (self.system-row-h + self.system-row-gap)));
+    property <int> list-top: Math.max(0, SystemsView.list-index - root.list-visible-rows + 1);
+
+    if root.list-layout && !root.gate-hide: list-card := Rectangle {
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
         height: root.list-card-h;
         background: Theme.surface-card;
-        border-radius: Theme.crt ? 4px : Sizing.radius-md;
-        border-width: root.list-divider;
+        border-radius: Layout.card-radius;
+        border-width: Sizing.card-border-width;
         border-color: Theme.border-mid;
         clip: true;
 
-        for sys[i] in root.systems: Rectangle {
+        for row[i] in SystemsView.list-rows: Rectangle {
             x: root.list-pad-x;
-            y: root.list-pad-y + i * (root.system-row-h + root.system-row-gap);
+            y: root.list-pad-y + (i - root.list-top) * (root.system-row-h + root.system-row-gap);
             width: root.list-section-w - 2 * root.list-pad-x;
             height: root.system-row-h;
-            background: i == root.index ? Theme.selection-fill : transparent;
-            border-radius: Theme.crt ? 2px : Sizing.pct-h(1.2);
-            opacity: sys.hidden ? 0.55 : 1.0;
+            visible: i >= root.list-top && i < root.list-top + root.list-visible-rows;
+            background: i == SystemsView.list-index ? Theme.selection-fill : transparent;
+            border-radius: Layout.row-radius;
 
-            if i == root.index: Rectangle {
-                x: 0;
-                y: 0;
-                width: Theme.crt ? 2px : Sizing.pct-w(0.45);
-                height: parent.height;
-                background: Theme.accent;
-            }
             Text {
-                x: Theme.crt ? 4px : Sizing.pct-w(1.6);
+                x: Layout.row-text-left-padding;
                 y: Math.round((parent.height - self.height) / 2px) * 1px;
-                max-width: parent.width - 2 * self.x;
+                width: parent.width - Layout.row-text-left-padding - Layout.row-text-right-padding;
                 overflow: elide;
-                text: sys.name;
-                color: i == root.index ? Theme.text-primary : Theme.text-label;
-                font-size: Theme.crt ? 8px : Sizing.font-size(2.9);
+                text: row.hidden ? row.name + " · " + @tr("Hidden") : row.name;
+                color: i == SystemsView.list-index ? Theme.on-accent : Theme.text-primary;
+                font-weight: i == SystemsView.list-index ? 500 : 400;
+                font-size: Sizing.font-section;
             }
         }
 
@@ -1021,164 +1045,105 @@ component SystemsScreen inherits Rectangle {
             background: Theme.border-mid;
         }
 
-        property <length> detail-x: root.tate-list ? root.list-pad-x
-            : root.list-section-w + root.list-divider + root.list-pad-x;
+        property <length> detail-x: root.tate-list ? Layout.pane-padding-left
+            : root.list-section-w + root.list-divider + Layout.pane-padding-left;
         property <length> detail-y: root.tate-list
-            ? root.list-section-h + root.list-divider + root.list-pad-y
-            : root.list-pad-y;
+            ? root.list-section-h + root.list-divider + Layout.pane-padding-top
+            : Layout.pane-padding-top;
         property <length> detail-w: root.tate-list
-            ? parent.width - 2 * root.list-pad-x
-            : parent.width - self.detail-x - root.list-pad-x;
+            ? parent.width - Layout.pane-padding-left - Layout.pane-padding-right
+            : parent.width - self.detail-x - Layout.pane-padding-right;
         property <length> detail-h: root.tate-list
-            ? parent.height - self.detail-y - root.list-pad-y
-            : parent.height - 2 * root.list-pad-y;
+            ? parent.height - self.detail-y - Layout.pane-padding-bottom
+            : parent.height - Layout.pane-padding-top - Layout.pane-padding-bottom;
         property <length> logo-w: root.tate-list
-            ? Math.floor(self.detail-w * 5 / 12 / 1px) * 1px
+            ? Math.floor(self.detail-w * Layout.image-share / (Layout.image-share + Layout.metadata-share) / 1px) * 1px
             : self.detail-w;
         property <length> logo-h: root.tate-list ? self.detail-h
-            : Math.floor(self.detail-h * 0.72 / 1px) * 1px;
+            : Math.floor(self.detail-h * Layout.image-share / (Layout.image-share + Layout.metadata-share) / 1px) * 1px;
+        property <GridCell> current: SystemsView.list-index >= 0 && SystemsView.list-index < SystemsView.list-rows.length
+            ? SystemsView.list-rows[SystemsView.list-index] : { };
 
-        if root.index >= 0 && root.index < root.systems.length
-            && root.systems[root.index].has-logo: Image {
+        if list-card.current.has-cover: Image {
             x: parent.detail-x;
             y: parent.detail-y;
             width: parent.logo-w;
             height: parent.logo-h;
-            source: root.systems[root.index].logo-focus;
+            source: list-card.current.has-cover-focus ? list-card.current.cover-focus : list-card.current.cover;
             image-fit: contain;
         }
-        if root.index >= 0 && root.index < root.systems.length: Text {
-            x: root.tate-list ? parent.detail-x + parent.logo-w + root.list-pad-x
-                : parent.detail-x;
-            y: root.tate-list ? parent.detail-y
-                : parent.detail-y + parent.logo-h + Sizing.pct-h(1);
-            max-width: root.tate-list
-                ? parent.detail-w - parent.logo-w - root.list-pad-x
-                : parent.detail-w;
+        Text {
+            x: root.tate-list ? parent.detail-x + parent.logo-w + Layout.section-gap : parent.detail-x;
+            y: root.tate-list ? parent.detail-y : parent.detail-y + parent.logo-h + Layout.section-gap;
+            width: root.tate-list ? parent.detail-w - parent.logo-w - Layout.section-gap : parent.detail-w;
             overflow: elide;
-            text: root.systems[root.index].name;
+            text: list-card.current.name;
             color: Theme.text-primary;
-            font-size: Theme.crt ? 8px : Sizing.font-size(3.2);
+            font-size: Sizing.font-title;
             font-weight: 600;
         }
     }
 
-    // Page-swoop viewport, the same clipped two-page strip as the
-    // games grid: the whole strip translates by one page period.
-    property <length> period: root.rows * (root.tile-h + root.gap);
-    property <length> grid-x: Theme.crt ? 4px
-        : Math.round((self.width - (root.tile-w * root.columns + root.gap * (root.columns - 1))) / 2px) * 1px;
-    if !root.list-layout: Rectangle {
-        x: root.grid-x;
-        y: root.grid-top;
-        width: root.tile-w * root.columns + root.gap * (root.columns - 1);
-        height: root.period - root.gap;
-        clip: true;
+    // Footer: the focused system's name, with the count and page cue
+    // in the corners only where the profile keeps them there (CRT).
+    property <length> label-y: root.height - (Sizing.tier-240 ? Sizing.help-bar-height : Layout.active-label-bottom-margin) - Layout.active-label-height;
+    property <length> footer-left-inset: Math.ceil(footer-count-measure.preferred-width / 1px) * 1px + Layout.bottom-status-left-margin;
+    property <length> footer-right-inset: footer-indicator.width + Layout.bottom-status-right-margin;
 
-        Rectangle {
-            x: 0;
-            y: -root.page-slide * root.period;
-            width: parent.width;
-            height: parent.height;
-            animate y { duration: root.slide-anim && !Shell.reduce-motion ? 240ms : 0ms; easing: ease-in-out; }
-
-            for sys[i] in root.systems: SystemCard {
-                x: Math.mod(i, root.columns) * (root.tile-w + root.gap);
-                y: Math.floor(i / root.columns) * (root.tile-h + root.gap);
-                width: root.tile-w;
-                height: root.tile-h;
-                label: sys.name;
-                logo: sys.logo;
-                logo-focus: sys.logo-focus;
-                has-logo: sys.has-logo;
-                entry-hidden: sys.hidden;
-                focused: i == root.index && !SystemsView.systems-cached-transition
-                    && !Shell.route-transitioning;
-            }
-            for sys[i] in root.systems-next: SystemCard {
-                x: Math.mod(i, root.columns) * (root.tile-w + root.gap);
-                y: Math.floor(i / root.columns) * (root.tile-h + root.gap)
-                    + root.slide-dir * root.period;
-                width: root.tile-w;
-                height: root.tile-h;
-                label: sys.name;
-                logo: sys.logo;
-                logo-focus: sys.logo-focus;
-                has-logo: sys.has-logo;
-                entry-hidden: sys.hidden;
-                focused: false;
-            }
-            // Gliding focus ring. The ANIMATED quantities are tile-unit
-            // floats (column/row), not pixels: navigation glides, but a
-            // DRS res switch recomputes the pixel position instantly
-            // instead of animating between the two coordinate spaces
-            // (which read as the ring flying in from off screen).
-            // slide-anim also gates the ring: the page-commit index
-            // change must snap, not glide across rows.
-            if root.systems.length > 0 && root.index >= 0
-                && !SystemsView.systems-cached-transition
-                && !Shell.route-transitioning: Rectangle {
-                property <float> fcol: Math.mod(root.index, root.columns);
-                property <float> frow: Math.floor(root.index / root.columns);
-                animate fcol { duration: root.slide-anim && !Shell.reduce-motion ? 120ms : 0ms; easing: ease-out; }
-                animate frow { duration: root.slide-anim && !Shell.reduce-motion ? 120ms : 0ms; easing: ease-out; }
-                x: fcol * (root.tile-w + root.gap);
-                y: frow * (root.tile-h + root.gap);
-                width: root.tile-w;
-                height: root.tile-h;
-                border-radius: Sizing.radius-md;
-                border-width: Sizing.stroke(0.55);
-                border-color: Theme.accent;
-            }
-        }
-    }
-
-    // Scroll-arrow gutter chrome (PagedGrid.qml's cue that more
-    // content sits above/below the viewport).
-    property <length> arrow-s: Theme.crt ? 8px : Sizing.pct-h(4);
-    if !root.list-layout && root.page > 0: Image {
-        x: parent.width - Sizing.pct-w(2) - root.arrow-s;
-        y: root.grid-top;
-        width: root.arrow-s;
-        height: root.arrow-s;
-        source: GlyphSource.glyph("ScrollUp", root.arrow-s);
-        colorize: Theme.text-label;
-    }
-    if !root.list-layout && root.page + 1 < root.total-pages: Image {
-        x: parent.width - Sizing.pct-w(2) - root.arrow-s;
-        y: root.grid-top + root.period - root.gap - root.arrow-s;
-        width: root.arrow-s;
-        height: root.arrow-s;
-        source: GlyphSource.glyph("ScrollDown", root.arrow-s);
-        colorize: Theme.text-label;
-    }
-
-    // In-screen empty cue (ScreenStateOverlay's essential role):
-    // transparent, one Text, no painted background. SystemsScreen.qml
-    // scopes the copy to the category; the "Run Update media database"
-    // guidance belongs to the Hub's whole-library cue only.
-    if root.systems.length == 0: Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        text: @tr("No systems in this category");
-        color: Theme.text-label;
-        font-size: Sizing.font-size(2.6);
+    footer-count-measure := Text {
+        visible: false;
+        text: root.count-text;
+        font-size: Sizing.font-section;
     }
 
     if !root.list-layout: ActiveLabel {
         x: 0;
-        y: parent.height - self.height - Sizing.pct-h(Theme.crt ? 6 : 8);
+        y: root.label-y;
         width: parent.width;
-        height: Theme.crt ? 8px : Sizing.pct-h(7);
-        text: root.index >= 0 && root.index < root.systems.length ? root.systems[root.index].name : "";
+        height: Layout.active-label-height;
+        side-inset: root.page-cue-in-footer ? Math.max(root.footer-left-inset, root.footer-right-inset) : Sizing.pct-w(3);
+        text: SystemsView.label-name;
+        tags: SystemsView.label-hidden ? @tr("Hidden") : "";
+        visible: !root.gate-hide;
     }
 
-    if Theme.crt && !root.list-layout && root.total-pages > 1: Text {
-        x: parent.width - self.width - 4px;
-        y: parent.height - self.height - Sizing.pct-h(6);
-        text: @tr("Page {} / {}", root.page + 1, root.total-pages);
+    if !root.list-layout && root.page-cue-in-footer && SystemsView.count > 0: Text {
+        x: Layout.bottom-status-left-margin;
+        y: root.label-y + Math.round((Layout.active-label-height - self.height) / 2px) * 1px;
+        width: root.footer-left-inset - Layout.bottom-status-left-margin;
+        height: Sizing.font-section;
+        vertical-alignment: center;
+        overflow: elide;
+        text: root.count-text;
         color: Theme.text-primary;
-        font-size: Sizing.font-size(2.9);
+        font-size: Sizing.font-section;
+        visible: !root.gate-hide;
+    }
+
+    footer-indicator := PageIndicator {
+        x: parent.width - Layout.bottom-status-right-margin - self.width;
+        y: root.label-y + Math.round((Layout.active-label-height - self.height) / 2px) * 1px;
+        chevron-size: Layout.grid-page-chevron-size;
+        current-page: SystemsView.page;
+        total-pages: SystemsView.total-pages;
+        item-position-mode: root.list-layout;
+        current-item: SystemsView.list-index;
+        total-items: SystemsView.count;
+        has-pages-above: root.list-layout ? SystemsView.list-index > 0 : SystemsView.has-pages-above;
+        has-pages-below: root.list-layout ? SystemsView.list-index + 1 < SystemsView.count : SystemsView.has-pages-below;
+        visible: !root.gate-hide && root.page-cue-in-footer;
+        page-requested(delta) => { SystemsInput.page-requested(delta); }
+    }
+
+    cue := StateCue {
+        x: 0;
+        y: root.list-layout ? root.list-card-y : SystemsView.grid-y;
+        width: parent.width;
+        height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : SystemsView.grid-height;
+        cue-center-y: root.height / 2 - self.y;
+        state: root.state;
+        empty-text: @tr("No systems in this category");
+        loading-text: @tr("Loading systems…");
     }
 }
 
@@ -2235,7 +2200,7 @@ export component App inherits Window {
     pure function browse-header-title() -> string {
         if (!Layout.title-in-header) { return ""; }
         if (Shell.active-screen == "settings") { return SettingsView.settings-title; }
-        if (Shell.active-screen == "systems") { return SystemsView.systems-category; }
+        if (Shell.active-screen == "systems") { return Labels.hub("category:" + SystemsView.category, SystemsView.category); }
         if (Shell.active-screen == "games") { return GamesView.games-system; }
         if (Shell.active-screen == "favorites") { return @tr("Favorites"); }
         if (Shell.active-screen == "recents") { return @tr("Recently played"); }
@@ -2347,7 +2312,7 @@ export component App inherits Window {
                 return [{ buttons: ["ButtonB"], label: @tr("Back") }];
             }
             return [
-                self.move-cue(SystemsView.systems-total-pages),
+                self.move-cue(SystemsView.total-pages),
                 { buttons: ["ButtonA"], label: @tr("Open") },
                 { buttons: ["ButtonX"], label: @tr("Options") },
                 { buttons: ["ButtonB"], label: @tr("Back") },

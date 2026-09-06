@@ -267,24 +267,8 @@ fn main() {
     app.global::<Shell>()
         .set_about_version_line("Version 1.2.2 (Slint demo)".into());
     // Systems fixtures: a paged category (page 2 of 3) with no logo
-    // files on disk, so the name fallback renders.
-    let sys_tiles: Vec<generated::SystemTile> = (13..=24)
-        .map(|i| generated::SystemTile {
-            id: format!("Sys{i}").into(),
-            name: format!("Example System {i}").into(),
-            logo: slint::Image::default(),
-            logo_focus: slint::Image::default(),
-            has_logo: false,
-            // One hidden entry exercises the dim + badge rendering.
-            hidden: i == 15,
-        })
-        .collect();
-    let sysv = app.global::<SystemsView>();
-    sysv.set_systems(slint::ModelRc::new(slint::VecModel::from(sys_tiles)));
-    sysv.set_systems_category("Console".into());
-    sysv.set_systems_page(1);
-    sysv.set_systems_total_pages(3);
-    sysv.set_systems_index(2);
+    // files on disk, so the wordmark fallback renders.
+    fixture_systems(&app, scene_w, scene_h, crt);
     app.global::<Shell>()
         .set_status_keys(slint::ModelRc::new(slint::VecModel::from(vec![
             slint::SharedString::from("NFC"),
@@ -505,8 +489,7 @@ fn main() {
         shell.set_route_cached_transition(true);
     }
     if screen.contains("cached") {
-        app.global::<SystemsView>()
-            .set_systems_cached_transition(true);
+        app.global::<SystemsView>().set_cached_transition(true);
         app.global::<GamesView>().set_games_cached_transition(true);
     }
 
@@ -564,11 +547,11 @@ fn main() {
             r.render(probe.as_mut_slice(), width as usize);
         });
         app.global::<SystemsView>()
-            .set_systems_category("Probe Category".into());
+            .set_category("Probe Category".into());
         let dirty_sys = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
-        println!("dirty after SystemsView.systems-category set: {dirty_sys}");
+        println!("dirty after SystemsView.category set: {dirty_sys}");
         app.global::<Shell>().set_active_screen("settings".into());
         app.global::<generated::SettingsView>()
             .set_settings_page("pageBrowsing".into());
@@ -749,4 +732,72 @@ fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize
     } else {
         "".into()
     });
+}
+
+/// Push a Systems page through the same geometry rules the app uses.
+fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool) {
+    use zaparoo_app::layouts::{self, Body, ThemeId, View};
+    let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let profile = layouts::profile(ThemeId::current(&inputs), View::SystemsGrid, &inputs);
+    let Body::Grid { grid, footer } = profile.body else {
+        return;
+    };
+    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
+        derived.help_bar_height + footer.active_label_height
+    } else {
+        footer.grid_bottom_margin
+    };
+    let grid_height = (inputs.screen_height as i32 - grid_y - bottom).max(0);
+    let insets = zaparoo_app::paged_grid::Insets {
+        left: grid.left_inset,
+        right: grid.right_inset,
+        top: grid.top_inset,
+        bottom: grid.bottom_inset,
+        column_gap: grid.column_gap,
+        row_gap: grid.row_gap,
+    };
+    let (columns, rows) = (derived.systems_grid_columns, derived.systems_grid_rows);
+    let fit = zaparoo_app::paged_grid::fit(
+        columns,
+        rows,
+        inputs.screen_width as i32,
+        grid_height,
+        None,
+        false,
+        &insets,
+    );
+    let page_size = (columns * rows).max(1) as usize;
+    let cells: Vec<GridCell> = (13..13 + page_size)
+        .map(|i| GridCell {
+            name: format!("Example System {i}").into(),
+            wordmark: true,
+            hidden: i == 15,
+            ..Default::default()
+        })
+        .collect();
+    let list_rows = cells.clone();
+    let view = app.global::<SystemsView>();
+    view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
+    view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(list_rows)));
+    view.set_category("Console".into());
+    view.set_count(30);
+    view.set_page(1);
+    view.set_total_pages(3);
+    view.set_has_pages_above(true);
+    view.set_has_pages_below(true);
+    view.set_selected_local(2);
+    view.set_list_index(2);
+    view.set_label_name("Example System 15".into());
+    view.set_label_hidden(true);
+    view.set_focus_ready(true);
+    view.set_columns(columns);
+    view.set_rows(rows);
+    view.set_cell_width(fit.cell_width as f32);
+    view.set_cell_height(fit.cell_height as f32);
+    view.set_block_offset_x(fit.block_offset_x as f32);
+    view.set_block_offset_y(fit.block_offset_y as f32);
+    view.set_grid_y(grid_y as f32);
+    view.set_grid_height(grid_height as f32);
 }

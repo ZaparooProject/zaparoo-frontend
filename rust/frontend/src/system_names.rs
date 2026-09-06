@@ -21,9 +21,9 @@ use std::sync::OnceLock;
 
 use crate::system_region::Region;
 
-const US_NAMES: &str = include_str!("data/names_us.txt");
-const EU_NAMES: &str = include_str!("data/names_eu.txt");
-const JP_NAMES: &str = include_str!("data/names_jp.txt");
+const US_NAMES: &str = include_str!("../../zaparoo-app/src/data/names_us.txt");
+const EU_NAMES: &str = include_str!("../../zaparoo-app/src/data/names_eu.txt");
+const JP_NAMES: &str = include_str!("../../zaparoo-app/src/data/names_jp.txt");
 
 /// Noise qualifier suffixes that are purely implementation markers and carry no
 /// user-visible meaning (cycle-accurate `+`, Sinden lightgun `S`, LLAPI input

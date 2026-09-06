@@ -37,6 +37,7 @@ mod sizing;
 mod status;
 mod system_logos;
 mod system_status;
+mod systems;
 mod tag_utils;
 mod theme;
 
@@ -550,6 +551,7 @@ fn main() -> Result<(), slint::PlatformError> {
     // The Hub paints its persisted layout before the first frame; the
     // catalog reconciles it when Core answers.
     hub::bind_input(&ctx, &app);
+    systems::bind_input(&ctx, &app);
     hub::rebuild(&ctx, &app);
     hub::restore(&ctx, &app);
     bind_resume(&ctx, &app, &client);
@@ -1207,9 +1209,9 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
         // Establish the parent synchronously so restored Games cannot
         // overlap a Hub -> Systems route transition while its browse
         // request is in flight.
-        router::enter_systems_immediate(ctx, app, &category);
+        systems::enter(ctx, app, &category, false);
         let sys = lock(&ctx.shared)
-            .screen_systems
+            .systems
             .iter()
             .find(|s| s.id == system_id)
             .cloned();
@@ -1220,7 +1222,7 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
             router::enter_games_restored(ctx, app, &sys);
         }
     } else {
-        router::enter_systems(ctx, app, &category);
+        systems::enter(ctx, app, &category, true);
     }
 }
 
