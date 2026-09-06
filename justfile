@@ -279,7 +279,7 @@ slint-arm32:
     cd rust && ZAPAROO_RESOURCES_DIR="$PWD/../resources" RUSTFLAGS="-C target-cpu=cortex-a9" cross build -p frontend-slint --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
 
 # MiSTer release bundle for the Slint frontend (zaparoo-frontend-<tag>-slint.zip);
-# same wrapper and layout as `release-zip`, plus fonts/ and slint-assets/.
+# same wrapper and layout as `release-zip`, one static binary with everything embedded.
 slint-release-zip *args:
     ./scripts/package-mister-release.sh --slint {{args}}
 

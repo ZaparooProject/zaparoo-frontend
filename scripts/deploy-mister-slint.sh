@@ -3,11 +3,12 @@
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
-# Slint demo: cross-builds the ARM32 binary with `cross` and deploys it
-# to a MiSTer over SSH/SCP. By default the binary lands beside the Qt
-# frontend as /media/fat/zaparoo/frontend-slint for manual testing;
-# --replace backs up the Qt frontend and installs the Slint build in
-# its place so Main's spawn path launches it.
+# Slint frontend: cross-builds the ARM32 binary with `cross` and deploys
+# it to a MiSTer over SSH/SCP. It is one static file with every font and
+# logo embedded, like the Qt binary; nothing else is copied. By default it
+# lands beside the Qt frontend as /media/fat/zaparoo/frontend-slint for
+# manual testing; --replace backs up the Qt frontend and installs the
+# Slint build in its place so Main's spawn path launches it.
 # Reads MISTER_IP (and optional MISTER_PW) from .env in the repo root.
 
 set -e
@@ -93,21 +94,6 @@ run_scp() {
 echo "=== Deploying to ${MISTER_IP} ==="
 run_scp "${BINARY}" "root@${MISTER_IP}:${REMOTE_DIR}/frontend-slint"
 run_ssh "root@${MISTER_IP}" "chmod +x ${REMOTE_DIR}/frontend-slint"
-
-# Runtime assets (system logo PNGs). The loader looks in
-# <exe dir>/slint-assets, so they live beside the binary.
-ASSETS_DIR="${PROJECT_ROOT}/rust/frontend-slint/assets"
-if [ -d "${ASSETS_DIR}" ]; then
-    echo "=== Syncing slint-assets ==="
-    run_ssh "root@${MISTER_IP}" "mkdir -p ${REMOTE_DIR}/slint-assets"
-    run_scp -r "${ASSETS_DIR}/systems" "root@${MISTER_IP}:${REMOTE_DIR}/slint-assets/"
-fi
-
-# Runtime fonts: the script faces load from <exe dir>/fonts (src/fonts.rs).
-FONTS_DIR="${PROJECT_ROOT}/resources/fonts/runtime"
-echo "=== Syncing fonts ==="
-run_ssh "root@${MISTER_IP}" "mkdir -p ${REMOTE_DIR}/fonts"
-run_scp "${FONTS_DIR}"/*.ttf "root@${MISTER_IP}:${REMOTE_DIR}/fonts/"
 
 if [ "${REPLACE}" -eq 1 ]; then
     echo "=== Installing as ${REMOTE_DIR}/frontend (Qt binary backed up) ==="

@@ -76,12 +76,12 @@ fn main() {
     let screen = args.get(4).cloned().unwrap_or_else(|| "hub".to_string());
     let radius_pct: Option<f32> = args.get(5).and_then(|a| a.parse().ok());
 
-    // Same runtime font stack as the device build: the script faces must be
-    // registered before the platform exists.
-    fonts::install_font_path();
     slint::platform::set_platform(Box::new(SnapshotPlatform)).unwrap();
 
     let app = App::new().unwrap();
+    // Same font stack as the device build: the embedded script faces and
+    // their fallback wiring.
+    fonts::register_embedded_fonts();
     // ZAPAROO_SNAPSHOT_LANG=de renders through the bundled German catalog
     // (any language directory under translations/).
     if let Ok(lang) = std::env::var("ZAPAROO_SNAPSHOT_LANG") {

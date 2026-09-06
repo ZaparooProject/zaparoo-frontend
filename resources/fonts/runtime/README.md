@@ -1,9 +1,10 @@
 # Runtime fonts for the Slint frontend
 
 Static Regular instances of the six script faces in the parent directory,
-loaded at startup by `rust/frontend-slint/src/fonts.rs` (from `<exe dir>/fonts`
-on MiSTer, from here on the desktop). The Qt build keeps embedding the
-variable files in the parent directory; nothing there changed.
+embedded into the Slint binary by `rust/frontend-slint/src/fonts.rs`
+(`include_bytes!`) and registered for script fallback at startup. One
+static binary, like the Qt build, which keeps embedding the variable files
+in the parent directory; nothing there changed.
 
 Why static: Slint's runtime text path renders a variable font's default
 instance and does not apply the weight the UI asks for. Noto Sans Hebrew,

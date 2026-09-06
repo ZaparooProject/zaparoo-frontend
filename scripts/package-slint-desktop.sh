@@ -3,8 +3,8 @@
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
-# Desktop tarball for the Slint frontend: a release cargo build plus the
-# runtime fonts and logo assets the binary looks up next to itself, as
+# Desktop tarball for the Slint frontend: a release cargo build, with every
+# font and logo embedded, as
 # output/release/zaparoo-frontend-<tag>-<os>-<arch>.tar.gz. No CMake, no
 # Qt, no shared-library bundling: the binary links system fontconfig and
 # opens wayland/X11 and GL at runtime. A macOS .app wrapper is a landing
@@ -41,16 +41,13 @@ NAME="zaparoo-frontend-${TAG}-${OS}-${ARCH}"
 STAGE="${RELEASE_DIR}/${NAME}"
 ARCHIVE="${RELEASE_DIR}/${NAME}.tar.gz"
 rm -rf "$STAGE" "$ARCHIVE"
-mkdir -p "$STAGE/fonts" "$STAGE/slint-assets"
+mkdir -p "$STAGE"
 install -m 0755 "$BIN" "$STAGE/frontend-slint"
-install -m 0644 "$PROJECT_ROOT"/resources/fonts/runtime/*.ttf "$STAGE/fonts/"
-rsync -a --delete "$PROJECT_ROOT/rust/frontend-slint/assets/systems/" "$STAGE/slint-assets/systems/"
 install -m 0644 "$PROJECT_ROOT/COPYING" "$STAGE/COPYING"
 cat > "$STAGE/README.txt" <<'EOF_README'
 # Zaparoo Frontend (Slint, desktop)
 
-Run ./frontend-slint from this directory. Keep the fonts and slint-assets
-folders next to the binary. Point it at a Zaparoo Core with
+Run ./frontend-slint. Point it at a Zaparoo Core with
 ZAPAROO_CORE_ENDPOINT=ws://<host>:7497/api/v0.1 or the [core] endpoint in
 ~/.config/zaparoo/frontend.toml.
 EOF_README

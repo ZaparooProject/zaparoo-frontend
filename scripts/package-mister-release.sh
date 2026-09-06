@@ -22,8 +22,8 @@ Builds the official MiSTer frontend binary, downloads the required MiSTer
 wrapper assets, and writes output/release/zaparoo-frontend-vX.Y.Z.zip.
 
 --slint packages the Slint frontend instead (docs/plans/slint-migration.md):
-the static musl binary from `just slint-arm32` plus its runtime fonts and
-logo assets, in the same zaparoo/ layout the wrapper expects, as
+the static musl binary from `just slint-arm32`, with every font and logo
+embedded, in the same zaparoo/ layout the wrapper expects, as
 output/release/zaparoo-frontend-vX.Y.Z-slint.zip.
 
 Set ZAPAROO_SKIP_FRONTEND_BUILD=1 to reuse the existing binary for
@@ -113,8 +113,7 @@ write_slint_readme() {
 # Zaparoo Frontend (Slint beta)
 
 This bundle carries the new Slint frontend. It installs exactly like a
-regular release and the MiSTer_Zaparoo wrapper starts it the same way; the
-extra `fonts` and `slint-assets` folders next to the binary are required.
+regular release and the MiSTer_Zaparoo wrapper starts it the same way.
 
 1. Copy the `zaparoo` folder to root/top of SD card (merge over an existing
    install; keep a copy of your current `zaparoo/frontend` if you want to
@@ -240,12 +239,8 @@ install -m 0755 "$MAIN_DIR/$MAIN_ASSET" "$STAGE/zaparoo/MiSTer_Zaparoo"
 install -m 0755 "$FRONTEND_BIN" "$STAGE/zaparoo/frontend"
 install -m 0644 "$PROJECT_ROOT/COPYING" "$STAGE/COPYING"
 if [ "$FRONTEND" = "slint" ]; then
-    # Runtime files the binary looks up next to itself (src/fonts.rs,
-    # src/system_logos.rs). The Qt LGPL notices in src/LICENSES do not
-    # apply to this binary; its third-party notices are a ledger item.
-    mkdir -p "$STAGE/zaparoo/fonts" "$STAGE/zaparoo/slint-assets"
-    install -m 0644 "$PROJECT_ROOT"/resources/fonts/runtime/*.ttf "$STAGE/zaparoo/fonts/"
-    rsync -a --delete "$PROJECT_ROOT/rust/frontend-slint/assets/systems/" "$STAGE/zaparoo/slint-assets/systems/"
+    # The Qt LGPL notices in src/LICENSES do not apply to this binary; its
+    # third-party notices are a ledger item.
     write_slint_readme "$STAGE/README.txt"
     (
         cd "$STAGE"
