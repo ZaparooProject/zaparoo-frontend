@@ -246,8 +246,9 @@ deploy-mister *args:
     ./scripts/deploy-mister.sh {{args}}
 
 # --- slint frontend (migration branch, see docs/plans/slint-migration.md) ---
-# Desktop run against the local mock Core (same port as `run-dev`).
+# Desktop run against the local mock Core (start `just mock-core` first)
 slint-run-dev *args:
+    @bash -c 'exec 3<>/dev/tcp/127.0.0.1/27497' 2>/dev/null || echo "warning: nothing is listening on 127.0.0.1:27497 - run 'just mock-core' in another terminal"
     cd rust && ZAPAROO_CORE_ENDPOINT=ws://127.0.0.1:27497/api/v0.1 cargo run -p frontend-slint -- {{args}}
 
 # Host-side lint for the Slint crates: fmt, clippy, and the toolkit-free guard.

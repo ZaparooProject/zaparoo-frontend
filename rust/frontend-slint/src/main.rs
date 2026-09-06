@@ -590,7 +590,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     restore_core_independent(&ctx, &app);
     bind_catalog(&ctx, &app, &store);
-    bind_connection_status(&ctx, &app, &client);
+    bind_connection_status(&ctx, &app, &client, &config.core_endpoint);
     bind_media_status(&ctx, &app, &store);
     bind_status_events(&ctx, &app, &client);
     bind_launchers(&ctx, &store);
@@ -989,7 +989,7 @@ fn bind_catalog(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
 /// 5-second escalation before an unreachable Core is blamed on the
 /// user's network (a transient probe failure on first connect isn't
 /// worth scaring anyone about).
-fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
+fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpoint: &str) {
     let seed = {
         let rx = client.connection.subscribe();
         let state = rx.borrow().clone();
@@ -1005,9 +1005,20 @@ fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     let handle = ctx.handle.clone();
     let escalate_handle = handle.clone();
     let ctx = ctx.clone();
+    let endpoint = endpoint.to_string();
     handle.spawn(async move {
         while rx.changed().await.is_ok() {
             let state = rx.borrow_and_update().clone();
+            // The connect loop logs its failures at debug, so at the
+            // default level an unreachable Core looks like nothing
+            // happening at all. Say it once per transition instead.
+            match &state {
+                ConnectionState::Connected => tracing::info!("connected to core at {endpoint}"),
+                ConnectionState::Unreachable(message) => {
+                    tracing::warn!("cannot reach core at {endpoint}, retrying: {message}");
+                }
+                other => tracing::info!("core link: {other:?} ({endpoint})"),
+            }
             let my_generation = generation.fetch_add(1, Ordering::SeqCst) + 1;
             let boot = boot_text(&state, false);
             let link = status::link_of(&state);
