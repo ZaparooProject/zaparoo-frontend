@@ -22,7 +22,10 @@ export global Theme {
     in-out property <color> surface-card: #181f26;
     in-out property <color> tile-edge: #293d56;
     in-out property <color> control-edge: #324b69;
-    in-out property <color> scrim: #cc000000;
+    // 80% black. Slint reads `#RRGGBBAA`, Qt `#AARRGGBB`: the palette's
+    // own `#cc000000` is the Qt spelling of this, and copying it here
+    // verbatim made every scrim in the app fully transparent.
+    in-out property <color> scrim: #000000cc;
     in-out property <color> border-subtle: #262b30;
     in-out property <color> border-mid: #4f565c;
     in-out property <color> text-primary: #f7f7f5;

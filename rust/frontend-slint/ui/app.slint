@@ -155,6 +155,13 @@ export global HubView {
 }
 
 // Pointer and page-cue events from the Hub, handled by the Rust router.
+// Context menu pointer input (ContextMenu.qml's per-row MouseAreas):
+// hover moves focus, a click accepts that row.
+export global ContextInput {
+    callback row-hovered(int);
+    callback row-clicked(int);
+}
+
 export global HubInput {
     callback cell-hovered(int);
     callback cell-clicked(int);
@@ -1440,19 +1447,46 @@ component ContextMenu inherits Rectangle {
     in property <length> anchor-w;
     in property <length> anchor-h;
 
+    // ContextMenu.qml's own tokens.
     property <length> margin: Sizing.pct-h(2);
     property <length> gap: Sizing.pct-w(1.2);
     property <length> row-h: Sizing.pct-h(6);
     property <length> row-sp: Sizing.pct-h(1);
     property <length> pad-x: Sizing.pct-w(2);
-    property <length> panel-radius: Sizing.pct-h(1.5);
-    // Fixed panel width (the Qt minimum): the demo vocabulary is
-    // short, long labels elide inside the rows.
-    property <length> panel-w: Math.max(Sizing.pct-w(24), Sizing.pct-h(32));
-    property <length> panel-h: root.entries.length * root.row-h
-        + Math.max(0, root.entries.length - 1) * root.row-sp + 2 * root.panel-radius;
-    // Keep clear of the help bar (6%) like the Qt bottomUnsafeHeight.
-    property <length> usable-bottom: root.height - Sizing.pct-h(8) - root.margin;
+    property <length> side-margin: Sizing.pct-w(1);
+    property <length> v-pad: Sizing.pct-h(1.5);
+    property <length> panel-radius: Sizing.radius-md;
+    property <length> min-panel-w: Sizing.pct-w(12);
+    // A vertical layout's preferred width is the widest child's, which
+    // is the measurement the panel sizes around; measured at the
+    // selected row's weight so a row cannot outgrow the panel when it
+    // gains focus.
+    measure := VerticalLayout {
+        visible: false;
+        for entry in root.entries: Text {
+            text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
+            font-size: Sizing.font-caption;
+            font-weight: 500;
+        }
+    }
+    property <length> desired-panel-w: measure.preferred-width + 2 * root.pad-x
+        + 2 * root.side-margin + 2 * Sizing.stroke(2);
+    property <length> panel-w: Math.min(Math.max(root.min-panel-w, root.desired-panel-w),
+        Math.max(0px, root.width - 2 * root.margin));
+    property <length> content-h: root.entries.length * root.row-h
+        + Math.max(0, root.entries.length - 1) * root.row-sp + 2 * root.v-pad;
+    property <length> usable-bottom: Math.max(root.margin,
+        root.height - Sizing.help-bar-clearance - root.margin);
+    property <length> panel-h: Math.min(root.content-h,
+        Math.max(0px, root.usable-bottom - root.margin));
+    property <length> viewport-h: Math.max(0px, root.panel-h - 2 * root.v-pad);
+    // Keep the focused row in view when the entries outrun the room the
+    // anchor leaves (the discovery list can be long).
+    property <length> row-bottom: (root.current-index + 1) * root.row-h
+        + root.current-index * root.row-sp;
+    property <length> scroll: Math.max(0px, Math.min(root.row-bottom - root.viewport-h,
+        root.content-h - 2 * root.v-pad - root.viewport-h));
+
     property <bool> fits-right: root.anchor-x + root.anchor-w + root.gap + root.panel-w <= root.width - root.margin;
     property <bool> fits-left: root.anchor-x - root.gap - root.panel-w >= root.margin;
     property <bool> beside: root.fits-right || root.fits-left;
@@ -1465,6 +1499,8 @@ component ContextMenu inherits Rectangle {
         : (root.fits-below ? root.anchor-y + root.anchor-h + root.gap : root.anchor-y - root.gap - root.panel-h);
     property <length> panel-y: Math.round(Math.min(Math.max(root.raw-y, root.margin), root.usable-bottom - root.panel-h) / 1px) * 1px;
 
+    // Four bands around the anchor: the tile the menu is about stays
+    // bright while the rest of the screen dims.
     Rectangle { x: 0; y: 0; width: parent.width; height: root.anchor-y; background: Theme.scrim; }
     Rectangle { x: 0; y: root.anchor-y + root.anchor-h; width: parent.width; height: Math.max(0px, parent.height - root.anchor-y - root.anchor-h); background: Theme.scrim; }
     Rectangle { x: 0; y: root.anchor-y; width: root.anchor-x; height: root.anchor-h; background: Theme.scrim; }
@@ -1477,27 +1513,40 @@ component ContextMenu inherits Rectangle {
         height: root.panel-h;
         background: Theme.bg-panel;
         border-radius: root.panel-radius;
-        border-width: Sizing.stroke(0.3);
-        border-color: Theme.border-mid;
+        clip: true;
 
         for entry[i] in root.entries: Rectangle {
-            x: Sizing.pct-w(1);
-            y: root.panel-radius + i * (root.row-h + root.row-sp);
-            width: parent.width - 2 * Sizing.pct-w(1);
+            x: root.side-margin;
+            y: root.v-pad + i * (root.row-h + root.row-sp) - root.scroll;
+            width: parent.width - 2 * root.side-margin;
             height: root.row-h;
-            background: i == root.current-index ? Theme.selection-fill : transparent;
-            border-radius: Sizing.pct-h(1);
-            border-width: i == root.current-index ? Sizing.stroke(0.4) : 0px;
-            border-color: Theme.accent;
 
+            bar := SelectionBar {
+                width: 100%;
+                height: 100%;
+                active: i == root.current-index;
+                radius: Sizing.radius-sm;
+            }
+
+            // Centered on its own measured width rather than stretched
+            // and aligned, so the glyph run lands on whole pixels.
             Text {
-                x: root.pad-x;
+                x: Math.round((parent.width - Math.min(self.preferred-width, parent.width - 2 * root.pad-x)) / 2px) * 1px;
                 y: Math.round((parent.height - self.height) / 2px) * 1px;
-                max-width: parent.width - 2 * root.pad-x;
+                width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
                 overflow: elide;
                 text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(2.6);
+                color: bar.active ? bar.content-color : Theme.text-primary;
+                font-size: Sizing.font-caption;
+                font-weight: bar.content-weight;
+            }
+
+            TouchArea {
+                mouse-cursor: pointer;
+                changed has-hover => {
+                    if (self.has-hover) { ContextInput.row-hovered(i); }
+                }
+                clicked => { ContextInput.row-clicked(i); }
             }
         }
     }

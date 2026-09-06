@@ -589,6 +589,7 @@ fn main() -> Result<(), slint::PlatformError> {
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
     log_upload::bind_input(&ctx, &app);
+    router::bind_context_input(&ctx, &app);
     hub::rebuild(&ctx, &app);
     hub::restore(&ctx, &app);
     bind_resume(&ctx, &app, &client);

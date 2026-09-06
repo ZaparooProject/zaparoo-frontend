@@ -1774,6 +1774,43 @@ fn close_context_menu(ctx: &Ctx, app: &App) {
     app.global::<crate::Overlays>().set_context_open(false);
 }
 
+/// Pointer input on the context menu's rows: hover moves focus, a click
+/// accepts (ContextMenu.qml's own per-row mouse areas).
+pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
+    let input = app.global::<crate::ContextInput>();
+    {
+        let ctx = ctx.clone();
+        let weak = app.as_weak();
+        input.on_row_hovered(move |index| {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            if !lock(&ctx.shared).persist.settings.mouse_enabled {
+                return;
+            }
+            app.global::<crate::Overlays>().set_context_index(index);
+        });
+    }
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    input.on_row_clicked(move |index| {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        if !lock(&ctx.shared).persist.settings.mouse_enabled {
+            return;
+        }
+        app.global::<crate::Overlays>().set_context_index(index);
+        let entry = app
+            .global::<crate::Overlays>()
+            .get_context_entries()
+            .row_data(usize::try_from(index).unwrap_or(0));
+        if let Some(entry) = entry {
+            context_accept(&ctx, &app, entry.id.as_str());
+        }
+    });
+}
+
 fn context_action(ctx: &Ctx, app: &App, action: &str) {
     let len = app
         .global::<crate::Overlays>()
