@@ -993,19 +993,24 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     };
     match id {
         "launch_random_favorite" => {
-            crate::router::launch(ctx, app, rules::random_favorite_launch_text(&row.id));
+            crate::router::launch(
+                ctx,
+                app,
+                rules::random_favorite_launch_text(&row.id),
+                &row.name,
+            );
         }
-        "launch_system" => crate::router::launch(ctx, app, row.launch_text()),
+        "launch_system" => crate::router::launch(ctx, app, row.launch_text(), &row.name),
         "launch_random_system" => {
             if let Some(text) = rules::random_launch_text(std::slice::from_ref(&row.id)) {
-                crate::router::launch(ctx, app, text);
+                crate::router::launch(ctx, app, text, &row.name);
             }
         }
         "change_launcher" => crate::router::open_launcher_picker(ctx, app, &row.id),
         "add_to_hub" => crate::hub::add_target(ctx, app, "system", &row.id, "", "", "", "", ""),
         "toggle_hide_system" => crate::router::toggle_hidden_system(ctx, app, &row.id),
         "index_system" => crate::router::start_index(ctx, app, Some(vec![row.id.clone()])),
-        "scrape_system" => crate::router::start_scrape(ctx, vec![row.id.clone()], false),
+        "scrape_system" => crate::router::start_scrape(ctx, app, vec![row.id.clone()], false),
         _ => {}
     }
 }

@@ -388,9 +388,14 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             "updateMediaDb" => {
                 if ms.indexing || ms.optimizing {
                     let client = ctx.store.client();
+                    let ctx2 = ctx.clone();
+                    let weak = app.as_weak();
                     ctx.handle.spawn(async move {
                         if let Err(e) = client.media_generate_cancel().await {
                             tracing::warn!("cancel index failed: {}", e.message);
+                            let _ = weak.upgrade_in_event_loop(move |app| {
+                                crate::router::report_action_error(&ctx2, &app, "media_cancel", "");
+                            });
                         }
                     });
                 } else {
@@ -400,9 +405,14 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             "runScraper" => {
                 if ms.scraping {
                     let client = ctx.store.client();
+                    let ctx2 = ctx.clone();
+                    let weak = app.as_weak();
                     ctx.handle.spawn(async move {
                         if let Err(e) = client.media_scrape_cancel().await {
                             tracing::warn!("cancel scrape failed: {}", e.message);
+                            let _ = weak.upgrade_in_event_loop(move |app| {
+                                crate::router::report_action_error(&ctx2, &app, "media_cancel", "");
+                            });
                         }
                     });
                 } else {
@@ -461,7 +471,7 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
             _ => return,
         }
     };
-    save(ctx);
+    save(ctx, app);
     match id {
         "showHidden" => {
             crate::router::reproject_hub(ctx, app);
@@ -546,7 +556,7 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             _ => return,
         }
     }
-    save(ctx);
+    save(ctx, app);
     apply(ctx, app, id, value);
     refresh(ctx, app);
 }
@@ -605,7 +615,7 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
 
 /// Persist the state file and mirror the durable half into
 /// `frontend.toml`.
-pub fn save(ctx: &Ctx) {
+pub fn save(ctx: &Ctx, app: &App) {
     let snapshot = {
         let shared = lock(&ctx.shared);
         shared.persist.clone()
@@ -642,6 +652,7 @@ pub fn save(ctx: &Ctx) {
     };
     if let Err(e) = zaparoo_core::config::save_settings_mirror(&ctx.config_path, mirror) {
         tracing::warn!("could not mirror settings to config: {e}");
+        crate::router::report_action_error(ctx, app, "setting", "");
     }
 }
 

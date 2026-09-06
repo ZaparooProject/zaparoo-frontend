@@ -560,7 +560,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                         .map(|e| e.media_path.clone());
                     match path {
                         Some(path) if !path.is_empty() => {
-                            crate::router::launch(ctx, app, path);
+                            crate::router::launch(ctx, app, path, &entry.name);
                             release_activate(ctx, app);
                         }
                         _ => release_activate(ctx, app),
@@ -589,7 +589,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 .cloned();
             match system {
                 Some(system) if !system.zap_script.is_empty() => {
-                    crate::router::launch(ctx, app, system.zap_script.clone());
+                    crate::router::launch(ctx, app, system.zap_script.clone(), &system.name);
                     release_activate(ctx, app);
                 }
                 Some(system) => crate::games::enter_from_hub(ctx, app, &system),
@@ -600,7 +600,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
             crate::games::enter_folder_from_hub(ctx, app, &entry.system, &entry.path);
         }
         Some(Kind::ZapScript) => {
-            crate::router::launch(ctx, app, entry.script.clone());
+            crate::router::launch(ctx, app, entry.script.clone(), &entry.name);
             release_activate(ctx, app);
         }
         _ => {}
@@ -870,7 +870,7 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         }
         "scrape_category" => {
             if let Some(category) = category {
-                crate::router::scrape_category(ctx, &category);
+                crate::router::scrape_category(ctx, app, &category);
             }
         }
         _ => {}
@@ -940,11 +940,7 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
         )
     };
     if entries.is_empty() {
-        crate::router::open_action_error(
-            app,
-            "Nothing left to add",
-            "All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\".",
-        );
+        crate::router::open_alert(app, "hub_full");
         return;
     }
     let rows: Vec<crate::MenuEntry> = entries

@@ -14,7 +14,7 @@ import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from 
 import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
-import { Labels } from "labels.slint";
+import { Labels, DialogLabels } from "labels.slint";
 
 // Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
 // 6x8 bitmap font for the CRT native path (family names must match
@@ -440,10 +440,17 @@ export global Overlays {
     // notice, core_version, first_run.
     in-out property <bool> dialog-open: false;
     in-out property <string> dialog-kind: "";
-    in-out property <string> dialog-title: "";
-    in-out property <string> dialog-body: "";
-    // First-run progress line ("Step N of M - path" / "Optimizing...").
+    // The sub-kind (an alert's failure kind, the first-run phase) and
+    // the one runtime value the copy needs; `DialogLabels` composes the
+    // words from these so every dialog string can be translated.
+    in-out property <string> dialog-detail: "";
+    in-out property <string> dialog-arg: "";
+    // First-run progress line, as a key plus its numbers.
     in-out property <string> dialog-status: "";
+    in-out property <int> dialog-status-step: 0;
+    in-out property <int> dialog-status-total: 0;
+    in-out property <string> dialog-status-name: "";
+    // Button keys, resolved through `DialogLabels.button`.
     in-out property <[string]> dialog-buttons: [];
     in-out property <int> dialog-focus: 0;
     // Full-framebuffer CRT calibration pattern. Unlike normal modals,
@@ -1248,7 +1255,10 @@ component QrCodeModal inherits Rectangle {
 component DialogModal inherits Rectangle {
     background: Theme.scrim;
 
-    property <length> panel-w: Sizing.pct-w(56);
+    // Modal.qml's own panel rule: as wide as the copy needs, capped at
+    // 92% of the screen and at a height-derived maximum, so a long body
+    // does not stack up into extra lines on a 240p screen.
+    property <length> panel-w: Math.min(root.width * 0.92, Sizing.pct-h(110));
     property <length> pad: Sizing.pct-h(3);
     property <length> btn-h: Sizing.pct-h(6);
     property <length> btn-gap: Sizing.pct-w(2);
@@ -1272,7 +1282,7 @@ component DialogModal inherits Rectangle {
             y: root.pad;
             max-width: parent.width - 2 * root.pad;
             overflow: elide;
-            text: Overlays.dialog-title;
+            text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
             color: Theme.text-primary;
             font-size: Sizing.font-size(3.2);
             font-weight: 600;
@@ -1283,7 +1293,7 @@ component DialogModal inherits Rectangle {
             y: root.pad + Sizing.font-size(3.2) + Sizing.pct-h(2);
             width: parent.width - 2 * root.pad;
             wrap: word-wrap;
-            text: Overlays.dialog-body;
+            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-detail, Overlays.dialog-arg);
             color: Theme.text-primary;
             font-size: Sizing.font-size(2.4);
             horizontal-alignment: center;
@@ -1294,7 +1304,8 @@ component DialogModal inherits Rectangle {
             y: root.pad + Sizing.font-size(3.2) + Sizing.pct-h(2) + root.body-h + Sizing.pct-h(2);
             max-width: parent.width - 2 * root.pad;
             overflow: elide;
-            text: Overlays.dialog-status;
+            text: DialogLabels.status(Overlays.dialog-status, Overlays.dialog-status-step,
+                Overlays.dialog-status-total, Overlays.dialog-status-name);
             color: Theme.text-variant;
             font-size: Sizing.font-size(2.4);
         }
@@ -1321,7 +1332,7 @@ component DialogModal inherits Rectangle {
                 y: Math.round((parent.height - self.height) / 2px) * 1px;
                 max-width: parent.width - Sizing.pct-w(1);
                 overflow: elide;
-                text: label;
+                text: DialogLabels.button(label);
                 color: i == Overlays.dialog-focus ? Theme.bg-bar : Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
                 font-weight: 600;
@@ -1970,7 +1981,9 @@ export component App inherits Window {
                 ];
             }
             return [
-                { buttons: ["ButtonA"], label: Overlays.dialog-buttons.length > 0 ? Overlays.dialog-buttons[0] : @tr("OK") },
+                { buttons: ["ButtonA"], label: Overlays.dialog-buttons.length > 0
+                    ? DialogLabels.button(Overlays.dialog-buttons[0])
+                    : @tr("OK") },
             ];
         }
         if (Overlays.context-open) {

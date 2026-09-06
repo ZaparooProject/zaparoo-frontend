@@ -385,6 +385,35 @@ fn main() {
         }
         lv.set_open(true);
     }
+    // "dialog" renders the two-button decision dialog; "alert" renders
+    // the one-button failure alert, both through the same vocabulary
+    // the router drives.
+    if screen == "dialog" || screen == "alert" || screen == "notice" {
+        let overlays = app.global::<generated::Overlays>();
+        if screen == "notice" {
+            overlays.set_dialog_kind("notice".into());
+            overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
+                slint::SharedString::from("i_understand"),
+            ])));
+            overlays.set_dialog_focus(0);
+        } else if screen == "alert" {
+            overlays.set_dialog_kind("action_error".into());
+            overlays.set_dialog_detail("launch".into());
+            overlays.set_dialog_arg("Sonic the Hedgehog".into());
+            overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
+                slint::SharedString::from("ok"),
+            ])));
+            overlays.set_dialog_focus(0);
+        } else {
+            overlays.set_dialog_kind("quit_confirm".into());
+            overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
+                slint::SharedString::from("yes"),
+                slint::SharedString::from("no"),
+            ])));
+            overlays.set_dialog_focus(1);
+        }
+        overlays.set_dialog_open(true);
+    }
     if screen == "calibration" {
         let overlays = app.global::<generated::Overlays>();
         overlays.set_crt_h_offset(4);
@@ -410,7 +439,12 @@ fn main() {
         || screen.contains("log-upload")
     {
         "settings"
-    } else if screen == "saver" || screen == "dialog" || screen == "calibration" {
+    } else if screen == "saver"
+        || screen == "dialog"
+        || screen == "alert"
+        || screen == "notice"
+        || screen == "calibration"
+    {
         "hub"
     } else if screen.contains("systems") {
         "systems"

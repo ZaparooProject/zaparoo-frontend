@@ -249,8 +249,15 @@ fn fetch_scrapers(ctx: &Ctx, app: &App) {
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
     ctx.handle.spawn(async move {
-        let Ok(result) = client.scrapers().await else {
-            return;
+        let result = match client.scrapers().await {
+            Ok(result) => result,
+            Err(e) => {
+                tracing::warn!("scraper list unavailable: {}", e.message);
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    crate::router::report_action_error(&ctx2, &app, "media_scrapers", "");
+                });
+                return;
+            }
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
             {
@@ -434,12 +441,12 @@ fn start(ctx: &Ctx, app: &App) {
             let params = MediaIndexParams {
                 systems: (!systems.is_empty()).then_some(systems),
             };
+            let ctx2 = ctx.clone();
             ctx.handle.spawn(async move {
                 if let Err(e) = client.media_generate(params).await {
-                    let message = format!("Update failed: {}", e.message);
+                    tracing::warn!("media update failed to start: {}", e.message);
                     let _ = weak.upgrade_in_event_loop(move |app| {
-                        app.global::<crate::Shell>()
-                            .set_status_text(SharedString::from(message.as_str()));
+                        crate::router::report_action_error(&ctx2, &app, "media_index", "");
                     });
                 }
             });
@@ -457,7 +464,7 @@ fn start(ctx: &Ctx, app: &App) {
                     .metadata_scraper
                     .clone_from(&scraper);
             }
-            crate::settings::save(ctx);
+            crate::settings::save(ctx, app);
             let client = ctx.store.client();
             let weak = app.as_weak();
             let params = MediaScrapeParams {
@@ -465,12 +472,12 @@ fn start(ctx: &Ctx, app: &App) {
                 systems,
                 force: rescrape,
             };
+            let ctx2 = ctx.clone();
             ctx.handle.spawn(async move {
                 if let Err(e) = client.media_scrape(params).await {
-                    let message = format!("Import failed: {}", e.message);
+                    tracing::warn!("metadata update failed to start: {}", e.message);
                     let _ = weak.upgrade_in_event_loop(move |app| {
-                        app.global::<crate::Shell>()
-                            .set_status_text(SharedString::from(message.as_str()));
+                        crate::router::report_action_error(&ctx2, &app, "media_scrape", "");
                     });
                 }
             });

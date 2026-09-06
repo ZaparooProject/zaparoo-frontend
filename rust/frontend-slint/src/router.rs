@@ -16,6 +16,7 @@ use crate::{App, Sizing};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::runtime::Handle;
+use zaparoo_app::action_error;
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{RunParams, SystemInfo};
@@ -59,6 +60,8 @@ pub struct Shared {
     pub setup: crate::media_setup::SetupModel,
     /// The log uploader's own panel state.
     pub log_upload: crate::log_upload::LogUploadModel,
+    /// Failed user actions waiting for the alert surface.
+    pub errors: action_error::ErrorQueue,
     /// The key path: duplicate guard, hold-repeat, rapid navigation.
     pub input: crate::input::InputModel,
     /// Core reports at least one connected reader. Refreshed lazily.
@@ -216,6 +219,7 @@ impl Shared {
             games: crate::games::GamesModel::new(),
             setup: crate::media_setup::SetupModel::new(),
             log_upload: crate::log_upload::LogUploadModel::new(),
+            errors: action_error::ErrorQueue::new(),
             input: crate::input::InputModel::new(),
             has_readers: false,
             has_nfc: false,
@@ -308,17 +312,18 @@ pub(crate) fn toggle_hidden_system(ctx: &Ctx, app: &App, id: &str) {
             shared.hidden_system_ids.clone(),
         )
     };
-    save_hidden_prefs(ctx, &cats, &sys);
+    save_hidden_prefs(ctx, app, &cats, &sys);
     reproject_systems(ctx, app);
 }
 
 /// Durable hidden-browse prefs go to `frontend.toml`, not the volatile
 /// state file (which lives in `/tmp` on `MiSTer`). Small atomic write.
-fn save_hidden_prefs(ctx: &Ctx, categories: &[String], system_ids: &[String]) {
+fn save_hidden_prefs(ctx: &Ctx, app: &App, categories: &[String], system_ids: &[String]) {
     if let Err(e) =
         zaparoo_core::config::save_hidden_browse_prefs(&ctx.config_path, categories, system_ids)
     {
         tracing::warn!("could not save hidden browse prefs: {e}");
+        report_action_error(ctx, app, "setting", "");
     }
 }
 
@@ -364,11 +369,14 @@ mod version_gate_tests {
     }
 }
 
-fn open_dialog(app: &App, kind: &str, title: &str, body: &str, buttons: &[&str], focus: i32) {
+/// Open a dialog. Rust names the kind, its sub-kind and the one
+/// runtime value the copy needs; `DialogLabels` in the UI composes
+/// every word, so the buttons are keys too.
+fn open_dialog(app: &App, kind: &str, detail: &str, arg: &str, buttons: &[&str], focus: i32) {
     let overlays = app.global::<crate::Overlays>();
     overlays.set_dialog_kind(SharedString::from(kind));
-    overlays.set_dialog_title(SharedString::from(title));
-    overlays.set_dialog_body(SharedString::from(body));
+    overlays.set_dialog_detail(SharedString::from(detail));
+    overlays.set_dialog_arg(SharedString::from(arg));
     overlays.set_dialog_status(SharedString::default());
     overlays.set_dialog_buttons(ModelRc::new(VecModel::from(
         buttons
@@ -380,24 +388,29 @@ fn open_dialog(app: &App, kind: &str, title: &str, body: &str, buttons: &[&str],
     overlays.set_dialog_open(true);
 }
 
+/// The first-run progress line, as the key plus the numbers the copy
+/// puts in it.
+fn set_dialog_status(app: &App, key: &str, step: i32, total: i32, name: &str) {
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_dialog_status(SharedString::from(key));
+    overlays.set_dialog_status_step(step);
+    overlays.set_dialog_status_total(total);
+    overlays.set_dialog_status_name(SharedString::from(name));
+}
+
 fn close_dialog(app: &App) {
-    app.global::<crate::Overlays>().set_dialog_open(false);
-    app.global::<crate::Overlays>()
-        .set_dialog_kind(SharedString::default());
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_dialog_open(false);
+    overlays.set_dialog_kind(SharedString::default());
+    overlays.set_dialog_detail(SharedString::default());
+    overlays.set_dialog_arg(SharedString::default());
 }
 
 /// Hub Back lands here instead of quitting outright, so a stray B
 /// can't kill the frontend (Main.qml's quit-confirm rule). Default
 /// focus is "No".
 pub(crate) fn open_quit_confirm(app: &App) {
-    open_dialog(
-        app,
-        "quit_confirm",
-        "Quit Zaparoo Frontend?",
-        "Are you sure you want to exit?",
-        &["Yes", "No"],
-        1,
-    );
+    open_dialog(app, "quit_confirm", "", "", &["yes", "no"], 1);
 }
 
 /// Advance the sequential startup chain: commercial notice ->
@@ -426,20 +439,7 @@ pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
         )
     };
     if !notice_ack {
-        open_dialog(
-            app,
-            "notice",
-            "Welcome to Zaparoo Frontend",
-            "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\n\
-             This free source-available build is for personal and non-commercial \
-             use only. Commercial use requires a separate license.\n\n\
-             Contact: legal@zaparoo.com\n\n\
-             Full details available any time under Settings > About / License.\n\n\
-             Created by\n\
-             Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo",
-            &["I understand"],
-            0,
-        );
+        open_dialog(app, "notice", "", "", &["i_understand"], 0);
         return;
     }
     if !version_shown {
@@ -449,17 +449,7 @@ pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
         }
         lock(&ctx.shared).version_warning_shown = true;
         if !version_supported(&version) {
-            open_dialog(
-                app,
-                "core_version",
-                "Update Zaparoo Core",
-                &format!(
-                    "This frontend needs Zaparoo Core {MIN_CORE_VERSION} or newer. \
-                     You're running {version}. Some features may not work until you update."
-                ),
-                &["OK"],
-                0,
-            );
+            open_dialog(app, "core_version", MIN_CORE_VERSION, &version, &["ok"], 0);
             return;
         }
     }
@@ -467,15 +457,7 @@ pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
     // systems means the media database has never been built.
     if !first_run_shown && indexed == 0 {
         lock(&ctx.shared).first_run_shown = true;
-        open_dialog(
-            app,
-            "first_run",
-            "First-time setup",
-            "Zaparoo needs to scan your games before you can use the frontend. \
-             This usually takes a few minutes.",
-            &["Start scan"],
-            0,
-        );
+        open_dialog(app, "first_run", "", "", &["start_scan"], 0);
     }
 }
 
@@ -519,7 +501,19 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
         }
         actions::ACCEPT => dialog_accept(ctx, app, &kind, focus),
         actions::CANCEL => dialog_cancel(ctx, app, &kind),
-        _ => {}
+        _ => return,
+    }
+    // The surface came free (this dialog closed, or the alert on it was
+    // dismissed): hand it to whatever failure was waiting.
+    if !app.global::<crate::Overlays>().get_dialog_open() {
+        let next = if kind == "action_error" {
+            lock(&ctx.shared).errors.dismiss()
+        } else {
+            lock(&ctx.shared).errors.take_next()
+        };
+        if let Some(entry) = next {
+            show_action_error(app, &entry);
+        }
     }
 }
 
@@ -568,9 +562,14 @@ fn dialog_cancel(ctx: &Ctx, app: &App, kind: &str) {
             if running {
                 lock(&ctx.shared).first_run_cancelling = true;
                 let client = ctx.store.client();
+                let ctx2 = ctx.clone();
+                let weak = app.as_weak();
                 ctx.handle.spawn(async move {
                     if let Err(e) = client.media_generate_cancel().await {
                         tracing::warn!("first-run cancel failed: {}", e.message);
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            report_action_error(&ctx2, &app, "media_cancel", "");
+                        });
                     }
                 });
             }
@@ -598,10 +597,10 @@ fn first_run_accept(ctx: &Ctx, app: &App) {
                 guard.first_run_cancelling = false;
             }
             start_index(ctx, app, None);
+            set_dialog_status(app, "preparing", 0, 0, "");
             let overlays = app.global::<crate::Overlays>();
-            overlays.set_dialog_status(SharedString::from("Preparing…"));
             overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![SharedString::from(
-                "Cancel",
+                "cancel",
             )])));
             overlays.set_dialog_focus(0);
         }
@@ -626,25 +625,21 @@ pub fn refresh_first_run(ctx: &Ctx, app: &App) {
     let overlays = app.global::<crate::Overlays>();
     if ms.indexing || ms.optimizing {
         lock(&ctx.shared).first_run_saw_indexing = true;
-        let line = if ms.optimizing {
-            "Optimizing database - almost done".to_string()
+        if ms.optimizing {
+            set_dialog_status(app, "optimizing", 0, 0, "");
         } else if ms.paused {
-            "Indexing paused".to_string()
+            set_dialog_status(app, "paused", 0, 0, "");
         } else if ms.total_steps > 0 {
-            if ms.current_step_display.is_empty() {
-                format!("Step {} of {}", ms.current_step.max(0), ms.total_steps)
-            } else {
-                format!(
-                    "Step {} of {} - {}",
-                    ms.current_step.max(0),
-                    ms.total_steps,
-                    ms.current_step_display
-                )
-            }
+            set_dialog_status(
+                app,
+                "step",
+                ms.current_step.max(0),
+                ms.total_steps,
+                &ms.current_step_display,
+            );
         } else {
-            "Preparing…".to_string()
-        };
-        overlays.set_dialog_status(SharedString::from(line.as_str()));
+            set_dialog_status(app, "preparing", 0, 0, "");
+        }
         return;
     }
     // indexing and optimizing both clear: completion or cancel, but
@@ -664,17 +659,18 @@ pub fn refresh_first_run(ctx: &Ctx, app: &App) {
         drop(guard);
         overlays.set_dialog_status(SharedString::default());
         overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![SharedString::from(
-            "Start scan",
+            "start_scan",
         )])));
         overlays.set_dialog_focus(0);
         return;
     }
     lock(&ctx.shared).first_run = FirstRunPhase::Done;
     overlays.set_dialog_status(SharedString::default());
-    overlays.set_dialog_body(SharedString::from(
-        format!("Done. {} files indexed.", ms.total_files.max(0)).as_str(),
+    overlays.set_dialog_detail(SharedString::from("done"));
+    overlays.set_dialog_arg(SharedString::from(
+        ms.total_files.max(0).to_string().as_str(),
     ));
-    overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![SharedString::from("OK")])));
+    overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![SharedString::from("ok")])));
     overlays.set_dialog_focus(0);
 }
 
@@ -966,14 +962,7 @@ fn about_action(ctx: &Ctx, app: &App, action: &str) {
 
 pub(crate) fn stage_restart(ctx: &Ctx, app: &App, pending: PendingRestart) {
     lock(&ctx.shared).pending_restart = Some(pending);
-    open_dialog(
-        app,
-        "restart_setting",
-        "Quit and restart Zaparoo Frontend?",
-        "This setting needs a frontend restart to take effect.",
-        &["Yes", "No"],
-        1,
-    );
+    open_dialog(app, "restart_setting", "", "", &["yes", "no"], 1);
 }
 
 #[cfg(feature = "mister")]
@@ -1003,7 +992,7 @@ fn confirm_pending_restart(ctx: &Ctx, app: &App) {
     match pending {
         PendingRestart::Resolution(value) => {
             lock(&ctx.shared).persist.settings.resolution = value;
-            crate::settings::save(ctx);
+            crate::settings::save(ctx, app);
             crate::request_restart();
         }
         PendingRestart::CrtStandard(value) => {
@@ -1013,11 +1002,10 @@ fn confirm_pending_restart(ctx: &Ctx, app: &App) {
                 .settings
                 .crt_video_standard
                 .clone_from(&standard);
-            crate::settings::save(ctx);
+            crate::settings::save(ctx, app);
             if let Err(e) = write_crt_state_file(true, &standard) {
                 tracing::warn!("{e}");
-                app.global::<crate::Shell>()
-                    .set_status_text(SharedString::from("Could not update CRT mode"));
+                report_action_error(ctx, app, "setting", "");
                 return;
             }
             crate::request_main_reload();
@@ -1030,8 +1018,7 @@ fn confirm_pending_restart(ctx: &Ctx, app: &App) {
                 .clone();
             if let Err(e) = write_crt_state_file(enabled, &standard) {
                 tracing::warn!("{e}");
-                app.global::<crate::Shell>()
-                    .set_status_text(SharedString::from("Could not update CRT mode"));
+                report_action_error(ctx, app, "setting", "");
                 return;
             }
             crate::request_main_reload();
@@ -1065,7 +1052,7 @@ fn crt_calibration_action(ctx: &Ctx, app: &App, action: &str) {
         actions::UP => v -= 1,
         actions::DOWN => v += 1,
         actions::ACCEPT | actions::CANCEL => {
-            crate::settings::save(ctx);
+            crate::settings::save(ctx, app);
             overlays.set_crt_calibration_open(false);
             return;
         }
@@ -1086,10 +1073,12 @@ fn crt_calibration_action(ctx: &Ctx, app: &App, action: &str) {
 /// only shipped scraper - `scraperId` has no server-side default, so
 /// the Qt model hardcodes the same id). `force` re-scrapes existing
 /// metadata; the one-shot toggle resets when the run is kicked off.
-pub(crate) fn start_scrape(ctx: &Ctx, systems: Vec<String>, force: bool) {
+pub(crate) fn start_scrape(ctx: &Ctx, app: &App, systems: Vec<String>, force: bool) {
     use zaparoo_core::media_types::MediaScrapeParams;
     let client = ctx.store.client();
     let shared = ctx.shared.clone();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
     ctx.handle.spawn(async move {
         let params = MediaScrapeParams {
             scraper_id: "gamelist.xml".to_string(),
@@ -1102,7 +1091,12 @@ pub(crate) fn start_scrape(ctx: &Ctx, systems: Vec<String>, force: bool) {
                     lock(&shared).rescrape_existing = false;
                 }
             }
-            Err(e) => tracing::warn!("start_scrape failed: {}", e.message),
+            Err(e) => {
+                tracing::warn!("start_scrape failed: {}", e.message);
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    report_action_error(&ctx2, &app, "media_scrape", "");
+                });
+            }
         }
     });
 }
@@ -1211,7 +1205,7 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                         crate::settings::picker_selected(ctx, app, &field, &id);
                     }
                     ListContext::SystemLauncher(system_id) => {
-                        set_system_launcher(ctx, &system_id, &id);
+                        set_system_launcher(ctx, app, &system_id, &id);
                     }
                 }
             }
@@ -1398,7 +1392,7 @@ pub(crate) fn open_documentation_qr(app: &App) {
     }
 }
 
-pub(crate) fn open_qr_code(app: &App, entry: &GameRow) {
+pub(crate) fn open_qr_code(ctx: &Ctx, app: &App, entry: &GameRow) {
     let text = if entry.zap_script.trim().is_empty() {
         entry.path.clone()
     } else {
@@ -1406,14 +1400,18 @@ pub(crate) fn open_qr_code(app: &App, entry: &GameRow) {
     };
     if text.is_empty() {
         tracing::warn!("QR code for {} has no launch payload", entry.name);
+        report_action_error(ctx, app, "qr_code", "");
         return;
     }
-    if let Some((image, modules)) = crate::qr::qr_image(&crate::qr::write_url(&text)) {
-        app.global::<crate::Overlays>().set_qr_image(image);
-        app.global::<crate::Overlays>()
-            .set_qr_modules(i32::try_from(modules).unwrap_or(0));
-        app.global::<crate::Overlays>().set_qr_open(true);
-    }
+    let Some((image, modules)) = crate::qr::qr_image(&crate::qr::write_url(&text)) else {
+        tracing::warn!("QR code for {} could not be rendered", entry.name);
+        report_action_error(ctx, app, "qr_code", "");
+        return;
+    };
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_qr_image(image);
+    overlays.set_qr_modules(i32::try_from(modules).unwrap_or(0));
+    overlays.set_qr_open(true);
 }
 
 pub(crate) fn menu_entry(id: &str, label: &str) -> crate::MenuEntry {
@@ -1448,10 +1446,10 @@ pub(crate) fn index_category(ctx: &Ctx, app: &App, category: &str) {
     }
 }
 
-pub(crate) fn scrape_category(ctx: &Ctx, category: &str) {
+pub(crate) fn scrape_category(ctx: &Ctx, app: &App, category: &str) {
     let ids = indexable_system_ids(ctx, category);
     if !ids.is_empty() {
-        start_scrape(ctx, ids, false);
+        start_scrape(ctx, app, ids, false);
     }
 }
 
@@ -1550,6 +1548,7 @@ fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
                 ctx,
                 app,
                 zaparoo_app::systems::random_favorite_launch_text(&scope),
+                "",
             );
         }
         "back_to_hub" => {
@@ -1593,7 +1592,7 @@ fn favorites_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
         }
         shared.persist.settings.favorites_grouping = id.to_string();
     }
-    crate::settings::save(ctx);
+    crate::settings::save(ctx, app);
     if id == "system" {
         crate::systems::enter_favorites(ctx, app);
     } else {
@@ -1618,14 +1617,39 @@ fn favorites_sort_picked(ctx: &Ctx, app: &App, id: &str) {
     lock(&ctx.shared).favorites_sort = sort.to_string();
     if let Err(e) = zaparoo_core::config::save_favorites_sort(&ctx.config_path, sort) {
         tracing::warn!("saving the favorites sort failed: {e}");
+        report_action_error(ctx, app, "setting", "");
     }
     crate::games::refresh_favorites(ctx, app);
 }
 
-/// A one-button alert above the current screen (Modal.qml's
-/// `action_error` kind).
-pub(crate) fn open_action_error(app: &App, title: &str, body: &str) {
-    open_dialog(app, "action_error", title, body, &["OK"], 0);
+/// A one-button informational alert above the current screen (the
+/// `action_error` surface, with its own copy kind).
+pub(crate) fn open_alert(app: &App, kind: &str) {
+    open_dialog(app, kind, "", "", &["ok"], 0);
+}
+
+/// Report a failed user action. The technical detail is already in the
+/// log at the call site; this is the user-facing half, deduplicated
+/// and queued by `zaparoo_app::action_error` so a burst of failures is
+/// read one alert at a time.
+pub(crate) fn report_action_error(ctx: &Ctx, app: &App, kind: &str, context: &str) {
+    // An alert is the one thing allowed above a modal, but a failed
+    // discovery arrives while the context menu still holds its
+    // "Searching…" row: close the menu first so Back returns to the
+    // screen rather than to a row that can never resolve.
+    if action_error::closes_context_menu(kind) && app.global::<crate::Overlays>().get_context_open()
+    {
+        close_context_menu(ctx, app);
+    }
+    let slot_free = !app.global::<crate::Overlays>().get_dialog_open();
+    let entry = lock(&ctx.shared).errors.present(kind, context, slot_free);
+    if let Some(entry) = entry {
+        show_action_error(app, &entry);
+    }
+}
+
+fn show_action_error(app: &App, entry: &action_error::Entry) {
+    open_dialog(app, "action_error", &entry.kind, &entry.context, &["ok"], 0);
 }
 
 /// Accept on a category tile while the catalog errored: refetch it.
@@ -1766,7 +1790,7 @@ pub(crate) fn open_launcher_picker(ctx: &Ctx, app: &App, system_id: &str) {
 /// Persist a launcher choice through the store mutation (which owns
 /// the settings invalidation), then mirror it into the local defaults
 /// so the next picker open reflects it immediately.
-fn set_system_launcher(ctx: &Ctx, system_id: &str, launcher_id: &str) {
+fn set_system_launcher(ctx: &Ctx, app: &App, system_id: &str, launcher_id: &str) {
     use zaparoo_core::endpoints::system_launcher_default::{
         SetSystemLauncherDefaultArgs, SetSystemLauncherDefaultMutation,
     };
@@ -1777,6 +1801,8 @@ fn set_system_launcher(ctx: &Ctx, system_id: &str, launcher_id: &str) {
     };
     let store = ctx.store.clone();
     let shared = ctx.shared.clone();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
     let system_id = system_id.to_string();
     ctx.handle.spawn(async move {
         let args = SetSystemLauncherDefaultArgs {
@@ -1805,7 +1831,12 @@ fn set_system_launcher(ctx: &Ctx, system_id: &str, launcher_id: &str) {
                         });
                 }
             }
-            Err(e) => tracing::warn!("set launcher failed: {}", e.message),
+            Err(e) => {
+                tracing::warn!("set launcher failed: {}", e.message);
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    report_action_error(&ctx2, &app, "launcher", "");
+                });
+            }
         }
     });
 }
@@ -1816,12 +1847,12 @@ pub(crate) fn start_index(ctx: &Ctx, app: &App, systems: Option<Vec<String>>) {
     use zaparoo_core::media_types::MediaIndexParams;
     let client = ctx.store.client();
     let weak = app.as_weak();
+    let ctx2 = ctx.clone();
     ctx.handle.spawn(async move {
         if let Err(e) = client.media_generate(MediaIndexParams { systems }).await {
-            let message = format!("Update failed: {}", e.message);
+            tracing::warn!("start_index failed: {}", e.message);
             let _ = weak.upgrade_in_event_loop(move |app| {
-                app.global::<crate::Shell>()
-                    .set_status_text(SharedString::from(message.as_str()));
+                report_action_error(&ctx2, &app, "media_index", "");
             });
         }
     });
@@ -1970,20 +2001,27 @@ fn modal_action(_ctx: &Ctx, app: &App, action: &str) {
 /// `MediaStatusResource` watches Core's indexing notifications), and
 /// the catalog refetches automatically on the busy -> idle edge via
 /// the store's `Tag::MEDIA_DB` invalidation watcher.
-pub(crate) fn launch(ctx: &Ctx, app: &App, text: String) {
+pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
     app.global::<crate::Shell>()
         .set_status_text(SharedString::from("Launching…"));
     let store = ctx.store.clone();
     let weak = app.as_weak();
+    let ctx2 = ctx.clone();
+    let name = name.to_string();
     ctx.handle.spawn(async move {
-        let outcome = store.run_mutation::<RunMutation>(RunParams { text }).await;
-        let message = match outcome {
-            Ok(()) => String::new(),
-            Err(e) => format!("Launch failed: {e}"),
+        let failed = match store.run_mutation::<RunMutation>(RunParams { text }).await {
+            Ok(()) => false,
+            Err(e) => {
+                tracing::warn!("launch failed for {name}: {e}");
+                true
+            }
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
             app.global::<crate::Shell>()
-                .set_status_text(SharedString::from(message.as_str()));
+                .set_status_text(SharedString::default());
+            if failed {
+                report_action_error(&ctx2, &app, "launch", &name);
+            }
         });
     });
 }

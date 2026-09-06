@@ -499,7 +499,7 @@ pub fn seed_detail_ctx(client: Arc<zaparoo_core::client::Client>, handle: Handle
 /// folder stack reset.
 pub fn enter(ctx: &Ctx, app: &App, sys: &SystemInfo) {
     if !sys.zap_script.is_empty() {
-        crate::router::launch(ctx, app, sys.zap_script.clone());
+        crate::router::launch(ctx, app, sys.zap_script.clone(), &sys.name);
         return;
     }
     {
@@ -2196,7 +2196,7 @@ fn accept_current(ctx: &Ctx, app: &App) {
         return;
     }
     if let Some(text) = row.launch_text() {
-        crate::router::launch(ctx, app, text);
+        crate::router::launch(ctx, app, text, &row.display);
     }
     slint::Timer::single_shot(Duration::from_millis(press_delay(app)), move || {
         let Some(app) = weak.upgrade() else {
@@ -2436,10 +2436,10 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         "more_info" => crate::router::open_game_info(ctx, app, &row),
         "toggle_favorite" => toggle_favorite(ctx, app, index, &row),
         "write_card" => crate::router::begin_card_write(ctx, app, &row),
-        "qr_code" => crate::router::open_qr_code(app, &row),
+        "qr_code" => crate::router::open_qr_code(ctx, app, &row),
         "add_to_hub" => add_to_hub(ctx, app, mode, &row, &system),
         "scrape_game" if !system.is_empty() => {
-            crate::router::start_scrape(ctx, vec![system], false);
+            crate::router::start_scrape(ctx, app, vec![system], false);
         }
         _ => {}
     }
@@ -2518,6 +2518,7 @@ fn toggle_favorite(ctx: &Ctx, app: &App, index: usize, row: &GameRow) {
             }
             Err(e) => {
                 tracing::warn!("favorite update failed for {name}: {}", e.message);
+                crate::router::report_action_error(&ctx2, &app, "favorite", &name);
             }
         });
     });

@@ -34,3 +34,102 @@ export global Labels {
         return "";
     }
 }
+
+// The dialog vocabulary. Rust pushes a kind, an optional sub-kind or
+// second value (`detail`) and one runtime value (`arg`); every word a
+// dialog shows is composed here so it can be translated. `detail`
+// carries the failure kind for an alert, the minimum version for the
+// Core warning, and the first-run phase; `arg` carries the item name,
+// the running version, or the file count.
+export global DialogLabels {
+    public pure function title(kind: string, detail: string) -> string {
+        if (kind == "quit_confirm") { return @tr("Quit Zaparoo Frontend?"); }
+        if (kind == "restart_setting") { return @tr("Quit and restart Zaparoo Frontend?"); }
+        if (kind == "notice") { return @tr("Welcome to Zaparoo Frontend"); }
+        if (kind == "core_version") { return @tr("Update Zaparoo Core"); }
+        if (kind == "first_run") { return @tr("First-time setup"); }
+        if (kind == "hub_full") { return @tr("Nothing left to add"); }
+        if (kind == "action_error") { return DialogLabels.error-title(detail); }
+        return "";
+    }
+
+    public pure function body(kind: string, detail: string, arg: string) -> string {
+        if (kind == "quit_confirm") { return @tr("Are you sure you want to exit?"); }
+        if (kind == "restart_setting") { return @tr("This setting needs a frontend restart to take effect."); }
+        if (kind == "notice") {
+            return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About / License.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");
+        }
+        if (kind == "core_version") {
+            return @tr("This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update.", detail, arg);
+        }
+        if (kind == "first_run") {
+            if (detail == "done") { return @tr("Done. {} files indexed.", arg); }
+            return @tr("Zaparoo needs to scan your games before you can use the frontend. This usually takes a few minutes.");
+        }
+        if (kind == "hub_full") {
+            return @tr("All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\".");
+        }
+        if (kind == "action_error") { return DialogLabels.error-body(detail, arg); }
+        return "";
+    }
+
+    // The first-run scan's progress line.
+    public pure function status(key: string, step: int, total: int, name: string) -> string {
+        if (key == "preparing") { return @tr("Preparing…"); }
+        if (key == "optimizing") { return @tr("Optimizing database - almost done"); }
+        if (key == "paused") { return @tr("Indexing paused"); }
+        if (key == "step") {
+            if (name == "") { return @tr("Step {} of {}", step, total); }
+            return @tr("Step {} of {} - {}", step, total, name);
+        }
+        return "";
+    }
+
+    public pure function button(key: string) -> string {
+        if (key == "yes") { return @tr("Yes"); }
+        if (key == "no") { return @tr("No"); }
+        if (key == "ok") { return @tr("OK"); }
+        if (key == "cancel") { return @tr("Cancel"); }
+        if (key == "i_understand") { return @tr("I understand"); }
+        if (key == "start_scan") { return @tr("Start scan"); }
+        return key;
+    }
+
+    // A failed user action. The technical detail is already in the log;
+    // these say what failed and what the user can do about it.
+    public pure function error-title(kind: string) -> string {
+        if (kind == "launch") { return @tr("Launch failed"); }
+        if (kind == "favorite") { return @tr("Favorite update failed"); }
+        if (kind == "add_to_hub") { return @tr("Add to Hub failed"); }
+        if (kind == "media_index") { return @tr("Media update failed"); }
+        if (kind == "media_scrape") { return @tr("Update metadata failed"); }
+        if (kind == "media_scrapers") { return @tr("Source list unavailable"); }
+        if (kind == "media_cancel") { return @tr("Cancel failed"); }
+        if (kind == "launcher") { return @tr("Launcher update failed"); }
+        if (kind == "alternate_discovery") { return @tr("Alternate versions unavailable"); }
+        if (kind == "qr_code") { return @tr("QR code failed"); }
+        if (kind == "setting") { return @tr("Setting not saved"); }
+        return @tr("Action failed");
+    }
+
+    public pure function error-body(kind: string, context: string) -> string {
+        if (kind == "launch") {
+            if (context == "") { return @tr("Could not start this item. Check Zaparoo Core and try again."); }
+            return @tr("Could not start {}. Check Zaparoo Core and try again.", context);
+        }
+        if (kind == "favorite") { return @tr("Could not update this favorite. Check Zaparoo Core and try again."); }
+        if (kind == "add_to_hub") {
+            if (context == "") { return @tr("Could not add this item to the Hub. Check Zaparoo Core and try again."); }
+            return @tr("Could not add {} to the Hub. Check Zaparoo Core and try again.", context);
+        }
+        if (kind == "media_index") { return @tr("Could not start the media database update. Check Zaparoo Core and try again."); }
+        if (kind == "media_scrape") { return @tr("Could not start updating metadata. Check Zaparoo Core and try again."); }
+        if (kind == "media_scrapers") { return @tr("Could not load the list of metadata sources. Check Zaparoo Core and try again."); }
+        if (kind == "media_cancel") { return @tr("Could not cancel the media operation. Check Zaparoo Core and try again."); }
+        if (kind == "launcher") { return @tr("Could not change the launcher. Check Zaparoo Core and try again."); }
+        if (kind == "alternate_discovery") { return @tr("Could not find alternate versions. Check Zaparoo Core and try again."); }
+        if (kind == "qr_code") { return @tr("Could not create the QR code for this item."); }
+        if (kind == "setting") { return @tr("Could not save this setting. Try again."); }
+        return @tr("The action could not be completed. Check Zaparoo Core and try again.");
+    }
+}
