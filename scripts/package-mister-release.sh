@@ -16,12 +16,18 @@ MAIN_ASSET="MiSTer_Zaparoo"
 
 usage() {
     cat >&2 <<'EOF_USAGE'
-Usage: scripts/package-mister-release.sh [vX.Y.Z]
+Usage: scripts/package-mister-release.sh [--slint] [vX.Y.Z]
 
 Builds the official MiSTer frontend binary, downloads the required MiSTer
 wrapper assets, and writes output/release/zaparoo-frontend-vX.Y.Z.zip.
 
-Set ZAPAROO_SKIP_FRONTEND_BUILD=1 to reuse output/frontend for packaging tests.
+--slint packages the Slint frontend instead (docs/plans/slint-migration.md):
+the static musl binary from `just slint-arm32` plus its runtime fonts and
+logo assets, in the same zaparoo/ layout the wrapper expects, as
+output/release/zaparoo-frontend-vX.Y.Z-slint.zip.
+
+Set ZAPAROO_SKIP_FRONTEND_BUILD=1 to reuse the existing binary for
+packaging tests (output/frontend, or the cross build's frontend-slint).
 EOF_USAGE
 }
 
@@ -102,6 +108,33 @@ main=zaparoo/MiSTer_Zaparoo
 EOF_README
 }
 
+write_slint_readme() {
+    cat > "$1" <<'EOF_README'
+# Zaparoo Frontend (Slint beta)
+
+This bundle carries the new Slint frontend. It installs exactly like a
+regular release and the MiSTer_Zaparoo wrapper starts it the same way; the
+extra `fonts` and `slint-assets` folders next to the binary are required.
+
+1. Copy the `zaparoo` folder to root/top of SD card (merge over an existing
+   install; keep a copy of your current `zaparoo/frontend` if you want to
+   switch back by copying it over this one)
+2. In `MiSTer.ini`, add following to the `[MiSTer]` or `[Menu]` section:
+
+```ini
+main=zaparoo/MiSTer_Zaparoo
+```
+
+3. Start or reboot your MiSTer, Frontend will start automatically
+EOF_README
+}
+
+FRONTEND="qt"
+if [ "${1:-}" = "--slint" ]; then
+    FRONTEND="slint"
+    shift
+fi
+
 TAG="$(resolve_tag "$@")"
 VERSION="${TAG#v}"
 BASE_VERSION="${VERSION%%-*}"
@@ -134,20 +167,33 @@ if [ "$BASE_VERSION" != "$CARGO_VERSION" ]; then
 fi
 
 cd "$PROJECT_ROOT"
-if [ "${ZAPAROO_SKIP_FRONTEND_BUILD:-0}" = "1" ]; then
-    echo "Skipping frontend build; reusing ${OUTPUT_DIR}/frontend"
+if [ "$FRONTEND" = "slint" ]; then
+    FRONTEND_BIN="${PROJECT_ROOT}/rust/target/armv7-unknown-linux-musleabihf/release/frontend-slint"
+    if [ "${ZAPAROO_SKIP_FRONTEND_BUILD:-0}" = "1" ]; then
+        echo "Skipping frontend build; reusing ${FRONTEND_BIN}"
+    else
+        just slint-arm32
+    fi
 else
-    just release
+    FRONTEND_BIN="${OUTPUT_DIR}/frontend"
+    if [ "${ZAPAROO_SKIP_FRONTEND_BUILD:-0}" = "1" ]; then
+        echo "Skipping frontend build; reusing ${FRONTEND_BIN}"
+    else
+        just release
+    fi
 fi
 
-FRONTEND_BIN="${OUTPUT_DIR}/frontend"
 if [ ! -f "$FRONTEND_BIN" ]; then
     error "frontend binary not found at $FRONTEND_BIN"
 fi
 
+SUFFIX=""
+if [ "$FRONTEND" = "slint" ]; then
+    SUFFIX="-slint"
+fi
 mkdir -p "$RELEASE_DIR"
-STAGE="${RELEASE_DIR}/zaparoo-frontend-${TAG}"
-ARCHIVE="${RELEASE_DIR}/zaparoo-frontend-${TAG}.zip"
+STAGE="${RELEASE_DIR}/zaparoo-frontend-${TAG}${SUFFIX}"
+ARCHIVE="${RELEASE_DIR}/zaparoo-frontend-${TAG}${SUFFIX}.zip"
 TMP_DIR="$(mktemp -d "${RELEASE_DIR}/download.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -193,13 +239,26 @@ install -m 0644 "$MENU_DIR/$MENU_ASSET" "$STAGE/zaparoo/menu_zaparoo.rbf"
 install -m 0755 "$MAIN_DIR/$MAIN_ASSET" "$STAGE/zaparoo/MiSTer_Zaparoo"
 install -m 0755 "$FRONTEND_BIN" "$STAGE/zaparoo/frontend"
 install -m 0644 "$PROJECT_ROOT/COPYING" "$STAGE/COPYING"
-rsync -a --delete "$PROJECT_ROOT/src/LICENSES/" "$STAGE/LICENSES/"
-write_readme "$STAGE/README.txt"
-
-(
-    cd "$STAGE"
-    zip -r "$ARCHIVE" zaparoo LICENSES README.txt COPYING
-)
+if [ "$FRONTEND" = "slint" ]; then
+    # Runtime files the binary looks up next to itself (src/fonts.rs,
+    # src/system_logos.rs). The Qt LGPL notices in src/LICENSES do not
+    # apply to this binary; its third-party notices are a ledger item.
+    mkdir -p "$STAGE/zaparoo/fonts" "$STAGE/zaparoo/slint-assets"
+    install -m 0644 "$PROJECT_ROOT"/resources/fonts/runtime/*.ttf "$STAGE/zaparoo/fonts/"
+    rsync -a --delete "$PROJECT_ROOT/rust/frontend-slint/assets/systems/" "$STAGE/zaparoo/slint-assets/systems/"
+    write_slint_readme "$STAGE/README.txt"
+    (
+        cd "$STAGE"
+        zip -r "$ARCHIVE" zaparoo README.txt COPYING
+    )
+else
+    rsync -a --delete "$PROJECT_ROOT/src/LICENSES/" "$STAGE/LICENSES/"
+    write_readme "$STAGE/README.txt"
+    (
+        cd "$STAGE"
+        zip -r "$ARCHIVE" zaparoo LICENSES README.txt COPYING
+    )
+fi
 
 unzip -t "$ARCHIVE" > /dev/null
 

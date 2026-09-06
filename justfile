@@ -278,6 +278,15 @@ test-slint:
 slint-arm32:
     cd rust && ZAPAROO_RESOURCES_DIR="$PWD/../resources" RUSTFLAGS="-C target-cpu=cortex-a9" cross build -p frontend-slint --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
 
+# MiSTer release bundle for the Slint frontend (zaparoo-frontend-<tag>-slint.zip);
+# same wrapper and layout as `release-zip`, plus fonts/ and slint-assets/.
+slint-release-zip *args:
+    ./scripts/package-mister-release.sh --slint {{args}}
+
+# Desktop tarball of the release cargo build with its runtime files.
+slint-package-desktop *args:
+    ./scripts/package-slint-desktop.sh {{args}}
+
 # Build and deploy the Slint frontend side by side as /media/fat/zaparoo/frontend-slint.
 # `--replace` installs it over the Qt binary (backed up once as frontend.qt-backup).
 deploy-mister-slint *args:

@@ -81,3 +81,6 @@ rust/frontend/.qmlls.ini
 
 # Dev-run log that lands in the repo root (real log goes to ~/.local/share/zaparoo/logs/)
 /frontend.log
+
+# Python bytecode from scripts/
+__pycache__/
