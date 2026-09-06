@@ -18,6 +18,7 @@ pub mod buttons;
 pub mod clock;
 pub mod format;
 pub mod layouts;
+pub mod paged_grid;
 pub mod palette;
 pub mod sizing;
 pub mod status_line;
