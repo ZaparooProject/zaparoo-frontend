@@ -25,6 +25,9 @@ use zaparoo_core::input_actions::actions;
 /// Cover key prefix for a media cover the cache already holds; the rest
 /// is `system` + `\u{1f}` + `path`.
 const MEDIA_PREFIX: &str = "media:";
+/// Cover key for a user's own Hub icon (`custom/hub/<id>.png`); the
+/// payload is the id the file was matched by.
+const CUSTOM_PREFIX: &str = "custom:";
 const LOADING_KEY: &str = "icons/Loading";
 /// Cover decode tier for Hub tiles (the Qt build's fixed 256 raster).
 const HUB_COVER_TIER: u32 = 256;
@@ -149,6 +152,13 @@ impl Resolver for SharedResolver<'_> {
         format!("systems/{id}")
     }
 
+    /// A user icon wins over the bundled glyph for any key the Hub
+    /// resolves art by: a category, an action, or a custom item's own
+    /// `icon` (`docs/customization.md`).
+    fn hub_override(&self, id: &str) -> Option<String> {
+        crate::customization::has_hub_override(id).then(|| format!("{CUSTOM_PREFIX}{id}"))
+    }
+
     fn media_cover_key(&self, system: &str, path: &str) -> String {
         let key = MediaKey {
             media_id: None,
@@ -210,8 +220,10 @@ pub fn rebuild(ctx: &Ctx, app: &App) {
             resume_name: &resume_name,
             resume_cover_key: &resume_cover,
             resume_known_unavailable: hub.resume_known_unavailable(connected),
-            // The Update screen has not been ported; the tile is a
-            // structural absence until it lands.
+            // The Update screen is out of scope for this migration: it
+            // is QML shipped by the external `zaparoo-update` crate, so
+            // there is nothing in this tree to port. The tile is a
+            // structural absence rather than a dead row.
             update_enabled: false,
             internet_available: hub.internet_available,
         };
@@ -262,13 +274,15 @@ fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
     if entry.is_empty() {
         return cell;
     }
-    // The user's own icon for this category or action, as supplied.
-    if let Some(image) = crate::customization::hub_image(&entry.id) {
-        cell.cover = image;
-        cell.has_cover = true;
-        return cell;
-    }
     let key = entry.cover_key.as_str();
+    // The user's own icon, as supplied: no tint, no glyph fallback.
+    if let Some(id) = key.strip_prefix(CUSTOM_PREFIX) {
+        if let Some(image) = crate::customization::hub_image(id) {
+            cell.cover = image;
+            cell.has_cover = true;
+            return cell;
+        }
+    }
     if let Some(id) = key.strip_prefix("systems/") {
         cell.wordmark = true;
         if let Some(rest) = crate::system_logos::tinted_logo_for(id, false) {

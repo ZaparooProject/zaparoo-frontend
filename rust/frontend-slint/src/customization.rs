@@ -120,6 +120,12 @@ pub fn hub_image(id: &str) -> Option<slint::Image> {
     image_for("hub", id)
 }
 
+/// Whether the user supplied a Hub icon for `id`, without decoding it.
+/// The Hub rules ask this while resolving cover keys.
+pub fn has_hub_override(id: &str) -> bool {
+    override_path("hub", id).is_some()
+}
+
 /// Decode one override file. SVG goes through the same rasterizer the
 /// bundled glyphs use, at the tallest size a tile can ask for; the
 /// bitmap formats decode at their native size and the view scales them.
