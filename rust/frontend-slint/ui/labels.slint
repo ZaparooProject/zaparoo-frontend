@@ -97,6 +97,13 @@ export global Labels {
         return Labels.hub(key, name);
     }
 
+    // The header's transient app line. Rust pushes a key; today the
+    // only one is the launch cue.
+    public pure function status(key: string) -> string {
+        if (key == "launching") { return @tr("Launching…"); }
+        return "";
+    }
+
     public pure function hub-reason(reason: string) -> string {
         if (reason == "no-recent-games") { return @tr("No recent games"); }
         if (reason == "no-internet") { return @tr("No internet connection"); }

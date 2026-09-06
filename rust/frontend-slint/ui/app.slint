@@ -66,6 +66,7 @@ export global Shell {
     in-out property <float> route-page-slide: 0;
     in-out property <bool> route-slide-anim: true;
     // Transient light cue / error line (the CoreStatusPill slot).
+    // The header's transient app line, as a `Labels.status` key.
     in-out property <string> status-text: "";
     in-out property <string> clock-text: "";
     // Widest reading for the clock format, so its slot never reflows.
@@ -2303,7 +2304,7 @@ export component App inherits Window {
         has-battery: Shell.has-battery;
         battery-percent: Shell.battery-percent;
         browse-title: root.browse-header-title();
-        app-text: Shell.status-text;
+        app-text: Labels.status(Shell.status-text);
     }
 
     // Game-info modal, mounted above the screens like the Qt modal

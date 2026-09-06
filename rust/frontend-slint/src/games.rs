@@ -1062,12 +1062,11 @@ fn on_append(
         let (rows, cursor) = match outcome {
             Ok(page) => page,
             Err(message) => {
+                // The rows already on screen stay; Qt says nothing here
+                // either, and the next move retries the fetch.
+                tracing::warn!("page fetch failed: {message}");
                 model.grid.set_loading_more(false);
                 drop(shared);
-                app.global::<crate::Shell>()
-                    .set_status_text(SharedString::from(
-                        format!("Page fetch failed: {message}").as_str(),
-                    ));
                 render(ctx, app);
                 return;
             }

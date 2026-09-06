@@ -1974,7 +1974,7 @@ fn modal_action(_ctx: &Ctx, app: &App, action: &str) {
 /// the store's `Tag::MEDIA_DB` invalidation watcher.
 pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
     app.global::<crate::Shell>()
-        .set_status_text(SharedString::from("Launching…"));
+        .set_status_text(SharedString::from("launching"));
     let store = ctx.store.clone();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
