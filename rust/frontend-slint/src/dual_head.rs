@@ -1,0 +1,723 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+
+//! State projection from the input-owning HDMI component into the
+//! view-only CRT component used by `MiSTer` dual-head mode.
+
+use crate::{
+    App, GameInfoView, GameTile, GamesView, HubView, Overlays, SettingsView, Shell, SystemTile,
+    SystemsView,
+};
+use slint::{ComponentHandle as _, Model as _, ModelRc, VecModel};
+
+macro_rules! set_if_changed {
+    ($target:expr, $get:ident => $set:ident, $value:expr) => {{
+        let value = $value;
+        if $target.$get() != value {
+            $target.$set(value);
+        }
+    }};
+}
+
+macro_rules! copy_properties {
+    ($source:expr, $target:expr; $($get:ident => $set:ident),+ $(,)?) => {
+        $(
+            set_if_changed!($target, $get => $set, $source.$get());
+        )+
+    };
+}
+
+trait MirrorRow: Clone + 'static {
+    fn same_content(&self, other: &Self) -> bool;
+}
+
+fn same_image(left: &slint::Image, right: &slint::Image) -> bool {
+    left == right || (left.size().width == 0 && right.size().width == 0)
+}
+
+impl MirrorRow for SystemTile {
+    fn same_content(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.name == other.name
+            && same_image(&self.logo, &other.logo)
+            && same_image(&self.logo_focus, &other.logo_focus)
+            && self.has_logo == other.has_logo
+            && self.hidden == other.hidden
+    }
+}
+
+impl MirrorRow for GameTile {
+    fn same_content(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.path == other.path
+            && same_image(&self.cover, &other.cover)
+            && self.has_cover == other.has_cover
+            && self.is_favorite == other.is_favorite
+            && same_image(&self.thumb, &other.thumb)
+            && self.has_thumb == other.has_thumb
+            && self.tags == other.tags
+    }
+}
+
+/// Project only the source page that fits the CRT grid. Returning
+/// `None` preserves the existing `ModelRc`, which avoids invalidating
+/// the CRT scene on every 16 ms mirror tick while source rows are idle.
+fn project_page<T: MirrorRow>(
+    model: &ModelRc<T>,
+    current: &ModelRc<T>,
+    selected: i32,
+    capacity: i32,
+) -> (Option<ModelRc<T>>, i32, usize) {
+    let capacity = capacity.max(1) as usize;
+    let selected = (selected.max(0) as usize).min(model.row_count().saturating_sub(1));
+    let start = selected / capacity * capacity;
+    let end = (start + capacity).min(model.row_count());
+    let unchanged = current.row_count() == end - start
+        && (start..end).all(|row| {
+            model
+                .row_data(row)
+                .zip(current.row_data(row - start))
+                .is_some_and(|(source, target)| source.same_content(&target))
+        });
+    let projected = if unchanged {
+        None
+    } else {
+        let rows = (start..end)
+            .filter_map(|row| model.row_data(row))
+            .collect::<Vec<_>>();
+        Some(ModelRc::new(VecModel::from(rows)))
+    };
+    (
+        projected,
+        i32::try_from(selected - start).unwrap_or(0),
+        model.row_count().div_ceil(capacity),
+    )
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum TransitionPhase {
+    #[default]
+    Idle,
+    Active,
+    Rearm,
+}
+
+#[derive(Default)]
+struct SyncState {
+    route: TransitionPhase,
+    systems: TransitionPhase,
+    games: TransitionPhase,
+}
+
+/// Copy router-owned state while leaving profile-specific geometry
+/// (`Sizing`, grid shapes, and visible-row count) under CRT ownership.
+#[allow(
+    clippy::too_many_lines,
+    reason = "explicit property inventory makes missing mirror state reviewable"
+)]
+fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
+    let source = primary.global::<Shell>();
+    let target = crt.global::<Shell>();
+    let route_in_progress = source.get_route_transitioning();
+    let route_motion =
+        source.get_route_cached_transition() || source.get_route_page_slide().abs() > f32::EPSILON;
+    if route_in_progress {
+        set_if_changed!(target, get_route_transitioning => set_route_transitioning, true);
+        set_if_changed!(
+            target,
+            get_route_from_screen => set_route_from_screen,
+            source.get_route_from_screen()
+        );
+        set_if_changed!(
+            target,
+            get_route_to_screen => set_route_to_screen,
+            source.get_route_to_screen()
+        );
+        set_if_changed!(
+            target,
+            get_route_slide_dir => set_route_slide_dir,
+            source.get_route_slide_dir()
+        );
+        set_if_changed!(
+            target,
+            get_route_cached_transition => set_route_cached_transition,
+            false
+        );
+        if route_motion && state.route != TransitionPhase::Active {
+            target.set_active_screen(source.get_route_from_screen());
+            target.set_route_slide_anim(true);
+            target.set_route_page_slide(source.get_route_slide_dir() as f32);
+            state.route = TransitionPhase::Active;
+        }
+    } else if state.route == TransitionPhase::Active || target.get_route_transitioning() {
+        target.set_route_slide_anim(false);
+        target.set_active_screen(source.get_active_screen());
+        target.set_route_page_slide(0.0);
+        target.set_route_from_screen(slint::SharedString::default());
+        target.set_route_to_screen(slint::SharedString::default());
+        target.set_route_transitioning(false);
+        state.route = TransitionPhase::Rearm;
+    } else if state.route == TransitionPhase::Rearm {
+        target.set_route_slide_anim(true);
+        state.route = TransitionPhase::Idle;
+    } else {
+        set_if_changed!(
+            target,
+            get_active_screen => set_active_screen,
+            source.get_active_screen()
+        );
+    }
+    copy_properties!(source, target;
+        get_transitioning => set_transitioning,
+        get_status_text => set_status_text,
+        get_media_status_text => set_media_status_text,
+        get_clock_text => set_clock_text,
+        get_status_keys => set_status_keys,
+        get_about_version_line => set_about_version_line,
+        get_boot_curtain => set_boot_curtain,
+        get_boot_complete => set_boot_complete,
+        get_boot_text => set_boot_text,
+        get_reduce_motion => set_reduce_motion,
+        get_saver_armed => set_saver_armed,
+        get_orientation => set_orientation,
+        get_browse_list_layout => set_browse_list_layout,
+        get_is_mister => set_is_mister,
+        get_crt_enabled => set_crt_enabled,
+        get_crt_standard => set_crt_standard,
+    );
+
+    let source = primary.global::<HubView>();
+    let target = crt.global::<HubView>();
+    copy_properties!(source, target;
+        get_hub_error => set_hub_error,
+        get_categories => set_categories,
+        get_hub_category_index => set_hub_category_index,
+        get_hub_row => set_hub_row,
+        get_hub_action_index => set_hub_action_index,
+        get_hub_actions => set_hub_actions,
+    );
+
+    let source = primary.global::<SystemsView>();
+    let target = crt.global::<SystemsView>();
+    copy_properties!(source, target;
+        get_systems_category => set_systems_category,
+    );
+    let capacity = target.get_systems_grid_cols() * target.get_systems_grid_rows();
+    let cached_transition = source.get_systems_cached_transition();
+    let strip_transition = source.get_systems_page_slide().abs() > f32::EPSILON;
+    let transition_requested = cached_transition || strip_transition;
+    if transition_requested {
+        if state.systems != TransitionPhase::Active {
+            let incoming = if cached_transition {
+                source.get_systems()
+            } else {
+                source.get_systems_next_page()
+            };
+            let (next_page, _, _) = project_page(
+                &incoming,
+                &ModelRc::default(),
+                source.get_systems_transition_target_index(),
+                capacity,
+            );
+            target.set_systems_next_page(next_page.unwrap_or_default());
+            set_if_changed!(
+                target,
+                get_systems_slide_dir => set_systems_slide_dir,
+                source.get_systems_slide_dir()
+            );
+            set_if_changed!(target, get_systems_slide_anim => set_systems_slide_anim, true);
+            target.set_systems_page_slide(source.get_systems_slide_dir() as f32);
+            state.systems = TransitionPhase::Active;
+        }
+    } else {
+        if state.systems == TransitionPhase::Active {
+            target.set_systems_slide_anim(false);
+        }
+        let (systems, index, chunks) = project_page(
+            &source.get_systems(),
+            &target.get_systems(),
+            source.get_systems_index(),
+            capacity,
+        );
+        if let Some(systems) = systems {
+            target.set_systems(systems);
+        }
+        set_if_changed!(target, get_systems_index => set_systems_index, index);
+        set_if_changed!(
+            target,
+            get_systems_next_page => set_systems_next_page,
+            ModelRc::default()
+        );
+        if target.get_systems_page_slide().abs() > f32::EPSILON {
+            target.set_systems_page_slide(0.0);
+        }
+        set_if_changed!(
+            target,
+            get_systems_page => set_systems_page,
+            source.get_systems_page() * i32::try_from(chunks.max(1)).unwrap_or(1)
+                + source.get_systems_index().max(0) / capacity.max(1)
+        );
+        set_if_changed!(
+            target,
+            get_systems_total_pages => set_systems_total_pages,
+            source.get_systems_total_pages() * i32::try_from(chunks.max(1)).unwrap_or(1)
+        );
+        if state.systems == TransitionPhase::Active {
+            state.systems = TransitionPhase::Rearm;
+        } else if state.systems == TransitionPhase::Rearm {
+            target.set_systems_slide_anim(true);
+            state.systems = TransitionPhase::Idle;
+        } else {
+            set_if_changed!(target, get_systems_slide_anim => set_systems_slide_anim, true);
+        }
+    }
+
+    let source = primary.global::<SettingsView>();
+    let target = crt.global::<SettingsView>();
+    copy_properties!(source, target;
+        get_settings_page => set_settings_page,
+        get_settings_title => set_settings_title,
+        get_settings_fields => set_settings_fields,
+        get_settings_index => set_settings_index,
+    );
+
+    let source = primary.global::<GamesView>();
+    let target = crt.global::<GamesView>();
+    copy_properties!(source, target;
+        get_games_system => set_games_system,
+        get_games_has_more => set_games_has_more,
+        get_games_empty_text => set_games_empty_text,
+        get_games_error => set_games_error,
+        get_games_list_layout => set_games_list_layout,
+        get_list_rows => set_list_rows,
+        get_list_sel => set_list_sel,
+        get_list_view_top => set_list_view_top,
+        get_list_total => set_list_total,
+        get_detail_title => set_detail_title,
+        get_detail_path => set_detail_path,
+        get_detail_has_cover => set_detail_has_cover,
+        get_detail_rows => set_detail_rows,
+        get_detail_description => set_detail_description,
+        get_rapid_letter => set_rapid_letter,
+    );
+    let detail_cover = source.get_detail_cover();
+    if !same_image(&target.get_detail_cover(), &detail_cover) {
+        target.set_detail_cover(detail_cover);
+    }
+    let capacity = target.get_games_grid_cols() * target.get_games_grid_rows();
+    let cached_transition = source.get_games_cached_transition();
+    let strip_transition = source.get_games_page_slide().abs() > f32::EPSILON;
+    let transition_requested = cached_transition || strip_transition;
+    if transition_requested {
+        if state.games != TransitionPhase::Active {
+            let incoming = if cached_transition {
+                source.get_games()
+            } else {
+                source.get_games_next_page()
+            };
+            let (next_page, _, _) = project_page(
+                &incoming,
+                &ModelRc::default(),
+                source.get_games_transition_target_index(),
+                capacity,
+            );
+            target.set_games_next_page(next_page.unwrap_or_default());
+            set_if_changed!(
+                target,
+                get_games_slide_dir => set_games_slide_dir,
+                source.get_games_slide_dir()
+            );
+            set_if_changed!(target, get_games_slide_anim => set_games_slide_anim, true);
+            target.set_games_page_slide(source.get_games_slide_dir() as f32);
+            state.games = TransitionPhase::Active;
+        }
+    } else {
+        if state.games == TransitionPhase::Active {
+            target.set_games_slide_anim(false);
+        }
+        let (games, index, chunks) = project_page(
+            &source.get_games(),
+            &target.get_games(),
+            source.get_games_index(),
+            capacity,
+        );
+        if let Some(games) = games {
+            target.set_games(games);
+        }
+        set_if_changed!(target, get_games_index => set_games_index, index);
+        set_if_changed!(
+            target,
+            get_games_next_page => set_games_next_page,
+            ModelRc::default()
+        );
+        if target.get_games_page_slide().abs() > f32::EPSILON {
+            target.set_games_page_slide(0.0);
+        }
+        set_if_changed!(
+            target,
+            get_games_page => set_games_page,
+            source.get_games_page() * i32::try_from(chunks.max(1)).unwrap_or(1)
+                + source.get_games_index().max(0) / capacity.max(1)
+        );
+        set_if_changed!(
+            target,
+            get_games_total_pages => set_games_total_pages,
+            source.get_games_total_pages() * i32::try_from(chunks.max(1)).unwrap_or(1)
+        );
+        if state.games == TransitionPhase::Active {
+            state.games = TransitionPhase::Rearm;
+        } else if state.games == TransitionPhase::Rearm {
+            target.set_games_slide_anim(true);
+            state.games = TransitionPhase::Idle;
+        } else {
+            set_if_changed!(target, get_games_slide_anim => set_games_slide_anim, true);
+        }
+    }
+
+    let source = primary.global::<GameInfoView>();
+    let target = crt.global::<GameInfoView>();
+    copy_properties!(source, target;
+        get_modal_open => set_modal_open,
+        get_modal_name => set_modal_name,
+        get_modal_system => set_modal_system,
+        get_modal_path => set_modal_path,
+        get_modal_tags => set_modal_tags,
+        get_modal_description => set_modal_description,
+        get_modal_has_cover => set_modal_has_cover,
+    );
+    let modal_cover = source.get_modal_cover();
+    if !same_image(&target.get_modal_cover(), &modal_cover) {
+        target.set_modal_cover(modal_cover);
+    }
+
+    let source = primary.global::<Overlays>();
+    let target = crt.global::<Overlays>();
+    copy_properties!(source, target;
+        get_context_open => set_context_open,
+        get_context_entries => set_context_entries,
+        get_context_index => set_context_index,
+        get_list_open => set_list_open,
+        get_list_title => set_list_title,
+        get_list_entries => set_list_entries,
+        get_list_index => set_list_index,
+        get_letter_open => set_letter_open,
+        get_letter_buckets => set_letter_buckets,
+        get_letter_index => set_letter_index,
+        get_letter_loading => set_letter_loading,
+        get_letter_columns => set_letter_columns,
+        get_card_write_open => set_card_write_open,
+        get_card_write_failed => set_card_write_failed,
+        get_qr_open => set_qr_open,
+        get_qr_modules => set_qr_modules,
+        get_dialog_open => set_dialog_open,
+        get_dialog_kind => set_dialog_kind,
+        get_dialog_title => set_dialog_title,
+        get_dialog_body => set_dialog_body,
+        get_dialog_status => set_dialog_status,
+        get_dialog_buttons => set_dialog_buttons,
+        get_dialog_focus => set_dialog_focus,
+        get_crt_calibration_open => set_crt_calibration_open,
+        get_crt_h_offset => set_crt_h_offset,
+        get_crt_v_offset => set_crt_v_offset,
+    );
+    let qr_image = source.get_qr_image();
+    if !same_image(&target.get_qr_image(), &qr_image) {
+        target.set_qr_image(qr_image);
+    }
+}
+
+#[cfg(test)]
+pub fn sync(primary: &App, crt: &App) {
+    sync_with_state(primary, crt, &mut SyncState::default());
+}
+
+pub struct Runtime {
+    _mirror: App,
+    _timer: slint::Timer,
+}
+
+impl Runtime {
+    pub fn start(primary: &App, mirror: App) -> Result<Self, slint::PlatformError> {
+        let mut state = SyncState::default();
+        sync_with_state(primary, &mirror, &mut state);
+        mirror.show()?;
+
+        let primary = primary.as_weak();
+        let mirror_weak = mirror.as_weak();
+        let timer = slint::Timer::default();
+        timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(16),
+            move || {
+                if let (Some(primary), Some(mirror)) = (primary.upgrade(), mirror_weak.upgrade()) {
+                    sync_with_state(&primary, &mirror, &mut state);
+                }
+            },
+        );
+
+        Ok(Self {
+            _mirror: mirror,
+            _timer: timer,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{GameTile, Theme};
+    use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
+    use slint::platform::{Platform, WindowAdapter};
+    use slint::{Model, ModelRc, SharedString, VecModel};
+    use std::rc::Rc;
+
+    struct TestPlatform;
+
+    impl Platform for TestPlatform {
+        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
+            Ok(MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer))
+        }
+
+        fn duration_since_start(&self) -> std::time::Duration {
+            std::time::Duration::ZERO
+        }
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one platform-owning integration test covers idle identity plus Systems/Games transition lifecycles"
+    )]
+    fn copies_view_state_but_preserves_crt_geometry() -> Result<(), slint::PlatformError> {
+        assert!(slint::platform::set_platform(Box::new(TestPlatform)).is_ok());
+        let primary = App::new()?;
+        let crt = App::new()?;
+
+        primary
+            .global::<Shell>()
+            .set_active_screen(SharedString::from("games"));
+        primary.global::<GamesView>().set_games_index(4);
+        primary.global::<GamesView>().set_games_grid_cols(7);
+        primary
+            .global::<GamesView>()
+            .set_games(ModelRc::new(VecModel::from(
+                (0..5)
+                    .map(|i| GameTile {
+                        name: SharedString::from(format!("Game {i}")),
+                        ..GameTile::default()
+                    })
+                    .collect::<Vec<_>>(),
+            )));
+        crt.global::<GamesView>().set_games_grid_cols(4);
+        crt.global::<GamesView>().set_games_grid_rows(1);
+        crt.global::<Theme>().set_crt(true);
+
+        sync(&primary, &crt);
+
+        assert_eq!(crt.global::<Shell>().get_active_screen().as_str(), "games");
+        assert_eq!(crt.global::<GamesView>().get_games_index(), 0);
+        assert_eq!(crt.global::<GamesView>().get_games_grid_cols(), 4);
+        assert!(crt.global::<Theme>().get_crt());
+        assert_eq!(
+            crt.global::<GamesView>()
+                .get_games()
+                .row_data(0)
+                .map(|game| game.name.to_string()),
+            Some("Game 4".to_string())
+        );
+
+        let projected = crt.global::<GamesView>().get_games();
+        sync(&primary, &crt);
+        assert_eq!(
+            crt.global::<GamesView>().get_games(),
+            projected,
+            "unchanged synchronization must preserve projected model identity"
+        );
+
+        let mut state = SyncState::default();
+
+        // Cached HDMI route motion becomes native Slint motion on CRT.
+        // Source screen stays mounted until primary transition completion.
+        let shell = primary.global::<Shell>();
+        shell.set_route_from_screen(SharedString::from("games"));
+        shell.set_route_to_screen(SharedString::from("systems"));
+        shell.set_route_slide_dir(1);
+        shell.set_route_cached_transition(true);
+        shell.set_route_transitioning(true);
+        shell.set_active_screen(SharedString::from("systems"));
+        sync_with_state(&primary, &crt, &mut state);
+        assert_eq!(crt.global::<Shell>().get_active_screen().as_str(), "games");
+        assert!(crt.global::<Shell>().get_route_transitioning());
+        assert_eq!(
+            crt.global::<Shell>().get_route_from_screen().as_str(),
+            "games"
+        );
+        assert_eq!(
+            crt.global::<Shell>().get_route_to_screen().as_str(),
+            "systems"
+        );
+        assert!((crt.global::<Shell>().get_route_page_slide() - 1.0).abs() < f32::EPSILON);
+
+        shell.set_route_cached_transition(false);
+        shell.set_route_transitioning(false);
+        sync_with_state(&primary, &crt, &mut state);
+        assert_eq!(
+            crt.global::<Shell>().get_active_screen().as_str(),
+            "systems"
+        );
+        assert!(!crt.global::<Shell>().get_route_transitioning());
+        assert!(!crt.global::<Shell>().get_route_slide_anim());
+        sync_with_state(&primary, &crt, &mut state);
+        assert!(crt.global::<Shell>().get_route_slide_anim());
+
+        // Cached HDMI grid motion must not force a CRT cut. The CRT keeps
+        // its current page, stages the destination at its own four-item
+        // capacity, animates, then commits the exact selected system.
+        crt.global::<SystemsView>().set_systems_grid_cols(2);
+        crt.global::<SystemsView>().set_systems_grid_rows(2);
+        crt.global::<SystemsView>()
+            .set_systems(ModelRc::new(VecModel::from(
+                (0..4)
+                    .map(|i| SystemTile {
+                        id: SharedString::from(format!("Old {i}")),
+                        ..SystemTile::default()
+                    })
+                    .collect::<Vec<_>>(),
+            )));
+        primary
+            .global::<SystemsView>()
+            .set_systems(ModelRc::new(VecModel::from(
+                (0..8)
+                    .map(|i| SystemTile {
+                        id: SharedString::from(format!("New {i}")),
+                        ..SystemTile::default()
+                    })
+                    .collect::<Vec<_>>(),
+            )));
+        primary.global::<SystemsView>().set_systems_index(6);
+        primary
+            .global::<SystemsView>()
+            .set_systems_transition_target_index(6);
+        primary.global::<SystemsView>().set_systems_page(1);
+        primary.global::<SystemsView>().set_systems_total_pages(2);
+        primary.global::<SystemsView>().set_systems_slide_dir(-1);
+        primary
+            .global::<SystemsView>()
+            .set_systems_cached_transition(true);
+
+        sync_with_state(&primary, &crt, &mut state);
+        assert_eq!(
+            crt.global::<SystemsView>()
+                .get_systems()
+                .row_data(0)
+                .map(|system| system.id.to_string()),
+            Some("Old 0".to_string())
+        );
+        assert_eq!(
+            crt.global::<SystemsView>()
+                .get_systems_next_page()
+                .row_data(2)
+                .map(|system| system.id.to_string()),
+            Some("New 6".to_string())
+        );
+        assert!((crt.global::<SystemsView>().get_systems_page_slide() + 1.0).abs() < f32::EPSILON);
+        assert!(crt.global::<SystemsView>().get_systems_slide_anim());
+
+        primary
+            .global::<SystemsView>()
+            .set_systems_cached_transition(false);
+        sync_with_state(&primary, &crt, &mut state);
+        assert_eq!(
+            crt.global::<SystemsView>()
+                .get_systems()
+                .row_data(2)
+                .map(|system| system.id.to_string()),
+            Some("New 6".to_string())
+        );
+        assert_eq!(crt.global::<SystemsView>().get_systems_index(), 2);
+        assert!(crt.global::<SystemsView>().get_systems_page_slide().abs() < f32::EPSILON);
+        assert_eq!(
+            crt.global::<SystemsView>()
+                .get_systems_next_page()
+                .row_count(),
+            0
+        );
+        assert!(!crt.global::<SystemsView>().get_systems_slide_anim());
+        sync_with_state(&primary, &crt, &mut state);
+        assert!(crt.global::<SystemsView>().get_systems_slide_anim());
+
+        // Games use the same cached-HDMI/native-CRT split. CRT still
+        // chooses the destination chunk and focus from the router's
+        // explicit incoming index.
+        crt.global::<GamesView>().set_games_grid_cols(2);
+        crt.global::<GamesView>().set_games_grid_rows(2);
+        crt.global::<GamesView>()
+            .set_games(ModelRc::new(VecModel::from(
+                (0..4)
+                    .map(|i| GameTile {
+                        path: SharedString::from(format!("Old {i}")),
+                        ..GameTile::default()
+                    })
+                    .collect::<Vec<_>>(),
+            )));
+        let incoming_games = ModelRc::new(VecModel::from(
+            (0..8)
+                .map(|i| GameTile {
+                    path: SharedString::from(format!("New {i}")),
+                    ..GameTile::default()
+                })
+                .collect::<Vec<_>>(),
+        ));
+        primary
+            .global::<GamesView>()
+            .set_games(incoming_games.clone());
+        primary.global::<GamesView>().set_games_index(6);
+        primary
+            .global::<GamesView>()
+            .set_games_transition_target_index(6);
+        primary.global::<GamesView>().set_games_slide_dir(1);
+        primary
+            .global::<GamesView>()
+            .set_games_cached_transition(true);
+
+        sync_with_state(&primary, &crt, &mut state);
+        assert_eq!(
+            crt.global::<GamesView>()
+                .get_games()
+                .row_data(0)
+                .map(|game| game.path.to_string()),
+            Some("Old 0".to_string())
+        );
+        assert_eq!(
+            crt.global::<GamesView>()
+                .get_games_next_page()
+                .row_data(2)
+                .map(|game| game.path.to_string()),
+            Some("New 6".to_string())
+        );
+        assert!((crt.global::<GamesView>().get_games_page_slide() - 1.0).abs() < f32::EPSILON);
+        assert!(crt.global::<GamesView>().get_games_slide_anim());
+
+        primary.global::<GamesView>().set_games(incoming_games);
+        primary.global::<GamesView>().set_games_page(1);
+        primary.global::<GamesView>().set_games_total_pages(2);
+        primary
+            .global::<GamesView>()
+            .set_games_cached_transition(false);
+        sync_with_state(&primary, &crt, &mut state);
+        assert_eq!(
+            crt.global::<GamesView>()
+                .get_games()
+                .row_data(2)
+                .map(|game| game.path.to_string()),
+            Some("New 6".to_string())
+        );
+        assert_eq!(crt.global::<GamesView>().get_games_index(), 2);
+        assert!(!crt.global::<GamesView>().get_games_slide_anim());
+        sync_with_state(&primary, &crt, &mut state);
+        assert!(crt.global::<GamesView>().get_games_slide_anim());
+
+        Ok(())
+    }
+}

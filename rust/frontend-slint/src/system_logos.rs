@@ -1,0 +1,267 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// Runtime loader for the tinted system logo art. The Qt frontend
+// embeds the neutral-grayscale SVGs in qrc and tints them through the
+// tinted-svg provider; here the SVGs are pre-rasterized to PNG
+// (assets/systems/{id}.png, 160 px tall) and loaded on demand so the
+// software-renderer binary doesn't carry 160 pre-rendered textures.
+// Tinting happens in .slint via `colorize`, same as the category
+// glyphs. Regional variants are out of demo scope (base art only).
+//
+// Search order for the assets root:
+//   1. $ZAPAROO_SLINT_ASSETS
+//   2. <exe dir>/slint-assets   (MiSTer deploy layout)
+//   3. the crate's assets/ dir  (desktop dev runs from the repo)
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+
+#[derive(Debug, Clone)]
+pub struct LogoPixels {
+    pub rgba: std::sync::Arc<Vec<u8>>,
+    pub width: u32,
+    pub height: u32,
+}
+
+static CACHE: OnceLock<Mutex<HashMap<String, Option<LogoPixels>>>> = OnceLock::new();
+
+fn cache() -> MutexGuard<'static, HashMap<String, Option<LogoPixels>>> {
+    CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
+fn assets_root() -> Option<PathBuf> {
+    if let Some(root) = std::env::var_os("ZAPAROO_SLINT_ASSETS") {
+        let p = PathBuf::from(root);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let p = dir.join("slint-assets");
+            if p.is_dir() {
+                return Some(p);
+            }
+        }
+    }
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
+    dev.is_dir().then_some(dev)
+}
+
+/// Theme tint triplets (highlight, midtone, shadow), the Theme.qml
+/// logo tokens. The demo theme is static so they live here.
+const TINT_REST: [(u8, u8, u8); 3] = [(0x98, 0x98, 0xCC), (0x60, 0x60, 0xA8), (0x3C, 0x3C, 0x80)];
+const TINT_FOCUS: [(u8, u8, u8); 3] = [(0xFF, 0xE3, 0xB8), (0xFF, 0xB3, 0x47), (0x9E, 0x5E, 0x15)];
+
+type TintCacheMap = HashMap<(String, bool), Option<LogoPixels>>;
+
+static TINT_CACHE: OnceLock<Mutex<TintCacheMap>> = OnceLock::new();
+
+fn tint_cache() -> MutexGuard<'static, TintCacheMap> {
+    TINT_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Tinted logo variant for a system, memoized. Port of the Qt
+/// tinted-svg provider's `tintImage`: a COLOR-GRADE, not a flat
+/// recolor - the darkest source tones map to the shadow tint,
+/// midtones to the theme tint, and the brightest stay primary, on a
+/// monotonic curve so gradients and antialiasing survive. A flat
+/// `colorize` destroys exactly the multi-tone art this preserves.
+pub fn tinted_logo_for(system_id: &str, focused: bool) -> Option<LogoPixels> {
+    let key = (system_id.to_string(), focused);
+    if let Some(hit) = tint_cache().get(&key) {
+        return hit.clone();
+    }
+    let tinted = logo_for(system_id).map(|base| {
+        let tints = if focused { &TINT_FOCUS } else { &TINT_REST };
+        tint(&base, tints[0], tints[1], tints[2])
+    });
+    tint_cache().insert(key, tinted.clone());
+    tinted
+}
+
+fn luma(r: u8, g: u8, b: u8) -> i32 {
+    (i32::from(r) * 299 + i32::from(g) * 587 + i32::from(b) * 114 + 500) / 1000
+}
+
+fn mix(a: u8, b: u8, amount_b: i32) -> u8 {
+    let v = (i32::from(a) * (255 - amount_b) + i32::from(b) * amount_b + 127) / 255;
+    v.clamp(0, 255) as u8
+}
+
+fn tint(
+    base: &LogoPixels,
+    highlight: (u8, u8, u8),
+    midtone: (u8, u8, u8),
+    shadow: (u8, u8, u8),
+) -> LogoPixels {
+    // Tone range over meaningfully-opaque pixels (alpha > 16).
+    let (mut min, mut max, mut visible) = (255i32, 0i32, 0u32);
+    for px in base.rgba.chunks_exact(4) {
+        if px[3] > 16 {
+            let l = luma(px[0], px[1], px[2]);
+            min = min.min(l);
+            max = max.max(l);
+            visible += 1;
+        }
+    }
+    let single_tone = visible == 0 || (max - min) < 16;
+
+    let mut out = Vec::with_capacity(base.rgba.len());
+    for px in base.rgba.chunks_exact(4) {
+        let alpha = px[3];
+        if alpha == 0 {
+            out.extend_from_slice(px);
+            continue;
+        }
+        let (r, g, b) = if single_tone {
+            highlight
+        } else {
+            let tone = ((luma(px[0], px[1], px[2]) - min) * 255 / (max - min).max(1)).clamp(0, 255);
+            if tone < 128 {
+                let amount = tone * 2;
+                (
+                    mix(shadow.0, midtone.0, amount),
+                    mix(shadow.1, midtone.1, amount),
+                    mix(shadow.2, midtone.2, amount),
+                )
+            } else {
+                let amount = (tone - 128) * 2;
+                (
+                    mix(midtone.0, highlight.0, amount),
+                    mix(midtone.1, highlight.1, amount),
+                    mix(midtone.2, highlight.2, amount),
+                )
+            }
+        };
+        out.extend_from_slice(&[r, g, b, alpha]);
+    }
+    LogoPixels {
+        rgba: std::sync::Arc::new(out),
+        width: base.width,
+        height: base.height,
+    }
+}
+
+/// Decoded logo pixels for a system id, memoized (including misses).
+pub fn logo_for(system_id: &str) -> Option<LogoPixels> {
+    if let Some(hit) = cache().get(system_id) {
+        return hit.clone();
+    }
+    let loaded = load(system_id);
+    cache().insert(system_id.to_string(), loaded.clone());
+    loaded
+}
+
+fn load(system_id: &str) -> Option<LogoPixels> {
+    // System ids are pathless tokens from Core's catalog; refuse
+    // anything that could traverse out of the assets dir.
+    if system_id.is_empty() || system_id.contains(['/', '\\', '.']) {
+        return None;
+    }
+    let path = assets_root()?
+        .join("systems")
+        .join(format!("{system_id}.png"));
+    let bytes = std::fs::read(&path).ok()?;
+    let decoded = image::load_from_memory(&bytes).ok()?.to_rgba8();
+    let (width, height) = decoded.dimensions();
+    Some(LogoPixels {
+        rgba: std::sync::Arc::new(decoded.into_raw()),
+        width,
+        height,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::expect_used,
+        reason = "tests should fail-fast on unexpected errors"
+    )]
+
+    use super::*;
+
+    fn px(r: u8, g: u8, b: u8, a: u8) -> [u8; 4] {
+        [r, g, b, a]
+    }
+
+    #[test]
+    fn tint_maps_dark_mid_bright_to_the_triplet() {
+        // Black, mid-gray, white opaque pixels: the grade must land on
+        // shadow, midtone, and highlight respectively.
+        let rgba: Vec<u8> = [
+            px(0, 0, 0, 255),
+            px(128, 128, 128, 255),
+            px(255, 255, 255, 255),
+        ]
+        .concat();
+        let base = LogoPixels {
+            rgba: std::sync::Arc::new(rgba),
+            width: 3,
+            height: 1,
+        };
+        let out = tint(&base, (200, 200, 200), (100, 100, 100), (20, 20, 20));
+        assert_eq!(&out.rgba[0..3], &[20, 20, 20]);
+        let mid = out.rgba[4];
+        assert!((95..=105).contains(&mid), "midtone landed at {mid}");
+        assert_eq!(&out.rgba[8..11], &[200, 200, 200]);
+    }
+
+    #[test]
+    fn tint_single_tone_goes_full_highlight() {
+        let rgba: Vec<u8> = [px(255, 255, 255, 255), px(250, 250, 250, 255)].concat();
+        let base = LogoPixels {
+            rgba: std::sync::Arc::new(rgba),
+            width: 2,
+            height: 1,
+        };
+        let out = tint(&base, (1, 2, 3), (100, 100, 100), (20, 20, 20));
+        assert_eq!(&out.rgba[0..3], &[1, 2, 3]);
+        assert_eq!(&out.rgba[4..7], &[1, 2, 3]);
+    }
+
+    #[test]
+    fn tint_preserves_alpha() {
+        let rgba: Vec<u8> = [px(255, 255, 255, 77), px(0, 0, 0, 0)].concat();
+        let base = LogoPixels {
+            rgba: std::sync::Arc::new(rgba),
+            width: 2,
+            height: 1,
+        };
+        let out = tint(&base, (9, 9, 9), (5, 5, 5), (1, 1, 1));
+        assert_eq!(out.rgba[3], 77);
+        assert_eq!(out.rgba[7], 0);
+    }
+
+    #[test]
+    fn traversal_tokens_are_refused() {
+        assert!(logo_for("../etc/passwd").is_none());
+        assert!(logo_for("a/b").is_none());
+        assert!(logo_for("").is_none());
+    }
+
+    #[test]
+    fn known_system_loads_in_dev_layout() {
+        // The crate's assets dir carries SNES.png; this covers the
+        // dev-path branch of assets_root.
+        let logo = logo_for("SNES");
+        assert!(logo.is_some(), "SNES.png must load from assets/systems");
+        let logo = logo.expect("checked above");
+        assert!(logo.width > 0 && logo.height > 0);
+    }
+
+    #[test]
+    fn misses_are_memoized_without_panic() {
+        assert!(logo_for("NotARealSystem").is_none());
+        assert!(logo_for("NotARealSystem").is_none());
+    }
+}

@@ -71,6 +71,8 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.browse.index" => Some(Ok(fixtures::media_browse_index_response(&req.params))),
         "media.meta" => Some(Ok(fixtures::media_meta_response(&req.params))),
         "media.meta.update" => Some(fixtures::media_meta_update_response(&req.params)),
+        "media.image" => Some(fixtures::media_image_response(&req.params)),
+        "media.tags.update" => Some(media_tags_update(&req.params)),
         "media.history" => Some(Ok(fixtures::media_history_response(&req.params))),
         "media.history.latest" => Some(Ok(fixtures::media_history_latest_response())),
         "media" => Some(Ok(media_state::media_response())),
@@ -129,6 +131,20 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
     };
 
     encode(&response)
+}
+
+/// `media.tags.update`: validates the exclusive media ref the way Core does
+/// (a `mediaId` or a `(system, path)` pair, never both) and acknowledges the
+/// change. The mock's catalog is static, so no tag state is kept.
+fn media_tags_update(params: &Value) -> Result<Value, String> {
+    let has_id = params.get("mediaId").is_some();
+    let system = params.get("system").and_then(Value::as_str).unwrap_or("");
+    let path = params.get("path").and_then(Value::as_str).unwrap_or("");
+    if has_id && (!system.is_empty() || !path.is_empty()) {
+        return Err("invalid params: mediaId cannot be mixed with system/path".into());
+    }
+    info!(%params, "media.tags.update");
+    Ok(serde_json::json!({ "tags": [] }))
 }
 
 fn encode(response: &RpcResponse) -> String {
@@ -658,5 +674,47 @@ mod tests {
         let resp = parse(&dispatch_with_notifier(req, &notifier));
         assert!(resp["result"].is_null());
         assert_eq!(resp["error"]["code"], -32000);
+    }
+
+    #[test]
+    fn media_image_returns_base64_png() {
+        use base64::Engine as _;
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.image","params":{"system":"Arcade","path":"/games/pacman.zip","maxSize":128}}"#;
+        let resp = parse(&dispatch(req));
+        let data = resp["result"]["data"].as_str().expect("data string");
+        assert!(!data.is_empty());
+        assert_eq!(resp["result"]["contentType"], "image/png");
+        // PNG magic survives the base64 round trip.
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .expect("valid base64");
+        assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    // Real Core rejects a bare path; the mock mirrors that so frontend
+    // parameter regressions surface in dev, not on hardware.
+    #[test]
+    fn media_image_rejects_bare_path_but_accepts_media_id() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.image","params":{"path":"/games/pacman.zip"}}"#;
+        let resp = parse(&dispatch(req));
+        assert_eq!(resp["error"]["code"], super::DOMAIN_ERROR_CODE);
+        let req = r#"{"jsonrpc":"2.0","id":"2","method":"media.image","params":{"mediaId":42,"maxSize":64}}"#;
+        let resp = parse(&dispatch(req));
+        assert_eq!(resp["result"]["contentType"], "image/png");
+    }
+
+    #[test]
+    fn tags_update_rejects_mixed_media_ref() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.tags.update","params":{"mediaId":7,"system":"nes","path":"/g/x","add":["user:favorite"]}}"#;
+        let resp = dispatch(req);
+        assert!(resp.contains("cannot be mixed"), "{resp}");
+    }
+
+    #[test]
+    fn tags_update_accepts_exclusive_refs() {
+        let by_id = r#"{"jsonrpc":"2.0","id":"1","method":"media.tags.update","params":{"mediaId":7,"add":["user:favorite"]}}"#;
+        assert!(dispatch(by_id).contains("\"tags\""));
+        let by_pair = r#"{"jsonrpc":"2.0","id":"1","method":"media.tags.update","params":{"system":"nes","path":"/g/x","remove":["user:favorite"]}}"#;
+        assert!(dispatch(by_pair).contains("\"tags\""));
     }
 }

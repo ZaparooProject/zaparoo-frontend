@@ -128,8 +128,10 @@ jobs:
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUST"
       - name: rustfmt
         run: cargo fmt --all --check
+      # frontend-slint is linted by the `slint` job below: the lint image lacks
+      # the fontconfig and wayland dev packages its desktop backend builds against.
       - name: clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --exclude frontend-slint --all-targets -- -D warnings
       - name: cargo-deny
         run: cargo deny check
 
@@ -152,8 +154,9 @@ jobs:
           workspaces: rust
           prefix-key: "v0-rust-${{ needs.ensure-lint-image.outputs.version }}"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUST"
+      # frontend-slint tests run in the `slint` job (same system-lib reason).
       - name: nextest
-        run: cargo nextest run --workspace
+        run: cargo nextest run --workspace --exclude frontend-slint
 
   desktop-build:
     # Folds the old `cpp-lint` job in: clang-tidy needs compile_commands.json
@@ -203,4 +206,44 @@ jobs:
           name: frontend-debug-${{ github.run_id }}
           path: build/bin/frontend
           if-no-files-found: warn
+          retention-days: 7
+
+  slint:
+    # The Slint frontend (docs/plans/slint-migration.md). Runs outside the
+    # lint container: Slint's desktop backend needs fontconfig and wayland dev
+    # packages the image does not carry, and the ARM32 static build goes
+    # through `cross`, which needs the runner's Docker.
+    name: Slint frontend (clippy + nextest + ARM32 musl)
+    runs-on: ubicloud-standard-8
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System libraries for the desktop backend
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1-dev libwayland-dev libxkbcommon-dev
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          workspaces: rust
+          prefix-key: "v0-slint"
+      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+        with:
+          tool: nextest,cross
+      - name: clippy
+        run: cargo clippy -p frontend-slint -p zaparoo-app --all-targets -- -D warnings
+      - name: nextest
+        run: cargo nextest run -p frontend-slint -p zaparoo-app
+      - name: Toolkit-free guard
+        run: bash ../scripts/check-toolkit-free.sh
+      - name: ARM32 static build (cross, Cortex-A9)
+        env:
+          RUSTFLAGS: -C target-cpu=cortex-a9
+          # Mounted into the cross container; see rust/Cross.toml.
+          ZAPAROO_RESOURCES_DIR: ${{ github.workspace }}/resources
+        run: cross build -p frontend-slint --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
+      - name: Upload MiSTer binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-slint-armv7-musl-${{ github.run_id }}
+          path: rust/target/armv7-unknown-linux-musleabihf/release/frontend-slint
           retention-days: 7

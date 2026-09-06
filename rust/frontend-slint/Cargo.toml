@@ -1,0 +1,74 @@
+# Zaparoo Frontend
+# Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+#
+# Slint migration experiment. Desktop builds use the default winit
+# backend; the MiSTer build (Phase 2) switches to a custom
+# `slint::platform` with the software renderer and no backend features.
+
+[package]
+name         = "frontend-slint"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish      = false
+
+[[bin]]
+name = "frontend-slint"
+path = "src/main.rs"
+
+# Offline layout checker: renders the App through the same software
+# renderer the MiSTer build uses and writes a PNG. Debug/parity tool;
+# never shipped.
+[[bin]]
+name = "snapshot"
+path = "src/bin/snapshot.rs"
+required-features = ["snapshot"]
+
+[features]
+# Desktop dev build: winit backend, windowed. MiSTer build: custom
+# slint::platform with the software renderer and the fb0 presenter.
+# Exactly one of the two must be enabled.
+default = ["desktop"]
+desktop = [
+    "slint/std",
+    "slint/backend-winit",
+    "slint/renderer-femtovg",
+    "slint/accessibility",
+]
+# Slint is built WITHOUT its `std` feature here: that keeps the
+# runtime font stack (fontique -> fontconfig, absent on MiSTer) out of
+# the graph entirely. Glyphs are pre-rendered into the binary by
+# build.rs (EmbedForSoftwareRenderer) at the SLINT_FONT_SIZES ladder;
+# ui/theme.slint quantizes every font-size onto that ladder.
+mister = [
+    "slint/renderer-software",
+    "slint/libm",
+    "slint/unsafe-single-threaded",
+    "dep:libc",
+]
+# Desktop build plus the software renderer, for the snapshot bin.
+snapshot = ["desktop", "slint/renderer-software"]
+
+[dependencies]
+zaparoo-core = { path = "../zaparoo-core" }
+zaparoo-app = { path = "../zaparoo-app" }
+slint = { version = "=1.17.1", default-features = false, features = ["compat-1-2"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+base64.workspace = true
+qrcode = { workspace = true }
+semver = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+resvg = { version = "0.47", default-features = false }
+libc = { version = "0.2", optional = true }
+time.workspace = true
+
+[build-dependencies]
+slint-build = "=1.17.1"
+
+[lints]
+workspace = true

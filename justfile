@@ -148,11 +148,17 @@ _lint-translations-internal:
     test -f build-docker/build.ninja || cmake --preset desktop-docker-debug
     bash scripts/check-translations-updated.sh build-docker
 
-# Container-internal: the rust lint surface (fmt --check + clippy + deny).
+# Container-internal: the rust lint surface (fmt --check + clippy + deny), plus
+# the guard that keeps `zaparoo-app` free of any UI toolkit. `frontend-slint`
+# is excluded from the in-container clippy because the lint image lacks the
+# fontconfig and wayland dev packages Slint's desktop backend links against;
+# `just lint-slint` covers it on the host and CI's `slint` job does the same.
+# fmt and deny need no build, so they stay whole-workspace.
 _lint-rust-internal:
     cd rust && cargo fmt --all --check
-    cd rust && cargo clippy --workspace --all-targets -- -D warnings
+    cd rust && cargo clippy --workspace --exclude frontend-slint --all-targets -- -D warnings
     cd rust && cargo deny check
+    bash scripts/check-toolkit-free.sh
 
 # Container-internal: fail if the committed icon atlas no longer matches the
 # SVGs in the tree. Pure coreutils, so it costs nothing on every lint run;
@@ -238,6 +244,32 @@ install-tools:
 # --- deploy ---
 deploy-mister *args:
     ./scripts/deploy-mister.sh {{args}}
+
+# --- slint frontend (migration branch, see docs/plans/slint-migration.md) ---
+# Desktop run against the local mock Core (same port as `run-dev`).
+slint-run-dev *args:
+    cd rust && ZAPAROO_CORE_ENDPOINT=ws://127.0.0.1:27497/api/v0.1 cargo run -p frontend-slint -- {{args}}
+
+# Host-side lint for the Slint crates: fmt, clippy, and the toolkit-free guard.
+# Runs on the host because the lint image lacks Slint's desktop system libs.
+lint-slint:
+    cd rust && cargo fmt -p frontend-slint -p zaparoo-app --check
+    cd rust && cargo clippy -p frontend-slint -p zaparoo-app --all-targets -- -D warnings
+    bash scripts/check-toolkit-free.sh
+
+# Host-side tests for the Slint crates (also part of `test-rust`).
+test-slint:
+    cd rust && cargo nextest run -p frontend-slint -p zaparoo-app
+
+# Static ARM32 musl MiSTer build via `cross` (Cortex-A9 tuning). Static musl
+# because the MiSTer rootfs glibc is older than cross's gnueabihf image.
+slint-arm32:
+    cd rust && ZAPAROO_RESOURCES_DIR="$PWD/../resources" RUSTFLAGS="-C target-cpu=cortex-a9" cross build -p frontend-slint --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
+
+# Build and deploy the Slint frontend side by side as /media/fat/zaparoo/frontend-slint.
+# `--replace` installs it over the Qt binary (backed up once as frontend.qt-backup).
+deploy-mister-slint *args:
+    ./scripts/deploy-mister-slint.sh {{args}}
 
 # --- clean ---
 clean:

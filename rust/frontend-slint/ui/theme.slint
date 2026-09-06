@@ -1,0 +1,117 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// Design tokens for the Slint demo, mirroring the QML `Zaparoo.Theme`
+// and `Sizing` singletons. Simple percent helpers live here as pure
+// functions; anything with loops or config tables (grid shape solver)
+// lives in `src/sizing.rs` and is pushed in as properties by Rust.
+// All geometry snaps to integer pixels; fractional geometry is a bug
+// at every resolution, exactly as in the QML app.
+
+export global Theme {
+    in-out property <bool> crt: false;
+
+    // Palette lifted 1:1 from src/ui/theme/Theme.qml.
+    out property <color> bg: #0f0f23;             // bgDeep
+    out property <color> bg-raised: #1a1a35;      // bgPanel
+    out property <color> bg-bar: #0a0a15;         // bgBar (help bar)
+    out property <color> bg-tile: #22223a;        // surfaceCard
+    out property <color> selection-surface: #3a3a66;
+    out property <color> border-subtle: #1a1a2e;
+    out property <color> border-mid: #404060;
+    out property <color> fg: #ffffff;             // textPrimary
+    out property <color> fg-dim: #888888;         // textLabel
+    out property <color> fg-variant: #8a8ab2;     // textVariant
+    out property <color> accent: #FFB347;
+    out property <color> focus-ring: #FFB347;     // accent focus, as in Tile.qml
+    out property <color> logo-primary: #9898CC;   // resting tint for glyph art
+    out property <color> logo-focus-primary: #FFE3B8; // focused tint
+    out property <color> state-marker: #9898CC;   // stateMarker (Hidden badge fill)
+    out property <color> scrim: #000000cc;        // modal scrim (Theme.scrim)
+
+    // CRT native path renders the 6x8 bitmap font, exactly like
+    // Theme.qml's fontUi switch.
+    out property <string> font-ui: crt ? "MxPlus HP 100LX 6x8" : "Noto Sans";
+}
+
+export global Sizing {
+    // Bound to the Window dimensions by App; every derived length is
+    // rounded to whole pixels.
+    in-out property <length> screen-width: 1280px;
+    in-out property <length> screen-height: 720px;
+    in-out property <bool> crt: false;
+    // Rotated scenes use swapped logical dimensions, but percentage
+    // tokens stay based on the physical axes. This matches the Qt
+    // Sizing.swapPercentageAxes contract and prevents portrait mode
+    // from inflating type/vertical chrome against the long axis.
+    in-out property <bool> swap-axes: false;
+    // MiSTer builds pre-render glyphs at a fixed ladder of sizes
+    // (build.rs FONT_SIZE_LADDER); every font-size must land on it.
+    in-out property <bool> bitmap-fonts: false;
+
+    public pure function pct-h(p: float) -> length {
+        return Math.round(p / 100 * (self.swap-axes ? self.screen-width : self.screen-height) / 1px) * 1px;
+    }
+    public pure function pct-w(p: float) -> length {
+        return Math.round(p / 100 * (self.swap-axes ? self.screen-height : self.screen-width) / 1px) * 1px;
+    }
+    // Mirrors Sizing.qml fontSize: minimum 8 px for 240p legibility;
+    // the CRT path quantizes to 8 or 16 so the 6x8 bitmap font only
+    // renders at integer multiples.
+    public pure function font-size(p: float) -> length {
+        return self.quantize(Math.max(8, self.pct-h(p) / 1px)) * 1px;
+    }
+    pure function quantize(size: int) -> int {
+        if (self.crt) {
+            return size < 12 ? 8 : 16;
+        }
+        if (!self.bitmap-fonts) {
+            return size;
+        }
+        // Dynamic-resolution pairing: the idle-sharp geometry is
+        // exactly 2x the motion geometry, so its snap must be exactly
+        // 2x the motion snap - same layout, same line breaks, a res
+        // switch changes only fidelity. All doubled values (16, 24,
+        // 32, 40, 48) are on the embedded ladder.
+        if ((self.swap-axes ? self.screen-width : self.screen-height) >= 1000px) {
+            return 2 * self.quantize-low(Math.round(size / 2));
+        }
+        return self.quantize-low(size);
+    }
+    // Snap down onto the low half of the ladder (8, 12, 16, 20, 24).
+    pure function quantize-low(size: int) -> int {
+        if (size < 12) { return 8; }
+        if (size < 16) { return 12; }
+        if (size < 20) { return 16; }
+        if (size < 24) { return 20; }
+        return 24;
+    }
+    // Standard corner radius for rounded surfaces (Sizing.qml
+    // cornerRadius). CRT keeps it: the software renderer handles
+    // small radii fine at 240p. The percent lives in a property so
+    // the snapshot tool can render radius candidates for design
+    // review.
+    // 1.2% (was 3.5): picked from the DRS comparison sheet - the big
+    // curves stepped visibly at the pixel-doubled motion res.
+    in-out property <float> corner-radius-pct: 1.2;
+    public pure function corner-radius() -> length {
+        return self.pct-h(self.corner-radius-pct);
+    }
+    // Header geometry, mirroring Sizing.qml: two stacked rows of
+    // headerRowHeight (fontSize 3.4%) plus the stack gap, below a 2%
+    // top margin. Screen content clears header-bottom().
+    public pure function header-row-height() -> length {
+        return self.font-size(3.4) * 1px / 1px;
+    }
+    public pure function header-height() -> length {
+        return 2 * self.header-row-height() + self.pct-h(0.8);
+    }
+    public pure function header-bottom() -> length {
+        return self.pct-h(2) + self.header-height();
+    }
+    // Stroke width that never rounds to zero.
+    public pure function stroke(p: float) -> length {
+        return Math.max(1, Math.round(p / 100 * self.screen-height / 1px)) * 1px;
+    }
+}

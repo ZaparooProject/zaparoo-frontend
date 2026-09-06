@@ -1,0 +1,2932 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// Slint migration demo UI. Screens are pure views: every key press is
+// forwarded to Rust as a raw key string, the Rust router maps it to an
+// action and mutates the state properties below. No screen owns
+// routing logic, matching the QML app's "screens are pure input
+// dispatchers, Main.qml owns forward orchestration" contract.
+
+import { Theme, Sizing } from "theme.slint";
+
+// Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
+// 6x8 bitmap font for the CRT native path (family names must match
+// Theme.qml's fontUi strings).
+import "../../../resources/fonts/NotoSans.ttf";
+// Static instances of the variable font's Medium/DemiBold weights:
+// the Qt frontend uses these all over (ActiveLabel, header, tile
+// fallback text); Slint's embedded renderer only rasterizes a
+// variable font's default instance, which read as the wrong typeface.
+import "../../../resources/fonts/NotoSans-Medium.ttf";
+import "../../../resources/fonts/NotoSans-DemiBold.ttf";
+import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
+
+export { Theme, Sizing }
+
+export struct CategoryTile {
+    name: string,
+    hidden: bool,
+}
+
+export struct SystemTile {
+    id: string,
+    name: string,
+    // Pre-tinted variants from the Qt tint grade (rest / focus): the
+    // multi-tone art keeps its shading, so no colorize here.
+    logo: image,
+    logo-focus: image,
+    has-logo: bool,
+    // User-hidden system, visible only while Show hidden items is on:
+    // rendered dimmed with the "Hidden" badge.
+    hidden: bool,
+}
+
+// Settings registry row (SettingsScreen.qml's field entries). On the
+// root page the rows are the six category tiles (`value` carries the
+// glyph key); on subpages they are headers and fields.
+export struct SettingsField {
+    kind: string,     // "header" | "field"
+    id: string,
+    label: string,
+    value: string,    // picker/action value text; glyph key on root
+    control: string,  // "toggle" | "picker" | "action"
+    checked: bool,
+    enabled: bool,
+}
+
+export struct GameTile {
+    name: string,
+    path: string,
+    cover: image,
+    has-cover: bool,
+    // Favorite marker (user:favorite tag); shows the two-tone heart.
+    is-favorite: bool,
+    // Tiny preview (32px thumb) painted before the full cover lands.
+    thumb: image,
+    has-thumb: bool,
+    // Sibling-diffed disambiguation tokens, rendered as a dim inline
+    // suffix after the name (the locked inline-metadata design).
+    tags: string,
+}
+
+// Context-menu row: `id` is the dispatch key the router switches on
+// (ContextMenu.qml's rule - position-keyed dispatch was a footgun).
+export struct MenuEntry {
+    id: string,
+    label: string,
+}
+
+// Detail-pane metadata table row (Year / Genre / Players / ...).
+export struct DetailRow {
+    label: string,
+    value: string,
+}
+
+// One first-character bucket of the jump-to-letter picker.
+export struct LetterBucket {
+    label: string,
+    count: int,
+}
+
+// ── UI state globals ────────────────────────────────────────────────
+// Host-interop shape recommended by Slint (and the analogue of the Qt
+// frontend's Zaparoo.Browse singletons): Rust pushes state into these
+// globals and screens read them directly, instead of threading ~50
+// properties through the App root. Property names keep their original
+// app-level names so every Rust call site maps 1:1.
+
+export global Shell {
+    in-out property <string> active-screen: "hub";
+    in-out property <bool> transitioning: false;
+    // Screen-route motion is separate from asynchronous Loading state.
+    // Cached HDMI renders only the destination endpoint; native backends
+    // use the same state to push two screen layers at their own geometry.
+    in-out property <bool> route-transitioning: false;
+    in-out property <bool> route-cached-transition: false;
+    in-out property <string> route-from-screen: "";
+    in-out property <string> route-to-screen: "";
+    in-out property <int> route-slide-dir: 1;
+    in-out property <float> route-page-slide: 0;
+    in-out property <bool> route-slide-anim: true;
+    // Transient light cue / error line (the CoreStatusPill slot).
+    in-out property <string> status-text: "";
+    // Media-database build progress; wins the header's status slot
+    // while active, mirroring the pill's mutually-exclusive surface.
+    in-out property <string> media-status-text: "";
+    in-out property <string> clock-text: "";
+    // Header HUD status icon keys (ordered, visible only).
+    in-out property <[string]> status-keys: [];
+    in-out property <string> about-version-line: "";
+    // Cold-launch curtain (BootOverlay port). `boot-curtain` is true
+    // only while the persisted restore target is a Core-dependent
+    // data screen and the catalog has not reported Ready: hub restores
+    // paint optimistically and Settings/About are core-independent,
+    // matching MainLayout's optimisticHubVisible /
+    // coreIndependentStartupVisible split. `boot-complete` is the
+    // one-shot "catalog has been Ready at least once" latch that also
+    // gates the Hub's empty-library cue so "No systems available"
+    // cannot flash before the first load settles.
+    in-out property <bool> boot-curtain: false;
+    in-out property <bool> boot-complete: false;
+    in-out property <string> boot-text: "";
+    // Reduce motion setting: every screen animation collapses to an
+    // instant cut (swoops, focus-ring glides). Marquee scrolling is
+    // exempt - it is the only way long names become readable.
+    in-out property <bool> reduce-motion: false;
+    // Screensaver armed (idle timeout elapsed); any input disarms via
+    // the router. Exempt from reduce-motion: burn protection needs
+    // the logo to keep moving.
+    in-out property <bool> saver-armed: false;
+    // Display settings. Orientation rotates the complete logical scene
+    // while App keeps the physical framebuffer fixed. Browse layout is
+    // shared by Systems and games-style screens.
+    in-out property <string> orientation: "horizontal";
+    in-out property <bool> browse-list-layout: false;
+    in-out property <bool> is-mister: false;
+    in-out property <bool> crt-enabled: false;
+    in-out property <string> crt-standard: "ntsc";
+}
+
+export global HubView {
+    // Terminal catalog error, rendered centered in the hub body
+    // ("Failed to load" + message); wins over the empty-library cue.
+    in-out property <string> hub-error: "";
+    in-out property <[CategoryTile]> categories: [];
+    in-out property <int> hub-category-index: 0;
+    in-out property <int> hub-row: 0;
+    in-out property <int> hub-action-index: 0;
+    in-out property <[string]> hub-actions: ["Resume", "Favorites", "Recents", "Update", "Settings"];
+}
+
+export global SystemsView {
+    in-out property <[SystemTile]> systems: [];
+    in-out property <int> systems-index: 0;
+    in-out property <string> systems-category: "";
+    in-out property <int> systems-grid-cols: 4;
+    in-out property <int> systems-grid-rows: 3;
+    // Paging (the PagedGrid behavior): visible page slice + counter,
+    // plus the page-swoop strip state shared with the games grid.
+    in-out property <int> systems-page: 0;
+    in-out property <int> systems-total-pages: 0;
+    in-out property <[SystemTile]> systems-next-page: [];
+    in-out property <int> systems-slide-dir: 1;
+    in-out property <float> systems-page-slide: 0;
+    in-out property <bool> systems-slide-anim: true;
+    // Selection within the incoming HDMI page. Dual-head projection
+    // uses it to choose the matching CRT-sized page and focused item.
+    in-out property <int> systems-transition-target-index: 0;
+    // Input-only gate while the latch presenter animates cached RGB565
+    // endpoints. It deliberately has no visual binding in Slint.
+    in-out property <bool> systems-cached-transition: false;
+}
+
+export global SettingsView {
+    // "" = the root category grid; otherwise the open subpage token
+    // (pageDisplayInterface / pageBrowsing / ...).
+    in-out property <string> settings-page: "";
+    // Top-strip title for the open page ("Settings" on the root).
+    in-out property <string> settings-title: "Settings";
+    in-out property <[SettingsField]> settings-fields: [];
+    in-out property <int> settings-index: 0;
+}
+
+export global GamesView {
+    in-out property <[GameTile]> games: [];
+    in-out property <[GameTile]> games-next-page: [];
+    in-out property <int> games-slide-dir: 1;
+    in-out property <float> games-page-slide: 0;
+    in-out property <bool> games-slide-anim: true;
+    // Selection within the incoming HDMI page, projected independently
+    // into the CRT page during dual-head transitions.
+    in-out property <int> games-transition-target-index: 0;
+    // Input and focus-visibility gate while latch presents cached game
+    // page endpoints. CRT mirror owns an independent native animation.
+    in-out property <bool> games-cached-transition: false;
+    in-out property <int> games-index: 0;
+    in-out property <string> games-system: "";
+    in-out property <int> games-grid-cols: 4;
+    in-out property <int> games-grid-rows: 3;
+    in-out property <int> games-page: 0;
+    in-out property <bool> games-has-more: false;
+    in-out property <int> games-total-pages: 0;
+    // ScreenStateOverlay vocabulary: per-mode empty copy ("No games in
+    // this system" / "No favorites yet" / "Nothing played yet") and
+    // the terminal error line. Error wins over empty.
+    in-out property <string> games-empty-text: "";
+    in-out property <string> games-error: "";
+    // Detailed-list browsing layout (browseLayout = "list"): rows are
+    // a Rust-windowed slice over everything fetched so far, plus the
+    // scrollbar's absolute geometry and the detail-pane state fed by
+    // the debounced media.meta fetch.
+    in-out property <bool> games-list-layout: false;
+    in-out property <[GameTile]> list-rows: [];
+    in-out property <int> list-sel: 0;       // selection within the slice
+    in-out property <int> list-view-top: 0;  // absolute index of slice start
+    in-out property <int> list-total: 0;     // fetched rows (scrollbar span)
+    in-out property <int> list-visible: 10;
+    in-out property <string> detail-title: "";
+    in-out property <string> detail-path: "";
+    in-out property <image> detail-cover;
+    in-out property <bool> detail-has-cover: false;
+    in-out property <[DetailRow]> detail-rows: [];
+    in-out property <string> detail-description: "";
+    // Rapid-paging letter badge (RapidScrollIndicator port): first
+    // letter of the landing row while page flips chain quickly.
+    in-out property <string> rapid-letter: "";
+}
+
+// Game-info modal state.
+export global GameInfoView {
+    in-out property <bool> modal-open: false;
+    in-out property <string> modal-name: "";
+    in-out property <string> modal-system: "";
+    in-out property <string> modal-path: "";
+    in-out property <string> modal-tags: "";
+    in-out property <string> modal-description: "";
+    in-out property <image> modal-cover;
+    in-out property <bool> modal-has-cover: false;
+}
+
+// Context menu, View menu, letter picker, and card-writer state.
+export global Overlays {
+    in-out property <bool> context-open: false;
+    in-out property <[MenuEntry]> context-entries: [];
+    in-out property <int> context-index: 0;
+    in-out property <bool> list-open: false;
+    in-out property <string> list-title: "";
+    in-out property <[MenuEntry]> list-entries: [];
+    in-out property <int> list-index: 0;
+    in-out property <bool> letter-open: false;
+    in-out property <[LetterBucket]> letter-buckets: [];
+    in-out property <int> letter-index: 0;
+    in-out property <bool> letter-loading: false;
+    in-out property <int> letter-columns: 9;
+    in-out property <bool> card-write-open: false;
+    in-out property <bool> card-write-failed: false;
+    // QR write deep-link modal: the matrix image is rendered by Rust
+    // at module resolution (quiet zone baked in) and scaled up
+    // pixelated to the largest whole multiple.
+    in-out property <bool> qr-open: false;
+    in-out property <image> qr-image;
+    in-out property <int> qr-modules: 0;
+    // Decision dialog (Modal.qml's confirm/action_error kinds plus
+    // the commercial notice and first-run bodies). Kinds never stack;
+    // the Qt startup chain is strictly sequential: quit_confirm,
+    // notice, core_version, first_run.
+    in-out property <bool> dialog-open: false;
+    in-out property <string> dialog-kind: "";
+    in-out property <string> dialog-title: "";
+    in-out property <string> dialog-body: "";
+    // First-run progress line ("Step N of M - path" / "Optimizing...").
+    in-out property <string> dialog-status: "";
+    in-out property <[string]> dialog-buttons: [];
+    in-out property <int> dialog-focus: 0;
+    // Full-framebuffer CRT calibration pattern. Unlike normal modals,
+    // this mounts outside the safe-area/rotation scene so its edge and
+    // safe-area guides represent real scanout pixels.
+    in-out property <bool> crt-calibration-open: false;
+    in-out property <int> crt-h-offset: 0;
+    in-out property <int> crt-v-offset: 0;
+}
+
+// Top header bar, ported from HeaderBar.qml: logo left (aspect-fit to
+// the header height), clock top-right (30-second tick pushed from
+// Rust), Core status line under the clock in the reserved second row.
+component HeaderBar inherits Rectangle {
+    in property <string> clock-text;
+    in property <string> core-status;
+    // CRT grid profiles move browse context into the header and remove
+    // the normal TopStrip, reclaiming scarce 240p vertical space.
+    in property <string> browse-title;
+    // Visible HUD icon keys in display order (NFC/WiFi/WiredNetwork/
+    // Bluetooth), pushed by Rust; rendered through GlyphSource at the
+    // display size so DRS switches re-raster them crisp.
+    in property <[string]> status-keys: [];
+
+    height: Sizing.header-height();
+    property <length> icon-s: Sizing.font-size(2.4);
+    property <length> icon-gap: Sizing.pct-w(1);
+
+    Image {
+        x: Sizing.pct-w(2);
+        y: 0;
+        height: parent.height;
+        width: self.height * self.source.width / Math.max(1, self.source.height);
+        source: @image-url("logo.png");
+        image-fit: contain;
+    }
+
+    clock := Text {
+        x: parent.width - self.width - Sizing.pct-w(2);
+        y: 0;
+        height: Sizing.header-row-height();
+        vertical-alignment: center;
+        text: root.clock-text;
+        color: Theme.fg;
+        font-weight: 500;
+        font-size: Sizing.header-row-height() * 0.9;
+    }
+
+    // Host status icons, right-anchored beside the clock like the Qt
+    // topHud Row (icons can appear/disappear without nudging it).
+    for key[i] in root.status-keys: Image {
+        x: clock.x - (i + 1) * (root.icon-s + root.icon-gap);
+        y: Math.round((Sizing.header-row-height() - root.icon-s) / 2px) * 1px;
+        width: root.icon-s;
+        height: root.icon-s;
+        source: GlyphSource.glyph(key, root.icon-s);
+        colorize: Theme.fg-variant;
+    }
+
+    if root.browse-title != "": Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Sizing.header-row-height() + Sizing.pct-h(0.8);
+        height: Sizing.header-row-height();
+        max-width: Math.round(parent.width * 0.46 / 1px) * 1px;
+        overflow: elide;
+        vertical-alignment: center;
+        text: root.browse-title;
+        color: Theme.fg;
+        font-weight: 600;
+        font-size: Sizing.font-size(3.2);
+    }
+
+    // Core status slot (the pill's line): collapses to empty text, but
+    // the row's space stays reserved by the fixed header height.
+    Text {
+        x: parent.width - self.width - Sizing.pct-w(2);
+        y: Sizing.header-row-height() + Sizing.pct-h(0.8);
+        height: Sizing.header-row-height();
+        max-width: root.browse-title == "" ? parent.width * 0.45 : parent.width * 0.23;
+        overflow: elide;
+        vertical-alignment: center;
+        text: root.core-status;
+        color: Theme.fg-variant;
+        font-weight: 500;
+        font-size: Sizing.font-size(2.2);
+    }
+}
+
+// Big single-line caption for the focused-tile name, ported from
+// ActiveLabel.qml: fontSize(4), medium weight, centered, elided -
+// never wrapped, so the help-bar baseline can't shift on focus moves.
+component ActiveLabel inherits Rectangle {
+    in property <string> text;
+
+    height: Sizing.pct-h(7);
+
+    Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        max-width: parent.width - 2 * Sizing.pct-w(5);
+        overflow: elide;
+        text: root.text;
+        color: Theme.fg;
+        font-size: Sizing.font-size(4);
+        font-weight: 500;
+    }
+}
+
+// One button-glyph + label cue, matching MainLayout.qml's help-entry
+// delegate: the original controller art at 4% height, label at
+// fontSize(2.6) in textPrimary beside it.
+export struct HelpEntry {
+    icon: image,
+    label: string,
+}
+
+component HelpCue inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+
+    property <length> icon-size: Sizing.pct-h(4);
+    width: root.icon-size + Sizing.pct-w(0.6) + Math.round(caption.preferred-width / 1px) * 1px;
+
+    Image {
+        x: 0;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.icon-size;
+        height: root.icon-size;
+        source: root.icon;
+        image-fit: contain;
+    }
+    caption := Text {
+        x: root.icon-size + Sizing.pct-w(0.6);
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        text: root.label;
+        color: Theme.fg;
+        font-size: Sizing.font-size(2.6);
+    }
+}
+
+// Bottom instructions bar, ported from MainLayout.qml: bgBar surface
+// with a subtle border and a centered row of glyph+label cues with
+// pctW(2) spacing, minimal label vocabulary (D-pad is always "Move";
+// A is "Open"; B is "Back", or "Quit" on the Hub root). Blank during
+// a forward transition - the input gate swallows every press, so the
+// bar must not advertise buttons that won't respond. Three fixed cue
+// slots (the vocabulary never exceeds three); out-of-range model
+// reads yield a default entry on the hidden slots.
+component HelpBar inherits Rectangle {
+    in property <[HelpEntry]> entries;
+
+    height: Sizing.pct-h(6);
+    background: Theme.bg-bar;
+    border-width: Sizing.stroke(1);
+    border-color: Theme.border-subtle;
+
+    property <length> sp: Sizing.pct-w(2);
+    property <int> n: root.entries.length;
+    property <length> total: (root.n > 0 ? c0.width : 0px)
+        + (root.n > 1 ? root.sp + c1.width : 0px)
+        + (root.n > 2 ? root.sp + c2.width : 0px);
+
+    c0 := HelpCue {
+        visible: root.n > 0;
+        x: Math.round((parent.width - root.total) / 2px) * 1px;
+        y: 0;
+        height: parent.height;
+        icon: root.entries[0].icon;
+        label: root.entries[0].label;
+    }
+    c1 := HelpCue {
+        visible: root.n > 1;
+        x: c0.x + c0.width + root.sp;
+        y: 0;
+        height: parent.height;
+        icon: root.entries[1].icon;
+        label: root.entries[1].label;
+    }
+    c2 := HelpCue {
+        visible: root.n > 2;
+        x: c1.x + c1.width + root.sp;
+        y: 0;
+        height: parent.height;
+        icon: root.entries[2].icon;
+        label: root.entries[2].label;
+    }
+}
+
+// Three-slot status strip under the header, ported from
+// TopStatusStrip.qml: centered screen title at fontSize(4) Medium
+// (the visual anchor) with the smaller page counter in the right
+// slot. Screens mount it at headerBottom + 1% and start content
+// below its 7% band, exactly like the Qt screens - the title must
+// never share the header band with the logo.
+component TopStrip inherits Rectangle {
+    in property <string> title;
+    in property <string> right-text;
+
+    height: Sizing.pct-h(7);
+
+    Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        max-width: Math.round(parent.width / 3 / 1px) * 1px;
+        overflow: elide;
+        text: root.title;
+        color: Theme.fg;
+        font-size: Sizing.font-size(4);
+        font-weight: 500;
+    }
+    if root.right-text != "": Text {
+        x: Math.round((parent.width - self.width - Sizing.pct-w(5)) / 1px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        text: root.right-text;
+        color: Theme.fg;
+        font-size: Sizing.font-size(2.9);
+    }
+}
+
+// One-line caption with the focused-overflow marquee, ported from
+// ScrollingCaption.qml: fits -> static (centered), overflows unfocused
+// -> elided, overflows focused -> integer-pixel scroll-reveal stepped
+// by a 40 ms timer with an 800 ms dwell at each end. Only the focused
+// caption ever animates, so the dirty rect stays one line on one tile
+// - exactly the animation class the software pipeline is built for.
+component MarqueeCaption inherits Rectangle {
+    in property <string> content;
+    // Sibling-diffed token suffix, dim, inline after the name. Empty
+    // for items with no variants (the common case).
+    in property <string> tags;
+    in property <bool> focused;
+    // Floor for anything meant to be READ: 3.0% keeps captions at or
+    // above 16px even at the DRS motion res (540p-class).
+    in property <length> caption-font-size: Sizing.font-size(3.0);
+    in property <color> caption-color: Theme.fg;
+    // Tile captions center a fitting name; list rows left-align
+    // (ScrollingCaption's centerContent: false).
+    in property <bool> center-content: true;
+
+    clip: true;
+
+    property <bool> has-tags: root.tags != "";
+    property <length> gap-w: root.has-tags ? Sizing.pct-w(1.2) : 0px;
+    property <int> scroll-x: 0;
+    property <int> dir: -1;
+    property <int> pause-ticks: 0;
+    property <length> name-full-w: label.preferred-width;
+    property <length> tags-full-w: root.has-tags ? suffix.preferred-width : 0px;
+    property <length> full-w: root.name-full-w + root.gap-w + root.tags-full-w;
+    property <bool> overflows: root.full-w > root.width;
+    property <bool> marquee: root.focused && root.overflows;
+    property <int> scroll-dist: Math.max(0, Math.round((root.full-w - root.width) / 1px));
+
+    // Static-overflow width policy (ScrollingCaption's minNameFraction
+    // 0.58): the name is protected from a long suffix, the suffix takes
+    // what the name leaves. Deviation from Qt: the suffix elides right
+    // (Slint has no left elide); the marquee reveals the full text.
+    property <length> name-static-w: Math.min(root.name-full-w, Math.max(root.width * 0.58, root.width - root.gap-w - root.tags-full-w));
+    property <length> name-render-w: (root.marquee || !root.overflows) ? root.name-full-w : root.name-static-w;
+    property <length> tags-render-w: (root.marquee || !root.overflows)
+        ? root.tags-full-w
+        : Math.min(root.tags-full-w, Math.max(0px, root.width - root.gap-w - root.name-render-w));
+    property <length> block-x: root.marquee
+        ? root.scroll-x * 1px
+        : (root.overflows || !root.center-content
+            ? 0px
+            : Math.round((root.width - root.full-w) / 2px) * 1px);
+
+    changed marquee => {
+        if (!self.marquee) {
+            self.scroll-x = 0;
+            self.dir = -1;
+            self.pause-ticks = 0;
+        }
+    }
+
+    Timer {
+        interval: 40ms;
+        running: root.marquee;
+        triggered => {
+            if (root.pause-ticks > 0) {
+                root.pause-ticks -= 1;
+            } else if (root.scroll-x + root.dir <= -root.scroll-dist) {
+                root.scroll-x = -root.scroll-dist;
+                root.dir = 1;
+                root.pause-ticks = 20;
+            } else if (root.scroll-x + root.dir >= 0) {
+                root.scroll-x = 0;
+                root.dir = -1;
+                root.pause-ticks = 20;
+            } else {
+                root.scroll-x = root.scroll-x + root.dir;
+            }
+        }
+    }
+
+    label := Text {
+        x: root.block-x;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.name-render-w;
+        overflow: elide;
+        text: root.content;
+        color: root.caption-color;
+        font-size: root.caption-font-size;
+    }
+
+    if root.has-tags: suffix-view := Text {
+        x: root.block-x + root.name-render-w + root.gap-w;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.tags-render-w;
+        overflow: elide;
+        text: root.tags;
+        color: Theme.fg-variant;
+        font-size: root.caption-font-size;
+    }
+
+    // Hidden measuring twin for the suffix (preferred-width needs an
+    // unconditional element to read from).
+    suffix := Text {
+        visible: false;
+        text: root.tags;
+        font-size: root.caption-font-size;
+    }
+}
+
+// Compact pill badge for tile state overlays (TileBadge.qml): filled
+// lavender state-marker surface (not the amber accent, so it stays
+// distinct from the focus ring) with a dark bold label and border
+// that stay readable over dimmed art.
+component TileBadge inherits Rectangle {
+    in property <string> label;
+
+    property <length> hpad: Sizing.pct-h(1.3);
+    property <length> vpad: Sizing.pct-h(0.6);
+
+    width: caption.preferred-width + 2 * self.hpad;
+    height: caption.preferred-height + 2 * self.vpad;
+    border-radius: self.height / 2;
+    background: Theme.state-marker;
+    border-width: Sizing.stroke(1);
+    border-color: Theme.bg-bar;
+
+    caption := Text {
+        text: root.label;
+        color: Theme.bg-bar;
+        font-size: Sizing.font-size(1.8);
+        font-weight: 700;
+    }
+}
+
+// System tile: tinted logo art above the caption band, mirroring
+// Tile.qml's tinted path for `systems/{id}` cover keys. Systems
+// without art fall back to the centered name.
+component SystemCard inherits Rectangle {
+    in property <string> label;
+    in property <bool> focused;
+    in property <image> logo;
+    in property <image> logo-focus;
+    in property <bool> has-logo;
+    // User-hidden entry shown under Show hidden items: art dims to
+    // 40% and the "Hidden" badge pins top-right, like Tile.qml.
+    in property <bool> entry-hidden: false;
+
+    property <length> pad: Sizing.pct-h(2);
+    property <length> caption-h: Sizing.pct-h(5.5);
+
+    background: Theme.bg-tile;
+    border-radius: Sizing.corner-radius();
+    // Focus is drawn by the screen's gliding ring; the card keeps its
+    // resting border so the ring has nothing to fight.
+    border-width: Sizing.stroke(0.2);
+    border-color: Theme.border-mid;
+
+    if root.has-logo: Image {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: root.pad;
+        width: parent.width - 2 * root.pad;
+        height: parent.height - 2 * root.pad - root.caption-h;
+        source: root.focused ? root.logo-focus : root.logo;
+        image-fit: contain;
+        opacity: root.entry-hidden ? 0.4 : 1.0;
+    }
+
+    if !root.has-logo: Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - root.caption-h - self.height) / 2px) * 1px;
+        width: parent.width - 2 * root.pad;
+        horizontal-alignment: center;
+        overflow: elide;
+        text: root.label;
+        color: Theme.fg-dim;
+        font-weight: 600;
+        font-size: Sizing.font-size(2.4);
+        opacity: root.entry-hidden ? 0.4 : 1.0;
+    }
+
+    MarqueeCaption {
+        x: root.pad;
+        y: parent.height - root.pad - root.caption-h;
+        width: parent.width - 2 * root.pad;
+        height: root.caption-h;
+        content: root.label;
+        focused: root.focused;
+    }
+
+    // Fully opaque over the dimmed art, so hidden tiles stay
+    // distinct while Show hidden items is on.
+    if root.entry-hidden: TileBadge {
+        x: parent.width - self.width - Math.round(parent.width / 12 / 1px) * 1px;
+        y: Math.round(parent.width / 12 / 1px) * 1px;
+        label: @tr("Hidden");
+    }
+}
+
+// Hub tile: square, glyph-only - the entry's name renders in the
+// ActiveLabel below the rows, never inside the tile (HubScreen.qml's
+// tile contract). Tinted glyph, logoPrimary resting /
+// logoFocusPrimary focused; entries without art center their name.
+// Category/action glyph provider, implemented in Rust: the ORIGINAL
+// SVG sources (verbatim from the Qt repo) are rasterized at the exact
+// requested pixel size with resvg. The binding depends on the
+// element's size, so DRS res switches re-rasterize automatically.
+// (Slint's Path element would be the natural fit, but it is compiled
+// out of the no-std MiSTer build.)
+export global GlyphSource {
+    pure callback glyph(string, length) -> image;
+}
+
+component CategoryCard inherits Rectangle {
+    in property <string> label;
+    // Stable art selector; defaults to the label. Hub actions pass a
+    // fixed key here because their labels can be dynamic (Resume shows
+    // the last-played game's name).
+    in property <string> glyph-key: root.label;
+    in property <bool> focused;
+    in property <bool> dimmed: false;
+
+    property <length> pad: Sizing.pct-h(2);
+
+    pure function has-glyph() -> bool {
+        return self.glyph-key == "Arcade" || self.glyph-key == "Computer"
+            || self.glyph-key == "Console" || self.glyph-key == "Handheld"
+            || self.glyph-key == "Resume" || self.glyph-key == "Favorites"
+            || self.glyph-key == "Recents" || self.glyph-key == "Update"
+            || self.glyph-key == "Settings" || self.glyph-key == "Display"
+            || self.glyph-key == "Browsing" || self.glyph-key == "Language"
+            || self.glyph-key == "Controls" || self.glyph-key == "Library"
+            || self.glyph-key == "Support";
+    }
+
+    background: Theme.bg-tile;
+    border-radius: Sizing.corner-radius();
+    border-width: Sizing.stroke(0.2);
+    border-color: Theme.border-mid;
+
+    if root.has-glyph(): Image {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: parent.width - 2 * root.pad;
+        height: parent.height - 2 * root.pad;
+        source: GlyphSource.glyph(root.glyph-key, self.width);
+        image-fit: contain;
+        colorize: root.dimmed
+            ? Theme.fg-dim
+            : (root.focused ? Theme.logo-focus-primary : Theme.logo-primary);
+    }
+
+    if !root.has-glyph(): Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        max-width: parent.width - 2 * root.pad;
+        overflow: elide;
+        text: root.label;
+        color: root.dimmed ? Theme.fg-dim : (root.focused ? Theme.fg : Theme.fg-dim);
+        font-size: Sizing.font-size(2.4);
+    }
+
+    // User-hidden category under Show hidden items (TileBadge.qml).
+    if root.dimmed: TileBadge {
+        x: parent.width - self.width - Math.round(parent.width / 12 / 1px) * 1px;
+        y: Math.round(parent.width / 12 / 1px) * 1px;
+        label: @tr("Hidden");
+    }
+}
+
+// Games-grid card: cover art above a one-line caption band, with the
+// name-only NameTile look as the procedural fallback while the cover
+// loads (or when Core has none). Bands mirror Tile.qml: 2% padding,
+// 5.5% caption, 0.4% gap.
+component CoverTile inherits Rectangle {
+    in property <string> label;
+    in property <string> tags;
+    in property <bool> focused;
+    in property <image> cover;
+    in property <bool> has-cover;
+    in property <image> thumb;
+    in property <bool> has-thumb;
+    in property <bool> is-favorite;
+
+    property <length> pad: Sizing.pct-h(2);
+    property <length> caption-h: Sizing.pct-h(5.5);
+    property <length> caption-gap: Sizing.pct-h(0.4);
+
+    background: Theme.bg-tile;
+    border-radius: Sizing.corner-radius();
+    border-width: Sizing.stroke(0.2);
+    border-color: Theme.border-mid;
+
+    // Thumbnail-first: the tiny preview paints as soon as the list
+    // loads (32px thumbs preload in one cheap burst) and the full
+    // cover fades in over it as it streams from disk. No placeholder
+    // text - the caption below already names the tile. Declared
+    // before the cover so the fade blends thumb -> cover.
+    if root.has-thumb: Image {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: root.pad;
+        width: parent.width - 2 * root.pad;
+        height: parent.height - 2 * root.pad - root.caption-h - root.caption-gap;
+        source: root.thumb;
+        image-fit: contain;
+    }
+
+    // Always present, opacity driven by state: the fade runs when
+    // has-cover FLIPS (the cover landing), not when the element is
+    // (re)created - so page changes and DRS res switches repaint at
+    // the settled opacity instead of replaying every fade.
+    Image {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: root.pad;
+        width: parent.width - 2 * root.pad;
+        height: parent.height - 2 * root.pad - root.caption-h - root.caption-gap;
+        source: root.cover;
+        image-fit: contain;
+        opacity: root.has-cover ? 1 : 0;
+        animate opacity { duration: 110ms; easing: ease-out; }
+    }
+
+    // Favorite heart badge, top-left like Tile.qml's favoriteGlyph:
+    // margin and size derive from the tile width (1/12 and 1/6). The
+    // two-tone tint (stateMarker fill, bgBar keyline) is applied by
+    // the glyph rasterizer, so no colorize here.
+    if root.is-favorite: Image {
+        x: Math.round(parent.width / 12 / 1px) * 1px;
+        y: Math.round(parent.width / 12 / 1px) * 1px;
+        width: Math.round(parent.width / 6 / 1px) * 1px;
+        height: self.width;
+        source: GlyphSource.glyph("Heart", self.width);
+        image-fit: contain;
+    }
+
+    MarqueeCaption {
+        x: root.pad;
+        y: parent.height - root.pad - root.caption-h;
+        width: parent.width - 2 * root.pad;
+        height: root.caption-h;
+        content: root.label;
+        tags: root.tags;
+        focused: root.focused;
+    }
+}
+
+// Settings screen: SettingsField-style rows (label left, value right)
+// under the header. Read-only rows render dim values; the focused row
+// gets the standard focus treatment.
+// Toggle knob for settings rows (SettingsField.qml's switch): track
+// tints accent when on, knob slides between ends. No animation - the
+// state swap is the feedback, and settings is where Reduce motion
+// itself gets flipped.
+component SettingsToggle inherits Rectangle {
+    in property <bool> checked;
+
+    property <length> knob: Math.round(self.height * 0.72 / 1px) * 1px;
+    property <length> inset: Math.round((self.height - self.knob) / 2px) * 1px;
+
+    border-radius: self.height / 2;
+    background: root.checked ? Theme.accent : Theme.border-mid;
+
+    Rectangle {
+        x: root.checked ? parent.width - self.width - root.inset : root.inset;
+        y: root.inset;
+        width: root.knob;
+        height: root.knob;
+        border-radius: self.height / 2;
+        background: root.checked ? Theme.bg-bar : Theme.fg-dim;
+    }
+}
+
+// Settings screen, ported from SettingsScreen.qml: root page is the
+// six-category grid (Display / Browsing / Language / Controls /
+// Library / Support); category pages are gamepad-driven field lists
+// with toggles, pickers (Accept opens the ListPickerModal), and
+// action rows. The Rust router owns the registries and values.
+component SettingsScreen inherits Rectangle {
+    // Data dependencies, read straight from the state globals.
+    property <[SettingsField]> fields: SettingsView.settings-fields;
+    property <int> index: SettingsView.settings-index;
+    property <bool> root-grid: SettingsView.settings-page == "";
+
+    TopStrip {
+        x: 0;
+        y: Sizing.header-bottom() + Sizing.pct-h(1);
+        width: parent.width;
+        title: SettingsView.settings-title;
+    }
+
+    // --- Root: 3x2 category grid, hub-style square cells. ---
+    property <int> grid-cols: 3;
+    property <length> cell-spacing: Sizing.pct-w(3);
+    property <length> cell: Math.min(Sizing.pct-h(24),
+        Math.floor((self.width - 2 * Sizing.pct-w(5) - (root.grid-cols - 1) * root.cell-spacing) / root.grid-cols / 1px) * 1px);
+    property <int> grid-rows: Math.max(1, Math.ceil(root.fields.length / root.grid-cols));
+    property <length> grid-w: root.grid-cols * root.cell + (root.grid-cols - 1) * root.cell-spacing;
+    property <length> grid-h: root.grid-rows * root.cell + (root.grid-rows - 1) * root.cell-spacing;
+    property <length> grid-x: Math.round((self.width - root.grid-w) / 2px) * 1px;
+    property <length> grid-y: Math.round((Sizing.header-bottom() + self.height - Sizing.pct-h(6) - root.grid-h - Sizing.pct-h(7)) / 2px) * 1px;
+
+    if root.root-grid: Rectangle {
+        x: root.grid-x;
+        y: root.grid-y;
+        width: root.grid-w;
+        height: root.grid-h;
+
+        for field[i] in root.fields: CategoryCard {
+            x: Math.mod(i, root.grid-cols) * (root.cell + root.cell-spacing);
+            y: Math.floor(i / root.grid-cols) * (root.cell + root.cell-spacing);
+            width: root.cell;
+            height: root.cell;
+            label: field.label;
+            glyph-key: field.value;
+            focused: i == root.index && !Shell.route-transitioning;
+        }
+
+        if root.fields.length > 0 && !Shell.route-transitioning: Rectangle {
+            x: Math.mod(root.index, root.grid-cols) * (root.cell + root.cell-spacing);
+            y: Math.floor(root.index / root.grid-cols) * (root.cell + root.cell-spacing);
+            width: root.cell;
+            height: root.cell;
+            border-radius: Sizing.corner-radius();
+            border-width: Sizing.stroke(0.55);
+            border-color: Theme.focus-ring;
+        }
+    }
+
+    if root.root-grid: ActiveLabel {
+        x: 0;
+        y: root.grid-y + root.grid-h + Sizing.pct-h(3);
+        width: parent.width;
+        text: root.index >= 0 && root.index < root.fields.length
+            ? root.fields[root.index].label : "";
+    }
+
+    // --- Category page: field rows. Headers render as dim section
+    // captions without a card; disabled rows dim whole. ---
+    property <length> row-h: Sizing.pct-h(8);
+    property <length> row-gap: Sizing.pct-h(1);
+    property <length> side: Sizing.pct-w(10);
+    property <length> toggle-w: Sizing.pct-h(7);
+    property <length> toggle-h: Sizing.pct-h(3.6);
+
+    if !root.root-grid: Rectangle {
+        x: root.side;
+        y: Sizing.header-bottom() + Sizing.pct-h(8);
+        width: parent.width - 2 * root.side;
+
+        for field[i] in root.fields: Rectangle {
+            x: 0;
+            y: i * (root.row-h + root.row-gap);
+            width: parent.width;
+            height: root.row-h;
+            background: field.kind == "header" ? transparent
+                : (i == root.index && !Shell.route-transitioning
+                    ? Theme.selection-surface : Theme.bg-tile);
+            border-radius: Sizing.pct-h(1.5);
+            border-width: field.kind == "header" ? 0px
+                : (i == root.index && !Shell.route-transitioning
+                    ? Sizing.stroke(0.4) : Sizing.stroke(0.2));
+            border-color: i == root.index && !Shell.route-transitioning
+                ? Theme.focus-ring : Theme.border-mid;
+            opacity: field.enabled ? 1.0 : 0.4;
+
+            if field.kind == "header": Text {
+                x: 0;
+                y: parent.height - self.height - Sizing.pct-h(0.6);
+                text: field.label;
+                color: Theme.fg-variant;
+                font-size: Sizing.font-size(2.2);
+                font-weight: 600;
+            }
+
+            if field.kind == "field": Text {
+                x: Sizing.pct-w(2);
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                max-width: parent.width * 0.55;
+                overflow: elide;
+                text: field.label;
+                color: Theme.fg;
+                font-size: Sizing.font-size(2.6);
+            }
+
+            if field.kind == "field" && field.control == "toggle": SettingsToggle {
+                x: parent.width - self.width - Sizing.pct-w(2);
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                width: root.toggle-w;
+                height: root.toggle-h;
+                checked: field.checked;
+            }
+
+            if field.kind == "field" && field.control != "toggle": Text {
+                x: parent.width - self.width - Sizing.pct-w(2);
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                max-width: parent.width * 0.4;
+                overflow: elide;
+                text: field.value;
+                color: field.control == "picker" ? Theme.accent : Theme.fg-variant;
+                font-size: Sizing.font-size(2.6);
+            }
+        }
+    }
+}
+
+component HubScreen inherits Rectangle {
+    // Data dependencies, read straight from the state globals.
+    property <[CategoryTile]> categories: HubView.categories;
+    property <int> category-index: HubView.hub-category-index;
+    property <int> focus-row: HubView.hub-row;   // 0 = categories, 1 = actions
+    property <int> action-index: HubView.hub-action-index;
+    property <[string]> actions: HubView.hub-actions;
+
+    // Focused-entry caption text, mirroring the Hub's ActiveLabel:
+    // reads from whichever row owns focus.
+    pure function caption() -> string {
+        if (self.focus-row == 1 && self.action-index >= 0 && self.action-index < self.actions.length) {
+            return self.actions[self.action-index];
+        }
+        if (self.category-index >= 0 && self.category-index < self.categories.length) {
+            return self.categories[self.category-index].name;
+        }
+        return "";
+    }
+
+    // HubScreen.qml geometry: both rows share SQUARE cells sized
+    // min(pctH(22), fit-within-width) with pctW(3) spacing and pctW(5)
+    // side insets; the whole block (rows + gap + caption) centers
+    // between headerBottom and the help bar.
+    property <length> cell-spacing: Sizing.pct-w(3);
+    property <length> side-inset: Sizing.pct-w(5);
+    property <int> n-cats: root.categories.length;
+    property <length> raw-cell: root.n-cats > 0
+        ? Math.floor((self.width - 2 * root.side-inset - (root.n-cats - 1) * root.cell-spacing) / root.n-cats / 1px) * 1px
+        : Sizing.pct-h(22);
+    property <length> cell: Math.min(Sizing.pct-h(22), root.raw-cell);
+    property <length> block-h: 2 * root.cell + root.cell-spacing + Sizing.pct-h(3) + Sizing.pct-h(7);
+    property <length> block-y: Math.round((Sizing.header-bottom() + self.height - Sizing.pct-h(6) - root.block-h) / 2px) * 1px;
+
+    // The row containers carry an explicit size and the cards an
+    // explicit y: Slint centers any element whose position is unset,
+    // so a full-height parent would drag every card to mid-screen.
+    property <length> cat-row-x: Math.round((self.width - (root.n-cats * root.cell + Math.max(0, root.n-cats - 1) * root.cell-spacing)) / 2px) * 1px;
+    property <length> act-row-x: Math.round((self.width - (root.actions.length * root.cell + Math.max(0, root.actions.length - 1) * root.cell-spacing)) / 2px) * 1px;
+
+    Rectangle {
+        x: root.cat-row-x;
+        y: root.block-y;
+        width: root.n-cats * root.cell + Math.max(0, root.n-cats - 1) * root.cell-spacing;
+        height: root.cell;
+        for tile[i] in root.categories: CategoryCard {
+            x: i * (root.cell + root.cell-spacing);
+            y: 0;
+            width: root.cell;
+            height: root.cell;
+            label: tile.name;
+            dimmed: tile.hidden;
+            focused: root.focus-row == 0 && i == root.category-index
+                && !Shell.route-transitioning;
+        }
+    }
+
+    // Fixed art keys for the actions row - labels can be dynamic
+    // (Resume carries the last-played name).
+    property <[string]> action-keys: ["Resume", "Favorites", "Recents", "Update", "Settings"];
+
+    Rectangle {
+        x: root.act-row-x;
+        y: root.block-y + root.cell + root.cell-spacing;
+        width: root.actions.length * root.cell + Math.max(0, root.actions.length - 1) * root.cell-spacing;
+        height: root.cell;
+        for name[i] in root.actions: CategoryCard {
+            x: i * (root.cell + root.cell-spacing);
+            y: 0;
+            width: root.cell;
+            height: root.cell;
+            label: name;
+            glyph-key: i < root.action-keys.length ? root.action-keys[i] : name;
+            focused: root.focus-row == 1 && i == root.action-index
+                && !Shell.route-transitioning;
+        }
+    }
+
+    // Gliding focus ring spanning both rows. ONE animated pair of
+    // normalized screen fractions: straight-line glides between any
+    // two cells (blending several animated floats bends the path into
+    // a swoop), and fractions are resolution-invariant so DRS res
+    // switches never animate across coordinate spaces.
+    if root.categories.length > 0 && !Shell.route-transitioning: Rectangle {
+        property <float> fx: (root.focus-row == 0
+            ? root.cat-row-x + root.category-index * (root.cell + root.cell-spacing)
+            : root.act-row-x + root.action-index * (root.cell + root.cell-spacing)) / root.width;
+        property <float> fy: (root.focus-row == 0
+            ? root.block-y
+            : root.block-y + root.cell + root.cell-spacing) / root.height;
+        animate fx { duration: Shell.reduce-motion ? 0ms : 120ms; easing: ease-out; }
+        animate fy { duration: Shell.reduce-motion ? 0ms : 120ms; easing: ease-out; }
+        x: fx * root.width;
+        y: fy * root.height;
+        width: root.cell;
+        height: root.cell;
+        border-radius: Sizing.corner-radius();
+        border-width: Sizing.stroke(0.55);
+        border-color: Theme.focus-ring;
+    }
+
+    ActiveLabel {
+        x: 0;
+        y: root.block-y + 2 * root.cell + root.cell-spacing + Sizing.pct-h(3);
+        width: parent.width;
+        text: root.caption();
+    }
+
+    // ScreenStateOverlay states. Error is terminal and wins over the
+    // empty cue; the empty cue is gated on boot-complete because
+    // before the first catalog Ready an empty model means "still
+    // loading", not "library is empty" (HubScreen.qml gates its
+    // overlay on `loaded || error` the same way).
+    if HubView.hub-error != "": Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px - Sizing.font-size(2.4);
+            text: @tr("Failed to load");
+            color: Theme.fg;
+            font-size: Sizing.font-size(2.9);
+        }
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px + Sizing.font-size(2.9);
+            max-width: Math.round(parent.width * 0.7 / 1px) * 1px;
+            overflow: elide;
+            text: HubView.hub-error;
+            color: Theme.fg;
+            font-size: Sizing.font-size(2.4);
+        }
+    }
+    if HubView.hub-error == "" && Shell.boot-complete && root.categories.length == 0: Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        text: @tr("No systems available. Run Update media database from Settings.");
+        color: Theme.fg-dim;
+        font-size: Sizing.font-size(2.6);
+    }
+}
+
+// About / License screen, ported from AboutScreen.qml: centered card
+// with the brand mark, version, copyright, and license text. Reached
+// from Settings; Back returns there.
+component AboutScreen inherits Rectangle {
+    // Data dependencies, read straight from the state globals.
+    property <string> version-line: Shell.about-version-line;
+
+    TopStrip {
+        x: 0;
+        y: Sizing.header-bottom() + Sizing.pct-h(1);
+        width: parent.width;
+        title: @tr("About / License");
+    }
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Sizing.header-bottom() + Sizing.pct-h(10);
+        width: Math.min(parent.width - Sizing.pct-w(10), Sizing.pct-w(50));
+        height: parent.height - Sizing.header-bottom() - Sizing.pct-h(18);
+        background: Theme.bg-raised;
+        border-radius: Sizing.corner-radius();
+        border-width: Sizing.stroke(1);
+        border-color: Theme.border-mid;
+
+        property <length> pad: Sizing.pct-h(4);
+        property <length> logo-w: Math.min(self.width - 2 * self.pad, Sizing.pct-h(35));
+
+        VerticalLayout {
+            x: parent.pad;
+            y: parent.pad;
+            width: parent.width - 2 * parent.pad;
+            spacing: Sizing.pct-h(2);
+            alignment: start;
+
+            Image {
+                source: @image-url("logo.png");
+                width: parent.width;
+                height: Sizing.pct-h(8);
+                image-fit: contain;
+            }
+            Text {
+                horizontal-alignment: center;
+                text: @tr("Zaparoo Frontend");
+                color: Theme.fg;
+                font-size: Sizing.font-size(4);
+                font-weight: 500;
+            }
+            Text {
+                horizontal-alignment: center;
+                text: root.version-line;
+                color: Theme.fg-dim;
+                font-size: Sizing.font-size(2.4);
+            }
+            Text {
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                text: @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.");
+                color: Theme.fg;
+                font-size: Sizing.font-size(2.6);
+            }
+            Text {
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                text: @tr("Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license.");
+                color: Theme.fg;
+                font-size: Sizing.font-size(2.6);
+            }
+            Text {
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                text: @tr("Commercial licensing: legal@zaparoo.org");
+                color: Theme.fg;
+                font-size: Sizing.font-size(2.6);
+            }
+            Text {
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                text: @tr("Project: https://zaparoo.org");
+                color: Theme.fg;
+                font-size: Sizing.font-size(2.6);
+            }
+        }
+    }
+}
+
+component SystemsScreen inherits Rectangle {
+    // Data dependencies, read straight from the state globals.
+    property <[SystemTile]> systems: SystemsView.systems;
+    property <int> index: SystemsView.systems-index;
+    property <string> category-name: SystemsView.systems-category;
+    property <int> page: SystemsView.systems-page;
+    property <int> total-pages: SystemsView.systems-total-pages;
+    property <[SystemTile]> systems-next: SystemsView.systems-next-page;
+    property <int> slide-dir: SystemsView.systems-slide-dir;
+    property <float> page-slide: SystemsView.systems-page-slide;
+    property <bool> slide-anim: SystemsView.systems-slide-anim;
+    property <bool> list-layout: Shell.browse-list-layout;
+    property <bool> tate-list: self.list-layout && Shell.orientation != "horizontal";
+    // Shape solved in Rust (src/sizing.rs systemsGridShape port).
+    property <int> columns: SystemsView.systems-grid-cols;
+    property <int> rows: SystemsView.systems-grid-rows;
+    property <length> gap: Theme.crt ? 4px : Sizing.pct-w(1.2);
+    property <length> grid-top: Theme.crt && !self.list-layout
+        ? Sizing.header-bottom() + 2px
+        : Sizing.header-bottom() + Sizing.pct-h(8);
+    // CRT profile reclaims the TopStrip and uses an 8px ActiveLabel;
+    // default keeps the 7% label at its 8% bottom margin.
+    property <length> grid-bottom-margin: Theme.crt ? Sizing.pct-h(6) + 8px : Sizing.pct-h(15);
+    property <length> grid-side-budget: Theme.crt ? 16px : Sizing.pct-w(8);
+    property <length> tile-w: Math.floor((self.width - self.grid-side-budget - (self.columns - 1) * self.gap) / self.columns / 1px) * 1px;
+    property <length> tile-h: Math.floor((self.height - self.grid-top - self.grid-bottom-margin - (self.rows - 1) * self.gap) / self.rows / 1px) * 1px;
+
+    if !Theme.crt || root.list-layout: TopStrip {
+        x: 0;
+        y: Sizing.header-bottom() + Sizing.pct-h(1);
+        width: parent.width;
+        title: root.category-name;
+        right-text: root.total-pages > 1
+            ? @tr("Page {} / {}", root.page + 1, root.total-pages)
+            : "";
+    }
+
+    // Profile-driven detailed list. Horizontal uses list-left/detail-
+    // right; tate uses list-top/detail-bottom with logo left of the
+    // detail title, matching systemsListTate.
+    property <length> list-card-x: Theme.crt ? 4px : Sizing.pct-w(4);
+    property <length> list-card-y: Sizing.header-bottom() + (Theme.crt ? 10px : Sizing.pct-h(8));
+    property <length> list-card-w: self.width - 2 * self.list-card-x;
+    property <length> list-card-h: self.height - self.list-card-y - (Theme.crt ? 16px : Sizing.pct-h(9));
+    property <length> list-pad-x: Theme.crt ? 3px : Sizing.pct-w(2);
+    property <length> list-pad-y: Theme.crt ? 3px : Sizing.pct-h(2);
+    property <length> list-divider: Sizing.stroke(0.3);
+    property <length> list-section-w: self.tate-list ? self.list-card-w
+        : Math.floor((self.list-card-w - self.list-divider) * 2 / 3 / 1px) * 1px;
+    property <length> list-section-h: self.tate-list
+        ? Math.floor((self.list-card-h - self.list-divider) * 9 / 16 / 1px) * 1px
+        : self.list-card-h;
+    property <length> system-row-gap: Theme.crt ? 0px : Sizing.pct-h(0.4);
+    property <length> system-row-h: Theme.crt ? 12px
+        : Math.floor((self.list-section-h - 2 * self.list-pad-y
+            - Math.max(0, self.systems.length - 1) * self.system-row-gap)
+            / Math.max(1, self.systems.length) / 1px) * 1px;
+
+    if root.list-layout: Rectangle {
+        x: root.list-card-x;
+        y: root.list-card-y;
+        width: root.list-card-w;
+        height: root.list-card-h;
+        background: Theme.bg-tile;
+        border-radius: Theme.crt ? 4px : Sizing.corner-radius();
+        border-width: root.list-divider;
+        border-color: Theme.border-mid;
+        clip: true;
+
+        for sys[i] in root.systems: Rectangle {
+            x: root.list-pad-x;
+            y: root.list-pad-y + i * (root.system-row-h + root.system-row-gap);
+            width: root.list-section-w - 2 * root.list-pad-x;
+            height: root.system-row-h;
+            background: i == root.index ? Theme.selection-surface : transparent;
+            border-radius: Theme.crt ? 2px : Sizing.pct-h(1.2);
+            opacity: sys.hidden ? 0.55 : 1.0;
+
+            if i == root.index: Rectangle {
+                x: 0;
+                y: 0;
+                width: Theme.crt ? 2px : Sizing.pct-w(0.45);
+                height: parent.height;
+                background: Theme.accent;
+            }
+            Text {
+                x: Theme.crt ? 4px : Sizing.pct-w(1.6);
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                max-width: parent.width - 2 * self.x;
+                overflow: elide;
+                text: sys.name;
+                color: i == root.index ? Theme.fg : Theme.fg-dim;
+                font-size: Theme.crt ? 8px : Sizing.font-size(2.9);
+            }
+        }
+
+        Rectangle {
+            x: root.tate-list ? 0px : root.list-section-w;
+            y: root.tate-list ? root.list-section-h : 0px;
+            width: root.tate-list ? parent.width : root.list-divider;
+            height: root.tate-list ? root.list-divider : parent.height;
+            background: Theme.border-mid;
+        }
+
+        property <length> detail-x: root.tate-list ? root.list-pad-x
+            : root.list-section-w + root.list-divider + root.list-pad-x;
+        property <length> detail-y: root.tate-list
+            ? root.list-section-h + root.list-divider + root.list-pad-y
+            : root.list-pad-y;
+        property <length> detail-w: root.tate-list
+            ? parent.width - 2 * root.list-pad-x
+            : parent.width - self.detail-x - root.list-pad-x;
+        property <length> detail-h: root.tate-list
+            ? parent.height - self.detail-y - root.list-pad-y
+            : parent.height - 2 * root.list-pad-y;
+        property <length> logo-w: root.tate-list
+            ? Math.floor(self.detail-w * 5 / 12 / 1px) * 1px
+            : self.detail-w;
+        property <length> logo-h: root.tate-list ? self.detail-h
+            : Math.floor(self.detail-h * 0.72 / 1px) * 1px;
+
+        if root.index >= 0 && root.index < root.systems.length
+            && root.systems[root.index].has-logo: Image {
+            x: parent.detail-x;
+            y: parent.detail-y;
+            width: parent.logo-w;
+            height: parent.logo-h;
+            source: root.systems[root.index].logo-focus;
+            image-fit: contain;
+        }
+        if root.index >= 0 && root.index < root.systems.length: Text {
+            x: root.tate-list ? parent.detail-x + parent.logo-w + root.list-pad-x
+                : parent.detail-x;
+            y: root.tate-list ? parent.detail-y
+                : parent.detail-y + parent.logo-h + Sizing.pct-h(1);
+            max-width: root.tate-list
+                ? parent.detail-w - parent.logo-w - root.list-pad-x
+                : parent.detail-w;
+            overflow: elide;
+            text: root.systems[root.index].name;
+            color: Theme.fg;
+            font-size: Theme.crt ? 8px : Sizing.font-size(3.2);
+            font-weight: 600;
+        }
+    }
+
+    // Page-swoop viewport, the same clipped two-page strip as the
+    // games grid: the whole strip translates by one page period.
+    property <length> period: root.rows * (root.tile-h + root.gap);
+    property <length> grid-x: Theme.crt ? 4px
+        : Math.round((self.width - (root.tile-w * root.columns + root.gap * (root.columns - 1))) / 2px) * 1px;
+    if !root.list-layout: Rectangle {
+        x: root.grid-x;
+        y: root.grid-top;
+        width: root.tile-w * root.columns + root.gap * (root.columns - 1);
+        height: root.period - root.gap;
+        clip: true;
+
+        Rectangle {
+            x: 0;
+            y: -root.page-slide * root.period;
+            width: parent.width;
+            height: parent.height;
+            animate y { duration: root.slide-anim && !Shell.reduce-motion ? 240ms : 0ms; easing: ease-in-out; }
+
+            for sys[i] in root.systems: SystemCard {
+                x: Math.mod(i, root.columns) * (root.tile-w + root.gap);
+                y: Math.floor(i / root.columns) * (root.tile-h + root.gap);
+                width: root.tile-w;
+                height: root.tile-h;
+                label: sys.name;
+                logo: sys.logo;
+                logo-focus: sys.logo-focus;
+                has-logo: sys.has-logo;
+                entry-hidden: sys.hidden;
+                focused: i == root.index && !SystemsView.systems-cached-transition
+                    && !Shell.route-transitioning;
+            }
+            for sys[i] in root.systems-next: SystemCard {
+                x: Math.mod(i, root.columns) * (root.tile-w + root.gap);
+                y: Math.floor(i / root.columns) * (root.tile-h + root.gap)
+                    + root.slide-dir * root.period;
+                width: root.tile-w;
+                height: root.tile-h;
+                label: sys.name;
+                logo: sys.logo;
+                logo-focus: sys.logo-focus;
+                has-logo: sys.has-logo;
+                entry-hidden: sys.hidden;
+                focused: false;
+            }
+            // Gliding focus ring. The ANIMATED quantities are tile-unit
+            // floats (column/row), not pixels: navigation glides, but a
+            // DRS res switch recomputes the pixel position instantly
+            // instead of animating between the two coordinate spaces
+            // (which read as the ring flying in from off screen).
+            // slide-anim also gates the ring: the page-commit index
+            // change must snap, not glide across rows.
+            if root.systems.length > 0 && root.index >= 0
+                && !SystemsView.systems-cached-transition
+                && !Shell.route-transitioning: Rectangle {
+                property <float> fcol: Math.mod(root.index, root.columns);
+                property <float> frow: Math.floor(root.index / root.columns);
+                animate fcol { duration: root.slide-anim && !Shell.reduce-motion ? 120ms : 0ms; easing: ease-out; }
+                animate frow { duration: root.slide-anim && !Shell.reduce-motion ? 120ms : 0ms; easing: ease-out; }
+                x: fcol * (root.tile-w + root.gap);
+                y: frow * (root.tile-h + root.gap);
+                width: root.tile-w;
+                height: root.tile-h;
+                border-radius: Sizing.corner-radius();
+                border-width: Sizing.stroke(0.55);
+                border-color: Theme.focus-ring;
+            }
+        }
+    }
+
+    // Scroll-arrow gutter chrome (PagedGrid.qml's cue that more
+    // content sits above/below the viewport).
+    property <length> arrow-s: Theme.crt ? 8px : Sizing.pct-h(4);
+    if !root.list-layout && root.page > 0: Image {
+        x: parent.width - Sizing.pct-w(2) - root.arrow-s;
+        y: root.grid-top;
+        width: root.arrow-s;
+        height: root.arrow-s;
+        source: GlyphSource.glyph("ScrollUp", root.arrow-s);
+        colorize: Theme.fg-dim;
+    }
+    if !root.list-layout && root.page + 1 < root.total-pages: Image {
+        x: parent.width - Sizing.pct-w(2) - root.arrow-s;
+        y: root.grid-top + root.period - root.gap - root.arrow-s;
+        width: root.arrow-s;
+        height: root.arrow-s;
+        source: GlyphSource.glyph("ScrollDown", root.arrow-s);
+        colorize: Theme.fg-dim;
+    }
+
+    // In-screen empty cue (ScreenStateOverlay's essential role):
+    // transparent, one Text, no painted background. SystemsScreen.qml
+    // scopes the copy to the category; the "Run Update media database"
+    // guidance belongs to the Hub's whole-library cue only.
+    if root.systems.length == 0: Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        text: @tr("No systems in this category");
+        color: Theme.fg-dim;
+        font-size: Sizing.font-size(2.6);
+    }
+
+    if !root.list-layout: ActiveLabel {
+        x: 0;
+        y: parent.height - self.height - Sizing.pct-h(Theme.crt ? 6 : 8);
+        width: parent.width;
+        height: Theme.crt ? 8px : Sizing.pct-h(7);
+        text: root.index >= 0 && root.index < root.systems.length ? root.systems[root.index].name : "";
+    }
+
+    if Theme.crt && !root.list-layout && root.total-pages > 1: Text {
+        x: parent.width - self.width - 4px;
+        y: parent.height - self.height - Sizing.pct-h(6);
+        text: @tr("Page {} / {}", root.page + 1, root.total-pages);
+        color: Theme.fg;
+        font-size: Sizing.font-size(2.9);
+    }
+}
+
+// Centered list-picker modal, ported from ListPickerModal.qml's
+// shape: title over a focused row list. Carries the West-button
+// "View" menu (page/list-scoped operations - Go to..., and later
+// sort/filter/layout) and any future picker use.
+component ListPickerModal inherits Rectangle {
+    in property <string> title;
+    in property <[MenuEntry]> entries;
+    in property <int> current-index;
+
+    background: Theme.scrim;
+
+    property <length> row-h: Sizing.pct-h(6);
+    property <length> row-sp: Sizing.pct-h(1);
+    property <length> title-h: Sizing.pct-h(8);
+    property <length> panel-w: Math.max(Sizing.pct-w(24), Sizing.pct-h(32));
+    property <length> panel-h: root.title-h + root.entries.length * root.row-h
+        + Math.max(0, root.entries.length - 1) * root.row-sp + Sizing.pct-h(4);
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: Theme.bg-raised;
+        border-radius: Sizing.corner-radius();
+        border-width: Sizing.stroke(0.3);
+        border-color: Theme.border-mid;
+
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            text: root.title;
+            color: Theme.fg;
+            font-size: Sizing.font-size(4);
+            font-weight: 500;
+        }
+
+        for entry[i] in root.entries: Rectangle {
+            x: Sizing.pct-w(1);
+            y: root.title-h + i * (root.row-h + root.row-sp);
+            width: parent.width - 2 * Sizing.pct-w(1);
+            height: root.row-h;
+            background: i == root.current-index ? Theme.selection-surface : transparent;
+            border-radius: Sizing.pct-h(1);
+            border-width: i == root.current-index ? Sizing.stroke(0.4) : 0px;
+            border-color: Theme.focus-ring;
+
+            Text {
+                x: Sizing.pct-w(2);
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                max-width: parent.width - 2 * Sizing.pct-w(2);
+                overflow: elide;
+                text: entry.label;
+                color: Theme.fg;
+                font-size: Sizing.font-size(2.6);
+            }
+        }
+    }
+}
+
+// Jump-to-letter grid picker, ported from LetterJumpModal.qml: the
+// buckets come from `media.browse.index` (only non-empty sections in
+// sort order), each cell shows the bucket label with its item count.
+// Pure presentation - the router owns navigation and the cursor seek.
+component LetterJumpModal inherits Rectangle {
+    in property <[LetterBucket]> buckets;
+    in property <int> current-index;
+    in property <bool> loading;
+    in property <int> columns: 9;
+
+    background: Theme.scrim;
+
+    property <length> gap: Sizing.pct-w(1);
+    property <length> panel-w: Sizing.pct-w(78);
+    property <length> content-w: root.panel-w - 2 * Sizing.pct-w(4);
+    property <int> rows: Math.max(1, Math.ceil(root.buckets.length / Math.max(1, root.columns)));
+    property <length> cell: Math.round(Math.min(Sizing.pct-w(13) / 1px, Math.max(Sizing.pct-w(7) / 1px,
+        (root.content-w - (root.columns - 1) * root.gap) / Math.max(1, root.columns) / 1px))) * 1px;
+    property <length> title-h: Sizing.pct-h(8);
+    property <length> grid-h: root.rows * root.cell + (root.rows - 1) * root.gap;
+    property <length> grid-w: root.columns * root.cell + (root.columns - 1) * root.gap;
+    property <length> panel-h: root.title-h + root.grid-h + Sizing.pct-h(6);
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: Theme.bg-raised;
+        border-radius: Sizing.corner-radius();
+        border-width: Sizing.stroke(0.3);
+        border-color: Theme.border-mid;
+
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            text: @tr("Go to...");
+            color: Theme.fg;
+            font-size: Sizing.font-size(4);
+            font-weight: 500;
+        }
+
+        if root.loading: Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.title-h + Math.round((root.grid-h - self.height) / 2px) * 1px;
+            text: @tr("Loading…");
+            color: Theme.fg-dim;
+            font-size: Sizing.font-size(2.6);
+        }
+
+        Rectangle {
+            x: Math.round((parent.width - root.grid-w) / 2px) * 1px;
+            y: root.title-h;
+            width: root.grid-w;
+            height: root.grid-h;
+
+            for bucket[i] in root.buckets: Rectangle {
+                x: Math.mod(i, root.columns) * (root.cell + root.gap);
+                y: Math.floor(i / root.columns) * (root.cell + root.gap);
+                width: root.cell;
+                height: root.cell;
+                background: i == root.current-index ? Theme.selection-surface : Theme.bg-tile;
+                border-radius: Sizing.pct-h(1);
+                border-width: i == root.current-index ? Sizing.stroke(0.4) : Sizing.stroke(0.2);
+                border-color: i == root.current-index ? Theme.focus-ring : Theme.border-mid;
+
+                Text {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: Math.round((parent.height * 0.52 - self.height) / 2px) * 1px;
+                    text: bucket.label;
+                    color: Theme.fg;
+                    font-size: Sizing.font-size(3.4);
+                    font-weight: 500;
+                }
+                Text {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: parent.height - self.height - Sizing.pct-h(0.8);
+                    text: bucket.count;
+                    color: Theme.fg-dim;
+                    font-size: Sizing.font-size(2.2);
+                }
+            }
+        }
+    }
+}
+
+// Card-writer modal, the Qt Modal's "transient" flavor: scrim +
+// small centered panel with only a title line. Title swaps to the
+// failure text when the write errors; B cancels either way (the
+// help bar carries the cue, controller-first like everything else).
+component CardWriteModal inherits Rectangle {
+    in property <bool> failed;
+
+    background: Theme.scrim;
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: Math.min(Sizing.pct-w(60), Math.round(title.preferred-width / 1px) * 1px + 2 * Sizing.pct-w(4));
+        height: Sizing.pct-h(16);
+        background: Theme.bg-raised;
+        border-radius: Sizing.corner-radius();
+        border-width: Sizing.stroke(0.3);
+        border-color: root.failed ? Theme.accent : Theme.border-mid;
+
+        title := Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            max-width: parent.width - 2 * Sizing.pct-w(3);
+            overflow: elide;
+            text: root.failed
+                ? @tr("Writing failed")
+                : @tr("Put a writable card near the reader");
+            color: Theme.fg;
+            font-size: Sizing.font-size(3);
+            font-weight: 500;
+        }
+    }
+}
+
+// QR write deep-link modal (QrCodeModal.qml): white card centered
+// over the scrim, matrix scaled to the largest whole module multiple
+// within min(42%w, 68%h) so modules stay square. The image already
+// carries the 4-module quiet zone in white.
+component QrCodeModal inherits Rectangle {
+    in property <image> qr;
+    in property <int> modules;
+
+    background: Theme.scrim;
+
+    property <length> max-px: Math.min(Sizing.pct-w(42), Sizing.pct-h(68));
+    property <length> module-px: root.modules > 0
+        ? Math.max(1, Math.floor(root.max-px / root.modules / 1px)) * 1px
+        : 1px;
+    property <length> qr-px: root.module-px * root.modules;
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.qr-px;
+        height: root.qr-px;
+        background: white;
+        border-width: Sizing.stroke(root.module-px * 0.18 / 1px);
+        border-color: Theme.border-subtle;
+
+        Image {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            source: root.qr;
+            image-rendering: pixelated;
+        }
+    }
+}
+
+// Decision dialog (Modal.qml port): rounded panel over the scrim
+// with title, wrapped body, an optional status line, and a centered
+// button row. Focus is a filled accent pill; unfocused buttons keep
+// the outline treatment. Purely presentational - the router owns
+// which buttons exist and what they mean.
+component DialogModal inherits Rectangle {
+    background: Theme.scrim;
+
+    property <length> panel-w: Sizing.pct-w(56);
+    property <length> pad: Sizing.pct-h(3);
+    property <length> btn-h: Sizing.pct-h(6);
+    property <length> btn-gap: Sizing.pct-w(2);
+    property <length> body-h: body-t.preferred-height;
+    property <length> status-h: Overlays.dialog-status != "" ? Sizing.font-size(2.4) + Sizing.pct-h(1) : 0px;
+    property <length> panel-h: self.pad + Sizing.font-size(3.2) + Sizing.pct-h(2)
+        + self.body-h + Sizing.pct-h(2) + self.status-h + self.btn-h + self.pad;
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: Theme.bg-raised;
+        border-radius: Sizing.corner-radius();
+        border-width: Sizing.stroke(0.3);
+        border-color: Theme.border-mid;
+
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.pad;
+            max-width: parent.width - 2 * root.pad;
+            overflow: elide;
+            text: Overlays.dialog-title;
+            color: Theme.fg;
+            font-size: Sizing.font-size(3.2);
+            font-weight: 600;
+        }
+
+        body-t := Text {
+            x: root.pad;
+            y: root.pad + Sizing.font-size(3.2) + Sizing.pct-h(2);
+            width: parent.width - 2 * root.pad;
+            wrap: word-wrap;
+            text: Overlays.dialog-body;
+            color: Theme.fg;
+            font-size: Sizing.font-size(2.4);
+            horizontal-alignment: center;
+        }
+
+        if Overlays.dialog-status != "": Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.pad + Sizing.font-size(3.2) + Sizing.pct-h(2) + root.body-h + Sizing.pct-h(2);
+            max-width: parent.width - 2 * root.pad;
+            overflow: elide;
+            text: Overlays.dialog-status;
+            color: Theme.fg-variant;
+            font-size: Sizing.font-size(2.4);
+        }
+
+        // Centered button row: fixed-width pills (two at most in the
+        // Qt kinds), focused pill filled accent.
+        property <length> btn-w: Sizing.pct-w(14);
+        for label[i] in Overlays.dialog-buttons: Rectangle {
+            x: Math.round((parent.width
+                - (Overlays.dialog-buttons.length * parent.btn-w
+                    + (Overlays.dialog-buttons.length - 1) * root.btn-gap))
+                / 2px) * 1px
+                + i * (parent.btn-w + root.btn-gap);
+            y: root.panel-h - root.pad - root.btn-h;
+            width: parent.btn-w;
+            height: root.btn-h;
+            border-radius: self.height / 2;
+            background: i == Overlays.dialog-focus ? Theme.accent : Theme.bg-tile;
+            border-width: Sizing.stroke(0.3);
+            border-color: i == Overlays.dialog-focus ? Theme.accent : Theme.border-mid;
+
+            Text {
+                x: Math.round((parent.width - self.width) / 2px) * 1px;
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                max-width: parent.width - Sizing.pct-w(1);
+                overflow: elide;
+                text: label;
+                color: i == Overlays.dialog-focus ? Theme.bg-bar : Theme.fg;
+                font-size: Sizing.font-size(2.6);
+                font-weight: 600;
+            }
+        }
+    }
+}
+
+// Screen-burn protection (ScreensaverOverlay.qml): solid-black
+// backstop - the only background that gives OLED pixels-off rest and
+// CRT phosphor a true break - with one copy of the logo starting at
+// the header position, holding 1 s, then drifting DVD-style at 45°
+// at one screen-width per 10 s. Per step only the logo's own box
+// repaints, so the software renderer's cost stays tiny. Mounted
+// fresh on every arm, so init state is always clean.
+component ScreensaverOverlay inherits Rectangle {
+    background: black;
+
+    property <image> logo: @image-url("logo.png");
+    property <length> lh: Sizing.header-height();
+    property <length> lw: root.lh * root.logo.width / Math.max(1, root.logo.height);
+
+    // Float pixel positions; the Image rounds on paint. Start mirrors
+    // the header logo so activation reads as the logo walking off.
+    property <float> lx: Sizing.pct-w(2) / 1px;
+    property <float> ly: Sizing.pct-h(2) / 1px;
+    property <float> dxs: 1;
+    property <float> dys: 1;
+    property <bool> bouncing: false;
+
+    // 1 s hold at the header position before the walk starts.
+    Timer {
+        interval: 1s;
+        running: !root.bouncing;
+        triggered() => {
+            root.bouncing = true;
+        }
+    }
+
+    // Drift ticks. 16 ms steps at one screen-width per 10 s keeps the
+    // classic slow DVD-player feel at every resolution.
+    Timer {
+        interval: 16ms;
+        running: root.bouncing;
+        triggered() => {
+            root.step();
+        }
+    }
+
+    function step() {
+        root.lx += root.dxs * (root.width / 1px) * 0.0016;
+        root.ly += root.dys * (root.width / 1px) * 0.0016;
+        if (root.lx <= 0) {
+            root.lx = 0;
+            root.dxs = 1;
+        }
+        if (root.lx >= (root.width - root.lw) / 1px) {
+            root.lx = (root.width - root.lw) / 1px;
+            root.dxs = -1;
+        }
+        if (root.ly <= 0) {
+            root.ly = 0;
+            root.dys = 1;
+        }
+        if (root.ly >= (root.height - root.lh) / 1px) {
+            root.ly = (root.height - root.lh) / 1px;
+            root.dys = -1;
+        }
+    }
+
+    Image {
+        x: Math.round(root.lx) * 1px;
+        y: Math.round(root.ly) * 1px;
+        width: root.lw;
+        height: root.lh;
+        source: root.logo;
+        image-fit: contain;
+    }
+}
+
+// Item-scoped context menu, ported from ContextMenu.qml: the panel
+// positions itself beside the anchored tile (right, then left, then
+// below/above) and clamps to the window; the scrim is four bands
+// drawn AROUND the anchor so the tile the menu is about stays bright
+// while the rest of the screen dims. Static scrim, one repaint on
+// open - no animation over the grid.
+component ContextMenu inherits Rectangle {
+    in property <[MenuEntry]> entries;
+    in property <int> current-index;
+    in property <length> anchor-x;
+    in property <length> anchor-y;
+    in property <length> anchor-w;
+    in property <length> anchor-h;
+
+    property <length> margin: Sizing.pct-h(2);
+    property <length> gap: Sizing.pct-w(1.2);
+    property <length> row-h: Sizing.pct-h(6);
+    property <length> row-sp: Sizing.pct-h(1);
+    property <length> pad-x: Sizing.pct-w(2);
+    property <length> panel-radius: Sizing.pct-h(1.5);
+    // Fixed panel width (the Qt minimum): the demo vocabulary is
+    // short, long labels elide inside the rows.
+    property <length> panel-w: Math.max(Sizing.pct-w(24), Sizing.pct-h(32));
+    property <length> panel-h: root.entries.length * root.row-h
+        + Math.max(0, root.entries.length - 1) * root.row-sp + 2 * root.panel-radius;
+    // Keep clear of the help bar (6%) like the Qt bottomUnsafeHeight.
+    property <length> usable-bottom: root.height - Sizing.pct-h(8) - root.margin;
+    property <bool> fits-right: root.anchor-x + root.anchor-w + root.gap + root.panel-w <= root.width - root.margin;
+    property <bool> fits-left: root.anchor-x - root.gap - root.panel-w >= root.margin;
+    property <bool> beside: root.fits-right || root.fits-left;
+    property <bool> fits-below: root.anchor-y + root.anchor-h + root.gap + root.panel-h <= root.usable-bottom;
+    property <length> panel-x: Math.round(Math.min(Math.max(root.beside
+        ? (root.fits-right ? root.anchor-x + root.anchor-w + root.gap : root.anchor-x - root.gap - root.panel-w)
+        : root.anchor-x + (root.anchor-w - root.panel-w) / 2, root.margin), root.width - root.margin - root.panel-w) / 1px) * 1px;
+    property <length> raw-y: root.beside
+        ? root.anchor-y + (root.anchor-h - root.panel-h) / 2
+        : (root.fits-below ? root.anchor-y + root.anchor-h + root.gap : root.anchor-y - root.gap - root.panel-h);
+    property <length> panel-y: Math.round(Math.min(Math.max(root.raw-y, root.margin), root.usable-bottom - root.panel-h) / 1px) * 1px;
+
+    Rectangle { x: 0; y: 0; width: parent.width; height: root.anchor-y; background: Theme.scrim; }
+    Rectangle { x: 0; y: root.anchor-y + root.anchor-h; width: parent.width; height: Math.max(0px, parent.height - root.anchor-y - root.anchor-h); background: Theme.scrim; }
+    Rectangle { x: 0; y: root.anchor-y; width: root.anchor-x; height: root.anchor-h; background: Theme.scrim; }
+    Rectangle { x: root.anchor-x + root.anchor-w; y: root.anchor-y; width: Math.max(0px, parent.width - root.anchor-x - root.anchor-w); height: root.anchor-h; background: Theme.scrim; }
+
+    Rectangle {
+        x: root.panel-x;
+        y: root.panel-y;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: Theme.bg-raised;
+        border-radius: root.panel-radius;
+        border-width: Sizing.stroke(0.3);
+        border-color: Theme.border-mid;
+
+        for entry[i] in root.entries: Rectangle {
+            x: Sizing.pct-w(1);
+            y: root.panel-radius + i * (root.row-h + root.row-sp);
+            width: parent.width - 2 * Sizing.pct-w(1);
+            height: root.row-h;
+            background: i == root.current-index ? Theme.selection-surface : transparent;
+            border-radius: Sizing.pct-h(1);
+            border-width: i == root.current-index ? Sizing.stroke(0.4) : 0px;
+            border-color: Theme.focus-ring;
+
+            Text {
+                x: root.pad-x;
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                max-width: parent.width - 2 * root.pad-x;
+                overflow: elide;
+                text: entry.label;
+                color: Theme.fg;
+                font-size: Sizing.font-size(2.6);
+            }
+        }
+    }
+}
+
+component GamesScreen inherits Rectangle {
+    // Data dependencies, read straight from the state globals.
+    property <[GameTile]> games: GamesView.games;
+    property <int> index: GamesView.games-index;
+    property <string> system-name: GamesView.games-system;
+    property <int> page: GamesView.games-page;
+    // Total page count from Core's browse totals; 0 hides the counter
+    // (non-paginated favorites/recents fills).
+    property <int> total-pages: GamesView.games-total-pages;
+    // Page-swoop state (router-driven): the incoming page's tiles, the
+    // slide direction (+1 = next page arrives from below), and the
+    // animated progress 0 -> dir. slide-anim gates the animation
+    // duration so the post-commit snap back to 0 is invisible.
+    property <[GameTile]> games-next: GamesView.games-next-page;
+    property <int> slide-dir: GamesView.games-slide-dir;
+    property <float> page-slide: GamesView.games-page-slide;
+    property <bool> slide-anim: GamesView.games-slide-anim;
+    // Context-menu state (router-driven); the menu mounts inside this
+    // screen because the screen owns the tile geometry it anchors to.
+    property <bool> context-open: Overlays.context-open;
+    property <[MenuEntry]> context-entries: Overlays.context-entries;
+    property <int> context-index: Overlays.context-index;
+
+    // Shape solved in Rust (src/sizing.rs), the same viewport-driven
+    // selector as Sizing.qml's gamesGridShape.
+    property <int> columns: GamesView.games-grid-cols;
+    property <int> rows: GamesView.games-grid-rows;
+
+    property <bool> tate-list: GamesView.games-list-layout && Shell.orientation != "horizontal";
+    property <length> gap: Theme.crt ? 4px : Sizing.pct-w(1.2);
+    property <length> grid-top: Theme.crt && !GamesView.games-list-layout
+        ? Sizing.header-bottom() + 2px
+        : Sizing.header-bottom() + Sizing.pct-h(8);
+    // CRT grid profile reclaims the TopStrip and uses fixed-pixel
+    // gutters/footer; default keeps the roomy 720p/1080p profile.
+    property <length> grid-bottom-margin: Theme.crt ? Sizing.pct-h(6) + 8px : Sizing.pct-h(15);
+    property <length> grid-side-budget: Theme.crt ? 16px : Sizing.pct-w(8);
+    property <length> tile-w: Math.floor((self.width - self.grid-side-budget - (self.columns - 1) * self.gap) / self.columns / 1px) * 1px;
+    property <length> tile-h: Math.floor((self.height - self.grid-top - self.grid-bottom-margin - (self.rows - 1) * self.gap) / self.rows / 1px) * 1px;
+
+    if !Theme.crt || GamesView.games-list-layout: TopStrip {
+        x: 0;
+        y: Sizing.header-bottom() + Sizing.pct-h(1);
+        width: parent.width;
+        title: root.system-name;
+        // Page counter, only when there is something to page through
+        // (TopStatusStrip.qml's rule: "Page N / M" from the totals).
+        // The list layout scrolls continuously - no pages to count.
+        right-text: root.total-pages > 1 && !GamesView.games-list-layout
+            ? @tr("Page {} / {}", root.page + 1, root.total-pages)
+            : "";
+    }
+
+    // Page-swoop viewport: a clipped window over a two-page strip.
+    // During a slide the whole strip translates by one page period -
+    // the outgoing page leaves as the incoming one arrives, one
+    // continuous full-screen sweep (affordable at the DRS motion res;
+    // the strip's y is driven by the normalized page-slide float, so
+    // a res switch mid-flight stays coherent).
+    property <length> period: root.rows * (root.tile-h + root.gap);
+    property <length> grid-x: Theme.crt ? 4px
+        : Math.round((self.width - (root.tile-w * root.columns + root.gap * (root.columns - 1))) / 2px) * 1px;
+    if !GamesView.games-list-layout: Rectangle {
+        x: root.grid-x;
+        y: root.grid-top;
+        width: root.tile-w * root.columns + root.gap * (root.columns - 1);
+        height: root.period - root.gap;
+        clip: true;
+
+        Rectangle {
+            x: 0;
+            y: -root.page-slide * root.period;
+            width: parent.width;
+            height: parent.height;
+            animate y { duration: root.slide-anim && !Shell.reduce-motion ? 240ms : 0ms; easing: ease-in-out; }
+
+            for game[i] in root.games: CoverTile {
+                x: Math.mod(i, root.columns) * (root.tile-w + root.gap);
+                y: Math.floor(i / root.columns) * (root.tile-h + root.gap);
+                width: root.tile-w;
+                height: root.tile-h;
+                label: game.name;
+                tags: game.tags;
+                cover: game.cover;
+                has-cover: game.has-cover;
+                is-favorite: game.is-favorite;
+                thumb: game.thumb;
+                has-thumb: game.has-thumb;
+                focused: i == root.index && !GamesView.games-cached-transition
+                    && !Shell.route-transitioning;
+            }
+            for game[i] in root.games-next: CoverTile {
+                x: Math.mod(i, root.columns) * (root.tile-w + root.gap);
+                y: Math.floor(i / root.columns) * (root.tile-h + root.gap)
+                    + root.slide-dir * root.period;
+                width: root.tile-w;
+                height: root.tile-h;
+                label: game.name;
+                tags: game.tags;
+                cover: game.cover;
+                has-cover: game.has-cover;
+                is-favorite: game.is-favorite;
+                thumb: game.thumb;
+                has-thumb: game.has-thumb;
+                focused: false;
+            }
+            if root.games.length > 0 && root.index >= 0
+                && !GamesView.games-cached-transition
+                && !Shell.route-transitioning: Rectangle {
+                property <float> fcol: Math.mod(root.index, root.columns);
+                property <float> frow: Math.floor(root.index / root.columns);
+                // slide-anim also gates the ring: the page-commit
+                // index change must snap, not glide across rows.
+                animate fcol { duration: root.slide-anim && !Shell.reduce-motion ? 120ms : 0ms; easing: ease-out; }
+                animate frow { duration: root.slide-anim && !Shell.reduce-motion ? 120ms : 0ms; easing: ease-out; }
+                x: fcol * (root.tile-w + root.gap);
+                y: frow * (root.tile-h + root.gap);
+                width: root.tile-w;
+                height: root.tile-h;
+                border-radius: Sizing.corner-radius();
+                border-width: Sizing.stroke(0.55);
+                border-color: Theme.focus-ring;
+            }
+        }
+    }
+
+    // Scroll-arrow gutter chrome (PagedGrid.qml's cue that more
+    // content sits above/below the viewport). Down also covers
+    // unfetched Core pages via has-more.
+    property <length> arrow-s: Theme.crt ? 8px : Sizing.pct-h(4);
+    if !GamesView.games-list-layout && root.page > 0: Image {
+        x: parent.width - Sizing.pct-w(2) - root.arrow-s;
+        y: root.grid-top;
+        width: root.arrow-s;
+        height: root.arrow-s;
+        source: GlyphSource.glyph("ScrollUp", root.arrow-s);
+        colorize: Theme.fg-dim;
+    }
+    if !GamesView.games-list-layout && (root.page + 1 < root.total-pages || GamesView.games-has-more): Image {
+        x: parent.width - Sizing.pct-w(2) - root.arrow-s;
+        y: root.grid-top + root.period - root.gap - root.arrow-s;
+        width: root.arrow-s;
+        height: root.arrow-s;
+        source: GlyphSource.glyph("ScrollDown", root.arrow-s);
+        colorize: Theme.fg-dim;
+    }
+
+    // --- Detailed-list layout (BrowseListDetailView port): list rows
+    // on the left 2/3, divider, detail pane right. Geometry lives at
+    // screen level so the context menu can anchor to the selected row.
+    property <length> card-x: Theme.crt ? 4px : Sizing.pct-w(4);
+    property <length> card-y: root.grid-top;
+    property <length> card-w: self.width - 2 * self.card-x;
+    property <length> card-h: self.height - root.grid-top - (Theme.crt ? 16px : Sizing.pct-h(9));
+    property <length> pad-x: Theme.crt ? 3px : Sizing.pct-w(2);
+    property <length> pad-y: Theme.crt ? 3px : Sizing.pct-h(2);
+    property <length> divider-w: Sizing.stroke(0.3);
+    property <length> list-w: root.tate-list ? root.card-w
+        : Math.floor((root.card-w - root.divider-w) * 2 / 3 / 1px) * 1px;
+    property <length> list-h: root.tate-list
+        ? Math.floor((root.card-h - root.divider-w) * (Theme.crt ? 9 : 11) / 16 / 1px) * 1px
+        : root.card-h;
+    property <int> visible-rows: Math.max(1, GamesView.list-visible);
+    property <length> row-spacing: Theme.crt ? 0px
+        : Sizing.pct-h(root.tate-list ? 0.3 : 0.7);
+    property <length> content-h: root.list-h - 2 * root.pad-y;
+    property <length> list-row-h: Theme.crt ? 12px
+        : Math.floor((root.content-h - (root.visible-rows - 1) * root.row-spacing) / root.visible-rows / 1px) * 1px;
+    property <length> gutter-w: Theme.crt ? 8px : Sizing.pct-w(3);
+    property <length> gutter-gap: Theme.crt ? 2px : Sizing.pct-w(1.5);
+    property <bool> list-scrollable: GamesView.list-total > root.visible-rows;
+    property <length> rows-w: root.list-w - root.pad-x
+        - (root.list-scrollable ? root.gutter-w + root.gutter-gap + root.pad-x : root.pad-x);
+    property <int> abs-sel: GamesView.list-view-top + GamesView.list-sel;
+
+    if GamesView.games-list-layout: Rectangle {
+        x: root.card-x;
+        y: root.card-y;
+        width: root.card-w;
+        height: root.card-h;
+        background: Theme.bg-tile;
+        border-radius: Theme.crt ? 4px : Sizing.corner-radius();
+        border-width: Sizing.stroke(0.3);
+        border-color: Theme.border-mid;
+        clip: true;
+
+        for row[i] in GamesView.list-rows: Rectangle {
+            x: root.pad-x;
+            y: root.pad-y + i * (root.list-row-h + root.row-spacing);
+            width: root.rows-w;
+            height: root.list-row-h;
+            background: i == GamesView.list-sel ? Theme.selection-surface : transparent;
+            border-radius: Sizing.pct-h(1.2);
+
+            // Accent bar on the selected row (BrowseList's left edge).
+            if i == GamesView.list-sel: Rectangle {
+                x: 0;
+                y: 0;
+                width: Sizing.pct-w(0.45);
+                height: parent.height;
+                background: Theme.accent;
+                border-radius: self.width / 3;
+            }
+
+            MarqueeCaption {
+                x: Sizing.pct-w(1.6);
+                y: 0;
+                width: parent.width - 2 * Sizing.pct-w(1.6)
+                    - (row.is-favorite ? Sizing.pct-w(1.6) + Sizing.pct-h(3.2) : 0px);
+                height: parent.height;
+                content: row.name;
+                tags: row.tags;
+                focused: i == GamesView.list-sel && !Shell.route-transitioning;
+                center-content: false;
+                caption-font-size: Sizing.font-size(2.9);
+                caption-color: i == GamesView.list-sel ? Theme.fg : Theme.fg-dim;
+            }
+
+            if row.is-favorite: Image {
+                x: parent.width - Sizing.pct-w(1.6) - Sizing.pct-h(3.2);
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                width: Sizing.pct-h(3.2);
+                height: self.width;
+                source: GlyphSource.glyph("Heart", self.width);
+            }
+        }
+
+        // Scrollbar gutter: arrows + proportional thumb over the
+        // FETCHED span (list-total grows as pages stream in).
+        if root.list-scrollable && root.abs-sel > 0: Image {
+            x: root.list-w - root.pad-x - root.gutter-w + Math.round((root.gutter-w - root.arrow-s) / 2px) * 1px;
+            y: root.pad-y;
+            width: root.arrow-s;
+            height: root.arrow-s;
+            source: GlyphSource.glyph("ScrollUp", root.arrow-s);
+            colorize: Theme.fg-dim;
+        }
+        if root.list-scrollable && root.abs-sel < GamesView.list-total - 1: Image {
+            x: root.list-w - root.pad-x - root.gutter-w + Math.round((root.gutter-w - root.arrow-s) / 2px) * 1px;
+            y: root.list-h - root.pad-y - root.arrow-s;
+            width: root.arrow-s;
+            height: root.arrow-s;
+            source: GlyphSource.glyph("ScrollDown", root.arrow-s);
+            colorize: Theme.fg-dim;
+        }
+        if root.list-scrollable: Rectangle {
+            property <length> region-y: root.pad-y + root.arrow-s + Sizing.pct-h(1);
+            property <length> region-h: root.content-h - 2 * (root.arrow-s + Sizing.pct-h(1));
+            property <length> thumb-h: Math.max(Sizing.pct-h(4),
+                self.region-h * root.visible-rows / Math.max(1, GamesView.list-total));
+            x: root.list-w - root.pad-x - Math.round((root.gutter-w + Sizing.pct-w(1.2)) / 2px) * 1px;
+            y: self.region-y + (GamesView.list-total > root.visible-rows
+                ? (self.region-h - self.thumb-h) * GamesView.list-view-top
+                    / Math.max(1, GamesView.list-total - root.visible-rows)
+                : 0px);
+            width: Sizing.pct-w(1.2);
+            height: self.thumb-h;
+            background: Theme.fg;
+            border-radius: self.width / 2;
+        }
+
+        Rectangle {
+            x: root.tate-list ? 0px : root.list-w;
+            y: root.tate-list ? root.list-h : 0px;
+            width: root.tate-list ? parent.width : root.divider-w;
+            height: root.tate-list ? root.divider-w : parent.height;
+            background: Theme.border-mid;
+        }
+
+        // Profile-driven detail pane. Standard stacks cover above
+        // metadata; tate places cover left and metadata right.
+        property <length> det-x: root.tate-list ? root.pad-x
+            : root.list-w + root.divider-w + root.pad-x;
+        property <length> det-y: root.tate-list
+            ? root.list-h + root.divider-w + root.pad-y
+            : root.pad-y;
+        property <length> det-w: root.tate-list
+            ? root.card-w - 2 * root.pad-x
+            : root.card-w - root.list-w - root.divider-w - 2 * root.pad-x;
+        property <length> det-h: root.tate-list
+            ? root.card-h - self.det-y - root.pad-y
+            : root.card-h - 2 * root.pad-y;
+        property <length> cover-w: root.tate-list
+            ? Math.floor(self.det-w * (Theme.crt ? 5 : 4) / 12 / 1px) * 1px
+            : self.det-w;
+        property <length> cover-h: root.tate-list ? self.det-h
+            : Math.floor(self.det-h * 0.42 / 1px) * 1px;
+        property <length> text-x: root.tate-list
+            ? self.det-x + self.cover-w + (Theme.crt ? 2px : Sizing.pct-w(3))
+            : self.det-x;
+        property <length> text-w: root.tate-list
+            ? self.det-w - self.cover-w - (Theme.crt ? 2px : Sizing.pct-w(3))
+            : self.det-w;
+        property <length> title-y: root.tate-list ? self.det-y
+            : self.det-y + self.cover-h + (Theme.crt ? 2px : Sizing.pct-h(1.5));
+        property <length> meta-y: self.title-y + (Theme.crt ? 8px : Sizing.font-size(2.9))
+            + (Theme.crt ? 1px : Sizing.pct-h(1.5));
+        property <length> meta-row-h: Theme.crt ? 8px : Sizing.pct-h(3);
+        property <length> desc-y: self.meta-y + GamesView.detail-rows.length * self.meta-row-h
+            + (Theme.crt ? 1px : Sizing.pct-h(1.5));
+
+        if GamesView.detail-has-cover: Image {
+            x: parent.det-x;
+            y: parent.det-y;
+            width: parent.cover-w;
+            height: parent.cover-h;
+            source: GamesView.detail-cover;
+            image-fit: contain;
+        }
+        if !GamesView.detail-has-cover: Rectangle {
+            x: parent.det-x;
+            y: parent.det-y;
+            width: parent.cover-w;
+            height: parent.cover-h;
+            background: Theme.bg-raised;
+            border-radius: Sizing.pct-h(1.5);
+        }
+        Text {
+            x: parent.text-x;
+            y: parent.title-y;
+            max-width: parent.text-w;
+            overflow: elide;
+            text: GamesView.detail-title;
+            color: Theme.fg;
+            font-size: Sizing.font-size(2.9);
+            font-weight: 600;
+        }
+        for meta[j] in GamesView.detail-rows: Rectangle {
+            x: parent.text-x;
+            y: parent.meta-y + j * parent.meta-row-h;
+            width: parent.text-w;
+            height: parent.meta-row-h;
+            label-t := Text {
+                x: 0;
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                text: meta.label;
+                color: Theme.fg-variant;
+                font-size: Sizing.font-size(2.2);
+            }
+            Text {
+                x: Math.round(parent.width * 0.34 / 1px) * 1px;
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                max-width: parent.width - Math.round(parent.width * 0.34 / 1px) * 1px;
+                overflow: elide;
+                text: meta.value;
+                color: Theme.fg;
+                font-size: Sizing.font-size(2.2);
+            }
+        }
+        Text {
+            x: parent.text-x;
+            y: parent.desc-y;
+            width: parent.text-w;
+            height: Math.max(0px, parent.det-y + parent.det-h - parent.desc-y);
+            wrap: word-wrap;
+            overflow: elide;
+            text: GamesView.detail-description;
+            color: Theme.fg;
+            font-size: Sizing.font-size(2.2);
+        }
+    }
+
+    // ScreenStateOverlay states: Error is terminal and wins; Empty
+    // shows the per-mode copy the router pushed with the fill.
+    if GamesView.games-error != "": Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px - Sizing.font-size(2.4);
+            text: @tr("Failed to load");
+            color: Theme.fg;
+            font-size: Sizing.font-size(2.9);
+        }
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px + Sizing.font-size(2.9);
+            max-width: Math.round(parent.width * 0.7 / 1px) * 1px;
+            overflow: elide;
+            text: GamesView.games-error;
+            color: Theme.fg;
+            font-size: Sizing.font-size(2.4);
+        }
+    }
+    if GamesView.games-error == ""
+        && (GamesView.games-list-layout ? GamesView.list-rows.length == 0 : root.games.length == 0): Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        text: GamesView.games-empty-text;
+        color: Theme.fg-dim;
+        font-size: Sizing.font-size(2.6);
+    }
+
+    // Rapid-paging letter badge (RapidScrollIndicator.qml): an 18%h
+    // square card with the landing row's first letter, centered over
+    // the grid while page flips chain quickly. Grid-only.
+    if !GamesView.games-list-layout && GamesView.rapid-letter != "": Rectangle {
+        property <length> s: Sizing.pct-h(18);
+        x: Math.round((parent.width - self.s) / 2px) * 1px;
+        y: root.grid-top + Math.round((root.period - root.gap - self.s) / 2px) * 1px;
+        width: self.s;
+        height: self.s;
+        background: Theme.bg-tile;
+        border-width: Sizing.stroke(0.3);
+        border-color: Theme.border-mid;
+        border-radius: Sizing.corner-radius();
+
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            text: GamesView.rapid-letter;
+            color: Theme.fg;
+            font-size: Sizing.font-size(10);
+        }
+    }
+
+    // The list layout shows the name in the row + detail title; the
+    // big caption is grid-only (the Qt MediaListScreen split).
+    if !GamesView.games-list-layout: ActiveLabel {
+        x: 0;
+        y: parent.height - self.height - Sizing.pct-h(Theme.crt ? 6 : 8);
+        width: parent.width;
+        height: Theme.crt ? 8px : Sizing.pct-h(7);
+        text: root.index >= 0 && root.index < root.games.length ? root.games[root.index].name : "";
+    }
+
+    if Theme.crt && !GamesView.games-list-layout && root.total-pages > 1: Text {
+        x: parent.width - self.width - 4px;
+        y: parent.height - self.height - Sizing.pct-h(6);
+        text: @tr("Page {} / {}", root.page + 1, root.total-pages);
+        color: Theme.fg;
+        font-size: Sizing.font-size(2.9);
+    }
+
+    if root.context-open: ContextMenu {
+        width: 100%;
+        height: 100%;
+        entries: root.context-entries;
+        current-index: root.context-index;
+        anchor-x: GamesView.games-list-layout
+            ? root.card-x + root.pad-x
+            : root.grid-x + Math.mod(root.index, root.columns) * (root.tile-w + root.gap);
+        anchor-y: GamesView.games-list-layout
+            ? root.card-y + root.pad-y + GamesView.list-sel * (root.list-row-h + root.row-spacing)
+            : root.grid-top + Math.floor(root.index / root.columns) * (root.tile-h + root.gap);
+        anchor-w: GamesView.games-list-layout ? root.rows-w : root.tile-w;
+        anchor-h: GamesView.games-list-layout ? root.list-row-h : root.tile-h;
+    }
+}
+
+// Full-framebuffer 240p-test-suite style calibration pattern. Mounted
+// by App outside the rotated/safe-area scene so every guide maps to a
+// physical scanout pixel. Rust owns input and live DDR offset updates.
+component CrtCalibrationPattern inherits Rectangle {
+    background: #000000;
+    property <length> stroke: Sizing.stroke(1);
+    property <length> action-x: Math.round(self.width * 0.05 / 1px) * 1px;
+    property <length> action-y: Math.round(self.height * 0.05 / 1px) * 1px;
+    property <length> title-x: Math.round(self.width * 0.10 / 1px) * 1px;
+    property <length> title-y: Math.round(self.height * 0.10 / 1px) * 1px;
+
+    for col in 17: Rectangle {
+        x: Math.min(parent.width - root.stroke,
+            Math.round(col * (parent.width - root.stroke) / 16px) * 1px);
+        y: 0;
+        width: root.stroke;
+        height: parent.height;
+        background: Theme.fg-dim;
+    }
+    for row in 13: Rectangle {
+        x: 0;
+        y: Math.min(parent.height - root.stroke,
+            Math.round(row * (parent.height - root.stroke) / 12px) * 1px);
+        width: parent.width;
+        height: root.stroke;
+        background: Theme.fg-dim;
+    }
+
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+        border-width: root.stroke;
+        border-color: Theme.fg;
+    }
+    Rectangle {
+        x: root.action-x;
+        y: root.action-y;
+        width: parent.width - 2 * root.action-x;
+        height: parent.height - 2 * root.action-y;
+        background: transparent;
+        border-width: root.stroke;
+        border-color: Theme.accent;
+    }
+    Rectangle {
+        x: root.title-x;
+        y: root.title-y;
+        width: parent.width - 2 * root.title-x;
+        height: parent.height - 2 * root.title-y;
+        background: transparent;
+        border-width: root.stroke;
+        border-color: Theme.fg;
+    }
+
+    plate := Rectangle {
+        property <length> pad-x: Sizing.pct-w(2);
+        property <length> pad-y: Sizing.pct-h(2);
+        width: Math.max(Sizing.pct-w(42), readout.preferred-width + 2 * self.pad-x);
+        height: Sizing.font-size(3.2) + 2 * Sizing.font-size(2.4)
+            + 2 * Sizing.pct-h(1) + 2 * self.pad-y;
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        background: #000000;
+        border-width: root.stroke;
+        border-color: Theme.fg;
+
+        readout := Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.pad-y;
+            text: "H \{Overlays.crt-h-offset}   V \{Overlays.crt-v-offset}";
+            color: Theme.fg;
+            font-size: Sizing.font-size(3.2);
+            font-weight: 600;
+        }
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.pad-y + Sizing.font-size(3.2) + Sizing.pct-h(1);
+            text: @tr("Arrows adjust position");
+            color: Theme.fg-dim;
+            font-size: Sizing.font-size(2.4);
+        }
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.pad-y + Sizing.font-size(3.2) + Sizing.font-size(2.4)
+                + 2 * Sizing.pct-h(1);
+            text: @tr("Accept or Back saves");
+            color: Theme.fg-dim;
+            font-size: Sizing.font-size(2.4);
+        }
+    }
+}
+
+component RouteScreen inherits Rectangle {
+    in property <string> screen-token;
+
+    if root.screen-token == "hub" && !Shell.boot-curtain: HubScreen {
+        width: 100%;
+        height: 100%;
+    }
+
+    if root.screen-token == "systems": SystemsScreen {
+        width: 100%;
+        height: 100%;
+    }
+
+    if root.screen-token == "settings": SettingsScreen {
+        width: 100%;
+        height: 100%;
+    }
+
+    if root.screen-token == "about": AboutScreen {
+        width: 100%;
+        height: 100%;
+    }
+
+    if root.screen-token == "games" || root.screen-token == "favorites"
+        || root.screen-token == "recents": GamesScreen {
+        width: 100%;
+        height: 100%;
+    }
+}
+
+export component App inherits Window {
+    title: "Zaparoo Frontend (Slint demo)";
+    background: Theme.bg;
+    default-font-family: Theme.font-ui;
+    preferred-width: 1280px;
+    preferred-height: 720px;
+
+    // Native CRT keeps all interaction inside the central 90% action-
+    // safe area while App's own background remains full bleed.
+    property <length> crt-inset-w: Theme.crt
+        ? 2 * Math.round(self.width * 0.05 / 1px) * 1px : 0px;
+    property <length> crt-inset-h: Theme.crt
+        ? 2 * Math.round(self.height * 0.05 / 1px) * 1px : 0px;
+    property <length> scene-width: Math.max(1px, self.width - self.crt-inset-w);
+    property <length> scene-height: Math.max(1px, self.height - self.crt-inset-h);
+
+    pure function browse-header-title() -> string {
+        if (!Theme.crt || Shell.browse-list-layout) { return ""; }
+        if (Shell.active-screen == "systems") { return SystemsView.systems-category; }
+        if (Shell.active-screen == "games") { return GamesView.games-system; }
+        if (Shell.active-screen == "favorites") { return @tr("Favorites"); }
+        if (Shell.active-screen == "recents") { return @tr("Recently Played"); }
+        return "";
+    }
+
+    pure function has-modal() -> bool {
+        return GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
+            || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
+            || Overlays.context-open;
+    }
+
+    // Router state, owned by Rust.
+    // Media-database build progress (indexing/optimizing); wins the
+    // header's status slot over transient status text while active,
+    // mirroring the CoreStatusPill's mutually-exclusive surface.
+
+    // Button glyphs from the Qt repo (buttons/a layout + D-pad icon).
+    property <image> glyph-dpad: @image-url("buttons/Dpad.png");
+    property <image> glyph-btn-a: @image-url("buttons/ButtonA.png");
+    property <image> glyph-btn-b: @image-url("buttons/ButtonB.png");
+    // Minimal help vocabulary, matching the Qt bar's locked rules:
+    // D-pad is always "Move", A is "Open", B is "Back" - except on the
+    // Hub root where it's "Quit". Blank while the input gate holds.
+    pure function help-entries() -> [HelpEntry] {
+        // Blank while the cold-launch curtain holds the screens back.
+        if (Shell.boot-curtain) {
+            return [];
+        }
+        // The modal rows win outright, matching the Qt bar's lookup.
+        if (Overlays.dialog-open) {
+            if (Overlays.dialog-buttons.length > 1) {
+                return [
+                    { icon: self.glyph-dpad, label: @tr("Move") },
+                    { icon: self.glyph-btn-a, label: @tr("Select") },
+                ];
+            }
+            return [
+                { icon: self.glyph-btn-a, label: @tr("Select") },
+            ];
+        }
+        if (Overlays.qr-open) {
+            return [
+                { icon: self.glyph-btn-b, label: @tr("Close") },
+            ];
+        }
+        if (Overlays.card-write-open) {
+            return [
+                { icon: self.glyph-btn-b, label: @tr("Cancel") },
+            ];
+        }
+        if (Overlays.list-open) {
+            return [
+                { icon: self.glyph-dpad, label: @tr("Move") },
+                { icon: self.glyph-btn-a, label: @tr("Select") },
+                { icon: self.glyph-btn-b, label: @tr("Close") },
+            ];
+        }
+        if (Overlays.letter-open) {
+            return [
+                { icon: self.glyph-dpad, label: @tr("Move") },
+                { icon: self.glyph-btn-a, label: @tr("Go") },
+                { icon: self.glyph-btn-b, label: @tr("Close") },
+            ];
+        }
+        if (Overlays.context-open) {
+            return [
+                { icon: self.glyph-dpad, label: @tr("Move") },
+                { icon: self.glyph-btn-a, label: @tr("Select") },
+                { icon: self.glyph-btn-b, label: @tr("Close") },
+            ];
+        }
+        if (GameInfoView.modal-open) {
+            return [
+                { icon: self.glyph-btn-b, label: @tr("Close") },
+            ];
+        }
+        if (Shell.transitioning || Shell.route-transitioning) {
+            return [];
+        }
+        if (Shell.active-screen == "hub") {
+            return [
+                { icon: self.glyph-dpad, label: @tr("Move") },
+                { icon: self.glyph-btn-a, label: @tr("Open") },
+                { icon: self.glyph-btn-b, label: @tr("Quit") },
+            ];
+        }
+        if (Shell.active-screen == "about") {
+            return [
+                { icon: self.glyph-btn-b, label: @tr("Back") },
+            ];
+        }
+        if (Shell.active-screen == "settings") {
+            return [
+                { icon: self.glyph-dpad, label: @tr("Move") },
+                { icon: self.glyph-btn-a, label: @tr("Change") },
+                { icon: self.glyph-btn-b, label: @tr("Back") },
+            ];
+        }
+        return [
+            { icon: self.glyph-dpad, label: @tr("Move") },
+            { icon: self.glyph-btn-a, label: @tr("Open") },
+            { icon: self.glyph-btn-b, label: @tr("Back") },
+        ];
+    }
+
+    // Hub state.
+
+    // Systems state.
+
+    // Settings state.
+
+    // About screen state.
+
+    // Header HUD status icon keys (ordered, visible only).
+
+    // Game-info modal state.
+
+    // Context-menu state (games-style rows).
+
+    // Card-writer modal state.
+
+    // List-picker modal state (the West "View" menu).
+
+    // Jump-to-letter picker state.
+
+    // Games state.
+
+    // Raw key press, forwarded to the Rust router.
+    callback key-pressed(string);
+    // Fired on resize so Rust can re-solve the grid shapes.
+    callback viewport-changed(length, length);
+
+    forward-focus: keys;
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            root.key-pressed(event.text);
+            accept
+        }
+    }
+
+    // Keep Sizing in logical scene space. In tate mode that space is
+    // B x A even though the physical framebuffer remains A x B.
+    changed scene-width => {
+        Sizing.screen-width = self.scene-width;
+        root.viewport-changed(self.scene-width, self.scene-height);
+    }
+    changed scene-height => {
+        Sizing.screen-height = self.scene-height;
+        root.viewport-changed(self.scene-width, self.scene-height);
+    }
+
+    // Extend modal dimming into the CRT overscan bands. The regular
+    // scrim lives inside `scene`; this sibling only paints behind it.
+    if Theme.crt && root.has-modal(): Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.scrim;
+    }
+
+    scene := Rectangle {
+        x: Math.round((root.width - self.width) / 2px) * 1px;
+        y: Math.round((root.height - self.height) / 2px) * 1px;
+        width: root.scene-width;
+        height: root.scene-height;
+    // Cached HDMI exposes only the committed destination to Slint; the
+    // presenter moves RGB565 endpoints. Native backends render the same
+    // hierarchy as a clipped two-screen strip, preserving CRT animation.
+    if !Shell.route-transitioning || Shell.route-cached-transition: RouteScreen {
+        width: 100%;
+        height: 100%;
+        screen-token: Shell.active-screen;
+    }
+
+    if Shell.route-transitioning && !Shell.route-cached-transition: Rectangle {
+        width: 100%;
+        height: 100%;
+        clip: true;
+
+        strip := Rectangle {
+            x: -Shell.route-page-slide * parent.width;
+            width: parent.width;
+            height: parent.height;
+            animate x {
+                duration: Shell.route-slide-anim && !Shell.reduce-motion ? 170ms : 0ms;
+                easing: ease-in-out;
+            }
+
+            RouteScreen {
+                x: 0;
+                width: parent.width;
+                height: parent.height;
+                screen-token: Shell.route-from-screen;
+            }
+
+            RouteScreen {
+                x: Shell.route-slide-dir * parent.width;
+                width: parent.width;
+                height: parent.height;
+                screen-token: Shell.route-to-screen;
+            }
+        }
+    }
+
+    // Cold-launch curtain (BootOverlay port): the window background
+    // paints through - no new fill - and a single centered cue tracks
+    // the connection state ("Connecting… / Reconnecting… / Loading
+    // library…" plus the escalated unreachable message from Rust).
+    if Shell.boot-curtain: Rectangle {
+        width: 100%;
+        height: 100%;
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            max-width: parent.width - 2 * Sizing.pct-w(10);
+            overflow: elide;
+            text: Shell.boot-text;
+            color: Theme.fg;
+            font-size: Sizing.font-size(3.2);
+        }
+    }
+
+    // Global loading cue: transparent Item plus one Text, no painted
+    // background, exactly like the QML overlay contract.
+    if Shell.transitioning: Rectangle {
+        width: 100%;
+        height: 100%;
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            text: @tr("Loading…");
+            color: Theme.fg;
+            font-size: Sizing.font-size(3.2);
+        }
+    }
+
+    // Game-info modal, mounted above the screens like the Qt modal
+    // stack. Static scrim (instant dim): at native 1080p a fading
+    // full-screen translucent surface costs ~100ms frames - the Qt
+    // rulebook's ban earns its place back at this resolution. The
+    // one-frame repaint on open is fine.
+    if GameInfoView.modal-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.scrim;
+
+        Rectangle {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            width: Sizing.pct-w(70);
+            height: Sizing.pct-h(64);
+            background: Theme.bg-raised;
+            border-radius: Sizing.corner-radius();
+            border-width: Sizing.stroke(0.3);
+            border-color: Theme.border-mid;
+
+            property <length> pad: Sizing.pct-h(3);
+            property <length> cover-w: Math.round(self.width * 0.38 / 1px) * 1px;
+
+            if GameInfoView.modal-has-cover: Image {
+                x: parent.pad;
+                y: parent.pad;
+                width: parent.cover-w - parent.pad;
+                height: parent.height - 2 * parent.pad;
+                source: GameInfoView.modal-cover;
+                image-fit: contain;
+            }
+            if !GameInfoView.modal-has-cover: Rectangle {
+                x: parent.pad;
+                y: parent.pad;
+                width: parent.cover-w - parent.pad;
+                height: parent.height - 2 * parent.pad;
+                background: Theme.bg-tile;
+                border-radius: Sizing.pct-h(1.5);
+            }
+
+            Text {
+                x: parent.cover-w + parent.pad;
+                y: parent.pad;
+                width: parent.width - parent.cover-w - 2 * parent.pad;
+                overflow: elide;
+                text: GameInfoView.modal-name;
+                color: Theme.fg;
+                font-size: Sizing.font-size(3.4);
+                font-weight: 600;
+            }
+            Text {
+                x: parent.cover-w + parent.pad;
+                y: parent.pad + Sizing.font-size(3.4) + Sizing.pct-h(1);
+                width: parent.width - parent.cover-w - 2 * parent.pad;
+                overflow: elide;
+                text: GameInfoView.modal-system;
+                color: Theme.fg-variant;
+                font-size: Sizing.font-size(2.4);
+            }
+            if GameInfoView.modal-tags != "": Text {
+                x: parent.cover-w + parent.pad;
+                y: parent.pad + Sizing.font-size(3.4) + Sizing.font-size(2.4) + Sizing.pct-h(2);
+                width: parent.width - parent.cover-w - 2 * parent.pad;
+                overflow: elide;
+                text: GameInfoView.modal-tags;
+                color: Theme.fg-dim;
+                font-size: Sizing.font-size(2.2);
+            }
+            Text {
+                x: parent.cover-w + parent.pad;
+                y: parent.pad + Sizing.font-size(3.4) + Sizing.font-size(2.4) + Sizing.font-size(2.2) + Sizing.pct-h(3.5);
+                width: parent.width - parent.cover-w - 2 * parent.pad;
+                height: parent.height - self.y - parent.pad;
+                wrap: word-wrap;
+                overflow: elide;
+                text: GameInfoView.modal-description;
+                color: Theme.fg;
+                font-size: Sizing.font-size(2.3);
+            }
+        }
+    }
+
+    if Overlays.card-write-open: CardWriteModal {
+        width: 100%;
+        height: 100%;
+        failed: Overlays.card-write-failed;
+    }
+
+    if Overlays.qr-open: QrCodeModal {
+        width: 100%;
+        height: 100%;
+        qr: Overlays.qr-image;
+        modules: Overlays.qr-modules;
+    }
+
+    if Overlays.dialog-open: DialogModal {
+        width: 100%;
+        height: 100%;
+    }
+
+    if Overlays.list-open: ListPickerModal {
+        width: 100%;
+        height: 100%;
+        title: Overlays.list-title;
+        entries: Overlays.list-entries;
+        current-index: Overlays.list-index;
+    }
+
+    if Overlays.letter-open: LetterJumpModal {
+        width: 100%;
+        height: 100%;
+        buckets: Overlays.letter-buckets;
+        current-index: Overlays.letter-index;
+        loading: Overlays.letter-loading;
+        columns: Overlays.letter-columns;
+    }
+
+    HeaderBar {
+        x: 0;
+        y: Sizing.pct-h(2);
+        width: parent.width;
+        clock-text: Shell.clock-text;
+        core-status: Shell.media-status-text != "" ? Shell.media-status-text : Shell.status-text;
+        status-keys: Shell.status-keys;
+        browse-title: root.browse-header-title();
+    }
+
+    HelpBar {
+        x: 0;
+        y: parent.height - self.height;
+        width: parent.width;
+        entries: root.help-entries();
+    }
+
+    // Topmost within the logical scene: burn protection covers header,
+    // screens, and regular modals, and rotates with the display.
+    if Shell.saver-armed: ScreensaverOverlay {
+        width: 100%;
+        height: 100%;
+    }
+    }
+
+    // Calibration deliberately bypasses scene rotation and the CRT safe
+    // inset: its edge frame must identify true framebuffer pixels.
+    if Theme.crt && Overlays.crt-calibration-open: CrtCalibrationPattern {
+        width: 100%;
+        height: 100%;
+    }
+}

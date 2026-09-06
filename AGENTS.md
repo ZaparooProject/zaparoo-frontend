@@ -27,9 +27,20 @@ raw cargo as the default path; the justfile carries the expected environment.
 | MiSTer ARM32 build | `just arm32` |
 | ARM64 build | `just arm64` |
 | Deploy to MiSTer | `just deploy-mister` |
+| Slint frontend: dev run against mock Core | `just mock-core`, then `just slint-run-dev` |
+| Slint frontend: lint (host) | `just lint-slint` |
+| Slint frontend: tests (host) | `just test-slint` |
+| Slint frontend: MiSTer ARM32 static build | `just slint-arm32` |
+| Slint frontend: deploy side by side | `just deploy-mister-slint` (`--replace` to install over Qt) |
 
 `just --list` is the source of truth. `CMakePresets.json` and
 `rust/.cargo/config.toml` are tuned for those recipes.
+
+The Slint frontend (`rust/frontend-slint`, plus the toolkit-free rules crate
+`rust/zaparoo-app`) is being ported per `docs/plans/slint-migration.md`. Qt is
+frozen to bug fixes. `just lint` excludes `frontend-slint` from clippy because
+the lint image lacks Slint's desktop system libs; run `just lint-slint` and
+`just test-slint` after touching those crates.
 
 ## Stack Facts
 

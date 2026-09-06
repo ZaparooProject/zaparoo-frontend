@@ -5,5 +5,5 @@
 [toolchain]
 channel    = "1.97.0"
 components = ["rustfmt", "clippy"]
-targets    = ["armv7-unknown-linux-gnueabihf"]
+targets    = ["armv7-unknown-linux-gnueabihf", "armv7-unknown-linux-musleabihf"]
 profile    = "minimal"
