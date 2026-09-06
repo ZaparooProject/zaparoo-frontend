@@ -14,6 +14,10 @@
 // See `docs/qt-to-rust-extraction.md` for the sequence this crate is being
 // filled in by.
 
+pub mod buttons;
+pub mod clock;
+pub mod format;
 pub mod layouts;
 pub mod palette;
 pub mod sizing;
+pub mod status_line;

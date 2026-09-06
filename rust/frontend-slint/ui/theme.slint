@@ -44,9 +44,34 @@ export global Theme {
     in-out property <color> qr-light: #ecf4ff;
     in-out property <color> qr-dark: #0054a2;
 
+    // Theme.qml's lightSurface: the preset's surfaces are light, so the
+    // logo and any on-surface art pick their on-light variants.
+    in-out property <bool> light-surface: false;
+
     // CRT native path renders the 6x8 bitmap font, exactly like
     // Theme.qml's fontUi switch.
     out property <string> font-ui: crt ? "MxPlus HP 100LX 6x8" : "Noto Sans";
+
+    // Distance from the top of a Text box to its baseline for a font size:
+    // Noto Sans has a 1.069 em ascender (hhea and OS/2 agree); the 6x8
+    // bitmap face sits its baseline on the seventh row. QML anchors side
+    // texts on `anchors.baseline`; Slint has no baseline anchor, so hosts
+    // offset the smaller text by the difference of the two ascents.
+    public pure function ascent(size: length) -> length {
+        return Math.round(size / 1px * (self.crt ? 0.875 : 1.069)) * 1px;
+    }
+}
+
+// Motion.qml: the three shared durations, collapsed to zero under Reduce
+// motion (Rust pushes `enabled` from the persisted setting).
+export global Motion {
+    in-out property <bool> enabled: true;
+    out property <duration> press-ms: 34ms;
+    out property <duration> settle-ms: 110ms;
+    out property <duration> pulse-ms: 250ms;
+    public pure function dur(ms: duration) -> duration {
+        return self.enabled ? ms : 0ms;
+    }
 }
 
 export global Sizing {
@@ -104,31 +129,145 @@ export global Sizing {
         if (size < 24) { return 20; }
         return 24;
     }
-    // Standard corner radius for rounded surfaces (Sizing.qml
-    // cornerRadius). CRT keeps it: the software renderer handles
-    // small radii fine at 240p. The percent lives in a property so
-    // the snapshot tool can render radius candidates for design
-    // review.
-    // 1.2% (was 3.5): picked from the DRS comparison sheet - the big
-    // curves stepped visibly at the pixel-doubled motion res.
-    in-out property <float> corner-radius-pct: 1.2;
-    public pure function corner-radius() -> length {
-        return self.pct-h(self.corner-radius-pct);
-    }
-    // Header geometry, mirroring Sizing.qml: two stacked rows of
-    // headerRowHeight (fontSize 3.4%) plus the stack gap, below a 2%
-    // top margin. Screen content clears header-bottom().
-    public pure function header-row-height() -> length {
-        return self.font-size(3.4) * 1px / 1px;
-    }
-    public pure function header-height() -> length {
-        return 2 * self.header-row-height() + self.pct-h(0.8);
-    }
-    public pure function header-bottom() -> length {
-        return self.pct-h(2) + self.header-height();
-    }
     // Stroke width that never rounds to zero.
     public pure function stroke(p: float) -> length {
         return Math.max(1, Math.round(p / 100 * self.screen-height / 1px)) * 1px;
     }
+
+    // Everything below is Sizing.qml's derived table, resolved by
+    // `zaparoo_app::sizing::derive` (pinned to tests/fixtures/
+    // sizing_golden.txt) and pushed by Rust whenever the scene changes.
+    // Defaults are the 1280x720 standard values so an unpushed frame
+    // still lays out sanely.
+    in-out property <bool> tier-240: false;
+    in-out property <bool> handheld: false;
+    // Radius ladder: every rounded-square surface uses radius-md, the
+    // small pill/row radius is its half (docs/style.md).
+    in-out property <length> radius-md: 8px;
+    in-out property <length> radius-sm: 4px;
+    // Type roles (fontSize 4 / 3.2 / 2.9 / 2.6 / 2.4 / 2.2 with the
+    // 240p and bitmap snaps applied).
+    in-out property <length> font-hero: 29px;
+    in-out property <length> font-title: 23px;
+    in-out property <length> font-section: 21px;
+    in-out property <length> font-body: 19px;
+    in-out property <length> font-caption: 17px;
+    in-out property <length> font-small: 16px;
+    in-out property <length> card-border-width: 1px;
+    in-out property <length> focus-border-width: 2px;
+    in-out property <length> focus-ring-width: 3px;
+    in-out property <length> press-edge-height: 2px;
+    // Header geometry: two stacked rows of header-row-height plus the
+    // stack gap, below the top margin. Screen content clears
+    // header-bottom.
+    in-out property <length> header-row-height: 24px;
+    in-out property <length> header-stack-gap: 6px;
+    in-out property <length> header-top-margin: 14px;
+    in-out property <length> header-side-margin: 26px;
+    in-out property <length> header-height: 54px;
+    in-out property <length> header-bottom: 68px;
+    // Bottom help bar band and the clearance content keeps above it.
+    in-out property <length> help-bar-height: 43px;
+    in-out property <length> help-bar-clearance: 57px;
+    in-out property <int> visible-covers: 5;
+    // Hub page geometry (Settings previews reuse it).
+    in-out property <int> hub-grid-columns: 5;
+    in-out property <int> hub-grid-rows: 2;
+    in-out property <length> hub-active-label-height: 50px;
+    in-out property <length> hub-grid-top-margin: 0px;
+    in-out property <length> hub-grid-height-budget: 0px;
+    in-out property <length> hub-grid-side-inset: 38px;
+    in-out property <length> hub-grid-column-gap: 26px;
+    in-out property <length> hub-grid-top-inset: 14px;
+    in-out property <length> hub-grid-bottom-inset: 14px;
+    in-out property <length> hub-grid-row-gap: 29px;
+    in-out property <length> hub-tile-width: 0px;
+    in-out property <length> hub-tile-height: 0px;
+}
+
+// BrowseLayouts.qml's profile for the browse view on screen, resolved
+// by `zaparoo_app::layouts::profile` (pinned to tests/fixtures/
+// layout_golden.txt) and pushed by Rust on every scene or view change.
+// Names follow the QML `section.key` spelling with the section as a
+// prefix. Lengths are whole pixels.
+export global Layout {
+    // header
+    in-out property <bool> title-in-header: false;
+    in-out property <bool> hud-bottom-aligned: false;
+    in-out property <bool> status-pill-pinned-top: false;
+    // status
+    in-out property <bool> top-strip-visible: true;
+    in-out property <length> strip-height: 50px;
+    in-out property <length> slot-margin: 38px;
+    in-out property <length> top-margin: 7px;
+    // grid
+    in-out property <length> grid-left-inset: 26px;
+    in-out property <length> grid-right-inset: 26px;
+    in-out property <length> grid-column-gap: 26px;
+    in-out property <length> grid-top-inset: 14px;
+    in-out property <length> grid-bottom-inset: 14px;
+    in-out property <length> grid-row-gap: 22px;
+    in-out property <length> grid-page-chevron-size: 29px;
+    // footer
+    in-out property <bool> page-cue-in-footer: false;
+    in-out property <length> active-label-height: 50px;
+    in-out property <length> active-label-bottom-margin: 58px;
+    in-out property <length> bottom-status-left-margin: 38px;
+    in-out property <length> bottom-status-right-margin: 38px;
+    in-out property <length> grid-bottom-margin: 108px;
+    in-out property <length> bottom-unsafe-height: 58px;
+    // list
+    in-out property <bool> list-vertical: false;
+    in-out property <int> list-share: 2;
+    in-out property <int> detail-share: 1;
+    in-out property <length> divider-width: 1px;
+    in-out property <length> divider-margin: 0px;
+    in-out property <length> card-side-margin: 38px;
+    in-out property <length> card-top-margin: 14px;
+    in-out property <length> card-bottom-margin: 58px;
+    in-out property <length> card-padding-left: 26px;
+    in-out property <length> card-padding-right: 26px;
+    in-out property <length> card-padding-top: 14px;
+    in-out property <length> card-padding-bottom: 14px;
+    in-out property <length> row-height: 0px;
+    in-out property <length> row-spacing: 5px;
+    in-out property <int> center-slot: -1;
+    in-out property <length> row-text-left-padding: 20px;
+    in-out property <length> row-text-right-padding: 20px;
+    in-out property <length> favorite-right-padding: 20px;
+    in-out property <length> overlay-bottom-margin: 108px;
+    // detail
+    in-out property <bool> detail-vertical: true;
+    in-out property <length> section-gap: 14px;
+    in-out property <int> image-share: 2;
+    in-out property <int> metadata-share: 1;
+    in-out property <int> image-height-ratio-with-title: 48;
+    in-out property <length> image-reserved-width: 0px;
+    in-out property <length> image-reserved-height: 0px;
+    in-out property <length> image-bottom-margin: 0px;
+    in-out property <length> pane-padding-left: 26px;
+    in-out property <length> pane-padding-right: 26px;
+    in-out property <length> pane-padding-top: 14px;
+    in-out property <length> pane-padding-bottom: 14px;
+    in-out property <length> image-padding-left: 0px;
+    in-out property <length> image-padding-right: 0px;
+    in-out property <length> image-padding-top: 0px;
+    in-out property <length> image-padding-bottom: 0px;
+    in-out property <length> metadata-padding-left: 0px;
+    in-out property <length> metadata-padding-right: 0px;
+    in-out property <length> metadata-padding-top: 0px;
+    in-out property <length> metadata-padding-bottom: 0px;
+    in-out property <length> metadata-top-margin: 12px;
+    in-out property <length> metadata-left-margin: 0px;
+    in-out property <length> metadata-right-margin: 0px;
+    in-out property <length> metadata-height-adjustment: 0px;
+    in-out property <bool> metadata-bottom-aligned: false;
+    // 0 means no cap (only the CRT non-rotated lists cap the label column).
+    in-out property <length> metadata-label-max-width: 0px;
+    in-out property <length> title-bottom-margin: 14px;
+    in-out property <length> tag-row-height: 22px;
+    in-out property <length> tag-row-spacing: 4px;
+    // surface
+    in-out property <length> card-radius: 8px;
+    in-out property <length> row-radius: 4px;
 }

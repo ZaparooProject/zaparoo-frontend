@@ -1782,6 +1782,7 @@ dependencies = [
  "qrcode",
  "resvg",
  "semver",
+ "serde_json",
  "slint",
  "slint-build",
  "time",

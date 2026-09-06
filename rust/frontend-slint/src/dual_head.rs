@@ -6,8 +6,8 @@
 //! view-only CRT component used by `MiSTer` dual-head mode.
 
 use crate::{
-    App, GameInfoView, GameTile, GamesView, HubView, Overlays, SettingsView, Shell, SystemTile,
-    SystemsView,
+    App, Buttons, GameInfoView, GameTile, GamesView, HubView, Motion, Overlays, SettingsView,
+    Shell, Status, SystemTile, SystemsView,
 };
 use slint::{ComponentHandle as _, Model as _, ModelRc, VecModel};
 
@@ -108,6 +108,8 @@ struct SyncState {
     route: TransitionPhase,
     systems: TransitionPhase,
     games: TransitionPhase,
+    /// Screen the CRT head last resolved its layout profile for.
+    layout_screen: slint::SharedString,
 }
 
 /// Copy router-owned state while leaving profile-specific geometry
@@ -171,9 +173,12 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     copy_properties!(source, target;
         get_transitioning => set_transitioning,
         get_status_text => set_status_text,
-        get_media_status_text => set_media_status_text,
         get_clock_text => set_clock_text,
+        get_clock_sample => set_clock_sample,
         get_status_keys => set_status_keys,
+        get_status_icons_enabled => set_status_icons_enabled,
+        get_has_battery => set_has_battery,
+        get_battery_percent => set_battery_percent,
         get_about_version_line => set_about_version_line,
         get_boot_curtain => set_boot_curtain,
         get_boot_complete => set_boot_complete,
@@ -182,9 +187,55 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_saver_armed => set_saver_armed,
         get_orientation => set_orientation,
         get_browse_list_layout => set_browse_list_layout,
+        get_systems_list_layout => set_systems_list_layout,
         get_is_mister => set_is_mister,
         get_crt_enabled => set_crt_enabled,
         get_crt_standard => set_crt_standard,
+    );
+    // The CRT head resolves its own layout profile (its scene is the
+    // 240p tier) whenever the mirrored screen changes.
+    let screen = target.get_active_screen();
+    if screen != state.layout_screen {
+        state.layout_screen = screen;
+        let sizing = crt.global::<crate::Sizing>();
+        let scene = crate::sizing::Scene::of(
+            crt,
+            f64::from(sizing.get_screen_width()),
+            f64::from(sizing.get_screen_height()),
+            true,
+        );
+        crate::sizing::refresh_layout(crt, scene);
+    }
+
+    let source = primary.global::<Status>();
+    let target = crt.global::<Status>();
+    copy_properties!(source, target;
+        get_kind => set_kind,
+        get_arg => set_arg,
+        get_arg2 => set_arg2,
+        get_is_error => set_is_error,
+        get_show_track => set_show_track,
+        get_paused => set_paused,
+        get_total_known => set_total_known,
+        get_current_step => set_current_step,
+        get_total_steps => set_total_steps,
+        get_percent => set_percent,
+    );
+
+    let source = primary.global::<Buttons>();
+    let target = crt.global::<Buttons>();
+    copy_properties!(source, target;
+        get_style => set_style,
+        get_confirm => set_confirm,
+        get_cancel => set_cancel,
+        get_options => set_options,
+        get_view => set_view,
+    );
+
+    let source = primary.global::<Motion>();
+    let target = crt.global::<Motion>();
+    copy_properties!(source, target;
+        get_enabled => set_enabled,
     );
 
     let source = primary.global::<HubView>();

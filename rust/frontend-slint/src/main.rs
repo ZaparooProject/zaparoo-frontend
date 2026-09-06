@@ -22,9 +22,18 @@ mod latch_protocol;
 mod media_cache;
 #[cfg(feature = "mister")]
 mod mister;
+#[cfg_attr(
+    not(feature = "mister"),
+    allow(
+        dead_code,
+        reason = "the SMBus probe is MiSTer-only; the desktop stub keeps the call site uniform"
+    )
+)]
+mod mister_battery;
 mod qr;
 mod router;
 mod sizing;
+mod status;
 mod system_logos;
 mod system_status;
 mod tag_utils;
@@ -283,6 +292,12 @@ fn seed_display_globals(
     app.global::<Shell>()
         .set_browse_list_layout(persisted.settings.games_browse_layout == "list");
     app.global::<Shell>()
+        .set_systems_list_layout(persisted.settings.systems_browse_layout == "list");
+    app.global::<Sizing>()
+        .set_handheld(persisted.settings.interface_profile == "handheld");
+    app.global::<Motion>()
+        .set_enabled(!persisted.settings.reduce_motion);
+    app.global::<Shell>()
         .set_is_mister(cfg!(feature = "mister"));
     app.global::<Shell>().set_crt_enabled(crt_enabled);
     app.global::<Shell>().set_crt_standard(SharedString::from(
@@ -463,14 +478,16 @@ fn main() -> Result<(), slint::PlatformError> {
         .set_games_list_layout(persisted.settings.games_browse_layout == "list");
     let notice_ack = config.notice.commercial_ack;
 
-    let clock_twelve_hour = Arc::new(std::sync::atomic::AtomicBool::new(
-        persisted.settings.clock_format == "12h",
-    ));
+    let clock_twelve_hour = Arc::new(std::sync::atomic::AtomicBool::new(clock_twelve_hour(
+        &persisted.settings,
+    )));
+    let status_language = effective_language(&persisted.settings.language);
     let ctx = Arc::new(Ctx {
         store: store.clone(),
         handle: handle.clone(),
         media,
         clock_twelve_hour: clock_twelve_hour.clone(),
+        status: status::new(&status_language),
         config_path: platform_paths::config_file_path(),
         crt_enabled: crt,
         is_mister: cfg!(feature = "mister"),
@@ -531,9 +548,12 @@ fn main() -> Result<(), slint::PlatformError> {
 
     restore_core_independent(&ctx, &app);
     bind_catalog(&ctx, &app, &store);
-    bind_connection_status(&app, &client, &handle);
+    bind_connection_status(&ctx, &app, &client);
     bind_media_status(&ctx, &app, &store);
+    bind_status_events(&ctx, &app, &client);
     bind_launchers(&ctx, &store);
+    apply_buttons(&ctx, &app);
+    bind_controller_report(&ctx, &app);
     start_clock(&app, &handle, clock_twelve_hour);
     start_status(&app, &ctx);
 
@@ -584,68 +604,107 @@ fn bind_input(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32
     });
 }
 
-/// Media-database build status -> the header's Core status line (the
-/// `CoreStatusPill`'s role): indexing shows step progress, optimizing
-/// shows its phase, scraping shows its counter, idle clears. Uses the
-/// store's singleton `MediaStatusResource`, so late subscription
-/// still sees the current state through the watch channel. Also
-/// re-renders the settings Library page so its Start/Cancel verbs and
-/// busy gates track the running job.
+/// Media status -> the header status line's task tier, plus the
+/// settings Library page so its Start/Cancel verbs and busy gates track
+/// the running job. Seeded synchronously from the store's singleton
+/// `MediaStatusResource`, then followed through its watch channel.
 fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
-    fn status_line(s: &zaparoo_core::store::MediaStatusState) -> Option<String> {
-        if s.indexing {
-            if s.paused {
-                return Some("Paused".to_string());
-            }
-            if s.total_steps > 0 {
-                let pct = (f64::from(s.current_step.max(0)) / f64::from(s.total_steps) * 100.0)
-                    .clamp(0.0, 100.0) as u32;
-                if s.current_step_display.is_empty() {
-                    return Some(format!("Indexing… {pct}%"));
-                }
-                return Some(format!("Indexing… {pct}% {}", s.current_step_display));
-            }
-            return Some("Indexing…".to_string());
-        }
-        if s.optimizing {
-            return Some("Optimizing database…".to_string());
-        }
-        if s.scraping {
-            if s.scrape_paused {
-                return Some("Paused".to_string());
-            }
-            if s.scrape_total > 0 {
-                return Some(format!(
-                    "Scraping {}/{}",
-                    s.scrape_processed.max(0),
-                    s.scrape_total
-                ));
-            }
-            return Some("Scraping…".to_string());
-        }
-        None
-    }
-
     let resource = store.media_status();
     let mut rx = resource.subscribe();
-    if let Some(line) = status_line(&rx.borrow_and_update()) {
-        app.global::<Shell>()
-            .set_media_status_text(SharedString::from(line.as_str()));
-    }
+    status::set_task(
+        &ctx.status,
+        app,
+        &ctx.handle,
+        status::task_of(&rx.borrow_and_update()),
+    );
+    status::enable_media_activity(&ctx.status, app, &ctx.handle);
     let weak = app.as_weak();
     let ctx = ctx.clone();
     ctx.handle.clone().spawn(async move {
         while rx.changed().await.is_ok() {
-            let line = status_line(&rx.borrow_and_update()).unwrap_or_default();
+            let task = status::task_of(&rx.borrow_and_update());
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
-                app.global::<Shell>()
-                    .set_media_status_text(SharedString::from(line.as_str()));
+                status::set_task(&ctx.status, &app, &ctx.handle, task);
                 router::refresh_settings_fields(&ctx, &app);
                 router::refresh_first_run(&ctx, &app);
             });
         }
     });
+}
+
+/// Core notifications the status line surfaces as transient events
+/// (playtime warnings, inbox messages); everything else is dropped.
+fn bind_status_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
+    let mut rx = client.subscribe_notifications();
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    ctx.handle.clone().spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(notification) => {
+                    let Some(event) = status::classify(&notification) else {
+                        continue;
+                    };
+                    let ctx = ctx.clone();
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        status::observe_event(&ctx.status, &app, &ctx.handle, &event);
+                    });
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    });
+}
+
+/// Help-bar glyphs: the controller report (`MiSTer`'s input report,
+/// polled by `zaparoo_core::controller_report`) combined with the
+/// Controls settings, re-resolved whenever either changes.
+fn bind_controller_report(ctx: &Arc<Ctx>, app: &App) {
+    let started = zaparoo_core::controller_report::spawn_watcher();
+    tracing::debug!(started, "controller report watcher");
+    let mut rx = zaparoo_core::controller_report::subscribe();
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    ctx.handle.clone().spawn(async move {
+        while rx.changed().await.is_ok() {
+            let ctx = ctx.clone();
+            let _ = weak.upgrade_in_event_loop(move |app| apply_buttons(&ctx, &app));
+        }
+    });
+}
+
+/// Push the resolved glyph selection into the `Buttons` global.
+pub(crate) fn apply_buttons(ctx: &Ctx, app: &App) {
+    let report = zaparoo_core::controller_report::subscribe()
+        .borrow()
+        .clone();
+    let (layout, swap_cc, swap_ov) = {
+        let guard = lock(&ctx.shared);
+        let s = &guard.persist.settings;
+        (
+            s.button_layout.clone(),
+            s.swap_confirm_cancel,
+            s.swap_options_view,
+        )
+    };
+    let resolved = zaparoo_app::buttons::resolve(
+        report.as_ref().map(|r| zaparoo_app::buttons::Report {
+            layout: r.layout,
+            accept_button: r.accept_button,
+            cancel_button: r.cancel_button,
+        }),
+        &layout,
+        swap_cc,
+        swap_ov,
+    );
+    let buttons = app.global::<Buttons>();
+    buttons.set_style(SharedString::from(resolved.style));
+    buttons.set_confirm(SharedString::from(resolved.confirm));
+    buttons.set_cancel(SharedString::from(resolved.cancel));
+    buttons.set_options(SharedString::from(resolved.options));
+    buttons.set_view(SharedString::from(resolved.view));
 }
 
 /// Fetch `media.history.latest` once the connection is up and label
@@ -701,9 +760,7 @@ fn start_clock(
     handle: &tokio::runtime::Handle,
     twelve_hour: Arc<std::sync::atomic::AtomicBool>,
 ) {
-    app.global::<Shell>().set_clock_text(SharedString::from(
-        clock_string(twelve_hour.load(Ordering::Relaxed)).as_str(),
-    ));
+    push_clock(app, twelve_hour.load(Ordering::Relaxed));
     let weak = app.as_weak();
     handle.spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(30));
@@ -720,10 +777,9 @@ fn start_clock(
 }
 
 /// Header HUD status icons, refreshed every 30 seconds: host-local
-/// probe (default-route class + internet reachability + Bluetooth
-/// adapter) on a blocking thread, NFC projected from Core's `readers`
-/// (Core owns the reader). Keys are pushed reversed because the
-/// header lays icons out right-to-left from the clock.
+/// probe (default-route class, internet reachability, Bluetooth
+/// adapter, battery HAT) on a blocking thread, NFC projected from
+/// Core's `readers` (Core owns the reader). Keys are in display order.
 fn start_status(app: &App, ctx: &Arc<Ctx>) {
     let weak = app.as_weak();
     let ctx = ctx.clone();
@@ -763,10 +819,12 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
             if local.has_bluetooth {
                 keys.push("Bluetooth".into());
             }
-            keys.reverse();
             let _ = weak.upgrade_in_event_loop(move |app| {
-                app.global::<Shell>()
-                    .set_status_keys(ModelRc::new(VecModel::from(keys)));
+                let shell = app.global::<Shell>();
+                shell.set_status_keys(ModelRc::new(VecModel::from(keys)));
+                shell.set_has_battery(local.has_battery);
+                shell.set_battery_percent(local.battery_percent);
+                shell.set_status_icons_enabled(true);
             });
         }
     });
@@ -775,16 +833,37 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
 /// Header clock text for the current minute.
 pub(crate) fn clock_string(twelve_hour: bool) -> String {
     let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
-    if twelve_hour {
-        let (hour, suffix) = match now.hour() {
-            0 => (12, "AM"),
-            h @ 1..=11 => (h, "AM"),
-            12 => (12, "PM"),
-            h => (h - 12, "PM"),
-        };
-        format!("{hour}:{:02} {suffix}", now.minute())
+    zaparoo_app::clock::format(now.hour(), now.minute(), twelve_hour)
+}
+
+/// Clock text plus the widest sample for its format, so the header's
+/// slot is measured once.
+pub(crate) fn push_clock(app: &App, twelve_hour: bool) {
+    let shell = app.global::<Shell>();
+    shell.set_clock_text(SharedString::from(clock_string(twelve_hour).as_str()));
+    shell.set_clock_sample(SharedString::from(zaparoo_app::clock::widest_sample(
+        twelve_hour,
+    )));
+}
+
+/// The 12-hour decision for the persisted clock and language settings.
+pub(crate) fn clock_twelve_hour(settings: &persist::SettingsState) -> bool {
+    let host = system_locale();
+    zaparoo_app::clock::uses_twelve_hour(
+        &settings.clock_format,
+        &settings.language,
+        (!host.is_empty()).then_some(host.as_str()),
+    )
+}
+
+/// The language tag number formatting follows: the setting, or the
+/// host locale when it is `auto`.
+pub(crate) fn effective_language(setting: &str) -> String {
+    let setting = setting.trim();
+    if setting.is_empty() || setting.eq_ignore_ascii_case("auto") {
+        system_locale()
     } else {
-        format!("{:02}:{:02}", now.hour(), now.minute())
+        setting.to_string()
     }
 }
 
@@ -845,30 +924,31 @@ fn bind_catalog(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
 /// 5-second escalation before an unreachable Core is blamed on the
 /// user's network (a transient probe failure on first connect isn't
 /// worth scaring anyone about).
-fn bind_connection_status(app: &App, client: &Arc<Client>, handle: &tokio::runtime::Handle) {
+fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     let seed = {
         let rx = client.connection.subscribe();
         let state = rx.borrow().clone();
         state
     };
-    app.global::<Shell>()
-        .set_status_text(SharedString::from(connection_text(&seed).as_str()));
+    status::set_link(&ctx.status, app, &ctx.handle, status::link_of(&seed), None);
     app.global::<Shell>()
         .set_boot_text(SharedString::from(boot_text(&seed, false).as_str()));
 
     let mut rx = client.connection.subscribe();
     let generation = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let weak = app.as_weak();
+    let handle = ctx.handle.clone();
     let escalate_handle = handle.clone();
+    let ctx = ctx.clone();
     handle.spawn(async move {
         while rx.changed().await.is_ok() {
             let state = rx.borrow_and_update().clone();
             let my_generation = generation.fetch_add(1, Ordering::SeqCst) + 1;
-            let text = connection_text(&state);
             let boot = boot_text(&state, false);
+            let link = status::link_of(&state);
+            let ctx_inner = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
-                app.global::<Shell>()
-                    .set_status_text(SharedString::from(text.as_str()));
+                status::set_link(&ctx_inner.status, &app, &ctx_inner.handle, link, None);
                 if !app.global::<Shell>().get_boot_complete() {
                     app.global::<Shell>()
                         .set_boot_text(SharedString::from(boot.as_str()));
@@ -964,32 +1044,10 @@ pub(crate) fn apply_cover(
 /// Push freshly-solved grid shapes into the UI. The games page size
 /// follows the shape (columns x rows), and the router derives its
 /// browse page size from the same properties.
+/// Re-solve everything the scene decides: the derived Sizing table, the
+/// page grid shapes and the browse layout profile.
 fn apply_grid_shapes(app: &App, width: f64, height: f64, crt: bool) {
-    let scene = sizing::Scene {
-        width,
-        height,
-        crt,
-        bitmap_fonts: app.global::<Sizing>().get_bitmap_fonts(),
-        swap_axes: app.global::<Sizing>().get_swap_axes(),
-    };
-    let games = sizing::games_grid_shape(scene);
-    app.global::<GamesView>().set_games_grid_cols(games.columns);
-    app.global::<GamesView>().set_games_grid_rows(games.rows);
-    let systems = sizing::systems_grid_shape(scene);
-    app.global::<SystemsView>()
-        .set_systems_grid_cols(systems.columns);
-    app.global::<SystemsView>()
-        .set_systems_grid_rows(systems.rows);
-}
-
-fn connection_text(state: &ConnectionState) -> String {
-    match state {
-        ConnectionState::Connected => String::new(),
-        ConnectionState::Connecting => "Connecting to Core…".to_string(),
-        ConnectionState::Reconnecting => "Reconnecting…".to_string(),
-        ConnectionState::Disconnected => "Disconnected".to_string(),
-        ConnectionState::Unreachable(_) => "Core unreachable".to_string(),
-    }
+    sizing::apply_scene(app, sizing::Scene::of(app, width, height, crt));
 }
 
 /// Project a catalog `ResourceStatus` into the UI. Runs on the Slint
@@ -999,6 +1057,7 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
         ResourceStatus::Ready(data) => {
             app.global::<HubView>()
                 .set_hub_error(SharedString::default());
+            status::set_catalog_error(&ctx.status, app, &ctx.handle, None);
             let categories: Vec<String> = data
                 .categories
                 .iter()
@@ -1039,10 +1098,11 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
         }
         ResourceStatus::Errored { message, .. } => {
             // In-screen terminal error like the Qt overlay reading
-            // CategoriesModel.error_message; the header status line
-            // stays reserved for connection state.
+            // CategoriesModel.error_message, and the status line's
+            // "Core error" tier (AppStatus.connection_state == ERROR).
             app.global::<HubView>()
                 .set_hub_error(SharedString::from(message.as_str()));
+            status::set_catalog_error(&ctx.status, app, &ctx.handle, Some(message));
         }
         ResourceStatus::Idle | ResourceStatus::Loading => {}
     }

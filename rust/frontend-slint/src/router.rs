@@ -350,6 +350,8 @@ pub struct Ctx {
     /// Live 12-hour clock flag shared with the clock task; the
     /// Settings toggle flips it without a restart.
     pub clock_twelve_hour: Arc<std::sync::atomic::AtomicBool>,
+    /// Header status line ladder state.
+    pub status: crate::status::Shared,
     /// `frontend.toml` location, for durable settings mirrors.
     pub config_path: std::path::PathBuf,
     /// Immutable process mode; changing it requires Main to respawn us.
@@ -999,6 +1001,7 @@ fn finish_route_transition(app: &App) {
     let target = shell.get_route_to_screen();
     shell.set_route_slide_anim(false);
     shell.set_active_screen(target);
+    refresh_layout(app);
     shell.set_route_cached_transition(false);
     shell.set_route_page_slide(0.0);
     shell.set_route_from_screen(SharedString::default());
@@ -1022,6 +1025,7 @@ fn begin_route_transition(app: &App) {
     if request_cached_route_transition(app, direction) {
         shell.set_route_cached_transition(true);
         shell.set_active_screen(shell.get_route_to_screen());
+        refresh_layout(app);
     } else {
         shell.set_route_slide_anim(true);
         shell.set_route_page_slide(direction as f32);
@@ -1056,6 +1060,7 @@ fn transition_to_screen(app: &App, target: &str, direction: i32) {
     if shell.get_reduce_motion() {
         shell.set_transitioning(false);
         shell.set_active_screen(SharedString::from(target));
+        refresh_layout(app);
         return;
     }
     if shell.get_route_transitioning() {
@@ -1944,6 +1949,7 @@ fn settings_toggle(ctx: &Ctx, app: &App, id: &str) {
         }
         "reduceMotion" => {
             app.global::<crate::Shell>().set_reduce_motion(value);
+            app.global::<crate::Motion>().set_enabled(!value);
         }
         _ => {}
     }
@@ -2060,6 +2066,8 @@ fn settings_picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             "language" => {
                 s.language = value.to_string();
                 crate::apply_language(value);
+                crate::status::set_language(&ctx.status, &crate::effective_language(value));
+                apply_clock(ctx, app);
             }
             "region" => s.region = value.to_string(),
             "clockFormat" => s.clock_format = value.to_string(),
@@ -2076,14 +2084,8 @@ fn settings_picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             app.global::<Sizing>().set_swap_axes(rotated);
             crate::set_live_orientation(app, value, ctx.framebuffer_size);
         }
-        "clockFormat" => {
-            ctx.clock_twelve_hour
-                .store(value == "12h", std::sync::atomic::Ordering::Relaxed);
-            app.global::<crate::Shell>()
-                .set_clock_text(SharedString::from(
-                    crate::clock_string(value == "12h").as_str(),
-                ));
-        }
+        "clockFormat" => apply_clock(ctx, app),
+        "buttonLayout" => crate::apply_buttons(ctx, app),
         "systemLogoStyle" => reproject_systems(ctx, app),
         "mediaImageType" => ctx.media.set_preferred_image_type(value),
         // Restart the idle clock so the new timeout takes effect now,
@@ -2094,6 +2096,7 @@ fn settings_picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             app.global::<crate::Shell>().set_browse_list_layout(is_list);
             app.global::<crate::GamesView>()
                 .set_games_list_layout(is_list);
+            refresh_layout(app);
             // Carry the selection into the other presentation and
             // re-render when a games-style screen is up (settings is
             // on screen right now, but the state must be coherent the
@@ -2377,6 +2380,7 @@ fn enter_systems_with_motion(ctx: &Ctx, app: &App, category: &str, animate: bool
     } else {
         app.global::<crate::Shell>()
             .set_active_screen(SharedString::from("systems"));
+        refresh_layout(app);
     }
 }
 
@@ -3004,14 +3008,31 @@ fn output_scene(app: &App) -> sizing::Scene {
         .map_or((f64::from(size.width), f64::from(size.height)), |(w, h)| {
             (f64::from(w), f64::from(h))
         });
+    let crt = app.global::<Sizing>().get_crt();
+    sizing::Scene::of(app, out_w, out_h, crt)
+}
+
+/// Re-resolve the browse layout profile for the screen now active, at
+/// the logical scene geometry (the same one `App` feeds Sizing).
+fn refresh_layout(app: &App) {
     let sizing_global = app.global::<Sizing>();
-    sizing::Scene {
-        width: out_w,
-        height: out_h,
-        crt: sizing_global.get_crt(),
-        bitmap_fonts: sizing_global.get_bitmap_fonts(),
-        swap_axes: sizing_global.get_swap_axes(),
-    }
+    let (w, h) = (
+        f64::from(sizing_global.get_screen_width()),
+        f64::from(sizing_global.get_screen_height()),
+    );
+    let crt = sizing_global.get_crt();
+    sizing::refresh_layout(app, sizing::Scene::of(app, w, h, crt));
+}
+
+/// Clock format or language changed: re-decide 12/24 hour and repaint.
+fn apply_clock(ctx: &Ctx, app: &App) {
+    let twelve = {
+        let guard = lock(&ctx.shared);
+        crate::clock_twelve_hour(&guard.persist.settings)
+    };
+    ctx.clock_twelve_hour
+        .store(twelve, std::sync::atomic::Ordering::Relaxed);
+    crate::push_clock(app, twelve);
 }
 
 /// Tiles for a page, with any already-cached art filled in
@@ -4435,9 +4456,7 @@ fn open_system_context_menu(ctx: &Ctx, app: &App, index: usize) {
 /// while it does (the Qt mediaBusy gate, read off the same status
 /// line the header shows).
 fn media_busy(app: &App) -> bool {
-    !app.global::<crate::Shell>()
-        .get_media_status_text()
-        .is_empty()
+    app.global::<crate::Status>().get_show_track()
 }
 
 fn present_context_menu(

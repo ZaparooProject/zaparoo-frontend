@@ -15,10 +15,17 @@ use std::time::Duration;
 const INTERNET_TIMEOUT: Duration = Duration::from_millis(800);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "one flag per header HUD icon"
+)]
 pub struct LocalStatus {
     pub has_wifi_internet: bool,
     pub has_lan_internet: bool,
     pub has_bluetooth: bool,
+    /// The optional `MiSTer` battery HAT answered on the `SMBus`.
+    pub has_battery: bool,
+    pub battery_percent: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,10 +43,13 @@ pub fn probe() -> LocalStatus {
             InterfaceKind::Wifi => (true, false),
             InterfaceKind::Lan => (false, true),
         });
+    let battery = crate::mister_battery::read_capacity_percent();
     LocalStatus {
         has_wifi_internet: network.0,
         has_lan_internet: network.1,
         has_bluetooth: bluetooth_adapter_present(),
+        has_battery: battery.is_some(),
+        battery_percent: i32::from(battery.unwrap_or(0)),
     }
 }
 

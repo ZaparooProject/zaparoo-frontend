@@ -41,11 +41,18 @@ mod generated {
     slint::include_modules!();
 }
 use generated::{App, CategoryTile, GameTile, GlyphSource, LetterBucket, MenuEntry, Sizing, Theme};
+#[allow(
+    unused_imports,
+    reason = "reached through crate:: paths from the shared sizing adapter"
+)]
+use generated::{GamesView, Layout, Shell, SystemsView};
 
 #[path = "../fonts.rs"]
 mod fonts;
 #[path = "../glyphs.rs"]
 mod glyphs;
+#[path = "../sizing.rs"]
+mod sizing;
 #[path = "../theme.rs"]
 mod theme;
 
@@ -76,7 +83,6 @@ fn main() {
         .cloned()
         .unwrap_or_else(|| "snapshot.png".to_string());
     let screen = args.get(4).cloned().unwrap_or_else(|| "hub".to_string());
-    let radius_pct: Option<f32> = args.get(5).and_then(|a| a.parse().ok());
 
     slint::platform::set_platform(Box::new(SnapshotPlatform)).unwrap();
 
@@ -105,7 +111,7 @@ fn main() {
     app.global::<Theme>().set_crt(crt);
     app.global::<Sizing>().set_crt(crt);
     app.global::<Sizing>().set_swap_axes(tate);
-    let shell = app.global::<generated::Shell>();
+    let shell = app.global::<Shell>();
     shell.set_orientation(if ccw {
         "ccw".into()
     } else if tate {
@@ -130,6 +136,30 @@ fn main() {
     };
     app.window()
         .set_size(slint::PhysicalSize::new(logical_width, logical_height));
+    // The scene the App derives: the CRT path trims 5% from each edge.
+    let inset = |v: u32| {
+        if crt {
+            2.0 * (f64::from(v) * 0.05).round()
+        } else {
+            0.0
+        }
+    };
+    let scene_w = f64::from(logical_width) - inset(logical_width);
+    let scene_h = f64::from(logical_height) - inset(logical_height);
+    sizing::apply_scene(&app, sizing::Scene::of(&app, scene_w, scene_h, crt));
+    // Chrome fixtures: a full HUD with a battery reading, and an
+    // indexing run in the status line so the track and percent render.
+    shell.set_status_icons_enabled(true);
+    shell.set_has_battery(true);
+    shell.set_battery_percent(62);
+    shell.set_clock_text("10:32".into());
+    let status = app.global::<generated::Status>();
+    status.set_kind("indexing".into());
+    status.set_arg("Super Nintendo".into());
+    status.set_show_track(true);
+    status.set_current_step(5);
+    status.set_total_steps(12);
+    status.set_percent(42);
 
     // Representative real catalog: Core emits singular category names.
     let cats = [
@@ -183,16 +213,15 @@ fn main() {
             },
         })
         .collect();
-    app.global::<generated::GamesView>()
+    app.global::<GamesView>()
         .set_games(slint::ModelRc::new(slint::VecModel::from(games)));
-    app.global::<generated::GamesView>()
+    app.global::<GamesView>()
         .set_games_system("Atari Lynx".into());
-    app.global::<generated::GamesView>().set_games_page(0);
-    app.global::<generated::GamesView>()
-        .set_games_has_more(true);
+    app.global::<GamesView>().set_games_page(0);
+    app.global::<GamesView>().set_games_has_more(true);
     // "context" renders the games screen with the context menu open.
     if screen == "context" {
-        app.global::<generated::GamesView>().set_games_index(6);
+        app.global::<GamesView>().set_games_index(6);
         app.global::<generated::Overlays>()
             .set_context_entries(slint::ModelRc::new(slint::VecModel::from(vec![
                 MenuEntry {
@@ -236,7 +265,7 @@ fn main() {
         app.global::<generated::Overlays>().set_letter_index(4);
         app.global::<generated::Overlays>().set_letter_open(true);
     }
-    app.global::<generated::Shell>()
+    app.global::<Shell>()
         .set_about_version_line("Version 1.2.2 (Slint demo)".into());
     // Systems fixtures: a paged category (page 2 of 3) with no logo
     // files on disk, so the name fallback renders.
@@ -251,18 +280,18 @@ fn main() {
             hidden: i == 15,
         })
         .collect();
-    let sysv = app.global::<generated::SystemsView>();
+    let sysv = app.global::<SystemsView>();
     sysv.set_systems(slint::ModelRc::new(slint::VecModel::from(sys_tiles)));
     sysv.set_systems_category("Console".into());
     sysv.set_systems_page(1);
     sysv.set_systems_total_pages(3);
     sysv.set_systems_index(2);
-    app.global::<generated::Shell>()
+    app.global::<Shell>()
         .set_status_keys(slint::ModelRc::new(slint::VecModel::from(vec![
-            slint::SharedString::from("Bluetooth"),
-            slint::SharedString::from("WiredNetwork"),
-            slint::SharedString::from("WiFi"),
             slint::SharedString::from("NFC"),
+            slint::SharedString::from("WiFi"),
+            slint::SharedString::from("WiredNetwork"),
+            slint::SharedString::from("Bluetooth"),
         ])));
     // Settings fixtures: root category grid, or a field page with
     // every control kind when "settings-page" is requested.
@@ -355,7 +384,7 @@ fn main() {
         setv.set_settings_fields(slint::ModelRc::new(slint::VecModel::from(rows)));
     }
     if screen == "saver" {
-        app.global::<generated::Shell>().set_saver_armed(true);
+        app.global::<Shell>().set_saver_armed(true);
     }
     // Startup decision dialog fixture (the quit-confirm kind shows
     // the two-button row with default focus on "No").
@@ -373,7 +402,7 @@ fn main() {
     }
     // Detailed-list layout fixtures: windowed rows + detail pane.
     if list && !screen.contains("systems") {
-        let gv = app.global::<generated::GamesView>();
+        let gv = app.global::<GamesView>();
         gv.set_games_list_layout(true);
         let rows: Vec<GameTile> = (13..=22)
             .map(|i| GameTile {
@@ -445,10 +474,9 @@ fn main() {
     } else {
         screen.as_str()
     };
-    app.global::<generated::Shell>()
-        .set_active_screen(base.into());
+    app.global::<Shell>().set_active_screen(base.into());
     if screen == "route-forward" {
-        let shell = app.global::<generated::Shell>();
+        let shell = app.global::<Shell>();
         shell.set_route_slide_anim(false);
         shell.set_route_from_screen("hub".into());
         shell.set_route_to_screen("systems".into());
@@ -457,7 +485,7 @@ fn main() {
         shell.set_route_page_slide(0.5);
     }
     if screen == "route-back" {
-        let shell = app.global::<generated::Shell>();
+        let shell = app.global::<Shell>();
         shell.set_active_screen("systems".into());
         shell.set_route_slide_anim(false);
         shell.set_route_from_screen("systems".into());
@@ -467,7 +495,7 @@ fn main() {
         shell.set_route_page_slide(-0.5);
     }
     if screen == "route-cached" {
-        let shell = app.global::<generated::Shell>();
+        let shell = app.global::<Shell>();
         shell.set_active_screen("systems".into());
         shell.set_route_from_screen("hub".into());
         shell.set_route_to_screen("systems".into());
@@ -476,13 +504,9 @@ fn main() {
         shell.set_route_cached_transition(true);
     }
     if screen.contains("cached") {
-        app.global::<generated::SystemsView>()
+        app.global::<SystemsView>()
             .set_systems_cached_transition(true);
-        app.global::<generated::GamesView>()
-            .set_games_cached_transition(true);
-    }
-    if let Some(pct) = radius_pct {
-        app.global::<Sizing>().set_corner_radius_pct(pct);
+        app.global::<GamesView>().set_games_cached_transition(true);
     }
 
     let late = std::env::var("SNAPSHOT_LATE_SET").is_ok();
@@ -515,8 +539,7 @@ fn main() {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after HubView.categories set: {dirty_model}");
-        app.global::<generated::Shell>()
-            .set_status_text("probe status".into());
+        app.global::<Shell>().set_status_text("probe status".into());
         let dirty_text = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
@@ -527,17 +550,16 @@ fn main() {
         });
         println!("dirty after HubView.hub-category-index set: {dirty_idx}");
         // Games screen (alias-block pattern): does a late set reach it?
-        app.global::<generated::Shell>()
-            .set_active_screen("games".into());
+        app.global::<Shell>().set_active_screen("games".into());
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
-        app.global::<generated::GamesView>().set_games_index(5);
+        app.global::<GamesView>().set_games_index(5);
         let dirty_games_idx = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after GamesView.games-index set (alias pattern): {dirty_games_idx}");
-        app.global::<generated::GamesView>()
+        app.global::<GamesView>()
             .set_games_system("Probe System".into());
         let dirty_games_sys = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
@@ -545,19 +567,17 @@ fn main() {
         println!("dirty after GamesView.games-system set (alias pattern): {dirty_games_sys}");
         // Systems / Settings / About: every screen must react to a
         // late global write (the partially-applied-refactor class).
-        app.global::<generated::Shell>()
-            .set_active_screen("systems".into());
+        app.global::<Shell>().set_active_screen("systems".into());
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
-        app.global::<generated::SystemsView>()
+        app.global::<SystemsView>()
             .set_systems_category("Probe Category".into());
         let dirty_sys = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after SystemsView.systems-category set: {dirty_sys}");
-        app.global::<generated::Shell>()
-            .set_active_screen("settings".into());
+        app.global::<Shell>().set_active_screen("settings".into());
         app.global::<generated::SettingsView>()
             .set_settings_page("pageBrowsing".into());
         let srows: Vec<generated::SettingsField> = ["A", "B"]
@@ -585,19 +605,17 @@ fn main() {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after SettingsView.settings-index set: {dirty_set}");
-        app.global::<generated::Shell>()
-            .set_active_screen("about".into());
+        app.global::<Shell>().set_active_screen("about".into());
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
-        app.global::<generated::Shell>()
+        app.global::<Shell>()
             .set_about_version_line("Probe Version".into());
         let dirty_about = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after Shell.about-version-line set: {dirty_about}");
-        app.global::<generated::Shell>()
-            .set_active_screen("hub".into());
+        app.global::<Shell>().set_active_screen("hub".into());
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });

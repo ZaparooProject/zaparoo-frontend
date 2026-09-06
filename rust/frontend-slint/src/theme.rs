@@ -53,8 +53,10 @@ pub fn apply_palette(app: &App, scheme: &str, intensity: &str) -> Palette {
     theme.set_error(color(p.error));
     theme.set_qr_light(color(p.qr_light));
     theme.set_qr_dark(color(p.qr_dark));
+    theme.set_light_surface(palette::is_light_surface(scheme));
     // The scrim is a constant dark veil in every preset; the .slint default
     // carries it.
+    crate::glyphs::set_heart_tints(p.marker.rgb8(), p.marker_outline.rgb8());
     p
 }
 

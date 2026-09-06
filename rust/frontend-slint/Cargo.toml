@@ -78,6 +78,7 @@ libc = { version = "0.2", optional = true }
 # (Cargo unifies the feature onto Slint's own fontique dependency).
 fontique = { version = "0.10", optional = true, default-features = false, features = ["fontconfig-dlopen"] }
 time.workspace = true
+serde_json.workspace = true
 
 [build-dependencies]
 slint-build = "=1.17.1"
