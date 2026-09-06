@@ -21,6 +21,7 @@ mod frame_transition;
 mod games;
 mod glyphs;
 mod hub;
+mod hub_covers;
 mod input;
 mod latch_protocol;
 mod launchers;
@@ -488,6 +489,11 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let (media, media_rx) = media_cache::MediaCache::new();
     media.set_preferred_image_type(&persisted.settings.media_image_type);
+    // Cover art can be read straight off the SD card when Core is on
+    // this machine; the manifest then paints the Hub's real art on the
+    // first frame instead of a placeholder.
+    media_cache::configure_local_path(cfg!(feature = "mister"), &config.core_endpoint);
+    hub_covers::seed(&media);
     games::seed_detail_ctx(client.clone(), handle.clone());
     let notice_ack = config.notice.commercial_ack;
 
@@ -787,6 +793,15 @@ fn bind_resume(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
             }
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
+            // Remember which thumbnail the Resume tile wants, so the
+            // next cold boot paints it before Core answers.
+            hub_covers::refresh_resume_entry(
+                &ctx,
+                entry
+                    .as_ref()
+                    .filter(|e| !e.system_id.is_empty() && !e.media_path.is_empty())
+                    .map(|e| (e.system_id.clone(), e.media_path.clone())),
+            );
             hub::set_resume(
                 &ctx,
                 &app,

@@ -18,6 +18,7 @@ pub mod action_error;
 pub mod alternate_versions;
 pub mod buttons;
 pub mod clock;
+pub mod covers;
 pub mod customization;
 pub mod format;
 pub mod hub;

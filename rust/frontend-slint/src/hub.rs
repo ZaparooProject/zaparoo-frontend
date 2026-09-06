@@ -62,6 +62,9 @@ pub struct HubModel {
     /// Layout position the open Options menu targets.
     pub menu_hub_index: i32,
     pub menu_kind: Option<Kind>,
+    /// The layout was persisted since the last rebuild, so the
+    /// cold-boot cover manifest needs rebuilding too.
+    pub layout_dirty: bool,
 }
 
 impl HubModel {
@@ -71,6 +74,7 @@ impl HubModel {
             layout_path,
             grid: Grid::new(5, 2),
             entries: Vec::new(),
+            layout_dirty: false,
             focus_armed: false,
             restore_done: false,
             move_snapshot: None,
@@ -119,10 +123,14 @@ impl HubModel {
         self.resume.requested && !self.resume.loading && self.resume.entry.is_none() && connected
     }
 
-    fn save(&self) {
+    /// Persist the layout and mark it changed, so the next rebuild
+    /// refreshes the cold-boot cover manifest once rather than per
+    /// mutation.
+    fn save(&mut self) {
         if let Err(e) = save_hub_layout(&self.layout_path, &self.layout) {
             tracing::warn!("could not save hub layout: {e}");
         }
+        self.layout_dirty = true;
     }
 }
 
@@ -158,6 +166,11 @@ impl Resolver for SharedResolver<'_> {
 
 /// Re-resolve the entries from the layout and the live state, then paint.
 pub fn rebuild(ctx: &Ctx, app: &App) {
+    // One refresh per layout change, not per mutation: every writer
+    // goes through `save`, and every writer ends in a rebuild.
+    if std::mem::take(&mut lock(&ctx.shared).hub.layout_dirty) {
+        crate::hub_covers::refresh_hub_entries(ctx);
+    }
     {
         let mut shared = lock(&ctx.shared);
         let connected = !app.global::<crate::Status>().get_is_error()

@@ -149,6 +149,17 @@ impl MediaCache {
         let _ = self.tx.send(key);
     }
 
+    /// True when the key already has an image in memory.
+    pub fn is_cached(&self, key: &MediaKey) -> bool {
+        lock_inner(&self.inner).map.contains_key(key)
+    }
+
+    /// Put an image the cache did not fetch itself into it (the
+    /// cold-boot manifest's own seed).
+    pub fn seed(&self, key: MediaKey, image: DecodedImage) {
+        self.insert(key, image);
+    }
+
     fn insert(&self, key: MediaKey, image: DecodedImage) {
         let mut inner = lock_inner(&self.inner);
         inner.queued.remove(&key);
@@ -182,6 +193,85 @@ impl MediaCache {
 /// Spawn the serialized fetch driver. `on_ready` runs on the driver
 /// task for every successful decode; it is expected to marshal onto
 /// the UI event loop itself.
+/// Latched once a Core that does not know the delivery field rejects
+/// it: the session stops asking rather than paying a failed round trip
+/// per cover.
+static LOCAL_PATH_DISABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+/// Whether Core runs on this machine, so the paths it names are ours to
+/// open. Set once at startup from the configured endpoint.
+static CORE_IS_LOCAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static IS_MISTER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Record the runtime facts the local-path fast path depends on.
+pub fn configure_local_path(is_mister: bool, core_endpoint: &str) {
+    use std::sync::atomic::Ordering;
+    IS_MISTER.store(is_mister, Ordering::Release);
+    CORE_IS_LOCAL.store(
+        zaparoo_app::covers::endpoint_is_loopback(core_endpoint),
+        Ordering::Release,
+    );
+}
+
+/// Whether a request for `max_size` may ask Core for a path.
+pub fn should_request_local_path(max_size: u32) -> bool {
+    use std::sync::atomic::Ordering;
+    zaparoo_app::covers::local_path_request_allowed(
+        max_size,
+        IS_MISTER.load(Ordering::Acquire),
+        CORE_IS_LOCAL.load(Ordering::Acquire),
+        LOCAL_PATH_DISABLED.load(Ordering::Acquire),
+    )
+}
+
+/// Read a thumbnail Core named, with the byte cap that keeps a
+/// mis-sized file from taking the machine down with it.
+pub fn read_local_image_file(path: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let metadata = file.metadata().map_err(|e| e.to_string())?;
+    if !metadata.is_file() {
+        return Err("thumbnail path is not a regular file".to_string());
+    }
+    let length = usize::try_from(metadata.len())
+        .map_err(|_| "thumbnail file size does not fit memory limits".to_string())?;
+    if length == 0 {
+        return Err("thumbnail file was empty".to_string());
+    }
+    if length > max_bytes {
+        return Err(format!(
+            "thumbnail file exceeds {max_bytes}-byte read limit"
+        ));
+    }
+    let mut bytes = Vec::with_capacity(length);
+    file.take(max_bytes.saturating_add(1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.is_empty() {
+        return Err("thumbnail file was empty".to_string());
+    }
+    if bytes.len() > max_bytes {
+        return Err(format!(
+            "thumbnail file exceeds {max_bytes}-byte read limit"
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Decode bytes already in hand (a local read, or the manifest's own
+/// seed) into the cache's image form.
+pub fn decode_bytes(bytes: &[u8]) -> Option<DecodedImage> {
+    let decoded = image::load_from_memory(bytes).ok()?;
+    let rgba = decoded.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Some(DecodedImage {
+        buffer: slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+            &rgba, width, height,
+        ),
+    })
+}
+
 pub fn spawn_driver(
     cache: Arc<MediaCache>,
     client: Arc<Client>,
@@ -212,6 +302,11 @@ pub fn spawn_driver(
                 image_types.retain(|t| *t != preferred);
                 image_types.insert(0, preferred);
             }
+            // On a colocated MiSTer the bytes are already on the SD
+            // card: ask for the path and read it here rather than
+            // making Core base64 a file we can open ourselves.
+            let delivery = should_request_local_path(key.max_size)
+                .then(|| zaparoo_app::covers::DELIVERY_LOCAL_PATH.to_string());
             let params = if key.media_id.is_some() {
                 MediaImageParams {
                     media_id: key.media_id,
@@ -219,7 +314,7 @@ pub fn spawn_driver(
                     path: String::new(),
                     image_types,
                     max_size: (key.max_size > 0).then_some(key.max_size),
-                    delivery: None,
+                    delivery,
                 }
             } else {
                 MediaImageParams {
@@ -228,17 +323,45 @@ pub fn spawn_driver(
                     path: key.path.clone(),
                     image_types,
                     max_size: (key.max_size > 0).then_some(key.max_size),
-                    delivery: None,
+                    delivery,
                 }
             };
-            match client.media_image(params).await {
-                Ok(result) => match decode(&result.data) {
-                    Some(image) => {
-                        cache.insert(key.clone(), image.clone());
-                        on_ready(key, image);
+            let asked_for_path = params.delivery.is_some();
+            let mut outcome = client.media_image(params.clone()).await;
+            if let Err(e) = &outcome {
+                if asked_for_path && zaparoo_app::covers::is_unsupported_delivery_error(&e.message)
+                {
+                    // This Core predates the delivery field; stop
+                    // asking for the rest of the session and retry the
+                    // ordinary way.
+                    LOCAL_PATH_DISABLED.store(true, std::sync::atomic::Ordering::Release);
+                    tracing::info!("core does not support localPath delivery; using inline images");
+                    outcome = client
+                        .media_image(MediaImageParams {
+                            delivery: None,
+                            ..params
+                        })
+                        .await;
+                }
+            }
+            match outcome {
+                Ok(result) => {
+                    let image = if result.delivery == zaparoo_app::covers::DELIVERY_LOCAL_PATH {
+                        match result.local_path.filter(|p| !p.is_empty()) {
+                            Some(path) => read_local(path).await.as_deref().and_then(decode_bytes),
+                            None => None,
+                        }
+                    } else {
+                        decode(&result.data)
+                    };
+                    match image {
+                        Some(image) => {
+                            cache.insert(key.clone(), image.clone());
+                            on_ready(key, image);
+                        }
+                        None => cache.insert_negative(key),
                     }
-                    None => cache.insert_negative(key),
-                },
+                }
                 Err(e) => {
                     tracing::debug!(path = %key.path, "media.image failed: {}", e.message);
                     cache.insert_negative(key);
@@ -246,6 +369,25 @@ pub fn spawn_driver(
             }
         }
     });
+}
+
+/// Read a Core-named thumbnail off the event loop.
+async fn read_local(path: String) -> Option<Vec<u8>> {
+    let read = tokio::task::spawn_blocking(move || {
+        read_local_image_file(&path, zaparoo_app::covers::MAX_LOCAL_IMAGE_BYTES)
+    })
+    .await;
+    match read {
+        Ok(Ok(bytes)) => Some(bytes),
+        Ok(Err(e)) => {
+            tracing::debug!("local thumbnail read failed: {e}");
+            None
+        }
+        Err(e) => {
+            tracing::debug!("local thumbnail read task failed: {e}");
+            None
+        }
+    }
 }
 
 /// Base64 payload -> decoded RGBA8. Returns None for empty payloads

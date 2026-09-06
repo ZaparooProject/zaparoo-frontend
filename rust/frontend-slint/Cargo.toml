@@ -80,7 +80,11 @@ libc = { version = "0.2", optional = true }
 # (Cargo unifies the feature onto Slint's own fontique dependency).
 fontique = { version = "0.10", optional = true, default-features = false, features = ["fontconfig-dlopen"] }
 time.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+# The Hub cold-boot cover manifest is the one sanctioned disk cache; it
+# is a small TOML path list (see src/hub_covers.rs).
+toml.workspace = true
 
 [build-dependencies]
 slint-build = "=1.17.1"
