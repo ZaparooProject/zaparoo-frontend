@@ -1063,8 +1063,7 @@ component ListPickerModal inherits Rectangle {
             y: root.title-h;
             width: root.arrow;
             height: root.arrow;
-            source: GlyphSource.glyph("icons/ScrollUp", root.arrow);
-            colorize: Theme.text-label;
+            source: GlyphSource.glyph("icons/ScrollUp", root.arrow, Theme.text-label);
         }
 
         Rectangle {
@@ -1103,8 +1102,7 @@ component ListPickerModal inherits Rectangle {
             y: parent.height - Sizing.pct-h(4) - root.arrow;
             width: root.arrow;
             height: root.arrow;
-            source: GlyphSource.glyph("icons/ScrollDown", root.arrow);
-            colorize: Theme.text-label;
+            source: GlyphSource.glyph("icons/ScrollDown", root.arrow, Theme.text-label);
         }
     }
 }
@@ -1745,8 +1743,7 @@ component GamesScreen inherits Rectangle {
             Image {
                 width: parent.height;
                 height: parent.height;
-                source: GlyphSource.glyph("icons/Loading", self.height);
-                colorize: Theme.text-primary;
+                source: GlyphSource.glyph("icons/Loading", self.height, Theme.text-primary);
             }
             Text {
                 vertical-alignment: center;

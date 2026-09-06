@@ -396,7 +396,6 @@ export component SettingsRowView inherits Rectangle {
             ? Sizing.pct-h(3) : 0px;
         height: self.width;
         visible: root.entry.control == "picker" || root.entry.control == "navigate";
-        source: GlyphSource.glyph("icons/NavRight", Math.max(1px, self.width));
-        colorize: bar.active ? bar.content-color : Theme.text-label;
+        source: GlyphSource.glyph("icons/NavRight", Math.max(1px, self.width), bar.active ? bar.content-color : Theme.text-label);
     }
 }

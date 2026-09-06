@@ -108,8 +108,8 @@ fn main() {
     if let Ok(lang) = std::env::var("ZAPAROO_SNAPSHOT_LANG") {
         slint::select_bundled_translation(&lang).expect("bundled language");
     }
-    app.global::<GlyphSource>().on_glyph(|key, px| {
-        glyphs::render(key.as_str(), px.round().max(0.0) as u32).unwrap_or_default()
+    app.global::<GlyphSource>().on_glyph(|key, px, tint| {
+        glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
     });
     let crt = screen.starts_with("crt-") || screen == "calibration";
     let ccw = screen.contains("ccw");

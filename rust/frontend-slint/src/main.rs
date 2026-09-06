@@ -464,8 +464,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let (rest, focus) = theme::logo_tints(&palette);
     system_logos::set_tints(rest, focus);
     seed_display_globals(&app, &persisted, visual_crt, crt, ui_framebuffer_size);
-    app.global::<GlyphSource>().on_glyph(|key, px| {
-        glyphs::render(key.as_str(), px.round().max(0.0) as u32).unwrap_or_default()
+    app.global::<GlyphSource>().on_glyph(|key, px, tint| {
+        glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
     });
 
     #[cfg(feature = "mister")]
@@ -477,8 +477,8 @@ fn main() -> Result<(), slint::PlatformError> {
             &persisted.settings.color_intensity,
         );
         seed_display_globals(&mirror, &persisted, true, true, crt_framebuffer_size);
-        mirror.global::<GlyphSource>().on_glyph(|key, px| {
-            glyphs::render(key.as_str(), px.round().max(0.0) as u32).unwrap_or_default()
+        mirror.global::<GlyphSource>().on_glyph(|key, px, tint| {
+            glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
         });
         Some(mirror)
     } else {

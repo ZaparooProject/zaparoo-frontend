@@ -18,7 +18,13 @@ import { Theme, Sizing, Motion, Layout } from "theme.slint";
 // "status/NFC", "buttons/style_a/FaceEast"). The binding depends on the
 // element's size, so a res switch re-rasterizes automatically.
 export global GlyphSource {
-    pure callback glyph(string, length) -> image;
+    // The tint is baked into the raster rather than applied as a
+    // draw-time `colorize`, the way Resources.qml's tinted-svg provider
+    // does it: one cached image per (key, size, color), and no
+    // per-item offscreen colorize pass in the renderer. A fully
+    // transparent color keeps the artwork's own colors (the two-tone
+    // heart, real art).
+    pure callback glyph(string, length, color) -> image;
 }
 
 // Header logo rungs (resources/images/logo/logo-<variant>-<w>.png):
@@ -355,16 +361,14 @@ export component HeaderBar inherits Rectangle {
             y: Math.round((parent.height - self.height) / 2px) * 1px;
             width: root.icon-size;
             height: root.icon-size;
-            source: GlyphSource.glyph("status/" + key, root.icon-size);
-            colorize: Theme.text-primary;
+            source: GlyphSource.glyph("status/" + key, root.icon-size, Theme.text-primary);
         }
         if root.battery-visible: Image {
             x: root.status-keys.length * (root.icon-size + root.hud-spacing);
             y: Math.round((parent.height - self.height) / 2px) * 1px;
             width: root.icon-size;
             height: root.icon-size;
-            source: GlyphSource.glyph(root.battery-icon, root.icon-size);
-            colorize: Theme.text-primary;
+            source: GlyphSource.glyph(root.battery-icon, root.icon-size, Theme.text-primary);
         }
         if root.battery-label-visible: Text {
             x: root.icon-count * (root.icon-size + root.hud-spacing);
@@ -470,8 +474,7 @@ export component PageIndicator inherits Rectangle {
         width: root.chevron-size;
         height: root.chevron-size;
         visible: root.has-navigation-range;
-        source: GlyphSource.glyph("icons/ScrollUp", root.chevron-size);
-        colorize: root.has-pages-above ? Theme.text-primary : Theme.text-label;
+        source: GlyphSource.glyph("icons/ScrollUp", root.chevron-size, root.has-pages-above ? Theme.text-primary : Theme.text-label);
         TouchArea {
             enabled: root.has-pages-above;
             clicked => { root.page-requested(-1); }
@@ -483,8 +486,7 @@ export component PageIndicator inherits Rectangle {
         width: root.chevron-size;
         height: root.chevron-size;
         visible: root.has-navigation-range;
-        source: GlyphSource.glyph("icons/ScrollDown", root.chevron-size);
-        colorize: root.has-pages-below ? Theme.text-primary : Theme.text-label;
+        source: GlyphSource.glyph("icons/ScrollDown", root.chevron-size, root.has-pages-below ? Theme.text-primary : Theme.text-label);
         TouchArea {
             enabled: root.has-pages-below;
             clicked => { root.page-requested(1); }
@@ -671,8 +673,7 @@ component HelpEntryView inherits HorizontalLayout {
         y: Math.round((root.height - self.height) / 2px) * 1px;
         width: root.icon-size;
         height: root.icon-size;
-        source: GlyphSource.glyph(Buttons.key(token), root.icon-size);
-        colorize: Theme.text-primary;
+        source: GlyphSource.glyph(Buttons.key(token), root.icon-size, Theme.text-primary);
     }
     Text {
         vertical-alignment: center;
@@ -916,8 +917,7 @@ export component StateCue inherits Rectangle {
             y: 0;
             width: parent.glyph;
             height: parent.glyph;
-            source: GlyphSource.glyph("icons/Loading", parent.glyph);
-            colorize: Theme.text-primary;
+            source: GlyphSource.glyph("icons/Loading", parent.glyph, Theme.text-primary);
         }
         loading-label := Text {
             x: parent.glyph + parent.spacing;

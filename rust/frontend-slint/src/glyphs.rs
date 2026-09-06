@@ -429,11 +429,12 @@ const ALIASES: &[(&str, &str)] = &[
 type HeartTints = (String, String);
 
 thread_local! {
-    /// Raster cache keyed by (key, px): res switches alternate
-    /// between two sizes, so both stay warm. Thread-local because
-    /// slint::Image is not Send and the GlyphSource callback only
-    /// runs on the UI thread.
-    static CACHE: RefCell<HashMap<(String, u32), slint::Image>> = RefCell::new(HashMap::new());
+    /// Raster cache keyed by (key, px, tint): res switches alternate
+    /// between two sizes, so both stay warm, and a glyph drawn in two
+    /// colors (a focused row against a resting one) keeps both. Thread
+    /// local because slint::Image is not Send and the GlyphSource
+    /// callback only runs on the UI thread.
+    static CACHE: RefCell<HashMap<(String, u32, u32), slint::Image>> = RefCell::new(HashMap::new());
     static HEART: RefCell<HeartTints> = RefCell::new(("#ec5545".to_string(), "#f6e4e0".to_string()));
 }
 
@@ -441,7 +442,7 @@ thread_local! {
 pub fn set_heart_tints(fill: (u8, u8, u8), outline: (u8, u8, u8)) {
     let hex = |(r, g, b): (u8, u8, u8)| format!("#{r:02x}{g:02x}{b:02x}");
     HEART.with(|h| *h.borrow_mut() = (hex(fill), hex(outline)));
-    CACHE.with(|c| c.borrow_mut().retain(|(key, _), _| key != "icons/Heart"));
+    CACHE.with(|c| c.borrow_mut().retain(|(key, _, _), _| key != "icons/Heart"));
 }
 
 fn resolve(key: &str) -> &str {
@@ -484,8 +485,42 @@ pub fn rasterize_svg(svg: &str, px: u32) -> Option<slint::Image> {
     Some(slint::Image::from_rgba8_premultiplied(buffer))
 }
 
-/// Rasterize `key` at `px` x `px` (every source has a square viewbox).
-pub fn render(key: &str, px: u32) -> Option<slint::Image> {
+/// The same raster with every pixel taken to `tint`, keeping the
+/// artwork's own coverage. Slint's `colorize` does this at draw time;
+/// baking it means the renderer draws a plain image, and on the GPU
+/// path it needs neither a second texture per item nor a mid-frame
+/// render-target switch to produce one.
+fn rasterize_svg_tinted(svg: &str, px: u32, tint: slint::Color) -> Option<slint::Image> {
+    let image = rasterize_svg(svg, px)?;
+    let source = image.to_rgba8_premultiplied()?;
+    let (r, g, b) = (
+        u32::from(tint.red()),
+        u32::from(tint.green()),
+        u32::from(tint.blue()),
+    );
+    let mut buffer =
+        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(source.width(), source.height());
+    for (out, px) in buffer.make_mut_slice().iter_mut().zip(source.as_slice()) {
+        // The source is premultiplied, so the tint is too: scale it by
+        // the coverage this pixel already carries.
+        let a = u32::from(px.a);
+        *out = slint::Rgba8Pixel {
+            r: ((r * a) / 255) as u8,
+            g: ((g * a) / 255) as u8,
+            b: ((b * a) / 255) as u8,
+            a: px.a,
+        };
+    }
+    Some(slint::Image::from_rgba8_premultiplied(buffer))
+}
+
+/// Rasterize `key` at `px` x `px` (every source has a square viewbox),
+/// in `tint`. The color is baked into the artwork rather than applied
+/// by the view, the way `Resources.qml`'s tinted-svg provider does it:
+/// the renderer then draws a plain image, with no per-item offscreen
+/// colorize pass and no second texture per tile. A transparent tint
+/// keeps the artwork's own colors (the two-tone heart).
+pub fn render(key: &str, px: u32, tint: slint::Color) -> Option<slint::Image> {
     // One line per rasterization, not per draw: a glyph that reappears
     // here on every frame means the cache key is moving under it.
     tracing::trace!(key, px, "glyph raster");
@@ -493,24 +528,34 @@ pub fn render(key: &str, px: u32) -> Option<slint::Image> {
         return None;
     }
     let key = resolve(key);
-    let cached = CACHE.with(|c| c.borrow().get(&(key.to_string(), px)).cloned());
+    let tint_key = u32::from_be_bytes([tint.alpha(), tint.red(), tint.green(), tint.blue()]);
+    let cached = CACHE.with(|c| c.borrow().get(&(key.to_string(), px, tint_key)).cloned());
     if let Some(image) = cached {
         return Some(image);
     }
 
     let (_, svg) = SOURCES.iter().find(|(k, _)| *k == key)?;
-    let tinted;
+    let recolored;
     let svg: &str = if key == "icons/Heart" {
         let (fill, outline) = HEART.with(|h| h.borrow().clone());
-        tinted = svg.replace("#fff", &fill).replace("#000", &outline);
-        tinted.as_str()
+        recolored = svg.replace("#fff", &fill).replace("#000", &outline);
+        recolored.as_str()
     } else {
         svg
     };
-    let image = rasterize_svg(svg, px)?;
+    // Tint the rendered pixels, not the document: the sources paint in
+    // `#fff`, `currentColor` and a couple of other inks, and only the
+    // coverage matters. `tinted_svg_image_provider.cpp` does the same -
+    // render, then run the ramp over the image.
+    let image = if key == "icons/Heart" || tint.alpha() == 0 {
+        rasterize_svg(svg, px)?
+    } else {
+        rasterize_svg_tinted(svg, px, tint)?
+    };
 
     CACHE.with(|c| {
-        c.borrow_mut().insert((key.to_string(), px), image.clone());
+        c.borrow_mut()
+            .insert((key.to_string(), px, tint_key), image.clone());
     });
     Some(image)
 }
@@ -527,7 +572,8 @@ mod tests {
     #[test]
     fn every_glyph_rasterizes_with_visible_pixels() {
         for (key, _) in SOURCES {
-            let image = render(key, 48).unwrap_or_else(|| panic!("{key} did not render"));
+            let image = render(key, 48, slint::Color::from_rgb_u8(255, 255, 255))
+                .unwrap_or_else(|| panic!("{key} did not render"));
             assert_eq!(image.size().width, 48, "{key}");
             let buffer = image
                 .to_rgba8_premultiplied()
@@ -541,7 +587,7 @@ mod tests {
 
     #[test]
     fn aliases_resolve_and_unknown_keys_are_none() {
-        assert!(render("NotAGlyph", 96).is_none());
+        assert!(render("NotAGlyph", 96, slint::Color::from_rgb_u8(255, 255, 255)).is_none());
         assert!(!has_glyph("NotAGlyph"));
         assert!(has_glyph("Arcade"));
         assert!(has_glyph("buttons/style_e/FaceEast"));
@@ -552,9 +598,27 @@ mod tests {
     }
 
     #[test]
+    fn a_tint_paints_every_covered_pixel_and_keeps_the_coverage() {
+        // The tint replaces the artwork's ink whatever it is (the
+        // sources use `#fff`, `currentColor` and a couple of others),
+        // and the alpha the rasterizer produced is what shapes it.
+        let tint = slint::Color::from_rgb_u8(0x8c, 0x40, 0x20);
+        let image = render("categories/Other", 48, tint).expect("renders");
+        let buffer = image.to_rgba8_premultiplied().expect("pixels");
+        let mut opaque = 0usize;
+        for p in buffer.as_slice() {
+            if p.a == 255 {
+                opaque += 1;
+                assert_eq!((p.r, p.g, p.b), (0x8c, 0x40, 0x20));
+            }
+        }
+        assert!(opaque > 0, "no fully covered pixels to check");
+    }
+
+    #[test]
     fn heart_tints_follow_the_palette() {
         set_heart_tints((1, 2, 3), (4, 5, 6));
-        let image = render("icons/Heart", 32).expect("heart renders");
+        let image = render("icons/Heart", 32, slint::Color::default()).expect("heart renders");
         let buffer = image.to_rgba8_premultiplied().expect("pixels");
         assert!(buffer.as_slice().iter().any(|p| p.a > 0));
     }

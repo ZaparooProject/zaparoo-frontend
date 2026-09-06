@@ -144,7 +144,7 @@ export component BrowseList inherits Rectangle {
             y: Math.round((parent.height - self.height) / 2px) * 1px;
             width: root.heart-size;
             height: root.heart-size;
-            source: GlyphSource.glyph("icons/Heart", root.heart-size);
+            source: GlyphSource.glyph("icons/Heart", root.heart-size, Colors.transparent);
         }
 
         TouchArea {
@@ -343,7 +343,7 @@ export component BrowseDetailPane inherits Rectangle {
                 y: parent.art-y + Math.round((parent.art-h - self.s) / 2px) * 1px;
                 width: self.s;
                 height: self.s;
-                source: GlyphSource.glyph(root.placeholder-key, self.s);
+                source: GlyphSource.glyph(root.placeholder-key, self.s, Theme.text-label);
             }
             // Wordmark fallback for a system without curated logo art
             // (the grid tile's fitted-text treatment).
@@ -440,8 +440,7 @@ export component BrowseDetailPane inherits Rectangle {
             Image {
                 width: parent.height;
                 height: parent.height;
-                source: GlyphSource.glyph("icons/Loading", self.height);
-                colorize: Theme.text-primary;
+                source: GlyphSource.glyph("icons/Loading", self.height, Theme.text-primary);
             }
             Text {
                 vertical-alignment: center;

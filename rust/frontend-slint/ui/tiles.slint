@@ -345,9 +345,8 @@ export component Tile inherits Rectangle {
             y: parent.art-top;
             width: parent.art-w;
             height: parent.art-h;
-            source: GlyphSource.glyph(root.cell.glyph-key, Math.min(self.width, self.height));
+            source: GlyphSource.glyph(root.cell.glyph-key, Math.min(self.width, self.height), root.art-tint);
             image-fit: contain;
-            colorize: root.art-tint;
         }
 
         if root.cell.glyph-key == "" && root.cell.has-cover: Image {
@@ -386,7 +385,7 @@ export component Tile inherits Rectangle {
             y: Math.round(parent.width / 12 / 1px) * 1px;
             width: Math.round(parent.width / 6 / 1px) * 1px;
             height: self.width;
-            source: GlyphSource.glyph("icons/Heart", self.width);
+            source: GlyphSource.glyph("icons/Heart", self.width, Colors.transparent);
             image-fit: contain;
         }
 

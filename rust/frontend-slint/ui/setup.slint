@@ -134,8 +134,7 @@ export component SetupModal inherits Rectangle {
                 y: root.header-h;
                 width: root.arrow;
                 height: root.arrow;
-                source: GlyphSource.glyph("icons/ScrollUp", root.arrow);
-                colorize: Theme.text-label;
+                source: GlyphSource.glyph("icons/ScrollUp", root.arrow, Theme.text-label);
             }
 
             for entry[i] in root.picker-rows: Rectangle {
@@ -177,8 +176,7 @@ export component SetupModal inherits Rectangle {
                 y: parent.height - root.arrow;
                 width: root.arrow;
                 height: root.arrow;
-                source: GlyphSource.glyph("icons/ScrollDown", root.arrow);
-                colorize: Theme.text-label;
+                source: GlyphSource.glyph("icons/ScrollDown", root.arrow, Theme.text-label);
             }
         }
     }
