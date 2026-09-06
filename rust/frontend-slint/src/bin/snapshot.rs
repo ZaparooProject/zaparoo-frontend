@@ -82,6 +82,11 @@ fn main() {
     slint::platform::set_platform(Box::new(SnapshotPlatform)).unwrap();
 
     let app = App::new().unwrap();
+    // ZAPAROO_SNAPSHOT_LANG=de renders through the bundled German catalog
+    // (any language directory under translations/).
+    if let Ok(lang) = std::env::var("ZAPAROO_SNAPSHOT_LANG") {
+        slint::select_bundled_translation(&lang).expect("bundled language");
+    }
     app.global::<GlyphSource>().on_glyph(|key, px| {
         glyphs::render(key.as_str(), px.round().max(0.0) as u32).unwrap_or_default()
     });

@@ -99,6 +99,42 @@ pub(crate) fn request_restart() {
     let _ = slint::quit_event_loop();
 }
 
+/// Select the bundled translation for the Language setting. `auto` (or an
+/// empty value) follows the process locale the way Qt's `QLocale::system()`
+/// did; anything else is tried as given and then by its language part, so
+/// `de_AT` still lands on the `de` catalog. English is the source text, so
+/// no bundled match means English. Safe to call again when the setting
+/// changes: Slint re-evaluates every `@tr` binding.
+pub(crate) fn apply_language(setting: &str) {
+    let setting = setting.trim();
+    let auto = setting.is_empty() || setting.eq_ignore_ascii_case("auto");
+    let requested = if auto {
+        system_locale()
+    } else {
+        setting.to_string()
+    };
+    let requested = requested.replace('-', "_");
+    let base = requested.split('_').next().unwrap_or_default().to_string();
+    for candidate in [requested.as_str(), base.as_str()] {
+        if !candidate.is_empty() && slint::select_bundled_translation(candidate).is_ok() {
+            tracing::info!(language = candidate, setting, "translation selected");
+            return;
+        }
+    }
+    let _ = slint::select_bundled_translation("");
+    tracing::info!(setting, "translation: English (no bundled catalog matched)");
+}
+
+/// The locale the environment declares, as a plain `ll_CC` tag, or empty.
+fn system_locale() -> String {
+    ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .filter_map(|key| std::env::var(key).ok())
+        .find(|value| !value.is_empty() && value != "C" && value != "POSIX")
+        .map(|value| value.split('.').next().unwrap_or_default().to_string())
+        .unwrap_or_default()
+}
+
 /// Ask patched `Main_MiSTer` to re-read the CRT state file, reconfigure
 /// fb geometry, and respawn us. Exit 42 is its reserved reload code.
 pub(crate) fn request_main_reload() {
@@ -393,6 +429,7 @@ fn main() -> Result<(), slint::PlatformError> {
         (1280, 720)
     };
     let app = App::new()?;
+    apply_language(&persisted.settings.language);
     seed_display_globals(&app, &persisted, visual_crt, crt, ui_framebuffer_size);
     app.global::<GlyphSource>().on_glyph(|key, px| {
         glyphs::render(key.as_str(), px.round().max(0.0) as u32).unwrap_or_default()

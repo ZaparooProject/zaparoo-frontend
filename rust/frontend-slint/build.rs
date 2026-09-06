@@ -12,5 +12,14 @@ fn main() {
     // stack on startup (see `src/fonts.rs`), on MiSTer as on the desktop.
     // The MiSTer build used to pre-render glyphs here at a fixed size
     // ladder (`EmbedForSoftwareRenderer`); that path has no text shaping.
-    slint_build::compile("ui/app.slint").unwrap_or_else(|e| panic!("slint compile failed: {e}"));
+    // Translations are bundled from translations/<lang>/LC_MESSAGES/
+    // frontend-slint.po (harvested from the Qt catalogs by
+    // scripts/convert-ts-catalogs.py) and selected at runtime by
+    // `apply_language` in main.rs. No default context: one msgid is one
+    // entry, which is what lets the Qt translations carry over.
+    let config = slint_build::CompilerConfiguration::new()
+        .with_bundled_translations("translations")
+        .with_default_translation_context(slint_build::DefaultTranslationContext::None);
+    slint_build::compile_with_config("ui/app.slint", config)
+        .unwrap_or_else(|e| panic!("slint compile failed: {e}"));
 }

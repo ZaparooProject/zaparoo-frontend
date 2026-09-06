@@ -2057,7 +2057,10 @@ fn settings_picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             "browseLayout" => s.games_browse_layout = value.to_string(),
             "systemLogoStyle" => s.system_logo_style = value.to_string(),
             "mediaImageType" => s.media_image_type = value.to_string(),
-            "language" => s.language = value.to_string(),
+            "language" => {
+                s.language = value.to_string();
+                crate::apply_language(value);
+            }
             "region" => s.region = value.to_string(),
             "clockFormat" => s.clock_format = value.to_string(),
             "buttonLayout" => s.button_layout = value.to_string(),

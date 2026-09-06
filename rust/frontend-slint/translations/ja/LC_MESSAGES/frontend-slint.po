@@ -1,0 +1,125 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-09-06 02:08+0000\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: scripts/convert-ts-catalogs.py\n"
+
+#: rust/frontend-slint/ui/app.slint:693 rust/frontend-slint/ui/app.slint:764
+msgid "Hidden"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1124 rust/frontend-slint/ui/app.slint:2324
+msgid "Failed to load"
+msgstr "読み込みに失敗しました"
+
+#: rust/frontend-slint/ui/app.slint:1141
+msgid "No systems available. Run Update media database from Settings."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1158
+msgid "About / License"
+msgstr "情報 / ライセンス"
+
+#: rust/frontend-slint/ui/app.slint:1189
+msgid "Zaparoo Frontend"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1203
+msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
+msgstr "Copyright 2026 Wizzo Pty Ltd および Zaparoo Project contributors."
+
+#: rust/frontend-slint/ui/app.slint:1210
+msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
+msgstr "PolyForm Noncommercial License 1.0.0 のもとでソースを公開しています。個人・非商用利用は無料です。商用利用または再配布には別途ライセンスが必要です。"
+
+#: rust/frontend-slint/ui/app.slint:1217
+msgid "Commercial licensing: legal@zaparoo.org"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1224
+msgid "Project: https://zaparoo.org"
+msgstr "プロジェクト: https://zaparoo.org"
+
+#: rust/frontend-slint/ui/app.slint:1265 rust/frontend-slint/ui/app.slint:1491
+#: rust/frontend-slint/ui/app.slint:2383
+msgid "Page {} / {}"
+msgstr "ページ {0} / {1}"
+
+#: rust/frontend-slint/ui/app.slint:1475
+msgid "No systems in this category"
+msgstr "このカテゴリにシステムはありません"
+
+#: rust/frontend-slint/ui/app.slint:1593
+msgid "Go to..."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1602 rust/frontend-slint/ui/app.slint:2778
+msgid "Loading…"
+msgstr "読み込み中…"
+
+#: rust/frontend-slint/ui/app.slint:1668
+msgid "Writing failed"
+msgstr "書き込み失敗"
+
+#: rust/frontend-slint/ui/app.slint:1669
+msgid "Put a writable card near the reader"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2483
+msgid "Arrows adjust position"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2491
+msgid "Accept or Back saves"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2548
+msgid "Favorites"
+msgstr "お気に入り"
+
+#: rust/frontend-slint/ui/app.slint:2549
+msgid "Recently Played"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2580 rust/frontend-slint/ui/app.slint:2600
+#: rust/frontend-slint/ui/app.slint:2614 rust/frontend-slint/ui/app.slint:2641
+msgid "Move"
+msgstr "移動"
+
+#: rust/frontend-slint/ui/app.slint:2581 rust/frontend-slint/ui/app.slint:2585
+#: rust/frontend-slint/ui/app.slint:2615
+msgid "Select"
+msgstr "選択"
+
+#: rust/frontend-slint/ui/app.slint:2590 rust/frontend-slint/ui/app.slint:2602
+#: rust/frontend-slint/ui/app.slint:2616
+msgid "Close"
+msgstr "閉じる"
+
+#: rust/frontend-slint/ui/app.slint:2595
+msgid "Cancel"
+msgstr "キャンセル"
+
+#: rust/frontend-slint/ui/app.slint:2608
+msgid "Go"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2630 rust/frontend-slint/ui/app.slint:2648
+msgid "Open"
+msgstr "開く"
+
+#: rust/frontend-slint/ui/app.slint:2631
+msgid "Quit"
+msgstr "終了"
+
+#: rust/frontend-slint/ui/app.slint:2636 rust/frontend-slint/ui/app.slint:2643
+msgid "Back"
+msgstr "戻る"
+
+#: rust/frontend-slint/ui/app.slint:2642
+msgid "Change"
+msgstr "変更"

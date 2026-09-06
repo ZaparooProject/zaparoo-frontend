@@ -1,0 +1,125 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-09-06 02:08+0000\n"
+"Language: he\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: scripts/convert-ts-catalogs.py\n"
+
+#: rust/frontend-slint/ui/app.slint:693 rust/frontend-slint/ui/app.slint:764
+msgid "Hidden"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1124 rust/frontend-slint/ui/app.slint:2324
+msgid "Failed to load"
+msgstr "הטעינה נכשלה"
+
+#: rust/frontend-slint/ui/app.slint:1141
+msgid "No systems available. Run Update media database from Settings."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1158
+msgid "About / License"
+msgstr "אודות / רישיון"
+
+#: rust/frontend-slint/ui/app.slint:1189
+msgid "Zaparoo Frontend"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1203
+msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
+msgstr "כל הזכויות שמורות 2026 ל-Wizzo Pty Ltd ולתורמי פרויקט Zaparoo."
+
+#: rust/frontend-slint/ui/app.slint:1210
+msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
+msgstr "קוד המקור זמין תחת רישיון PolyForm Noncommercial 1.0.0. חינם לשימוש אישי ולא מסחרי. שימוש מסחרי או הפצה מחדש דורשים רישיון נפרד."
+
+#: rust/frontend-slint/ui/app.slint:1217
+msgid "Commercial licensing: legal@zaparoo.org"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1224
+msgid "Project: https://zaparoo.org"
+msgstr "פרויקט: https://zaparoo.org"
+
+#: rust/frontend-slint/ui/app.slint:1265 rust/frontend-slint/ui/app.slint:1491
+#: rust/frontend-slint/ui/app.slint:2383
+msgid "Page {} / {}"
+msgstr "עמוד {0} / {1}"
+
+#: rust/frontend-slint/ui/app.slint:1475
+msgid "No systems in this category"
+msgstr "אין מערכות בקטגוריה זו"
+
+#: rust/frontend-slint/ui/app.slint:1593
+msgid "Go to..."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1602 rust/frontend-slint/ui/app.slint:2778
+msgid "Loading…"
+msgstr "טוען…"
+
+#: rust/frontend-slint/ui/app.slint:1668
+msgid "Writing failed"
+msgstr "הכתיבה נכשלה"
+
+#: rust/frontend-slint/ui/app.slint:1669
+msgid "Put a writable card near the reader"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2483
+msgid "Arrows adjust position"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2491
+msgid "Accept or Back saves"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2548
+msgid "Favorites"
+msgstr "מועדפים"
+
+#: rust/frontend-slint/ui/app.slint:2549
+msgid "Recently Played"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2580 rust/frontend-slint/ui/app.slint:2600
+#: rust/frontend-slint/ui/app.slint:2614 rust/frontend-slint/ui/app.slint:2641
+msgid "Move"
+msgstr "הזזה"
+
+#: rust/frontend-slint/ui/app.slint:2581 rust/frontend-slint/ui/app.slint:2585
+#: rust/frontend-slint/ui/app.slint:2615
+msgid "Select"
+msgstr "בחירה"
+
+#: rust/frontend-slint/ui/app.slint:2590 rust/frontend-slint/ui/app.slint:2602
+#: rust/frontend-slint/ui/app.slint:2616
+msgid "Close"
+msgstr "סגור"
+
+#: rust/frontend-slint/ui/app.slint:2595
+msgid "Cancel"
+msgstr "ביטול"
+
+#: rust/frontend-slint/ui/app.slint:2608
+msgid "Go"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2630 rust/frontend-slint/ui/app.slint:2648
+msgid "Open"
+msgstr "פתח"
+
+#: rust/frontend-slint/ui/app.slint:2631
+msgid "Quit"
+msgstr "יציאה"
+
+#: rust/frontend-slint/ui/app.slint:2636 rust/frontend-slint/ui/app.slint:2643
+msgid "Back"
+msgstr "חזרה"
+
+#: rust/frontend-slint/ui/app.slint:2642
+msgid "Change"
+msgstr "שינוי"

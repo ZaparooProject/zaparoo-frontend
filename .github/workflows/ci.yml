@@ -229,6 +229,11 @@ jobs:
       - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
         with:
           tool: nextest,cross
+      - uses: taiki-e/cache-cargo-install-action@9ee83daaa7b96a6fab930949ecf1122bba04a389 # v3.0.8
+        with:
+          tool: slint-tr-extractor@1.17.1
+      - name: Translation template is fresh
+        run: bash ../scripts/check-slint-translations.sh
       - name: clippy
         run: cargo clippy -p frontend-slint -p zaparoo-app --all-targets -- -D warnings
       - name: nextest

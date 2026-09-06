@@ -256,6 +256,18 @@ lint-slint:
     cd rust && cargo fmt -p frontend-slint -p zaparoo-app --check
     cd rust && cargo clippy -p frontend-slint -p zaparoo-app --all-targets -- -D warnings
     bash scripts/check-toolkit-free.sh
+    bash scripts/check-slint-translations.sh
+
+# Regenerate the gettext template from the .slint files (needs
+# `cargo install slint-tr-extractor --version 1.17.1`). Run after any @tr edit.
+slint-tr-extract:
+    bash scripts/extract-slint-translations.sh
+
+# Re-harvest the Qt Linguist catalogs into translations/<lang>/LC_MESSAGES/
+# (needs lconvert-qt6 and gettext). Run after slint-tr-extract while screens
+# are being ported so identical source strings pick up their translations.
+slint-tr-convert:
+    python3 scripts/convert-ts-catalogs.py
 
 # Host-side tests for the Slint crates (also part of `test-rust`).
 test-slint:
