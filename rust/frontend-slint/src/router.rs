@@ -62,6 +62,8 @@ pub struct Shared {
     pub log_upload: crate::log_upload::LogUploadModel,
     /// Failed user actions waiting for the alert surface.
     pub errors: action_error::ErrorQueue,
+    /// The context menu's alternate-versions page.
+    pub alternates: crate::alternates::AlternatesModel,
     /// The key path: duplicate guard, hold-repeat, rapid navigation.
     pub input: crate::input::InputModel,
     /// Core reports at least one connected reader. Refreshed lazily.
@@ -117,6 +119,9 @@ pub struct Shared {
     /// Ticket for the picker's facet fetch; bumped on open/close so a
     /// stale index response cannot fill a reopened picker.
     pub letter_seq: u64,
+    /// Ticket for the per-game launcher read, so a picker only opens
+    /// for the row the user is still on.
+    pub game_launcher_seq: u64,
     pub persist: PersistedState,
     /// True until the first catalog Ready has restored the persisted
     /// screen after a cold start.
@@ -172,6 +177,9 @@ pub enum ListContext {
     SettingsPicker(String),
     /// The "Change launcher" picker; the payload is the system id.
     SystemLauncher(String),
+    /// The per-game "Change launcher" picker; the payload is the game's
+    /// system id and path.
+    GameLauncher(String, String),
 }
 
 #[derive(Debug, Clone)]
@@ -220,6 +228,7 @@ impl Shared {
             setup: crate::media_setup::SetupModel::new(),
             log_upload: crate::log_upload::LogUploadModel::new(),
             errors: action_error::ErrorQueue::new(),
+            alternates: crate::alternates::AlternatesModel::default(),
             input: crate::input::InputModel::new(),
             has_readers: false,
             has_nfc: false,
@@ -242,6 +251,7 @@ impl Shared {
             card_write_seq: 0,
             letter_buckets: Vec::new(),
             letter_seq: 0,
+            game_launcher_seq: 0,
             persist,
             restore_pending,
             hub: crate::hub::HubModel::new(hub_layout_path),
@@ -1202,7 +1212,10 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                         crate::settings::picker_selected(ctx, app, &field, &id);
                     }
                     ListContext::SystemLauncher(system_id) => {
-                        set_system_launcher(ctx, app, &system_id, &id);
+                        crate::launchers::set_system_launcher(ctx, app, &system_id, &id);
+                    }
+                    ListContext::GameLauncher(system_id, path) => {
+                        crate::launchers::set_game_launcher(ctx, app, &system_id, &path, &id);
                     }
                 }
             }
@@ -1722,8 +1735,15 @@ fn present_context_menu(
 
 fn close_context_menu(ctx: &Ctx, app: &App) {
     // Bumping the seq abandons any in-flight card write (its result
-    // is ignored on arrival - the Qt cancel rule).
-    lock(&ctx.shared).card_write_seq += 1;
+    // is ignored on arrival - the Qt cancel rule), and any discovery
+    // still looking for a menu to fill.
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.card_write_seq += 1;
+        shared.alternates.seq += 1;
+        shared.alternates.showing = false;
+        shared.alternates.rows.clear();
+    }
     app.global::<crate::Overlays>().set_context_open(false);
 }
 
@@ -1751,15 +1771,33 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
                 context_accept(ctx, app, entry.id.as_str());
             }
         }
-        actions::CANCEL | actions::CONTEXT_MENU => close_context_menu(ctx, app),
+        actions::CANCEL | actions::CONTEXT_MENU => {
+            // The alternates page is a page of this menu, not a menu of
+            // its own: Back returns to the rows it replaced.
+            if crate::alternates::showing(ctx) {
+                crate::alternates::leave(ctx, app);
+            } else {
+                close_context_menu(ctx, app);
+            }
+        }
         _ => {}
     }
 }
 
 fn context_accept(ctx: &Ctx, app: &App, id: &str) {
+    if crate::alternates::showing(ctx) {
+        crate::alternates::accept(ctx, app, id);
+        return;
+    }
     let owner = lock(&ctx.shared).context_owner;
     match owner {
         ContextOwner::Games => {
+            // Discovery keeps the menu open: its rows become the
+            // alternates once Core answers.
+            if id == "discover" {
+                crate::games::begin_discovery(ctx, app);
+                return;
+            }
             close_context_menu(ctx, app);
             crate::games::context_accept(ctx, app, id);
         }
@@ -1772,103 +1810,6 @@ fn context_accept(ctx: &Ctx, app: &App, id: &str) {
             crate::hub::context_accept(ctx, app, id);
         }
     }
-}
-
-/// "Change launcher" picker (the `SystemLaunchers` model's
-/// `picker_entries_for_system`): Default first, the system's launchers
-/// by id, plus a "Current: x" row when the stored default no longer
-/// matches a known launcher. Focused on the current selection.
-pub(crate) fn open_launcher_picker(ctx: &Ctx, app: &App, system_id: &str) {
-    const DEFAULT_LAUNCHER_ID: &str = "__default__";
-    let (launchers, current) = {
-        let guard = lock(&ctx.shared);
-        let launchers: Vec<String> = guard
-            .launchers
-            .iter()
-            .filter(|l| l.system_id == system_id)
-            .map(|l| l.id.clone())
-            .collect();
-        let current = guard
-            .system_defaults
-            .iter()
-            .find(|d| d.system == system_id)
-            .map(|d| d.launcher.clone())
-            .filter(|l| !l.is_empty())
-            .unwrap_or_else(|| DEFAULT_LAUNCHER_ID.to_string());
-        (launchers, current)
-    };
-    let mut entries = vec![menu_row_keyed(DEFAULT_LAUNCHER_ID, "launcher:default", "")];
-    for id in &launchers {
-        entries.push(menu_entry(id, id));
-    }
-    if current != DEFAULT_LAUNCHER_ID && !launchers.contains(&current) {
-        entries.push(menu_row_keyed(&current, "launcher:current", &current));
-    }
-    let initial = entries
-        .iter()
-        .position(|e| e.id.as_str() == current)
-        .unwrap_or(0);
-    lock(&ctx.shared).list_context = ListContext::SystemLauncher(system_id.to_string());
-    let overlays = app.global::<crate::Overlays>();
-    overlays.set_list_setting_id(SharedString::default());
-    overlays.set_list_title(SharedString::from("title:change_launcher"));
-    overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
-    overlays.set_list_index(i32::try_from(initial).unwrap_or(0));
-    overlays.set_list_open(true);
-}
-
-/// Persist a launcher choice through the store mutation (which owns
-/// the settings invalidation), then mirror it into the local defaults
-/// so the next picker open reflects it immediately.
-fn set_system_launcher(ctx: &Ctx, app: &App, system_id: &str, launcher_id: &str) {
-    use zaparoo_core::endpoints::system_launcher_default::{
-        SetSystemLauncherDefaultArgs, SetSystemLauncherDefaultMutation,
-    };
-    let launcher = if launcher_id == "__default__" {
-        String::new()
-    } else {
-        launcher_id.to_string()
-    };
-    let store = ctx.store.clone();
-    let shared = ctx.shared.clone();
-    let ctx2 = ctx.clone();
-    let weak = app.as_weak();
-    let system_id = system_id.to_string();
-    ctx.handle.spawn(async move {
-        let args = SetSystemLauncherDefaultArgs {
-            system_id: system_id.clone(),
-            launcher: launcher.clone(),
-        };
-        match store
-            .run_mutation::<SetSystemLauncherDefaultMutation>(args)
-            .await
-        {
-            Ok(()) => {
-                let mut guard = lock(&shared);
-                if let Some(existing) = guard
-                    .system_defaults
-                    .iter_mut()
-                    .find(|d| d.system == system_id)
-                {
-                    existing.launcher = launcher;
-                } else {
-                    guard
-                        .system_defaults
-                        .push(zaparoo_core::media_types::SystemDefault {
-                            system: system_id,
-                            launcher,
-                            before_exit: String::new(),
-                        });
-                }
-            }
-            Err(e) => {
-                tracing::warn!("set launcher failed: {}", e.message);
-                let _ = weak.upgrade_in_event_loop(move |app| {
-                    report_action_error(&ctx2, &app, "launcher", "");
-                });
-            }
-        }
-    });
 }
 
 /// Kick a scoped media-database rebuild; progress lands in the header

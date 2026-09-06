@@ -2417,10 +2417,6 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
     };
     let entries: Vec<crate::MenuEntry> = rules::context_entries(&input)
         .into_iter()
-        // Alternate-version discovery and the per-game launcher override
-        // have no Slint counterpart yet; the menu omits them rather than
-        // show dead rows.
-        .filter(|id| !matches!(*id, "discover" | "change_launcher"))
         .map(|id| crate::router::menu_row_keyed(id, menu_key(id, row.is_favorite), ""))
         .collect();
     if entries.is_empty() {
@@ -2453,8 +2449,33 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         "scrape_game" if !system.is_empty() => {
             crate::router::start_scrape(ctx, app, vec![system], false);
         }
+        "change_launcher" if !system.is_empty() => {
+            crate::launchers::open_game_picker(ctx, app, &system, &row.path, row.media_id);
+        }
         _ => {}
     }
+}
+
+/// "Discover alt. versions": the menu stays open while Core answers.
+pub fn begin_discovery(ctx: &Ctx, app: &App) {
+    let (system, name, path) = {
+        let shared = lock(&ctx.shared);
+        let model = &shared.games;
+        let Some(row) = model.current() else {
+            return;
+        };
+        (
+            row.system_or(&model.system_id).to_string(),
+            row.name.clone(),
+            row.path.clone(),
+        )
+    };
+    crate::alternates::begin(ctx, app, &system, &name, &path);
+}
+
+/// Rebuild the row's own menu after the alternates page is left.
+pub fn reopen_context_menu(ctx: &Ctx, app: &App) {
+    open_context_menu(ctx, app);
 }
 
 /// `add_to_hub` (Main.qml): folders and filesystem roots pin as `folder`

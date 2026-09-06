@@ -207,8 +207,30 @@ fn main() {
         &i18n_titles,
         i18n,
         games_mode,
-        (screen == "context").then_some(6),
+        (screen == "context" || screen == "context-alt").then_some(6),
     );
+    // "context-alt" renders the same menu after discovery replaced its
+    // rows with the alternate builds it found.
+    if screen == "context-alt" {
+        let rows = [
+            "Bubble Bobble (Japan)",
+            "Bubble Bobble (Bootleg)",
+            "Bubble Bobble (Rev A)",
+        ];
+        app.global::<generated::Overlays>()
+            .set_context_entries(slint::ModelRc::new(slint::VecModel::from(
+                rows.iter()
+                    .enumerate()
+                    .map(|(index, name)| MenuEntry {
+                        id: format!("alternate_version:{index}").into(),
+                        label: (*name).into(),
+                        label_key: "".into(),
+                    })
+                    .collect::<Vec<_>>(),
+            )));
+        app.global::<generated::Overlays>().set_context_index(0);
+        app.global::<generated::Overlays>().set_context_open(true);
+    }
     // "context" renders the games screen with the context menu open.
     if screen == "context" {
         app.global::<generated::Overlays>()
@@ -423,6 +445,7 @@ fn main() {
     let base = if screen.starts_with("route-") {
         "hub"
     } else if screen == "context"
+        || screen == "context-alt"
         || screen == "letters"
         || (list && !screen.contains("systems"))
         || screen.contains("games")

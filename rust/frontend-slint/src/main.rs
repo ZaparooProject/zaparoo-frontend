@@ -10,6 +10,7 @@
 // `upgrade_in_event_loop` instead of `qt_thread.queue`).
 
 mod actions;
+mod alternates;
 mod drs;
 #[cfg(feature = "mister")]
 mod dual_head;
@@ -21,6 +22,7 @@ mod glyphs;
 mod hub;
 mod input;
 mod latch_protocol;
+mod launchers;
 mod log_upload;
 mod media_cache;
 mod media_setup;
