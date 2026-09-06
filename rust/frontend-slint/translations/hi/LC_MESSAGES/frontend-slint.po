@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-09-06 06:25+0000\n"
+"POT-Creation-Date: 2026-09-06 06:33+0000\n"
 "Language: hi\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -8,222 +8,226 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Generator: scripts/convert-ts-catalogs.py\n"
 
-#: rust/frontend-slint/ui/app.slint:663
+#: rust/frontend-slint/ui/app.slint:677
 msgid "Updating the media database"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:663
+#: rust/frontend-slint/ui/app.slint:677
 msgid "No games found yet"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:665
+#: rust/frontend-slint/ui/app.slint:679
 msgid "Your games appear here as Core finds them."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:666
+#: rust/frontend-slint/ui/app.slint:680
 msgid "Update media database in Settings > Library."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:682
+#: rust/frontend-slint/ui/app.slint:696
 msgid "About / License"
 msgstr "परिचय / लाइसेंस"
 
-#: rust/frontend-slint/ui/app.slint:714
+#: rust/frontend-slint/ui/app.slint:728
 msgid "Zaparoo Frontend"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:728
+#: rust/frontend-slint/ui/app.slint:742
 msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
 msgstr "कॉपीराइट 2026 Wizzo Pty Ltd और Zaparoo परियोजना के योगदानकर्ता।"
 
-#: rust/frontend-slint/ui/app.slint:735
+#: rust/frontend-slint/ui/app.slint:749
 msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
 msgstr "स्रोत PolyForm Noncommercial License 1.0.0 के अंतर्गत उपलब्ध है। व्यक्तिगत, गैर-व्यावसायिक उपयोग के लिए निःशुल्क। व्यावसायिक उपयोग या पुनर्वितरण के लिए अलग लाइसेंस आवश्यक है।"
 
-#: rust/frontend-slint/ui/app.slint:742
+#: rust/frontend-slint/ui/app.slint:756
 msgid "Commercial licensing: legal@zaparoo.org"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:749
+#: rust/frontend-slint/ui/app.slint:763
 msgid "Project: https://zaparoo.org"
 msgstr "परियोजना: https://zaparoo.org"
 
-#: rust/frontend-slint/ui/app.slint:773 rust/frontend-slint/ui/app.slint:1440
-#: rust/frontend-slint/ui/app.slint:1847
+#: rust/frontend-slint/ui/app.slint:787 rust/frontend-slint/ui/app.slint:1454
+#: rust/frontend-slint/ui/app.slint:1861
 msgid "Favorites"
 msgstr "पसंदीदा"
 
-#: rust/frontend-slint/ui/app.slint:779
+#: rust/frontend-slint/ui/app.slint:793
 msgid "{} systems with favorites"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:780
+#: rust/frontend-slint/ui/app.slint:794
 msgid "{} systems"
 msgstr "{0} सिस्टम"
 
-#: rust/frontend-slint/ui/app.slint:924
+#: rust/frontend-slint/ui/app.slint:938
 msgid "{} favorites"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:925
+#: rust/frontend-slint/ui/app.slint:939
 msgid "Hidden"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:964 rust/frontend-slint/ui/app.slint:1693
+#: rust/frontend-slint/ui/app.slint:978 rust/frontend-slint/ui/app.slint:1707
 msgid "No favorites yet"
 msgstr "अभी तक कोई पसंदीदा नहीं"
 
-#: rust/frontend-slint/ui/app.slint:964
+#: rust/frontend-slint/ui/app.slint:978
 msgid "No systems in this category"
 msgstr "इस श्रेणी में कोई सिस्टम नहीं है"
 
-#: rust/frontend-slint/ui/app.slint:965
+#: rust/frontend-slint/ui/app.slint:979
 msgid "Loading favorite systems…"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:965
+#: rust/frontend-slint/ui/app.slint:979
 msgid "Loading systems…"
 msgstr "सिस्टम लोड हो रहे हैं…"
 
-#: rust/frontend-slint/ui/app.slint:1069
+#: rust/frontend-slint/ui/app.slint:1083
 msgid "Go to..."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1078 rust/frontend-slint/ui/app.slint:1578
-#: rust/frontend-slint/ui/app.slint:2195
+#: rust/frontend-slint/ui/app.slint:1092 rust/frontend-slint/ui/app.slint:1592
+#: rust/frontend-slint/ui/app.slint:2219
 msgid "Loading…"
 msgstr "लोड हो रहा है…"
 
-#: rust/frontend-slint/ui/app.slint:1144
+#: rust/frontend-slint/ui/app.slint:1158
 msgid "Writing failed"
 msgstr "लिखना विफल हुआ"
 
-#: rust/frontend-slint/ui/app.slint:1145
+#: rust/frontend-slint/ui/app.slint:1159
 msgid "Put a writable card near the reader"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1441 rust/frontend-slint/ui/app.slint:1848
+#: rust/frontend-slint/ui/app.slint:1455 rust/frontend-slint/ui/app.slint:1862
 msgid "Recently played"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1451
+#: rust/frontend-slint/ui/app.slint:1465
 msgid "{} games"
 msgstr ""
 
 #. background fetch fills rows the user scrolled past.
-#: rust/frontend-slint/ui/app.slint:1454
+#: rust/frontend-slint/ui/app.slint:1468
 msgid "Loading more…"
 msgstr "और लोड हो रहा है…"
 
-#: rust/frontend-slint/ui/app.slint:1578
+#: rust/frontend-slint/ui/app.slint:1592
 msgid "Loading game…"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1694
+#: rust/frontend-slint/ui/app.slint:1708
 msgid "Nothing played yet"
 msgstr "अभी तक कुछ नहीं खेला गया"
 
-#: rust/frontend-slint/ui/app.slint:1694
+#: rust/frontend-slint/ui/app.slint:1708
 msgid "No games in this system"
 msgstr "इस सिस्टम में कोई गेम नहीं है"
 
-#: rust/frontend-slint/ui/app.slint:1695
+#: rust/frontend-slint/ui/app.slint:1709
 msgid "Loading favorites…"
 msgstr "पसंदीदा लोड हो रहे हैं…"
 
-#: rust/frontend-slint/ui/app.slint:1696
+#: rust/frontend-slint/ui/app.slint:1710
 msgid "Loading recently played…"
 msgstr "हाल ही में खेले गए लोड हो रहे हैं…"
 
-#: rust/frontend-slint/ui/app.slint:1696
+#: rust/frontend-slint/ui/app.slint:1710
 msgid "Loading games…"
 msgstr "गेम लोड हो रहे हैं…"
 
-#: rust/frontend-slint/ui/app.slint:1780
+#: rust/frontend-slint/ui/app.slint:1794
 msgid "Arrows adjust position"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1788
+#: rust/frontend-slint/ui/app.slint:1802
 msgid "Accept or Back saves"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1874 rust/frontend-slint/ui/app.slint:1888
-#: rust/frontend-slint/ui/app.slint:1914 rust/frontend-slint/ui/app.slint:1994
-#: rust/frontend-slint/ui/app.slint:2014
+#: rust/frontend-slint/ui/app.slint:1888 rust/frontend-slint/ui/app.slint:1912
+#: rust/frontend-slint/ui/app.slint:1938 rust/frontend-slint/ui/app.slint:2018
+#: rust/frontend-slint/ui/app.slint:2038
 msgid "Move"
 msgstr "स्थानांतरित करें"
 
-#: rust/frontend-slint/ui/app.slint:1897 rust/frontend-slint/ui/app.slint:1970
-#: rust/frontend-slint/ui/app.slint:1987 rust/frontend-slint/ui/app.slint:2001
-#: rust/frontend-slint/ui/app.slint:2016 rust/frontend-slint/ui/app.slint:2028
-#: rust/frontend-slint/ui/app.slint:2038 rust/frontend-slint/ui/app.slint:2051
-#: rust/frontend-slint/ui/app.slint:2066
+#: rust/frontend-slint/ui/app.slint:1901 rust/frontend-slint/ui/app.slint:1905
+#: rust/frontend-slint/ui/app.slint:1994 rust/frontend-slint/ui/app.slint:2011
+#: rust/frontend-slint/ui/app.slint:2025 rust/frontend-slint/ui/app.slint:2040
+#: rust/frontend-slint/ui/app.slint:2052 rust/frontend-slint/ui/app.slint:2062
+#: rust/frontend-slint/ui/app.slint:2075 rust/frontend-slint/ui/app.slint:2090
 msgid "Back"
 msgstr "वापस"
 
-#: rust/frontend-slint/ui/app.slint:1904 rust/frontend-slint/ui/app.slint:1915
-msgid "Select"
-msgstr "चुनें"
-
-#: rust/frontend-slint/ui/app.slint:1905 rust/frontend-slint/ui/app.slint:1920
-#: rust/frontend-slint/ui/app.slint:1951
-msgid "Cancel"
-msgstr "रद्द करें"
-
-#: rust/frontend-slint/ui/app.slint:1909
-msgid "OK"
-msgstr "ठीक है"
-
-#: rust/frontend-slint/ui/app.slint:1916 rust/frontend-slint/ui/app.slint:1923
-msgid "Close"
-msgstr "बंद करें"
-
-#: rust/frontend-slint/ui/app.slint:1927 rust/frontend-slint/ui/app.slint:2027
-msgid "Scroll"
-msgstr "स्क्रॉल"
-
-#: rust/frontend-slint/ui/app.slint:1940
-msgid "Adjust"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:1941
-msgid "Save"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:1949
-msgid "Reposition"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:1950
-msgid "Place"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:1957 rust/frontend-slint/ui/app.slint:1964
-#: rust/frontend-slint/ui/app.slint:2044
+#: rust/frontend-slint/ui/app.slint:1904 rust/frontend-slint/ui/app.slint:1981
+#: rust/frontend-slint/ui/app.slint:2061 rust/frontend-slint/ui/app.slint:2073
 msgid "Retry"
 msgstr "फिर से प्रयास करें"
 
-#: rust/frontend-slint/ui/app.slint:1957 rust/frontend-slint/ui/app.slint:1964
-#: rust/frontend-slint/ui/app.slint:1985 rust/frontend-slint/ui/app.slint:2000
-#: rust/frontend-slint/ui/app.slint:2063
+#: rust/frontend-slint/ui/app.slint:1904
+msgid "Done"
+msgstr "पूरा"
+
+#: rust/frontend-slint/ui/app.slint:1928 rust/frontend-slint/ui/app.slint:1939
+msgid "Select"
+msgstr "चुनें"
+
+#: rust/frontend-slint/ui/app.slint:1929 rust/frontend-slint/ui/app.slint:1944
+#: rust/frontend-slint/ui/app.slint:1975
+msgid "Cancel"
+msgstr "रद्द करें"
+
+#: rust/frontend-slint/ui/app.slint:1933
+msgid "OK"
+msgstr "ठीक है"
+
+#: rust/frontend-slint/ui/app.slint:1940 rust/frontend-slint/ui/app.slint:1947
+msgid "Close"
+msgstr "बंद करें"
+
+#: rust/frontend-slint/ui/app.slint:1951 rust/frontend-slint/ui/app.slint:2051
+msgid "Scroll"
+msgstr "स्क्रॉल"
+
+#: rust/frontend-slint/ui/app.slint:1964
+msgid "Adjust"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1965
+msgid "Save"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1973
+msgid "Reposition"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1974
+msgid "Place"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1981 rust/frontend-slint/ui/app.slint:1988
+#: rust/frontend-slint/ui/app.slint:2009 rust/frontend-slint/ui/app.slint:2024
+#: rust/frontend-slint/ui/app.slint:2087
 msgid "Open"
 msgstr "खोलें"
 
-#: rust/frontend-slint/ui/app.slint:1958 rust/frontend-slint/ui/app.slint:1978
-#: rust/frontend-slint/ui/app.slint:2064
+#: rust/frontend-slint/ui/app.slint:1982 rust/frontend-slint/ui/app.slint:2002
+#: rust/frontend-slint/ui/app.slint:2088
 msgid "Options"
 msgstr "विकल्प"
 
-#: rust/frontend-slint/ui/app.slint:1959 rust/frontend-slint/ui/app.slint:1965
-#: rust/frontend-slint/ui/app.slint:2050
+#: rust/frontend-slint/ui/app.slint:1983 rust/frontend-slint/ui/app.slint:1989
+#: rust/frontend-slint/ui/app.slint:2074
 msgid "View"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2007 rust/frontend-slint/ui/app.slint:2021
+#: rust/frontend-slint/ui/app.slint:2031 rust/frontend-slint/ui/app.slint:2045
 msgid "Change"
 msgstr "बदलें"
 
-#: rust/frontend-slint/ui/app.slint:2008
+#: rust/frontend-slint/ui/app.slint:2032
 msgid "Toggle"
 msgstr "टॉगल"
 
@@ -1136,4 +1140,12 @@ msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:335
 msgid "Running…"
+msgstr ""
+
+#: rust/frontend-slint/ui/setup.slint:245
+msgid "Upload failed. Check the network connection and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/setup.slint:246
+msgid "Uploading log file. This may take a moment."
 msgstr ""

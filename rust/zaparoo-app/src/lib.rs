@@ -19,6 +19,7 @@ pub mod clock;
 pub mod format;
 pub mod hub;
 pub mod layouts;
+pub mod log_upload;
 pub mod media_list;
 pub mod media_setup;
 pub mod paged_grid;

@@ -57,6 +57,9 @@ mod glyphs;
     reason = "the app's adapter; the snapshot tool uses its scene push only"
 )]
 mod sizing;
+#[path = "../qr.rs"]
+#[allow(dead_code, reason = "the snapshot tool renders one fixture code")]
+mod qr;
 #[path = "../theme.rs"]
 mod theme;
 
@@ -347,6 +350,17 @@ fn main() {
         }
         sv.set_open(true);
     }
+    // "log-upload" renders the uploader's finished state with its link.
+    if screen.contains("log-upload") {
+        let lv = app.global::<generated::LogUploadView>();
+        lv.set_phase(if screen.contains("failed") { "failed" } else { "done" }.into());
+        lv.set_url("https://logs.zaparoo.org/a1b2c3d4".into());
+        if let Some((image, modules)) = qr::qr_image("https://logs.zaparoo.org/a1b2c3d4") {
+            lv.set_qr(image);
+            lv.set_qr_modules(i32::try_from(modules).unwrap_or(0));
+        }
+        lv.set_open(true);
+    }
     if screen == "calibration" {
         let overlays = app.global::<generated::Overlays>();
         overlays.set_crt_h_offset(4);
@@ -367,7 +381,8 @@ fn main() {
         "favorites"
     } else if screen.contains("recents") {
         "recents"
-    } else if screen.contains("settings") || screen.contains("setup") {
+    } else if screen.contains("settings") || screen.contains("setup") || screen.contains("log-upload")
+    {
         "settings"
     } else if screen == "saver" || screen == "dialog" || screen == "calibration" {
         "hub"

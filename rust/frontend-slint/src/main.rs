@@ -20,6 +20,7 @@ mod games;
 mod glyphs;
 mod hub;
 mod latch_protocol;
+mod log_upload;
 mod media_cache;
 mod media_setup;
 #[cfg(feature = "mister")]
@@ -556,6 +557,7 @@ fn main() -> Result<(), slint::PlatformError> {
     games::bind_input(&ctx, &app);
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
+    log_upload::bind_input(&ctx, &app);
     hub::rebuild(&ctx, &app);
     hub::restore(&ctx, &app);
     bind_resume(&ctx, &app, &client);

@@ -183,3 +183,123 @@ export component SetupModal inherits Rectangle {
         }
     }
 }
+
+// The log uploader (LogUploadModal.qml): one panel that reports the
+// upload, then shows the link as a scannable code with the URL under it.
+export component LogUploadModal inherits Rectangle {
+    in property <string> phase: "uploading";
+    in property <string> url: "";
+    in property <image> qr;
+    in property <int> qr-modules: 0;
+    callback confirmed();
+
+    background: Theme.scrim;
+
+    property <length> pad-x: Sizing.pct-w(4);
+    property <length> pad-y: Sizing.pct-h(3);
+    property <length> title-h: Sizing.pct-h(9);
+    property <length> button-h: Sizing.pct-h(7);
+    property <bool> done: root.phase == "done";
+    property <bool> failed: root.phase == "failed";
+    // The code is square, sized to whole modules so it never resamples.
+    property <length> max-px: Math.min(Sizing.pct-w(38), Sizing.pct-h(54));
+    property <length> module-px: root.qr-modules > 0
+        ? Math.max(1, Math.floor(root.max-px / root.qr-modules / 1px)) * 1px
+        : 1px;
+    property <length> qr-px: root.done ? root.module-px * root.qr-modules : 0px;
+    property <length> body-h: root.done
+        ? root.qr-px + Sizing.pct-h(2) + url-text.preferred-height
+        : message.preferred-height;
+    property <length> panel-w: Math.min(Sizing.pct-h(110), root.width - 2 * Sizing.pct-w(6));
+    property <length> panel-h: root.title-h + root.body-h + Sizing.pct-h(3)
+        + (root.phase == "uploading" ? 0px : root.button-h) + 2 * root.pad-y;
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: Theme.bg-panel;
+        border-radius: Sizing.radius-md;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.border-mid;
+        clip: true;
+
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            text: @tr("Upload log file");
+            color: Theme.text-primary;
+            font-size: Sizing.font-title;
+            font-weight: 500;
+        }
+
+        message := Text {
+            x: root.pad-x;
+            y: root.title-h;
+            width: parent.width - 2 * root.pad-x;
+            visible: !root.done;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+            text: root.failed
+                ? @tr("Upload failed. Check the network connection and try again.")
+                : @tr("Uploading log file. This may take a moment.");
+            color: Theme.text-primary;
+            font-size: Sizing.font-body;
+        }
+
+        if root.done: Rectangle {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.title-h;
+            width: root.qr-px;
+            height: root.qr-px;
+            background: white;
+            border-width: Sizing.stroke(root.module-px * 0.18 / 1px);
+            border-color: Theme.border-subtle;
+
+            Image {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                source: root.qr;
+                image-rendering: pixelated;
+            }
+        }
+
+        url-text := Text {
+            x: root.pad-x;
+            y: root.title-h + root.qr-px + Sizing.pct-h(2);
+            width: parent.width - 2 * root.pad-x;
+            visible: root.done;
+            wrap: char-wrap;
+            horizontal-alignment: center;
+            text: root.url;
+            color: Theme.text-primary;
+            font-size: Sizing.font-small;
+        }
+
+        if root.phase != "uploading": Rectangle {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.height - root.pad-y - root.button-h;
+            width: Math.min(Sizing.pct-w(28), parent.width - 2 * root.pad-x);
+            height: root.button-h;
+            background: Theme.selection-fill;
+            border-radius: Layout.row-radius;
+
+            Text {
+                x: Math.round((parent.width - self.width) / 2px) * 1px;
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                text: root.failed ? @tr("Retry") : @tr("Done");
+                color: Theme.on-accent;
+                font-size: Sizing.font-body;
+                font-weight: 500;
+            }
+
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.confirmed(); }
+            }
+        }
+    }
+}

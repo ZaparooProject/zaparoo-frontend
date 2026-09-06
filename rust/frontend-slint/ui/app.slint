@@ -13,7 +13,7 @@ import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, 
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
-import { SetupPickerRow, SetupModal } from "setup.slint";
+import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels } from "labels.slint";
 
 // Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
@@ -283,6 +283,20 @@ export global SetupInput {
     callback row-clicked(int);
     callback picker-hovered(int);
     callback picker-clicked(int);
+}
+
+// The log uploader panel.
+export global LogUploadView {
+    in-out property <bool> open: false;
+    // "uploading" | "done" | "failed"
+    in-out property <string> phase: "uploading";
+    in-out property <string> url: "";
+    in-out property <image> qr;
+    in-out property <int> qr-modules: 0;
+}
+
+export global LogUploadInput {
+    callback confirmed();
 }
 
 // Pointer input from the settings screen.
@@ -1850,7 +1864,7 @@ export component App inherits Window {
     }
 
     pure function has-modal() -> bool {
-        return SetupModalView.open || GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
+        return LogUploadView.open || SetupModalView.open || GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
             || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
             || Overlays.context-open;
     }
@@ -1880,6 +1894,16 @@ export component App inherits Window {
     pure function help-entries() -> [HelpEntry] {
         if (Shell.boot-curtain) {
             return [];
+        }
+        // The uploader: nothing to confirm while it runs.
+        if (LogUploadView.open) {
+            if (LogUploadView.phase == "uploading") {
+                return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            return [
+                { buttons: ["ButtonA"], label: LogUploadView.phase == "failed" ? @tr("Retry") : @tr("Done") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
         }
         // The setup panel: its confirm cue names what the focused row
         // does, and Back steps out of a picker page before the panel.
@@ -2305,6 +2329,16 @@ export component App inherits Window {
         height: 100%;
         qr: Overlays.qr-image;
         modules: Overlays.qr-modules;
+    }
+
+    if LogUploadView.open: LogUploadModal {
+        width: 100%;
+        height: 100%;
+        phase: LogUploadView.phase;
+        url: LogUploadView.url;
+        qr: LogUploadView.qr;
+        qr-modules: LogUploadView.qr-modules;
+        confirmed => { LogUploadInput.confirmed(); }
     }
 
     if SetupModalView.open: SetupModal {

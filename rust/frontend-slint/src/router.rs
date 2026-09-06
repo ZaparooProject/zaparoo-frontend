@@ -57,6 +57,8 @@ pub struct Shared {
     pub games: crate::games::GamesModel,
     /// The media-job setup panel's form state.
     pub setup: crate::media_setup::SetupModel,
+    /// The log uploader's own panel state.
+    pub log_upload: crate::log_upload::LogUploadModel,
     /// Core reports at least one connected reader. Refreshed lazily.
     pub has_readers: bool,
     /// An NFC-class reader is present; gates the context-menu "Write
@@ -211,6 +213,7 @@ impl Shared {
             systems_model: crate::systems::SystemsModel::new(),
             games: crate::games::GamesModel::new(),
             setup: crate::media_setup::SetupModel::new(),
+            log_upload: crate::log_upload::LogUploadModel::new(),
             has_readers: false,
             has_nfc: false,
             context_owner: ContextOwner::Games,
@@ -427,8 +430,10 @@ pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
             "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\n\
              This free source-available build is for personal and non-commercial \
              use only. Commercial use requires a separate license.\n\n\
-             Contact: legal@zaparoo.org\n\n\
-             Full details available any time under Settings > About / License.",
+             Contact: legal@zaparoo.com\n\n\
+             Full details available any time under Settings > About / License.\n\n\
+             Created by\n\
+             Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo",
             &["I understand"],
             0,
         );
@@ -854,6 +859,10 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     }
     // Single input gate during forward transitions, as in Main.qml.
     // Modals run on top of the gate; pickers and menus are topmost.
+    if app.global::<crate::LogUploadView>().get_open() {
+        crate::log_upload::handle_action(ctx, app, action);
+        return;
+    }
     // The setup panel owns input above every screen, below the alerts
     // and the picker overlays that can sit on top of it.
     if app.global::<crate::SetupModalView>().get_open() {

@@ -117,9 +117,6 @@ fn rows(ctx: &Ctx, app: &App, page: &str) -> Vec<SettingsRow> {
     let mut offset = 0;
     rules::page_rows(page, &inputs(ctx))
         .into_iter()
-        // The log uploader is a modal the port has not reached; the row
-        // stays out of the page until it lands.
-        .filter(|row| row.id() != "uploadLog")
         .map(|row| {
             let mut out = SettingsRow {
                 kind: SharedString::from(if row.is_field() { "field" } else { "header" }),
@@ -386,6 +383,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
         Control::Navigate | Control::Action => match id {
             "aboutLicense" => crate::router::enter_about(ctx, app),
             "documentation" => crate::router::open_documentation_qr(app),
+            "uploadLog" => crate::log_upload::open(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
             "updateMediaDb" => {
                 if ms.indexing || ms.optimizing {
