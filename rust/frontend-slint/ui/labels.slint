@@ -10,9 +10,12 @@
 export global Labels {
     public pure function hub(key: string, name: string) -> string {
         if (key == "category:Arcade") { return @tr("Arcade"); }
-        if (key == "category:Computer") { return @tr("Computers"); }
-        if (key == "category:Console") { return @tr("Consoles"); }
-        if (key == "category:Handheld") { return @tr("Handhelds"); }
+        // Core sends the canonical singular ids; the plurals are what an
+        // older Core (and a hub item written by one) can still carry,
+        // canonicalized here the way CategoryIds.qml does.
+        if (key == "category:Computer" || key == "category:Computers") { return @tr("Computers"); }
+        if (key == "category:Console" || key == "category:Consoles") { return @tr("Consoles"); }
+        if (key == "category:Handheld" || key == "category:Handhelds") { return @tr("Handhelds"); }
         if (key == "category:Other") { return @tr("Other"); }
         if (key == "action:resume") { return name == "" ? @tr("Resume") : @tr("Resume: {}", name); }
         if (key == "action:favorites") { return @tr("Favorites"); }
