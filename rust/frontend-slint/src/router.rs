@@ -273,15 +273,13 @@ pub(crate) fn save_persist(shared: &Arc<Mutex<Shared>>) {
 /// Systems belonging to `category`, using the same "empty category
 /// buckets as Other" rule as `CatalogData::systems_by_category`.
 fn systems_for_category(systems: &[SystemInfo], category: &str) -> Vec<SystemInfo> {
-    use zaparoo_app::hub::canonical_category;
-    let wanted = canonical_category(category);
     systems
         .iter()
         .filter(|s| {
             if s.category.is_empty() {
-                wanted == "Other"
+                category == "Other"
             } else {
-                canonical_category(&s.category) == wanted
+                s.category == category
             }
         })
         .cloned()

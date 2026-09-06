@@ -20,14 +20,14 @@ static SYSTEM_DEFAULTS: OnceLock<Mutex<Vec<SystemDefaultFixture>>> = OnceLock::n
 static LAUNCHER_OVERRIDES: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
 
 pub(crate) const MOCK_SYSTEMS: &[(&str, &str, &str)] = &[
-    ("NES", "Nintendo Entertainment System", "Consoles"),
-    ("SNES", "Super Nintendo", "Consoles"),
-    ("Genesis", "Sega Genesis", "Consoles"),
-    ("Nintendo64", "Nintendo 64", "Consoles"),
-    ("Gameboy", "Game Boy", "Handhelds"),
-    ("GameboyColor", "Game Boy Color", "Handhelds"),
-    ("GBA", "Game Boy Advance", "Handhelds"),
-    ("NDS", "Nintendo DS", "Handhelds"),
+    ("NES", "Nintendo Entertainment System", "Console"),
+    ("SNES", "Super Nintendo", "Console"),
+    ("Genesis", "Sega Genesis", "Console"),
+    ("Nintendo64", "Nintendo 64", "Console"),
+    ("Gameboy", "Game Boy", "Handheld"),
+    ("GameboyColor", "Game Boy Color", "Handheld"),
+    ("GBA", "Game Boy Advance", "Handheld"),
+    ("NDS", "Nintendo DS", "Handheld"),
     ("MAME", "MAME", "Arcade"),
     ("NeoGeo", "Neo Geo", "Arcade"),
 ];

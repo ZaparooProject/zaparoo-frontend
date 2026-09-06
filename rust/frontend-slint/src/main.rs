@@ -1238,17 +1238,7 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
         }
         _ => {}
     }
-    // The persisted id and Core's own spelling of a category need not
-    // agree (see `canonical_category`), so compare them canonically or
-    // a restore silently lands nowhere.
-    let category_exists = {
-        use zaparoo_app::hub::canonical_category;
-        let wanted = canonical_category(&category);
-        lock(&ctx.shared)
-            .categories
-            .iter()
-            .any(|c| canonical_category(c) == wanted)
-    };
+    let category_exists = lock(&ctx.shared).categories.contains(&category);
     if !category_exists {
         return;
     }

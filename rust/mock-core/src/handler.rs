@@ -353,7 +353,7 @@ mod tests {
         let system = &results[0]["system"];
         assert_eq!(system["id"], Value::from("NES"));
         assert_eq!(system["name"], Value::from("Nintendo Entertainment System"));
-        assert_eq!(system["category"], Value::from("Consoles"));
+        assert_eq!(system["category"], Value::from("Console"));
     }
 
     #[test]

@@ -259,16 +259,13 @@ fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entr
 }
 
 fn resolve_category(live: &Live, resolver: &dyn Resolver, id: &str) -> Entry {
+    // The layout's id is canonicalized (an older build may have written
+    // a plural), then compared against Core's list as Core spells it -
+    // `HubScreen.qml`'s `index_for_category(canonicalId)`. Core sends the
+    // canonical singular ids (`Console`, `Handheld`, ...).
     let canonical = canonical_category(id);
-    // Both sides go through `canonical_category`: the layout may hold a
-    // plural id an older build wrote, and a Core may answer with either
-    // spelling. Comparing raw strings marks a category Core does list as
-    // unavailable, which mutes the tile and empties its systems screen.
-    let unconfirmed = live.categories_loaded
-        && !live
-            .confirmed_categories
-            .iter()
-            .any(|c| canonical_category(c) == canonical);
+    let unconfirmed =
+        live.categories_loaded && !live.confirmed_categories.iter().any(|c| c == canonical);
     Entry {
         kind: Some(Kind::Category),
         id: canonical.to_string(),
@@ -1043,15 +1040,15 @@ mod tests {
     }
 
     #[test]
-    fn a_category_confirms_under_either_spelling() {
-        // A layout written against a Core that says "Consoles" must
-        // still light up against one that says "Console", and the other
-        // way round: an unconfirmed category mutes the tile and empties
-        // the screen behind it.
+    fn a_layout_id_confirms_against_the_ids_core_sends() {
+        // Core sends the canonical singular ids; a layout entry written
+        // by an older build may be plural. The plural is canonicalized
+        // before the comparison, so both confirm - an unconfirmed
+        // category mutes the tile and empties the screen behind it.
         let resolver = Names;
         for (layout_id, core_id) in [
             ("Consoles", "Console"),
-            ("Console", "Consoles"),
+            ("Console", "Console"),
             ("Handhelds", "Handheld"),
             ("Arcade", "Arcade"),
         ] {
