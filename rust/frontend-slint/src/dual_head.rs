@@ -452,10 +452,12 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     let source = primary.global::<SettingsView>();
     let target = crt.global::<SettingsView>();
     copy_properties!(source, target;
-        get_settings_page => set_settings_page,
-        get_settings_title => set_settings_title,
-        get_settings_fields => set_settings_fields,
-        get_settings_index => set_settings_index,
+        get_page => set_page,
+        get_rows => set_rows,
+        get_index => set_index,
+        get_cells => set_cells,
+        get_activate_pulse => set_activate_pulse,
+        get_release_pulse => set_release_pulse,
     );
 
     let source = primary.global::<GamesView>();

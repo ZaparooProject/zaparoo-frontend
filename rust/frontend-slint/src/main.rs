@@ -19,7 +19,6 @@ mod frame_transition;
 mod games;
 mod glyphs;
 mod hub;
-mod hub_nav;
 mod latch_protocol;
 mod media_cache;
 #[cfg(feature = "mister")]
@@ -34,6 +33,7 @@ mod mister;
 mod mister_battery;
 mod qr;
 mod router;
+mod settings;
 mod sizing;
 mod status;
 mod system_logos;
@@ -553,6 +553,7 @@ fn main() -> Result<(), slint::PlatformError> {
     hub::bind_input(&ctx, &app);
     systems::bind_input(&ctx, &app);
     games::bind_input(&ctx, &app);
+    settings::bind_input(&ctx, &app);
     hub::rebuild(&ctx, &app);
     hub::restore(&ctx, &app);
     bind_resume(&ctx, &app, &client);
@@ -593,7 +594,7 @@ fn restore_core_independent(ctx: &Arc<Ctx>, app: &App) {
     if matches!(target.as_str(), "settings" | "about") {
         lock(&ctx.shared).restore_pending = false;
         if target == "settings" {
-            router::enter_settings(ctx, app);
+            settings::enter(ctx, app);
         } else {
             router::enter_about(ctx, app);
         }
@@ -637,7 +638,7 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
                 status::set_task(&ctx.status, &app, &ctx.handle, task);
-                router::refresh_settings_fields(&ctx, &app);
+                settings::refresh(&ctx, &app);
                 router::refresh_first_run(&ctx, &app);
             });
         }
@@ -1166,7 +1167,7 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
             return;
         }
         "settings" => {
-            router::enter_settings(ctx, app);
+            settings::enter(ctx, app);
             return;
         }
         "about" => {

@@ -23,7 +23,7 @@ snapshot="$repo_root/rust/target/debug/snapshot"
 mkdir -p "$out"
 
 digital_screens=(hub systems systems-list favorite-systems games games-list favorites favorites-list recents settings settings-page about context letters dialog saver)
-crt_screens=(crt-hub crt-systems crt-games crt-games-list crt-favorites crt-settings calibration)
+crt_screens=(crt-hub crt-systems crt-games crt-games-list crt-favorites crt-settings crt-settings-page calibration)
 
 render() {
     local w="$1" h="$2" screen="$3"

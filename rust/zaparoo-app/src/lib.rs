@@ -22,6 +22,7 @@ pub mod layouts;
 pub mod media_list;
 pub mod paged_grid;
 pub mod palette;
+pub mod settings;
 pub mod sizing;
 pub mod status_line;
 pub mod systems;

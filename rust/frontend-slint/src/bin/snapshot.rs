@@ -283,163 +283,15 @@ fn main() {
             slint::SharedString::from("WiredNetwork"),
             slint::SharedString::from("Bluetooth"),
         ])));
-    // Settings fixtures: root category grid, or a field page with
-    // every control kind when "settings-page" is requested.
-    let setv = app.global::<generated::SettingsView>();
-    if screen == "settings-page" {
-        setv.set_settings_page("pageBrowsing".into());
-        setv.set_settings_title("Browsing".into());
-        setv.set_settings_index(3);
-        let fields = vec![
-            (
-                "field",
-                "browseLayout",
-                "Browsing layout",
-                "Grid view",
-                "picker",
-                false,
-            ),
-            (
-                "field",
-                "systemLogoStyle",
-                "System logos",
-                "Tinted",
-                "picker",
-                false,
-            ),
-            (
-                "field",
-                "mediaImageType",
-                "Preferred artwork",
-                "Auto",
-                "picker",
-                false,
-            ),
-            (
-                "field",
-                "showHidden",
-                "Show hidden items",
-                "",
-                "toggle",
-                true,
-            ),
-            (
-                "field",
-                "showOriginalFilenames",
-                "Show original filenames",
-                "",
-                "toggle",
-                false,
-            ),
-        ];
-        let rows: Vec<generated::SettingsField> = fields
-            .into_iter()
-            .map(
-                |(kind, id, label, value, control, checked)| generated::SettingsField {
-                    kind: kind.into(),
-                    id: id.into(),
-                    label: label.into(),
-                    value: value.into(),
-                    control: control.into(),
-                    checked,
-                    enabled: true,
-                },
-            )
-            .collect();
-        setv.set_settings_fields(slint::ModelRc::new(slint::VecModel::from(rows)));
-    } else {
-        setv.set_settings_page("".into());
-        setv.set_settings_title("Settings".into());
-        setv.set_settings_index(1);
-        let pages = [
-            ("pageDisplayInterface", "Display"),
-            ("pageBrowsing", "Browsing"),
-            ("pageLanguage", "Language"),
-            ("pageControlsInput", "Controls"),
-            ("pageLibraryData", "Library"),
-            ("pageSupportAbout", "Support"),
-        ];
-        let rows: Vec<generated::SettingsField> = pages
-            .iter()
-            .map(|(id, label)| generated::SettingsField {
-                kind: "field".into(),
-                id: (*id).into(),
-                label: (*label).into(),
-                value: (*label).into(),
-                control: "action".into(),
-                checked: false,
-                enabled: true,
-            })
-            .collect();
-        setv.set_settings_fields(slint::ModelRc::new(slint::VecModel::from(rows)));
-    }
-    if screen == "saver" {
-        app.global::<Shell>().set_saver_armed(true);
-    }
-    // Startup decision dialog fixture (the quit-confirm kind shows
-    // the two-button row with default focus on "No").
-    if screen == "dialog" {
-        let ov = app.global::<generated::Overlays>();
-        ov.set_dialog_kind("quit_confirm".into());
-        ov.set_dialog_title("Quit Zaparoo Frontend?".into());
-        ov.set_dialog_body("Are you sure you want to exit?".into());
-        ov.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
-            slint::SharedString::from("Yes"),
-            slint::SharedString::from("No"),
-        ])));
-        ov.set_dialog_focus(1);
-        ov.set_dialog_open(true);
-    }
-    // Detailed-list layout fixtures: windowed rows plus the detail pane.
-    if list && !screen.contains("systems") {
-        let gv = app.global::<GamesView>();
-        let target = if tate && !crt { 16 } else { 10 };
-        let (row_height, visible) = list_metrics(&app, scene_w, scene_h, crt, target);
-        let rows: Vec<GridCell> = (13..13 + visible)
-            .map(|i| GridCell {
-                name: format!("Example Game {i}").into(),
-                favorite: i == 15,
-                tags: if i == 16 {
-                    "Rev A · USA".into()
-                } else {
-                    "".into()
-                },
-                ..Default::default()
-            })
-            .collect();
-        gv.set_list_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
-        gv.set_list_sel(3);
-        gv.set_list_view_top(12);
-        gv.set_list_visible(i32::try_from(visible).unwrap_or(10));
-        gv.set_list_row_height(row_height);
-        gv.set_current_index(15);
-        gv.set_count(64);
-        gv.set_total_items(64);
-        gv.set_list_page(1);
-        gv.set_list_total_pages(7);
-        gv.set_has_items_above(true);
-        gv.set_has_items_below(true);
-        gv.set_detail_title("Example Game 16".into());
-        gv.set_detail_path("/games/example-16.bin".into());
-        gv.set_detail_has_cover(false);
-        gv.set_detail_cover_absent(true);
-        let meta = vec![
-            ("year", "1994"),
-            ("genre", "Platformer"),
-            ("players", "1-2"),
-            ("developer", "Example Corp"),
-            ("publisher", "Example Publishing"),
-        ];
-        let meta_rows: Vec<generated::DetailRow> = meta
-            .into_iter()
-            .map(|(key, value)| generated::DetailRow {
-                key: key.into(),
-                value: value.into(),
-            })
-            .collect();
-        gv.set_detail_rows(slint::ModelRc::new(slint::VecModel::from(meta_rows)));
-        gv.set_title("Console".into());
-    }
+    // Settings fixtures: the root category grid, or the Library page
+    // with a header, both maintenance actions and the browsing rows.
+    fixture_settings(
+        &app,
+        scene_w,
+        scene_h,
+        crt,
+        screen.contains("settings-page"),
+    );
     if screen == "calibration" {
         let overlays = app.global::<generated::Overlays>();
         overlays.set_crt_h_offset(4);
@@ -460,7 +312,7 @@ fn main() {
         "favorites"
     } else if screen.contains("recents") {
         "recents"
-    } else if screen == "settings-page" || screen == "crt-settings" {
+    } else if screen.contains("settings") {
         "settings"
     } else if screen == "saver" || screen == "dialog" || screen == "calibration" {
         "hub"
@@ -565,32 +417,33 @@ fn main() {
         println!("dirty after SystemsView.category set: {dirty_sys}");
         app.global::<Shell>().set_active_screen("settings".into());
         app.global::<generated::SettingsView>()
-            .set_settings_page("pageBrowsing".into());
-        let srows: Vec<generated::SettingsField> = ["A", "B"]
+            .set_page("pageLanguage".into());
+        let srows: Vec<generated::SettingsRow> = ["language", "region"]
             .iter()
-            .map(|l| generated::SettingsField {
+            .enumerate()
+            .map(|(i, id)| generated::SettingsRow {
                 kind: "field".into(),
-                id: (*l).into(),
-                label: (*l).into(),
-                value: "v".into(),
+                id: (*id).into(),
                 control: "picker".into(),
-                checked: false,
+                value: "auto".into(),
                 enabled: true,
+                y_offset: (i as f32) * 40.0,
+                height: 40.0,
+                ..Default::default()
             })
             .collect();
         app.global::<generated::SettingsView>()
-            .set_settings_fields(slint::ModelRc::new(slint::VecModel::from(srows)));
+            .set_rows(slint::ModelRc::new(slint::VecModel::from(srows)));
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
         // The startup fixture may already sit on index 1; move to 0 so
         // the write is a real change and must dirty a frame.
-        app.global::<generated::SettingsView>()
-            .set_settings_index(0);
+        app.global::<generated::SettingsView>().set_index(0);
         let dirty_set = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
-        println!("dirty after SettingsView.settings-index set: {dirty_set}");
+        println!("dirty after SettingsView.index set: {dirty_set}");
         app.global::<Shell>().set_active_screen("about".into());
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
@@ -786,6 +639,147 @@ fn list_metrics(
         },
     );
     (g.row_height as f32, g.visible_rows.max(1))
+}
+
+/// The settings screen at its own geometry: the root tiles, or one page
+/// of rows straight from the registry.
+fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool) {
+    use zaparoo_app::layouts::{self, Body, ThemeId, View};
+    use zaparoo_app::settings::{self as rules, Control, Row};
+    let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let view = app.global::<generated::SettingsView>();
+    let page_id = if page { "pageLibraryData" } else { "" };
+    let registry = rules::Inputs {
+        is_mister: crt,
+        crt_enabled: crt,
+        debug_build: false,
+    };
+    let row_h = inputs.pct_h(8.0);
+    let header_h = inputs.pct_h(5.0);
+    let band = inputs.pct_h(3.2);
+    let mut offset = 0;
+    let rows: Vec<generated::SettingsRow> = rules::page_rows(page_id, &registry)
+        .into_iter()
+        .filter(|row| row.id() != "uploadLog")
+        .map(|row| {
+            let mut out = generated::SettingsRow {
+                kind: if row.is_field() { "field" } else { "header" }.into(),
+                id: row.id().into(),
+                enabled: true,
+                y_offset: offset as f32,
+                ..Default::default()
+            };
+            let height = match row {
+                Row::Header(_) => header_h,
+                Row::Field { id, control } => {
+                    out.control = match control {
+                        Control::Toggle => "toggle",
+                        Control::Picker => "picker",
+                        Control::Action => "action",
+                        Control::Navigate => "navigate",
+                    }
+                    .into();
+                    match control {
+                        Control::Toggle => out.checked = id == "showHidden",
+                        Control::Picker => {
+                            out.value = match id {
+                                "systemsLayout" => "grid",
+                                "gamesLayout" => "list",
+                                _ => "auto",
+                            }
+                            .into();
+                        }
+                        Control::Action => {
+                            out.busy = id == "runScraper";
+                            out.value = rules::action_label_key(id, out.busy).into();
+                        }
+                        Control::Navigate => {}
+                    }
+                    if out.busy {
+                        row_h + band
+                    } else {
+                        row_h
+                    }
+                }
+            };
+            out.height = height as f32;
+            offset += height;
+            out
+        })
+        .collect();
+    let profile = layouts::profile(ThemeId::current(&inputs), View::GamesGrid, &inputs);
+    let Body::Grid { grid, footer } = profile.body else {
+        return;
+    };
+    // The rows viewport, as the driver computes it.
+    let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
+    let card_y = derived.header_bottom
+        + profile.status.top_margin
+        + profile.status.strip_height
+        + inputs.pct_h(2.0);
+    let card_bottom = if t240 {
+        derived.help_bar_height + inputs.pct_h(2.0)
+    } else {
+        inputs.pct_h(8.0)
+    };
+    let card_h = (inputs.screen_height as i32 - card_y - card_bottom).max(0);
+    let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
+    let viewport = (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0);
+    view.set_page(page_id.into());
+    view.set_index(if page { 2 } else { 1 });
+    view.set_rows_height(viewport as f32);
+    view.set_scroll(0.0);
+    view.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+
+    if page {
+        return;
+    }
+    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
+        derived.help_bar_height
+    } else {
+        footer.grid_bottom_margin
+    };
+    let grid_height = (inputs.screen_height as i32 - grid_y - bottom).max(0);
+    let insets = zaparoo_app::paged_grid::Insets {
+        left: grid.left_inset,
+        right: grid.right_inset,
+        top: grid.top_inset,
+        bottom: grid.bottom_inset,
+        column_gap: grid.column_gap,
+        row_gap: grid.row_gap,
+    };
+    let (columns, grid_rows) =
+        rules::root_grid_shape(rules::PAGES.len(), inputs.swap_percentage_axes);
+    let columns = i32::try_from(columns).unwrap_or(3);
+    let grid_rows = i32::try_from(grid_rows).unwrap_or(2);
+    let fit = zaparoo_app::paged_grid::fit(
+        columns,
+        grid_rows,
+        inputs.screen_width as i32,
+        grid_height,
+        None,
+        true,
+        &insets,
+    );
+    let cells: Vec<GridCell> = rules::PAGES
+        .iter()
+        .map(|p| GridCell {
+            label_key: p.id.into(),
+            glyph_key: p.glyph.into(),
+            ..Default::default()
+        })
+        .collect();
+    view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
+    view.set_columns(columns);
+    view.set_rows_count(grid_rows);
+    view.set_cell_width(fit.cell_width as f32);
+    view.set_cell_height(fit.cell_height as f32);
+    view.set_block_offset_x(fit.block_offset_x as f32);
+    view.set_block_offset_y(fit.block_offset_y as f32);
+    view.set_grid_y(grid_y as f32);
+    view.set_grid_height(grid_height as f32);
 }
 
 /// The Games grid at its browse geometry: a page of captioned tiles with

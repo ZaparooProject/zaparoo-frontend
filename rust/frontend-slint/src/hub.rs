@@ -577,7 +577,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                     }
                 }
                 "recents" => crate::games::enter_recents(ctx, app),
-                "settings" => crate::router::enter_settings(ctx, app),
+                "settings" => crate::settings::enter(ctx, app),
                 _ => release_activate(ctx, app),
             }
         }
@@ -905,7 +905,7 @@ pub fn page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
             }
             rebuild(ctx, app);
         }
-        "hub_settings" => crate::router::enter_settings(ctx, app),
+        "hub_settings" => crate::settings::enter(ctx, app),
         "hub_quit" => crate::router::open_quit_confirm(app),
         _ => {}
     }

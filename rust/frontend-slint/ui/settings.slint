@@ -1,0 +1,368 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The Settings screen: SettingsScreen.qml's root category grid and its
+// per-page rows, with SettingsField.qml's row anatomy. Rust pushes rows
+// as ids and values; every user-visible string is translated here.
+
+import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { GlyphSource, SelectionBar } from "chrome.slint";
+import { GridCell, Tile } from "tiles.slint";
+
+// One row: a group header, or a field with its control and state.
+export struct SettingsRow {
+    // "header" | "field"
+    kind: string,
+    // Vocabulary key: the field id, or the header's own key.
+    id: string,
+    // "picker" | "toggle" | "action" | "navigate"
+    control: string,
+    // Picker: the canonical value. Action: the label key its control
+    // shows. Navigate on the root grid: the category glyph.
+    value: string,
+    checked: bool,
+    enabled: bool,
+    // An action whose job is already running says so under its label.
+    busy: bool,
+    // Where the row sits in the card and how tall it is; Rust stacks
+    // them so a busy action's taller box shifts everything below it.
+    y-offset: length,
+    height: length,
+}
+
+// SettingsScreen.qml's string table: labels, the hint line under the
+// list, and the display name of every canonical value.
+export global SettingsLabels {
+    public pure function page-title(id: string) -> string {
+        if (id == "") { return @tr("Settings"); }
+        return SettingsLabels.label(id);
+    }
+
+    public pure function label(id: string) -> string {
+        // Root categories.
+        if (id == "pageAppearance") { return @tr("Appearance"); }
+        if (id == "pageLibraryData") { return @tr("Library"); }
+        if (id == "pageDisplayInterface") { return @tr("Display"); }
+        if (id == "pageControlsInput") { return @tr("Controls"); }
+        if (id == "pageLanguage") { return @tr("Language"); }
+        if (id == "pageSupportAbout") { return @tr("About"); }
+        // Group headers.
+        if (id == "analogVideo") { return @tr("Analog video"); }
+        if (id == "maintenance") { return @tr("Maintenance"); }
+        if (id == "browsing") { return @tr("Browsing"); }
+        // Appearance.
+        if (id == "colorScheme") { return @tr("Color scheme"); }
+        if (id == "colorIntensity") { return @tr("Color intensity"); }
+        if (id == "systemLogoStyle") { return @tr("System logos"); }
+        if (id == "reduceMotion") { return @tr("Reduce motion"); }
+        if (id == "screensaverTimeout") { return @tr("Screensaver"); }
+        // Display.
+        if (id == "resolution") { return @tr("Interface resolution"); }
+        if (id == "interfaceProfile") { return @tr("Interface layout"); }
+        if (id == "orientation") { return @tr("Orientation"); }
+        if (id == "crtEnabled") { return @tr("CRT mode"); }
+        if (id == "crtVideoStandard") { return @tr("Video standard"); }
+        if (id == "crtCalibration") { return @tr("Screen position"); }
+        // Language.
+        if (id == "language") { return @tr("Language"); }
+        if (id == "region") { return @tr("Region"); }
+        if (id == "clockFormat") { return @tr("Clock format"); }
+        // Controls.
+        if (id == "buttonLayout") { return @tr("Button style"); }
+        if (id == "swapConfirmCancel") { return @tr("Swap controller confirm/cancel"); }
+        if (id == "swapOptionsView") { return @tr("Swap controller options/view"); }
+        if (id == "mouseEnabled") { return @tr("Mouse support"); }
+        // Library.
+        if (id == "updateMediaDb") { return @tr("Update media database"); }
+        if (id == "runScraper") { return @tr("Update metadata"); }
+        if (id == "systemsLayout") { return @tr("Systems layout"); }
+        if (id == "gamesLayout") { return @tr("Games layout"); }
+        if (id == "mediaImageType") { return @tr("Preferred artwork"); }
+        if (id == "showHidden") { return @tr("Show hidden items"); }
+        if (id == "showOriginalFilenames") { return @tr("Show original filenames"); }
+        // About.
+        if (id == "aboutLicense") { return @tr("About / License"); }
+        if (id == "documentation") { return @tr("Documentation"); }
+        if (id == "debugLogging") { return @tr("Debug logging"); }
+        if (id == "uploadLog") { return @tr("Upload log file"); }
+        return id;
+    }
+
+    public pure function description(id: string) -> string {
+        if (id == "colorScheme") { return @tr("Changes colors across screens, including text and highlights."); }
+        if (id == "colorIntensity") { return @tr("Controls how strongly accent colors tint tiles and backgrounds."); }
+        if (id == "systemLogoStyle") { return @tr("Shows system logos in original colors or tinted to match colors."); }
+        if (id == "reduceMotion") { return @tr("Turns off animation throughout the interface."); }
+        if (id == "screensaverTimeout") { return @tr("Sets idle time before the screensaver starts. Off disables it."); }
+        if (id == "resolution") { return @tr("The resolution the interface renders at. Restarts the frontend."); }
+        if (id == "interfaceProfile") { return @tr("Adjusts layout density for standard and handheld screens."); }
+        if (id == "orientation") { return @tr("Rotates the interface for a sideways screen or tate cabinet."); }
+        if (id == "crtEnabled") { return @tr("Outputs 15 kHz analog video through MiSTer. Restarts frontend."); }
+        if (id == "crtVideoStandard") { return @tr("Matches analog output to NTSC or PAL. Restarts the frontend."); }
+        if (id == "crtCalibration") { return @tr("Opens a test pattern to position the analog picture with arrows."); }
+        if (id == "language") { return @tr("The language used for interface text. Restarts the frontend."); }
+        if (id == "region") { return @tr("Selects regional system and game names, such as Mega Drive."); }
+        if (id == "clockFormat") { return @tr("12-hour or 24-hour time in the top bar."); }
+        if (id == "buttonLayout") { return @tr("Matches on-screen prompt icons to your controller."); }
+        if (id == "swapConfirmCancel") { return @tr("Flips which controller button accepts and which cancels."); }
+        if (id == "swapOptionsView") { return @tr("Swaps which controller button opens Options and View."); }
+        if (id == "mouseEnabled") { return @tr("Lets a mouse click tiles and menu rows."); }
+        if (id == "updateMediaDb") { return @tr("Rescans game folders for added or removed files. Choose systems."); }
+        if (id == "runScraper") { return @tr("Imports artwork and details from your files. Downloads nothing."); }
+        if (id == "systemsLayout") { return @tr("Shows systems as a cover grid or a list with details."); }
+        if (id == "gamesLayout") { return @tr("Sets grid or list layout for Games, Favorites, and Recents."); }
+        if (id == "mediaImageType") { return @tr("Prefers an artwork type when games have multiple images."); }
+        if (id == "showHidden") { return @tr("Shows hidden systems and categories so you can unhide them."); }
+        if (id == "showOriginalFilenames") { return @tr("Shows real filenames instead of cleaned-up display titles."); }
+        if (id == "aboutLicense") { return @tr("Version, build date, license terms, and contributors."); }
+        if (id == "documentation") { return @tr("Shows a code for opening the Frontend guide on your phone."); }
+        if (id == "debugLogging") { return @tr("Adds troubleshooting detail to logs. Restarts the frontend."); }
+        if (id == "uploadLog") { return @tr("Uploads the log and provides a link for problem reports."); }
+        return "";
+    }
+
+    // The label an action row's control carries.
+    public pure function action(key: string) -> string {
+        if (key == "cancel") { return @tr("Cancel"); }
+        if (key == "configure") { return @tr("Configure"); }
+        if (key == "upload") { return @tr("Upload"); }
+        return @tr("Open");
+    }
+
+    public pure function value(id: string, value: string) -> string {
+        if (id == "language") { return SettingsLabels.language(value); }
+        if (id == "colorScheme") { return SettingsLabels.color-scheme(value); }
+        if (id == "screensaverTimeout") { return SettingsLabels.screensaver(value); }
+        if (id == "mediaImageType") { return SettingsLabels.artwork(value); }
+        if (id == "buttonLayout") {
+            if (value == "style_a") { return @tr("Style A"); }
+            if (value == "style_b") { return @tr("Style B"); }
+            if (value == "style_c") { return @tr("Style C"); }
+            if (value == "style_d") { return @tr("Style D"); }
+            if (value == "style_e") { return @tr("Style E"); }
+            return @tr("Automatic");
+        }
+        if (id == "clockFormat") {
+            if (value == "12h") { return @tr("12-hour"); }
+            if (value == "24h") { return @tr("24-hour"); }
+            return @tr("Automatic");
+        }
+        if (id == "region") {
+            if (value == "us") { return @tr("Americas"); }
+            if (value == "eu") { return @tr("Europe"); }
+            if (value == "jp") { return @tr("Japan"); }
+            return @tr("Automatic");
+        }
+        if (id == "interfaceProfile") {
+            if (value == "standard") { return @tr("Standard"); }
+            if (value == "handheld") { return @tr("Handheld"); }
+            return @tr("Device default");
+        }
+        if (id == "orientation") {
+            if (value == "cw") { return @tr("Rotated CW"); }
+            if (value == "ccw") { return @tr("Rotated CCW"); }
+            return @tr("Horizontal");
+        }
+        if (id == "systemsLayout" || id == "gamesLayout") {
+            if (value == "list") { return @tr("Detailed list view"); }
+            return @tr("Grid view");
+        }
+        if (id == "systemLogoStyle") {
+            if (value == "color") { return @tr("Full color"); }
+            return @tr("Tinted");
+        }
+        if (id == "colorIntensity") {
+            if (value == "vivid") { return @tr("Vivid"); }
+            return @tr("Subtle");
+        }
+        if (id == "crtVideoStandard") {
+            if (value == "pal") { return @tr("PAL (50 Hz)"); }
+            if (value == "480i") { return @tr("480i (60 Hz)"); }
+            return @tr("NTSC (60 Hz)");
+        }
+        if (id == "favoritesGrouping") {
+            if (value == "system") { return @tr("System"); }
+            return @tr("None");
+        }
+        // Resolutions arrive as "1280x720"; the host formats them.
+        return value;
+    }
+
+    pure function language(value: string) -> string {
+        if (value == "en") { return @tr("English"); }
+        if (value == "it_IT") { return @tr("Italian"); }
+        if (value == "es") { return @tr("Spanish"); }
+        if (value == "eu") { return @tr("Basque"); }
+        if (value == "de") { return @tr("German"); }
+        if (value == "el") { return @tr("Greek"); }
+        if (value == "ja") { return @tr("Japanese"); }
+        if (value == "ko") { return @tr("Korean"); }
+        if (value == "nl") { return @tr("Dutch"); }
+        if (value == "ro") { return @tr("Romanian"); }
+        if (value == "sk") { return @tr("Slovak"); }
+        if (value == "uk") { return @tr("Ukrainian"); }
+        if (value == "zh_CN") { return @tr("Chinese (Simplified)"); }
+        if (value == "zh_TW") { return @tr("Chinese (Traditional)"); }
+        if (value == "he") { return @tr("Hebrew"); }
+        if (value == "ar") { return @tr("Arabic"); }
+        if (value == "hi") { return @tr("Hindi"); }
+        if (value == "fr") { return @tr("French"); }
+        return @tr("Automatic");
+    }
+
+    pure function color-scheme(value: string) -> string {
+        if (value == "zaparoo-light") { return @tr("Zaparoo Light"); }
+        if (value == "classic-purple") { return @tr("Classic Purple"); }
+        if (value == "amber-phosphor") { return @tr("Amber Phosphor"); }
+        if (value == "game-boy") { return @tr("Game Boy"); }
+        if (value == "green-phosphor") { return @tr("Green Phosphor"); }
+        if (value == "neo-geo") { return @tr("Neo Geo"); }
+        if (value == "nes") { return @tr("NES"); }
+        if (value == "virtual-boy") { return @tr("Virtual Boy"); }
+        if (value == "dracula") { return @tr("Dracula"); }
+        if (value == "everforest") { return @tr("Everforest"); }
+        if (value == "gruvbox") { return @tr("Gruvbox"); }
+        if (value == "nord") { return @tr("Nord"); }
+        if (value == "oxocarbon") { return @tr("Oxocarbon"); }
+        if (value == "rose-pine") { return @tr("Rosé Pine"); }
+        if (value == "solarized-dark") { return @tr("Solarized Dark"); }
+        if (value == "synthwave-84") { return @tr("Synthwave '84"); }
+        if (value == "flexoki-paper") { return @tr("Flexoki Paper"); }
+        if (value == "solarized-light") { return @tr("Solarized Light"); }
+        return @tr("Zaparoo Dark");
+    }
+
+    pure function screensaver(value: string) -> string {
+        if (value == "off") { return @tr("Off"); }
+        if (value == "1") { return @tr("1 second (testing)"); }
+        if (value == "60") { return @tr("1 minute"); }
+        if (value == "120") { return @tr("2 minutes"); }
+        if (value == "300") { return @tr("5 minutes"); }
+        if (value == "600") { return @tr("10 minutes"); }
+        if (value == "900") { return @tr("15 minutes"); }
+        if (value == "1800") { return @tr("30 minutes"); }
+        return @tr("{} seconds", value);
+    }
+
+    pure function artwork(value: string) -> string {
+        if (value == "image") { return @tr("Image"); }
+        if (value == "thumbnail") { return @tr("Thumbnail"); }
+        if (value == "boxart") { return @tr("Box art"); }
+        if (value == "boxart3d") { return @tr("3D box art"); }
+        if (value == "screenshot") { return @tr("Screenshot"); }
+        if (value == "wheel") { return @tr("Wheel"); }
+        if (value == "titleshot") { return @tr("Title screen"); }
+        if (value == "map") { return @tr("Map"); }
+        if (value == "marquee") { return @tr("Marquee"); }
+        if (value == "fanart") { return @tr("Fan art"); }
+        if (value == "boxartside") { return @tr("Box side"); }
+        if (value == "boxartback") { return @tr("Box back"); }
+        return @tr("Automatic");
+    }
+}
+
+// SettingsField.qml: an inverse-video row carrying the label, then the
+// value, the toggle knob or the action label.
+export component SettingsRowView inherits Rectangle {
+    in property <SettingsRow> entry;
+    in property <bool> focused: false;
+    in property <int> activate-pulse: 0;
+    in property <bool> settling: false;
+
+    background: transparent;
+    opacity: root.entry.enabled ? 1.0 : 0.4;
+
+    property <bool> is-action: root.entry.control == "action";
+    property <length> pad: Sizing.pct-w(2);
+    property <length> knob-h: Sizing.pct-h(3.8);
+
+    bar := SelectionBar {
+        width: 100%;
+        height: 100%;
+        active: root.focused;
+        // Toggles answer with their knob slide, not a flash.
+        activate-pulse: root.entry.control == "toggle" ? 0 : root.activate-pulse;
+        screen-settling: root.settling;
+        radius: Layout.row-radius;
+    }
+
+    label := Text {
+        x: root.is-action ? Math.round((parent.width - self.width) / 2px) * 1px : root.pad;
+        y: root.entry.busy
+            ? Sizing.pct-h(1)
+            : Math.round((parent.height - self.height) / 2px) * 1px;
+        width: Math.min(self.preferred-width, parent.width - 2 * root.pad);
+        overflow: elide;
+        text: SettingsLabels.label(root.entry.id);
+        color: bar.active ? bar.content-color : (root.is-action ? Theme.accent : Theme.text-primary);
+        font-size: Sizing.font-body;
+        font-weight: bar.content-weight;
+    }
+
+    // A running media job reports under its own row.
+    if root.entry.busy: Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: label.y + label.height + Sizing.pct-h(0.3);
+        text: @tr("Running…");
+        color: bar.active ? bar.content-color : Theme.text-label;
+        font-size: Sizing.font-caption;
+        font-weight: bar.content-weight;
+    }
+
+    if root.entry.control == "picker": Text {
+        x: parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: Math.min(self.preferred-width, parent.width * 0.5);
+        horizontal-alignment: right;
+        overflow: elide;
+        text: SettingsLabels.value(root.entry.id, root.entry.value);
+        color: bar.active ? bar.content-color : Theme.text-primary;
+        font-size: Sizing.font-body;
+        font-weight: bar.content-weight;
+    }
+
+    if root.entry.control == "action": Text {
+        x: parent.width - self.width - root.pad;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        text: SettingsLabels.action(root.entry.value);
+        color: bar.active ? bar.content-color : Theme.accent;
+        font-size: Sizing.font-body;
+        font-weight: bar.content-weight;
+    }
+
+    if root.entry.control == "toggle": Rectangle {
+        property <length> inset: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
+        x: parent.width - self.width - root.pad;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: Math.round(root.knob-h * 1.85 / 1px) * 1px;
+        height: root.knob-h;
+        border-radius: Sizing.radius-sm;
+        background: bar.active
+            ? (root.entry.checked ? Theme.on-accent : Theme.on-accent-muted)
+            : (root.entry.checked ? Theme.accent : Theme.border-mid);
+
+        Rectangle {
+            x: root.entry.checked ? parent.width - self.width - parent.inset : parent.inset;
+            y: parent.inset;
+            width: parent.height - 2 * parent.inset;
+            height: self.width;
+            border-radius: Sizing.radius-sm;
+            background: bar.active ? Theme.selection-fill : Theme.surface-card;
+            border-width: Sizing.card-border-width;
+            border-color: bar.active ? Theme.on-accent : Theme.accent;
+            animate x { duration: Motion.dur(Motion.settle-ms); easing: ease-out; }
+        }
+    }
+
+    chevron := Image {
+        x: parent.width - self.width - root.pad;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.entry.control == "picker" || root.entry.control == "navigate"
+            ? Sizing.pct-h(3) : 0px;
+        height: self.width;
+        visible: root.entry.control == "picker" || root.entry.control == "navigate";
+        source: GlyphSource.glyph("icons/NavRight", Math.max(1px, self.width));
+        colorize: bar.active ? bar.content-color : Theme.text-label;
+    }
+}

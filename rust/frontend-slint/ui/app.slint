@@ -12,6 +12,7 @@ import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, SelectionBar, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
+import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 
 // Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
 // 6x8 bitmap font for the CRT native path (family names must match
@@ -25,20 +26,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow }
-
-// Settings registry row (SettingsScreen.qml's field entries). On the
-// root page the rows are the six category tiles (`value` carries the
-// glyph key); on subpages they are headers and fields.
-export struct SettingsField {
-    kind: string,     // "header" | "field"
-    id: string,
-    label: string,
-    value: string,    // picker/action value text; glyph key on root
-    control: string,  // "toggle" | "picker" | "action"
-    checked: bool,
-    enabled: bool,
-}
+export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow }
 
 // Context-menu row: `id` is the dispatch key the router switches on
 // (ContextMenu.qml's rule - position-keyed dispatch was a footgun).
@@ -280,11 +268,34 @@ export global SystemsInput {
 export global SettingsView {
     // "" = the root category grid; otherwise the open subpage token
     // (pageDisplayInterface / pageBrowsing / ...).
-    in-out property <string> settings-page: "";
-    // Top-strip title for the open page ("Settings" on the root).
-    in-out property <string> settings-title: "Settings";
-    in-out property <[SettingsField]> settings-fields: [];
-    in-out property <int> settings-index: 0;
+    // The open page ("" is the root category grid), its rows, and the
+    // cursor. The root grid renders as tiles through the shared grid.
+    in-out property <string> page: "";
+    in-out property <[SettingsRow]> rows: [];
+    in-out property <int> index: 0;
+    in-out property <[GridCell]> cells: [];
+    in-out property <int> columns: 3;
+    in-out property <int> rows-count: 2;
+    in-out property <length> cell-width: 0px;
+    in-out property <length> cell-height: 0px;
+    in-out property <length> block-offset-x: 0px;
+    in-out property <length> block-offset-y: 0px;
+    in-out property <length> grid-y: 0px;
+    in-out property <length> grid-height: 0px;
+    // The rows viewport and how far it has scrolled to keep the focused
+    // row inside it.
+    in-out property <length> rows-height: 0px;
+    in-out property <length> scroll: 0px;
+    in-out property <int> activate-pulse: 0;
+    in-out property <int> release-pulse: 0;
+}
+
+// Pointer input from the settings screen.
+export global SettingsInput {
+    callback cell-hovered(int);
+    callback cell-clicked(int);
+    callback row-hovered(int);
+    callback row-clicked(int);
 }
 
 export global GamesView {
@@ -395,6 +406,10 @@ export global Overlays {
     in-out property <length> context-anchor-h: 0px;
     in-out property <bool> list-open: false;
     in-out property <string> list-title: "";
+    // Non-empty while the picker is choosing a settings value: its rows
+    // and title read through the settings vocabulary rather than the
+    // plain labels the other pickers carry.
+    in-out property <string> list-setting-id: "";
     in-out property <[MenuEntry]> list-entries: [];
     in-out property <int> list-index: 0;
     in-out property <bool> letter-open: false;
@@ -430,253 +445,151 @@ export global Overlays {
     in-out property <int> crt-v-offset: 0;
 }
 
-// Compact pill badge for tile state overlays (TileBadge.qml): filled
-// lavender state-marker surface (not the amber accent, so it stays
-// distinct from the focus ring) with a dark bold label and border
-// that stay readable over dimmed art.
-component TileBadge inherits Rectangle {
-    in property <string> label;
-
-    property <length> hpad: Sizing.pct-h(1.3);
-    property <length> vpad: Sizing.pct-h(0.6);
-
-    width: caption.preferred-width + 2 * self.hpad;
-    height: caption.preferred-height + 2 * self.vpad;
-    border-radius: self.height / 2;
-    background: Theme.marker;
-    border-width: Sizing.stroke(1);
-    border-color: Theme.bg-bar;
-
-    caption := Text {
-        text: root.label;
-        color: Theme.bg-bar;
-        font-size: Sizing.font-size(1.8);
-        font-weight: 700;
-    }
-}
-
-// Hub tile: square, glyph-only - the entry's name renders in the
-// ActiveLabel below the rows, never inside the tile (HubScreen.qml's
-// tile contract). Tinted glyph, logoPrimary resting /
-// logoFocusPrimary focused; entries without art center their name.
-component CategoryCard inherits Rectangle {
-    in property <string> label;
-    // Stable art selector; defaults to the label. Hub actions pass a
-    // fixed key here because their labels can be dynamic (Resume shows
-    // the last-played game's name).
-    in property <string> glyph-key: root.label;
-    in property <bool> focused;
-    in property <bool> dimmed: false;
-
-    property <length> pad: Sizing.pct-h(2);
-
-    pure function has-glyph() -> bool {
-        return self.glyph-key == "Arcade" || self.glyph-key == "Computer"
-            || self.glyph-key == "Console" || self.glyph-key == "Handheld"
-            || self.glyph-key == "Resume" || self.glyph-key == "Favorites"
-            || self.glyph-key == "Recents" || self.glyph-key == "Update"
-            || self.glyph-key == "Settings" || self.glyph-key == "Display"
-            || self.glyph-key == "Browsing" || self.glyph-key == "Language"
-            || self.glyph-key == "Controls" || self.glyph-key == "Library"
-            || self.glyph-key == "Support";
-    }
-
-    background: Theme.surface-card;
-    border-radius: Sizing.radius-md;
-    border-width: Sizing.stroke(0.2);
-    border-color: Theme.border-mid;
-
-    if root.has-glyph(): Image {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: parent.width - 2 * root.pad;
-        height: parent.height - 2 * root.pad;
-        source: GlyphSource.glyph(root.glyph-key, self.width);
-        image-fit: contain;
-        colorize: root.dimmed
-            ? Theme.text-label
-            : (root.focused ? Theme.logo-focus-primary : Theme.logo-primary);
-    }
-
-    if !root.has-glyph(): Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        max-width: parent.width - 2 * root.pad;
-        overflow: elide;
-        text: root.label;
-        color: root.dimmed ? Theme.text-label : (root.focused ? Theme.text-primary : Theme.text-label);
-        font-size: Sizing.font-size(2.4);
-    }
-
-    // User-hidden category under Show hidden items (TileBadge.qml).
-    if root.dimmed: TileBadge {
-        x: parent.width - self.width - Math.round(parent.width / 12 / 1px) * 1px;
-        y: Math.round(parent.width / 12 / 1px) * 1px;
-        label: @tr("Hidden");
-    }
-}
-
-// Settings screen: SettingsField-style rows (label left, value right)
-// under the header. Read-only rows render dim values; the focused row
-// gets the standard focus treatment.
-// Toggle knob for settings rows (SettingsField.qml's switch): track
-// tints accent when on, knob slides between ends. No animation - the
-// state swap is the feedback, and settings is where Reduce motion
-// itself gets flipped.
-component SettingsToggle inherits Rectangle {
-    in property <bool> checked;
-
-    property <length> knob: Math.round(self.height * 0.72 / 1px) * 1px;
-    property <length> inset: Math.round((self.height - self.knob) / 2px) * 1px;
-
-    border-radius: self.height / 2;
-    background: root.checked ? Theme.accent : Theme.border-mid;
-
-    Rectangle {
-        x: root.checked ? parent.width - self.width - root.inset : root.inset;
-        y: root.inset;
-        width: root.knob;
-        height: root.knob;
-        border-radius: self.height / 2;
-        background: root.checked ? Theme.bg-bar : Theme.text-label;
-    }
-}
-
-// Settings screen, ported from SettingsScreen.qml: root page is the
-// six-category grid (Display / Browsing / Language / Controls /
-// Library / Support); category pages are gamepad-driven field lists
-// with toggles, pickers (Accept opens the ListPickerModal), and
-// action rows. The Rust router owns the registries and values.
+// Settings, ported from SettingsScreen.qml: the root is a grid of six
+// category tiles; a page is a card of rows over a two-line hint band
+// carrying the focused row's description.
 component SettingsScreen inherits Rectangle {
-    // Data dependencies, read straight from the state globals.
-    property <[SettingsField]> fields: SettingsView.settings-fields;
-    property <int> index: SettingsView.settings-index;
-    property <bool> root-grid: SettingsView.settings-page == "";
+    background: transparent;
+    property <bool> root-grid: SettingsView.page == "";
+    property <[SettingsRow]> rows: SettingsView.rows;
+    property <int> index: SettingsView.index;
 
     TopStatusStrip {
         x: 0;
-        y: Sizing.header-bottom + Sizing.pct-h(1);
+        y: Sizing.header-bottom + Layout.top-margin;
         width: parent.width;
-        height: Sizing.pct-h(7);
-        title: SettingsView.settings-title;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: SettingsLabels.page-title(SettingsView.page);
         show-page-counter: false;
+        visible: Layout.top-strip-visible;
     }
 
-    // --- Root: 3x2 category grid, hub-style square cells. ---
-    property <int> grid-cols: 3;
-    property <length> cell-spacing: Sizing.pct-w(3);
-    property <length> cell: Math.min(Sizing.pct-h(24),
-        Math.floor((self.width - 2 * Sizing.pct-w(5) - (root.grid-cols - 1) * root.cell-spacing) / root.grid-cols / 1px) * 1px);
-    property <int> grid-rows: Math.max(1, Math.ceil(root.fields.length / root.grid-cols));
-    property <length> grid-w: root.grid-cols * root.cell + (root.grid-cols - 1) * root.cell-spacing;
-    property <length> grid-h: root.grid-rows * root.cell + (root.grid-rows - 1) * root.cell-spacing;
-    property <length> grid-x: Math.round((self.width - root.grid-w) / 2px) * 1px;
-    property <length> grid-y: Math.round((Sizing.header-bottom + self.height - Sizing.pct-h(6) - root.grid-h - Sizing.pct-h(7)) / 2px) * 1px;
-
-    if root.root-grid: Rectangle {
-        x: root.grid-x;
-        y: root.grid-y;
-        width: root.grid-w;
-        height: root.grid-h;
-
-        for field[i] in root.fields: CategoryCard {
-            x: Math.mod(i, root.grid-cols) * (root.cell + root.cell-spacing);
-            y: Math.floor(i / root.grid-cols) * (root.cell + root.cell-spacing);
-            width: root.cell;
-            height: root.cell;
-            label: field.label;
-            glyph-key: field.value;
-            focused: i == root.index && !Shell.route-transitioning;
-        }
-
-        if root.fields.length > 0 && !Shell.route-transitioning: Rectangle {
-            x: Math.mod(root.index, root.grid-cols) * (root.cell + root.cell-spacing);
-            y: Math.floor(root.index / root.grid-cols) * (root.cell + root.cell-spacing);
-            width: root.cell;
-            height: root.cell;
-            border-radius: Sizing.radius-md;
-            border-width: Sizing.stroke(0.55);
-            border-color: Theme.accent;
-        }
-    }
-
-    if root.root-grid: ActiveLabel {
+    // Root: the category tiles, on the shared grid.
+    if root.root-grid: PagedGridView {
         x: 0;
-        y: root.grid-y + root.grid-h + Sizing.pct-h(3);
+        y: SettingsView.grid-y;
         width: parent.width;
-        height: Sizing.pct-h(7);
-        text: root.index >= 0 && root.index < root.fields.length
-            ? root.fields[root.index].label : "";
+        height: SettingsView.grid-height;
+        cells: SettingsView.cells;
+        columns: SettingsView.columns;
+        cell-width: SettingsView.cell-width;
+        cell-height: SettingsView.cell-height;
+        block-offset-x: SettingsView.block-offset-x;
+        block-offset-y: SettingsView.block-offset-y;
+        left-inset: Layout.grid-left-inset;
+        top-inset: Layout.grid-top-inset;
+        column-gap: Layout.grid-column-gap;
+        row-gap: Layout.grid-row-gap;
+        selected-local: Shell.route-transitioning ? -1 : root.index;
+        section-focused: !Overlays.list-open;
+        focus-ready: true;
+        activate-pulse: SettingsView.activate-pulse;
+        release-pulse: SettingsView.release-pulse;
+        settling: Shell.active-screen != "settings";
+        show-caption: true;
+        card-radius: Layout.card-radius;
+        caption-for(cell) => { return SettingsLabels.label(cell.label-key); }
+        cell-hovered(i) => { SettingsInput.cell-hovered(i); }
+        cell-clicked(i) => { SettingsInput.cell-clicked(i); }
     }
 
-    // --- Category page: field rows. Headers render as dim section
-    // captions without a card; disabled rows dim whole. ---
+    // Page: rows in a card, with the hint band pinned to its bottom.
+    // The card carries its own margins rather than the browse profile's
+    // card values, which belong to whichever browse view was last shown.
+    property <length> card-x: Sizing.pct-w(3);
+    property <length> card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Sizing.pct-h(2);
+    property <length> card-w: self.width - 2 * self.card-x;
+    property <length> card-h: self.height - self.card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Sizing.pct-h(2) : Sizing.pct-h(8));
+    property <length> pad-x: Sizing.pct-w(2);
+    property <length> pad-y: Sizing.pct-h(2);
     property <length> row-h: Sizing.pct-h(8);
-    property <length> row-gap: Sizing.pct-h(1);
-    property <length> side: Sizing.pct-w(10);
-    property <length> toggle-w: Sizing.pct-h(7);
-    property <length> toggle-h: Sizing.pct-h(3.6);
+    property <length> action-band: Sizing.pct-h(3.2);
+    property <length> header-h: Sizing.pct-h(5);
+    property <length> hint-line: Math.ceil(Theme.ascent(Sizing.font-body) * 1.362 / 1px) * 1px;
+    property <length> hint-h: 2 * self.hint-line;
+    property <string> hint: root.index >= 0 && root.index < root.rows.length
+        ? SettingsLabels.description(root.rows[root.index].id) : "";
 
     if !root.root-grid: Rectangle {
-        x: root.side;
-        y: Sizing.header-bottom + Sizing.pct-h(8);
-        width: parent.width - 2 * root.side;
+        x: root.card-x;
+        y: root.card-y;
+        width: root.card-w;
+        height: root.card-h;
+        background: Theme.surface-card;
+        border-radius: Layout.card-radius;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.border-mid;
+        clip: true;
 
-        for field[i] in root.fields: Rectangle {
+        // Rows stack from the top inside a clipped viewport; a busy
+        // action row is taller, so Rust stacks the offsets and scrolls
+        // the band to keep the focused row on screen.
+        rows-band := Rectangle {
+            x: root.pad-x;
+            y: root.pad-y;
+            width: root.card-w - 2 * root.pad-x;
+            height: SettingsView.rows-height;
+            clip: true;
+
+        for row[i] in root.rows: Rectangle {
             x: 0;
-            y: i * (root.row-h + root.row-gap);
+            y: row.y-offset - SettingsView.scroll;
             width: parent.width;
-            height: root.row-h;
-            background: field.kind == "header" ? transparent
-                : (i == root.index && !Shell.route-transitioning
-                    ? Theme.selection-fill : Theme.surface-card);
-            border-radius: Sizing.pct-h(1.5);
-            border-width: field.kind == "header" ? 0px
-                : (i == root.index && !Shell.route-transitioning
-                    ? Sizing.stroke(0.4) : Sizing.stroke(0.2));
-            border-color: i == root.index && !Shell.route-transitioning
-                ? Theme.accent : Theme.border-mid;
-            opacity: field.enabled ? 1.0 : 0.4;
+            height: row.height;
 
-            if field.kind == "header": Text {
+            if row.kind == "header": Text {
                 x: 0;
                 y: parent.height - self.height - Sizing.pct-h(0.6);
-                text: field.label;
+                text: SettingsLabels.label(row.id);
                 color: Theme.text-variant;
-                font-size: Sizing.font-size(2.2);
+                font-size: Sizing.font-caption;
                 font-weight: 600;
             }
 
-            if field.kind == "field": Text {
-                x: Sizing.pct-w(2);
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
-                max-width: parent.width * 0.55;
-                overflow: elide;
-                text: field.label;
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(2.6);
+            if row.kind == "field": SettingsRowView {
+                width: 100%;
+                height: 100%;
+                entry: row;
+                focused: i == root.index && !Shell.route-transitioning;
+                activate-pulse: SettingsView.activate-pulse;
+                settling: Shell.active-screen != "settings";
             }
 
-            if field.kind == "field" && field.control == "toggle": SettingsToggle {
-                x: parent.width - self.width - Sizing.pct-w(2);
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
-                width: root.toggle-w;
-                height: root.toggle-h;
-                checked: field.checked;
+            TouchArea {
+                enabled: row.kind == "field" && row.enabled;
+                mouse-cursor: pointer;
+                changed has-hover => {
+                    if (self.has-hover) { SettingsInput.row-hovered(i); }
+                }
+                clicked => { SettingsInput.row-clicked(i); }
             }
+        }
+        }
 
-            if field.kind == "field" && field.control != "toggle": Text {
-                x: parent.width - self.width - Sizing.pct-w(2);
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
-                max-width: parent.width * 0.4;
-                overflow: elide;
-                text: field.value;
-                color: field.control == "picker" ? Theme.accent : Theme.text-variant;
-                font-size: Sizing.font-size(2.6);
-            }
+        // Hint band: the focused row's own description, two lines.
+        Rectangle {
+            x: rows-band.x;
+            y: parent.height - root.pad-y - root.hint-h - Sizing.pct-h(0.5);
+            width: rows-band.width;
+            height: Sizing.card-border-width;
+            background: Theme.border-mid;
+        }
+        Text {
+            x: rows-band.x;
+            y: parent.height - root.pad-y - root.hint-h;
+            width: rows-band.width;
+            height: root.hint-h;
+            vertical-alignment: top;
+            wrap: word-wrap;
+            overflow: elide;
+            text: root.hint;
+            color: Theme.text-label;
+            font-size: Sizing.font-body;
         }
     }
 }
+
 
 // Hub screen (HubScreen.qml): one paged grid of square tiles between the
 // header and the help bar, the focused entry's caption under it with the
@@ -1066,6 +979,8 @@ component ListPickerModal inherits Rectangle {
     in property <string> title;
     in property <[MenuEntry]> entries;
     in property <int> current-index;
+    // Set while picking a settings value; see Overlays.list-setting-id.
+    in property <string> setting-id;
 
     background: Theme.scrim;
 
@@ -1089,7 +1004,7 @@ component ListPickerModal inherits Rectangle {
         Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((root.title-h - self.height) / 2px) * 1px;
-            text: root.title;
+            text: root.setting-id != "" ? SettingsLabels.label(root.setting-id) : root.title;
             color: Theme.text-primary;
             font-size: Sizing.font-size(4);
             font-weight: 500;
@@ -1110,7 +1025,9 @@ component ListPickerModal inherits Rectangle {
                 y: Math.round((parent.height - self.height) / 2px) * 1px;
                 max-width: parent.width - 2 * Sizing.pct-w(2);
                 overflow: elide;
-                text: entry.label-key != "" ? Labels.hub(entry.label-key, entry.label) : entry.label;
+                text: root.setting-id != ""
+                    ? SettingsLabels.value(root.setting-id, entry.id)
+                    : (entry.label-key != "" ? Labels.hub(entry.label-key, entry.label) : entry.label);
                 color: Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
             }
@@ -1928,7 +1845,7 @@ export component App inherits Window {
 
     pure function browse-header-title() -> string {
         if (!Layout.title-in-header) { return ""; }
-        if (Shell.active-screen == "settings") { return SettingsView.settings-title; }
+        if (Shell.active-screen == "settings") { return SettingsLabels.page-title(SettingsView.page); }
         if (Shell.active-screen == "systems") { return Labels.hub("category:" + SystemsView.category, SystemsView.category); }
         if (Shell.active-screen == "favorite-systems") { return @tr("Favorites"); }
         if (Shell.active-screen == "games") { return GamesView.title; }
@@ -1962,8 +1879,8 @@ export component App inherits Window {
         return { buttons: pages > 1 ? ["ButtonL", "ButtonR", "Dpad"] : ["Dpad"], label: @tr("Move") };
     }
     pure function focused-settings-control() -> string {
-        return SettingsView.settings-index >= 0 && SettingsView.settings-index < SettingsView.settings-fields.length
-            ? SettingsView.settings-fields[SettingsView.settings-index].control : "";
+        return SettingsView.index >= 0 && SettingsView.index < SettingsView.rows.length
+            ? SettingsView.rows[SettingsView.index].control : "";
     }
     pure function help-entries() -> [HelpEntry] {
         if (Shell.boot-curtain) {
@@ -2060,8 +1977,8 @@ export component App inherits Window {
             ];
         }
         if (Shell.active-screen == "settings") {
-            if (SettingsView.settings-page == "") {
-                if (SettingsView.settings-fields.length > 1) {
+            if (SettingsView.page == "") {
+                if (SettingsView.rows.length > 1) {
                     return [
                         { buttons: ["Dpad"], label: @tr("Move") },
                         { buttons: ["ButtonA"], label: @tr("Open") },
@@ -2084,7 +2001,7 @@ export component App inherits Window {
             if (self.focused-settings-control() == "action") {
                 return [
                     { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
-                    { buttons: ["ButtonA"], label: SettingsView.settings-fields[SettingsView.settings-index].value },
+                    { buttons: ["ButtonA"], label: SettingsLabels.action(SettingsView.rows[SettingsView.index].value) },
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
             }
@@ -2385,6 +2302,7 @@ export component App inherits Window {
         width: 100%;
         height: 100%;
         title: Overlays.list-title;
+        setting-id: Overlays.list-setting-id;
         entries: Overlays.list-entries;
         current-index: Overlays.list-index;
     }

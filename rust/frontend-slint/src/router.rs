@@ -10,7 +10,6 @@
 // is Ready, then cached/native route motion commits the new screen.
 
 use crate::games::GameRow;
-use crate::hub_nav;
 use crate::media_cache::{MediaCache, MediaKey};
 use crate::sizing;
 use crate::{App, Sizing};
@@ -894,7 +893,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         // Favorites and Recents reuse the games-style grid; the mode
         // stored in Shared adjusts back/paging/persist behavior.
         "games" | "favorites" | "recents" => crate::games::handle_action(ctx, app, action),
-        "settings" => settings_action(ctx, app, action),
+        "settings" => crate::settings::handle_action(ctx, app, action),
         "about" => about_action(ctx, app, action),
         _ => {}
     }
@@ -909,465 +908,12 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 // resolution and native-CRT controls. Log upload remains outside this
 // migration slice.
 
-const SETTINGS_PAGES: &[(&str, &str, &str)] = &[
-    ("pageDisplayInterface", "Display", "Display"),
-    ("pageBrowsing", "Browsing", "Browsing"),
-    ("pageLanguage", "Language", "Language"),
-    ("pageControlsInput", "Controls", "Controls"),
-    ("pageLibraryData", "Library", "Library"),
-    ("pageSupportAbout", "Support", "Support"),
-];
-
-const LANGUAGES: &[&str] = &[
-    "auto", "en", "it_IT", "es", "eu", "de", "el", "ja", "ko", "nl", "ro", "sk", "uk", "zh_CN",
-    "zh_TW", "he", "ar", "hi",
-];
-const CLOCK_FORMATS: &[&str] = &["auto", "12h", "24h"];
-const REGIONS: &[&str] = &["auto", "us", "eu", "jp"];
-const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
-const MISTER_RESOLUTIONS: &[&str] = &[
-    "",
-    "1280x720",
-    "1920x1080",
-    "2560x1440",
-    "1920x1200",
-    "1920x1440",
-    "640x480",
-    "2048x1536",
-];
-const CRT_VIDEO_STANDARDS: &[&str] = &["ntsc", "pal"];
-const BROWSE_LAYOUTS: &[&str] = &["grid", "list"];
-const SYSTEM_LOGO_STYLES: &[&str] = &["tinted", "color"];
-const BUTTON_LAYOUTS: &[&str] = &["a", "b", "c", "d"];
-const SCREENSAVER_TIMEOUTS: &[&str] = &["off", "60", "120", "300", "600", "900", "1800"];
-const MEDIA_IMAGE_TYPES: &[&str] = &[
-    "auto",
-    "image",
-    "thumbnail",
-    "boxart",
-    "boxart3d",
-    "screenshot",
-    "wheel",
-    "titleshot",
-    "map",
-    "marquee",
-    "fanart",
-    "boxartside",
-    "boxartback",
-];
-
-fn language_display(value: &str) -> &'static str {
-    match value {
-        "en" | "en_US" | "en_GB" => "English",
-        "it" | "it_IT" => "Italian",
-        "es" | "es_ES" => "Spanish",
-        "eu" | "eu_ES" => "Basque",
-        "de" | "de_DE" => "German",
-        "el" | "el_GR" => "Greek",
-        "ja" | "ja_JP" => "Japanese",
-        "ko" | "ko_KR" => "Korean",
-        "nl" | "nl_NL" => "Dutch",
-        "ro" | "ro_RO" => "Romanian",
-        "sk" | "sk_SK" => "Slovak",
-        "uk" | "uk_UA" => "Ukrainian",
-        "zh_CN" => "Chinese (Simplified)",
-        "zh_TW" | "zh_HK" => "Chinese (Traditional)",
-        "he" | "he_IL" => "Hebrew",
-        "ar" | "ar_SA" => "Arabic",
-        "hi" | "hi_IN" => "Hindi",
-        _ => "Auto",
-    }
-}
-
-fn clock_format_display(value: &str) -> &'static str {
-    match value {
-        "12h" => "12-hour",
-        "24h" => "24-hour",
-        _ => "Auto",
-    }
-}
-
-fn region_display(value: &str) -> &'static str {
-    match value {
-        "us" => "Americas",
-        "eu" => "Europe",
-        "jp" => "Japan",
-        _ => "Automatic",
-    }
-}
-
-fn orientation_display(value: &str) -> &'static str {
-    match value {
-        "cw" => "Rotated CW",
-        "ccw" => "Rotated CCW",
-        _ => "Horizontal",
-    }
-}
-
-fn resolution_display(value: &str) -> &str {
-    if value.is_empty() {
-        "Default"
-    } else {
-        value
-    }
-}
-
-fn crt_standard_display(value: &str) -> &'static str {
-    match value {
-        "pal" => "PAL 288p50",
-        _ => "NTSC 240p60",
-    }
-}
-
-fn browse_layout_display(value: &str) -> &'static str {
-    if value == "list" {
-        "Detailed list view"
-    } else {
-        "Grid view"
-    }
-}
-
-fn system_logo_style_display(value: &str) -> &'static str {
-    if value == "color" {
-        "Full color"
-    } else {
-        "Tinted"
-    }
-}
-
-fn button_layout_display(value: &str) -> &'static str {
-    match value {
-        "b" => "Style B",
-        "c" => "Style C",
-        "d" => "Style D",
-        _ => "Style A",
-    }
-}
-
-fn screensaver_timeout_display(value: &str) -> &'static str {
-    match value {
-        "off" => "Off",
-        "60" => "1 minute",
-        "120" => "2 minutes",
-        "600" => "10 minutes",
-        "900" => "15 minutes",
-        "1800" => "30 minutes",
-        _ => "5 minutes",
-    }
-}
-
-fn media_image_type_display(value: &str) -> &'static str {
-    match value {
-        "image" => "Image",
-        "thumbnail" => "Thumbnail",
-        "boxart" => "Box art",
-        "boxart3d" => "3D box art",
-        "screenshot" => "Screenshot",
-        "wheel" => "Wheel",
-        "titleshot" => "Title screen",
-        "map" => "Map",
-        "marquee" => "Marquee",
-        "fanart" => "Fan art",
-        "boxartside" => "Box art (side)",
-        "boxartback" => "Box art (back)",
-        _ => "Auto",
-    }
-}
-
-fn make_field(
-    kind: &str,
-    id: &str,
-    label: &str,
-    value: &str,
-    control: &str,
-    checked: bool,
-    enabled: bool,
-) -> crate::SettingsField {
-    crate::SettingsField {
-        kind: SharedString::from(kind),
-        id: SharedString::from(id),
-        label: SharedString::from(label),
-        value: SharedString::from(value),
-        control: SharedString::from(control),
-        checked,
-        enabled,
-    }
-}
-
-fn picker_field(id: &str, label: &str, value: &str) -> crate::SettingsField {
-    make_field("field", id, label, value, "picker", false, true)
-}
-
-fn toggle_field(id: &str, label: &str, checked: bool, enabled: bool) -> crate::SettingsField {
-    make_field("field", id, label, "", "toggle", checked, enabled)
-}
-
-fn action_field(id: &str, label: &str, verb: &str, enabled: bool) -> crate::SettingsField {
-    make_field("field", id, label, verb, "action", false, enabled)
-}
-
 /// Current media-database state, read synchronously off the store's
 /// watch resource (the Qt _indexBusy/_scrapeBusy gates).
-fn media_state(ctx: &Ctx) -> zaparoo_core::store::MediaStatusState {
+pub(crate) fn media_state(ctx: &Ctx) -> zaparoo_core::store::MediaStatusState {
     let rx = ctx.store.media_status().subscribe();
     let state = rx.borrow().clone();
     state
-}
-
-fn settings_page_title(page: &str) -> &'static str {
-    SETTINGS_PAGES
-        .iter()
-        .find(|(id, _, _)| *id == page)
-        .map_or("Settings", |(_, label, _)| label)
-}
-
-fn display_settings_fields(
-    ctx: &Ctx,
-    settings: &persist::SettingsState,
-) -> Vec<crate::SettingsField> {
-    let mut fields = Vec::new();
-    if ctx.is_mister {
-        fields.push(picker_field(
-            "resolution",
-            "Resolution",
-            resolution_display(&settings.resolution),
-        ));
-    }
-    fields.push(picker_field(
-        "orientation",
-        "Orientation",
-        orientation_display(&settings.orientation),
-    ));
-    fields.push(picker_field(
-        "screensaverTimeout",
-        "Screensaver",
-        screensaver_timeout_display(&settings.screensaver_timeout),
-    ));
-    if ctx.is_mister {
-        fields.push(make_field(
-            "header",
-            "",
-            "Analog video",
-            "",
-            "",
-            false,
-            true,
-        ));
-        fields.push(toggle_field(
-            "crtEnabled",
-            "CRT mode",
-            ctx.crt_enabled,
-            true,
-        ));
-        if ctx.crt_enabled {
-            fields.push(picker_field(
-                "crtVideoStandard",
-                "Video standard",
-                crt_standard_display(&settings.crt_video_standard),
-            ));
-            fields.push(action_field(
-                "crtCalibration",
-                "Screen position",
-                "Open",
-                true,
-            ));
-        }
-    }
-    fields
-}
-
-/// Field registry for a settings page ("" = the root category grid),
-/// mirroring SettingsScreen.qml's per-domain lists.
-fn settings_fields(ctx: &Ctx, page: &str) -> Vec<crate::SettingsField> {
-    let (s, show_hidden, rescrape) = {
-        let shared = lock(&ctx.shared);
-        (
-            shared.persist.settings.clone(),
-            shared.show_hidden,
-            shared.rescrape_existing,
-        )
-    };
-    match page {
-        "" => SETTINGS_PAGES
-            .iter()
-            .map(|(id, label, glyph)| make_field("field", id, label, glyph, "action", false, true))
-            .collect(),
-        "pageDisplayInterface" => display_settings_fields(ctx, &s),
-        "pageBrowsing" => vec![
-            picker_field(
-                "browseLayout",
-                "Browsing layout",
-                browse_layout_display(&s.games_browse_layout),
-            ),
-            picker_field(
-                "systemLogoStyle",
-                "System logos",
-                system_logo_style_display(&s.system_logo_style),
-            ),
-            picker_field(
-                "mediaImageType",
-                "Preferred artwork",
-                media_image_type_display(&s.media_image_type),
-            ),
-            toggle_field("showHidden", "Show hidden items", show_hidden, true),
-            toggle_field(
-                "showOriginalFilenames",
-                "Show original filenames",
-                s.show_original_filenames,
-                true,
-            ),
-        ],
-        "pageLanguage" => vec![
-            picker_field("language", "Language", language_display(&s.language)),
-            picker_field("region", "System names", region_display(&s.region)),
-            picker_field(
-                "clockFormat",
-                "Clock format",
-                clock_format_display(&s.clock_format),
-            ),
-        ],
-        "pageControlsInput" => vec![
-            picker_field(
-                "buttonLayout",
-                "Button style",
-                button_layout_display(&s.button_layout),
-            ),
-            toggle_field("mouseEnabled", "Mouse support", s.mouse_enabled, true),
-            toggle_field("reduceMotion", "Reduce motion", s.reduce_motion, true),
-        ],
-        "pageLibraryData" => {
-            let ms = media_state(ctx);
-            let index_busy = ms.indexing || ms.optimizing;
-            let scrape_busy = ms.scraping;
-            vec![
-                action_field(
-                    "updateMediaDb",
-                    "Update media database",
-                    if index_busy { "Cancel" } else { "Start" },
-                    !scrape_busy,
-                ),
-                action_field(
-                    "runScraper",
-                    "Scrape metadata",
-                    if scrape_busy { "Cancel" } else { "Start" },
-                    !index_busy,
-                ),
-                toggle_field(
-                    "rescrapeExisting",
-                    "Re-scrape existing",
-                    rescrape,
-                    !index_busy && !scrape_busy,
-                ),
-            ]
-        }
-        "pageSupportAbout" => vec![
-            action_field("aboutLicense", "About / License", "Open", true),
-            toggle_field("debugLogging", "Debug logging", s.debug_logging, true),
-        ],
-        _ => Vec::new(),
-    }
-}
-
-/// First focusable row (headers are transparent to focus).
-fn first_navigable(fields: &[crate::SettingsField]) -> usize {
-    fields.iter().position(|f| f.kind == "field").unwrap_or(0)
-}
-
-/// Walk from `from` in `dir` until a focusable row, wrapping at the
-/// edges (the Qt _seekNavigable rule).
-fn seek_navigable(fields: &[crate::SettingsField], from: usize, dir: i64) -> usize {
-    let len = fields.len();
-    if len == 0 {
-        return from;
-    }
-    let mut i = from as i64;
-    for _ in 0..len {
-        i += dir;
-        if i < 0 {
-            i = len as i64 - 1;
-        } else if i >= len as i64 {
-            i = 0;
-        }
-        if fields[i as usize].kind == "field" {
-            return i as usize;
-        }
-    }
-    from
-}
-
-/// Persist the settings snapshot and mirror it into `frontend.toml`
-/// (the Qt model writes both on every change so a config-driven
-/// launch and the state file never disagree).
-fn save_settings(ctx: &Ctx) {
-    let snapshot = {
-        let shared = lock(&ctx.shared);
-        shared.persist.clone()
-    };
-    persist::save(&snapshot);
-    let s = &snapshot.settings;
-    let mirror = zaparoo_core::config::SettingsMirror {
-        resolution: &s.resolution,
-        language: &s.language,
-        orientation: &s.orientation,
-        clock_format: &s.clock_format,
-        interface_profile: &s.interface_profile,
-        systems_browse_layout: &s.systems_browse_layout,
-        games_browse_layout: &s.games_browse_layout,
-        system_logo_style: &s.system_logo_style,
-        color_scheme: &s.color_scheme,
-        color_intensity: &s.color_intensity,
-        metadata_scraper: &s.metadata_scraper,
-        button_layout: &s.button_layout,
-        mouse_enabled: s.mouse_enabled,
-        reduce_motion: s.reduce_motion,
-        debug_logging: s.debug_logging,
-        screensaver_timeout: &s.screensaver_timeout,
-        media_image_type: &s.media_image_type,
-        favorites_grouping: &s.favorites_grouping,
-        show_hidden: s.show_hidden,
-        show_original_filenames: s.show_original_filenames,
-        swap_confirm_cancel: s.swap_confirm_cancel,
-        swap_options_view: s.swap_options_view,
-        region: &s.region,
-        crt_video_standard: &s.crt_video_standard,
-        crt_h_offset: s.crt_h_offset,
-        crt_v_offset: s.crt_v_offset,
-    };
-    if let Err(e) = zaparoo_core::config::save_settings_mirror(&ctx.config_path, mirror) {
-        tracing::warn!("could not mirror settings to config: {e}");
-    }
-}
-
-/// Rebuild the visible field list in place (busy verbs, toggle
-/// states). Called after every change and from the media-status
-/// watcher so Start/Cancel labels track the running job.
-pub fn refresh_settings_fields(ctx: &Ctx, app: &App) {
-    if app.global::<crate::Shell>().get_active_screen().as_str() != "settings" {
-        return;
-    }
-    let page = app
-        .global::<crate::SettingsView>()
-        .get_settings_page()
-        .to_string();
-    let fields = settings_fields(ctx, &page);
-    let index = app
-        .global::<crate::SettingsView>()
-        .get_settings_index()
-        .max(0) as usize;
-    let clamped = index.min(fields.len().saturating_sub(1));
-    app.global::<crate::SettingsView>()
-        .set_settings_fields(ModelRc::new(VecModel::from(fields)));
-    app.global::<crate::SettingsView>()
-        .set_settings_index(clamped as i32);
-}
-
-fn open_settings_page(ctx: &Ctx, app: &App, page: &str) {
-    let fields = settings_fields(ctx, page);
-    let view = app.global::<crate::SettingsView>();
-    view.set_settings_page(SharedString::from(page));
-    view.set_settings_title(SharedString::from(settings_page_title(page)));
-    view.set_settings_index(first_navigable(&fields) as i32);
-    view.set_settings_fields(ModelRc::new(VecModel::from(fields)));
 }
 
 /// About screen: enter from Settings, Back returns there. The screen
@@ -1387,127 +933,11 @@ pub fn enter_about(ctx: &Ctx, app: &App) {
 fn about_action(ctx: &Ctx, app: &App, action: &str) {
     if action == actions::CANCEL {
         // About is reached from the Support page; Back lands there.
-        enter_settings_with_direction(ctx, app, -1);
-        open_settings_page(ctx, app, "pageSupportAbout");
+        crate::settings::return_from_about(ctx, app);
     }
 }
 
-fn enter_settings_with_direction(ctx: &Ctx, app: &App, direction: i32) {
-    lock(&ctx.shared).persist.active_screen = "settings".to_string();
-    save_persist(&ctx.shared);
-    open_settings_page(ctx, app, "");
-    transition_to_screen(app, "settings", direction);
-}
-
-pub fn enter_settings(ctx: &Ctx, app: &App) {
-    enter_settings_with_direction(ctx, app, 1);
-}
-
-fn settings_action(ctx: &Ctx, app: &App, action: &str) {
-    use slint::Model as _;
-    let view = app.global::<crate::SettingsView>();
-    let page = view.get_settings_page().to_string();
-    let fields: Vec<crate::SettingsField> = view.get_settings_fields().iter().collect();
-    let index = view.get_settings_index().max(0) as usize;
-
-    if page.is_empty() {
-        // Root category grid: 3x2, Accept opens the focused page.
-        match action {
-            actions::LEFT | actions::RIGHT | actions::UP | actions::DOWN => {
-                let (dx, dy) = match action {
-                    actions::LEFT => (-1, 0),
-                    actions::RIGHT => (1, 0),
-                    actions::UP => (0, -1),
-                    _ => (0, 1),
-                };
-                let next = hub_nav::grid_move(index, fields.len(), 3, dx, dy);
-                view.set_settings_index(i32::try_from(next).unwrap_or(0));
-            }
-            actions::ACCEPT => {
-                if let Some(field) = fields.get(index) {
-                    open_settings_page(ctx, app, field.id.as_str());
-                }
-            }
-            actions::CANCEL => {
-                lock(&ctx.shared).persist.active_screen = "hub".to_string();
-                save_persist(&ctx.shared);
-                transition_to_screen(app, "hub", -1);
-            }
-            _ => {}
-        }
-        return;
-    }
-
-    match action {
-        actions::UP => {
-            view.set_settings_index(seek_navigable(&fields, index, -1) as i32);
-        }
-        actions::DOWN => {
-            view.set_settings_index(seek_navigable(&fields, index, 1) as i32);
-        }
-        // Left/right flips toggles in place (the Qt SettingsField
-        // contract); pickers and actions only react to Accept.
-        actions::LEFT | actions::RIGHT => {
-            if let Some(field) = fields.get(index) {
-                if field.control.as_str() == "toggle" && field.enabled {
-                    settings_toggle(ctx, app, field.id.as_str());
-                }
-            }
-        }
-        actions::ACCEPT => {
-            if let Some(field) = fields.get(index) {
-                if field.enabled {
-                    settings_accept(ctx, app, field.id.as_str(), field.control.as_str());
-                }
-            }
-        }
-        actions::CANCEL => {
-            open_settings_page(ctx, app, "");
-        }
-        _ => {}
-    }
-}
-
-fn settings_accept(ctx: &Ctx, app: &App, id: &str, control: &str) {
-    match control {
-        "toggle" => settings_toggle(ctx, app, id),
-        "picker" => open_settings_picker(ctx, app, id),
-        _ => match id {
-            "aboutLicense" => enter_about(ctx, app),
-            "crtCalibration" => open_crt_calibration(ctx, app),
-            "updateMediaDb" => {
-                let ms = media_state(ctx);
-                if ms.indexing || ms.optimizing {
-                    let client = ctx.store.client();
-                    ctx.handle.spawn(async move {
-                        if let Err(e) = client.media_generate_cancel().await {
-                            tracing::warn!("cancel index failed: {}", e.message);
-                        }
-                    });
-                } else {
-                    start_index(ctx, app, None);
-                }
-            }
-            "runScraper" => {
-                let ms = media_state(ctx);
-                if ms.scraping {
-                    let client = ctx.store.client();
-                    ctx.handle.spawn(async move {
-                        if let Err(e) = client.media_scrape_cancel().await {
-                            tracing::warn!("cancel scrape failed: {}", e.message);
-                        }
-                    });
-                } else {
-                    let force = lock(&ctx.shared).rescrape_existing;
-                    start_scrape(ctx, Vec::new(), force);
-                }
-            }
-            _ => {}
-        },
-    }
-}
-
-fn stage_restart(ctx: &Ctx, app: &App, pending: PendingRestart) {
+pub(crate) fn stage_restart(ctx: &Ctx, app: &App, pending: PendingRestart) {
     lock(&ctx.shared).pending_restart = Some(pending);
     open_dialog(
         app,
@@ -1546,7 +976,7 @@ fn confirm_pending_restart(ctx: &Ctx, app: &App) {
     match pending {
         PendingRestart::Resolution(value) => {
             lock(&ctx.shared).persist.settings.resolution = value;
-            save_settings(ctx);
+            crate::settings::save(ctx);
             crate::request_restart();
         }
         PendingRestart::CrtStandard(value) => {
@@ -1556,7 +986,7 @@ fn confirm_pending_restart(ctx: &Ctx, app: &App) {
                 .settings
                 .crt_video_standard
                 .clone_from(&standard);
-            save_settings(ctx);
+            crate::settings::save(ctx);
             if let Err(e) = write_crt_state_file(true, &standard) {
                 tracing::warn!("{e}");
                 app.global::<crate::Shell>()
@@ -1582,7 +1012,7 @@ fn confirm_pending_restart(ctx: &Ctx, app: &App) {
     }
 }
 
-fn open_crt_calibration(ctx: &Ctx, app: &App) {
+pub(crate) fn open_crt_calibration(ctx: &Ctx, app: &App) {
     if !ctx.crt_enabled {
         return;
     }
@@ -1608,7 +1038,7 @@ fn crt_calibration_action(ctx: &Ctx, app: &App, action: &str) {
         actions::UP => v -= 1,
         actions::DOWN => v += 1,
         actions::ACCEPT | actions::CANCEL => {
-            save_settings(ctx);
+            crate::settings::save(ctx);
             overlays.set_crt_calibration_open(false);
             return;
         }
@@ -1623,220 +1053,6 @@ fn crt_calibration_action(ctx: &Ctx, app: &App, action: &str) {
     overlays.set_crt_h_offset(h);
     overlays.set_crt_v_offset(v);
     crate::set_live_crt_offsets(h, v);
-}
-
-/// Flip a boolean setting and run its live consumer, mirroring the
-/// Qt setters' side effects.
-fn settings_toggle(ctx: &Ctx, app: &App, id: &str) {
-    if id == "crtEnabled" {
-        stage_restart(ctx, app, PendingRestart::CrtEnabled(!ctx.crt_enabled));
-        return;
-    }
-    let value = {
-        let mut shared = lock(&ctx.shared);
-        match id {
-            "showHidden" => {
-                shared.show_hidden = !shared.show_hidden;
-                shared.persist.settings.show_hidden = shared.show_hidden;
-                shared.show_hidden
-            }
-            "showOriginalFilenames" => {
-                let v = !shared.persist.settings.show_original_filenames;
-                shared.persist.settings.show_original_filenames = v;
-                v
-            }
-            "reduceMotion" => {
-                let v = !shared.persist.settings.reduce_motion;
-                shared.persist.settings.reduce_motion = v;
-                v
-            }
-            "mouseEnabled" => {
-                let v = !shared.persist.settings.mouse_enabled;
-                shared.persist.settings.mouse_enabled = v;
-                v
-            }
-            "debugLogging" => {
-                let v = !shared.persist.settings.debug_logging;
-                shared.persist.settings.debug_logging = v;
-                v
-            }
-            // Session-scoped one-shot; intentionally NOT persisted
-            // (Qt's _visibleRescrapeExisting rule).
-            "rescrapeExisting" => {
-                shared.rescrape_existing = !shared.rescrape_existing;
-                shared.rescrape_existing
-            }
-            _ => return,
-        }
-    };
-    if id != "rescrapeExisting" {
-        save_settings(ctx);
-    }
-    match id {
-        "showHidden" => {
-            reproject_hub(ctx, app);
-            reproject_systems(ctx, app);
-        }
-        "showOriginalFilenames" => crate::games::reproject(ctx, app),
-        "reduceMotion" => {
-            app.global::<crate::Shell>().set_reduce_motion(value);
-            app.global::<crate::Motion>().set_enabled(!value);
-        }
-        "region" => {
-            crate::systems::reproject(ctx, app);
-            reproject_hub(ctx, app);
-        }
-        _ => {}
-    }
-    refresh_settings_fields(ctx, app);
-}
-
-/// Options for a picker field: (value, display label) pairs from the
-/// canonical lists.
-fn settings_picker_options(id: &str) -> Vec<(String, String)> {
-    let map = |values: &[&str], display: fn(&str) -> &'static str| {
-        values
-            .iter()
-            .map(|v| ((*v).to_string(), display(v).to_string()))
-            .collect::<Vec<_>>()
-    };
-    match id {
-        "orientation" => map(ORIENTATIONS, orientation_display),
-        "resolution" => MISTER_RESOLUTIONS
-            .iter()
-            .map(|v| ((*v).to_string(), resolution_display(v).to_string()))
-            .collect(),
-        "crtVideoStandard" => map(CRT_VIDEO_STANDARDS, crt_standard_display),
-        "screensaverTimeout" => map(SCREENSAVER_TIMEOUTS, screensaver_timeout_display),
-        "browseLayout" => map(BROWSE_LAYOUTS, browse_layout_display),
-        "systemLogoStyle" => map(SYSTEM_LOGO_STYLES, system_logo_style_display),
-        "mediaImageType" => map(MEDIA_IMAGE_TYPES, media_image_type_display),
-        "language" => map(LANGUAGES, language_display),
-        "region" => map(REGIONS, region_display),
-        "clockFormat" => map(CLOCK_FORMATS, clock_format_display),
-        "buttonLayout" => map(BUTTON_LAYOUTS, button_layout_display),
-        _ => Vec::new(),
-    }
-}
-
-fn settings_picker_title(id: &str) -> &'static str {
-    match id {
-        "orientation" => "Orientation",
-        "resolution" => "Resolution",
-        "crtVideoStandard" => "Video standard",
-        "screensaverTimeout" => "Screensaver",
-        "browseLayout" => "Browsing layout",
-        "systemLogoStyle" => "System logos",
-        "mediaImageType" => "Preferred artwork",
-        "language" => "Language",
-        "region" => "System names",
-        "clockFormat" => "Clock format",
-        "buttonLayout" => "Button style",
-        _ => "Select",
-    }
-}
-
-fn settings_current_value(ctx: &Ctx, id: &str) -> String {
-    let s = lock(&ctx.shared).persist.settings.clone();
-    match id {
-        "orientation" => s.orientation,
-        "resolution" => s.resolution,
-        "crtVideoStandard" => s.crt_video_standard,
-        "screensaverTimeout" => s.screensaver_timeout,
-        "browseLayout" => s.games_browse_layout,
-        "systemLogoStyle" => s.system_logo_style,
-        "mediaImageType" => s.media_image_type,
-        "language" => s.language,
-        "region" => s.region,
-        "clockFormat" => s.clock_format,
-        "buttonLayout" => s.button_layout,
-        _ => String::new(),
-    }
-}
-
-/// Open the shared `ListPickerModal` on a settings field, focused on
-/// the current value (the Qt requestListPicker flow).
-fn open_settings_picker(ctx: &Ctx, app: &App, id: &str) {
-    let options = settings_picker_options(id);
-    if options.is_empty() {
-        return;
-    }
-    let current = settings_current_value(ctx, id);
-    let initial = options.iter().position(|(v, _)| *v == current).unwrap_or(0);
-    let entries: Vec<crate::MenuEntry> = options
-        .iter()
-        .map(|(value, label)| menu_entry(value, label))
-        .collect();
-    lock(&ctx.shared).list_context = ListContext::SettingsPicker(id.to_string());
-    let overlays = app.global::<crate::Overlays>();
-    overlays.set_list_title(SharedString::from(settings_picker_title(id)));
-    overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
-    overlays.set_list_index(i32::try_from(initial).unwrap_or(0));
-    overlays.set_list_open(true);
-}
-
-/// Apply a picker selection and run its live consumer.
-fn settings_picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
-    if id == "resolution" {
-        if value != lock(&ctx.shared).persist.settings.resolution {
-            stage_restart(ctx, app, PendingRestart::Resolution(value.to_string()));
-        }
-        return;
-    }
-    if id == "crtVideoStandard" {
-        if value != lock(&ctx.shared).persist.settings.crt_video_standard {
-            stage_restart(ctx, app, PendingRestart::CrtStandard(value.to_string()));
-        }
-        return;
-    }
-    {
-        let mut shared = lock(&ctx.shared);
-        let s = &mut shared.persist.settings;
-        match id {
-            "orientation" => s.orientation = value.to_string(),
-            "screensaverTimeout" => s.screensaver_timeout = value.to_string(),
-            "browseLayout" => s.games_browse_layout = value.to_string(),
-            "systemLogoStyle" => s.system_logo_style = value.to_string(),
-            "mediaImageType" => s.media_image_type = value.to_string(),
-            "language" => {
-                s.language = value.to_string();
-                crate::apply_language(value);
-                crate::status::set_language(&ctx.status, &crate::effective_language(value));
-                apply_clock(ctx, app);
-            }
-            "region" => s.region = value.to_string(),
-            "clockFormat" => s.clock_format = value.to_string(),
-            "buttonLayout" => s.button_layout = value.to_string(),
-            _ => return,
-        }
-    }
-    save_settings(ctx);
-    match id {
-        "orientation" => {
-            let rotated = matches!(value, "cw" | "ccw");
-            app.global::<crate::Shell>()
-                .set_orientation(SharedString::from(value));
-            app.global::<Sizing>().set_swap_axes(rotated);
-            crate::set_live_orientation(app, value, ctx.framebuffer_size);
-        }
-        "clockFormat" => apply_clock(ctx, app),
-        "buttonLayout" => crate::apply_buttons(ctx, app),
-        "systemLogoStyle" => reproject_systems(ctx, app),
-        "mediaImageType" => ctx.media.set_preferred_image_type(value),
-        // Restart the idle clock so the new timeout takes effect now,
-        // not after the old countdown fires into the seq guard.
-        "screensaverTimeout" => reset_idle(ctx, app),
-        "browseLayout" => {
-            app.global::<crate::Shell>()
-                .set_browse_list_layout(value == "list");
-            refresh_layout(app);
-            // The cursor carries into the other presentation; the state
-            // must be coherent the moment the user backs out of Settings.
-            crate::games::on_layout_changed(ctx, app);
-        }
-        _ => {}
-    }
-    refresh_settings_fields(ctx, app);
 }
 
 /// Scoped scraper run: Core's in-tree ES gamelist.xml scraper (the
@@ -1897,7 +1113,7 @@ pub(crate) fn refresh_layout(app: &App) {
 }
 
 /// Clock format or language changed: re-decide 12/24 hour and repaint.
-fn apply_clock(ctx: &Ctx, app: &App) {
+pub(crate) fn apply_clock_setting(ctx: &Ctx, app: &App) {
     let twelve = {
         let guard = lock(&ctx.shared);
         crate::clock_twelve_hour(&guard.persist.settings)
@@ -1916,6 +1132,8 @@ fn apply_clock(ctx: &Ctx, app: &App) {
 pub(crate) fn open_view_menu(ctx: &Ctx, app: &App) {
     fetch_letter_index(ctx, app);
     lock(&ctx.shared).list_context = ListContext::ViewMenu;
+    app.global::<crate::Overlays>()
+        .set_list_setting_id(SharedString::default());
     app.global::<crate::Overlays>()
         .set_list_title(SharedString::from("View"));
     app.global::<crate::Overlays>()
@@ -1963,7 +1181,7 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                     ListContext::FavoritesGrouping => favorites_grouping_picked(ctx, app, &id),
                     ListContext::FavoritesSort => favorites_sort_picked(ctx, app, &id),
                     ListContext::SettingsPicker(field) => {
-                        settings_picker_selected(ctx, app, &field, &id);
+                        crate::settings::picker_selected(ctx, app, &field, &id);
                     }
                     ListContext::SystemLauncher(system_id) => {
                         set_system_launcher(ctx, &system_id, &id);
@@ -2142,6 +1360,17 @@ pub(crate) fn refresh_readers(ctx: &Ctx) {
 /// QR write deep-link for the focused row (QrCodeModal.qml's flow):
 /// the scanning device opens zaparoo.app, which hands the zapscript
 /// back to a Core/frontend pairing.
+/// The Frontend guide as a scannable link (the Documentation row).
+pub(crate) fn open_documentation_qr(app: &App) {
+    const DOCS_URL: &str = "https://zaparoo.org/docs/frontend/";
+    if let Some((image, modules)) = crate::qr::qr_image(DOCS_URL) {
+        app.global::<crate::Overlays>().set_qr_image(image);
+        app.global::<crate::Overlays>()
+            .set_qr_modules(i32::try_from(modules).unwrap_or(0));
+        app.global::<crate::Overlays>().set_qr_open(true);
+    }
+}
+
 pub(crate) fn open_qr_code(app: &App, entry: &GameRow) {
     let text = if entry.zap_script.trim().is_empty() {
         entry.path.clone()
@@ -2235,6 +1464,7 @@ fn present_list(
 ) {
     lock(&ctx.shared).list_context = context;
     let overlays = app.global::<crate::Overlays>();
+    overlays.set_list_setting_id(SharedString::default());
     overlays.set_list_title(SharedString::from(title));
     overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_list_index(0);
@@ -2336,7 +1566,7 @@ fn favorites_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
         }
         shared.persist.settings.favorites_grouping = id.to_string();
     }
-    save_settings(ctx);
+    crate::settings::save(ctx);
     if id == "system" {
         crate::systems::enter_favorites(ctx, app);
     } else {
@@ -2499,6 +1729,7 @@ pub(crate) fn open_launcher_picker(ctx: &Ctx, app: &App, system_id: &str) {
         .unwrap_or(0);
     lock(&ctx.shared).list_context = ListContext::SystemLauncher(system_id.to_string());
     let overlays = app.global::<crate::Overlays>();
+    overlays.set_list_setting_id(SharedString::default());
     overlays.set_list_title(SharedString::from("Change launcher"));
     overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_list_index(i32::try_from(initial).unwrap_or(0));
