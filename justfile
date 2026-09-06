@@ -283,6 +283,11 @@ slint-arm32:
 slint-release-zip *args:
     ./scripts/package-mister-release.sh --slint {{args}}
 
+# Render every screen offline at the ledger's tiers into output/snapshots/
+# (software renderer, no window). Optional language argument, e.g. `de`.
+slint-snapshots *args:
+    bash scripts/render-slint-snapshots.sh {{args}}
+
 # Desktop tarball of the release cargo build with its runtime files.
 slint-package-desktop *args:
     ./scripts/package-slint-desktop.sh {{args}}
