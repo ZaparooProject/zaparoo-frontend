@@ -14,6 +14,8 @@
 
 pub const STYLES: [&str; 5] = ["style_a", "style_b", "style_c", "style_d", "style_e"];
 pub const DEFAULT_STYLE: &str = "style_d";
+/// The style the controller report resolves for a plain keyboard.
+pub const KEYBOARD_STYLE: &str = "style_e";
 pub const DEFAULT_ACCEPT: &str = "FaceEast";
 pub const DEFAULT_CANCEL: &str = "FaceSouth";
 
@@ -35,6 +37,13 @@ pub struct Resolved<'a> {
     pub view: &'static str,
 }
 
+/// The keyboard is the live input source. The swap settings
+/// compensate for a controller whose own mapping is backwards, so they
+/// never apply to it; the action seam reads this too.
+pub fn keyboard_active(glyph_layout: &str) -> bool {
+    glyph_layout == KEYBOARD_STYLE
+}
+
 /// Resolve the bar's glyphs for the `button_layout` setting (`auto` or a
 /// style id) and the two swap settings, given the latest report if any.
 pub fn resolve<'a>(
@@ -53,7 +62,7 @@ pub fn resolve<'a>(
     };
     // Enter/Escape and Tab/Space are fixed keys: no swap applies while
     // the keyboard drives the UI.
-    let keyboard_active = glyph_layout == "style_e";
+    let keyboard_active = keyboard_active(glyph_layout);
     let swap_cc = swap_confirm_cancel && !keyboard_active;
     let swap_ov = swap_options_view && !keyboard_active;
     Resolved {

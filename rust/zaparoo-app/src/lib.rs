@@ -18,6 +18,7 @@ pub mod buttons;
 pub mod clock;
 pub mod format;
 pub mod hub;
+pub mod input;
 pub mod layouts;
 pub mod log_upload;
 pub mod media_list;

@@ -59,6 +59,8 @@ pub struct Shared {
     pub setup: crate::media_setup::SetupModel,
     /// The log uploader's own panel state.
     pub log_upload: crate::log_upload::LogUploadModel,
+    /// The key path: duplicate guard, hold-repeat, rapid navigation.
+    pub input: crate::input::InputModel,
     /// Core reports at least one connected reader. Refreshed lazily.
     pub has_readers: bool,
     /// An NFC-class reader is present; gates the context-menu "Write
@@ -214,6 +216,7 @@ impl Shared {
             games: crate::games::GamesModel::new(),
             setup: crate::media_setup::SetupModel::new(),
             log_upload: crate::log_upload::LogUploadModel::new(),
+            input: crate::input::InputModel::new(),
             has_readers: false,
             has_nfc: false,
             context_owner: ContextOwner::Games,
@@ -835,6 +838,9 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     // disarm, restart the idle clock, swallow.
     if app.global::<crate::Shell>().get_saver_armed() {
         app.global::<crate::Shell>().set_saver_armed(false);
+        // A held key dismissed mid-repeat would otherwise keep ticking
+        // against a screen the user cannot see.
+        crate::input::stop_repeat(ctx);
         reset_idle(ctx, app);
         return;
     }
@@ -905,6 +911,9 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     {
         return;
     }
+    // A fresh press always keeps (or restores) the live grid; only the
+    // repeat path may set the flag.
+    crate::input::note_rapid(ctx, app, action, false);
     match app.global::<crate::Shell>().get_active_screen().as_str() {
         "hub" => crate::hub::handle_action(ctx, app, action),
         "systems" | "favorite-systems" => crate::systems::handle_action(ctx, app, action),

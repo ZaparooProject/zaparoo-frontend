@@ -19,6 +19,7 @@ mod frame_transition;
 mod games;
 mod glyphs;
 mod hub;
+mod input;
 mod latch_protocol;
 mod log_upload;
 mod media_cache;
@@ -549,7 +550,7 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     lock(&ctx.shared).notice_ack = notice_ack;
-    bind_input(&ctx, &app, config.key_to_action.clone());
+    input::bind(&ctx, &app, config.key_to_action.clone());
     // The Hub paints its persisted layout before the first frame; the
     // catalog reconciles it when Core answers.
     hub::bind_input(&ctx, &app);
@@ -603,21 +604,6 @@ fn restore_core_independent(ctx: &Arc<Ctx>, app: &App) {
             router::enter_about(ctx, app);
         }
     }
-}
-
-/// Key events -> normalized actions -> router, honoring the merged
-/// `[input.keyboard]` bindings from frontend.toml.
-fn bind_input(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, String>) {
-    let ctx = ctx.clone();
-    let weak = app.as_weak();
-    app.on_key_pressed(move |text| {
-        if let (Some(app), Some(action)) = (
-            weak.upgrade(),
-            actions::action_for_key_with(&bindings, &text),
-        ) {
-            router::handle_action(&ctx, &app, &action);
-        }
-    });
 }
 
 /// Media status -> the header status line's task tier, plus the

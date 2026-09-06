@@ -2153,8 +2153,16 @@ export component App inherits Window {
 
     // Games state.
 
-    // Raw key press, forwarded to the Rust router.
+    // Raw key press and release, forwarded to the Rust key path. The
+    // toolkit's own auto-repeat is dropped: it bursts unpredictably
+    // under load and is not tunable on the framebuffer build, so Rust
+    // drives its own cadence off the press/release pair.
     callback key-pressed(string);
+    callback key-released(string);
+    // The window went away mid-hold (alt-tab, a compositor grab): the
+    // release will never arrive, so cancel the repeat rather than let
+    // it tick forever.
+    callback input-lost();
     // Fired on resize so Rust can re-solve the grid shapes.
     callback viewport-changed(length, length);
 
@@ -2162,8 +2170,17 @@ export component App inherits Window {
 
     keys := FocusScope {
         key-pressed(event) => {
-            root.key-pressed(event.text);
+            if (!event.repeat) {
+                root.key-pressed(event.text);
+            }
             accept
+        }
+        key-released(event) => {
+            root.key-released(event.text);
+            accept
+        }
+        focus-lost(reason) => {
+            root.input-lost();
         }
     }
 

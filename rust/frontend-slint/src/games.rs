@@ -1960,10 +1960,6 @@ fn note_rapid_flip(ctx: &Ctx, app: &App) {
 
 /// Held rapid navigation (Main.qml's `rapidNavigationActive`): covers
 /// pause and the detail pane clears while it runs.
-#[allow(
-    dead_code,
-    reason = "wired by the input rules row once hold-repeat lands"
-)]
 pub fn set_rapid(ctx: &Ctx, app: &App, active: bool) {
     {
         let mut shared = lock(&ctx.shared);
