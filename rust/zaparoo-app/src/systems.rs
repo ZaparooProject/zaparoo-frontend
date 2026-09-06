@@ -253,11 +253,14 @@ pub fn sort_by_display_name(rows: &mut [SystemRow]) {
 }
 
 /// `systems_by_category`: a system with no category belongs to `Other`.
+/// Both spellings of a category name are the same category (the Hub's
+/// own `canonical_category` rule), so a plural id from an older layout
+/// or Core still finds its systems.
 fn in_category(system: &CatalogSystem, category: &str) -> bool {
     if system.category.is_empty() {
-        category == "Other"
+        crate::hub::canonical_category(category) == "Other"
     } else {
-        system.category == category
+        crate::hub::canonical_category(&system.category) == crate::hub::canonical_category(category)
     }
 }
 
@@ -372,6 +375,38 @@ pub fn random_launch_text(system_ids: &[String]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_category_matches_its_other_spelling() {
+        let systems = vec![
+            CatalogSystem {
+                id: "SNES".into(),
+                name: "Super Nintendo".into(),
+                category: "Consoles".into(),
+                ..CatalogSystem::default()
+            },
+            CatalogSystem {
+                id: "Loose".into(),
+                name: "Loose".into(),
+                category: String::new(),
+                ..CatalogSystem::default()
+            },
+        ];
+        // The layout's id and Core's own spelling need not agree.
+        assert_eq!(
+            rows_for_category(&systems, "Console", &[], false, Region::Us, &|_| None).len(),
+            1
+        );
+        assert_eq!(
+            rows_for_category(&systems, "Consoles", &[], false, Region::Us, &|_| None).len(),
+            1
+        );
+        // A system with no category still belongs to Other, alone.
+        assert_eq!(
+            rows_for_category(&systems, "Other", &[], false, Region::Us, &|_| None).len(),
+            1
+        );
+    }
 
     #[test]
     fn region_resolution_matches_the_qt_rules() {

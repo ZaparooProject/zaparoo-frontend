@@ -35,10 +35,15 @@ required-features = ["snapshot"]
 # slint::platform with the software renderer and the fb0 presenter.
 # Exactly one of the two must be enabled.
 default = ["desktop"]
+# The desktop build renders through the same software renderer the
+# MiSTer build ships, so a dev run previews what hardware will draw
+# rather than a GL path nothing ships. It also avoids the FemtoVG
+# renderer's per-frame texture handling for the runtime-rasterized
+# glyphs, which visibly flickered on desktop.
 desktop = [
     "slint/std",
     "slint/backend-winit",
-    "slint/renderer-femtovg",
+    "slint/renderer-software",
     "slint/accessibility",
 ]
 # The MiSTer build uses Slint's `std` software renderer so text goes

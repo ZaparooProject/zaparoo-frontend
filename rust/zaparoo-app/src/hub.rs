@@ -260,8 +260,15 @@ fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entr
 
 fn resolve_category(live: &Live, resolver: &dyn Resolver, id: &str) -> Entry {
     let canonical = canonical_category(id);
-    let unconfirmed =
-        live.categories_loaded && !live.confirmed_categories.iter().any(|c| c == canonical);
+    // Both sides go through `canonical_category`: the layout may hold a
+    // plural id an older build wrote, and a Core may answer with either
+    // spelling. Comparing raw strings marks a category Core does list as
+    // unavailable, which mutes the tile and empties its systems screen.
+    let unconfirmed = live.categories_loaded
+        && !live
+            .confirmed_categories
+            .iter()
+            .any(|c| canonical_category(c) == canonical);
     Entry {
         kind: Some(Kind::Category),
         id: canonical.to_string(),
@@ -1033,6 +1040,49 @@ mod tests {
             "Homebrew"
         );
         assert_eq!(folder_name_for_path("Homebrew"), "Homebrew");
+    }
+
+    #[test]
+    fn a_category_confirms_under_either_spelling() {
+        // A layout written against a Core that says "Consoles" must
+        // still light up against one that says "Console", and the other
+        // way round: an unconfirmed category mutes the tile and empties
+        // the screen behind it.
+        let resolver = Names;
+        for (layout_id, core_id) in [
+            ("Consoles", "Console"),
+            ("Console", "Consoles"),
+            ("Handhelds", "Handheld"),
+            ("Arcade", "Arcade"),
+        ] {
+            let live = Live {
+                categories_loaded: true,
+                confirmed_categories: &[core_id.to_string()],
+                resume_enabled: false,
+                resume_name: "",
+                resume_cover_key: "",
+                resume_known_unavailable: false,
+                update_enabled: false,
+                internet_available: true,
+            };
+            let entry = resolve_category(&live, &resolver, layout_id);
+            assert!(
+                !entry.disabled,
+                "{layout_id} against {core_id} read as unavailable"
+            );
+        }
+        // A category Core really does not list still reads unavailable.
+        let live = Live {
+            categories_loaded: true,
+            confirmed_categories: &["Console".to_string()],
+            resume_enabled: false,
+            resume_name: "",
+            resume_cover_key: "",
+            resume_known_unavailable: false,
+            update_enabled: false,
+            internet_available: true,
+        };
+        assert!(resolve_category(&live, &resolver, "Arcade").disabled);
     }
 
     #[test]
