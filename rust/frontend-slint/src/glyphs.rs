@@ -457,6 +457,33 @@ fn has_glyph(key: &str) -> bool {
     SOURCES.iter().any(|(k, _)| *k == key)
 }
 
+/// Rasterize an SVG document into a square `px` image. Shared with the
+/// user's own override artwork, which arrives as a file rather than an
+/// embedded source.
+pub fn rasterize_svg(svg: &str, px: u32) -> Option<slint::Image> {
+    if px == 0 {
+        return None;
+    }
+    let tree = resvg::usvg::Tree::from_str(svg, &resvg::usvg::Options::default()).ok()?;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(px, px)?;
+    let size = tree.size();
+    let scale = (px as f32 / size.width()).min(px as f32 / size.height());
+    // Center the artwork when its viewbox is not square, so a wide
+    // glyph does not sit flush left in its cell.
+    let dx = (px as f32 - size.width() * scale) / 2.0;
+    let dy = (px as f32 - size.height() * scale) / 2.0;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(scale, scale).post_translate(dx, dy),
+        &mut pixmap.as_mut(),
+    );
+    // tiny-skia's output is premultiplied RGBA, exactly what Slint's
+    // premultiplied constructor expects.
+    let buffer =
+        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(pixmap.data(), px, px);
+    Some(slint::Image::from_rgba8_premultiplied(buffer))
+}
+
 /// Rasterize `key` at `px` x `px` (every source has a square viewbox).
 pub fn render(key: &str, px: u32) -> Option<slint::Image> {
     if px == 0 {
@@ -477,25 +504,7 @@ pub fn render(key: &str, px: u32) -> Option<slint::Image> {
     } else {
         svg
     };
-    let tree = resvg::usvg::Tree::from_str(svg, &resvg::usvg::Options::default()).ok()?;
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(px, px)?;
-    let size = tree.size();
-    let scale = (px as f32 / size.width()).min(px as f32 / size.height());
-    // Center the artwork when its viewbox is not square, so a wide
-    // glyph does not sit flush left in its cell.
-    let dx = (px as f32 - size.width() * scale) / 2.0;
-    let dy = (px as f32 - size.height() * scale) / 2.0;
-    resvg::render(
-        &tree,
-        resvg::tiny_skia::Transform::from_scale(scale, scale).post_translate(dx, dy),
-        &mut pixmap.as_mut(),
-    );
-
-    // tiny-skia's output is premultiplied RGBA, exactly what Slint's
-    // premultiplied constructor expects.
-    let buffer =
-        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(pixmap.data(), px, px);
-    let image = slint::Image::from_rgba8_premultiplied(buffer);
+    let image = rasterize_svg(svg, px)?;
 
     CACHE.with(|c| {
         c.borrow_mut().insert((key.to_string(), px), image.clone());

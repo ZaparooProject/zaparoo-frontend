@@ -71,7 +71,9 @@ tracing-subscriber.workspace = true
 base64.workspace = true
 qrcode = { workspace = true }
 semver = { workspace = true }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+# `bmp` is here for the user's own override artwork; the bundled art is
+# all PNG. See docs/customization.md for the accepted types.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
 resvg = { version = "0.47", default-features = false }
 libc = { version = "0.2", optional = true }
 # Same version Slint 1.17 resolves; only here to turn on `fontconfig-dlopen`

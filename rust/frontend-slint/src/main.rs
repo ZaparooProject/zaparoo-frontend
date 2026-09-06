@@ -11,6 +11,7 @@
 
 mod actions;
 mod alternates;
+mod customization;
 mod drs;
 #[cfg(feature = "mister")]
 mod dual_head;
@@ -555,6 +556,16 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     lock(&ctx.shared).notice_ack = notice_ack;
+    // User customization: the name table applies at once, the artwork
+    // folder is walked off the event loop once there is a frame up.
+    customization::configure(
+        config
+            .custom_dir
+            .as_ref()
+            .map_or_else(platform_paths::custom_dir, std::path::PathBuf::from),
+        config.system_names.clone(),
+    );
+    scan_customization(&ctx, &app);
     input::bind(&ctx, &app, config.key_to_action.clone());
     // The Hub paints its persisted layout before the first frame; the
     // catalog reconciles it when Core answers.
@@ -609,6 +620,27 @@ fn restore_core_independent(ctx: &Arc<Ctx>, app: &App) {
             router::enter_about(ctx, app);
         }
     }
+}
+
+/// Walk the customization folder off the event loop and repaint what
+/// it can change. On `MiSTer` the folder is on the SD card, so the
+/// first frame must never wait on it; a zero-config install finds
+/// nothing and repaints nothing.
+fn scan_customization(ctx: &Arc<Ctx>, app: &App) {
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    ctx.handle.clone().spawn(async move {
+        let found = tokio::task::spawn_blocking(customization::scan)
+            .await
+            .unwrap_or(0);
+        if found == 0 {
+            return;
+        }
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            hub::render(&ctx, &app);
+            systems::render(&ctx, &app);
+        });
+    });
 }
 
 /// Media status -> the header status line's task tier, plus the

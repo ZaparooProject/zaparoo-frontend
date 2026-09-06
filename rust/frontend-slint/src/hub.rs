@@ -249,6 +249,12 @@ fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
     if entry.is_empty() {
         return cell;
     }
+    // The user's own icon for this category or action, as supplied.
+    if let Some(image) = crate::customization::hub_image(&entry.id) {
+        cell.cover = image;
+        cell.has_cover = true;
+        return cell;
+    }
     let key = entry.cover_key.as_str();
     if let Some(id) = key.strip_prefix("systems/") {
         cell.wordmark = true;

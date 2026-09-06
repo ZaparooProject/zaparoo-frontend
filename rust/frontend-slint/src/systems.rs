@@ -123,7 +123,7 @@ pub fn project(shared: &Shared, category: &str) -> Vec<SystemRow> {
         &shared.hidden_system_ids,
         shared.show_hidden,
         region(shared),
-        &|_| None,
+        &user_name,
     )
 }
 
@@ -134,8 +134,14 @@ fn project_favorites(shared: &Shared) -> Vec<SystemRow> {
         &shared.hidden_system_ids,
         shared.show_hidden,
         region(shared),
-        &|_| None,
+        &user_name,
     )
+}
+
+/// The `[custom.system_names]` override for a system, which wins over
+/// the localized and Core names (`docs/customization.md`).
+fn user_name(system_id: &str) -> Option<String> {
+    crate::customization::system_name(system_id)
 }
 
 /// Localized display name for a system id (Hub tiles and titles).
@@ -145,7 +151,8 @@ pub fn display_name(shared: &Shared, id: &str) -> String {
         .iter()
         .find(|s| s.id == id)
         .map_or_else(|| id.to_string(), |s| s.name.clone());
-    rules::display_name(id, &fallback, region(shared), None)
+    let user = user_name(id);
+    rules::display_name(id, &fallback, region(shared), user.as_deref())
 }
 
 fn catalog_entry(shared: &Shared, id: &str) -> Option<SystemInfo> {
@@ -327,6 +334,15 @@ fn cell_for(row: &SystemRow, logo_style: &str) -> GridCell {
         hidden: row.hidden,
         ..Default::default()
     };
+    // A user override is served as supplied: no tint ramp, one image
+    // for both states (the Qt custom-image provider's own rule).
+    if let Some(image) = crate::customization::system_image(&row.id) {
+        cell.cover = image.clone();
+        cell.has_cover = true;
+        cell.cover_focus = image;
+        cell.has_cover_focus = true;
+        return cell;
+    }
     let stem = row.cover_key.strip_prefix("systems/").unwrap_or(&row.id);
     let (rest, focus) = if logo_style == "color" {
         let original =
