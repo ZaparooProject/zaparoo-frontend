@@ -2358,22 +2358,34 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> (f32, f32, f32, f32) {
     }
 }
 
-fn menu_label(id: &str, is_favorite: bool) -> &'static str {
+/// The `Labels.menu` key for a row id; only the favorite toggle's copy
+/// depends on the row's own state.
+fn menu_key(id: &str, is_favorite: bool) -> &'static str {
+    if id == "toggle_favorite" {
+        return if is_favorite {
+            "favorite:remove"
+        } else {
+            "favorite:add"
+        };
+    }
     match id {
-        "more_info" => "Details",
-        "toggle_favorite" => {
-            if is_favorite {
-                "Remove from favorites"
-            } else {
-                "Add to favorites"
-            }
-        }
-        "change_launcher" => "Change launcher",
-        "write_card" => "Write to NFC token",
-        "qr_code" => "Write with App",
-        "discover" => "Discover alt. versions",
-        "add_to_hub" => "Add to Hub",
-        "scrape_game" => "Update metadata",
+        "more_info" | "change_launcher" | "write_card" | "qr_code" | "discover" | "add_to_hub"
+        | "scrape_game" => id_static(id),
+        _ => "",
+    }
+}
+
+/// The menu ids are compile-time strings; hand the vocabulary the same
+/// `'static` copy rather than allocating one per open.
+fn id_static(id: &str) -> &'static str {
+    match id {
+        "more_info" => "more_info",
+        "change_launcher" => "change_launcher",
+        "write_card" => "write_card",
+        "qr_code" => "qr_code",
+        "discover" => "discover",
+        "add_to_hub" => "add_to_hub",
+        "scrape_game" => "scrape_game",
         _ => "",
     }
 }
@@ -2409,7 +2421,7 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
         // have no Slint counterpart yet; the menu omits them rather than
         // show dead rows.
         .filter(|id| !matches!(*id, "discover" | "change_launcher"))
-        .map(|id| crate::router::menu_entry(id, menu_label(id, row.is_favorite)))
+        .map(|id| crate::router::menu_row_keyed(id, menu_key(id, row.is_favorite), ""))
         .collect();
     if entries.is_empty() {
         return;

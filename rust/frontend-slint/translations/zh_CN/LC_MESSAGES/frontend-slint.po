@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-09-06 07:11+0000\n"
+"POT-Creation-Date: 2026-09-06 07:17+0000\n"
 "Language: zh_CN\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -149,7 +149,7 @@ msgstr ""
 
 #: rust/frontend-slint/ui/app.slint:1939 rust/frontend-slint/ui/app.slint:1963
 #: rust/frontend-slint/ui/app.slint:1991 rust/frontend-slint/ui/app.slint:2071
-#: rust/frontend-slint/ui/app.slint:2091
+#: rust/frontend-slint/ui/app.slint:2091 rust/frontend-slint/ui/labels.slint:69
 msgid "Move"
 msgstr "移动"
 
@@ -219,7 +219,7 @@ msgid "Options"
 msgstr "选项"
 
 #: rust/frontend-slint/ui/app.slint:2036 rust/frontend-slint/ui/app.slint:2042
-#: rust/frontend-slint/ui/app.slint:2127
+#: rust/frontend-slint/ui/app.slint:2127 rust/frontend-slint/ui/labels.slint:89
 msgid "View"
 msgstr ""
 
@@ -485,51 +485,168 @@ msgstr ""
 msgid "Settings"
 msgstr "设置"
 
-#: rust/frontend-slint/ui/labels.slint:34
-msgid "No recent games"
+#: rust/frontend-slint/ui/labels.slint:37
+msgid "A-Z"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:35
-msgid "No internet connection"
+#: rust/frontend-slint/ui/labels.slint:38
+msgid "Default"
+msgstr "默认"
+
+#: rust/frontend-slint/ui/labels.slint:39
+msgid "None"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:36
-msgid "Not available"
-msgstr ""
-
-#: rust/frontend-slint/ui/labels.slint:49
-msgid "Quit Zaparoo Frontend?"
-msgstr ""
-
+#. Games, favorites and recents rows.
 #: rust/frontend-slint/ui/labels.slint:50
-msgid "Quit and restart Zaparoo Frontend?"
+msgid "Details"
 msgstr ""
 
 #: rust/frontend-slint/ui/labels.slint:51
-msgid "Welcome to Zaparoo Frontend"
-msgstr ""
+msgid "Add to favorites"
+msgstr "添加到收藏"
 
 #: rust/frontend-slint/ui/labels.slint:52
-msgid "Update Zaparoo Core"
-msgstr ""
+msgid "Remove from favorites"
+msgstr "从收藏中移除"
 
 #: rust/frontend-slint/ui/labels.slint:53
-msgid "First-time setup"
+msgid "Change launcher"
 msgstr ""
 
 #: rust/frontend-slint/ui/labels.slint:54
-msgid "Nothing left to add"
+msgid "Write to NFC token"
+msgstr "写入 NFC 令牌"
+
+#: rust/frontend-slint/ui/labels.slint:55
+msgid "Write with App"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:56
+msgid "Discover alt. versions"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:57
+msgid "Add to Hub"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:58
+msgid "Update metadata"
 msgstr ""
 
 #: rust/frontend-slint/ui/labels.slint:60
-msgid "Are you sure you want to exit?"
-msgstr "确定要退出吗？"
+msgid "Launch system"
+msgstr ""
 
 #: rust/frontend-slint/ui/labels.slint:61
-msgid "This setting needs a frontend restart to take effect."
+msgid "Random game"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:62
+msgid "Hide"
 msgstr ""
 
 #: rust/frontend-slint/ui/labels.slint:63
+msgid "Unhide"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:64
+msgid "Update media database"
+msgstr "更新媒体数据库"
+
+#: rust/frontend-slint/ui/labels.slint:68
+msgid "Add item…"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:71
+msgid "Remove"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:72
+msgid "Reset layout"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:74
+msgid "Quit"
+msgstr "退出"
+
+#: rust/frontend-slint/ui/labels.slint:75
+msgid "Back to Hub"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:79
+msgid "Sort: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:80
+msgid "Group by: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:87
+msgid "Current: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:90
+msgid "Add item"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:91
+msgid "Sort"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:92
+msgid "Group by"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:94
+msgid "Alternate versions"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:99
+msgid "No recent games"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:100
+msgid "No internet connection"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:101
+msgid "Not available"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:114
+msgid "Quit Zaparoo Frontend?"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:115
+msgid "Quit and restart Zaparoo Frontend?"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:116
+msgid "Welcome to Zaparoo Frontend"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:117
+msgid "Update Zaparoo Core"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:118
+msgid "First-time setup"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:119
+msgid "Nothing left to add"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:125
+msgid "Are you sure you want to exit?"
+msgstr "确定要退出吗？"
+
+#: rust/frontend-slint/ui/labels.slint:126
+msgid "This setting needs a frontend restart to take effect."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:128
 msgid ""
 "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n"
 "\n"
@@ -543,169 +660,161 @@ msgid ""
 "Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:66
+#: rust/frontend-slint/ui/labels.slint:131
 msgid "This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:69
+#: rust/frontend-slint/ui/labels.slint:134
 msgid "Done. {} files indexed."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:70
+#: rust/frontend-slint/ui/labels.slint:135
 msgid "Zaparoo needs to scan your games before you can use the frontend. This usually takes a few minutes."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:73
+#: rust/frontend-slint/ui/labels.slint:138
 msgid "All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\"."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:81
+#: rust/frontend-slint/ui/labels.slint:146
 msgid "Preparing…"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:82
+#: rust/frontend-slint/ui/labels.slint:147
 msgid "Optimizing database - almost done"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:83
+#: rust/frontend-slint/ui/labels.slint:148
 msgid "Indexing paused"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:85
+#: rust/frontend-slint/ui/labels.slint:150
 msgid "Step {} of {}"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:86
+#: rust/frontend-slint/ui/labels.slint:151
 msgid "Step {} of {} - {}"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:92
+#: rust/frontend-slint/ui/labels.slint:157
 msgid "Yes"
 msgstr "是"
 
-#: rust/frontend-slint/ui/labels.slint:93
+#: rust/frontend-slint/ui/labels.slint:158
 msgid "No"
 msgstr "否"
 
-#: rust/frontend-slint/ui/labels.slint:96
+#: rust/frontend-slint/ui/labels.slint:161
 msgid "I understand"
 msgstr "我明白了"
 
-#: rust/frontend-slint/ui/labels.slint:97
+#: rust/frontend-slint/ui/labels.slint:162
 msgid "Start scan"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:104
+#: rust/frontend-slint/ui/labels.slint:169
 msgid "Launch failed"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:105
+#: rust/frontend-slint/ui/labels.slint:170
 msgid "Favorite update failed"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:106
+#: rust/frontend-slint/ui/labels.slint:171
 msgid "Add to Hub failed"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:107
+#: rust/frontend-slint/ui/labels.slint:172
 msgid "Media update failed"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:108
+#: rust/frontend-slint/ui/labels.slint:173
 msgid "Update metadata failed"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:109
+#: rust/frontend-slint/ui/labels.slint:174
 msgid "Source list unavailable"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:110
+#: rust/frontend-slint/ui/labels.slint:175
 msgid "Cancel failed"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:111
+#: rust/frontend-slint/ui/labels.slint:176
 msgid "Launcher update failed"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:112
+#: rust/frontend-slint/ui/labels.slint:177
 msgid "Alternate versions unavailable"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:113
+#: rust/frontend-slint/ui/labels.slint:178
 msgid "QR code failed"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:114
+#: rust/frontend-slint/ui/labels.slint:179
 msgid "Setting not saved"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:115
+#: rust/frontend-slint/ui/labels.slint:180
 msgid "Action failed"
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:120
+#: rust/frontend-slint/ui/labels.slint:185
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:121
+#: rust/frontend-slint/ui/labels.slint:186
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:123
+#: rust/frontend-slint/ui/labels.slint:188
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:125
+#: rust/frontend-slint/ui/labels.slint:190
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:126
+#: rust/frontend-slint/ui/labels.slint:191
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:128
+#: rust/frontend-slint/ui/labels.slint:193
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:129
+#: rust/frontend-slint/ui/labels.slint:194
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:130
+#: rust/frontend-slint/ui/labels.slint:195
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:131
+#: rust/frontend-slint/ui/labels.slint:196
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:132
+#: rust/frontend-slint/ui/labels.slint:197
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:133
+#: rust/frontend-slint/ui/labels.slint:198
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:134
+#: rust/frontend-slint/ui/labels.slint:199
 msgid "Could not create the QR code for this item."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:135
+#: rust/frontend-slint/ui/labels.slint:200
 msgid "Could not save this setting. Try again."
 msgstr ""
 
-#: rust/frontend-slint/ui/labels.slint:136
+#: rust/frontend-slint/ui/labels.slint:201
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:48
-msgid "Update metadata"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:49
-msgid "Update media database"
-msgstr "更新媒体数据库"
 
 #: rust/frontend-slint/ui/settings.slint:53
 msgid "All systems"
@@ -1102,10 +1211,6 @@ msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:210
 msgid "NTSC (60 Hz)"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:214
-msgid "None"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:221

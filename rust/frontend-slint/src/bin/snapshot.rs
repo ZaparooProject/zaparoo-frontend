@@ -215,33 +215,33 @@ fn main() {
             .set_context_entries(slint::ModelRc::new(slint::VecModel::from(vec![
                 MenuEntry {
                     id: "more_info".into(),
-                    label: "Details".into(),
-                    label_key: "".into(),
+                    label: "".into(),
+                    label_key: "more_info".into(),
                 },
                 MenuEntry {
                     id: "toggle_favorite".into(),
-                    label: "Add to favorites".into(),
-                    label_key: "".into(),
+                    label: "".into(),
+                    label_key: "favorite:add".into(),
                 },
                 MenuEntry {
                     id: "write_card".into(),
-                    label: "Write to NFC token".into(),
-                    label_key: "".into(),
+                    label: "".into(),
+                    label_key: "write_card".into(),
                 },
                 MenuEntry {
                     id: "qr_code".into(),
-                    label: "Write with App".into(),
-                    label_key: "".into(),
+                    label: "".into(),
+                    label_key: "qr_code".into(),
                 },
                 MenuEntry {
                     id: "add_to_hub".into(),
-                    label: "Add to Hub".into(),
-                    label_key: "".into(),
+                    label: "".into(),
+                    label_key: "add_to_hub".into(),
                 },
                 MenuEntry {
                     id: "scrape_game".into(),
-                    label: "Update metadata".into(),
-                    label_key: "".into(),
+                    label: "".into(),
+                    label_key: "scrape_game".into(),
                 },
             ])));
         app.global::<generated::Overlays>().set_context_index(1);

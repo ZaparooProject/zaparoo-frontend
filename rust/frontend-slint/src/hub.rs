@@ -777,27 +777,26 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
     let mut entries = Vec::new();
     if kind == Kind::Category {
         let has_indexable = crate::router::category_has_indexable(ctx, &entry.id);
-        entries.push(crate::router::menu_entry("hub_move", "Move"));
-        entries.push(crate::router::menu_entry("hub_remove", "Hide"));
+        entries.push(crate::router::menu_row("hub_move"));
+        entries.push(crate::router::menu_row_keyed(
+            "hub_remove",
+            "hub_remove:hide",
+            "",
+        ));
         if has_indexable && !crate::router::media_busy(app) {
-            entries.push(crate::router::menu_entry(
-                "index_category",
-                "Update media database",
-            ));
-            entries.push(crate::router::menu_entry(
-                "scrape_category",
-                "Update metadata",
-            ));
+            entries.push(crate::router::menu_row("index_category"));
+            entries.push(crate::router::menu_row("scrape_category"));
         }
     } else {
-        entries.push(crate::router::menu_entry("hub_move", "Move"));
-        entries.push(crate::router::menu_entry(
+        entries.push(crate::router::menu_row("hub_move"));
+        entries.push(crate::router::menu_row_keyed(
             "hub_remove",
             if kind == Kind::Action {
-                "Hide"
+                "hub_remove:hide"
             } else {
-                "Remove"
+                "hub_remove:remove"
             },
+            "",
         ));
     }
     {
@@ -883,10 +882,10 @@ fn open_page_menu(ctx: &Ctx, app: &App) {
         ctx,
         app,
         vec![
-            crate::router::menu_entry("hub_add", "Add item…"),
-            crate::router::menu_entry("hub_reset", "Reset layout"),
-            crate::router::menu_entry("hub_settings", "Settings"),
-            crate::router::menu_entry("hub_quit", "Quit"),
+            crate::router::menu_row("hub_add"),
+            crate::router::menu_row("hub_reset"),
+            crate::router::menu_row("hub_settings"),
+            crate::router::menu_row("hub_quit"),
         ],
     );
 }

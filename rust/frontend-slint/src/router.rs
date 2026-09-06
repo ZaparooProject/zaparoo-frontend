@@ -1156,12 +1156,9 @@ pub(crate) fn open_view_menu(ctx: &Ctx, app: &App) {
     app.global::<crate::Overlays>()
         .set_list_setting_id(SharedString::default());
     app.global::<crate::Overlays>()
-        .set_list_title(SharedString::from("View"));
+        .set_list_title(SharedString::from("title:view"));
     app.global::<crate::Overlays>()
-        .set_list_entries(ModelRc::new(VecModel::from(vec![menu_entry(
-            "jump_letter",
-            "Go to...",
-        )])));
+        .set_list_entries(ModelRc::new(VecModel::from(vec![menu_row("jump_letter")])));
     app.global::<crate::Overlays>().set_list_index(0);
     app.global::<crate::Overlays>().set_list_open(true);
 }
@@ -1414,11 +1411,28 @@ pub(crate) fn open_qr_code(ctx: &Ctx, app: &App, entry: &GameRow) {
     overlays.set_qr_open(true);
 }
 
+/// A menu row whose text is literal (a launcher id, a system name).
 pub(crate) fn menu_entry(id: &str, label: &str) -> crate::MenuEntry {
     crate::MenuEntry {
         id: SharedString::from(id),
         label: SharedString::from(label),
         label_key: SharedString::default(),
+    }
+}
+
+/// A menu row whose text comes from the `Labels.menu` vocabulary. The
+/// key is the row id unless the copy depends on state (a favorite that
+/// is already set, a hub item that hides rather than removes), and
+/// `name` fills the one placeholder a row can carry.
+pub(crate) fn menu_row(id: &str) -> crate::MenuEntry {
+    menu_row_keyed(id, id, "")
+}
+
+pub(crate) fn menu_row_keyed(id: &str, key: &str, name: &str) -> crate::MenuEntry {
+    crate::MenuEntry {
+        id: SharedString::from(id),
+        label: SharedString::from(name),
+        label_key: SharedString::from(key),
     }
 }
 
@@ -1497,26 +1511,28 @@ fn present_list(
 }
 
 pub(crate) fn present_hub_page_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
-    present_list(ctx, app, ListContext::HubPageMenu, "View", entries);
+    present_list(ctx, app, ListContext::HubPageMenu, "title:view", entries);
 }
 
 pub(crate) fn present_hub_add_picker(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
-    present_list(ctx, app, ListContext::HubAdd, "Add item", entries);
+    present_list(ctx, app, ListContext::HubAdd, "title:add_item", entries);
 }
 
+/// The vocabulary key for the current grouping, so the View menu row
+/// can name it in the reader's language.
 fn favorites_grouping_label(ctx: &Ctx) -> &'static str {
     if lock(&ctx.shared).persist.settings.favorites_grouping == "system" {
-        "System"
+        "group:system"
     } else {
-        "None"
+        "group:none"
     }
 }
 
 fn favorites_sort_label(ctx: &Ctx) -> &'static str {
     if lock(&ctx.shared).favorites_sort == "name" {
-        "A-Z"
+        "sort:name"
     } else {
-        "Default"
+        "sort:default"
     }
 }
 
@@ -1524,18 +1540,26 @@ fn favorites_sort_label(ctx: &Ctx) -> &'static str {
 /// favorite, and the way back to the Hub.
 pub(crate) fn open_favorites_page_menu(ctx: &Ctx, app: &App) {
     let entries = vec![
-        menu_entry(
+        menu_row_keyed(
             "favorites_sort",
-            &format!("Sort: {}", favorites_sort_label(ctx)),
+            "favorites_sort",
+            favorites_sort_label(ctx),
         ),
-        menu_entry(
+        menu_row_keyed(
             "favorites_grouping",
-            &format!("Group by: {}", favorites_grouping_label(ctx)),
+            "favorites_grouping",
+            favorites_grouping_label(ctx),
         ),
-        menu_entry("launch_random_favorite", "Random favorite"),
-        menu_entry("back_to_hub", "Back to Hub"),
+        menu_row("launch_random_favorite"),
+        menu_row("back_to_hub"),
     ];
-    present_list(ctx, app, ListContext::FavoritesPageMenu, "View", entries);
+    present_list(
+        ctx,
+        app,
+        ListContext::FavoritesPageMenu,
+        "title:view",
+        entries,
+    );
 }
 
 fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
@@ -1562,7 +1586,10 @@ fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
 
 /// The grouping page, reachable from either favorites screen.
 pub(crate) fn open_favorites_grouping_menu(ctx: &Ctx, app: &App) {
-    let entries = vec![menu_entry("none", "None"), menu_entry("system", "System")];
+    let entries = vec![
+        menu_row_keyed("none", "group:none", ""),
+        menu_row_keyed("system", "group:system", ""),
+    ];
     let current = lock(&ctx.shared)
         .persist
         .settings
@@ -1573,7 +1600,7 @@ pub(crate) fn open_favorites_grouping_menu(ctx: &Ctx, app: &App) {
         ctx,
         app,
         ListContext::FavoritesGrouping,
-        "Group by",
+        "title:group_by",
         entries,
     );
     app.global::<crate::Overlays>()
@@ -1601,9 +1628,12 @@ fn favorites_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
 }
 
 fn open_favorites_sort_menu(ctx: &Ctx, app: &App) {
-    let entries = vec![menu_entry("default", "Default"), menu_entry("name", "A-Z")];
+    let entries = vec![
+        menu_row_keyed("default", "sort:default", ""),
+        menu_row_keyed("name", "sort:name", ""),
+    ];
     let index = usize::from(lock(&ctx.shared).favorites_sort == "name");
-    present_list(ctx, app, ListContext::FavoritesSort, "Sort", entries);
+    present_list(ctx, app, ListContext::FavoritesSort, "title:sort", entries);
     app.global::<crate::Overlays>()
         .set_list_index(i32::try_from(index).unwrap_or(0));
 }
@@ -1767,12 +1797,12 @@ pub(crate) fn open_launcher_picker(ctx: &Ctx, app: &App, system_id: &str) {
             .unwrap_or_else(|| DEFAULT_LAUNCHER_ID.to_string());
         (launchers, current)
     };
-    let mut entries = vec![menu_entry(DEFAULT_LAUNCHER_ID, "Default")];
+    let mut entries = vec![menu_row_keyed(DEFAULT_LAUNCHER_ID, "launcher:default", "")];
     for id in &launchers {
         entries.push(menu_entry(id, id));
     }
     if current != DEFAULT_LAUNCHER_ID && !launchers.contains(&current) {
-        entries.push(menu_entry(&current, &format!("Current: {current}")));
+        entries.push(menu_row_keyed(&current, "launcher:current", &current));
     }
     let initial = entries
         .iter()
@@ -1781,7 +1811,7 @@ pub(crate) fn open_launcher_picker(ctx: &Ctx, app: &App, system_id: &str) {
     lock(&ctx.shared).list_context = ListContext::SystemLauncher(system_id.to_string());
     let overlays = app.global::<crate::Overlays>();
     overlays.set_list_setting_id(SharedString::default());
-    overlays.set_list_title(SharedString::from("Change launcher"));
+    overlays.set_list_title(SharedString::from("title:change_launcher"));
     overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_list_index(i32::try_from(initial).unwrap_or(0));
     overlays.set_list_open(true);

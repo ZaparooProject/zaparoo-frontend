@@ -30,6 +30,71 @@ export global Labels {
     public pure function count(n: int) -> string {
         return n;
     }
+    // The values the two favorites rows can carry, named on their own so
+    // the row that shows one can compose it (a Slint function cannot
+    // call itself).
+    public pure function menu-value(key: string) -> string {
+        if (key == "sort:name") { return @tr("A-Z"); }
+        if (key == "sort:default") { return @tr("Default"); }
+        if (key == "group:none") { return @tr("None"); }
+        if (key == "group:system") { return @tr("System"); }
+        return "";
+    }
+
+    // Menu rows and picker titles. Rust pushes the id it routes on; a
+    // key this table does not know falls through to the Hub vocabulary
+    // (a hub item's own `category:`/`action:` key) and then to the name
+    // the driver sent, which is already the item's own text.
+    public pure function menu(key: string, name: string) -> string {
+        // Games, favorites and recents rows.
+        if (key == "more_info") { return @tr("Details"); }
+        if (key == "favorite:add") { return @tr("Add to favorites"); }
+        if (key == "favorite:remove") { return @tr("Remove from favorites"); }
+        if (key == "change_launcher") { return @tr("Change launcher"); }
+        if (key == "write_card") { return @tr("Write to NFC token"); }
+        if (key == "qr_code") { return @tr("Write with App"); }
+        if (key == "discover") { return @tr("Discover alt. versions"); }
+        if (key == "add_to_hub") { return @tr("Add to Hub"); }
+        if (key == "scrape_game") { return @tr("Update metadata"); }
+        // Systems rows.
+        if (key == "launch_system") { return @tr("Launch system"); }
+        if (key == "launch_random_system" || key == "launch_random_favorite") { return @tr("Random game"); }
+        if (key == "hide:hide") { return @tr("Hide"); }
+        if (key == "hide:unhide") { return @tr("Unhide"); }
+        if (key == "index_category" || key == "index_system") { return @tr("Update media database"); }
+        if (key == "scrape_category" || key == "scrape_system") { return @tr("Update metadata"); }
+        if (key == "jump_letter") { return @tr("Go to..."); }
+        // Hub rows and its View menu.
+        if (key == "hub_add") { return @tr("Add item…"); }
+        if (key == "hub_move") { return @tr("Move"); }
+        if (key == "hub_remove:hide") { return @tr("Hide"); }
+        if (key == "hub_remove:remove") { return @tr("Remove"); }
+        if (key == "hub_reset") { return @tr("Reset layout"); }
+        if (key == "hub_settings") { return @tr("Settings"); }
+        if (key == "hub_quit") { return @tr("Quit"); }
+        if (key == "back_to_hub") { return @tr("Back to Hub"); }
+        // The favorites View menu and its pages.
+        // The two rows that show their current value; `name` carries the
+        // value's own key so both halves get translated.
+        if (key == "favorites_sort") { return @tr("Sort: {}", Labels.menu-value(name)); }
+        if (key == "favorites_grouping") { return @tr("Group by: {}", Labels.menu-value(name)); }
+        if (key == "sort:name" || key == "sort:default"
+            || key == "group:none" || key == "group:system") {
+            return Labels.menu-value(key);
+        }
+        // Launcher picker rows.
+        if (key == "launcher:default") { return @tr("Default"); }
+        if (key == "launcher:current") { return @tr("Current: {}", name); }
+        // Picker titles.
+        if (key == "title:view") { return @tr("View"); }
+        if (key == "title:add_item") { return @tr("Add item"); }
+        if (key == "title:sort") { return @tr("Sort"); }
+        if (key == "title:group_by") { return @tr("Group by"); }
+        if (key == "title:change_launcher") { return @tr("Change launcher"); }
+        if (key == "title:alternate_versions") { return @tr("Alternate versions"); }
+        return Labels.hub(key, name);
+    }
+
     public pure function hub-reason(reason: string) -> string {
         if (reason == "no-recent-games") { return @tr("No recent games"); }
         if (reason == "no-internet") { return @tr("No internet connection"); }

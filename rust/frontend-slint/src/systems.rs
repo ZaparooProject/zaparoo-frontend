@@ -902,41 +902,31 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
         crate::router::present_systems_context_menu(
             ctx,
             app,
-            vec![crate::router::menu_entry(
-                "launch_random_favorite",
-                "Random game",
-            )],
+            vec![crate::router::menu_row("launch_random_favorite")],
         );
         return;
     }
     let launchable = row.is_launchable();
-    let mut entries = vec![crate::router::menu_entry("launch_system", "Launch system")];
+    let mut entries = vec![crate::router::menu_row("launch_system")];
     if !launchable {
-        entries.push(crate::router::menu_entry(
-            "launch_random_system",
-            "Random game",
-        ));
+        entries.push(crate::router::menu_row("launch_random_system"));
     }
     if !launchable && has_launchers {
-        entries.push(crate::router::menu_entry(
-            "change_launcher",
-            "Change launcher",
-        ));
+        entries.push(crate::router::menu_row("change_launcher"));
     }
-    entries.push(crate::router::menu_entry("add_to_hub", "Add to Hub"));
-    entries.push(crate::router::menu_entry(
+    entries.push(crate::router::menu_row("add_to_hub"));
+    entries.push(crate::router::menu_row_keyed(
         "toggle_hide_system",
-        if row.hidden { "Unhide" } else { "Hide" },
+        if row.hidden {
+            "hide:unhide"
+        } else {
+            "hide:hide"
+        },
+        "",
     ));
     if !launchable && !crate::router::media_busy(app) {
-        entries.push(crate::router::menu_entry(
-            "index_system",
-            "Update media database",
-        ));
-        entries.push(crate::router::menu_entry(
-            "scrape_system",
-            "Update metadata",
-        ));
+        entries.push(crate::router::menu_row("index_system"));
+        entries.push(crate::router::menu_row("scrape_system"));
     }
     let (x, y, w, h) = cell_anchor(ctx, app);
     crate::router::set_context_anchor(app, x, y, w, h);
