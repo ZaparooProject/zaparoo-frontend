@@ -9,6 +9,7 @@
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, SelectionBar } from "chrome.slint";
 import { GridCell, Tile } from "tiles.slint";
+import { Labels } from "labels.slint";
 
 // One row: a group header, or a field with its control and state.
 export struct SettingsRow {
@@ -29,6 +30,9 @@ export struct SettingsRow {
     // them so a busy action's taller box shifts everything below it.
     y-offset: length,
     height: length,
+    // The setup forms name their scope and source rows here: `value`
+    // carries the kind, this the name it needs.
+    value-name: string,
 }
 
 // SettingsScreen.qml's string table: labels, the hint line under the
@@ -39,7 +43,31 @@ export global SettingsLabels {
         return SettingsLabels.label(id);
     }
 
+    // The media-job setup forms (IndexSetupModal, ScrapeSetupModal).
+    public pure function setup-title(kind: string) -> string {
+        if (kind == "scrape") { return @tr("Update metadata"); }
+        return @tr("Update media database");
+    }
+    // The scope a job runs over, and the source it runs from.
+    public pure function scope(kind: string, name: string) -> string {
+        if (kind == "all") { return @tr("All systems"); }
+        if (kind == "category") { return @tr("All {} systems", Labels.hub("category:" + name, name)); }
+        return name;
+    }
+    public pure function setup-action(key: string) -> string {
+        if (key == "select") { return @tr("Select"); }
+        if (key == "start") { return @tr("Start"); }
+        if (key == "toggle") { return @tr("Toggle"); }
+        return @tr("Change");
+    }
+
     public pure function label(id: string) -> string {
+        // Setup forms.
+        if (id == "source") { return @tr("Source"); }
+        if (id == "systems") { return @tr("Systems"); }
+        if (id == "rescrape") { return @tr("Replace existing"); }
+        if (id == "startIndex") { return @tr("Start update"); }
+        if (id == "startImport") { return @tr("Start import"); }
         // Root categories.
         if (id == "pageAppearance") { return @tr("Appearance"); }
         if (id == "pageLibraryData") { return @tr("Library"); }
@@ -310,19 +338,25 @@ export component SettingsRowView inherits Rectangle {
         font-weight: bar.content-weight;
     }
 
+    property <string> value-text: (root.entry.id == "systems" || root.entry.id == "source")
+        ? SettingsLabels.scope(root.entry.value, root.entry.value-name)
+        : SettingsLabels.value(root.entry.id, root.entry.value);
+
     if root.entry.control == "picker": Text {
         x: parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         width: Math.min(self.preferred-width, parent.width * 0.5);
         horizontal-alignment: right;
         overflow: elide;
-        text: SettingsLabels.value(root.entry.id, root.entry.value);
+        text: root.value-text;
         color: bar.active ? bar.content-color : Theme.text-primary;
         font-size: Sizing.font-body;
         font-weight: bar.content-weight;
     }
 
-    if root.entry.control == "action": Text {
+    // The setup forms' Start row is its own button: the centered label
+    // says what it does, so it carries no right-hand action text.
+    if root.entry.control == "action" && root.entry.value != "": Text {
         x: parent.width - self.width - root.pad;
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         text: SettingsLabels.action(root.entry.value);

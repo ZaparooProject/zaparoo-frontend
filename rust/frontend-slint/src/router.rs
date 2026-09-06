@@ -55,6 +55,8 @@ pub struct Shared {
     pub systems_model: crate::systems::SystemsModel,
     /// The games-style screens: rows, cursor, fetch and cue state.
     pub games: crate::games::GamesModel,
+    /// The media-job setup panel's form state.
+    pub setup: crate::media_setup::SetupModel,
     /// Core reports at least one connected reader. Refreshed lazily.
     pub has_readers: bool,
     /// An NFC-class reader is present; gates the context-menu "Write
@@ -208,6 +210,7 @@ impl Shared {
             systems: Vec::new(),
             systems_model: crate::systems::SystemsModel::new(),
             games: crate::games::GamesModel::new(),
+            setup: crate::media_setup::SetupModel::new(),
             has_readers: false,
             has_nfc: false,
             context_owner: ContextOwner::Games,
@@ -851,6 +854,12 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     }
     // Single input gate during forward transitions, as in Main.qml.
     // Modals run on top of the gate; pickers and menus are topmost.
+    // The setup panel owns input above every screen, below the alerts
+    // and the picker overlays that can sit on top of it.
+    if app.global::<crate::SetupModalView>().get_open() {
+        crate::media_setup::handle_action(ctx, app, action);
+        return;
+    }
     if app.global::<crate::Overlays>().get_qr_open() {
         // Static display: any Cancel closes, everything else swallowed.
         if action == actions::CANCEL {

@@ -292,6 +292,61 @@ fn main() {
         crt,
         screen.contains("settings-page"),
     );
+    // "setup" renders the scrape setup form over Settings; "setup-picker"
+    // renders its scope page.
+    if screen.contains("setup") {
+        let inputs = sizing::Scene::of(&app, scene_w, scene_h, crt).inputs();
+        let row_h = inputs.pct_h(8.0);
+        let sv = app.global::<generated::SetupModalView>();
+        let rows: Vec<generated::SettingsRow> = [
+            ("source", "picker", "source", "Screenscraper"),
+            ("systems", "picker", "category", "Console"),
+            ("rescrape", "toggle", "", ""),
+            ("startImport", "action", "", ""),
+        ]
+        .iter()
+        .enumerate()
+        .map(|(i, (id, control, value, name))| generated::SettingsRow {
+            kind: "field".into(),
+            id: (*id).into(),
+            control: (*control).into(),
+            value: (*value).into(),
+            value_name: (*name).into(),
+            checked: *id == "rescrape",
+            enabled: true,
+            y_offset: (i as i32 * row_h) as f32,
+            height: row_h as f32,
+            ..Default::default()
+        })
+        .collect();
+        sv.set_kind("scrape".into());
+        sv.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        sv.set_index(1);
+        if screen.contains("picker") {
+            let entries = [
+                ("all", ""),
+                ("category", "Console"),
+                ("category", "Handheld"),
+                ("system", "Nintendo Entertainment System"),
+                ("system", "Super Nintendo"),
+                ("system", "Mega Drive"),
+                ("system", "Neo Geo"),
+            ];
+            let picker: Vec<generated::SetupPickerRow> = entries
+                .iter()
+                .map(|(kind, name)| generated::SetupPickerRow {
+                    kind: (*kind).into(),
+                    name: (*name).into(),
+                })
+                .collect();
+            sv.set_picker_page(true);
+            sv.set_picker_title("systems".into());
+            sv.set_picker_rows(slint::ModelRc::new(slint::VecModel::from(picker)));
+            sv.set_picker_sel(1);
+            sv.set_has_below(true);
+        }
+        sv.set_open(true);
+    }
     if screen == "calibration" {
         let overlays = app.global::<generated::Overlays>();
         overlays.set_crt_h_offset(4);
@@ -312,7 +367,7 @@ fn main() {
         "favorites"
     } else if screen.contains("recents") {
         "recents"
-    } else if screen.contains("settings") {
+    } else if screen.contains("settings") || screen.contains("setup") {
         "settings"
     } else if screen == "saver" || screen == "dialog" || screen == "calibration" {
         "hub"

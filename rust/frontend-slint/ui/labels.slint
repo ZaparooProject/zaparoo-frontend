@@ -1,0 +1,36 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The shared label vocabulary: Rust pushes stable keys, this file turns
+// them into translated text. Kept in its own file so every screen and
+// modal can reach it without importing the app tree.
+
+// Key-to-copy vocabulary for labels Rust hands over as stable ids.
+export global Labels {
+    public pure function hub(key: string, name: string) -> string {
+        if (key == "category:Arcade") { return @tr("Arcade"); }
+        if (key == "category:Computer") { return @tr("Computers"); }
+        if (key == "category:Console") { return @tr("Consoles"); }
+        if (key == "category:Handheld") { return @tr("Handhelds"); }
+        if (key == "category:Other") { return @tr("Other"); }
+        if (key == "action:resume") { return name == "" ? @tr("Resume") : @tr("Resume: {}", name); }
+        if (key == "action:favorites") { return @tr("Favorites"); }
+        if (key == "action:recents") { return @tr("Recently played"); }
+        if (key == "action:update") { return @tr("Update"); }
+        if (key == "action:settings") { return @tr("Settings"); }
+        return name;
+    }
+    // Counts arrive already grouped by Rust (`zaparoo_app::format`)
+    // through `Shell.count-*`; this keeps a plain number readable when a
+    // view has only the integer.
+    public pure function count(n: int) -> string {
+        return n;
+    }
+    public pure function hub-reason(reason: string) -> string {
+        if (reason == "no-recent-games") { return @tr("No recent games"); }
+        if (reason == "no-internet") { return @tr("No internet connection"); }
+        if (reason == "not-available") { return @tr("Not available"); }
+        return "";
+    }
+}

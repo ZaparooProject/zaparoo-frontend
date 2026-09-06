@@ -13,6 +13,8 @@ import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, 
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
+import { SetupPickerRow, SetupModal } from "setup.slint";
+import { Labels } from "labels.slint";
 
 // Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
 // 6x8 bitmap font for the CRT native path (family names must match
@@ -26,7 +28,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow }
+export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SetupPickerRow }
 
 // Context-menu row: `id` is the dispatch key the router switches on
 // (ContextMenu.qml's rule - position-keyed dispatch was a footgun).
@@ -160,35 +162,6 @@ export global HubInput {
     callback wheel(int);
 }
 
-// Key-to-copy vocabulary for labels Rust hands over as stable ids.
-export global Labels {
-    public pure function hub(key: string, name: string) -> string {
-        if (key == "category:Arcade") { return @tr("Arcade"); }
-        if (key == "category:Computer") { return @tr("Computers"); }
-        if (key == "category:Console") { return @tr("Consoles"); }
-        if (key == "category:Handheld") { return @tr("Handhelds"); }
-        if (key == "category:Other") { return @tr("Other"); }
-        if (key == "action:resume") { return name == "" ? @tr("Resume") : @tr("Resume: {}", name); }
-        if (key == "action:favorites") { return @tr("Favorites"); }
-        if (key == "action:recents") { return @tr("Recently played"); }
-        if (key == "action:update") { return @tr("Update"); }
-        if (key == "action:settings") { return @tr("Settings"); }
-        return name;
-    }
-    // Counts arrive already grouped by Rust (`zaparoo_app::format`)
-    // through `Shell.count-*`; this keeps a plain number readable when a
-    // view has only the integer.
-    public pure function count(n: int) -> string {
-        return n;
-    }
-    public pure function hub-reason(reason: string) -> string {
-        if (reason == "no-recent-games") { return @tr("No recent games"); }
-        if (reason == "no-internet") { return @tr("No internet connection"); }
-        if (reason == "not-available") { return @tr("Not available"); }
-        return "";
-    }
-}
-
 // Systems state (SystemsScreen.qml over `zaparoo_app::systems` and
 // `paged_grid`): Rust projects the category's rows, drives the cursor,
 // and pushes the current page's cells at the geometry it resolved. The
@@ -288,6 +261,28 @@ export global SettingsView {
     in-out property <length> scroll: 0px;
     in-out property <int> activate-pulse: 0;
     in-out property <int> release-pulse: 0;
+}
+
+// The media-job setup panel (Update media database, Update metadata).
+export global SetupModalView {
+    in-out property <bool> open: false;
+    in-out property <string> kind: "index";
+    in-out property <bool> picker-page: false;
+    in-out property <string> picker-title: "systems";
+    in-out property <[SettingsRow]> rows: [];
+    in-out property <int> index: 0;
+    in-out property <[SetupPickerRow]> picker-rows: [];
+    in-out property <int> picker-sel: 0;
+    in-out property <bool> has-above: false;
+    in-out property <bool> has-below: false;
+    in-out property <int> activate-pulse: 0;
+}
+
+export global SetupInput {
+    callback row-hovered(int);
+    callback row-clicked(int);
+    callback picker-hovered(int);
+    callback picker-clicked(int);
 }
 
 // Pointer input from the settings screen.
@@ -1855,7 +1850,7 @@ export component App inherits Window {
     }
 
     pure function has-modal() -> bool {
-        return GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
+        return SetupModalView.open || GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
             || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
             || Overlays.context-open;
     }
@@ -1885,6 +1880,22 @@ export component App inherits Window {
     pure function help-entries() -> [HelpEntry] {
         if (Shell.boot-curtain) {
             return [];
+        }
+        // The setup panel: its confirm cue names what the focused row
+        // does, and Back steps out of a picker page before the panel.
+        if (SetupModalView.open) {
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: SettingsLabels.setup-action(
+                    SetupModalView.picker-page
+                        ? "select"
+                        : (SetupModalView.index >= 0 && SetupModalView.index < SetupModalView.rows.length
+                            ? (SetupModalView.rows[SetupModalView.index].control == "action"
+                                ? "start"
+                                : (SetupModalView.rows[SetupModalView.index].control == "toggle" ? "toggle" : "change"))
+                            : "change")) },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
         }
         if (Overlays.dialog-open) {
             if (Overlays.dialog-buttons.length > 1) {
@@ -2187,6 +2198,20 @@ export component App inherits Window {
         }
     }
 
+    header := HeaderBar {
+        x: 0;
+        y: Sizing.header-top-margin;
+        width: parent.width;
+        clock-text: Shell.clock-text;
+        clock-sample: Shell.clock-sample;
+        status-keys: Shell.status-keys;
+        status-icons-enabled: Shell.status-icons-enabled;
+        has-battery: Shell.has-battery;
+        battery-percent: Shell.battery-percent;
+        browse-title: root.browse-header-title();
+        app-text: Shell.status-text;
+    }
+
     // Game-info modal, mounted above the screens like the Qt modal
     // stack. Static scrim (instant dim): at native 1080p a fading
     // full-screen translucent surface costs ~100ms frames - the Qt
@@ -2282,6 +2307,25 @@ export component App inherits Window {
         modules: Overlays.qr-modules;
     }
 
+    if SetupModalView.open: SetupModal {
+        width: 100%;
+        height: 100%;
+        kind: SetupModalView.kind;
+        picker-page: SetupModalView.picker-page;
+        picker-title: SetupModalView.picker-title;
+        rows: SetupModalView.rows;
+        index: SetupModalView.index;
+        picker-rows: SetupModalView.picker-rows;
+        picker-sel: SetupModalView.picker-sel;
+        has-above: SetupModalView.has-above;
+        has-below: SetupModalView.has-below;
+        activate-pulse: SetupModalView.activate-pulse;
+        row-hovered(i) => { SetupInput.row-hovered(i); }
+        row-clicked(i) => { SetupInput.row-clicked(i); }
+        picker-hovered(i) => { SetupInput.picker-hovered(i); }
+        picker-clicked(i) => { SetupInput.picker-clicked(i); }
+    }
+
     if Overlays.context-open: ContextMenu {
         width: 100%;
         height: 100%;
@@ -2316,19 +2360,6 @@ export component App inherits Window {
         columns: Overlays.letter-columns;
     }
 
-    header := HeaderBar {
-        x: 0;
-        y: Sizing.header-top-margin;
-        width: parent.width;
-        clock-text: Shell.clock-text;
-        clock-sample: Shell.clock-sample;
-        status-keys: Shell.status-keys;
-        status-icons-enabled: Shell.status-icons-enabled;
-        has-battery: Shell.has-battery;
-        battery-percent: Shell.battery-percent;
-        browse-title: root.browse-header-title();
-        app-text: Shell.status-text;
-    }
 
     HelpBar {
         x: 0;

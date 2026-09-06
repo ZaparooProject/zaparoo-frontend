@@ -21,6 +21,7 @@ mod glyphs;
 mod hub;
 mod latch_protocol;
 mod media_cache;
+mod media_setup;
 #[cfg(feature = "mister")]
 mod mister;
 #[cfg_attr(
@@ -554,6 +555,7 @@ fn main() -> Result<(), slint::PlatformError> {
     systems::bind_input(&ctx, &app);
     games::bind_input(&ctx, &app);
     settings::bind_input(&ctx, &app);
+    media_setup::bind_input(&ctx, &app);
     hub::rebuild(&ctx, &app);
     hub::restore(&ctx, &app);
     bind_resume(&ctx, &app, &client);

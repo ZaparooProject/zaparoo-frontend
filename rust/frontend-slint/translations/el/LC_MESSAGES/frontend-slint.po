@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-09-06 06:07+0000\n"
+"POT-Creation-Date: 2026-09-06 06:25+0000\n"
 "Language: el\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -8,269 +8,222 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Generator: scripts/convert-ts-catalogs.py\n"
 
-#: rust/frontend-slint/ui/app.slint:166
-msgid "Arcade"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:167
-msgid "Computers"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:168
-msgid "Consoles"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:169
-msgid "Handhelds"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:170
-msgid "Other"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:171
-msgid "Resume"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:171
-msgid "Resume: {}"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:172 rust/frontend-slint/ui/app.slint:778
-#: rust/frontend-slint/ui/app.slint:1850
-msgid "Favorites"
-msgstr "Αγαπημένα"
-
-#: rust/frontend-slint/ui/app.slint:173 rust/frontend-slint/ui/app.slint:1446
-msgid "Recently played"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:174
-msgid "Update"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:175
-msgid "Settings"
-msgstr "Ρυθμίσεις"
-
-#: rust/frontend-slint/ui/app.slint:185
-msgid "No recent games"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:186
-msgid "No internet connection"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:187
-msgid "Not available"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:668
+#: rust/frontend-slint/ui/app.slint:663
 msgid "Updating the media database"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:668
+#: rust/frontend-slint/ui/app.slint:663
 msgid "No games found yet"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:670
+#: rust/frontend-slint/ui/app.slint:665
 msgid "Your games appear here as Core finds them."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:671
+#: rust/frontend-slint/ui/app.slint:666
 msgid "Update media database in Settings > Library."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:687
+#: rust/frontend-slint/ui/app.slint:682
 msgid "About / License"
 msgstr "Σχετικά / Άδεια"
 
-#: rust/frontend-slint/ui/app.slint:719
+#: rust/frontend-slint/ui/app.slint:714
 msgid "Zaparoo Frontend"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:733
+#: rust/frontend-slint/ui/app.slint:728
 msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
 msgstr "Πνευματικά δικαιώματα 2026 Wizzo Pty Ltd και οι συντελεστές του έργου Zaparoo."
 
-#: rust/frontend-slint/ui/app.slint:740
+#: rust/frontend-slint/ui/app.slint:735
 msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
 msgstr "Ο πηγαίος κώδικας διατίθεται με την άδεια PolyForm Noncommercial License 1.0.0. Δωρεάν για προσωπική, μη εμπορική χρήση. Η εμπορική χρήση ή αναδιανομή απαιτεί ξεχωριστή άδεια."
 
-#: rust/frontend-slint/ui/app.slint:747
+#: rust/frontend-slint/ui/app.slint:742
 msgid "Commercial licensing: legal@zaparoo.org"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:754
+#: rust/frontend-slint/ui/app.slint:749
 msgid "Project: https://zaparoo.org"
 msgstr "Έργο: https://zaparoo.org"
 
-#: rust/frontend-slint/ui/app.slint:784
+#: rust/frontend-slint/ui/app.slint:773 rust/frontend-slint/ui/app.slint:1440
+#: rust/frontend-slint/ui/app.slint:1847
+msgid "Favorites"
+msgstr "Αγαπημένα"
+
+#: rust/frontend-slint/ui/app.slint:779
 msgid "{} systems with favorites"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:785
+#: rust/frontend-slint/ui/app.slint:780
 msgid "{} systems"
 msgstr "{0} συστήματα"
 
-#: rust/frontend-slint/ui/app.slint:929
+#: rust/frontend-slint/ui/app.slint:924
 msgid "{} favorites"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:930
+#: rust/frontend-slint/ui/app.slint:925
 msgid "Hidden"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:969 rust/frontend-slint/ui/app.slint:1698
+#: rust/frontend-slint/ui/app.slint:964 rust/frontend-slint/ui/app.slint:1693
 msgid "No favorites yet"
 msgstr "Δεν υπάρχουν αγαπημένα ακόμα"
 
-#: rust/frontend-slint/ui/app.slint:969
+#: rust/frontend-slint/ui/app.slint:964
 msgid "No systems in this category"
 msgstr "Δεν υπάρχουν συστήματα σε αυτή την κατηγορία"
 
-#: rust/frontend-slint/ui/app.slint:970
+#: rust/frontend-slint/ui/app.slint:965
 msgid "Loading favorite systems…"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:970
+#: rust/frontend-slint/ui/app.slint:965
 msgid "Loading systems…"
 msgstr "Φόρτωση συστημάτων…"
 
-#: rust/frontend-slint/ui/app.slint:1074
+#: rust/frontend-slint/ui/app.slint:1069
 msgid "Go to..."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1083 rust/frontend-slint/ui/app.slint:1583
-#: rust/frontend-slint/ui/app.slint:2184
+#: rust/frontend-slint/ui/app.slint:1078 rust/frontend-slint/ui/app.slint:1578
+#: rust/frontend-slint/ui/app.slint:2195
 msgid "Loading…"
 msgstr "Φόρτωση…"
 
-#: rust/frontend-slint/ui/app.slint:1149
+#: rust/frontend-slint/ui/app.slint:1144
 msgid "Writing failed"
 msgstr "Αποτυχία εγγραφής"
 
-#: rust/frontend-slint/ui/app.slint:1150
+#: rust/frontend-slint/ui/app.slint:1145
 msgid "Put a writable card near the reader"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1456
+#: rust/frontend-slint/ui/app.slint:1441 rust/frontend-slint/ui/app.slint:1848
+msgid "Recently played"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1451
 msgid "{} games"
 msgstr ""
 
 #. background fetch fills rows the user scrolled past.
-#: rust/frontend-slint/ui/app.slint:1459
+#: rust/frontend-slint/ui/app.slint:1454
 msgid "Loading more…"
 msgstr "Φόρτωση περισσότερων…"
 
-#: rust/frontend-slint/ui/app.slint:1583
+#: rust/frontend-slint/ui/app.slint:1578
 msgid "Loading game…"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1699
+#: rust/frontend-slint/ui/app.slint:1694
 msgid "Nothing played yet"
 msgstr "Δεν παίχτηκε τίποτα ακόμα"
 
-#: rust/frontend-slint/ui/app.slint:1699
+#: rust/frontend-slint/ui/app.slint:1694
 msgid "No games in this system"
 msgstr "Δεν υπάρχουν παιχνίδια σε αυτό το σύστημα"
 
-#: rust/frontend-slint/ui/app.slint:1700
+#: rust/frontend-slint/ui/app.slint:1695
 msgid "Loading favorites…"
 msgstr "Φόρτωση αγαπημένων…"
 
-#: rust/frontend-slint/ui/app.slint:1701
+#: rust/frontend-slint/ui/app.slint:1696
 msgid "Loading recently played…"
 msgstr "Φόρτωση πρόσφατα παιγμένων…"
 
-#: rust/frontend-slint/ui/app.slint:1701
+#: rust/frontend-slint/ui/app.slint:1696
 msgid "Loading games…"
 msgstr "Φόρτωση παιχνιδιών…"
 
-#: rust/frontend-slint/ui/app.slint:1785
+#: rust/frontend-slint/ui/app.slint:1780
 msgid "Arrows adjust position"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1793
+#: rust/frontend-slint/ui/app.slint:1788
 msgid "Accept or Back saves"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1879 rust/frontend-slint/ui/app.slint:1892
-#: rust/frontend-slint/ui/app.slint:1922 rust/frontend-slint/ui/app.slint:1995
-#: rust/frontend-slint/ui/app.slint:2009
+#: rust/frontend-slint/ui/app.slint:1874 rust/frontend-slint/ui/app.slint:1888
+#: rust/frontend-slint/ui/app.slint:1914 rust/frontend-slint/ui/app.slint:1994
+#: rust/frontend-slint/ui/app.slint:2014
 msgid "Move"
 msgstr "Μετακίνηση"
 
-#: rust/frontend-slint/ui/app.slint:1893 rust/frontend-slint/ui/app.slint:1904
-msgid "Select"
-msgstr "Επιλογή"
-
-#: rust/frontend-slint/ui/app.slint:1894 rust/frontend-slint/ui/app.slint:1909
-#: rust/frontend-slint/ui/app.slint:1940
-msgid "Cancel"
-msgstr "Ακύρωση"
-
-#: rust/frontend-slint/ui/app.slint:1898
-msgid "OK"
-msgstr "Εντάξει"
-
-#: rust/frontend-slint/ui/app.slint:1905 rust/frontend-slint/ui/app.slint:1912
-msgid "Close"
-msgstr "Κλείσιμο"
-
-#: rust/frontend-slint/ui/app.slint:1916 rust/frontend-slint/ui/app.slint:2016
-msgid "Scroll"
-msgstr "Κύλιση"
-
-#: rust/frontend-slint/ui/app.slint:1929
-msgid "Adjust"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:1930
-msgid "Save"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:1938
-msgid "Reposition"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:1939
-msgid "Place"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:1946 rust/frontend-slint/ui/app.slint:1953
-#: rust/frontend-slint/ui/app.slint:2033
-msgid "Retry"
-msgstr "Επανάληψη"
-
-#: rust/frontend-slint/ui/app.slint:1946 rust/frontend-slint/ui/app.slint:1953
-#: rust/frontend-slint/ui/app.slint:1974 rust/frontend-slint/ui/app.slint:1989
-#: rust/frontend-slint/ui/app.slint:2052
-msgid "Open"
-msgstr "Άνοιγμα"
-
-#: rust/frontend-slint/ui/app.slint:1947 rust/frontend-slint/ui/app.slint:1967
-#: rust/frontend-slint/ui/app.slint:2053
-msgid "Options"
-msgstr "Επιλογές"
-
-#: rust/frontend-slint/ui/app.slint:1948 rust/frontend-slint/ui/app.slint:1954
-#: rust/frontend-slint/ui/app.slint:2039
-msgid "View"
-msgstr ""
-
-#: rust/frontend-slint/ui/app.slint:1959 rust/frontend-slint/ui/app.slint:1969
-#: rust/frontend-slint/ui/app.slint:1985 rust/frontend-slint/ui/app.slint:1998
-#: rust/frontend-slint/ui/app.slint:2011 rust/frontend-slint/ui/app.slint:2022
-#: rust/frontend-slint/ui/app.slint:2034 rust/frontend-slint/ui/app.slint:2047
+#: rust/frontend-slint/ui/app.slint:1897 rust/frontend-slint/ui/app.slint:1970
+#: rust/frontend-slint/ui/app.slint:1987 rust/frontend-slint/ui/app.slint:2001
+#: rust/frontend-slint/ui/app.slint:2016 rust/frontend-slint/ui/app.slint:2028
+#: rust/frontend-slint/ui/app.slint:2038 rust/frontend-slint/ui/app.slint:2051
+#: rust/frontend-slint/ui/app.slint:2066
 msgid "Back"
 msgstr "Πίσω"
 
-#: rust/frontend-slint/ui/app.slint:1996 rust/frontend-slint/ui/app.slint:2010
+#: rust/frontend-slint/ui/app.slint:1904 rust/frontend-slint/ui/app.slint:1915
+msgid "Select"
+msgstr "Επιλογή"
+
+#: rust/frontend-slint/ui/app.slint:1905 rust/frontend-slint/ui/app.slint:1920
+#: rust/frontend-slint/ui/app.slint:1951
+msgid "Cancel"
+msgstr "Ακύρωση"
+
+#: rust/frontend-slint/ui/app.slint:1909
+msgid "OK"
+msgstr "Εντάξει"
+
+#: rust/frontend-slint/ui/app.slint:1916 rust/frontend-slint/ui/app.slint:1923
+msgid "Close"
+msgstr "Κλείσιμο"
+
+#: rust/frontend-slint/ui/app.slint:1927 rust/frontend-slint/ui/app.slint:2027
+msgid "Scroll"
+msgstr "Κύλιση"
+
+#: rust/frontend-slint/ui/app.slint:1940
+msgid "Adjust"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1941
+msgid "Save"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1949
+msgid "Reposition"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1950
+msgid "Place"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1957 rust/frontend-slint/ui/app.slint:1964
+#: rust/frontend-slint/ui/app.slint:2044
+msgid "Retry"
+msgstr "Επανάληψη"
+
+#: rust/frontend-slint/ui/app.slint:1957 rust/frontend-slint/ui/app.slint:1964
+#: rust/frontend-slint/ui/app.slint:1985 rust/frontend-slint/ui/app.slint:2000
+#: rust/frontend-slint/ui/app.slint:2063
+msgid "Open"
+msgstr "Άνοιγμα"
+
+#: rust/frontend-slint/ui/app.slint:1958 rust/frontend-slint/ui/app.slint:1978
+#: rust/frontend-slint/ui/app.slint:2064
+msgid "Options"
+msgstr "Επιλογές"
+
+#: rust/frontend-slint/ui/app.slint:1959 rust/frontend-slint/ui/app.slint:1965
+#: rust/frontend-slint/ui/app.slint:2050
+msgid "View"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2007 rust/frontend-slint/ui/app.slint:2021
 msgid "Change"
 msgstr "Αλλαγή"
 
-#: rust/frontend-slint/ui/app.slint:1997
+#: rust/frontend-slint/ui/app.slint:2008
 msgid "Toggle"
 msgstr "Εναλλαγή"
 
@@ -492,615 +445,695 @@ msgstr ""
 msgid "Failed to load"
 msgstr "Αποτυχία φόρτωσης"
 
-#. Root categories.
-#: rust/frontend-slint/ui/settings.slint:44
-msgid "Appearance"
+#: rust/frontend-slint/ui/labels.slint:12
+msgid "Arcade"
 msgstr ""
 
-#: rust/frontend-slint/ui/settings.slint:45
-msgid "Library"
-msgstr "Βιβλιοθήκη"
-
-#: rust/frontend-slint/ui/settings.slint:46
-msgid "Display"
+#: rust/frontend-slint/ui/labels.slint:13
+msgid "Computers"
 msgstr ""
 
-#: rust/frontend-slint/ui/settings.slint:47
-msgid "Controls"
+#: rust/frontend-slint/ui/labels.slint:14
+msgid "Consoles"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:15
+msgid "Handhelds"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:16
+msgid "Other"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:17
+msgid "Resume"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:17
+msgid "Resume: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:20
+msgid "Update"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:21
+msgid "Settings"
+msgstr "Ρυθμίσεις"
+
+#: rust/frontend-slint/ui/labels.slint:31
+msgid "No recent games"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:32
+msgid "No internet connection"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:33
+msgid "Not available"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:48
-msgid "Language"
-msgstr "Γλώσσα"
-
-#: rust/frontend-slint/ui/settings.slint:49
-msgid "About"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:51
-msgid "Analog video"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:52
-msgid "Maintenance"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:53
-msgid "Browsing"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:55
-msgid "Color scheme"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:56
-msgid "Color intensity"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:57
-msgid "System logos"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:58
-msgid "Reduce motion"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:59
-msgid "Screensaver"
-msgstr "Προφύλαξη οθόνης"
-
-#: rust/frontend-slint/ui/settings.slint:61
-msgid "Interface resolution"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:62
-msgid "Interface layout"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:63
-msgid "Orientation"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:64
-msgid "CRT mode"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:65
-msgid "Video standard"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:66
-msgid "Screen position"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:69
-msgid "Region"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:70
-msgid "Clock format"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:72
-msgid "Button style"
-msgstr "Στυλ κουμπιών"
-
-#: rust/frontend-slint/ui/settings.slint:73
-msgid "Swap controller confirm/cancel"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:74
-msgid "Swap controller options/view"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:75
-msgid "Mouse support"
-msgstr "Υποστήριξη ποντικιού"
-
-#: rust/frontend-slint/ui/settings.slint:77
-msgid "Update media database"
-msgstr "Ενημέρωση βάσης δεδομένων"
-
-#: rust/frontend-slint/ui/settings.slint:78
 msgid "Update metadata"
 msgstr ""
 
+#: rust/frontend-slint/ui/settings.slint:49
+msgid "Update media database"
+msgstr "Ενημέρωση βάσης δεδομένων"
+
+#: rust/frontend-slint/ui/settings.slint:53
+msgid "All systems"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:54
+msgid "All {} systems"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:59
+msgid "Start"
+msgstr "Έναρξη"
+
+#. Setup forms.
+#: rust/frontend-slint/ui/settings.slint:66
+msgid "Source"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:67
+msgid "Systems"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:68
+msgid "Replace existing"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:69
+msgid "Start update"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:70
+msgid "Start import"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:72
+msgid "Appearance"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:73
+msgid "Library"
+msgstr "Βιβλιοθήκη"
+
+#: rust/frontend-slint/ui/settings.slint:74
+msgid "Display"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:75
+msgid "Controls"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:76
+msgid "Language"
+msgstr "Γλώσσα"
+
+#: rust/frontend-slint/ui/settings.slint:77
+msgid "About"
+msgstr ""
+
 #: rust/frontend-slint/ui/settings.slint:79
-msgid "Systems layout"
+msgid "Analog video"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:80
-msgid "Games layout"
+msgid "Maintenance"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:81
-msgid "Preferred artwork"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:82
-msgid "Show hidden items"
+msgid "Browsing"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:83
-msgid "Show original filenames"
+msgid "Color scheme"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:84
+msgid "Color intensity"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:85
+msgid "System logos"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:86
-msgid "Documentation"
+msgid "Reduce motion"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:87
-msgid "Debug logging"
-msgstr "Καταγραφή εντοπισμού σφαλμάτων"
+msgid "Screensaver"
+msgstr "Προφύλαξη οθόνης"
 
-#: rust/frontend-slint/ui/settings.slint:88
-msgid "Upload log file"
-msgstr "Αποστολή αρχείου καταγραφής"
+#: rust/frontend-slint/ui/settings.slint:89
+msgid "Interface resolution"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:90
+msgid "Interface layout"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:91
+msgid "Orientation"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:92
+msgid "CRT mode"
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:93
-msgid "Changes colors across screens, including text and highlights."
+msgid "Video standard"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:94
-msgid "Controls how strongly accent colors tint tiles and backgrounds."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:95
-msgid "Shows system logos in original colors or tinted to match colors."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:96
-msgid "Turns off animation throughout the interface."
+msgid "Screen position"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:97
-msgid "Sets idle time before the screensaver starts. Off disables it."
+msgid "Region"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:98
-msgid "The resolution the interface renders at. Restarts the frontend."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:99
-msgid "Adjusts layout density for standard and handheld screens."
+msgid "Clock format"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:100
-msgid "Rotates the interface for a sideways screen or tate cabinet."
-msgstr ""
+msgid "Button style"
+msgstr "Στυλ κουμπιών"
 
 #: rust/frontend-slint/ui/settings.slint:101
-msgid "Outputs 15 kHz analog video through MiSTer. Restarts frontend."
+msgid "Swap controller confirm/cancel"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:102
-msgid "Matches analog output to NTSC or PAL. Restarts the frontend."
+msgid "Swap controller options/view"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:103
-msgid "Opens a test pattern to position the analog picture with arrows."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:104
-msgid "The language used for interface text. Restarts the frontend."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:105
-msgid "Selects regional system and game names, such as Mega Drive."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:106
-msgid "12-hour or 24-hour time in the top bar."
-msgstr ""
+msgid "Mouse support"
+msgstr "Υποστήριξη ποντικιού"
 
 #: rust/frontend-slint/ui/settings.slint:107
-msgid "Matches on-screen prompt icons to your controller."
+msgid "Systems layout"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:108
-msgid "Flips which controller button accepts and which cancels."
+msgid "Games layout"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:109
-msgid "Swaps which controller button opens Options and View."
+msgid "Preferred artwork"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:110
-msgid "Lets a mouse click tiles and menu rows."
+msgid "Show hidden items"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:111
-msgid "Rescans game folders for added or removed files. Choose systems."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:112
-msgid "Imports artwork and details from your files. Downloads nothing."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:113
-msgid "Shows systems as a cover grid or a list with details."
+msgid "Show original filenames"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:114
-msgid "Sets grid or list layout for Games, Favorites, and Recents."
+msgid "Documentation"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:115
-msgid "Prefers an artwork type when games have multiple images."
-msgstr ""
+msgid "Debug logging"
+msgstr "Καταγραφή εντοπισμού σφαλμάτων"
 
 #: rust/frontend-slint/ui/settings.slint:116
-msgid "Shows hidden systems and categories so you can unhide them."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:117
-msgid "Shows real filenames instead of cleaned-up display titles."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:118
-msgid "Version, build date, license terms, and contributors."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:119
-msgid "Shows a code for opening the Frontend guide on your phone."
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:120
-msgid "Adds troubleshooting detail to logs. Restarts the frontend."
-msgstr ""
+msgid "Upload log file"
+msgstr "Αποστολή αρχείου καταγραφής"
 
 #: rust/frontend-slint/ui/settings.slint:121
-msgid "Uploads the log and provides a link for problem reports."
+msgid "Changes colors across screens, including text and highlights."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:122
+msgid "Controls how strongly accent colors tint tiles and backgrounds."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:123
+msgid "Shows system logos in original colors or tinted to match colors."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:124
+msgid "Turns off animation throughout the interface."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:125
+msgid "Sets idle time before the screensaver starts. Off disables it."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:126
+msgid "The resolution the interface renders at. Restarts the frontend."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:127
+msgid "Adjusts layout density for standard and handheld screens."
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:128
-msgid "Configure"
+msgid "Rotates the interface for a sideways screen or tate cabinet."
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:129
-msgid "Upload"
-msgstr "Μεταφόρτωση"
+msgid "Outputs 15 kHz analog video through MiSTer. Restarts frontend."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:130
+msgid "Matches analog output to NTSC or PAL. Restarts the frontend."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:131
+msgid "Opens a test pattern to position the analog picture with arrows."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:132
+msgid "The language used for interface text. Restarts the frontend."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:133
+msgid "Selects regional system and game names, such as Mega Drive."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:134
+msgid "12-hour or 24-hour time in the top bar."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:135
+msgid "Matches on-screen prompt icons to your controller."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:136
+msgid "Flips which controller button accepts and which cancels."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:137
+msgid "Swaps which controller button opens Options and View."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:138
+msgid "Lets a mouse click tiles and menu rows."
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:139
-msgid "Style A"
-msgstr "Στυλ A"
+msgid "Rescans game folders for added or removed files. Choose systems."
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:140
-msgid "Style B"
-msgstr "Στυλ B"
+msgid "Imports artwork and details from your files. Downloads nothing."
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:141
-msgid "Style C"
-msgstr "Στυλ C"
+msgid "Shows systems as a cover grid or a list with details."
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:142
-msgid "Style D"
-msgstr "Στυλ D"
+msgid "Sets grid or list layout for Games, Favorites, and Recents."
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:143
-msgid "Style E"
+msgid "Prefers an artwork type when games have multiple images."
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:144
-msgid "Automatic"
+msgid "Shows hidden systems and categories so you can unhide them."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:145
+msgid "Shows real filenames instead of cleaned-up display titles."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:146
+msgid "Version, build date, license terms, and contributors."
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:147
-msgid "12-hour"
+msgid "Shows a code for opening the Frontend guide on your phone."
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:148
-msgid "24-hour"
+msgid "Adds troubleshooting detail to logs. Restarts the frontend."
 msgstr ""
 
-#: rust/frontend-slint/ui/settings.slint:152
-msgid "Americas"
+#: rust/frontend-slint/ui/settings.slint:149
+msgid "Uploads the log and provides a link for problem reports."
 msgstr ""
 
-#: rust/frontend-slint/ui/settings.slint:153
-msgid "Europe"
+#: rust/frontend-slint/ui/settings.slint:156
+msgid "Configure"
 msgstr ""
 
-#: rust/frontend-slint/ui/settings.slint:154
-msgid "Japan"
-msgstr ""
+#: rust/frontend-slint/ui/settings.slint:157
+msgid "Upload"
+msgstr "Μεταφόρτωση"
 
-#: rust/frontend-slint/ui/settings.slint:158
-msgid "Standard"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:159
-msgid "Handheld"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:160
-msgid "Device default"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:163
-msgid "Rotated CW"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:164
-msgid "Rotated CCW"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:165
-msgid "Horizontal"
-msgstr ""
+#: rust/frontend-slint/ui/settings.slint:167
+msgid "Style A"
+msgstr "Στυλ A"
 
 #: rust/frontend-slint/ui/settings.slint:168
-msgid "Detailed list view"
-msgstr "Λεπτομερής προβολή λίστας"
+msgid "Style B"
+msgstr "Στυλ B"
 
 #: rust/frontend-slint/ui/settings.slint:169
-msgid "Grid view"
-msgstr "Προβολή πλέγματος"
+msgid "Style C"
+msgstr "Στυλ C"
 
-#: rust/frontend-slint/ui/settings.slint:172
-msgid "Full color"
+#: rust/frontend-slint/ui/settings.slint:170
+msgid "Style D"
+msgstr "Στυλ D"
+
+#: rust/frontend-slint/ui/settings.slint:171
+msgid "Style E"
 msgstr ""
 
-#: rust/frontend-slint/ui/settings.slint:173
-msgid "Tinted"
+#: rust/frontend-slint/ui/settings.slint:172
+msgid "Automatic"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:175
+msgid "12-hour"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:176
-msgid "Vivid"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:177
-msgid "Subtle"
+msgid "24-hour"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:180
-msgid "PAL (50 Hz)"
+msgid "Americas"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:181
-msgid "480i (60 Hz)"
+msgid "Europe"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:182
-msgid "NTSC (60 Hz)"
+msgid "Japan"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:186
-msgid "None"
+msgid "Standard"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:187
+msgid "Handheld"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:188
+msgid "Device default"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:191
+msgid "Rotated CW"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:192
+msgid "Rotated CCW"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:193
-msgid "English"
-msgstr "Αγγλικά"
-
-#: rust/frontend-slint/ui/settings.slint:194
-msgid "Italian"
-msgstr "Ιταλικά"
-
-#: rust/frontend-slint/ui/settings.slint:195
-msgid "Spanish"
+msgid "Horizontal"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:196
-msgid "Basque"
-msgstr ""
+msgid "Detailed list view"
+msgstr "Λεπτομερής προβολή λίστας"
 
 #: rust/frontend-slint/ui/settings.slint:197
-msgid "German"
-msgstr "Γερμανικά"
-
-#: rust/frontend-slint/ui/settings.slint:198
-msgid "Greek"
-msgstr "Ελληνικά"
-
-#: rust/frontend-slint/ui/settings.slint:199
-msgid "Japanese"
-msgstr "Ιαπωνικά"
+msgid "Grid view"
+msgstr "Προβολή πλέγματος"
 
 #: rust/frontend-slint/ui/settings.slint:200
-msgid "Korean"
-msgstr "Κορεατικά"
-
-#: rust/frontend-slint/ui/settings.slint:201
-msgid "Dutch"
-msgstr "Ολλανδικά"
-
-#: rust/frontend-slint/ui/settings.slint:202
-msgid "Romanian"
-msgstr "Ρουμανικά"
-
-#: rust/frontend-slint/ui/settings.slint:203
-msgid "Slovak"
-msgstr "Σλοβακικά"
-
-#: rust/frontend-slint/ui/settings.slint:204
-msgid "Ukrainian"
-msgstr "Ουκρανικά"
-
-#: rust/frontend-slint/ui/settings.slint:205
-msgid "Chinese (Simplified)"
-msgstr "Κινεζικά (Απλοποιημένα)"
-
-#: rust/frontend-slint/ui/settings.slint:206
-msgid "Chinese (Traditional)"
+msgid "Full color"
 msgstr ""
 
-#: rust/frontend-slint/ui/settings.slint:207
-msgid "Hebrew"
-msgstr "Εβραϊκά"
+#: rust/frontend-slint/ui/settings.slint:201
+msgid "Tinted"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:204
+msgid "Vivid"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:205
+msgid "Subtle"
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:208
-msgid "Arabic"
+msgid "PAL (50 Hz)"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:209
-msgid "Hindi"
+msgid "480i (60 Hz)"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:210
-msgid "French"
+msgid "NTSC (60 Hz)"
 msgstr ""
 
-#: rust/frontend-slint/ui/settings.slint:215
-msgid "Zaparoo Light"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:216
-msgid "Classic Purple"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:217
-msgid "Amber Phosphor"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:218
-msgid "Game Boy"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:219
-msgid "Green Phosphor"
-msgstr ""
-
-#: rust/frontend-slint/ui/settings.slint:220
-msgid "Neo Geo"
+#: rust/frontend-slint/ui/settings.slint:214
+msgid "None"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:221
-msgid "NES"
-msgstr ""
+msgid "English"
+msgstr "Αγγλικά"
 
 #: rust/frontend-slint/ui/settings.slint:222
-msgid "Virtual Boy"
-msgstr ""
+msgid "Italian"
+msgstr "Ιταλικά"
 
 #: rust/frontend-slint/ui/settings.slint:223
-msgid "Dracula"
+msgid "Spanish"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:224
-msgid "Everforest"
+msgid "Basque"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:225
-msgid "Gruvbox"
-msgstr ""
+msgid "German"
+msgstr "Γερμανικά"
 
 #: rust/frontend-slint/ui/settings.slint:226
-msgid "Nord"
-msgstr ""
+msgid "Greek"
+msgstr "Ελληνικά"
 
 #: rust/frontend-slint/ui/settings.slint:227
-msgid "Oxocarbon"
-msgstr ""
+msgid "Japanese"
+msgstr "Ιαπωνικά"
 
 #: rust/frontend-slint/ui/settings.slint:228
-msgid "Rosé Pine"
-msgstr ""
+msgid "Korean"
+msgstr "Κορεατικά"
 
 #: rust/frontend-slint/ui/settings.slint:229
-msgid "Solarized Dark"
-msgstr ""
+msgid "Dutch"
+msgstr "Ολλανδικά"
 
 #: rust/frontend-slint/ui/settings.slint:230
-msgid "Synthwave '84"
-msgstr ""
+msgid "Romanian"
+msgstr "Ρουμανικά"
 
 #: rust/frontend-slint/ui/settings.slint:231
-msgid "Flexoki Paper"
-msgstr ""
+msgid "Slovak"
+msgstr "Σλοβακικά"
 
 #: rust/frontend-slint/ui/settings.slint:232
-msgid "Solarized Light"
-msgstr ""
+msgid "Ukrainian"
+msgstr "Ουκρανικά"
 
 #: rust/frontend-slint/ui/settings.slint:233
-msgid "Zaparoo Dark"
+msgid "Chinese (Simplified)"
+msgstr "Κινεζικά (Απλοποιημένα)"
+
+#: rust/frontend-slint/ui/settings.slint:234
+msgid "Chinese (Traditional)"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:235
+msgid "Hebrew"
+msgstr "Εβραϊκά"
+
+#: rust/frontend-slint/ui/settings.slint:236
+msgid "Arabic"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:237
-msgid "Off"
-msgstr "Απενεργοποιημένο"
+msgid "Hindi"
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:238
-msgid "1 second (testing)"
-msgstr "1 δευτερόλεπτο (δοκιμή)"
-
-#: rust/frontend-slint/ui/settings.slint:239
-msgid "1 minute"
-msgstr "1 λεπτό"
-
-#: rust/frontend-slint/ui/settings.slint:240
-msgid "2 minutes"
-msgstr "2 λεπτά"
-
-#: rust/frontend-slint/ui/settings.slint:241
-msgid "5 minutes"
-msgstr "5 λεπτά"
-
-#: rust/frontend-slint/ui/settings.slint:242
-msgid "10 minutes"
-msgstr "10 λεπτά"
+msgid "French"
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:243
-msgid "15 minutes"
-msgstr "15 λεπτά"
+msgid "Zaparoo Light"
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:244
-msgid "30 minutes"
-msgstr "30 λεπτά"
+msgid "Classic Purple"
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:245
-msgid "{} seconds"
-msgstr "{0} δευτερόλεπτα"
+msgid "Amber Phosphor"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:246
+msgid "Game Boy"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:247
+msgid "Green Phosphor"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:248
+msgid "Neo Geo"
+msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:249
-msgid "Image"
+msgid "NES"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:250
-msgid "Thumbnail"
+msgid "Virtual Boy"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:251
-msgid "Box art"
+msgid "Dracula"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:252
-msgid "3D box art"
+msgid "Everforest"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:253
-msgid "Screenshot"
+msgid "Gruvbox"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:254
-msgid "Wheel"
+msgid "Nord"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:255
-msgid "Title screen"
+msgid "Oxocarbon"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:256
-msgid "Map"
+msgid "Rosé Pine"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:257
-msgid "Marquee"
+msgid "Solarized Dark"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:258
-msgid "Fan art"
+msgid "Synthwave '84"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:259
-msgid "Box side"
+msgid "Flexoki Paper"
 msgstr ""
 
 #: rust/frontend-slint/ui/settings.slint:260
+msgid "Solarized Light"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:261
+msgid "Zaparoo Dark"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:265
+msgid "Off"
+msgstr "Απενεργοποιημένο"
+
+#: rust/frontend-slint/ui/settings.slint:266
+msgid "1 second (testing)"
+msgstr "1 δευτερόλεπτο (δοκιμή)"
+
+#: rust/frontend-slint/ui/settings.slint:267
+msgid "1 minute"
+msgstr "1 λεπτό"
+
+#: rust/frontend-slint/ui/settings.slint:268
+msgid "2 minutes"
+msgstr "2 λεπτά"
+
+#: rust/frontend-slint/ui/settings.slint:269
+msgid "5 minutes"
+msgstr "5 λεπτά"
+
+#: rust/frontend-slint/ui/settings.slint:270
+msgid "10 minutes"
+msgstr "10 λεπτά"
+
+#: rust/frontend-slint/ui/settings.slint:271
+msgid "15 minutes"
+msgstr "15 λεπτά"
+
+#: rust/frontend-slint/ui/settings.slint:272
+msgid "30 minutes"
+msgstr "30 λεπτά"
+
+#: rust/frontend-slint/ui/settings.slint:273
+msgid "{} seconds"
+msgstr "{0} δευτερόλεπτα"
+
+#: rust/frontend-slint/ui/settings.slint:277
+msgid "Image"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:278
+msgid "Thumbnail"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:279
+msgid "Box art"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:280
+msgid "3D box art"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:281
+msgid "Screenshot"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:282
+msgid "Wheel"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:283
+msgid "Title screen"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:284
+msgid "Map"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:285
+msgid "Marquee"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:286
+msgid "Fan art"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:287
+msgid "Box side"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:288
 msgid "Box back"
 msgstr ""
 
-#: rust/frontend-slint/ui/settings.slint:307
+#: rust/frontend-slint/ui/settings.slint:335
 msgid "Running…"
 msgstr ""

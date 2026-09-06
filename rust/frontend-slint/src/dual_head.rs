@@ -449,6 +449,22 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         }
     }
 
+    let source = primary.global::<crate::SetupModalView>();
+    let target = crt.global::<crate::SetupModalView>();
+    copy_properties!(source, target;
+        get_open => set_open,
+        get_kind => set_kind,
+        get_picker_page => set_picker_page,
+        get_picker_title => set_picker_title,
+        get_rows => set_rows,
+        get_index => set_index,
+        get_picker_rows => set_picker_rows,
+        get_picker_sel => set_picker_sel,
+        get_has_above => set_has_above,
+        get_has_below => set_has_below,
+        get_activate_pulse => set_activate_pulse,
+    );
+
     let source = primary.global::<SettingsView>();
     let target = crt.global::<SettingsView>();
     copy_properties!(source, target;

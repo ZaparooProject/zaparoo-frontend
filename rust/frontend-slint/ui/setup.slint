@@ -1,0 +1,185 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The media-job setup modals (IndexSetupModal.qml, ScrapeSetupModal.qml):
+// one panel that shows either the job's form or, as a page of the same
+// panel rather than a second modal, the picker its rows open.
+
+import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { GlyphSource, SectionHeader, SelectionBar } from "chrome.slint";
+import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
+
+// One row of the picker page: the same (kind, name) pair the form's own
+// scope row carries, so both read through one vocabulary.
+export struct SetupPickerRow {
+    kind: string,
+    name: string,
+}
+
+export component SetupModal inherits Rectangle {
+    in property <string> kind: "index";
+    in property <bool> picker-page: false;
+    // "systems" or "source": the picker page's own header.
+    in property <string> picker-title: "systems";
+    in property <[SettingsRow]> rows: [];
+    in property <int> index: 0;
+    in property <[SetupPickerRow]> picker-rows: [];
+    in property <int> picker-sel: 0;
+    in property <bool> has-above: false;
+    in property <bool> has-below: false;
+    in property <int> activate-pulse: 0;
+    callback row-hovered(int);
+    callback row-clicked(int);
+    callback picker-hovered(int);
+    callback picker-clicked(int);
+
+    background: Theme.scrim;
+
+    property <length> pad-x: Sizing.pct-w(4);
+    property <length> pad-y: Sizing.pct-h(3);
+    property <length> title-h: Sizing.pct-h(9);
+    property <length> row-gap: Sizing.pct-h(1.5);
+    property <length> picker-row-h: Sizing.pct-h(7);
+    property <length> picker-gap: Sizing.pct-h(1);
+    property <length> arrow: Sizing.pct-h(3);
+    // Mirrors SectionHeader's own height so the rows below it line up.
+    property <length> header-h: Sizing.pct-h(1.5) + header-measure.preferred-height
+        + Sizing.pct-h(0.8) + Sizing.stroke(1);
+    // The scroll cues only take room when there is somewhere to scroll.
+    property <length> arrow-band: (root.has-above || root.has-below) ? root.arrow + Sizing.pct-h(0.5) : 0px;
+    // The form's own height is the stacked rows Rust measured.
+    property <length> form-h: root.rows.length <= 0
+        ? 0px
+        : root.rows[root.rows.length - 1].y-offset + root.rows[root.rows.length - 1].height
+            + (root.rows.length - 1) * root.row-gap;
+    property <length> picker-h: root.header-h + 2 * root.arrow-band
+        + root.picker-rows.length * root.picker-row-h
+        + Math.max(0, root.picker-rows.length - 1) * root.picker-gap;
+    property <length> body-h: root.picker-page ? root.picker-h : root.form-h;
+    property <length> panel-w: Math.min(Sizing.pct-h(110), root.width - 2 * Sizing.pct-w(6));
+    property <length> panel-h: root.title-h + root.body-h + 2 * root.pad-y;
+
+    header-measure := Text {
+        visible: false;
+        text: SettingsLabels.label(root.picker-title);
+        font-size: Sizing.font-body;
+        font-weight: 600;
+    }
+
+    panel := Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: Theme.bg-panel;
+        border-radius: Sizing.radius-md;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.border-mid;
+        clip: true;
+
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            text: SettingsLabels.setup-title(root.kind);
+            color: Theme.text-primary;
+            font-size: Sizing.font-title;
+            font-weight: 500;
+        }
+
+        // The form.
+        if !root.picker-page: Rectangle {
+            x: root.pad-x;
+            y: root.title-h;
+            width: parent.width - 2 * root.pad-x;
+            height: root.form-h;
+
+            for row[i] in root.rows: SettingsRowView {
+                x: 0;
+                y: row.y-offset + i * root.row-gap;
+                width: parent.width;
+                height: row.height;
+                entry: row;
+                focused: i == root.index;
+                activate-pulse: root.activate-pulse;
+
+                TouchArea {
+                    mouse-cursor: pointer;
+                    changed has-hover => {
+                        if (self.has-hover) { root.row-hovered(i); }
+                    }
+                    clicked => { root.row-clicked(i); }
+                }
+            }
+        }
+
+        // The picker page: a header, the windowed rows Rust sends, and
+        // the scroll cues for what sits outside the window.
+        if root.picker-page: Rectangle {
+            x: root.pad-x;
+            y: root.title-h;
+            width: parent.width - 2 * root.pad-x;
+            height: root.picker-h;
+
+            SectionHeader {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                label-inset: 0px;
+                label: SettingsLabels.label(root.picker-title);
+            }
+
+            if root.has-above: Image {
+                x: Math.round((parent.width - self.width) / 2px) * 1px;
+                y: root.header-h;
+                width: root.arrow;
+                height: root.arrow;
+                source: GlyphSource.glyph("icons/ScrollUp", root.arrow);
+                colorize: Theme.text-label;
+            }
+
+            for entry[i] in root.picker-rows: Rectangle {
+                x: 0;
+                y: root.header-h + root.arrow-band + i * (root.picker-row-h + root.picker-gap);
+                width: parent.width;
+                height: root.picker-row-h;
+
+                bar := SelectionBar {
+                    width: 100%;
+                    height: 100%;
+                    active: i == root.picker-sel;
+                    activate-pulse: root.activate-pulse;
+                    radius: Layout.row-radius;
+                }
+
+                Text {
+                    x: Sizing.pct-w(2);
+                    y: Math.round((parent.height - self.height) / 2px) * 1px;
+                    width: parent.width - 2 * Sizing.pct-w(2);
+                    overflow: elide;
+                    text: SettingsLabels.scope(entry.kind, entry.name);
+                    color: bar.active ? bar.content-color : Theme.text-primary;
+                    font-size: Sizing.font-body;
+                    font-weight: bar.content-weight;
+                }
+
+                TouchArea {
+                    mouse-cursor: pointer;
+                    changed has-hover => {
+                        if (self.has-hover) { root.picker-hovered(i); }
+                    }
+                    clicked => { root.picker-clicked(i); }
+                }
+            }
+
+            if root.has-below: Image {
+                x: Math.round((parent.width - self.width) / 2px) * 1px;
+                y: parent.height - root.arrow;
+                width: root.arrow;
+                height: root.arrow;
+                source: GlyphSource.glyph("icons/ScrollDown", root.arrow);
+                colorize: Theme.text-label;
+            }
+        }
+    }
+}

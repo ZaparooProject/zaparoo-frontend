@@ -396,7 +396,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
                         }
                     });
                 } else {
-                    crate::router::start_index(ctx, app, None);
+                    crate::media_setup::open(ctx, app, zaparoo_app::media_setup::Kind::Index);
                 }
             }
             "runScraper" => {
@@ -408,8 +408,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
                         }
                     });
                 } else {
-                    let force = lock(&ctx.shared).rescrape_existing;
-                    crate::router::start_scrape(ctx, Vec::new(), force);
+                    crate::media_setup::open(ctx, app, zaparoo_app::media_setup::Kind::Scrape);
                 }
             }
             _ => {}

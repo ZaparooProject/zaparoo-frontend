@@ -20,6 +20,7 @@ pub mod format;
 pub mod hub;
 pub mod layouts;
 pub mod media_list;
+pub mod media_setup;
 pub mod paged_grid;
 pub mod palette;
 pub mod settings;

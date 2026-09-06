@@ -100,7 +100,7 @@ pub fn region(shared: &Shared) -> Region {
     rules::resolve_region(&shared.persist.settings.region, &locale)
 }
 
-fn catalog_systems(systems: &[SystemInfo]) -> Vec<CatalogSystem> {
+pub fn catalog_systems(systems: &[SystemInfo]) -> Vec<CatalogSystem> {
     systems
         .iter()
         .map(|s| CatalogSystem {
