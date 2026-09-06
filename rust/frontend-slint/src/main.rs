@@ -28,6 +28,7 @@ mod sizing;
 mod system_logos;
 mod system_status;
 mod tag_utils;
+mod theme;
 
 #[cfg(all(feature = "desktop", feature = "mister"))]
 compile_error!("features `desktop` and `mister` are mutually exclusive; build the MiSTer target with --no-default-features --features mister");
@@ -424,6 +425,13 @@ fn main() -> Result<(), slint::PlatformError> {
     let app = App::new()?;
     fonts::register_embedded_fonts();
     apply_language(&persisted.settings.language);
+    let palette = theme::apply_palette(
+        &app,
+        &persisted.settings.color_scheme,
+        &persisted.settings.color_intensity,
+    );
+    let (rest, focus) = theme::logo_tints(&palette);
+    system_logos::set_tints(rest, focus);
     seed_display_globals(&app, &persisted, visual_crt, crt, ui_framebuffer_size);
     app.global::<GlyphSource>().on_glyph(|key, px| {
         glyphs::render(key.as_str(), px.round().max(0.0) as u32).unwrap_or_default()
@@ -432,6 +440,11 @@ fn main() -> Result<(), slint::PlatformError> {
     #[cfg(feature = "mister")]
     let crt_mirror = if dual_head {
         let mirror = App::new()?;
+        theme::apply_palette(
+            &mirror,
+            &persisted.settings.color_scheme,
+            &persisted.settings.color_intensity,
+        );
         seed_display_globals(&mirror, &persisted, true, true, crt_framebuffer_size);
         mirror.global::<GlyphSource>().on_glyph(|key, px| {
             glyphs::render(key.as_str(), px.round().max(0.0) as u32).unwrap_or_default()

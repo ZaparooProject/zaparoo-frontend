@@ -40,12 +40,14 @@ use slint::ComponentHandle;
 mod generated {
     slint::include_modules!();
 }
-use generated::{App, CategoryTile, GameTile, GlyphSource, LetterBucket, MenuEntry, Sizing};
+use generated::{App, CategoryTile, GameTile, GlyphSource, LetterBucket, MenuEntry, Sizing, Theme};
 
 #[path = "../fonts.rs"]
 mod fonts;
 #[path = "../glyphs.rs"]
 mod glyphs;
+#[path = "../theme.rs"]
+mod theme;
 
 thread_local! {
     static WINDOW: RefCell<Option<Rc<MinimalSoftwareWindow>>> = const { RefCell::new(None) };
@@ -82,6 +84,12 @@ fn main() {
     // Same font stack as the device build: the embedded script faces and
     // their fallback wiring.
     fonts::register_embedded_fonts();
+    // ZAPAROO_SNAPSHOT_SCHEME / ZAPAROO_SNAPSHOT_INTENSITY render any preset.
+    theme::apply_palette(
+        &app,
+        &std::env::var("ZAPAROO_SNAPSHOT_SCHEME").unwrap_or_default(),
+        &std::env::var("ZAPAROO_SNAPSHOT_INTENSITY").unwrap_or_default(),
+    );
     // ZAPAROO_SNAPSHOT_LANG=de renders through the bundled German catalog
     // (any language directory under translations/).
     if let Ok(lang) = std::env::var("ZAPAROO_SNAPSHOT_LANG") {
@@ -94,7 +102,7 @@ fn main() {
     let ccw = screen.contains("ccw");
     let tate = screen.contains("tate") || ccw;
     let list = screen.contains("list");
-    app.global::<generated::Theme>().set_crt(crt);
+    app.global::<Theme>().set_crt(crt);
     app.global::<Sizing>().set_crt(crt);
     app.global::<Sizing>().set_swap_axes(tate);
     let shell = app.global::<generated::Shell>();

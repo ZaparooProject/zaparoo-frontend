@@ -31,10 +31,31 @@ fn cache() -> MutexGuard<'static, HashMap<String, Option<LogoPixels>>> {
         .unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Theme tint triplets (highlight, midtone, shadow), the Theme.qml
-/// logo tokens. The demo theme is static so they live here.
-const TINT_REST: [(u8, u8, u8); 3] = [(0x98, 0x98, 0xCC), (0x60, 0x60, 0xA8), (0x3C, 0x3C, 0x80)];
-const TINT_FOCUS: [(u8, u8, u8); 3] = [(0xFF, 0xE3, 0xB8), (0xFF, 0xB3, 0x47), (0x9E, 0x5E, 0x15)];
+/// Tint triplets (highlight, midtone, shadow) for the resting and focused
+/// logo ramps: the palette's `logo*` and `logoFocus*` roles, pushed by
+/// `theme::apply_palette` through `set_tints`. The defaults are
+/// zaparoo-dark at Subtle, matching the `Theme` global's own defaults.
+type Tints = [(u8, u8, u8); 3];
+static TINTS: OnceLock<Mutex<(Tints, Tints)>> = OnceLock::new();
+
+fn tints() -> MutexGuard<'static, (Tints, Tints)> {
+    TINTS
+        .get_or_init(|| {
+            Mutex::new((
+                [(0x8c, 0x8c, 0x8c), (0x5e, 0x5e, 0x5e), (0x3d, 0x3d, 0x3d)],
+                [(0x8f, 0xc1, 0xff), (0x16, 0x8b, 0xff), (0x00, 0x4c, 0x94)],
+            ))
+        })
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Installs new ramps (on a scheme change) and drops every tinted variant
+/// so the next request re-tints from the base art.
+pub fn set_tints(rest: Tints, focus: Tints) {
+    *tints() = (rest, focus);
+    tint_cache().clear();
+}
 
 type TintCacheMap = HashMap<(String, bool), Option<LogoPixels>>;
 
@@ -58,9 +79,10 @@ pub fn tinted_logo_for(system_id: &str, focused: bool) -> Option<LogoPixels> {
     if let Some(hit) = tint_cache().get(&key) {
         return hit.clone();
     }
+    let (rest, focus) = *tints();
     let tinted = logo_for(system_id).map(|base| {
-        let tints = if focused { &TINT_FOCUS } else { &TINT_REST };
-        tint(&base, tints[0], tints[1], tints[2])
+        let ramp = if focused { focus } else { rest };
+        tint(&base, ramp[0], ramp[1], ramp[2])
     });
     tint_cache().insert(key, tinted.clone());
     tinted

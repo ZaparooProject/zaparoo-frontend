@@ -323,7 +323,7 @@ component HeaderBar inherits Rectangle {
         height: Sizing.header-row-height();
         vertical-alignment: center;
         text: root.clock-text;
-        color: Theme.fg;
+        color: Theme.text-primary;
         font-weight: 500;
         font-size: Sizing.header-row-height() * 0.9;
     }
@@ -336,7 +336,7 @@ component HeaderBar inherits Rectangle {
         width: root.icon-s;
         height: root.icon-s;
         source: GlyphSource.glyph(key, root.icon-s);
-        colorize: Theme.fg-variant;
+        colorize: Theme.text-variant;
     }
 
     if root.browse-title != "": Text {
@@ -347,7 +347,7 @@ component HeaderBar inherits Rectangle {
         overflow: elide;
         vertical-alignment: center;
         text: root.browse-title;
-        color: Theme.fg;
+        color: Theme.text-primary;
         font-weight: 600;
         font-size: Sizing.font-size(3.2);
     }
@@ -362,7 +362,7 @@ component HeaderBar inherits Rectangle {
         overflow: elide;
         vertical-alignment: center;
         text: root.core-status;
-        color: Theme.fg-variant;
+        color: Theme.text-variant;
         font-weight: 500;
         font-size: Sizing.font-size(2.2);
     }
@@ -382,7 +382,7 @@ component ActiveLabel inherits Rectangle {
         max-width: parent.width - 2 * Sizing.pct-w(5);
         overflow: elide;
         text: root.text;
-        color: Theme.fg;
+        color: Theme.text-primary;
         font-size: Sizing.font-size(4);
         font-weight: 500;
     }
@@ -415,7 +415,7 @@ component HelpCue inherits Rectangle {
         x: root.icon-size + Sizing.pct-w(0.6);
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         text: root.label;
-        color: Theme.fg;
+        color: Theme.text-primary;
         font-size: Sizing.font-size(2.6);
     }
 }
@@ -486,7 +486,7 @@ component TopStrip inherits Rectangle {
         max-width: Math.round(parent.width / 3 / 1px) * 1px;
         overflow: elide;
         text: root.title;
-        color: Theme.fg;
+        color: Theme.text-primary;
         font-size: Sizing.font-size(4);
         font-weight: 500;
     }
@@ -494,7 +494,7 @@ component TopStrip inherits Rectangle {
         x: Math.round((parent.width - self.width - Sizing.pct-w(5)) / 1px) * 1px;
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         text: root.right-text;
-        color: Theme.fg;
+        color: Theme.text-primary;
         font-size: Sizing.font-size(2.9);
     }
 }
@@ -514,7 +514,7 @@ component MarqueeCaption inherits Rectangle {
     // Floor for anything meant to be READ: 3.0% keeps captions at or
     // above 16px even at the DRS motion res (540p-class).
     in property <length> caption-font-size: Sizing.font-size(3.0);
-    in property <color> caption-color: Theme.fg;
+    in property <color> caption-color: Theme.text-primary;
     // Tile captions center a fitting name; list rows left-align
     // (ScrollingCaption's centerContent: false).
     in property <bool> center-content: true;
@@ -592,7 +592,7 @@ component MarqueeCaption inherits Rectangle {
         width: root.tags-render-w;
         overflow: elide;
         text: root.tags;
-        color: Theme.fg-variant;
+        color: Theme.text-variant;
         font-size: root.caption-font-size;
     }
 
@@ -618,7 +618,7 @@ component TileBadge inherits Rectangle {
     width: caption.preferred-width + 2 * self.hpad;
     height: caption.preferred-height + 2 * self.vpad;
     border-radius: self.height / 2;
-    background: Theme.state-marker;
+    background: Theme.marker;
     border-width: Sizing.stroke(1);
     border-color: Theme.bg-bar;
 
@@ -646,7 +646,7 @@ component SystemCard inherits Rectangle {
     property <length> pad: Sizing.pct-h(2);
     property <length> caption-h: Sizing.pct-h(5.5);
 
-    background: Theme.bg-tile;
+    background: Theme.surface-card;
     border-radius: Sizing.corner-radius();
     // Focus is drawn by the screen's gliding ring; the card keeps its
     // resting border so the ring has nothing to fight.
@@ -670,7 +670,7 @@ component SystemCard inherits Rectangle {
         horizontal-alignment: center;
         overflow: elide;
         text: root.label;
-        color: Theme.fg-dim;
+        color: Theme.text-label;
         font-weight: 600;
         font-size: Sizing.font-size(2.4);
         opacity: root.entry-hidden ? 0.4 : 1.0;
@@ -730,7 +730,7 @@ component CategoryCard inherits Rectangle {
             || self.glyph-key == "Support";
     }
 
-    background: Theme.bg-tile;
+    background: Theme.surface-card;
     border-radius: Sizing.corner-radius();
     border-width: Sizing.stroke(0.2);
     border-color: Theme.border-mid;
@@ -743,7 +743,7 @@ component CategoryCard inherits Rectangle {
         source: GlyphSource.glyph(root.glyph-key, self.width);
         image-fit: contain;
         colorize: root.dimmed
-            ? Theme.fg-dim
+            ? Theme.text-label
             : (root.focused ? Theme.logo-focus-primary : Theme.logo-primary);
     }
 
@@ -753,7 +753,7 @@ component CategoryCard inherits Rectangle {
         max-width: parent.width - 2 * root.pad;
         overflow: elide;
         text: root.label;
-        color: root.dimmed ? Theme.fg-dim : (root.focused ? Theme.fg : Theme.fg-dim);
+        color: root.dimmed ? Theme.text-label : (root.focused ? Theme.text-primary : Theme.text-label);
         font-size: Sizing.font-size(2.4);
     }
 
@@ -783,7 +783,7 @@ component CoverTile inherits Rectangle {
     property <length> caption-h: Sizing.pct-h(5.5);
     property <length> caption-gap: Sizing.pct-h(0.4);
 
-    background: Theme.bg-tile;
+    background: Theme.surface-card;
     border-radius: Sizing.corner-radius();
     border-width: Sizing.stroke(0.2);
     border-color: Theme.border-mid;
@@ -863,7 +863,7 @@ component SettingsToggle inherits Rectangle {
         width: root.knob;
         height: root.knob;
         border-radius: self.height / 2;
-        background: root.checked ? Theme.bg-bar : Theme.fg-dim;
+        background: root.checked ? Theme.bg-bar : Theme.text-label;
     }
 }
 
@@ -919,7 +919,7 @@ component SettingsScreen inherits Rectangle {
             height: root.cell;
             border-radius: Sizing.corner-radius();
             border-width: Sizing.stroke(0.55);
-            border-color: Theme.focus-ring;
+            border-color: Theme.accent;
         }
     }
 
@@ -951,20 +951,20 @@ component SettingsScreen inherits Rectangle {
             height: root.row-h;
             background: field.kind == "header" ? transparent
                 : (i == root.index && !Shell.route-transitioning
-                    ? Theme.selection-surface : Theme.bg-tile);
+                    ? Theme.selection-fill : Theme.surface-card);
             border-radius: Sizing.pct-h(1.5);
             border-width: field.kind == "header" ? 0px
                 : (i == root.index && !Shell.route-transitioning
                     ? Sizing.stroke(0.4) : Sizing.stroke(0.2));
             border-color: i == root.index && !Shell.route-transitioning
-                ? Theme.focus-ring : Theme.border-mid;
+                ? Theme.accent : Theme.border-mid;
             opacity: field.enabled ? 1.0 : 0.4;
 
             if field.kind == "header": Text {
                 x: 0;
                 y: parent.height - self.height - Sizing.pct-h(0.6);
                 text: field.label;
-                color: Theme.fg-variant;
+                color: Theme.text-variant;
                 font-size: Sizing.font-size(2.2);
                 font-weight: 600;
             }
@@ -975,7 +975,7 @@ component SettingsScreen inherits Rectangle {
                 max-width: parent.width * 0.55;
                 overflow: elide;
                 text: field.label;
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
             }
 
@@ -993,7 +993,7 @@ component SettingsScreen inherits Rectangle {
                 max-width: parent.width * 0.4;
                 overflow: elide;
                 text: field.value;
-                color: field.control == "picker" ? Theme.accent : Theme.fg-variant;
+                color: field.control == "picker" ? Theme.accent : Theme.text-variant;
                 font-size: Sizing.font-size(2.6);
             }
         }
@@ -1098,7 +1098,7 @@ component HubScreen inherits Rectangle {
         height: root.cell;
         border-radius: Sizing.corner-radius();
         border-width: Sizing.stroke(0.55);
-        border-color: Theme.focus-ring;
+        border-color: Theme.accent;
     }
 
     ActiveLabel {
@@ -1122,7 +1122,7 @@ component HubScreen inherits Rectangle {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((parent.height - self.height) / 2px) * 1px - Sizing.font-size(2.4);
             text: @tr("Failed to load");
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(2.9);
         }
         Text {
@@ -1131,7 +1131,7 @@ component HubScreen inherits Rectangle {
             max-width: Math.round(parent.width * 0.7 / 1px) * 1px;
             overflow: elide;
             text: HubView.hub-error;
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(2.4);
         }
     }
@@ -1139,7 +1139,7 @@ component HubScreen inherits Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         text: @tr("No systems available. Run Update media database from Settings.");
-        color: Theme.fg-dim;
+        color: Theme.text-label;
         font-size: Sizing.font-size(2.6);
     }
 }
@@ -1163,7 +1163,7 @@ component AboutScreen inherits Rectangle {
         y: Sizing.header-bottom() + Sizing.pct-h(10);
         width: Math.min(parent.width - Sizing.pct-w(10), Sizing.pct-w(50));
         height: parent.height - Sizing.header-bottom() - Sizing.pct-h(18);
-        background: Theme.bg-raised;
+        background: Theme.bg-panel;
         border-radius: Sizing.corner-radius();
         border-width: Sizing.stroke(1);
         border-color: Theme.border-mid;
@@ -1187,42 +1187,42 @@ component AboutScreen inherits Rectangle {
             Text {
                 horizontal-alignment: center;
                 text: @tr("Zaparoo Frontend");
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(4);
                 font-weight: 500;
             }
             Text {
                 horizontal-alignment: center;
                 text: root.version-line;
-                color: Theme.fg-dim;
+                color: Theme.text-label;
                 font-size: Sizing.font-size(2.4);
             }
             Text {
                 horizontal-alignment: center;
                 wrap: word-wrap;
                 text: @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.");
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
             }
             Text {
                 horizontal-alignment: center;
                 wrap: word-wrap;
                 text: @tr("Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license.");
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
             }
             Text {
                 horizontal-alignment: center;
                 wrap: word-wrap;
                 text: @tr("Commercial licensing: legal@zaparoo.org");
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
             }
             Text {
                 horizontal-alignment: center;
                 wrap: word-wrap;
                 text: @tr("Project: https://zaparoo.org");
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
             }
         }
@@ -1292,7 +1292,7 @@ component SystemsScreen inherits Rectangle {
         y: root.list-card-y;
         width: root.list-card-w;
         height: root.list-card-h;
-        background: Theme.bg-tile;
+        background: Theme.surface-card;
         border-radius: Theme.crt ? 4px : Sizing.corner-radius();
         border-width: root.list-divider;
         border-color: Theme.border-mid;
@@ -1303,7 +1303,7 @@ component SystemsScreen inherits Rectangle {
             y: root.list-pad-y + i * (root.system-row-h + root.system-row-gap);
             width: root.list-section-w - 2 * root.list-pad-x;
             height: root.system-row-h;
-            background: i == root.index ? Theme.selection-surface : transparent;
+            background: i == root.index ? Theme.selection-fill : transparent;
             border-radius: Theme.crt ? 2px : Sizing.pct-h(1.2);
             opacity: sys.hidden ? 0.55 : 1.0;
 
@@ -1320,7 +1320,7 @@ component SystemsScreen inherits Rectangle {
                 max-width: parent.width - 2 * self.x;
                 overflow: elide;
                 text: sys.name;
-                color: i == root.index ? Theme.fg : Theme.fg-dim;
+                color: i == root.index ? Theme.text-primary : Theme.text-label;
                 font-size: Theme.crt ? 8px : Sizing.font-size(2.9);
             }
         }
@@ -1369,7 +1369,7 @@ component SystemsScreen inherits Rectangle {
                 : parent.detail-w;
             overflow: elide;
             text: root.systems[root.index].name;
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Theme.crt ? 8px : Sizing.font-size(3.2);
             font-weight: 600;
         }
@@ -1440,7 +1440,7 @@ component SystemsScreen inherits Rectangle {
                 height: root.tile-h;
                 border-radius: Sizing.corner-radius();
                 border-width: Sizing.stroke(0.55);
-                border-color: Theme.focus-ring;
+                border-color: Theme.accent;
             }
         }
     }
@@ -1454,7 +1454,7 @@ component SystemsScreen inherits Rectangle {
         width: root.arrow-s;
         height: root.arrow-s;
         source: GlyphSource.glyph("ScrollUp", root.arrow-s);
-        colorize: Theme.fg-dim;
+        colorize: Theme.text-label;
     }
     if !root.list-layout && root.page + 1 < root.total-pages: Image {
         x: parent.width - Sizing.pct-w(2) - root.arrow-s;
@@ -1462,7 +1462,7 @@ component SystemsScreen inherits Rectangle {
         width: root.arrow-s;
         height: root.arrow-s;
         source: GlyphSource.glyph("ScrollDown", root.arrow-s);
-        colorize: Theme.fg-dim;
+        colorize: Theme.text-label;
     }
 
     // In-screen empty cue (ScreenStateOverlay's essential role):
@@ -1473,7 +1473,7 @@ component SystemsScreen inherits Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         text: @tr("No systems in this category");
-        color: Theme.fg-dim;
+        color: Theme.text-label;
         font-size: Sizing.font-size(2.6);
     }
 
@@ -1489,7 +1489,7 @@ component SystemsScreen inherits Rectangle {
         x: parent.width - self.width - 4px;
         y: parent.height - self.height - Sizing.pct-h(6);
         text: @tr("Page {} / {}", root.page + 1, root.total-pages);
-        color: Theme.fg;
+        color: Theme.text-primary;
         font-size: Sizing.font-size(2.9);
     }
 }
@@ -1517,7 +1517,7 @@ component ListPickerModal inherits Rectangle {
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         width: root.panel-w;
         height: root.panel-h;
-        background: Theme.bg-raised;
+        background: Theme.bg-panel;
         border-radius: Sizing.corner-radius();
         border-width: Sizing.stroke(0.3);
         border-color: Theme.border-mid;
@@ -1526,7 +1526,7 @@ component ListPickerModal inherits Rectangle {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((root.title-h - self.height) / 2px) * 1px;
             text: root.title;
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(4);
             font-weight: 500;
         }
@@ -1536,10 +1536,10 @@ component ListPickerModal inherits Rectangle {
             y: root.title-h + i * (root.row-h + root.row-sp);
             width: parent.width - 2 * Sizing.pct-w(1);
             height: root.row-h;
-            background: i == root.current-index ? Theme.selection-surface : transparent;
+            background: i == root.current-index ? Theme.selection-fill : transparent;
             border-radius: Sizing.pct-h(1);
             border-width: i == root.current-index ? Sizing.stroke(0.4) : 0px;
-            border-color: Theme.focus-ring;
+            border-color: Theme.accent;
 
             Text {
                 x: Sizing.pct-w(2);
@@ -1547,7 +1547,7 @@ component ListPickerModal inherits Rectangle {
                 max-width: parent.width - 2 * Sizing.pct-w(2);
                 overflow: elide;
                 text: entry.label;
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
             }
         }
@@ -1582,7 +1582,7 @@ component LetterJumpModal inherits Rectangle {
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         width: root.panel-w;
         height: root.panel-h;
-        background: Theme.bg-raised;
+        background: Theme.bg-panel;
         border-radius: Sizing.corner-radius();
         border-width: Sizing.stroke(0.3);
         border-color: Theme.border-mid;
@@ -1591,7 +1591,7 @@ component LetterJumpModal inherits Rectangle {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((root.title-h - self.height) / 2px) * 1px;
             text: @tr("Go to...");
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(4);
             font-weight: 500;
         }
@@ -1600,7 +1600,7 @@ component LetterJumpModal inherits Rectangle {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: root.title-h + Math.round((root.grid-h - self.height) / 2px) * 1px;
             text: @tr("Loading…");
-            color: Theme.fg-dim;
+            color: Theme.text-label;
             font-size: Sizing.font-size(2.6);
         }
 
@@ -1615,16 +1615,16 @@ component LetterJumpModal inherits Rectangle {
                 y: Math.floor(i / root.columns) * (root.cell + root.gap);
                 width: root.cell;
                 height: root.cell;
-                background: i == root.current-index ? Theme.selection-surface : Theme.bg-tile;
+                background: i == root.current-index ? Theme.selection-fill : Theme.surface-card;
                 border-radius: Sizing.pct-h(1);
                 border-width: i == root.current-index ? Sizing.stroke(0.4) : Sizing.stroke(0.2);
-                border-color: i == root.current-index ? Theme.focus-ring : Theme.border-mid;
+                border-color: i == root.current-index ? Theme.accent : Theme.border-mid;
 
                 Text {
                     x: Math.round((parent.width - self.width) / 2px) * 1px;
                     y: Math.round((parent.height * 0.52 - self.height) / 2px) * 1px;
                     text: bucket.label;
-                    color: Theme.fg;
+                    color: Theme.text-primary;
                     font-size: Sizing.font-size(3.4);
                     font-weight: 500;
                 }
@@ -1632,7 +1632,7 @@ component LetterJumpModal inherits Rectangle {
                     x: Math.round((parent.width - self.width) / 2px) * 1px;
                     y: parent.height - self.height - Sizing.pct-h(0.8);
                     text: bucket.count;
-                    color: Theme.fg-dim;
+                    color: Theme.text-label;
                     font-size: Sizing.font-size(2.2);
                 }
             }
@@ -1654,7 +1654,7 @@ component CardWriteModal inherits Rectangle {
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         width: Math.min(Sizing.pct-w(60), Math.round(title.preferred-width / 1px) * 1px + 2 * Sizing.pct-w(4));
         height: Sizing.pct-h(16);
-        background: Theme.bg-raised;
+        background: Theme.bg-panel;
         border-radius: Sizing.corner-radius();
         border-width: Sizing.stroke(0.3);
         border-color: root.failed ? Theme.accent : Theme.border-mid;
@@ -1667,7 +1667,7 @@ component CardWriteModal inherits Rectangle {
             text: root.failed
                 ? @tr("Writing failed")
                 : @tr("Put a writable card near the reader");
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(3);
             font-weight: 500;
         }
@@ -1732,7 +1732,7 @@ component DialogModal inherits Rectangle {
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         width: root.panel-w;
         height: root.panel-h;
-        background: Theme.bg-raised;
+        background: Theme.bg-panel;
         border-radius: Sizing.corner-radius();
         border-width: Sizing.stroke(0.3);
         border-color: Theme.border-mid;
@@ -1743,7 +1743,7 @@ component DialogModal inherits Rectangle {
             max-width: parent.width - 2 * root.pad;
             overflow: elide;
             text: Overlays.dialog-title;
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(3.2);
             font-weight: 600;
         }
@@ -1754,7 +1754,7 @@ component DialogModal inherits Rectangle {
             width: parent.width - 2 * root.pad;
             wrap: word-wrap;
             text: Overlays.dialog-body;
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(2.4);
             horizontal-alignment: center;
         }
@@ -1765,7 +1765,7 @@ component DialogModal inherits Rectangle {
             max-width: parent.width - 2 * root.pad;
             overflow: elide;
             text: Overlays.dialog-status;
-            color: Theme.fg-variant;
+            color: Theme.text-variant;
             font-size: Sizing.font-size(2.4);
         }
 
@@ -1782,7 +1782,7 @@ component DialogModal inherits Rectangle {
             width: parent.btn-w;
             height: root.btn-h;
             border-radius: self.height / 2;
-            background: i == Overlays.dialog-focus ? Theme.accent : Theme.bg-tile;
+            background: i == Overlays.dialog-focus ? Theme.accent : Theme.surface-card;
             border-width: Sizing.stroke(0.3);
             border-color: i == Overlays.dialog-focus ? Theme.accent : Theme.border-mid;
 
@@ -1792,7 +1792,7 @@ component DialogModal inherits Rectangle {
                 max-width: parent.width - Sizing.pct-w(1);
                 overflow: elide;
                 text: label;
-                color: i == Overlays.dialog-focus ? Theme.bg-bar : Theme.fg;
+                color: i == Overlays.dialog-focus ? Theme.bg-bar : Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
                 font-weight: 600;
             }
@@ -1921,7 +1921,7 @@ component ContextMenu inherits Rectangle {
         y: root.panel-y;
         width: root.panel-w;
         height: root.panel-h;
-        background: Theme.bg-raised;
+        background: Theme.bg-panel;
         border-radius: root.panel-radius;
         border-width: Sizing.stroke(0.3);
         border-color: Theme.border-mid;
@@ -1931,10 +1931,10 @@ component ContextMenu inherits Rectangle {
             y: root.panel-radius + i * (root.row-h + root.row-sp);
             width: parent.width - 2 * Sizing.pct-w(1);
             height: root.row-h;
-            background: i == root.current-index ? Theme.selection-surface : transparent;
+            background: i == root.current-index ? Theme.selection-fill : transparent;
             border-radius: Sizing.pct-h(1);
             border-width: i == root.current-index ? Sizing.stroke(0.4) : 0px;
-            border-color: Theme.focus-ring;
+            border-color: Theme.accent;
 
             Text {
                 x: root.pad-x;
@@ -1942,7 +1942,7 @@ component ContextMenu inherits Rectangle {
                 max-width: parent.width - 2 * root.pad-x;
                 overflow: elide;
                 text: entry.label;
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
             }
         }
@@ -2070,7 +2070,7 @@ component GamesScreen inherits Rectangle {
                 height: root.tile-h;
                 border-radius: Sizing.corner-radius();
                 border-width: Sizing.stroke(0.55);
-                border-color: Theme.focus-ring;
+                border-color: Theme.accent;
             }
         }
     }
@@ -2085,7 +2085,7 @@ component GamesScreen inherits Rectangle {
         width: root.arrow-s;
         height: root.arrow-s;
         source: GlyphSource.glyph("ScrollUp", root.arrow-s);
-        colorize: Theme.fg-dim;
+        colorize: Theme.text-label;
     }
     if !GamesView.games-list-layout && (root.page + 1 < root.total-pages || GamesView.games-has-more): Image {
         x: parent.width - Sizing.pct-w(2) - root.arrow-s;
@@ -2093,7 +2093,7 @@ component GamesScreen inherits Rectangle {
         width: root.arrow-s;
         height: root.arrow-s;
         source: GlyphSource.glyph("ScrollDown", root.arrow-s);
-        colorize: Theme.fg-dim;
+        colorize: Theme.text-label;
     }
 
     // --- Detailed-list layout (BrowseListDetailView port): list rows
@@ -2129,7 +2129,7 @@ component GamesScreen inherits Rectangle {
         y: root.card-y;
         width: root.card-w;
         height: root.card-h;
-        background: Theme.bg-tile;
+        background: Theme.surface-card;
         border-radius: Theme.crt ? 4px : Sizing.corner-radius();
         border-width: Sizing.stroke(0.3);
         border-color: Theme.border-mid;
@@ -2140,7 +2140,7 @@ component GamesScreen inherits Rectangle {
             y: root.pad-y + i * (root.list-row-h + root.row-spacing);
             width: root.rows-w;
             height: root.list-row-h;
-            background: i == GamesView.list-sel ? Theme.selection-surface : transparent;
+            background: i == GamesView.list-sel ? Theme.selection-fill : transparent;
             border-radius: Sizing.pct-h(1.2);
 
             // Accent bar on the selected row (BrowseList's left edge).
@@ -2164,7 +2164,7 @@ component GamesScreen inherits Rectangle {
                 focused: i == GamesView.list-sel && !Shell.route-transitioning;
                 center-content: false;
                 caption-font-size: Sizing.font-size(2.9);
-                caption-color: i == GamesView.list-sel ? Theme.fg : Theme.fg-dim;
+                caption-color: i == GamesView.list-sel ? Theme.text-primary : Theme.text-label;
             }
 
             if row.is-favorite: Image {
@@ -2184,7 +2184,7 @@ component GamesScreen inherits Rectangle {
             width: root.arrow-s;
             height: root.arrow-s;
             source: GlyphSource.glyph("ScrollUp", root.arrow-s);
-            colorize: Theme.fg-dim;
+            colorize: Theme.text-label;
         }
         if root.list-scrollable && root.abs-sel < GamesView.list-total - 1: Image {
             x: root.list-w - root.pad-x - root.gutter-w + Math.round((root.gutter-w - root.arrow-s) / 2px) * 1px;
@@ -2192,7 +2192,7 @@ component GamesScreen inherits Rectangle {
             width: root.arrow-s;
             height: root.arrow-s;
             source: GlyphSource.glyph("ScrollDown", root.arrow-s);
-            colorize: Theme.fg-dim;
+            colorize: Theme.text-label;
         }
         if root.list-scrollable: Rectangle {
             property <length> region-y: root.pad-y + root.arrow-s + Sizing.pct-h(1);
@@ -2206,7 +2206,7 @@ component GamesScreen inherits Rectangle {
                 : 0px);
             width: Sizing.pct-w(1.2);
             height: self.thumb-h;
-            background: Theme.fg;
+            background: Theme.text-primary;
             border-radius: self.width / 2;
         }
 
@@ -2263,7 +2263,7 @@ component GamesScreen inherits Rectangle {
             y: parent.det-y;
             width: parent.cover-w;
             height: parent.cover-h;
-            background: Theme.bg-raised;
+            background: Theme.bg-panel;
             border-radius: Sizing.pct-h(1.5);
         }
         Text {
@@ -2272,7 +2272,7 @@ component GamesScreen inherits Rectangle {
             max-width: parent.text-w;
             overflow: elide;
             text: GamesView.detail-title;
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(2.9);
             font-weight: 600;
         }
@@ -2285,7 +2285,7 @@ component GamesScreen inherits Rectangle {
                 x: 0;
                 y: Math.round((parent.height - self.height) / 2px) * 1px;
                 text: meta.label;
-                color: Theme.fg-variant;
+                color: Theme.text-variant;
                 font-size: Sizing.font-size(2.2);
             }
             Text {
@@ -2294,7 +2294,7 @@ component GamesScreen inherits Rectangle {
                 max-width: parent.width - Math.round(parent.width * 0.34 / 1px) * 1px;
                 overflow: elide;
                 text: meta.value;
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(2.2);
             }
         }
@@ -2306,7 +2306,7 @@ component GamesScreen inherits Rectangle {
             wrap: word-wrap;
             overflow: elide;
             text: GamesView.detail-description;
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(2.2);
         }
     }
@@ -2322,7 +2322,7 @@ component GamesScreen inherits Rectangle {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((parent.height - self.height) / 2px) * 1px - Sizing.font-size(2.4);
             text: @tr("Failed to load");
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(2.9);
         }
         Text {
@@ -2331,7 +2331,7 @@ component GamesScreen inherits Rectangle {
             max-width: Math.round(parent.width * 0.7 / 1px) * 1px;
             overflow: elide;
             text: GamesView.games-error;
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(2.4);
         }
     }
@@ -2340,7 +2340,7 @@ component GamesScreen inherits Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         text: GamesView.games-empty-text;
-        color: Theme.fg-dim;
+        color: Theme.text-label;
         font-size: Sizing.font-size(2.6);
     }
 
@@ -2353,7 +2353,7 @@ component GamesScreen inherits Rectangle {
         y: root.grid-top + Math.round((root.period - root.gap - self.s) / 2px) * 1px;
         width: self.s;
         height: self.s;
-        background: Theme.bg-tile;
+        background: Theme.surface-card;
         border-width: Sizing.stroke(0.3);
         border-color: Theme.border-mid;
         border-radius: Sizing.corner-radius();
@@ -2362,7 +2362,7 @@ component GamesScreen inherits Rectangle {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((parent.height - self.height) / 2px) * 1px;
             text: GamesView.rapid-letter;
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(10);
         }
     }
@@ -2381,7 +2381,7 @@ component GamesScreen inherits Rectangle {
         x: parent.width - self.width - 4px;
         y: parent.height - self.height - Sizing.pct-h(6);
         text: @tr("Page {} / {}", root.page + 1, root.total-pages);
-        color: Theme.fg;
+        color: Theme.text-primary;
         font-size: Sizing.font-size(2.9);
     }
 
@@ -2418,7 +2418,7 @@ component CrtCalibrationPattern inherits Rectangle {
         y: 0;
         width: root.stroke;
         height: parent.height;
-        background: Theme.fg-dim;
+        background: Theme.text-label;
     }
     for row in 13: Rectangle {
         x: 0;
@@ -2426,7 +2426,7 @@ component CrtCalibrationPattern inherits Rectangle {
             Math.round(row * (parent.height - root.stroke) / 12px) * 1px);
         width: parent.width;
         height: root.stroke;
-        background: Theme.fg-dim;
+        background: Theme.text-label;
     }
 
     Rectangle {
@@ -2436,7 +2436,7 @@ component CrtCalibrationPattern inherits Rectangle {
         height: parent.height;
         background: transparent;
         border-width: root.stroke;
-        border-color: Theme.fg;
+        border-color: Theme.text-primary;
     }
     Rectangle {
         x: root.action-x;
@@ -2454,7 +2454,7 @@ component CrtCalibrationPattern inherits Rectangle {
         height: parent.height - 2 * root.title-y;
         background: transparent;
         border-width: root.stroke;
-        border-color: Theme.fg;
+        border-color: Theme.text-primary;
     }
 
     plate := Rectangle {
@@ -2467,13 +2467,13 @@ component CrtCalibrationPattern inherits Rectangle {
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         background: #000000;
         border-width: root.stroke;
-        border-color: Theme.fg;
+        border-color: Theme.text-primary;
 
         readout := Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: parent.pad-y;
             text: "H \{Overlays.crt-h-offset}   V \{Overlays.crt-v-offset}";
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(3.2);
             font-weight: 600;
         }
@@ -2481,7 +2481,7 @@ component CrtCalibrationPattern inherits Rectangle {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: parent.pad-y + Sizing.font-size(3.2) + Sizing.pct-h(1);
             text: @tr("Arrows adjust position");
-            color: Theme.fg-dim;
+            color: Theme.text-label;
             font-size: Sizing.font-size(2.4);
         }
         Text {
@@ -2489,7 +2489,7 @@ component CrtCalibrationPattern inherits Rectangle {
             y: parent.pad-y + Sizing.font-size(3.2) + Sizing.font-size(2.4)
                 + 2 * Sizing.pct-h(1);
             text: @tr("Accept or Back saves");
-            color: Theme.fg-dim;
+            color: Theme.text-label;
             font-size: Sizing.font-size(2.4);
         }
     }
@@ -2527,7 +2527,7 @@ component RouteScreen inherits Rectangle {
 
 export component App inherits Window {
     title: "Zaparoo Frontend (Slint demo)";
-    background: Theme.bg;
+    background: Theme.bg-deep;
     default-font-family: Theme.font-ui;
     preferred-width: 1280px;
     preferred-height: 720px;
@@ -2762,7 +2762,7 @@ export component App inherits Window {
             max-width: parent.width - 2 * Sizing.pct-w(10);
             overflow: elide;
             text: Shell.boot-text;
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(3.2);
         }
     }
@@ -2776,7 +2776,7 @@ export component App inherits Window {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((parent.height - self.height) / 2px) * 1px;
             text: @tr("Loading…");
-            color: Theme.fg;
+            color: Theme.text-primary;
             font-size: Sizing.font-size(3.2);
         }
     }
@@ -2796,7 +2796,7 @@ export component App inherits Window {
             y: Math.round((parent.height - self.height) / 2px) * 1px;
             width: Sizing.pct-w(70);
             height: Sizing.pct-h(64);
-            background: Theme.bg-raised;
+            background: Theme.bg-panel;
             border-radius: Sizing.corner-radius();
             border-width: Sizing.stroke(0.3);
             border-color: Theme.border-mid;
@@ -2817,7 +2817,7 @@ export component App inherits Window {
                 y: parent.pad;
                 width: parent.cover-w - parent.pad;
                 height: parent.height - 2 * parent.pad;
-                background: Theme.bg-tile;
+                background: Theme.surface-card;
                 border-radius: Sizing.pct-h(1.5);
             }
 
@@ -2827,7 +2827,7 @@ export component App inherits Window {
                 width: parent.width - parent.cover-w - 2 * parent.pad;
                 overflow: elide;
                 text: GameInfoView.modal-name;
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(3.4);
                 font-weight: 600;
             }
@@ -2837,7 +2837,7 @@ export component App inherits Window {
                 width: parent.width - parent.cover-w - 2 * parent.pad;
                 overflow: elide;
                 text: GameInfoView.modal-system;
-                color: Theme.fg-variant;
+                color: Theme.text-variant;
                 font-size: Sizing.font-size(2.4);
             }
             if GameInfoView.modal-tags != "": Text {
@@ -2846,7 +2846,7 @@ export component App inherits Window {
                 width: parent.width - parent.cover-w - 2 * parent.pad;
                 overflow: elide;
                 text: GameInfoView.modal-tags;
-                color: Theme.fg-dim;
+                color: Theme.text-label;
                 font-size: Sizing.font-size(2.2);
             }
             Text {
@@ -2857,7 +2857,7 @@ export component App inherits Window {
                 wrap: word-wrap;
                 overflow: elide;
                 text: GameInfoView.modal-description;
-                color: Theme.fg;
+                color: Theme.text-primary;
                 font-size: Sizing.font-size(2.3);
             }
         }

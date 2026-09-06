@@ -12,23 +12,37 @@
 export global Theme {
     in-out property <bool> crt: false;
 
-    // Palette lifted 1:1 from src/ui/theme/Theme.qml.
-    out property <color> bg: #0f0f23;             // bgDeep
-    out property <color> bg-raised: #1a1a35;      // bgPanel
-    out property <color> bg-bar: #0a0a15;         // bgBar (help bar)
-    out property <color> bg-tile: #22223a;        // surfaceCard
-    out property <color> selection-surface: #3a3a66;
-    out property <color> border-subtle: #1a1a2e;
-    out property <color> border-mid: #404060;
-    out property <color> fg: #ffffff;             // textPrimary
-    out property <color> fg-dim: #888888;         // textLabel
-    out property <color> fg-variant: #8a8ab2;     // textVariant
-    out property <color> accent: #FFB347;
-    out property <color> focus-ring: #FFB347;     // accent focus, as in Tile.qml
-    out property <color> logo-primary: #9898CC;   // resting tint for glyph art
-    out property <color> logo-focus-primary: #FFE3B8; // focused tint
-    out property <color> state-marker: #9898CC;   // stateMarker (Hidden badge fill)
-    out property <color> scrim: #000000cc;        // modal scrim (Theme.scrim)
+    // The palette roles Theme.qml publishes, pushed by Rust
+    // (src/theme.rs, from zaparoo_app::palette) at startup and on a scheme
+    // change. Defaults are zaparoo-dark at Subtle so the first frame
+    // already matches the default preset.
+    in-out property <color> bg-deep: #050608;
+    in-out property <color> bg-panel: #11171d;
+    in-out property <color> bg-bar: #030405;
+    in-out property <color> surface-card: #181f26;
+    in-out property <color> tile-edge: #293d56;
+    in-out property <color> control-edge: #324b69;
+    in-out property <color> scrim: #cc000000;
+    in-out property <color> border-subtle: #262b30;
+    in-out property <color> border-mid: #4f565c;
+    in-out property <color> text-primary: #f7f7f5;
+    in-out property <color> text-label: #9b9b9b;
+    in-out property <color> text-variant: #8091a1;
+    in-out property <color> accent: #168bff;
+    in-out property <color> selection-fill: #4c8edd;
+    in-out property <color> on-accent: #050608;
+    in-out property <color> on-accent-muted: #242629;
+    in-out property <color> logo-primary: #8c8c8c;
+    in-out property <color> logo-secondary: #5e5e5e;
+    in-out property <color> logo-shadow: #3d3d3d;
+    in-out property <color> logo-focus-primary: #8fc1ff;
+    in-out property <color> logo-focus-secondary: #168bff;
+    in-out property <color> logo-focus-shadow: #004c94;
+    in-out property <color> marker: #ec5545;
+    in-out property <color> marker-outline: #f6e4e0;
+    in-out property <color> error: #ff4f91;
+    in-out property <color> qr-light: #ecf4ff;
+    in-out property <color> qr-dark: #0054a2;
 
     // CRT native path renders the 6x8 bitmap font, exactly like
     // Theme.qml's fontUi switch.
