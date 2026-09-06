@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-09-06 06:33+0000\n"
+"POT-Creation-Date: 2026-09-06 06:37+0000\n"
 "Language: nl\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -48,8 +48,8 @@ msgstr ""
 msgid "Project: https://zaparoo.org"
 msgstr "Projectwebsite: https://zaparoo.org"
 
-#: rust/frontend-slint/ui/app.slint:787 rust/frontend-slint/ui/app.slint:1454
-#: rust/frontend-slint/ui/app.slint:1861
+#: rust/frontend-slint/ui/app.slint:787 rust/frontend-slint/ui/app.slint:1494
+#: rust/frontend-slint/ui/app.slint:1901
 msgid "Favorites"
 msgstr "Favorieten"
 
@@ -69,7 +69,7 @@ msgstr ""
 msgid "Hidden"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:978 rust/frontend-slint/ui/app.slint:1707
+#: rust/frontend-slint/ui/app.slint:978 rust/frontend-slint/ui/app.slint:1747
 msgid "No favorites yet"
 msgstr "Nog geen favorieten"
 
@@ -85,149 +85,149 @@ msgstr ""
 msgid "Loading systems…"
 msgstr "Systemen laden…"
 
-#: rust/frontend-slint/ui/app.slint:1083
+#: rust/frontend-slint/ui/app.slint:1123
 msgid "Go to..."
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1092 rust/frontend-slint/ui/app.slint:1592
-#: rust/frontend-slint/ui/app.slint:2219
+#: rust/frontend-slint/ui/app.slint:1132 rust/frontend-slint/ui/app.slint:1632
+#: rust/frontend-slint/ui/app.slint:2259
 msgid "Loading…"
 msgstr "Laden…"
 
-#: rust/frontend-slint/ui/app.slint:1158
+#: rust/frontend-slint/ui/app.slint:1198
 msgid "Writing failed"
 msgstr "Schrijven mislukt"
 
-#: rust/frontend-slint/ui/app.slint:1159
+#: rust/frontend-slint/ui/app.slint:1199
 msgid "Put a writable card near the reader"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1455 rust/frontend-slint/ui/app.slint:1862
+#: rust/frontend-slint/ui/app.slint:1495 rust/frontend-slint/ui/app.slint:1902
 msgid "Recently played"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1465
+#: rust/frontend-slint/ui/app.slint:1505
 msgid "{} games"
 msgstr ""
 
 #. background fetch fills rows the user scrolled past.
-#: rust/frontend-slint/ui/app.slint:1468
+#: rust/frontend-slint/ui/app.slint:1508
 msgid "Loading more…"
 msgstr "Meer laden…"
 
-#: rust/frontend-slint/ui/app.slint:1592
+#: rust/frontend-slint/ui/app.slint:1632
 msgid "Loading game…"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1708
+#: rust/frontend-slint/ui/app.slint:1748
 msgid "Nothing played yet"
 msgstr "Nog niets gespeeld"
 
-#: rust/frontend-slint/ui/app.slint:1708
+#: rust/frontend-slint/ui/app.slint:1748
 msgid "No games in this system"
 msgstr "Geen games in dit systeem"
 
-#: rust/frontend-slint/ui/app.slint:1709
+#: rust/frontend-slint/ui/app.slint:1749
 msgid "Loading favorites…"
 msgstr "Favorieten laden…"
 
-#: rust/frontend-slint/ui/app.slint:1710
+#: rust/frontend-slint/ui/app.slint:1750
 msgid "Loading recently played…"
 msgstr "Recent gespeeld laden…"
 
-#: rust/frontend-slint/ui/app.slint:1710
+#: rust/frontend-slint/ui/app.slint:1750
 msgid "Loading games…"
 msgstr "Games laden…"
 
-#: rust/frontend-slint/ui/app.slint:1794
+#: rust/frontend-slint/ui/app.slint:1834
 msgid "Arrows adjust position"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1802
+#: rust/frontend-slint/ui/app.slint:1842
 msgid "Accept or Back saves"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1888 rust/frontend-slint/ui/app.slint:1912
-#: rust/frontend-slint/ui/app.slint:1938 rust/frontend-slint/ui/app.slint:2018
-#: rust/frontend-slint/ui/app.slint:2038
+#: rust/frontend-slint/ui/app.slint:1928 rust/frontend-slint/ui/app.slint:1952
+#: rust/frontend-slint/ui/app.slint:1978 rust/frontend-slint/ui/app.slint:2058
+#: rust/frontend-slint/ui/app.slint:2078
 msgid "Move"
 msgstr "Bewegen"
 
-#: rust/frontend-slint/ui/app.slint:1901 rust/frontend-slint/ui/app.slint:1905
-#: rust/frontend-slint/ui/app.slint:1994 rust/frontend-slint/ui/app.slint:2011
-#: rust/frontend-slint/ui/app.slint:2025 rust/frontend-slint/ui/app.slint:2040
-#: rust/frontend-slint/ui/app.slint:2052 rust/frontend-slint/ui/app.slint:2062
-#: rust/frontend-slint/ui/app.slint:2075 rust/frontend-slint/ui/app.slint:2090
+#: rust/frontend-slint/ui/app.slint:1941 rust/frontend-slint/ui/app.slint:1945
+#: rust/frontend-slint/ui/app.slint:2034 rust/frontend-slint/ui/app.slint:2051
+#: rust/frontend-slint/ui/app.slint:2065 rust/frontend-slint/ui/app.slint:2080
+#: rust/frontend-slint/ui/app.slint:2092 rust/frontend-slint/ui/app.slint:2102
+#: rust/frontend-slint/ui/app.slint:2115 rust/frontend-slint/ui/app.slint:2130
 msgid "Back"
 msgstr "Terug"
 
-#: rust/frontend-slint/ui/app.slint:1904 rust/frontend-slint/ui/app.slint:1981
-#: rust/frontend-slint/ui/app.slint:2061 rust/frontend-slint/ui/app.slint:2073
+#: rust/frontend-slint/ui/app.slint:1944 rust/frontend-slint/ui/app.slint:2021
+#: rust/frontend-slint/ui/app.slint:2101 rust/frontend-slint/ui/app.slint:2113
 msgid "Retry"
 msgstr "Opnieuw proberen"
 
-#: rust/frontend-slint/ui/app.slint:1904
+#: rust/frontend-slint/ui/app.slint:1944
 msgid "Done"
 msgstr "Klaar"
 
-#: rust/frontend-slint/ui/app.slint:1928 rust/frontend-slint/ui/app.slint:1939
+#: rust/frontend-slint/ui/app.slint:1968 rust/frontend-slint/ui/app.slint:1979
 msgid "Select"
 msgstr "Selecteren"
 
-#: rust/frontend-slint/ui/app.slint:1929 rust/frontend-slint/ui/app.slint:1944
-#: rust/frontend-slint/ui/app.slint:1975
+#: rust/frontend-slint/ui/app.slint:1969 rust/frontend-slint/ui/app.slint:1984
+#: rust/frontend-slint/ui/app.slint:2015
 msgid "Cancel"
 msgstr "Annuleren"
 
-#: rust/frontend-slint/ui/app.slint:1933
+#: rust/frontend-slint/ui/app.slint:1973
 msgid "OK"
 msgstr "Akkoord"
 
-#: rust/frontend-slint/ui/app.slint:1940 rust/frontend-slint/ui/app.slint:1947
+#: rust/frontend-slint/ui/app.slint:1980 rust/frontend-slint/ui/app.slint:1987
 msgid "Close"
 msgstr "Sluiten"
 
-#: rust/frontend-slint/ui/app.slint:1951 rust/frontend-slint/ui/app.slint:2051
+#: rust/frontend-slint/ui/app.slint:1991 rust/frontend-slint/ui/app.slint:2091
 msgid "Scroll"
 msgstr "Scrollen"
 
-#: rust/frontend-slint/ui/app.slint:1964
+#: rust/frontend-slint/ui/app.slint:2004
 msgid "Adjust"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1965
+#: rust/frontend-slint/ui/app.slint:2005
 msgid "Save"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1973
+#: rust/frontend-slint/ui/app.slint:2013
 msgid "Reposition"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1974
+#: rust/frontend-slint/ui/app.slint:2014
 msgid "Place"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1981 rust/frontend-slint/ui/app.slint:1988
-#: rust/frontend-slint/ui/app.slint:2009 rust/frontend-slint/ui/app.slint:2024
-#: rust/frontend-slint/ui/app.slint:2087
+#: rust/frontend-slint/ui/app.slint:2021 rust/frontend-slint/ui/app.slint:2028
+#: rust/frontend-slint/ui/app.slint:2049 rust/frontend-slint/ui/app.slint:2064
+#: rust/frontend-slint/ui/app.slint:2127
 msgid "Open"
 msgstr "Openen"
 
-#: rust/frontend-slint/ui/app.slint:1982 rust/frontend-slint/ui/app.slint:2002
-#: rust/frontend-slint/ui/app.slint:2088
+#: rust/frontend-slint/ui/app.slint:2022 rust/frontend-slint/ui/app.slint:2042
+#: rust/frontend-slint/ui/app.slint:2128
 msgid "Options"
 msgstr "Opties"
 
-#: rust/frontend-slint/ui/app.slint:1983 rust/frontend-slint/ui/app.slint:1989
-#: rust/frontend-slint/ui/app.slint:2074
+#: rust/frontend-slint/ui/app.slint:2023 rust/frontend-slint/ui/app.slint:2029
+#: rust/frontend-slint/ui/app.slint:2114
 msgid "View"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2031 rust/frontend-slint/ui/app.slint:2045
+#: rust/frontend-slint/ui/app.slint:2071 rust/frontend-slint/ui/app.slint:2085
 msgid "Change"
 msgstr "Wijzigen"
 
-#: rust/frontend-slint/ui/app.slint:2032
+#: rust/frontend-slint/ui/app.slint:2072
 msgid "Toggle"
 msgstr "Schakelen"
 
