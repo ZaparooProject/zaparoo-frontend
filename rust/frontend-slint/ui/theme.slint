@@ -130,8 +130,14 @@ export global Sizing {
         return 24;
     }
     // Stroke width that never rounds to zero.
+    // Hairline width in device pixels, exactly as `Sizing.stroke` in
+    // Sizing.qml: `max(1, round(value))`. The argument is a pixel count,
+    // NOT a percentage - a keyline stays a keyline at every resolution.
+    // Percentage-derived thicknesses (card borders, the focus ring) come
+    // from `zaparoo_app::sizing`, which composes the two the way the QML
+    // does (`stroke(pctH(0.2))`).
     public pure function stroke(p: float) -> length {
-        return Math.max(1, Math.round(p / 100 * self.screen-height / 1px)) * 1px;
+        return Math.max(1, Math.round(p)) * 1px;
     }
 
     // Everything below is Sizing.qml's derived table, resolved by

@@ -1051,7 +1051,54 @@ fn fixture_games(
         overlays.set_context_anchor_w(rect.width as f32);
         overlays.set_context_anchor_h(rect.height as f32);
     }
+    // The list layout is a different view of the same model: rows in a
+    // card beside the focused row's detail pane. Filled here too so the
+    // `*-list` screens render what the driver would push, not an empty
+    // card.
+    let (list_row_height, list_visible) = list_metrics(app, scene_w, scene_h, crt, 0);
+    let list_rows: Vec<GridCell> = (1..=list_visible)
+        .map(|i| GridCell {
+            name: if i == 1 && !flat {
+                "Homebrew".into()
+            } else {
+                format!("Example Game Title {i}").into()
+            },
+            glyph_key: if i == 1 && !flat {
+                "icons/Folder".into()
+            } else {
+                "".into()
+            },
+            tags: if i == 1 && !flat {
+                "42".into()
+            } else {
+                "".into()
+            },
+            favorite: i == 2,
+            ..Default::default()
+        })
+        .collect();
     let view = app.global::<GamesView>();
+    view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(list_rows)));
+    view.set_list_sel(2);
+    view.set_list_view_top(0);
+    view.set_list_visible(i32::try_from(list_visible).unwrap_or(10));
+    view.set_list_row_height(list_row_height);
+    view.set_detail_title("Example Game Title 3".into());
+    view.set_detail_cover_absent(true);
+    view.set_detail_rows(slint::ModelRc::new(slint::VecModel::from(vec![
+        generated::DetailRow {
+            key: "system".into(),
+            value: "Atari Lynx".into(),
+        },
+        generated::DetailRow {
+            key: "region".into(),
+            value: "USA".into(),
+        },
+        generated::DetailRow {
+            key: "players".into(),
+            value: "2".into(),
+        },
+    ])));
     view.set_mode(mode.into());
     view.set_title("Atari Lynx".into());
     view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));

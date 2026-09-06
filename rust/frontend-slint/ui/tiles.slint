@@ -167,6 +167,10 @@ export component PressableSurface inherits Rectangle {
     property <length> edge-band: Math.min(root.edge-height + root.radius, root.height);
     property <length> press-depth: Math.min(root.edge-height, root.height);
     out property <length> face-y: Math.round(root.press-t * root.press-depth / 1px) * 1px;
+    // The face is shorter than the cell by the depth the press travels;
+    // content and the focus ring belong to the face, never to the front
+    // edge below it (Tile.qml puts both inside `faceContent`).
+    out property <length> face-height: Math.max(0px, root.height - root.press-depth);
     property <length> ring-gap: Sizing.card-border-width;
     property <length> ring-width: Sizing.card-border-width * 2;
 
@@ -301,12 +305,13 @@ export component Tile inherits Rectangle {
         pressed: root.pressed;
 
         // Focus ring inside the card edge: an accent pill and a face
-        // colored mask punched back out of its center.
+        // colored mask punched back out of its center. Sized to the face
+        // so it never reaches down over the front edge.
         if root.focused-selection: Rectangle {
             x: root.outline-gap;
             y: root.outline-gap;
             width: parent.width - 2 * root.outline-gap;
-            height: parent.height - 2 * root.outline-gap;
+            height: parent.face-height - 2 * root.outline-gap;
             background: Theme.accent;
             border-radius: Math.max(0px, root.card-radius - root.outline-gap);
             Rectangle {
@@ -322,7 +327,7 @@ export component Tile inherits Rectangle {
         property <length> art-top: root.has-top-label ? root.top-label-height + root.top-label-gap : root.pad;
         property <length> art-bottom: root.show-caption ? root.caption-height + root.caption-gap : root.pad;
         property <length> art-w: Math.max(0px, self.width - 2 * root.pad);
-        property <length> art-h: Math.max(0px, self.height - self.art-top - self.art-bottom);
+        property <length> art-h: Math.max(0px, self.face-height - self.art-top - self.art-bottom);
 
         if root.has-top-label: MarqueeCaption {
             x: root.pad;
@@ -387,7 +392,7 @@ export component Tile inherits Rectangle {
 
         if root.show-caption: MarqueeCaption {
             x: root.pad;
-            y: parent.height - root.caption-height;
+            y: parent.face-height - root.caption-height;
             width: parent.art-w;
             height: root.caption-height;
             content: root.caption;

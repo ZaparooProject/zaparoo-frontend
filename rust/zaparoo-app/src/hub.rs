@@ -700,7 +700,7 @@ pub fn geometry(inputs: &Inputs, d: &Derived) -> Geometry {
     };
     let height = inputs.screen_height as i32;
     let width = inputs.screen_width as i32;
-    let fit = paged_grid::fit(
+    let mut fit = paged_grid::fit(
         d.hub_grid_columns,
         d.hub_grid_rows,
         width,
@@ -713,6 +713,14 @@ pub fn geometry(inputs: &Inputs, d: &Derived) -> Geometry {
         + insets.bottom
         + d.hub_grid_rows * fit.cell_height
         + (d.hub_grid_rows - 1) * insets.row_gap;
+    // HubScreen.qml sizes the grid item to exactly its own content plus
+    // insets, so PagedGrid's vertical centering has no slack to hand out:
+    // the rows start at the top of the grid and the band's leftover room
+    // is spent on `vertical_gap` above and below instead. The screen
+    // height above is only the reference for the width fit; centering the
+    // block against it would push every row down by half the band.
+    fit.available_height = (grid_height - insets.top - insets.bottom).max(0);
+    fit.block_offset_y = 0;
     let vertical_band = (height - d.header_bottom - d.help_bar_height).max(0);
     let vertical_gap = ((f64::from(vertical_band - grid_height - d.hub_active_label_height) / 3.0)
         .round() as i32)
@@ -1025,6 +1033,33 @@ mod tests {
             "Homebrew"
         );
         assert_eq!(folder_name_for_path("Homebrew"), "Homebrew");
+    }
+
+    #[test]
+    fn the_grid_block_starts_at_the_top_of_its_own_band() {
+        // HubScreen.qml sizes the grid item to its content plus insets,
+        // so PagedGrid has no slack to center within: row 0 sits at the
+        // top of the grid, and the band's spare room becomes the gaps
+        // above the grid and around the label. Centering the block
+        // against the screen instead drops every row half a band down.
+        for (w, h) in [(1280.0, 720.0), (1920.0, 1080.0), (960.0, 540.0)] {
+            let inputs = Inputs {
+                screen_width: w,
+                screen_height: h,
+                ..Inputs::default()
+            };
+            let d = crate::sizing::derive(&inputs);
+            let g = geometry(&inputs, &d);
+            assert_eq!(g.fit.block_offset_y, 0, "{w}x{h}");
+            let first_row = paged_grid::cell_rect(&g.fit, &g.insets, 0, 0);
+            assert_eq!(first_row.y, g.insets.top, "{w}x{h}");
+            let last_row_bottom =
+                paged_grid::cell_rect(&g.fit, &g.insets, g.rows - 1, 0).y + g.fit.cell_height;
+            assert!(
+                last_row_bottom + g.insets.bottom <= g.grid_height,
+                "{w}x{h}: rows overflow the grid item"
+            );
+        }
     }
 
     #[test]

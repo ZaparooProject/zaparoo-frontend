@@ -504,11 +504,21 @@ component SettingsScreen inherits Rectangle {
         activate-pulse: SettingsView.activate-pulse;
         release-pulse: SettingsView.release-pulse;
         settling: Shell.active-screen != "settings";
-        show-caption: true;
         card-radius: Layout.card-radius;
-        caption-for(cell) => { return SettingsLabels.label(cell.label-key); }
         cell-hovered(i) => { SettingsInput.cell-hovered(i); }
         cell-clicked(i) => { SettingsInput.cell-clicked(i); }
+    }
+
+    // The focused category is named under the grid, not inside the tile
+    // (SettingsScreen.qml's own ActiveLabel); the tiles carry art only.
+    if root.root-grid: ActiveLabel {
+        x: 0;
+        y: parent.height - (Sizing.tier-240 ? Sizing.help-bar-height : Sizing.pct-h(8)) - self.height;
+        width: parent.width;
+        height: Sizing.tier-240 ? Sizing.hub-active-label-height : Sizing.pct-h(7);
+        text: (root.index >= 0 && root.index < SettingsView.cells.length)
+            ? SettingsLabels.label(SettingsView.cells[root.index].label-key)
+            : "";
     }
 
     // Page: rows in a card, with the hint band pinned to its bottom.

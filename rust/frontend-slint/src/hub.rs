@@ -181,6 +181,9 @@ pub fn rebuild(ctx: &Ctx, app: &App) {
     if std::mem::take(&mut lock(&ctx.shared).hub.layout_dirty) {
         crate::hub_covers::refresh_hub_entries(ctx);
     }
+    // The page size below is the grid's, so its shape has to match the
+    // scene before the entries are padded to it.
+    geometry_for(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
         let connected = !app.global::<crate::Status>().get_is_error()
@@ -312,12 +315,28 @@ fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
     cell
 }
 
-/// Push the current page, the cursor, the caption and the geometry.
-pub fn render(ctx: &Ctx, app: &App) {
+/// The Hub's geometry for the current scene, with the model's own grid
+/// shape kept in step. The shape is the fixed per-tier table (7x3, or
+/// 4x2 on the low tiers), so a viewport change can move it: navigation
+/// and paging read the model's grid, which has to agree with the rows
+/// the view draws or Down lands on the wrong tile.
+fn geometry_for(ctx: &Ctx, app: &App) -> rules::Geometry {
     let scene = crate::router::output_scene(app);
     let inputs = scene.inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let geometry = rules::geometry(&inputs, &derived);
+    let mut shared = lock(&ctx.shared);
+    let columns = usize::try_from(geometry.columns).unwrap_or(1);
+    let rows = usize::try_from(geometry.rows).unwrap_or(1);
+    if shared.hub.grid.columns() != columns || shared.hub.grid.rows() != rows {
+        shared.hub.grid.set_shape(columns, rows);
+    }
+    geometry
+}
+
+/// Push the current page, the cursor, the caption and the geometry.
+pub fn render(ctx: &Ctx, app: &App) {
+    let geometry = geometry_for(ctx, app);
     let view = app.global::<HubView>();
     let shared = lock(&ctx.shared);
     let hub = &shared.hub;

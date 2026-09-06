@@ -265,7 +265,7 @@ fn merge_config_settings(
     s.crt_v_offset = v;
 }
 
-fn scene_size(width: f64, height: f64, orientation: &str, crt: bool) -> (f64, f64) {
+pub(crate) fn scene_size(width: f64, height: f64, orientation: &str, crt: bool) -> (f64, f64) {
     let inset_w = if crt {
         2.0 * (width * 0.05).round()
     } else {
@@ -535,6 +535,7 @@ fn main() -> Result<(), slint::PlatformError> {
     apply_grid_shapes(&app, initial_w, initial_h, visual_crt);
     {
         let weak = app.as_weak();
+        let ctx = ctx.clone();
         app.on_viewport_changed(move |w, h| {
             if let Some(app) = weak.upgrade() {
                 let orientation = app.global::<Shell>().get_orientation().to_string();
@@ -542,6 +543,10 @@ fn main() -> Result<(), slint::PlatformError> {
                     scene_size(f64::from(ow), f64::from(oh), &orientation, visual_crt)
                 });
                 apply_grid_shapes(&app, w, h, visual_crt);
+                // The window is rarely the size the config asked for
+                // (a tiling WM, a smaller display, a live resize), so
+                // every screen has to re-solve against what it got.
+                router::relayout(&ctx, &app);
             }
         });
     }

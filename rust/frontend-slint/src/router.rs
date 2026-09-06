@@ -1122,13 +1122,27 @@ pub(crate) fn start_scrape(ctx: &Ctx, app: &App, systems: Vec<String>, force: bo
 /// the physical output size during DRS rather than the transient Slint
 /// window size, plus the rendering flags the `Sizing` global carries.
 pub(crate) fn output_scene(app: &App) -> sizing::Scene {
-    let size = app.window().size();
-    let (out_w, out_h) = crate::output_size()
-        .map_or((f64::from(size.width), f64::from(size.height)), |(w, h)| {
-            (f64::from(w), f64::from(h))
-        });
-    let crt = app.global::<Sizing>().get_crt();
-    sizing::Scene::of(app, out_w, out_h, crt)
+    let sizing_global = app.global::<Sizing>();
+    let crt = sizing_global.get_crt();
+    // The sizing rules work in the logical scene the views lay out in:
+    // rotated, and already trimmed to the action-safe canvas on the CRT
+    // path. `MiSTer` prefers the live output size because DRS moves it
+    // under the window; everywhere else the window's own logical size is
+    // the scene, and reading the physical size here would scale the whole
+    // layout by the display's device pixel ratio.
+    let (w, h) = crate::output_size().map_or_else(
+        || {
+            (
+                f64::from(sizing_global.get_screen_width()),
+                f64::from(sizing_global.get_screen_height()),
+            )
+        },
+        |(ow, oh)| {
+            let orientation = app.global::<crate::Shell>().get_orientation().to_string();
+            crate::scene_size(f64::from(ow), f64::from(oh), &orientation, crt)
+        },
+    );
+    sizing::Scene::of(app, w, h, crt)
 }
 
 /// Re-resolve the browse layout profile for the screen now active, at
@@ -1141,6 +1155,19 @@ pub(crate) fn refresh_layout(app: &App) {
     );
     let crt = sizing_global.get_crt();
     sizing::refresh_layout(app, sizing::Scene::of(app, w, h, crt));
+}
+
+/// The scene changed size (a desktop window resize, a live orientation
+/// flip): re-solve every screen's geometry. The views read grid shapes,
+/// cell sizes and block positions that Rust pushed for the previous
+/// size, so without this the whole layout keeps the old scene's
+/// proportions inside the new window.
+pub(crate) fn relayout(ctx: &Ctx, app: &App) {
+    refresh_layout(app);
+    crate::hub::rebuild(ctx, app);
+    crate::systems::render(ctx, app);
+    crate::games::on_layout_changed(ctx, app);
+    crate::settings::refresh(ctx, app);
 }
 
 /// Clock format or language changed: re-decide 12/24 hour and repaint.

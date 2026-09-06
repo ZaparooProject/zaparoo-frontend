@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
-use zaparoo_app::layouts::{self, Body, ThemeId, View};
+use zaparoo_app::layouts::{self, ThemeId, View};
 use zaparoo_app::paged_grid::{self, Insets};
 use zaparoo_app::settings::{self as rules, Control, Row};
 use zaparoo_core::input_actions::actions;
@@ -162,43 +162,60 @@ fn rows(ctx: &Ctx, app: &App, page: &str) -> Vec<SettingsRow> {
 }
 
 /// The root grid's band and cell fit, on the shared grid geometry.
+/// The category grid, as `SettingsScreen.qml`'s `categoryGrid` resolves
+/// it: the Hub's own insets and gaps, its band from the status strip to
+/// a bottom margin that clears the active label, and cells capped at the
+/// Hub's resolved tile size so both grids read as the same object.
 fn root_geometry(ctx: &Ctx, app: &App) -> (i32, i32, i32, i32, Insets, paged_grid::Fit) {
     let scene = crate::router::output_scene(app);
     let inputs = scene.inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let profile = layouts::profile(ThemeId::current(&inputs), View::GamesGrid, &inputs);
-    let (grid, footer) = match profile.body {
-        Body::Grid { grid, footer } => (grid, footer),
-        Body::List { .. } => unreachable!("the games grid view resolves to a grid body"),
-    };
-    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
-    let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
-        derived.help_bar_height
+    let compact = derived.tier == zaparoo_app::sizing::Tier::T240;
+    let top_margin = inputs.pct_h(if compact { 1.0 } else { 2.0 });
+    let grid_y = derived.header_bottom
+        + profile.status.top_margin
+        + profile.status.strip_height
+        + top_margin;
+    let bottom = if compact {
+        derived.help_bar_height + derived.hub_active_label_height
     } else {
-        footer.grid_bottom_margin
+        inputs.pct_h(15.0)
     };
     let grid_height = (inputs.screen_height as i32 - grid_y - bottom).max(0);
     let insets = Insets {
-        left: grid.left_inset,
-        right: grid.right_inset,
-        top: grid.top_inset,
-        bottom: grid.bottom_inset,
-        column_gap: grid.column_gap,
-        row_gap: grid.row_gap,
+        left: derived.hub_grid_side_inset,
+        right: derived.hub_grid_side_inset,
+        top: derived.hub_grid_top_inset,
+        bottom: derived.hub_grid_bottom_inset,
+        column_gap: derived.hub_grid_column_gap,
+        row_gap: derived.hub_grid_row_gap,
     };
     let rotated = lock(&ctx.shared).persist.settings.orientation != "horizontal";
     let (columns, grid_rows) = rules::root_grid_shape(rules::PAGES.len(), rotated);
     let columns = i32::try_from(columns).unwrap_or(3);
     let grid_rows = i32::try_from(grid_rows).unwrap_or(2);
-    let fit = paged_grid::fit(
+    let mut fit = paged_grid::fit(
         columns,
         grid_rows,
         inputs.screen_width as i32,
         grid_height,
         None,
-        true,
+        false,
         &insets,
     );
+    // The Hub's tile size is the ceiling, per axis, and the block
+    // re-centers on what the capped cells actually occupy.
+    fit.cell_width = fit.cell_width.min(derived.hub_tile_width);
+    fit.cell_height = fit.cell_height.min(derived.hub_tile_height);
+    let fields = i32::try_from(rules::PAGES.len()).unwrap_or(columns);
+    let visible_columns = columns.min(fields).max(1);
+    let visible_rows = grid_rows.min(((fields + columns - 1) / columns).max(1));
+    fit.content_width =
+        visible_columns * fit.cell_width + (visible_columns - 1) * insets.column_gap;
+    fit.content_height = visible_rows * fit.cell_height + (visible_rows - 1) * insets.row_gap;
+    fit.block_offset_x = ((fit.available_width - fit.content_width) / 2).max(0);
+    fit.block_offset_y = ((fit.available_height - fit.content_height) / 2).max(0);
     (columns, grid_rows, grid_y, grid_height, insets, fit)
 }
 
