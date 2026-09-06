@@ -995,10 +995,23 @@ component ListPickerModal inherits Rectangle {
 
     property <length> row-h: Sizing.pct-h(6);
     property <length> row-sp: Sizing.pct-h(1);
+    property <length> stride: root.row-h + root.row-sp;
     property <length> title-h: Sizing.pct-h(8);
+    property <length> arrow: Sizing.pct-h(3);
+    // A long option list (languages, color schemes) scrolls rather than
+    // growing the panel past the screen; PickerList.qml's own cap.
+    property <length> max-viewport: Sizing.pct-h(60);
+    property <int> visible-rows: Math.max(1, Math.min(root.entries.length,
+        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
+    property <bool> scrollable: root.entries.length > root.visible-rows;
+    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
+    property <length> viewport-h: root.visible-rows * root.row-h
+        + Math.max(0, root.visible-rows - 1) * root.row-sp;
+    // The window keeps the cursor centered until it reaches an end.
+    property <int> top: Math.max(0, Math.min(root.entries.length - root.visible-rows,
+        root.current-index - Math.floor((root.visible-rows - 1) / 2)));
     property <length> panel-w: Math.max(Sizing.pct-w(24), Sizing.pct-h(32));
-    property <length> panel-h: root.title-h + root.entries.length * root.row-h
-        + Math.max(0, root.entries.length - 1) * root.row-sp + Sizing.pct-h(4);
+    property <length> panel-h: root.title-h + root.viewport-h + 2 * root.arrow-band + Sizing.pct-h(4);
 
     Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
@@ -1009,6 +1022,7 @@ component ListPickerModal inherits Rectangle {
         border-radius: Sizing.radius-md;
         border-width: Sizing.stroke(0.3);
         border-color: Theme.border-mid;
+        clip: true;
 
         Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
@@ -1019,27 +1033,53 @@ component ListPickerModal inherits Rectangle {
             font-weight: 500;
         }
 
-        for entry[i] in root.entries: Rectangle {
-            x: Sizing.pct-w(1);
-            y: root.title-h + i * (root.row-h + root.row-sp);
-            width: parent.width - 2 * Sizing.pct-w(1);
-            height: root.row-h;
-            background: i == root.current-index ? Theme.selection-fill : transparent;
-            border-radius: Sizing.pct-h(1);
-            border-width: i == root.current-index ? Sizing.stroke(0.4) : 0px;
-            border-color: Theme.accent;
+        if root.top > 0: Image {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.title-h;
+            width: root.arrow;
+            height: root.arrow;
+            source: GlyphSource.glyph("icons/ScrollUp", root.arrow);
+            colorize: Theme.text-label;
+        }
 
-            Text {
-                x: Sizing.pct-w(2);
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
-                max-width: parent.width - 2 * Sizing.pct-w(2);
-                overflow: elide;
-                text: root.setting-id != ""
-                    ? SettingsLabels.value(root.setting-id, entry.id)
-                    : (entry.label-key != "" ? Labels.hub(entry.label-key, entry.label) : entry.label);
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(2.6);
+        Rectangle {
+            x: Sizing.pct-w(1);
+            y: root.title-h + root.arrow-band;
+            width: parent.width - 2 * Sizing.pct-w(1);
+            height: root.viewport-h;
+            clip: true;
+
+            for entry[i] in root.entries: Rectangle {
+                x: 0;
+                y: (i - root.top) * root.stride;
+                width: parent.width;
+                height: root.row-h;
+                background: i == root.current-index ? Theme.selection-fill : transparent;
+                border-radius: Sizing.pct-h(1);
+                border-width: i == root.current-index ? Sizing.stroke(0.4) : 0px;
+                border-color: Theme.accent;
+
+                Text {
+                    x: Sizing.pct-w(2);
+                    y: Math.round((parent.height - self.height) / 2px) * 1px;
+                    max-width: parent.width - 2 * Sizing.pct-w(2);
+                    overflow: elide;
+                    text: root.setting-id != ""
+                        ? SettingsLabels.value(root.setting-id, entry.id)
+                        : (entry.label-key != "" ? Labels.hub(entry.label-key, entry.label) : entry.label);
+                    color: Theme.text-primary;
+                    font-size: Sizing.font-size(2.6);
+                }
             }
+        }
+
+        if root.top + root.visible-rows < root.entries.length: Image {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.height - Sizing.pct-h(4) - root.arrow;
+            width: root.arrow;
+            height: root.arrow;
+            source: GlyphSource.glyph("icons/ScrollDown", root.arrow);
+            colorize: Theme.text-label;
         }
     }
 }

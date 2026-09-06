@@ -350,6 +350,23 @@ fn main() {
         }
         sv.set_open(true);
     }
+    // "picker" renders the shared list picker over a long option list,
+    // to check its scrolling window.
+    if screen == "picker" || screen == "crt-picker" {
+        let ov = app.global::<generated::Overlays>();
+        let entries: Vec<MenuEntry> = zaparoo_app::settings::LANGUAGES
+            .iter()
+            .map(|value| MenuEntry {
+                id: (*value).into(),
+                label: "".into(),
+                label_key: "".into(),
+            })
+            .collect();
+        ov.set_list_setting_id("language".into());
+        ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(entries)));
+        ov.set_list_index(6);
+        ov.set_list_open(true);
+    }
     // "log-upload" renders the uploader's finished state with its link.
     if screen.contains("log-upload") {
         let lv = app.global::<generated::LogUploadView>();

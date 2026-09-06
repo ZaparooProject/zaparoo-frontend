@@ -22,7 +22,7 @@ cargo build -q -p frontend-slint --features snapshot --bin snapshot
 snapshot="$repo_root/rust/target/debug/snapshot"
 mkdir -p "$out"
 
-digital_screens=(hub systems systems-list favorite-systems games games-list favorites favorites-list recents settings settings-page setup setup-picker log-upload about context letters dialog saver)
+digital_screens=(hub systems systems-list favorite-systems games games-list favorites favorites-list recents settings settings-page setup setup-picker log-upload picker about context letters dialog saver)
 crt_screens=(crt-hub crt-systems crt-games crt-games-list crt-favorites crt-settings crt-settings-page crt-setup calibration)
 
 render() {
