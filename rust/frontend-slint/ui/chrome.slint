@@ -859,3 +859,44 @@ export component SelectionBar inherits Rectangle {
         border-radius: root.radius;
     }
 }
+
+// In-screen state cue (ScreenStateOverlay.qml): the empty or failed
+// message centered over the content area, with an optional detail line.
+// `state` is "error", "empty" or "" (nothing painted).
+export component StateCue inherits Rectangle {
+    in property <string> state: "";
+    in property <string> empty-text: @tr("Nothing here");
+    in property <string> empty-detail: "";
+    in property <string> error-detail: @tr("Check Zaparoo Core and try again.");
+
+    background: transparent;
+    visible: root.state != "";
+
+    property <string> headline: root.state == "error" ? @tr("Failed to load") : root.empty-text;
+    property <string> detail: root.state == "error" ? root.error-detail : root.empty-detail;
+    property <length> text-w: Math.round(root.width * 0.7 / 1px) * 1px;
+    property <length> gap: Sizing.pct-h(0.6);
+    property <length> block-h: headline-text.preferred-height + (root.detail != "" ? root.gap + detail-text.preferred-height : 0px);
+
+    headline-text := Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - root.block-h) / 2px) * 1px;
+        width: root.text-w;
+        wrap: word-wrap;
+        horizontal-alignment: center;
+        text: root.headline;
+        color: Theme.text-primary;
+        font-size: Sizing.font-section;
+    }
+    detail-text := Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: headline-text.y + headline-text.preferred-height + root.gap;
+        width: root.text-w;
+        visible: root.detail != "";
+        wrap: word-wrap;
+        horizontal-alignment: center;
+        text: root.detail;
+        color: Theme.text-primary;
+        font-size: Sizing.font-caption;
+    }
+}

@@ -40,7 +40,7 @@ use slint::ComponentHandle;
 mod generated {
     slint::include_modules!();
 }
-use generated::{App, CategoryTile, GameTile, GlyphSource, LetterBucket, MenuEntry, Sizing, Theme};
+use generated::{App, GameTile, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
 #[allow(
     unused_imports,
     reason = "reached through crate:: paths from the shared sizing adapter"
@@ -52,6 +52,10 @@ mod fonts;
 #[path = "../glyphs.rs"]
 mod glyphs;
 #[path = "../sizing.rs"]
+#[allow(
+    dead_code,
+    reason = "the app's adapter; the snapshot tool uses its scene push only"
+)]
 mod sizing;
 #[path = "../theme.rs"]
 mod theme;
@@ -161,19 +165,10 @@ fn main() {
     status.set_total_steps(12);
     status.set_percent(42);
 
-    // Representative real catalog: Core emits singular category names.
-    let cats = [
-        "Arcade", "Console", "Computer", "Handheld", "Media", "Other", "Software",
-    ];
-    let tiles: Vec<CategoryTile> = cats
-        .iter()
-        .map(|name| CategoryTile {
-            name: (*name).into(),
-            hidden: *name == "Software",
-        })
-        .collect();
-    app.global::<generated::HubView>()
-        .set_categories(slint::ModelRc::new(slint::VecModel::from(tiles)));
+    // Representative persisted Hub layout: Resume first, the detected
+    // categories, then the built-in actions, with one hidden system
+    // shortcut and one folder shortcut the user added.
+    fixture_hub(&app, scene_w, scene_h, crt, 1);
     // Games fixtures so the grid, top strip, and page counter render.
     // `*-i18n` screens swap the fixture titles for one string per script
     // the catalogs ship, so shaping (Arabic, Devanagari), bidi (Hebrew,
@@ -227,18 +222,22 @@ fn main() {
                 MenuEntry {
                     id: "toggle_favorite".into(),
                     label: "Add to favorites".into(),
+                    label_key: "".into(),
                 },
                 MenuEntry {
                     id: "write_card".into(),
                     label: "Write to NFC token".into(),
+                    label_key: "".into(),
                 },
                 MenuEntry {
                     id: "more_info".into(),
                     label: "Game info".into(),
+                    label_key: "".into(),
                 },
                 MenuEntry {
                     id: "launch_game".into(),
                     label: "Launch game".into(),
+                    label_key: "".into(),
                 },
             ])));
         app.global::<generated::Overlays>().set_context_index(1);
@@ -471,6 +470,8 @@ fn main() {
         "hub"
     } else if screen.contains("systems") {
         "systems"
+    } else if screen.contains("hub") {
+        "hub"
     } else {
         screen.as_str()
     };
@@ -515,40 +516,31 @@ fn main() {
         // Regression probe for the globals refactor: first paint with
         // the empty defaults, then push state the way the runtime does
         // (after the first frame) and require a second dirty frame.
-        let empty: Vec<CategoryTile> = Vec::new();
+        let empty: Vec<GridCell> = Vec::new();
         app.global::<generated::HubView>()
-            .set_categories(slint::ModelRc::new(slint::VecModel::from(empty)));
+            .set_cells(slint::ModelRc::new(slint::VecModel::from(empty)));
         let mut first = vec![PremultipliedRgbaColor::default(); width as usize * height as usize];
         let drew = window.draw_if_needed(|renderer| {
             renderer.set_rendering_rotation(rotation);
             renderer.render(first.as_mut_slice(), width as usize);
         });
         assert!(drew, "first frame had nothing to draw");
-        let cats = ["Arcade", "Console", "Computer", "Handheld"];
-        let tiles: Vec<CategoryTile> = cats
-            .iter()
-            .map(|name| CategoryTile {
-                name: (*name).into(),
-                hidden: false,
-            })
-            .collect();
-        app.global::<generated::HubView>()
-            .set_categories(slint::ModelRc::new(slint::VecModel::from(tiles)));
+        fixture_hub(&app, scene_w, scene_h, crt, 0);
         let mut probe = vec![PremultipliedRgbaColor::default(); width as usize * height as usize];
         let dirty_model = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
-        println!("dirty after HubView.categories set: {dirty_model}");
+        println!("dirty after HubView.cells set: {dirty_model}");
         app.global::<Shell>().set_status_text("probe status".into());
         let dirty_text = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after Shell.status-text set: {dirty_text}");
-        app.global::<generated::HubView>().set_hub_category_index(2);
+        app.global::<generated::HubView>().set_selected_local(2);
         let dirty_idx = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
-        println!("dirty after HubView.hub-category-index set: {dirty_idx}");
+        println!("dirty after HubView.selected-local set: {dirty_idx}");
         // Games screen (alias-block pattern): does a late set reach it?
         app.global::<Shell>().set_active_screen("games".into());
         let _ = window.draw_if_needed(|r| {
@@ -619,15 +611,7 @@ fn main() {
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
-        let tiles2: Vec<CategoryTile> = cats
-            .iter()
-            .map(|name| CategoryTile {
-                name: (*name).into(),
-                hidden: false,
-            })
-            .collect();
-        app.global::<generated::HubView>()
-            .set_categories(slint::ModelRc::new(slint::VecModel::from(tiles2)));
+        fixture_hub(&app, scene_w, scene_h, crt, 0);
         println!("late-set applied; drawing final frame");
     }
     slint::platform::update_timers_and_animations();
@@ -661,4 +645,108 @@ fn main() {
         image::ImageBuffer::from_raw(width, height, rgba).expect("buffer size mismatch");
     img.save(&out).expect("write png");
     println!("wrote {out}");
+}
+
+/// Push a Hub page built from a representative layout through the same
+/// rules the app uses (`zaparoo_app::hub`), at the scene's geometry.
+fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize) {
+    use zaparoo_app::hub::{self, LayoutItem, Live, Resolver};
+    struct Names;
+    impl Resolver for Names {
+        fn system_name(&self, id: &str) -> String {
+            id.to_string()
+        }
+        fn system_cover_key(&self, id: &str) -> String {
+            format!("systems/{id}")
+        }
+        fn media_cover_key(&self, _system: &str, _path: &str) -> String {
+            "icons/File".to_string()
+        }
+    }
+    let item = |kind: &str, id: &str| LayoutItem {
+        kind: kind.into(),
+        id: id.into(),
+        ..LayoutItem::default()
+    };
+    let items = vec![
+        item("action", "resume"),
+        item("category", "Arcade"),
+        item("category", "Console"),
+        item("category", "Computer"),
+        item("category", "Handheld"),
+        item("category", "Other"),
+        item("action", "favorites"),
+        item("action", "recents"),
+        item("action", "update"),
+        item("action", "settings"),
+        LayoutItem {
+            kind: "folder".into(),
+            path: "/media/fat/games/SNES/Homebrew".into(),
+            system: "SNES".into(),
+            ..LayoutItem::default()
+        },
+    ];
+    let confirmed: Vec<String> = ["Arcade", "Console", "Computer", "Handheld", "Other"]
+        .iter()
+        .map(|c| (*c).to_string())
+        .collect();
+    let live = Live {
+        categories_loaded: true,
+        confirmed_categories: &confirmed,
+        resume_enabled: true,
+        resume_name: "Super Metroid",
+        resume_cover_key: "",
+        resume_known_unavailable: false,
+        update_enabled: false,
+        internet_available: true,
+    };
+    let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let geometry = hub::geometry(&inputs, &derived);
+    let page_size = (geometry.columns * geometry.rows).max(1) as usize;
+    let entries = hub::entries(&items, false, &live, &Names, page_size, 0);
+    let cells: Vec<GridCell> = entries
+        .iter()
+        .take(page_size)
+        .map(|e| GridCell {
+            label_key: e.label_key.as_str().into(),
+            name: e.name.as_str().into(),
+            glyph_key: if e.is_empty() || e.cover_key.starts_with("systems/") {
+                "".into()
+            } else {
+                e.cover_key.as_str().into()
+            },
+            wordmark: e.cover_key.starts_with("systems/"),
+            disabled: e.disabled,
+            is_empty: e.is_empty(),
+            ..Default::default()
+        })
+        .collect();
+    let view = app.global::<generated::HubView>();
+    view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
+    view.set_selected_local(selected as i32);
+    view.set_columns(geometry.columns);
+    view.set_rows(geometry.rows);
+    view.set_cell_width(geometry.fit.cell_width as f32);
+    view.set_cell_height(geometry.fit.cell_height as f32);
+    view.set_block_offset_x(geometry.fit.block_offset_x as f32);
+    view.set_block_offset_y(geometry.fit.block_offset_y as f32);
+    view.set_grid_y(geometry.grid_y as f32);
+    view.set_grid_height(geometry.grid_height as f32);
+    view.set_label_y(geometry.label_y as f32);
+    view.set_label_height(geometry.label_height as f32);
+    view.set_page(0);
+    view.set_total_pages(entries.len().div_ceil(page_size).max(1) as i32);
+    view.set_has_pages_below(entries.len() > page_size);
+    view.set_focus_ready(true);
+    view.set_loaded(true);
+    view.set_options_available(true);
+    let focused = &entries[selected.min(entries.len() - 1)];
+    view.set_label_key(focused.label_key.as_str().into());
+    view.set_label_name(focused.name.as_str().into());
+    view.set_label_reason(if focused.disabled {
+        focused.reason.as_str().into()
+    } else {
+        "".into()
+    });
 }

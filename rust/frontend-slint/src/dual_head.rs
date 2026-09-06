@@ -238,16 +238,66 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_enabled => set_enabled,
     );
 
+    // The CRT head shows the HDMI head's page at its own geometry: the
+    // page shape follows the primary until the CRT/DDR takeback re-slices
+    // it per head (docs/plans/slint-migration.md).
     let source = primary.global::<HubView>();
     let target = crt.global::<HubView>();
     copy_properties!(source, target;
         get_hub_error => set_hub_error,
-        get_categories => set_categories,
-        get_hub_category_index => set_hub_category_index,
-        get_hub_row => set_hub_row,
-        get_hub_action_index => set_hub_action_index,
-        get_hub_actions => set_hub_actions,
+        get_loaded => set_loaded,
+        get_catalog_empty => set_catalog_empty,
+        get_indexing => set_indexing,
+        get_cells => set_cells,
+        get_selected_local => set_selected_local,
+        get_columns => set_columns,
+        get_rows => set_rows,
+        get_page => set_page,
+        get_total_pages => set_total_pages,
+        get_has_pages_above => set_has_pages_above,
+        get_has_pages_below => set_has_pages_below,
+        get_label_key => set_label_key,
+        get_label_name => set_label_name,
+        get_label_reason => set_label_reason,
+        get_label_visible => set_label_visible,
+        get_focused_is_category => set_focused_is_category,
+        get_focus_ready => set_focus_ready,
+        get_move_armed => set_move_armed,
+        get_held_local => set_held_local,
+        get_options_available => set_options_available,
+        get_activate_pulse => set_activate_pulse,
+        get_release_pulse => set_release_pulse,
     );
+    {
+        let sizing = crt.global::<crate::Sizing>();
+        let scene = crate::sizing::Scene::of(
+            crt,
+            f64::from(sizing.get_screen_width()),
+            f64::from(sizing.get_screen_height()),
+            true,
+        );
+        let inputs = scene.inputs();
+        let derived = zaparoo_app::sizing::derive(&inputs);
+        let mut g = zaparoo_app::hub::geometry(&inputs, &derived);
+        let insets = g.insets;
+        g.fit = zaparoo_app::paged_grid::fit(
+            source.get_columns(),
+            source.get_rows(),
+            inputs.screen_width as i32,
+            inputs.screen_height as i32,
+            Some(derived.hub_grid_height_budget),
+            !g.compact_footer,
+            &insets,
+        );
+        target.set_cell_width(g.fit.cell_width as f32);
+        target.set_cell_height(g.fit.cell_height as f32);
+        target.set_block_offset_x(g.fit.block_offset_x as f32);
+        target.set_block_offset_y(g.fit.block_offset_y as f32);
+        target.set_grid_y(g.grid_y as f32);
+        target.set_grid_height(g.grid_height as f32);
+        target.set_label_y(g.label_y as f32);
+        target.set_label_height(g.label_height as f32);
+    }
 
     let source = primary.global::<SystemsView>();
     let target = crt.global::<SystemsView>();

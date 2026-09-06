@@ -9,7 +9,8 @@
 // dispatchers, Main.qml owns forward orchestration" contract.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, SelectionBar } from "chrome.slint";
+import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, SelectionBar, StateCue } from "chrome.slint";
+import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 
 // Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
 // 6x8 bitmap font for the CRT native path (family names must match
@@ -23,12 +24,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry }
-
-export struct CategoryTile {
-    name: string,
-    hidden: bool,
-}
+export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell }
 
 export struct SystemTile {
     id: string,
@@ -76,6 +72,8 @@ export struct GameTile {
 export struct MenuEntry {
     id: string,
     label: string,
+    // Translatable label id (see `Labels`); empty rows show `label`.
+    label-key: string,
 }
 
 // Detail-pane metadata table row (Year / Genre / Players / ...).
@@ -155,15 +153,79 @@ export global Shell {
     in-out property <string> crt-standard: "ntsc";
 }
 
+// Hub state (HubScreen.qml over `zaparoo_app::hub`): Rust resolves the
+// layout into entries, projects the current page's cells, and pushes the
+// geometry it solved (`zaparoo_app::hub::geometry`). Labels arrive as
+// translatable keys so the catalogs own the words.
 export global HubView {
-    // Terminal catalog error, rendered centered in the hub body
-    // ("Failed to load" + message); wins over the empty-library cue.
+    // Terminal catalog error; the grid hides and the cue paints alone.
     in-out property <string> hub-error: "";
-    in-out property <[CategoryTile]> categories: [];
-    in-out property <int> hub-category-index: 0;
-    in-out property <int> hub-row: 0;
-    in-out property <int> hub-action-index: 0;
-    in-out property <[string]> hub-actions: ["Resume", "Favorites", "Recents", "Update", "Settings"];
+    // Core has answered with a category list this launch.
+    in-out property <bool> loaded: false;
+    in-out property <bool> catalog-empty: false;
+    in-out property <bool> indexing: false;
+    in-out property <[GridCell]> cells: [];
+    in-out property <int> selected-local: 0;
+    in-out property <int> columns: 5;
+    in-out property <int> rows: 2;
+    in-out property <length> cell-width: 0px;
+    in-out property <length> cell-height: 0px;
+    in-out property <length> block-offset-x: 0px;
+    in-out property <length> block-offset-y: 0px;
+    in-out property <length> grid-y: 0px;
+    in-out property <length> grid-height: 0px;
+    in-out property <length> label-y: 0px;
+    in-out property <length> label-height: 0px;
+    in-out property <int> page: 0;
+    in-out property <int> total-pages: 1;
+    in-out property <bool> has-pages-above: false;
+    in-out property <bool> has-pages-below: false;
+    // The focused entry's caption: label key plus free text, and the
+    // worded reason while it is disabled.
+    in-out property <string> label-key: "";
+    in-out property <string> label-name: "";
+    in-out property <string> label-reason: "";
+    in-out property <bool> label-visible: true;
+    in-out property <bool> focused-is-category: false;
+    // Focus paints only once the restore or the first input has seated it.
+    in-out property <bool> focus-ready: false;
+    in-out property <bool> move-armed: false;
+    in-out property <int> held-local: -1;
+    in-out property <bool> options-available: false;
+    in-out property <int> activate-pulse: 0;
+    in-out property <int> release-pulse: 0;
+}
+
+// Pointer and page-cue events from the Hub, handled by the Rust router.
+export global HubInput {
+    callback cell-hovered(int);
+    callback cell-clicked(int);
+    callback cell-right-clicked(int);
+    callback page-requested(int);
+    callback wheel(int);
+}
+
+// Key-to-copy vocabulary for labels Rust hands over as stable ids.
+export global Labels {
+    public pure function hub(key: string, name: string) -> string {
+        if (key == "category:Arcade") { return @tr("Arcade"); }
+        if (key == "category:Computer") { return @tr("Computers"); }
+        if (key == "category:Console") { return @tr("Consoles"); }
+        if (key == "category:Handheld") { return @tr("Handhelds"); }
+        if (key == "category:Other") { return @tr("Other"); }
+        if (key == "action:resume") { return name == "" ? @tr("Resume") : @tr("Resume: {}", name); }
+        if (key == "action:favorites") { return @tr("Favorites"); }
+        if (key == "action:recents") { return @tr("Recently played"); }
+        if (key == "action:update") { return @tr("Update"); }
+        if (key == "action:settings") { return @tr("Settings"); }
+        return name;
+    }
+    public pure function hub-reason(reason: string) -> string {
+        if (reason == "no-recent-games") { return @tr("No recent games"); }
+        if (reason == "no-internet") { return @tr("No internet connection"); }
+        if (reason == "not-available") { return @tr("Not available"); }
+        return "";
+    }
 }
 
 export global SystemsView {
@@ -295,112 +357,6 @@ export global Overlays {
     in-out property <bool> crt-calibration-open: false;
     in-out property <int> crt-h-offset: 0;
     in-out property <int> crt-v-offset: 0;
-}
-
-// One-line caption with the focused-overflow marquee, ported from
-// ScrollingCaption.qml: fits -> static (centered), overflows unfocused
-// -> elided, overflows focused -> integer-pixel scroll-reveal stepped
-// by a 40 ms timer with an 800 ms dwell at each end. Only the focused
-// caption ever animates, so the dirty rect stays one line on one tile
-// - exactly the animation class the software pipeline is built for.
-component MarqueeCaption inherits Rectangle {
-    in property <string> content;
-    // Sibling-diffed token suffix, dim, inline after the name. Empty
-    // for items with no variants (the common case).
-    in property <string> tags;
-    in property <bool> focused;
-    // Floor for anything meant to be READ: 3.0% keeps captions at or
-    // above 16px even at the DRS motion res (540p-class).
-    in property <length> caption-font-size: Sizing.font-size(3.0);
-    in property <color> caption-color: Theme.text-primary;
-    // Tile captions center a fitting name; list rows left-align
-    // (ScrollingCaption's centerContent: false).
-    in property <bool> center-content: true;
-
-    clip: true;
-
-    property <bool> has-tags: root.tags != "";
-    property <length> gap-w: root.has-tags ? Sizing.pct-w(1.2) : 0px;
-    property <int> scroll-x: 0;
-    property <int> dir: -1;
-    property <int> pause-ticks: 0;
-    property <length> name-full-w: label.preferred-width;
-    property <length> tags-full-w: root.has-tags ? suffix.preferred-width : 0px;
-    property <length> full-w: root.name-full-w + root.gap-w + root.tags-full-w;
-    property <bool> overflows: root.full-w > root.width;
-    property <bool> marquee: root.focused && root.overflows;
-    property <int> scroll-dist: Math.max(0, Math.round((root.full-w - root.width) / 1px));
-
-    // Static-overflow width policy (ScrollingCaption's minNameFraction
-    // 0.58): the name is protected from a long suffix, the suffix takes
-    // what the name leaves. Deviation from Qt: the suffix elides right
-    // (Slint has no left elide); the marquee reveals the full text.
-    property <length> name-static-w: Math.min(root.name-full-w, Math.max(root.width * 0.58, root.width - root.gap-w - root.tags-full-w));
-    property <length> name-render-w: (root.marquee || !root.overflows) ? root.name-full-w : root.name-static-w;
-    property <length> tags-render-w: (root.marquee || !root.overflows)
-        ? root.tags-full-w
-        : Math.min(root.tags-full-w, Math.max(0px, root.width - root.gap-w - root.name-render-w));
-    property <length> block-x: root.marquee
-        ? root.scroll-x * 1px
-        : (root.overflows || !root.center-content
-            ? 0px
-            : Math.round((root.width - root.full-w) / 2px) * 1px);
-
-    changed marquee => {
-        if (!self.marquee) {
-            self.scroll-x = 0;
-            self.dir = -1;
-            self.pause-ticks = 0;
-        }
-    }
-
-    Timer {
-        interval: 40ms;
-        running: root.marquee;
-        triggered => {
-            if (root.pause-ticks > 0) {
-                root.pause-ticks -= 1;
-            } else if (root.scroll-x + root.dir <= -root.scroll-dist) {
-                root.scroll-x = -root.scroll-dist;
-                root.dir = 1;
-                root.pause-ticks = 20;
-            } else if (root.scroll-x + root.dir >= 0) {
-                root.scroll-x = 0;
-                root.dir = -1;
-                root.pause-ticks = 20;
-            } else {
-                root.scroll-x = root.scroll-x + root.dir;
-            }
-        }
-    }
-
-    label := Text {
-        x: root.block-x;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: root.name-render-w;
-        overflow: elide;
-        text: root.content;
-        color: root.caption-color;
-        font-size: root.caption-font-size;
-    }
-
-    if root.has-tags: suffix-view := Text {
-        x: root.block-x + root.name-render-w + root.gap-w;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: root.tags-render-w;
-        overflow: elide;
-        text: root.tags;
-        color: Theme.text-variant;
-        font-size: root.caption-font-size;
-    }
-
-    // Hidden measuring twin for the suffix (preferred-width needs an
-    // unconditional element to read from).
-    suffix := Text {
-        visible: false;
-        text: root.tags;
-        font-size: root.caption-font-size;
-    }
 }
 
 // Compact pill badge for tile state overlays (TileBadge.qml): filled
@@ -791,148 +747,84 @@ component SettingsScreen inherits Rectangle {
     }
 }
 
+// Hub screen (HubScreen.qml): one paged grid of square tiles between the
+// header and the help bar, the focused entry's caption under it with the
+// page cue in the footer's right slot, and the in-screen empty or failed
+// cue. Rust owns the entries, the cursor and the geometry.
 component HubScreen inherits Rectangle {
-    // Data dependencies, read straight from the state globals.
-    property <[CategoryTile]> categories: HubView.categories;
-    property <int> category-index: HubView.hub-category-index;
-    property <int> focus-row: HubView.hub-row;   // 0 = categories, 1 = actions
-    property <int> action-index: HubView.hub-action-index;
-    property <[string]> actions: HubView.hub-actions;
+    background: transparent;
+    property <bool> error: HubView.hub-error != "";
 
-    // Focused-entry caption text, mirroring the Hub's ActiveLabel:
-    // reads from whichever row owns focus.
-    pure function caption() -> string {
-        if (self.focus-row == 1 && self.action-index >= 0 && self.action-index < self.actions.length) {
-            return self.actions[self.action-index];
-        }
-        if (self.category-index >= 0 && self.category-index < self.categories.length) {
-            return self.categories[self.category-index].name;
-        }
-        return "";
-    }
-
-    // HubScreen.qml geometry: both rows share SQUARE cells sized
-    // min(pctH(22), fit-within-width) with pctW(3) spacing and pctW(5)
-    // side insets; the whole block (rows + gap + caption) centers
-    // between headerBottom and the help bar.
-    property <length> cell-spacing: Sizing.pct-w(3);
-    property <length> side-inset: Sizing.pct-w(5);
-    property <int> n-cats: root.categories.length;
-    property <length> raw-cell: root.n-cats > 0
-        ? Math.floor((self.width - 2 * root.side-inset - (root.n-cats - 1) * root.cell-spacing) / root.n-cats / 1px) * 1px
-        : Sizing.pct-h(22);
-    property <length> cell: Math.min(Sizing.pct-h(22), root.raw-cell);
-    property <length> block-h: 2 * root.cell + root.cell-spacing + Sizing.pct-h(3) + Sizing.pct-h(7);
-    property <length> block-y: Math.round((Sizing.header-bottom + self.height - Sizing.pct-h(6) - root.block-h) / 2px) * 1px;
-
-    // The row containers carry an explicit size and the cards an
-    // explicit y: Slint centers any element whose position is unset,
-    // so a full-height parent would drag every card to mid-screen.
-    property <length> cat-row-x: Math.round((self.width - (root.n-cats * root.cell + Math.max(0, root.n-cats - 1) * root.cell-spacing)) / 2px) * 1px;
-    property <length> act-row-x: Math.round((self.width - (root.actions.length * root.cell + Math.max(0, root.actions.length - 1) * root.cell-spacing)) / 2px) * 1px;
-
-    Rectangle {
-        x: root.cat-row-x;
-        y: root.block-y;
-        width: root.n-cats * root.cell + Math.max(0, root.n-cats - 1) * root.cell-spacing;
-        height: root.cell;
-        for tile[i] in root.categories: CategoryCard {
-            x: i * (root.cell + root.cell-spacing);
-            y: 0;
-            width: root.cell;
-            height: root.cell;
-            label: tile.name;
-            dimmed: tile.hidden;
-            focused: root.focus-row == 0 && i == root.category-index
-                && !Shell.route-transitioning;
-        }
-    }
-
-    // Fixed art keys for the actions row - labels can be dynamic
-    // (Resume carries the last-played name).
-    property <[string]> action-keys: ["Resume", "Favorites", "Recents", "Update", "Settings"];
-
-    Rectangle {
-        x: root.act-row-x;
-        y: root.block-y + root.cell + root.cell-spacing;
-        width: root.actions.length * root.cell + Math.max(0, root.actions.length - 1) * root.cell-spacing;
-        height: root.cell;
-        for name[i] in root.actions: CategoryCard {
-            x: i * (root.cell + root.cell-spacing);
-            y: 0;
-            width: root.cell;
-            height: root.cell;
-            label: name;
-            glyph-key: i < root.action-keys.length ? root.action-keys[i] : name;
-            focused: root.focus-row == 1 && i == root.action-index
-                && !Shell.route-transitioning;
-        }
-    }
-
-    // Gliding focus ring spanning both rows. ONE animated pair of
-    // normalized screen fractions: straight-line glides between any
-    // two cells (blending several animated floats bends the path into
-    // a swoop), and fractions are resolution-invariant so DRS res
-    // switches never animate across coordinate spaces.
-    if root.categories.length > 0 && !Shell.route-transitioning: Rectangle {
-        property <float> fx: (root.focus-row == 0
-            ? root.cat-row-x + root.category-index * (root.cell + root.cell-spacing)
-            : root.act-row-x + root.action-index * (root.cell + root.cell-spacing)) / root.width;
-        property <float> fy: (root.focus-row == 0
-            ? root.block-y
-            : root.block-y + root.cell + root.cell-spacing) / root.height;
-        animate fx { duration: Shell.reduce-motion ? 0ms : 120ms; easing: ease-out; }
-        animate fy { duration: Shell.reduce-motion ? 0ms : 120ms; easing: ease-out; }
-        x: fx * root.width;
-        y: fy * root.height;
-        width: root.cell;
-        height: root.cell;
-        border-radius: Sizing.radius-md;
-        border-width: Sizing.stroke(0.55);
-        border-color: Theme.accent;
-    }
-
-    ActiveLabel {
+    grid := PagedGridView {
         x: 0;
-        y: root.block-y + 2 * root.cell + root.cell-spacing + Sizing.pct-h(3);
+        y: HubView.grid-y;
         width: parent.width;
-        height: Sizing.hub-active-label-height;
-        text: root.caption();
+        height: HubView.grid-height;
+        cells: HubView.cells;
+        columns: HubView.columns;
+        cell-width: HubView.cell-width;
+        cell-height: HubView.cell-height;
+        block-offset-x: HubView.block-offset-x;
+        block-offset-y: HubView.block-offset-y;
+        left-inset: Sizing.hub-grid-side-inset;
+        top-inset: Sizing.hub-grid-top-inset;
+        column-gap: Sizing.hub-grid-column-gap;
+        row-gap: Sizing.hub-grid-row-gap;
+        selected-local: HubView.selected-local;
+        focus-ready: HubView.focus-ready;
+        held-local: HubView.held-local;
+        activate-pulse: HubView.activate-pulse;
+        release-pulse: HubView.release-pulse;
+        settling: Shell.active-screen != "hub";
+        compact-padding: true;
+        card-radius: Sizing.radius-md;
+        skip-empty-cells: !HubView.move-armed;
+        // Hidden on a forward transition and while the load error shows,
+        // so the cue paints alone against the background.
+        visible: !Shell.transitioning && !root.error;
+        caption-for(cell) => { return Labels.hub(cell.label-key, cell.name); }
+        cell-hovered(i) => { HubInput.cell-hovered(i); }
+        cell-clicked(i) => { HubInput.cell-clicked(i); }
+        cell-right-clicked(i) => { HubInput.cell-right-clicked(i); }
+        wheel(delta) => { HubInput.wheel(delta); }
     }
 
-    // ScreenStateOverlay states. Error is terminal and wins over the
-    // empty cue; the empty cue is gated on boot-complete because
-    // before the first catalog Ready an empty model means "still
-    // loading", not "library is empty" (HubScreen.qml gates its
-    // overlay on `loaded || error` the same way).
-    if HubView.hub-error != "": Rectangle {
+    // Footer row: the focused entry's name, with the page cue reserved in
+    // the right corner (the same inset paid on the left for symmetry).
+    label := ActiveLabel {
         x: 0;
-        y: 0;
+        y: HubView.label-y;
         width: parent.width;
-        height: parent.height;
-        Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((parent.height - self.height) / 2px) * 1px - Sizing.font-size(2.4);
-            text: @tr("Failed to load");
-            color: Theme.text-primary;
-            font-size: Sizing.font-size(2.9);
-        }
-        Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((parent.height - self.height) / 2px) * 1px + Sizing.font-size(2.9);
-            max-width: Math.round(parent.width * 0.7 / 1px) * 1px;
-            overflow: elide;
-            text: HubView.hub-error;
-            color: Theme.text-primary;
-            font-size: Sizing.font-size(2.4);
-        }
+        height: HubView.label-height;
+        side-inset: indicator.width + Sizing.hub-grid-side-inset;
+        text: Labels.hub(HubView.label-key, HubView.label-name);
+        tags: Labels.hub-reason(HubView.label-reason);
+        visible: !Shell.transitioning && HubView.label-visible;
     }
-    if HubView.hub-error == "" && Shell.boot-complete && root.categories.length == 0: Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        text: @tr("No systems available. Run Update media database from Settings.");
-        color: Theme.text-label;
-        font-size: Sizing.font-size(2.6);
+
+    indicator := PageIndicator {
+        x: parent.width - Sizing.hub-grid-side-inset - self.width;
+        y: label.y + Math.round((label.height - self.height) / 2px) * 1px;
+        current-page: HubView.page;
+        total-pages: HubView.total-pages;
+        has-pages-above: HubView.has-pages-above;
+        has-pages-below: HubView.has-pages-below;
+        visible: label.visible;
+        page-requested(delta) => { HubInput.page-requested(delta); }
+    }
+
+    // Indexing starts on its own, so a first run's empty Hub names the
+    // operation instead of reading as a failure report.
+    StateCue {
+        x: 0;
+        y: HubView.grid-y;
+        width: parent.width;
+        height: HubView.grid-height;
+        state: root.error ? "error" : ((HubView.loaded && HubView.catalog-empty) ? "empty" : "");
+        empty-text: HubView.indexing ? @tr("Updating the media database") : @tr("No games found yet");
+        empty-detail: HubView.indexing
+            ? @tr("Your games appear here as Core finds them.")
+            : @tr("Update media database in Settings > Library.");
     }
 }
 
@@ -1342,7 +1234,7 @@ component ListPickerModal inherits Rectangle {
                 y: Math.round((parent.height - self.height) / 2px) * 1px;
                 max-width: parent.width - 2 * Sizing.pct-w(2);
                 overflow: elide;
-                text: entry.label;
+                text: entry.label-key != "" ? Labels.hub(entry.label-key, entry.label) : entry.label;
                 color: Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
             }
@@ -1739,7 +1631,7 @@ component ContextMenu inherits Rectangle {
                 y: Math.round((parent.height - self.height) / 2px) * 1px;
                 max-width: parent.width - 2 * root.pad-x;
                 overflow: elide;
-                text: entry.label;
+                text: entry.label-key != "" ? Labels.hub(entry.label-key, entry.label) : entry.label;
                 color: Theme.text-primary;
                 font-size: Sizing.font-size(2.6);
             }
@@ -2427,20 +2319,26 @@ export component App inherits Window {
             ];
         }
         if (Shell.active-screen == "hub") {
-            // Options needs a tile with a real layout entry behind it:
-            // the actions row always has one, the categories row only
-            // while the catalog has categories.
-            if (HubView.hub-row == 1 || HubView.categories.length > 0) {
+            // Mid-reorder: the d-pad repositions the held tile, Accept
+            // places it, Cancel reverts; nothing else is live.
+            if (HubView.move-armed) {
                 return [
-                    { buttons: ["Dpad"], label: @tr("Move") },
-                    { buttons: ["ButtonA"], label: HubView.hub-error != "" && HubView.hub-row == 0 ? @tr("Retry") : @tr("Open") },
+                    { buttons: ["Dpad"], label: @tr("Reposition") },
+                    { buttons: ["ButtonA"], label: @tr("Place") },
+                    { buttons: ["ButtonB"], label: @tr("Cancel") },
+                ];
+            }
+            if (HubView.options-available) {
+                return [
+                    self.move-cue(HubView.total-pages),
+                    { buttons: ["ButtonA"], label: HubView.hub-error != "" && HubView.focused-is-category ? @tr("Retry") : @tr("Open") },
                     { buttons: ["ButtonX"], label: @tr("Options") },
                     { buttons: ["ButtonY"], label: @tr("View") },
                 ];
             }
             return [
-                { buttons: ["Dpad"], label: @tr("Move") },
-                { buttons: ["ButtonA"], label: @tr("Open") },
+                self.move-cue(HubView.total-pages),
+                { buttons: ["ButtonA"], label: HubView.hub-error != "" && HubView.focused-is-category ? @tr("Retry") : @tr("Open") },
                 { buttons: ["ButtonY"], label: @tr("View") },
             ];
         }

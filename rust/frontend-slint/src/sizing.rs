@@ -52,7 +52,7 @@ impl Scene {
         }
     }
 
-    fn inputs(self) -> Inputs {
+    pub fn inputs(self) -> Inputs {
         Inputs {
             screen_width: self.width,
             screen_height: self.height,

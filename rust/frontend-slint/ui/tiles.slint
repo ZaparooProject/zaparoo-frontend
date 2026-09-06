@@ -1,0 +1,501 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// Grid tiles, ported from Tile.qml, PressableSurface.qml, EmptySlot.qml and
+// the cell layer of PagedGrid.qml. Navigation lives in Rust
+// (`zaparoo_app::paged_grid`); the grid view here renders one page of cells
+// at the geometry Rust resolved and reports pointer events back.
+
+import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { GlyphSource } from "chrome.slint";
+
+// One grid cell, as Rust projects it. Art is either a glyph key the
+// rasterizer serves tinted (`categories/...`, `icons/...`), a raster
+// cover with its focused twin (system logos, media art), or nothing,
+// in which case the name renders as a wordmark.
+export struct GridCell {
+    label-key: string,
+    name: string,
+    glyph-key: string,
+    cover: image,
+    cover-focus: image,
+    has-cover: bool,
+    has-cover-focus: bool,
+    // The name doubles as a fitted wordmark when there is no art.
+    wordmark: bool,
+    favorite: bool,
+    hidden: bool,
+    disabled: bool,
+    // Dim suffix after the caption (tags, "Hidden").
+    tags: string,
+    top-label: string,
+    // A structural placeholder: paints nothing, ever.
+    is-empty: bool,
+}
+
+// One-line caption with the focused-overflow marquee, ported from
+// ScrollingCaption.qml: fits -> static (centered), overflows unfocused
+// -> elided, overflows focused -> integer-pixel scroll-reveal stepped
+// by a 40 ms timer with an 800 ms dwell at each end. Only the focused
+// caption ever animates, so the dirty rect stays one line on one tile
+// - exactly the animation class the software pipeline is built for.
+export component MarqueeCaption inherits Rectangle {
+    in property <string> content;
+    // Sibling-diffed token suffix, dim, inline after the name. Empty
+    // for items with no variants (the common case).
+    in property <string> tags;
+    in property <bool> focused;
+    // Floor for anything meant to be READ: 3.0% keeps captions at or
+    // above 16px even at the DRS motion res (540p-class).
+    in property <length> caption-font-size: Sizing.font-size(3.0);
+    in property <color> caption-color: Theme.text-primary;
+    // Tile captions center a fitting name; list rows left-align
+    // (ScrollingCaption's centerContent: false).
+    in property <bool> center-content: true;
+
+    clip: true;
+
+    property <bool> has-tags: root.tags != "";
+    property <length> gap-w: root.has-tags ? Sizing.pct-w(1.2) : 0px;
+    property <int> scroll-x: 0;
+    property <int> dir: -1;
+    property <int> pause-ticks: 0;
+    property <length> name-full-w: label.preferred-width;
+    property <length> tags-full-w: root.has-tags ? suffix.preferred-width : 0px;
+    property <length> full-w: root.name-full-w + root.gap-w + root.tags-full-w;
+    property <bool> overflows: root.full-w > root.width;
+    property <bool> marquee: root.focused && root.overflows;
+    property <int> scroll-dist: Math.max(0, Math.round((root.full-w - root.width) / 1px));
+
+    // Static-overflow width policy (ScrollingCaption's minNameFraction
+    // 0.58): the name is protected from a long suffix, the suffix takes
+    // what the name leaves. Deviation from Qt: the suffix elides right
+    // (Slint has no left elide); the marquee reveals the full text.
+    property <length> name-static-w: Math.min(root.name-full-w, Math.max(root.width * 0.58, root.width - root.gap-w - root.tags-full-w));
+    property <length> name-render-w: (root.marquee || !root.overflows) ? root.name-full-w : root.name-static-w;
+    property <length> tags-render-w: (root.marquee || !root.overflows)
+        ? root.tags-full-w
+        : Math.min(root.tags-full-w, Math.max(0px, root.width - root.gap-w - root.name-render-w));
+    property <length> block-x: root.marquee
+        ? root.scroll-x * 1px
+        : (root.overflows || !root.center-content
+            ? 0px
+            : Math.round((root.width - root.full-w) / 2px) * 1px);
+
+    changed marquee => {
+        if (!self.marquee) {
+            self.scroll-x = 0;
+            self.dir = -1;
+            self.pause-ticks = 0;
+        }
+    }
+
+    Timer {
+        interval: 40ms;
+        running: root.marquee;
+        triggered => {
+            if (root.pause-ticks > 0) {
+                root.pause-ticks -= 1;
+            } else if (root.scroll-x + root.dir <= -root.scroll-dist) {
+                root.scroll-x = -root.scroll-dist;
+                root.dir = 1;
+                root.pause-ticks = 20;
+            } else if (root.scroll-x + root.dir >= 0) {
+                root.scroll-x = 0;
+                root.dir = -1;
+                root.pause-ticks = 20;
+            } else {
+                root.scroll-x = root.scroll-x + root.dir;
+            }
+        }
+    }
+
+    label := Text {
+        x: root.block-x;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.name-render-w;
+        overflow: elide;
+        text: root.content;
+        color: root.caption-color;
+        font-size: root.caption-font-size;
+    }
+
+    if root.has-tags: suffix-view := Text {
+        x: root.block-x + root.name-render-w + root.gap-w;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.tags-render-w;
+        overflow: elide;
+        text: root.tags;
+        color: Theme.text-variant;
+        font-size: root.caption-font-size;
+    }
+
+    // Hidden measuring twin for the suffix (preferred-width needs an
+    // unconditional element to read from).
+    suffix := Text {
+        visible: false;
+        text: root.tags;
+        font-size: root.caption-font-size;
+    }
+}
+
+
+// Raised control surface (PressableSurface.qml): an opaque face over a
+// front edge that reads as depth. Activation lowers the face by the edge
+// depth and holds it there; the edge band collapses under it. The
+// optional focus ring is the same two-rect construction Tile draws,
+// inset inside the face.
+export component PressableSurface inherits Rectangle {
+    in property <color> face-color: Theme.surface-card;
+    in property <color> edge-color: Theme.control-edge;
+    in property <length> radius: Sizing.radius-sm;
+    in property <length> edge-height: Sizing.press-edge-height;
+    in property <bool> focused: false;
+    in property <bool> pressed: false;
+
+    property <float> press-t: root.pressed ? 1 : 0;
+    animate press-t {
+        duration: Motion.dur(root.pressed ? Motion.press-ms : Motion.settle-ms);
+        easing: ease-out-quad;
+    }
+    property <length> edge-band: Math.min(root.edge-height + root.radius, root.height);
+    property <length> press-depth: Math.min(root.edge-height, root.height);
+    out property <length> face-y: Math.round(root.press-t * root.press-depth / 1px) * 1px;
+    property <length> ring-gap: Sizing.card-border-width;
+    property <length> ring-width: Sizing.card-border-width * 2;
+
+    clip: true;
+    background: transparent;
+
+    // Edge band, clipped to the part the face has not covered.
+    Rectangle {
+        x: 0;
+        y: parent.height - self.height;
+        width: parent.width;
+        height: Math.round((1 - root.press-t) * root.edge-band / 1px) * 1px;
+        clip: true;
+        Rectangle {
+            x: 0;
+            y: parent.height - self.height;
+            width: parent.width;
+            height: root.edge-band;
+            background: root.edge-color;
+            border-bottom-left-radius: root.radius;
+            border-bottom-right-radius: root.radius;
+        }
+    }
+
+    face := Rectangle {
+        x: 0;
+        y: root.face-y;
+        width: parent.width;
+        height: Math.max(0px, parent.height - root.press-depth);
+        background: root.face-color;
+        border-radius: root.radius;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.border-mid;
+
+        if root.focused: Rectangle {
+            x: root.ring-gap;
+            y: root.ring-gap;
+            width: parent.width - 2 * root.ring-gap;
+            height: parent.height - 2 * root.ring-gap;
+            background: Theme.accent;
+            border-radius: Math.max(0px, root.radius - root.ring-gap);
+            Rectangle {
+                x: root.ring-width;
+                y: root.ring-width;
+                width: parent.width - 2 * root.ring-width;
+                height: parent.height - 2 * root.ring-width;
+                background: root.face-color;
+                border-radius: Math.max(0px, parent.border-radius - root.ring-width);
+            }
+        }
+
+        @children
+    }
+}
+
+// Unified grid tile (Tile.qml): a raised card with a centered art area,
+// an accent ring inside the card edge while focused, the favorite heart,
+// and, in caption mode, a one-line name band along the bottom. A hidden
+// or disabled tile mutes its front edge and keeps its art at the resting
+// tint; the worded reason lives in the host's caption. The held cue
+// (Options > Move) blinks the whole tile out of existence and back.
+export component Tile inherits Rectangle {
+    in property <GridCell> cell;
+    in property <bool> selected: false;
+    // The section owning this tile has user focus.
+    in property <bool> section-focused: true;
+    in property <bool> focus-ready: true;
+    in property <bool> held: false;
+    in property <int> activate-pulse: 0;
+    in property <int> release-pulse: 0;
+    in property <bool> settling: false;
+    // Hub and Settings tiles: art fills the card up to the ring's inner
+    // edge plus a small clearance instead of the 2% band.
+    in property <bool> compact-padding: false;
+    in property <bool> show-caption: false;
+    // Resolved caption text (the host composes translations).
+    in property <string> caption: "";
+    in property <length> card-radius: Layout.card-radius;
+
+    background: transparent;
+
+    property <length> outline-gap: Sizing.pct-h(0.4);
+    property <length> outline-width: Sizing.focus-ring-width;
+    property <length> ring-inner-edge: root.outline-gap + root.outline-width;
+    property <length> pad: root.compact-padding ? root.ring-inner-edge + Sizing.pct-h(0.4) : Sizing.pct-h(2);
+    property <length> caption-height: Sizing.pct-h(5.5);
+    property <length> caption-gap: Sizing.pct-h(0.4);
+    property <bool> has-top-label: root.cell.top-label != "";
+    property <length> top-label-height: root.caption-height;
+    property <length> top-label-gap: root.caption-gap;
+    property <bool> focused-selection: root.selected && root.section-focused && root.focus-ready;
+    property <bool> muted: root.cell.hidden || root.cell.disabled;
+    property <color> art-tint: (!root.muted && root.focused-selection) ? Theme.logo-focus-primary : Theme.logo-primary;
+    property <bool> system-cover: root.cell.wordmark;
+
+    // Press cue: lowered on activate while focused, raised on release,
+    // on settling (screen going off-screen) and when the cell changes.
+    property <bool> pressed: false;
+    property <bool> mounted: false;
+    Timer {
+        interval: 1ms;
+        running: !root.mounted;
+        triggered => { root.mounted = true; }
+    }
+    changed activate-pulse => {
+        if (root.mounted && root.focused-selection) { root.pressed = true; }
+    }
+    changed release-pulse => {
+        if (root.mounted && root.focused-selection) { root.pressed = false; }
+    }
+    changed settling => {
+        if (root.settling) { root.pressed = false; }
+    }
+    changed cell => { root.pressed = false; }
+
+    // Held blink: a hard 0/1 cut at about 0.77 Hz; Reduce motion shows
+    // the tile steadily instead.
+    property <bool> blink-on: true;
+    changed held => { root.blink-on = true; }
+    Timer {
+        interval: 650ms;
+        running: root.held && Motion.enabled;
+        triggered => { root.blink-on = !root.blink-on; }
+    }
+    opacity: (root.held && Motion.enabled && !root.blink-on) ? 0 : 1;
+
+    surface := PressableSurface {
+        width: 100%;
+        height: 100%;
+        radius: root.card-radius;
+        edge-color: root.muted ? Theme.border-mid : Theme.tile-edge;
+        pressed: root.pressed;
+
+        // Focus ring inside the card edge: an accent pill and a face
+        // colored mask punched back out of its center.
+        if root.focused-selection: Rectangle {
+            x: root.outline-gap;
+            y: root.outline-gap;
+            width: parent.width - 2 * root.outline-gap;
+            height: parent.height - 2 * root.outline-gap;
+            background: Theme.accent;
+            border-radius: Math.max(0px, root.card-radius - root.outline-gap);
+            Rectangle {
+                x: root.outline-width;
+                y: root.outline-width;
+                width: parent.width - 2 * root.outline-width;
+                height: parent.height - 2 * root.outline-width;
+                background: Theme.surface-card;
+                border-radius: Math.max(0px, parent.border-radius - root.outline-width);
+            }
+        }
+
+        property <length> art-top: root.has-top-label ? root.top-label-height + root.top-label-gap : root.pad;
+        property <length> art-bottom: root.show-caption ? root.caption-height + root.caption-gap : root.pad;
+        property <length> art-w: Math.max(0px, self.width - 2 * root.pad);
+        property <length> art-h: Math.max(0px, self.height - self.art-top - self.art-bottom);
+
+        if root.has-top-label: MarqueeCaption {
+            x: root.pad;
+            y: 0;
+            width: parent.art-w;
+            height: root.top-label-height;
+            content: root.cell.top-label;
+            focused: root.focused-selection;
+            caption-font-size: Sizing.font-small;
+            caption-color: root.focused-selection ? Theme.text-primary : Theme.text-label;
+        }
+
+        if root.cell.glyph-key != "": Image {
+            x: root.pad;
+            y: parent.art-top;
+            width: parent.art-w;
+            height: parent.art-h;
+            source: GlyphSource.glyph(root.cell.glyph-key, Math.min(self.width, self.height));
+            image-fit: contain;
+            colorize: root.art-tint;
+        }
+
+        if root.cell.glyph-key == "" && root.cell.has-cover: Image {
+            x: root.pad;
+            y: parent.art-top;
+            width: parent.art-w;
+            height: parent.art-h;
+            source: (!root.muted && root.focused-selection && root.cell.has-cover-focus)
+                ? root.cell.cover-focus : root.cell.cover;
+            image-fit: contain;
+        }
+
+        // Wordmark fallback for a system without art; other tiles stay
+        // blank until their art lands (the caption already names them).
+        if root.cell.glyph-key == "" && !root.cell.has-cover && root.system-cover && !root.show-caption: Text {
+            x: root.pad + Sizing.pct-h(1);
+            y: parent.art-top + Sizing.pct-h(1);
+            width: Math.max(0px, parent.art-w - 2 * Sizing.pct-h(1));
+            height: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
+            text: root.cell.name;
+            color: root.art-tint;
+            font-size: Sizing.font-size(5.8);
+            font-weight: 600;
+            wrap: word-wrap;
+            overflow: elide;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        if root.cell.favorite: Image {
+            x: Math.round(parent.width / 12 / 1px) * 1px;
+            y: Math.round(parent.width / 12 / 1px) * 1px;
+            width: Math.round(parent.width / 6 / 1px) * 1px;
+            height: self.width;
+            source: GlyphSource.glyph("icons/Heart", self.width);
+            image-fit: contain;
+        }
+
+        if root.show-caption: MarqueeCaption {
+            x: root.pad;
+            y: parent.height - root.caption-height;
+            width: parent.art-w;
+            height: root.caption-height;
+            content: root.caption;
+            tags: root.cell.tags;
+            focused: root.focused-selection;
+            caption-font-size: Sizing.font-small;
+            caption-color: root.focused-selection ? Theme.text-primary : Theme.text-label;
+        }
+    }
+}
+
+// One page of a paged grid (PagedGrid.qml's cell layer). Rust resolves
+// the cell fit and centering (`zaparoo_app::paged_grid::fit`) and hands
+// the page's cells over; this lays them out row-major and reports
+// pointer events by page-local index. Blank cells paint nothing.
+export component PagedGridView inherits Rectangle {
+    in property <[GridCell]> cells: [];
+    in property <int> columns: 1;
+    in property <length> cell-width: 0px;
+    in property <length> cell-height: 0px;
+    in property <length> block-offset-x: 0px;
+    in property <length> block-offset-y: 0px;
+    in property <length> left-inset: 0px;
+    in property <length> top-inset: 0px;
+    in property <length> column-gap: 0px;
+    in property <length> row-gap: 0px;
+    in property <int> selected-local: -1;
+    in property <bool> section-focused: true;
+    in property <bool> focus-ready: true;
+    in property <int> held-local: -1;
+    in property <int> activate-pulse: 0;
+    in property <int> release-pulse: 0;
+    in property <bool> settling: false;
+    in property <bool> compact-padding: false;
+    in property <bool> show-caption: false;
+    in property <length> card-radius: Layout.card-radius;
+    // Blank cells refuse the pointer while this is set.
+    in property <bool> skip-empty-cells: false;
+    // The host resolves each cell's caption (translations live there).
+    pure callback caption-for(GridCell) -> string;
+
+    callback cell-hovered(int);
+    callback cell-clicked(int);
+    callback cell-right-clicked(int);
+    callback wheel(int);
+
+    background: transparent;
+    clip: true;
+
+    // Two passes: every unselected tile, then the selected one on top so
+    // its ring stays whole at the cell boundaries (`z` is static in
+    // Slint, so the layering is done by draw order).
+    for cell[i] in root.cells: Rectangle {
+        property <int> cell-col: Math.mod(i, root.columns);
+        property <int> cell-row: Math.floor(i / root.columns);
+        x: root.left-inset + root.block-offset-x + self.cell-col * (root.cell-width + root.column-gap);
+        y: root.top-inset + root.block-offset-y + self.cell-row * (root.cell-height + root.row-gap);
+        width: root.cell-width;
+        height: root.cell-height;
+        background: transparent;
+
+        if !cell.is-empty && i != root.selected-local: Tile {
+            width: 100%;
+            height: 100%;
+            cell: cell;
+            selected: i == root.selected-local;
+            section-focused: root.section-focused;
+            focus-ready: root.focus-ready;
+            held: i == root.held-local;
+            activate-pulse: root.activate-pulse;
+            release-pulse: root.release-pulse;
+            settling: root.settling;
+            compact-padding: root.compact-padding;
+            show-caption: root.show-caption;
+            caption: root.caption-for(cell);
+            card-radius: root.card-radius;
+        }
+
+        if !cell.is-empty && i == root.selected-local: Tile {
+            width: 100%;
+            height: 100%;
+            cell: cell;
+            selected: true;
+            section-focused: root.section-focused;
+            focus-ready: root.focus-ready;
+            held: i == root.held-local;
+            activate-pulse: root.activate-pulse;
+            release-pulse: root.release-pulse;
+            settling: root.settling;
+            compact-padding: root.compact-padding;
+            show-caption: root.show-caption;
+            caption: root.caption-for(cell);
+            card-radius: root.card-radius;
+        }
+
+        TouchArea {
+            enabled: !(root.skip-empty-cells && cell.is-empty);
+            mouse-cursor: pointer;
+            changed has-hover => {
+                if (self.has-hover) { root.cell-hovered(i); }
+            }
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.up) {
+                    if (event.button == PointerEventButton.right) {
+                        root.cell-right-clicked(i);
+                    } else if (event.button == PointerEventButton.left) {
+                        root.cell-clicked(i);
+                    }
+                }
+            }
+            scroll-event(event) => {
+                if (event.delta-y != 0) {
+                    root.wheel(event.delta-y < 0 ? 1 : -1);
+                    return accept;
+                }
+                return reject;
+            }
+        }
+    }
+}

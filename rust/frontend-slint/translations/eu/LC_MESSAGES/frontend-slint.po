@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-09-06 03:47+0000\n"
+"POT-Creation-Date: 2026-09-06 04:14+0000\n"
 "Language: eu\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -8,147 +8,216 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Generator: scripts/convert-ts-catalogs.py\n"
 
-#: rust/frontend-slint/ui/app.slint:491 rust/frontend-slint/ui/app.slint:552
-msgid "Hidden"
+#: rust/frontend-slint/ui/app.slint:211
+msgid "Arcade"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:916 rust/frontend-slint/ui/app.slint:2123
-msgid "Failed to load"
-msgstr "Ezin izan da kargatu"
-
-#: rust/frontend-slint/ui/app.slint:933
-msgid "No systems available. Run Update media database from Settings."
+#: rust/frontend-slint/ui/app.slint:212
+msgid "Computers"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:951
-msgid "About / License"
-msgstr "Buruz / Lizentzia"
-
-#: rust/frontend-slint/ui/app.slint:983
-msgid "Zaparoo Frontend"
-msgstr "Zaparoo Frontend-a"
-
-#: rust/frontend-slint/ui/app.slint:997
-msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
-msgstr "Copyright 2026 Wizzo Pty Ltd eta Zaparoo Project-eko laguntzaileak"
-
-#: rust/frontend-slint/ui/app.slint:1004
-msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
-msgstr "Kodea PolyForm Noncommercial License 1.0.0. lizentziapean eskuragai dago. Doan erabilera pertsonal, ez komertzialerako. Erabilera komertzialak aparteko lizentzia eskatzen du."
-
-#: rust/frontend-slint/ui/app.slint:1011
-msgid "Commercial licensing: legal@zaparoo.org"
+#: rust/frontend-slint/ui/app.slint:213
+msgid "Consoles"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1018
-msgid "Project: https://zaparoo.org"
-msgstr "Proiektua: https://zaparoo.org"
-
-#: rust/frontend-slint/ui/app.slint:1271
-msgid "No systems in this category"
-msgstr "Ez dago sistemarik kategoria honetan"
-
-#: rust/frontend-slint/ui/app.slint:1287 rust/frontend-slint/ui/app.slint:2182
-msgid "Page {} / {}"
-msgstr " {0} orria / {1}tik"
-
-#: rust/frontend-slint/ui/app.slint:1389
-msgid "Go to..."
+#: rust/frontend-slint/ui/app.slint:214
+msgid "Handhelds"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:1398 rust/frontend-slint/ui/app.slint:2663
-msgid "Loading…"
-msgstr "Kargatzen…"
-
-#: rust/frontend-slint/ui/app.slint:1464
-msgid "Writing failed"
-msgstr "Idazketak huts egin du"
-
-#: rust/frontend-slint/ui/app.slint:1465
-msgid "Put a writable card near the reader"
+#: rust/frontend-slint/ui/app.slint:215
+msgid "Other"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2282
-msgid "Arrows adjust position"
+#: rust/frontend-slint/ui/app.slint:216
+msgid "Resume"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2290
-msgid "Accept or Back saves"
-msgstr ""
+#: rust/frontend-slint/ui/app.slint:216
+msgid "Resume: {}"
+msgstr "Berrekin: {0}"
 
-#: rust/frontend-slint/ui/app.slint:2348
+#: rust/frontend-slint/ui/app.slint:217 rust/frontend-slint/ui/app.slint:2240
 msgid "Favorites"
 msgstr "Gogokoak"
 
-#: rust/frontend-slint/ui/app.slint:2349
+#: rust/frontend-slint/ui/app.slint:218 rust/frontend-slint/ui/app.slint:2241
 msgid "Recently played"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2375 rust/frontend-slint/ui/app.slint:2388
-#: rust/frontend-slint/ui/app.slint:2418 rust/frontend-slint/ui/app.slint:2442
-#: rust/frontend-slint/ui/app.slint:2474 rust/frontend-slint/ui/app.slint:2488
+#: rust/frontend-slint/ui/app.slint:219
+msgid "Update"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:220
+msgid "Settings"
+msgstr "Ezarpenak"
+
+#: rust/frontend-slint/ui/app.slint:224
+msgid "No recent games"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:225
+msgid "No internet connection"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:226
+msgid "Not available"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:447 rust/frontend-slint/ui/app.slint:508
+msgid "Hidden"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:824
+msgid "Updating the media database"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:824
+msgid "No games found yet"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:826
+msgid "Your games appear here as Core finds them."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:827
+msgid "Update media database in Settings > Library."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:843
+msgid "About / License"
+msgstr "Buruz / Lizentzia"
+
+#: rust/frontend-slint/ui/app.slint:875
+msgid "Zaparoo Frontend"
+msgstr "Zaparoo Frontend-a"
+
+#: rust/frontend-slint/ui/app.slint:889
+msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
+msgstr "Copyright 2026 Wizzo Pty Ltd eta Zaparoo Project-eko laguntzaileak"
+
+#: rust/frontend-slint/ui/app.slint:896
+msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
+msgstr "Kodea PolyForm Noncommercial License 1.0.0. lizentziapean eskuragai dago. Doan erabilera pertsonal, ez komertzialerako. Erabilera komertzialak aparteko lizentzia eskatzen du."
+
+#: rust/frontend-slint/ui/app.slint:903
+msgid "Commercial licensing: legal@zaparoo.org"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:910
+msgid "Project: https://zaparoo.org"
+msgstr "Proiektua: https://zaparoo.org"
+
+#: rust/frontend-slint/ui/app.slint:1163
+msgid "No systems in this category"
+msgstr "Ez dago sistemarik kategoria honetan"
+
+#: rust/frontend-slint/ui/app.slint:1179 rust/frontend-slint/ui/app.slint:2074
+msgid "Page {} / {}"
+msgstr " {0} orria / {1}tik"
+
+#: rust/frontend-slint/ui/app.slint:1281
+msgid "Go to..."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1290 rust/frontend-slint/ui/app.slint:2561
+msgid "Loading…"
+msgstr "Kargatzen…"
+
+#: rust/frontend-slint/ui/app.slint:1356
+msgid "Writing failed"
+msgstr "Idazketak huts egin du"
+
+#: rust/frontend-slint/ui/app.slint:1357
+msgid "Put a writable card near the reader"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2015
+msgid "Failed to load"
+msgstr "Ezin izan da kargatu"
+
+#: rust/frontend-slint/ui/app.slint:2174
+msgid "Arrows adjust position"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2182
+msgid "Accept or Back saves"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2267 rust/frontend-slint/ui/app.slint:2280
+#: rust/frontend-slint/ui/app.slint:2310 rust/frontend-slint/ui/app.slint:2372
+#: rust/frontend-slint/ui/app.slint:2386
 msgid "Move"
 msgstr "Mugitu"
 
-#: rust/frontend-slint/ui/app.slint:2389 rust/frontend-slint/ui/app.slint:2400
+#: rust/frontend-slint/ui/app.slint:2281 rust/frontend-slint/ui/app.slint:2292
 msgid "Select"
 msgstr "Aukeratu"
 
-#: rust/frontend-slint/ui/app.slint:2390 rust/frontend-slint/ui/app.slint:2405
+#: rust/frontend-slint/ui/app.slint:2282 rust/frontend-slint/ui/app.slint:2297
+#: rust/frontend-slint/ui/app.slint:2328
 msgid "Cancel"
 msgstr "Utzi"
 
-#: rust/frontend-slint/ui/app.slint:2394
+#: rust/frontend-slint/ui/app.slint:2286
 msgid "OK"
 msgstr "Ados"
 
-#: rust/frontend-slint/ui/app.slint:2401 rust/frontend-slint/ui/app.slint:2408
+#: rust/frontend-slint/ui/app.slint:2293 rust/frontend-slint/ui/app.slint:2300
 msgid "Close"
 msgstr "Itxi"
 
-#: rust/frontend-slint/ui/app.slint:2412 rust/frontend-slint/ui/app.slint:2495
+#: rust/frontend-slint/ui/app.slint:2304 rust/frontend-slint/ui/app.slint:2393
 msgid "Scroll"
 msgstr "Scroll-a egin"
 
-#: rust/frontend-slint/ui/app.slint:2425
+#: rust/frontend-slint/ui/app.slint:2317
 msgid "Adjust"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2426
+#: rust/frontend-slint/ui/app.slint:2318
 msgid "Save"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2436 rust/frontend-slint/ui/app.slint:2505
-#: rust/frontend-slint/ui/app.slint:2517
+#: rust/frontend-slint/ui/app.slint:2326
+msgid "Reposition"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2327
+msgid "Place"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2334 rust/frontend-slint/ui/app.slint:2341
+#: rust/frontend-slint/ui/app.slint:2410
 msgid "Retry"
 msgstr "Berriro saiatu"
 
-#: rust/frontend-slint/ui/app.slint:2436 rust/frontend-slint/ui/app.slint:2443
-#: rust/frontend-slint/ui/app.slint:2463 rust/frontend-slint/ui/app.slint:2525
+#: rust/frontend-slint/ui/app.slint:2334 rust/frontend-slint/ui/app.slint:2341
+#: rust/frontend-slint/ui/app.slint:2361 rust/frontend-slint/ui/app.slint:2423
 msgid "Open"
 msgstr "Ireki"
 
-#: rust/frontend-slint/ui/app.slint:2437 rust/frontend-slint/ui/app.slint:2454
+#: rust/frontend-slint/ui/app.slint:2335 rust/frontend-slint/ui/app.slint:2352
 msgid "Options"
 msgstr "Aukerak"
 
-#: rust/frontend-slint/ui/app.slint:2438 rust/frontend-slint/ui/app.slint:2444
-#: rust/frontend-slint/ui/app.slint:2533
+#: rust/frontend-slint/ui/app.slint:2336 rust/frontend-slint/ui/app.slint:2342
+#: rust/frontend-slint/ui/app.slint:2431
 msgid "View"
 msgstr ""
 
-#: rust/frontend-slint/ui/app.slint:2449 rust/frontend-slint/ui/app.slint:2455
-#: rust/frontend-slint/ui/app.slint:2469 rust/frontend-slint/ui/app.slint:2484
-#: rust/frontend-slint/ui/app.slint:2496 rust/frontend-slint/ui/app.slint:2506
-#: rust/frontend-slint/ui/app.slint:2519 rust/frontend-slint/ui/app.slint:2534
+#: rust/frontend-slint/ui/app.slint:2347 rust/frontend-slint/ui/app.slint:2353
+#: rust/frontend-slint/ui/app.slint:2367 rust/frontend-slint/ui/app.slint:2382
+#: rust/frontend-slint/ui/app.slint:2394 rust/frontend-slint/ui/app.slint:2404
+#: rust/frontend-slint/ui/app.slint:2417 rust/frontend-slint/ui/app.slint:2432
 msgid "Back"
 msgstr "Atzera"
 
-#: rust/frontend-slint/ui/app.slint:2475 rust/frontend-slint/ui/app.slint:2489
+#: rust/frontend-slint/ui/app.slint:2373 rust/frontend-slint/ui/app.slint:2387
 msgid "Change"
 msgstr "Aldatu"
 
-#: rust/frontend-slint/ui/app.slint:2476
+#: rust/frontend-slint/ui/app.slint:2374
 msgid "Toggle"
 msgstr "Txandakatu"
 
@@ -240,4 +309,12 @@ msgstr ""
 
 #: rust/frontend-slint/ui/chrome.slint:545
 msgid "Page {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:868
+msgid "Nothing here"
+msgstr "Ez dago ezer hemen"
+
+#: rust/frontend-slint/ui/chrome.slint:870
+msgid "Check Zaparoo Core and try again."
 msgstr ""

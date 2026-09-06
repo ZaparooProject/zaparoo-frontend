@@ -17,6 +17,7 @@
 pub mod buttons;
 pub mod clock;
 pub mod format;
+pub mod hub;
 pub mod layouts;
 pub mod paged_grid;
 pub mod palette;

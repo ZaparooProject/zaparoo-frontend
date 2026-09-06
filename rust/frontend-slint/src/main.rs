@@ -17,6 +17,7 @@ mod fonts;
 #[cfg(any(feature = "mister", test))]
 mod frame_transition;
 mod glyphs;
+mod hub;
 mod hub_nav;
 mod latch_protocol;
 mod media_cache;
@@ -63,7 +64,7 @@ mod generated {
 }
 pub use generated::*;
 
-use router::{lock, Ctx, Shared, HUB_ACTIONS};
+use router::{lock, Ctx, Shared};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
@@ -471,7 +472,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     seed_startup_state(&app, &persisted, boot_curtain);
 
-    let media = start_media_cache(&app, &client, &handle);
+    let (media, media_rx) = media_cache::MediaCache::new();
     media.set_preferred_image_type(&persisted.settings.media_image_type);
     router::seed_detail_ctx(client.clone(), handle.clone());
     app.global::<GamesView>()
@@ -497,8 +498,10 @@ fn main() -> Result<(), slint::PlatformError> {
             restore_pending,
             config.settings.hidden_categories.clone(),
             config.settings.hidden_system_ids.clone(),
+            platform_paths::config_file_path(),
         ))),
     });
+    start_media_cache(&ctx, &app, &client, media_rx);
 
     // Solve the initial grid shapes in logical scene space and re-solve
     // on resize/orientation changes. DRS still keys from the physical
@@ -544,6 +547,11 @@ fn main() -> Result<(), slint::PlatformError> {
 
     lock(&ctx.shared).notice_ack = notice_ack;
     bind_input(&ctx, &app, config.key_to_action.clone());
+    // The Hub paints its persisted layout before the first frame; the
+    // catalog reconciles it when Core answers.
+    hub::bind_input(&ctx, &app);
+    hub::rebuild(&ctx, &app);
+    hub::restore(&ctx, &app);
     bind_resume(&ctx, &app, &client);
 
     restore_core_independent(&ctx, &app);
@@ -707,10 +715,8 @@ pub(crate) fn apply_buttons(ctx: &Ctx, app: &App) {
     buttons.set_view(SharedString::from(resolved.view));
 }
 
-/// Fetch `media.history.latest` once the connection is up and label
-/// the Hub's Resume tile with the last-played game (the Qt hub's
-/// resumeName behavior). No entry keeps the plain "Resume" label and
-/// the action reports "nothing to resume".
+/// Fetch `media.history.latest` once the connection is up and hand the
+/// Hub's Resume tile the last-played game (`RecentsModel`'s resume state).
 fn bind_resume(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     let ctx = ctx.clone();
     let weak = app.as_weak();
@@ -725,26 +731,37 @@ fn bind_resume(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                 return;
             }
         }
-        let Ok(result) = client.media_history_latest().await else {
-            return;
-        };
-        let Some(entry) = result.entry else {
-            return;
-        };
-        lock(&ctx.shared).resume_entry = Some(entry.clone());
-        let label = if entry.media_name.is_empty() {
-            "Resume".to_string()
-        } else {
-            entry.media_name
+        {
+            let ctx = ctx.clone();
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                hub::set_resume(
+                    &ctx,
+                    &app,
+                    hub::Resume {
+                        requested: true,
+                        loading: true,
+                        entry: None,
+                    },
+                );
+            });
+        }
+        let entry = match client.media_history_latest().await {
+            Ok(result) => result.entry,
+            Err(e) => {
+                tracing::debug!("media.history.latest failed: {}", e.message);
+                None
+            }
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
-            let labels: Vec<SharedString> =
-                [label.as_str(), "Favorites", "Recents", "Update", "Settings"]
-                    .iter()
-                    .map(|s| SharedString::from(*s))
-                    .collect();
-            app.global::<HubView>()
-                .set_hub_actions(ModelRc::new(VecModel::from(labels)));
+            hub::set_resume(
+                &ctx,
+                &app,
+                hub::Resume {
+                    requested: true,
+                    loading: false,
+                    entry,
+                },
+            );
         });
     });
 }
@@ -819,12 +836,18 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
             if local.has_bluetooth {
                 keys.push("Bluetooth".into());
             }
+            let ctx_inner = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
                 let shell = app.global::<Shell>();
                 shell.set_status_keys(ModelRc::new(VecModel::from(keys)));
                 shell.set_has_battery(local.has_battery);
                 shell.set_battery_percent(local.battery_percent);
                 shell.set_status_icons_enabled(true);
+                hub::set_internet(
+                    &ctx_inner,
+                    &app,
+                    local.has_wifi_internet || local.has_lan_internet,
+                );
             });
         }
     });
@@ -867,39 +890,31 @@ pub(crate) fn effective_language(setting: &str) -> String {
     }
 }
 
-/// Media cover cache + its serialized fetch driver. Ready covers are
-/// marshaled onto the event loop and patched into whatever games row
-/// still shows that path.
+/// Media cover fetch driver. Ready covers are marshaled onto the event
+/// loop and patched into whatever tile still shows that path.
 fn start_media_cache(
+    ctx: &Arc<Ctx>,
     app: &App,
     client: &Arc<Client>,
-    handle: &tokio::runtime::Handle,
-) -> Arc<media_cache::MediaCache> {
-    let (media, media_rx) = media_cache::MediaCache::new();
+    media_rx: tokio::sync::mpsc::UnboundedReceiver<media_cache::MediaKey>,
+) {
     let weak = app.as_weak();
+    let media = ctx.media.clone();
+    let handle = ctx.handle.clone();
+    let ctx = ctx.clone();
     media_cache::spawn_driver(
-        media.clone(),
+        media,
         client.clone(),
-        handle,
+        &handle,
         media_rx,
         move |key, image| {
-            let _ = weak.upgrade_in_event_loop(move |app| apply_cover(&app, &key, &image));
+            let ctx = ctx.clone();
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                apply_cover(&app, &key, &image);
+                hub::cover_landed(&ctx, &app, &key);
+            });
         },
     );
-    media
-}
-
-/// Seed the Hub selection from persisted state before the first
-/// frame; the category index is re-derived when the catalog arrives.
-fn seed_hub_selection(app: &App, persisted: &persist::PersistedState) {
-    app.global::<HubView>()
-        .set_hub_row(persisted.hub.selected_row.min(1) as i32);
-    let action_index = HUB_ACTIONS
-        .iter()
-        .position(|a| *a == persisted.hub.selected_action)
-        .unwrap_or(0);
-    app.global::<HubView>()
-        .set_hub_action_index(action_index as i32);
 }
 
 /// Catalog endpoint -> categories, systems, cold-start restore.
@@ -1074,9 +1089,10 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
                 pending
             };
 
-            // User-hidden projection + tiles + case-sensitive restore
-            // of the persisted category (a vanished one lands on 0).
+            // Visible categories, then the Hub: reconcile the persisted
+            // layout against what Core reported and seat the saved focus.
             router::reproject_hub(ctx, app);
+            hub::on_catalog_ready(ctx, app);
 
             // One-shot boot latch: the curtain lifts here and never
             // re-asserts; later disconnects surface through the header
@@ -1103,6 +1119,7 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
             app.global::<HubView>()
                 .set_hub_error(SharedString::from(message.as_str()));
             status::set_catalog_error(&ctx.status, app, &ctx.handle, Some(message));
+            hub::render(ctx, app);
         }
         ResourceStatus::Idle | ResourceStatus::Loading => {}
     }
@@ -1111,7 +1128,6 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
 /// Persisted-state seeds that must land before the first frame: hub
 /// selection, the cold-launch curtain, and the reduce-motion flag.
 fn seed_startup_state(app: &App, persisted: &persist::PersistedState, boot_curtain: bool) {
-    seed_hub_selection(app, persisted);
     app.global::<Shell>().set_boot_curtain(boot_curtain);
     app.global::<Shell>()
         .set_boot_text(SharedString::from("Connecting to Zaparoo Core…"));

@@ -21,9 +21,7 @@ use zaparoo_core::endpoints::media_favorites::{FavoritesArgs, MediaFavoritesEndp
 use zaparoo_core::endpoints::media_history::{HistoryArgs, MediaHistoryEndpoint};
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::input_actions::actions;
-use zaparoo_core::media_types::{
-    BrowseEntry, MediaHistoryEntry, MediaHistoryLatestEntry, MediaItem, RunParams, SystemInfo,
-};
+use zaparoo_core::media_types::{BrowseEntry, MediaHistoryEntry, MediaItem, RunParams, SystemInfo};
 use zaparoo_core::persist::{self, PersistedState};
 use zaparoo_core::remote_resource::ResourceStatus;
 use zaparoo_core::store::Store;
@@ -163,11 +161,6 @@ fn dedup_roots_drop_ancestors(entries: &[BrowseEntry]) -> Vec<BrowseEntry> {
         .collect()
 }
 
-/// Bottom-row Hub actions. Lower-case ids persist in `HubState::
-/// selected_action`; display labels live in `ui/app.slint`. `resume`
-/// leads, matching the Qt hub's action row.
-pub const HUB_ACTIONS: [&str; 5] = ["resume", "favorites", "recents", "update", "settings"];
-
 /// State shared between the router (Slint event loop thread) and the
 /// tokio watcher tasks. Everything UI-visible is projected into App
 /// properties; this holds the authoritative Rust-side copies.
@@ -301,7 +294,8 @@ pub struct Shared {
     pub restore_pending: bool,
     /// Last-played entry backing the Hub's Resume action; None until
     /// `media.history.latest` answers (or when history is empty).
-    pub resume_entry: Option<MediaHistoryLatestEntry>,
+    /// The Hub: persisted layout, entries, cursor and Move session.
+    pub hub: crate::hub::HubModel,
 }
 
 /// Which surface an open context menu was invoked on. Favorites and
@@ -310,8 +304,9 @@ pub struct Shared {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextOwner {
     Games,
-    Categories,
     Systems,
+    /// A Hub tile's Options menu (`crate::hub`).
+    Hub,
 }
 
 /// First-run index modal phase (FirstRunIndexModal.qml's idle /
@@ -335,6 +330,10 @@ pub enum PendingRestart {
 pub enum ListContext {
     /// The games-screen West "View" menu.
     ViewMenu,
+    /// The Hub's West "View" menu (Add item, Reset layout, Settings, Quit).
+    HubPageMenu,
+    /// The Hub's "Add item" picker.
+    HubAdd,
     /// A settings picker row; the payload is the field id.
     SettingsPicker(String),
     /// The "Change launcher" picker; the payload is the system id.
@@ -384,6 +383,7 @@ impl Shared {
         restore_pending: bool,
         hidden_categories: Vec<String>,
         hidden_system_ids: Vec<String>,
+        hub_layout_path: std::path::PathBuf,
     ) -> Self {
         let show_hidden = persist.settings.show_hidden;
         Self {
@@ -434,7 +434,7 @@ impl Shared {
             persist,
             games_ticket: 0,
             restore_pending,
-            resume_entry: None,
+            hub: crate::hub::HubModel::new(hub_layout_path),
         }
     }
 }
@@ -445,7 +445,7 @@ pub fn lock(shared: &Arc<Mutex<Shared>>) -> MutexGuard<'_, Shared> {
     shared.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn save_persist(shared: &Arc<Mutex<Shared>>) {
+pub(crate) fn save_persist(shared: &Arc<Mutex<Shared>>) {
     let snapshot = lock(shared).persist.clone();
     persist::save(&snapshot);
 }
@@ -476,42 +476,20 @@ fn projected_systems_for_category(shared: &Shared, category: &str) -> Vec<System
         .collect()
 }
 
-/// Rebuild the Hub's category projection from the master list and the
-/// hidden prefs, restoring focus to the persisted category when it
-/// survives the projection.
+/// Rebuild the visible category list from the master list and the
+/// hidden prefs, then re-resolve the Hub's tiles.
 pub fn reproject_hub(ctx: &Ctx, app: &App) {
-    let (all, hidden, show, persisted_category) = {
-        let shared = lock(&ctx.shared);
-        (
-            shared.all_categories.clone(),
-            shared.hidden_categories.clone(),
-            shared.show_hidden,
-            shared.persist.hub.category.clone(),
-        )
-    };
-    let visible: Vec<(String, bool)> = all
-        .into_iter()
-        .filter_map(|name| {
-            let is_hidden = hidden.iter().any(|h| h == &name);
-            (show || !is_hidden).then_some((name, is_hidden))
-        })
-        .collect();
-    lock(&ctx.shared).categories = visible.iter().map(|(n, _)| n.clone()).collect();
-    let tiles: Vec<crate::CategoryTile> = visible
-        .iter()
-        .map(|(name, is_hidden)| crate::CategoryTile {
-            name: SharedString::from(name.as_str()),
-            hidden: *is_hidden,
-        })
-        .collect();
-    let index = visible
-        .iter()
-        .position(|(n, _)| *n == persisted_category)
-        .unwrap_or(0);
-    app.global::<crate::HubView>()
-        .set_categories(ModelRc::new(VecModel::from(tiles)));
-    app.global::<crate::HubView>()
-        .set_hub_category_index(i32::try_from(index).unwrap_or(0));
+    {
+        let mut shared = lock(&ctx.shared);
+        let visible: Vec<String> = shared
+            .all_categories
+            .iter()
+            .filter(|name| shared.show_hidden || !shared.hidden_categories.contains(name))
+            .cloned()
+            .collect();
+        shared.categories = visible;
+    }
+    crate::hub::rebuild(ctx, app);
 }
 
 /// Re-run the Systems screen's projection after a hide/unhide or a
@@ -531,25 +509,6 @@ pub fn reproject_systems(ctx: &Ctx, app: &App) {
     lock(&ctx.shared).screen_systems = projected;
     let page = app.global::<crate::SystemsView>().get_systems_page().max(0) as usize;
     show_systems_page(ctx, app, page);
-}
-
-/// Flip a category's hidden flag, persist the durable pref, and
-/// reproject the Hub.
-fn toggle_hidden_category(ctx: &Ctx, app: &App, name: &str) {
-    let (cats, sys) = {
-        let mut shared = lock(&ctx.shared);
-        if shared.hidden_categories.iter().any(|h| h == name) {
-            shared.hidden_categories.retain(|h| h != name);
-        } else {
-            shared.hidden_categories.push(name.to_string());
-        }
-        (
-            shared.hidden_categories.clone(),
-            shared.hidden_system_ids.clone(),
-        )
-    };
-    save_hidden_prefs(ctx, &cats, &sys);
-    reproject_hub(ctx, app);
 }
 
 /// Flip a system's hidden flag, persist, and reproject the grid.
@@ -647,7 +606,7 @@ fn close_dialog(app: &App) {
 /// Hub Back lands here instead of quitting outright, so a stray B
 /// can't kill the frontend (Main.qml's quit-confirm rule). Default
 /// focus is "No".
-fn open_quit_confirm(app: &App) {
+pub(crate) fn open_quit_confirm(app: &App) {
     open_dialog(
         app,
         "quit_confirm",
@@ -1155,7 +1114,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         return;
     }
     match app.global::<crate::Shell>().get_active_screen().as_str() {
-        "hub" => hub_action(ctx, app, action),
+        "hub" => crate::hub::handle_action(ctx, app, action),
         "systems" => systems_action(ctx, app, action),
         // Favorites and Recents reuse the games-style grid; the mode
         // stored in Shared adjusts back/paging/persist behavior.
@@ -2149,135 +2108,6 @@ fn start_scrape(ctx: &Ctx, systems: Vec<String>, force: bool) {
     });
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "action match keeps hub navigation and persistence transitions auditable together"
-)]
-fn hub_action(ctx: &Ctx, app: &App, action: &str) {
-    let n_cats = lock(&ctx.shared).categories.len();
-    let row = app.global::<crate::HubView>().get_hub_row();
-    match action {
-        actions::LEFT | actions::RIGHT => {
-            let delta = if action == actions::LEFT { -1 } else { 1 };
-            if row == 0 {
-                let next = hub_nav::row_move(
-                    app.global::<crate::HubView>().get_hub_category_index() as usize,
-                    n_cats,
-                    delta,
-                );
-                app.global::<crate::HubView>()
-                    .set_hub_category_index(next as i32);
-                let mut shared = lock(&ctx.shared);
-                if let Some(name) = shared.categories.get(next).cloned() {
-                    shared.persist.hub.category = name;
-                }
-                drop(shared);
-                save_persist(&ctx.shared);
-            } else {
-                let next = hub_nav::row_move(
-                    app.global::<crate::HubView>().get_hub_action_index() as usize,
-                    HUB_ACTIONS.len(),
-                    delta,
-                );
-                app.global::<crate::HubView>()
-                    .set_hub_action_index(next as i32);
-                lock(&ctx.shared).persist.hub.selected_action = HUB_ACTIONS[next].to_string();
-                save_persist(&ctx.shared);
-            }
-        }
-        actions::UP | actions::DOWN => {
-            let target_row = i32::from(action == actions::DOWN);
-            if target_row == row {
-                return;
-            }
-            if target_row == 1 {
-                let next = hub_nav::nearest_by_center(
-                    app.global::<crate::HubView>().get_hub_category_index() as usize,
-                    n_cats,
-                    hub_nav::HUB_TILE_W,
-                    HUB_ACTIONS.len(),
-                    hub_nav::HUB_TILE_W,
-                );
-                app.global::<crate::HubView>()
-                    .set_hub_action_index(next as i32);
-                lock(&ctx.shared).persist.hub.selected_action = HUB_ACTIONS[next].to_string();
-            } else {
-                let next = hub_nav::nearest_by_center(
-                    app.global::<crate::HubView>().get_hub_action_index() as usize,
-                    HUB_ACTIONS.len(),
-                    hub_nav::HUB_TILE_W,
-                    n_cats,
-                    hub_nav::HUB_TILE_W,
-                );
-                app.global::<crate::HubView>()
-                    .set_hub_category_index(next as i32);
-                let mut shared = lock(&ctx.shared);
-                if let Some(name) = shared.categories.get(next).cloned() {
-                    shared.persist.hub.category = name;
-                }
-            }
-            app.global::<crate::HubView>().set_hub_row(target_row);
-            lock(&ctx.shared).persist.hub.selected_row = target_row as u32;
-            save_persist(&ctx.shared);
-        }
-        actions::ACCEPT => {
-            if row == 0 {
-                let category = lock(&ctx.shared)
-                    .categories
-                    .get(app.global::<crate::HubView>().get_hub_category_index() as usize)
-                    .cloned();
-                if let Some(category) = category {
-                    enter_systems(ctx, app, &category);
-                }
-                // Empty payload convention: press on an empty row is a no-op.
-            } else {
-                match HUB_ACTIONS[app
-                    .global::<crate::HubView>()
-                    .get_hub_action_index()
-                    .clamp(0, 4) as usize]
-                {
-                    "resume" => {
-                        let entry = lock(&ctx.shared).resume_entry.clone();
-                        if let Some(entry) = entry {
-                            launch(ctx, app, entry.media_path);
-                        } else {
-                            app.global::<crate::Shell>()
-                                .set_status_text(SharedString::from("Nothing to resume yet"));
-                        }
-                    }
-                    "favorites" => enter_favorites(ctx, app),
-                    "recents" => enter_recents(ctx, app),
-                    "update" => start_media_update(ctx, app),
-                    "settings" => enter_settings(ctx, app),
-                    other => {
-                        app.global::<crate::Shell>()
-                            .set_status_text(SharedString::from(
-                                format!("{other} is outside the demo scope").as_str(),
-                            ));
-                    }
-                }
-            }
-        }
-        actions::CONTEXT_MENU => {
-            // Category tiles carry the hide/index menu; the action row
-            // has none (the Qt owner split).
-            if row == 0 {
-                let index = app
-                    .global::<crate::HubView>()
-                    .get_hub_category_index()
-                    .max(0) as usize;
-                open_category_context_menu(ctx, app, index);
-            }
-        }
-        actions::CANCEL => {
-            // Back on the Hub asks first - a stray B can't kill the
-            // frontend (the Qt quit-confirm rule).
-            open_quit_confirm(app);
-        }
-        _ => {}
-    }
-}
-
 fn systems_page_size(app: &App) -> usize {
     let cols = app
         .global::<crate::SystemsView>()
@@ -3002,7 +2832,7 @@ fn games_cover_tier(app: &App) -> u32 {
 /// The scene at the current output geometry, as the sizing rules see it:
 /// the physical output size during DRS rather than the transient Slint
 /// window size, plus the rendering flags the `Sizing` global carries.
-fn output_scene(app: &App) -> sizing::Scene {
+pub(crate) fn output_scene(app: &App) -> sizing::Scene {
     let size = app.window().size();
     let (out_w, out_h) = crate::output_size()
         .map_or((f64::from(size.width), f64::from(size.height)), |(w, h)| {
@@ -3972,6 +3802,8 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                             open_letter_jump(ctx, app);
                         }
                     }
+                    ListContext::HubPageMenu => crate::hub::page_menu_accept(ctx, app, &id),
+                    ListContext::HubAdd => crate::hub::add_picked(ctx, app, &id),
                     ListContext::SettingsPicker(field) => {
                         settings_picker_selected(ctx, app, &field, &id);
                     }
@@ -4339,11 +4171,121 @@ fn open_qr_code(app: &App, entry: &GameRow) {
     }
 }
 
-fn menu_entry(id: &str, label: &str) -> crate::MenuEntry {
+pub(crate) fn menu_entry(id: &str, label: &str) -> crate::MenuEntry {
     crate::MenuEntry {
         id: SharedString::from(id),
         label: SharedString::from(label),
+        label_key: SharedString::default(),
     }
+}
+
+/// Hub helpers the driver in `crate::hub` calls back into.
+pub(crate) fn category_has_indexable(ctx: &Ctx, category: &str) -> bool {
+    let guard = lock(&ctx.shared);
+    systems_for_category(&guard.systems, category)
+        .iter()
+        .any(|s| s.zap_script.trim().is_empty())
+}
+
+fn indexable_system_ids(ctx: &Ctx, category: &str) -> Vec<String> {
+    let guard = lock(&ctx.shared);
+    systems_for_category(&guard.systems, category)
+        .iter()
+        .filter(|s| s.zap_script.trim().is_empty())
+        .map(|s| s.id.clone())
+        .collect()
+}
+
+pub(crate) fn index_category(ctx: &Ctx, app: &App, category: &str) {
+    let ids = indexable_system_ids(ctx, category);
+    if !ids.is_empty() {
+        start_index(ctx, app, Some(ids));
+    }
+}
+
+pub(crate) fn scrape_category(ctx: &Ctx, category: &str) {
+    let ids = indexable_system_ids(ctx, category);
+    if !ids.is_empty() {
+        start_scrape(ctx, ids, false);
+    }
+}
+
+pub(crate) fn present_hub_context_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
+    present_context_menu(ctx, app, ContextOwner::Hub, 0, entries);
+}
+
+fn present_list(
+    ctx: &Ctx,
+    app: &App,
+    context: ListContext,
+    title: &str,
+    entries: Vec<crate::MenuEntry>,
+) {
+    lock(&ctx.shared).list_context = context;
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_list_title(SharedString::from(title));
+    overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_list_index(0);
+    overlays.set_list_open(true);
+}
+
+pub(crate) fn present_hub_page_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
+    present_list(ctx, app, ListContext::HubPageMenu, "View", entries);
+}
+
+pub(crate) fn present_hub_add_picker(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
+    present_list(ctx, app, ListContext::HubAdd, "Add item", entries);
+}
+
+/// A one-button alert above the current screen (Modal.qml's
+/// `action_error` kind).
+pub(crate) fn open_action_error(app: &App, title: &str, body: &str) {
+    open_dialog(app, "action_error", title, body, &["OK"], 0);
+}
+
+/// Accept on a category tile while the catalog errored: refetch it.
+pub(crate) fn retry_catalog(ctx: &Ctx) {
+    ctx.store
+        .subscribe::<zaparoo_core::endpoints::catalog::CatalogEndpoint>(())
+        .refetch();
+}
+
+/// A `system` shortcut lands on Games having skipped Systems; Back then
+/// returns to the Hub.
+pub(crate) fn enter_games_from_hub(ctx: &Ctx, app: &App, sys: &SystemInfo) {
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.persist.games.entered_from_hub = true;
+        shared.persist.systems.system_id.clone_from(&sys.id);
+    }
+    enter_games(ctx, app, sys);
+}
+
+/// A `folder` shortcut: establish the system, then browse the folder
+/// as one pushed level so Back climbs to the system root.
+pub(crate) fn enter_folder_from_hub(ctx: &Ctx, app: &App, system_id: &str, path: &str) {
+    if system_id.is_empty() || path.is_empty() {
+        return;
+    }
+    let system = lock(&ctx.shared)
+        .systems
+        .iter()
+        .find(|s| s.id == system_id)
+        .cloned();
+    let Some(system) = system else {
+        return;
+    };
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.games_mode = GamesMode::Browse;
+        shared.persist.games.system_id.clone_from(&system.id);
+        shared.persist.games.path_stack = vec![String::new(), path.to_string()];
+        shared.persist.games.selected_at_level = vec![String::new(), String::new()];
+        shared.persist.games.entered_from_hub = true;
+        shared.persist.systems.system_id.clone_from(&system.id);
+        shared.games_system_name.clone_from(&system.name);
+    }
+    browse_games(ctx, app, &system.id, &system.name, path, true);
 }
 
 /// Open the item-scoped context menu on the focused games-style row,
@@ -4399,29 +4341,6 @@ fn open_context_menu(ctx: &Ctx, app: &App, index: usize) {
 /// Category tile menu (Hub top row): hide/unhide plus a scoped media
 /// database rebuild when the category has indexable systems and no
 /// media job is running.
-fn open_category_context_menu(ctx: &Ctx, app: &App, index: usize) {
-    let (is_hidden, has_indexable) = {
-        let guard = lock(&ctx.shared);
-        let Some(name) = guard.categories.get(index) else {
-            return;
-        };
-        let is_hidden = guard.hidden_categories.iter().any(|h| h == name);
-        let has_indexable = systems_for_category(&guard.systems, name)
-            .iter()
-            .any(|s| s.zap_script.trim().is_empty());
-        (is_hidden, has_indexable)
-    };
-    let mut entries = vec![menu_entry(
-        "toggle_hide_category",
-        if is_hidden { "Unhide" } else { "Hide" },
-    )];
-    if has_indexable && !media_busy(app) {
-        entries.push(menu_entry("index_category", "Update media database"));
-        entries.push(menu_entry("scrape_category", "Scrape metadata"));
-    }
-    present_context_menu(ctx, app, ContextOwner::Categories, index, entries);
-}
-
 /// System tile menu: launch, a scoped index for real (non-launchable)
 /// systems, and hide/unhide. `index` is absolute into the projected
 /// `screen_systems` list.
@@ -4455,7 +4374,7 @@ fn open_system_context_menu(ctx: &Ctx, app: &App, index: usize) {
 /// A media-database job is running; index/scrape entries drop out
 /// while it does (the Qt mediaBusy gate, read off the same status
 /// line the header shows).
-fn media_busy(app: &App) -> bool {
+pub(crate) fn media_busy(app: &App) -> bool {
     app.global::<crate::Status>().get_show_track()
 }
 
@@ -4520,8 +4439,11 @@ fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     let owner = lock(&ctx.shared).context_owner;
     match owner {
         ContextOwner::Games => context_accept_games(ctx, app, id),
-        ContextOwner::Categories => context_accept_category(ctx, app, id),
         ContextOwner::Systems => context_accept_system(ctx, app, id),
+        ContextOwner::Hub => {
+            close_context_menu(ctx, app);
+            crate::hub::context_accept(ctx, app, id);
+        }
     }
 }
 
@@ -4561,49 +4483,6 @@ fn context_accept_games(ctx: &Ctx, app: &App, id: &str) {
         "qr_code" => {
             close_context_menu(ctx, app);
             open_qr_code(app, &entry);
-        }
-        _ => {}
-    }
-}
-
-fn context_accept_category(ctx: &Ctx, app: &App, id: &str) {
-    let name = {
-        let guard = lock(&ctx.shared);
-        guard.categories.get(guard.context_target).cloned()
-    };
-    close_context_menu(ctx, app);
-    let Some(name) = name else {
-        return;
-    };
-    match id {
-        "toggle_hide_category" => toggle_hidden_category(ctx, app, &name),
-        "index_category" => {
-            // Indexable = real systems only; launch-only ones carry no
-            // media and Core would reject their ids.
-            let ids: Vec<String> = {
-                let guard = lock(&ctx.shared);
-                systems_for_category(&guard.systems, &name)
-                    .iter()
-                    .filter(|s| s.zap_script.trim().is_empty())
-                    .map(|s| s.id.clone())
-                    .collect()
-            };
-            if !ids.is_empty() {
-                start_index(ctx, app, Some(ids));
-            }
-        }
-        "scrape_category" => {
-            let ids: Vec<String> = {
-                let guard = lock(&ctx.shared);
-                systems_for_category(&guard.systems, &name)
-                    .iter()
-                    .filter(|s| s.zap_script.trim().is_empty())
-                    .map(|s| s.id.clone())
-                    .collect()
-            };
-            if !ids.is_empty() {
-                start_scrape(ctx, ids, false);
-            }
         }
         _ => {}
     }
@@ -5011,27 +4890,7 @@ fn pop_folder_level(ctx: &Ctx, app: &App) -> bool {
 /// `MediaStatusResource` watches Core's indexing notifications), and
 /// the catalog refetches automatically on the busy -> idle edge via
 /// the store's `Tag::MEDIA_DB` invalidation watcher.
-fn start_media_update(ctx: &Ctx, app: &App) {
-    app.global::<crate::Shell>()
-        .set_status_text(SharedString::from("Updating media database…"));
-    let client = ctx.store.client();
-    let weak = app.as_weak();
-    ctx.handle.spawn(async move {
-        let outcome = client
-            .media_generate(zaparoo_core::media_types::MediaIndexParams { systems: None })
-            .await;
-        let message = match outcome {
-            Ok(()) => String::new(),
-            Err(e) => format!("Update failed: {}", e.message),
-        };
-        let _ = weak.upgrade_in_event_loop(move |app| {
-            app.global::<crate::Shell>()
-                .set_status_text(SharedString::from(message.as_str()));
-        });
-    });
-}
-
-fn launch(ctx: &Ctx, app: &App, text: String) {
+pub(crate) fn launch(ctx: &Ctx, app: &App, text: String) {
     app.global::<crate::Shell>()
         .set_status_text(SharedString::from("Launching…"));
     let store = ctx.store.clone();
