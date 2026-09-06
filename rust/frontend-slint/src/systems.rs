@@ -10,6 +10,7 @@
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use zaparoo_app::layouts::{self, Body, ThemeId, View};
+use zaparoo_app::media_list as list_rules;
 use zaparoo_app::paged_grid::{self, Grid, Insets};
 use zaparoo_app::systems::{self as rules, CatalogSystem, Region, SystemRow};
 use zaparoo_core::input_actions::actions;
@@ -75,6 +76,8 @@ fn catalog_systems(systems: &[SystemInfo]) -> Vec<CatalogSystem> {
             name: s.name.clone(),
             category: s.category.clone(),
             zap_script: s.zap_script.clone(),
+            release_date: s.release_date.clone().unwrap_or_default(),
+            manufacturer: s.manufacturer.clone().unwrap_or_default(),
         })
         .collect()
 }
@@ -208,6 +211,7 @@ struct Geometry {
     rows: i32,
     grid_y: i32,
     grid_height: i32,
+    insets: Insets,
     fit: paged_grid::Fit,
 }
 
@@ -241,6 +245,7 @@ fn geometry(app: &App) -> Geometry {
         rows,
         grid_y,
         grid_height,
+        insets,
         fit: paged_grid::fit(
             columns,
             rows,
@@ -251,6 +256,48 @@ fn geometry(app: &App) -> Geometry {
             &insets,
         ),
     }
+}
+
+fn list_layout(shared: &Shared) -> bool {
+    shared.persist.settings.systems_browse_layout == "list"
+}
+
+/// The list card's geometry from the systems list profile (the TATE
+/// table on a rotated scene); the row count follows the row height.
+fn list_geometry(app: &App, shared: &Shared) -> list_rules::ListGeometry {
+    let inputs = crate::router::output_scene(app).inputs();
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let rotated = matches!(shared.persist.settings.orientation.as_str(), "cw" | "ccw");
+    let view = if rotated {
+        View::SystemsListTate
+    } else {
+        View::SystemsList
+    };
+    let profile = layouts::profile(ThemeId::current(&inputs), view, &inputs);
+    let Body::List { list, .. } = profile.body else {
+        unreachable!("the systems list views resolve to a list body");
+    };
+    list_rules::list_geometry(
+        &list,
+        &list_rules::ListFrame {
+            screen_width: inputs.screen_width as i32,
+            screen_height: inputs.screen_height as i32,
+            header_bottom: derived.header_bottom,
+            status_top_margin: profile.status.top_margin,
+            strip_height: profile.status.strip_height,
+            help_bar_height: derived.help_bar_height,
+            tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
+            safe_bottom_gap: inputs.pct_h(6.0),
+            target_rows: 0,
+            min_row_height: inputs.pct_h(3.0),
+            default_row_height: inputs.pct_h(6.0),
+        },
+    )
+}
+
+/// The list's own page size: the rows that fit the card.
+fn list_visible_rows(app: &App, shared: &Shared) -> usize {
+    list_geometry(app, shared).visible_rows.max(1)
 }
 
 fn page_cells(shared: &Shared, page: usize) -> Vec<GridCell> {
@@ -318,15 +365,66 @@ pub fn render(ctx: &Ctx, app: &App) {
         view.set_label_name(SharedString::default());
         view.set_label_hidden(false);
     }
-    // The detailed list shows every row; the grid page is enough for
-    // the swoop strip.
-    let list_rows: Vec<GridCell> = model
-        .rows
-        .iter()
-        .map(|row| cell_for(row, &shared.persist.settings.system_logo_style))
-        .collect();
-    view.set_list_rows(ModelRc::new(VecModel::from(list_rows)));
-    view.set_list_index(i32::try_from(model.grid.current_index()).unwrap_or(0));
+    render_list(app, &shared);
+}
+
+/// Detailed list: the window around the centered slot, its cues and the
+/// detail pane (logo, name, category, release date, manufacturer).
+fn render_list(app: &App, shared: &Shared) {
+    let view = app.global::<SystemsView>();
+    let model = &shared.systems_model;
+    let list_geometry = list_geometry(app, shared);
+    let visible = list_geometry.visible_rows.max(1);
+    let count = model.rows.len();
+    let current = model.grid.current_index();
+    let paging = list_rules::list_paging(current, count, None, true, visible, false);
+    view.set_current_index(i32::try_from(current).unwrap_or(0));
+    view.set_list_visible(i32::try_from(visible).unwrap_or(10));
+    view.set_list_row_height(list_geometry.row_height as f32);
+    view.set_list_page(i32::try_from(paging.current_page).unwrap_or(0));
+    view.set_list_total_pages(i32::try_from(paging.total_pages).unwrap_or(1));
+    view.set_has_items_above(paging.has_items_above);
+    view.set_has_items_below(paging.has_items_below);
+    if list_layout(shared) {
+        let top = list_rules::list_view_top(current, count, visible, None);
+        let rows: Vec<GridCell> = model
+            .rows
+            .iter()
+            .skip(top)
+            .take(visible)
+            .map(|row| cell_for(row, &shared.persist.settings.system_logo_style))
+            .collect();
+        view.set_list_rows(ModelRc::new(VecModel::from(rows)));
+        view.set_list_sel(i32::try_from(current.saturating_sub(top)).unwrap_or(0));
+        view.set_list_view_top(i32::try_from(top).unwrap_or(0));
+        if let Some(row) = model.current() {
+            let cell = cell_for(row, &shared.persist.settings.system_logo_style);
+            view.set_detail_title(SharedString::from(row.name.as_str()));
+            view.set_detail_has_cover(cell.has_cover);
+            view.set_detail_wordmark(!cell.has_cover);
+            view.set_detail_cover(if cell.has_cover_focus {
+                cell.cover_focus
+            } else {
+                cell.cover
+            });
+            let rows: Vec<crate::DetailRow> = row
+                .detail_rows()
+                .into_iter()
+                .map(|(key, value)| crate::DetailRow {
+                    key: SharedString::from(key),
+                    value: SharedString::from(value.as_str()),
+                })
+                .collect();
+            view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
+        } else {
+            view.set_detail_title(SharedString::default());
+            view.set_detail_has_cover(false);
+            view.set_detail_wordmark(false);
+            view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
+        }
+    } else {
+        view.set_list_rows(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
+    }
 }
 
 /// Screen state (SystemsScreen.qml's `_state`).
@@ -456,9 +554,10 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
 
 /// A directional or page move: returns whether the index changed and the
 /// page it started on.
-fn move_cursor(ctx: &Ctx, action: &str) -> Option<(bool, usize)> {
+fn move_cursor(ctx: &Ctx, app: &App, action: &str) -> Option<(bool, usize)> {
     let mut shared = lock(&ctx.shared);
-    let list_layout = shared.persist.settings.systems_browse_layout == "list";
+    let list_layout = list_layout(&shared);
+    let list_page = list_visible_rows(app, &shared) as i64;
     let model = &mut shared.systems_model;
     if model.sliding {
         return None;
@@ -470,8 +569,8 @@ fn move_cursor(ctx: &Ctx, action: &str) -> Option<(bool, usize)> {
         let delta: i64 = match action {
             actions::UP => -1,
             actions::DOWN => 1,
-            actions::PAGE_PREV => -(model.grid.page_size() as i64),
-            actions::PAGE_NEXT => model.grid.page_size() as i64,
+            actions::PAGE_PREV => -list_page,
+            actions::PAGE_NEXT => list_page,
             _ => return Some((false, from_page)),
         };
         if count == 0 {
@@ -529,7 +628,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         if matches!(action, actions::PAGE_PREV | actions::PAGE_NEXT) && state(app) != "ready" {
             return;
         }
-        let Some((moved, from_page)) = move_cursor(ctx, action) else {
+        let Some((moved, from_page)) = move_cursor(ctx, app, action) else {
             return;
         };
         if moved {
@@ -643,7 +742,49 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
             "Update metadata",
         ));
     }
+    let (x, y, w, h) = cell_anchor(ctx, app);
+    crate::router::set_context_anchor(app, x, y, w, h);
     crate::router::present_systems_context_menu(ctx, app, entries);
+}
+
+/// The scene rect of the focused tile or list row (the menu anchor).
+fn cell_anchor(ctx: &Ctx, app: &App) -> (f32, f32, f32, f32) {
+    let shared = lock(&ctx.shared);
+    let model = &shared.systems_model;
+    if list_layout(&shared) {
+        let g = list_geometry(app, &shared);
+        let layout = app.global::<crate::Layout>();
+        let top = list_rules::list_view_top(
+            model.grid.current_index(),
+            model.rows.len(),
+            g.visible_rows.max(1),
+            None,
+        );
+        let local = model.grid.current_index().saturating_sub(top) as f32;
+        let row_h = g.row_height as f32;
+        (
+            (g.card_x + g.list_x) as f32 + layout.get_card_padding_left(),
+            (g.card_y + g.list_y) as f32
+                + layout.get_card_padding_top()
+                + local * (row_h + layout.get_row_spacing()),
+            g.list_width as f32 - layout.get_card_padding_left() - layout.get_card_padding_right(),
+            row_h,
+        )
+    } else {
+        let geometry = geometry(app);
+        let rect = paged_grid::cell_rect(
+            &geometry.fit,
+            &geometry.insets,
+            i32::try_from(model.grid.current_row()).unwrap_or(0),
+            i32::try_from(model.grid.current_column()).unwrap_or(0),
+        );
+        (
+            rect.x as f32,
+            (geometry.grid_y + rect.y) as f32,
+            rect.width as f32,
+            rect.height as f32,
+        )
+    }
 }
 
 pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
@@ -680,7 +821,16 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
         let Ok(local) = usize::try_from(local) else {
             return false;
         };
-        let index = model.grid.current_page() * model.grid.page_size() + local;
+        let base = if list_layout(&shared) {
+            let visible = list_visible_rows(app, &shared);
+            let model = &shared.systems_model;
+            list_rules::list_view_top(model.grid.current_index(), model.rows.len(), visible, None)
+        } else {
+            let model = &shared.systems_model;
+            model.grid.current_page() * model.grid.page_size()
+        };
+        let model = &mut shared.systems_model;
+        let index = base + local;
         if index >= model.rows.len() {
             return false;
         }

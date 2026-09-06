@@ -11,6 +11,7 @@
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, SelectionBar, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
+import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
 
 // Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
 // 6x8 bitmap font for the CRT native path (family names must match
@@ -24,7 +25,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell }
+export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow }
 
 // Settings registry row (SettingsScreen.qml's field entries). On the
 // root page the rows are the six category tiles (`value` carries the
@@ -46,12 +47,6 @@ export struct MenuEntry {
     label: string,
     // Translatable label id (see `Labels`); empty rows show `label`.
     label-key: string,
-}
-
-// Detail-pane metadata table row (Year / Genre / Players / ...).
-export struct DetailRow {
-    label: string,
-    value: string,
 }
 
 // One first-character bucket of the jump-to-letter picker.
@@ -246,10 +241,23 @@ export global SystemsView {
     // Input-only gate while the latch presenter animates cached RGB565
     // endpoints. It deliberately has no visual binding in Slint.
     in-out property <bool> cached-transition: false;
-    // Detailed list layout rows (the prototype list, until the
-    // MediaList row lands): every row of the category.
+    // Detailed list: the window Rust centers on the selection, its row
+    // metrics and cues, and the detail pane (logo, name, metadata).
+    in-out property <int> current-index: 0;
     in-out property <[GridCell]> list-rows: [];
-    in-out property <int> list-index: 0;
+    in-out property <int> list-sel: 0;
+    in-out property <int> list-view-top: 0;
+    in-out property <int> list-visible: 10;
+    in-out property <length> list-row-height: 0px;
+    in-out property <int> list-page: 0;
+    in-out property <int> list-total-pages: 1;
+    in-out property <bool> has-items-above: false;
+    in-out property <bool> has-items-below: false;
+    in-out property <string> detail-title: "";
+    in-out property <image> detail-cover;
+    in-out property <bool> detail-has-cover: false;
+    in-out property <bool> detail-wordmark: false;
+    in-out property <[DetailRow]> detail-rows: [];
 }
 
 // Pointer and page-cue events from the Systems screen.
@@ -324,13 +332,13 @@ export global GamesView {
     // RapidScrollIndicator: the landing row's first letter while page
     // flips chain quickly.
     in-out property <string> rapid-letter: "";
-    // Detailed list: the windowed slice, its cursor and page cues, and
-    // the detail pane (prototype rows until the MediaList row lands).
+    // Detailed list: the window Rust centers on the selection, its row
+    // metrics and cues, and the detail pane.
     in-out property <[GridCell]> list-rows: [];
     in-out property <int> list-sel: 0;
     in-out property <int> list-view-top: 0;
-    in-out property <int> list-total: 0;
     in-out property <int> list-visible: 10;
+    in-out property <length> list-row-height: 0px;
     in-out property <int> list-page: 0;
     in-out property <int> list-total-pages: 1;
     in-out property <bool> has-items-above: false;
@@ -341,7 +349,8 @@ export global GamesView {
     in-out property <bool> detail-has-cover: false;
     in-out property <bool> detail-cover-absent: false;
     in-out property <[DetailRow]> detail-rows: [];
-    in-out property <string> detail-description: "";
+    in-out property <bool> detail-loading: false;
+    in-out property <bool> rapid-active: false;
 }
 
 // Pointer and page-cue input from the games-style screens.
@@ -855,17 +864,17 @@ component SystemsScreen inherits Rectangle {
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
         title: root.title;
-        current-page: root.list-layout ? Math.floor(SystemsView.list-index / Math.max(1, list-visible-rows)) : SystemsView.page;
-        total-pages: SystemsView.total-pages;
+        current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
+        total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
         total-text: !root.list-layout && root.show-grid-page-cue && SystemsView.count > 0 ? root.count-text : "";
         show-page-counter: root.list-layout || root.show-grid-page-cue;
         page-indicator-mode: root.show-top-page-cue;
         item-position-mode: root.list-layout;
-        current-item: SystemsView.list-index;
+        current-item: SystemsView.current-index;
         total-items: SystemsView.count;
         page-indicator-chevron-size: Layout.grid-page-chevron-size;
-        has-pages-above: root.list-layout ? SystemsView.list-index > 0 : SystemsView.has-pages-above;
-        has-pages-below: root.list-layout ? SystemsView.list-index + 1 < SystemsView.count : SystemsView.has-pages-below;
+        has-pages-above: root.list-layout ? SystemsView.has-items-above : SystemsView.has-pages-above;
+        has-pages-below: root.list-layout ? SystemsView.has-items-below : SystemsView.has-pages-below;
         visible: !root.gate-hide && Layout.top-strip-visible;
         page-requested(delta) => { SystemsInput.page-requested(delta); }
     }
@@ -939,101 +948,35 @@ component SystemsScreen inherits Rectangle {
         }
     }
 
-    // Detailed list (the prototype's rows until the MediaList row lands).
+    // Detailed list: BrowseListDetailView over the systems list profile.
     property <length> list-card-x: Layout.card-side-margin;
     property <length> list-card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Layout.card-top-margin;
     property <length> list-card-w: self.width - 2 * self.list-card-x;
     property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
-    property <length> list-pad-x: Layout.card-padding-left;
-    property <length> list-pad-y: Layout.card-padding-top;
-    property <length> list-divider: Layout.divider-width;
-    property <length> list-section-w: self.tate-list ? self.list-card-w
-        : Math.floor((self.list-card-w - self.list-divider) * Layout.list-share / (Layout.list-share + Layout.detail-share) / 1px) * 1px;
-    property <length> list-section-h: self.tate-list
-        ? Math.floor((self.list-card-h - self.list-divider) * Layout.list-share / (Layout.list-share + Layout.detail-share) / 1px) * 1px
-        : self.list-card-h;
-    property <length> system-row-gap: Layout.row-spacing;
-    property <length> system-row-h: Layout.row-height > 0px ? Layout.row-height : Sizing.font-size(4.2);
-    property <int> list-visible-rows: Math.max(1, Math.floor((self.list-section-h - 2 * self.list-pad-y + self.system-row-gap) / (self.system-row-h + self.system-row-gap)));
-    property <int> list-top: Math.max(0, SystemsView.list-index - root.list-visible-rows + 1);
 
-    if root.list-layout && !root.gate-hide: list-card := Rectangle {
+    if root.list-layout && !root.gate-hide: BrowseListDetailView {
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
         height: root.list-card-h;
-        background: Theme.surface-card;
-        border-radius: Layout.card-radius;
-        border-width: Sizing.card-border-width;
-        border-color: Theme.border-mid;
-        clip: true;
-
-        for row[i] in SystemsView.list-rows: Rectangle {
-            x: root.list-pad-x;
-            y: root.list-pad-y + (i - root.list-top) * (root.system-row-h + root.system-row-gap);
-            width: root.list-section-w - 2 * root.list-pad-x;
-            height: root.system-row-h;
-            visible: i >= root.list-top && i < root.list-top + root.list-visible-rows;
-            background: i == SystemsView.list-index ? Theme.selection-fill : transparent;
-            border-radius: Layout.row-radius;
-
-            Text {
-                x: Layout.row-text-left-padding;
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
-                width: parent.width - Layout.row-text-left-padding - Layout.row-text-right-padding;
-                overflow: elide;
-                text: row.hidden ? row.name + " · " + @tr("Hidden") : row.name;
-                color: i == SystemsView.list-index ? Theme.on-accent : Theme.text-primary;
-                font-weight: i == SystemsView.list-index ? 500 : 400;
-                font-size: Sizing.font-section;
-            }
-        }
-
-        Rectangle {
-            x: root.tate-list ? 0px : root.list-section-w;
-            y: root.tate-list ? root.list-section-h : 0px;
-            width: root.tate-list ? parent.width : root.list-divider;
-            height: root.tate-list ? root.list-divider : parent.height;
-            background: Theme.border-mid;
-        }
-
-        property <length> detail-x: root.tate-list ? Layout.pane-padding-left
-            : root.list-section-w + root.list-divider + Layout.pane-padding-left;
-        property <length> detail-y: root.tate-list
-            ? root.list-section-h + root.list-divider + Layout.pane-padding-top
-            : Layout.pane-padding-top;
-        property <length> detail-w: root.tate-list
-            ? parent.width - Layout.pane-padding-left - Layout.pane-padding-right
-            : parent.width - self.detail-x - Layout.pane-padding-right;
-        property <length> detail-h: root.tate-list
-            ? parent.height - self.detail-y - Layout.pane-padding-bottom
-            : parent.height - Layout.pane-padding-top - Layout.pane-padding-bottom;
-        property <length> logo-w: root.tate-list
-            ? Math.floor(self.detail-w * Layout.image-share / (Layout.image-share + Layout.metadata-share) / 1px) * 1px
-            : self.detail-w;
-        property <length> logo-h: root.tate-list ? self.detail-h
-            : Math.floor(self.detail-h * Layout.image-share / (Layout.image-share + Layout.metadata-share) / 1px) * 1px;
-        property <GridCell> current: SystemsView.list-index >= 0 && SystemsView.list-index < SystemsView.list-rows.length
-            ? SystemsView.list-rows[SystemsView.list-index] : { };
-
-        if list-card.current.has-cover: Image {
-            x: parent.detail-x;
-            y: parent.detail-y;
-            width: parent.logo-w;
-            height: parent.logo-h;
-            source: list-card.current.has-cover-focus ? list-card.current.cover-focus : list-card.current.cover;
-            image-fit: contain;
-        }
-        Text {
-            x: root.tate-list ? parent.detail-x + parent.logo-w + Layout.section-gap : parent.detail-x;
-            y: root.tate-list ? parent.detail-y : parent.detail-y + parent.logo-h + Layout.section-gap;
-            width: root.tate-list ? parent.detail-w - parent.logo-w - Layout.section-gap : parent.detail-w;
-            overflow: elide;
-            text: list-card.current.name;
-            color: Theme.text-primary;
-            font-size: Sizing.font-title;
-            font-weight: 600;
-        }
+        rows: SystemsView.list-rows;
+        selected: SystemsView.list-sel;
+        focus-ready: SystemsView.focus-ready;
+        activate-pulse: SystemsView.activate-pulse;
+        release-pulse: SystemsView.release-pulse;
+        settling: Shell.active-screen != "systems";
+        row-height: SystemsView.list-row-height;
+        detail-title: SystemsView.detail-title;
+        show-title: true;
+        cover: SystemsView.detail-cover;
+        has-cover: SystemsView.detail-has-cover;
+        wordmark: SystemsView.detail-wordmark;
+        placeholder-key: "icons/Console";
+        detail-rows: SystemsView.detail-rows;
+        row-hovered(i) => { SystemsInput.cell-hovered(i); }
+        row-clicked(i) => { SystemsInput.cell-clicked(i); }
+        row-right-clicked(i) => { SystemsInput.cell-right-clicked(i); }
+        wheel(delta) => { SystemsInput.wheel(delta); }
     }
 
     // Footer: the focused system's name, with the count and page cue
@@ -1076,13 +1019,13 @@ component SystemsScreen inherits Rectangle {
         x: parent.width - Layout.bottom-status-right-margin - self.width;
         y: root.label-y + Math.round((Layout.active-label-height - self.height) / 2px) * 1px;
         chevron-size: Layout.grid-page-chevron-size;
-        current-page: SystemsView.page;
-        total-pages: SystemsView.total-pages;
+        current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
+        total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
         item-position-mode: root.list-layout;
-        current-item: SystemsView.list-index;
+        current-item: SystemsView.current-index;
         total-items: SystemsView.count;
-        has-pages-above: root.list-layout ? SystemsView.list-index > 0 : SystemsView.has-pages-above;
-        has-pages-below: root.list-layout ? SystemsView.list-index + 1 < SystemsView.count : SystemsView.has-pages-below;
+        has-pages-above: root.list-layout ? SystemsView.has-items-above : SystemsView.has-pages-above;
+        has-pages-below: root.list-layout ? SystemsView.has-items-below : SystemsView.has-pages-below;
         visible: !root.gate-hide && root.page-cue-in-footer;
         page-requested(delta) => { SystemsInput.page-requested(delta); }
     }
@@ -1677,189 +1620,38 @@ component GamesScreen inherits Rectangle {
         }
     }
 
-    // Detailed list (the prototype's rows until the MediaList row lands).
+    // Detailed list: BrowseListDetailView over the games list profile.
     property <length> list-card-x: Layout.card-side-margin;
     property <length> list-card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Layout.card-top-margin;
     property <length> list-card-w: self.width - 2 * self.list-card-x;
     property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
-    property <length> list-pad-x: Layout.card-padding-left;
-    property <length> list-pad-y: Layout.card-padding-top;
-    property <length> list-divider: Layout.divider-width;
-    property <length> list-section-w: self.tate-list ? self.list-card-w
-        : Math.floor((self.list-card-w - self.list-divider) * Layout.list-share / (Layout.list-share + Layout.detail-share) / 1px) * 1px;
-    property <length> list-section-h: self.tate-list
-        ? Math.floor((self.list-card-h - self.list-divider) * Layout.list-share / (Layout.list-share + Layout.detail-share) / 1px) * 1px
-        : self.list-card-h;
-    property <int> visible-rows: Math.max(1, GamesView.list-visible);
-    property <length> row-spacing: Layout.row-spacing;
-    property <length> content-h: root.list-section-h - Layout.card-padding-top - Layout.card-padding-bottom;
-    property <length> list-row-h: Layout.row-height > 0px ? Layout.row-height
-        : Math.max(Sizing.pct-h(3), Math.floor((root.content-h - (root.visible-rows - 1) * root.row-spacing) / root.visible-rows / 1px) * 1px);
-    property <length> gutter-w: Sizing.tier-240 ? 8px : Sizing.pct-w(3);
-    property <length> gutter-gap: Sizing.tier-240 ? 2px : Sizing.pct-w(1.5);
-    property <length> arrow-s: Layout.grid-page-chevron-size;
-    property <bool> list-scrollable: GamesView.list-total > root.visible-rows;
-    property <length> rows-w: root.list-section-w - root.list-pad-x
-        - (root.list-scrollable ? root.gutter-w + root.gutter-gap + Layout.card-padding-right : Layout.card-padding-right);
 
-    if root.list-layout && !root.gate-hide: list-card := Rectangle {
+    if root.list-layout && !root.gate-hide: BrowseListDetailView {
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
         height: root.list-card-h;
-        background: Theme.surface-card;
-        border-radius: Layout.card-radius;
-        border-width: Sizing.card-border-width;
-        border-color: Theme.border-mid;
-        clip: true;
-
-        for row[i] in GamesView.list-rows: Rectangle {
-            x: root.list-pad-x;
-            y: root.list-pad-y + i * (root.list-row-h + root.row-spacing);
-            width: root.rows-w;
-            height: root.list-row-h;
-            background: i == GamesView.list-sel && GamesView.focus-ready ? Theme.selection-fill : transparent;
-            border-radius: Layout.row-radius;
-
-            MarqueeCaption {
-                x: Layout.row-text-left-padding;
-                y: 0;
-                width: parent.width - Layout.row-text-left-padding - Layout.row-text-right-padding
-                    - (row.favorite ? Layout.favorite-right-padding + Sizing.pct-h(3.2) : 0px);
-                height: parent.height;
-                content: row.name;
-                tags: row.tags;
-                focused: i == GamesView.list-sel && !Shell.route-transitioning;
-                center-content: false;
-                caption-font-size: Sizing.font-section;
-                caption-color: i == GamesView.list-sel && GamesView.focus-ready ? Theme.on-accent : Theme.text-label;
-            }
-
-            if row.favorite: Image {
-                x: parent.width - Layout.favorite-right-padding - Sizing.pct-h(3.2);
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
-                width: Sizing.pct-h(3.2);
-                height: self.width;
-                source: GlyphSource.glyph("icons/Heart", self.width);
-            }
-        }
-
-        // Scrollbar gutter: chevrons plus a thumb over the FETCHED span.
-        if root.list-scrollable && GamesView.current-index > 0: Image {
-            x: root.list-section-w - Layout.card-padding-right - root.gutter-w + Math.round((root.gutter-w - root.arrow-s) / 2px) * 1px;
-            y: root.list-pad-y;
-            width: root.arrow-s;
-            height: root.arrow-s;
-            source: GlyphSource.glyph("icons/ScrollUp", root.arrow-s);
-            colorize: Theme.text-label;
-        }
-        if root.list-scrollable && GamesView.current-index < GamesView.list-total - 1: Image {
-            x: root.list-section-w - Layout.card-padding-right - root.gutter-w + Math.round((root.gutter-w - root.arrow-s) / 2px) * 1px;
-            y: root.list-section-h - Layout.card-padding-bottom - root.arrow-s;
-            width: root.arrow-s;
-            height: root.arrow-s;
-            source: GlyphSource.glyph("icons/ScrollDown", root.arrow-s);
-            colorize: Theme.text-label;
-        }
-        if root.list-scrollable: Rectangle {
-            property <length> region-y: root.list-pad-y + root.arrow-s + Sizing.pct-h(1);
-            property <length> region-h: root.content-h - 2 * (root.arrow-s + Sizing.pct-h(1));
-            property <length> thumb-h: Math.max(Sizing.pct-h(4),
-                self.region-h * root.visible-rows / Math.max(1, GamesView.list-total));
-            x: root.list-section-w - Layout.card-padding-right - Math.round((root.gutter-w + Sizing.pct-w(1.2)) / 2px) * 1px;
-            y: self.region-y + (GamesView.list-total > root.visible-rows
-                ? (self.region-h - self.thumb-h) * GamesView.list-view-top
-                    / Math.max(1, GamesView.list-total - root.visible-rows)
-                : 0px);
-            width: Sizing.pct-w(1.2);
-            height: self.thumb-h;
-            background: Theme.text-primary;
-            border-radius: self.width / 2;
-        }
-
-        Rectangle {
-            x: root.tate-list ? 0px : root.list-section-w;
-            y: root.tate-list ? root.list-section-h : 0px;
-            width: root.tate-list ? parent.width : root.list-divider;
-            height: root.tate-list ? root.list-divider : parent.height;
-            background: Theme.border-mid;
-        }
-
-        // Detail pane: cover above the metadata, or beside it in TATE.
-        property <length> det-x: root.tate-list ? Layout.pane-padding-left
-            : root.list-section-w + root.list-divider + Layout.pane-padding-left;
-        property <length> det-y: root.tate-list
-            ? root.list-section-h + root.list-divider + Layout.pane-padding-top
-            : Layout.pane-padding-top;
-        property <length> det-w: root.tate-list
-            ? root.list-card-w - Layout.pane-padding-left - Layout.pane-padding-right
-            : root.list-card-w - self.det-x - Layout.pane-padding-right;
-        property <length> det-h: root.tate-list
-            ? root.list-card-h - self.det-y - Layout.pane-padding-bottom
-            : root.list-card-h - Layout.pane-padding-top - Layout.pane-padding-bottom;
-        property <length> cover-w: root.tate-list
-            ? Math.floor(self.det-w * Layout.image-share / (Layout.image-share + Layout.metadata-share) / 1px) * 1px
-            : self.det-w;
-        property <length> cover-h: root.tate-list ? self.det-h
-            : Math.floor(self.det-h * Layout.image-share / (Layout.image-share + Layout.metadata-share) / 1px) * 1px;
-        property <length> text-x: root.tate-list ? self.det-x + self.cover-w + Layout.section-gap : self.det-x;
-        property <length> text-w: root.tate-list ? self.det-w - self.cover-w - Layout.section-gap : self.det-w;
-        property <length> meta-y: root.tate-list ? self.det-y : self.det-y + self.cover-h + Layout.section-gap;
-        property <length> meta-row-h: Layout.tag-row-height + Layout.tag-row-spacing;
-        property <length> desc-y: self.meta-y + GamesView.detail-rows.length * self.meta-row-h + Layout.section-gap;
-
-        if GamesView.detail-has-cover: Image {
-            x: parent.det-x;
-            y: parent.det-y;
-            width: parent.cover-w;
-            height: parent.cover-h;
-            source: GamesView.detail-cover;
-            image-fit: contain;
-        }
-        if !GamesView.detail-has-cover && GamesView.detail-cover-absent: Image {
-            property <length> s: Math.round(parent.cover-w * 0.5 / 1px) * 1px;
-            x: parent.det-x + Math.round((parent.cover-w - self.s) / 2px) * 1px;
-            y: parent.det-y + Math.round((parent.cover-h - self.s) / 2px) * 1px;
-            width: self.s;
-            height: self.s;
-            source: GlyphSource.glyph("icons/File", self.s);
-        }
-        for meta[j] in GamesView.detail-rows: Rectangle {
-            x: parent.text-x;
-            y: parent.meta-y + j * parent.meta-row-h;
-            width: parent.text-w;
-            height: Layout.tag-row-height;
-            Text {
-                x: 0;
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
-                width: Math.round(parent.width * 0.3 / 1px) * 1px;
-                horizontal-alignment: right;
-                overflow: elide;
-                text: meta.label;
-                color: Theme.text-label;
-                font-size: Sizing.font-small;
-            }
-            Text {
-                x: Math.round(parent.width * 0.3 / 1px) * 1px + Sizing.pct-w(1.4);
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
-                width: parent.width - Math.round(parent.width * 0.3 / 1px) * 1px - Sizing.pct-w(1.4);
-                overflow: elide;
-                text: meta.value;
-                color: Theme.text-primary;
-                font-size: Sizing.font-small;
-            }
-        }
-        if GamesView.detail-description != "": Text {
-            x: parent.text-x;
-            y: parent.desc-y;
-            width: parent.text-w;
-            height: Math.max(0px, parent.det-y + parent.det-h - parent.desc-y);
-            wrap: word-wrap;
-            overflow: elide;
-            text: GamesView.detail-description;
-            color: Theme.text-primary;
-            font-size: Sizing.font-small;
-        }
+        rows: GamesView.list-rows;
+        selected: GamesView.list-sel;
+        focus-ready: GamesView.focus-ready;
+        activate-pulse: GamesView.activate-pulse;
+        release-pulse: GamesView.release-pulse;
+        settling: Shell.active-screen != GamesView.mode;
+        row-height: GamesView.list-row-height;
+        detail-title: GamesView.detail-title;
+        show-title: false;
+        cover: GamesView.detail-cover;
+        has-cover: GamesView.detail-has-cover;
+        cover-absent: GamesView.detail-cover-absent;
+        wordmark: false;
+        detail-rows: GamesView.detail-rows;
+        detail-loading: GamesView.detail-loading;
+        suppressed: GamesView.rapid-active;
+        loading-text: root.is-games ? @tr("Loading game…") : @tr("Loading…");
+        row-hovered(i) => { GamesInput.cell-hovered(i); }
+        row-clicked(i) => { GamesInput.cell-clicked(i); }
+        row-right-clicked(i) => { GamesInput.cell-right-clicked(i); }
+        wheel(delta) => { GamesInput.wheel(delta); }
     }
 
     // Footer: the focused row's name with the dim suffix, the count and

@@ -124,6 +124,7 @@ fn main() {
         "horizontal".into()
     });
     shell.set_browse_list_layout(list);
+    shell.set_systems_list_layout(list);
     shell.set_crt_enabled(crt);
     shell.set_is_mister(crt);
     let rotation = if ccw {
@@ -383,10 +384,12 @@ fn main() {
         ov.set_dialog_focus(1);
         ov.set_dialog_open(true);
     }
-    // Detailed-list layout fixtures: windowed rows + detail pane.
+    // Detailed-list layout fixtures: windowed rows plus the detail pane.
     if list && !screen.contains("systems") {
         let gv = app.global::<GamesView>();
-        let rows: Vec<GridCell> = (13..=22)
+        let target = if tate && !crt { 16 } else { 10 };
+        let (row_height, visible) = list_metrics(&app, scene_w, scene_h, crt, target);
+        let rows: Vec<GridCell> = (13..13 + visible)
             .map(|i| GridCell {
                 name: format!("Example Game {i}").into(),
                 favorite: i == 15,
@@ -401,9 +404,11 @@ fn main() {
         gv.set_list_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
         gv.set_list_sel(3);
         gv.set_list_view_top(12);
-        gv.set_list_total(64);
-        gv.set_list_visible(10);
+        gv.set_list_visible(i32::try_from(visible).unwrap_or(10));
+        gv.set_list_row_height(row_height);
         gv.set_current_index(15);
+        gv.set_count(64);
+        gv.set_total_items(64);
         gv.set_list_page(1);
         gv.set_list_total_pages(7);
         gv.set_has_items_above(true);
@@ -411,27 +416,22 @@ fn main() {
         gv.set_detail_title("Example Game 16".into());
         gv.set_detail_path("/games/example-16.bin".into());
         gv.set_detail_has_cover(false);
+        gv.set_detail_cover_absent(true);
         let meta = vec![
-            ("Year", "1994"),
-            ("Genre", "Platformer"),
-            ("Players", "1-2"),
-            ("Developer", "Example Corp"),
-            ("Publisher", "Example Publishing"),
+            ("year", "1994"),
+            ("genre", "Platformer"),
+            ("players", "1-2"),
+            ("developer", "Example Corp"),
+            ("publisher", "Example Publishing"),
         ];
         let meta_rows: Vec<generated::DetailRow> = meta
             .into_iter()
-            .map(|(label, value)| generated::DetailRow {
-                label: label.into(),
+            .map(|(key, value)| generated::DetailRow {
+                key: key.into(),
                 value: value.into(),
             })
             .collect();
         gv.set_detail_rows(slint::ModelRc::new(slint::VecModel::from(meta_rows)));
-        gv.set_detail_description(
-            "A demo description long enough to wrap across several lines in the \
-             detail pane, proving the metadata table and body copy lay out the \
-             way BrowseDetailPane does in the Qt frontend."
-                .into(),
-        );
         gv.set_title("Console".into());
     }
     if screen == "calibration" {
@@ -738,6 +738,48 @@ fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize
 }
 
 /// Push a Systems page through the same geometry rules the app uses.
+/// The list row height the driver would push for `target_rows` (0 lets
+/// the profile's default row height decide).
+fn list_metrics(
+    app: &App,
+    scene_w: f64,
+    scene_h: f64,
+    crt: bool,
+    target_rows: usize,
+) -> (f32, usize) {
+    use zaparoo_app::layouts::{self, Body, ThemeId, View};
+    let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let systems = target_rows == 0;
+    let view = match (systems, inputs.swap_percentage_axes) {
+        (true, true) => View::SystemsListTate,
+        (true, false) => View::SystemsList,
+        (false, true) => View::GamesListTate,
+        (false, false) => View::GamesList,
+    };
+    let profile = layouts::profile(ThemeId::current(&inputs), view, &inputs);
+    let Body::List { list, .. } = profile.body else {
+        return (0.0, 1);
+    };
+    let g = zaparoo_app::media_list::list_geometry(
+        &list,
+        &zaparoo_app::media_list::ListFrame {
+            screen_width: inputs.screen_width as i32,
+            screen_height: inputs.screen_height as i32,
+            header_bottom: derived.header_bottom,
+            status_top_margin: profile.status.top_margin,
+            strip_height: profile.status.strip_height,
+            help_bar_height: derived.help_bar_height,
+            tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
+            safe_bottom_gap: inputs.pct_h(6.0),
+            target_rows,
+            min_row_height: inputs.pct_h(3.0),
+            default_row_height: inputs.pct_h(6.0),
+        },
+    );
+    (g.row_height as f32, g.visible_rows.max(1))
+}
+
 /// The Games grid at its browse geometry: a page of captioned tiles with
 /// a favorite heart, a tag suffix and a folder row, page 1 of 4 with more
 /// pages loaded behind it (GamesScreen.qml's footer profile).
@@ -924,10 +966,43 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool) {
             ..Default::default()
         })
         .collect();
-    let list_rows = cells.clone();
+    let (row_height, visible) = list_metrics(app, scene_w, scene_h, crt, 0);
+    let list_rows: Vec<GridCell> = (13..13 + visible)
+        .map(|i| GridCell {
+            name: format!("Example System {i}").into(),
+            wordmark: true,
+            hidden: i == 15,
+            ..Default::default()
+        })
+        .collect();
     let view = app.global::<SystemsView>();
     view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
     view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(list_rows)));
+    view.set_list_sel(2);
+    view.set_list_view_top(12);
+    view.set_list_visible(i32::try_from(visible).unwrap_or(10));
+    view.set_list_row_height(row_height);
+    view.set_current_index(14);
+    view.set_list_page(1);
+    view.set_list_total_pages(3);
+    view.set_has_items_above(true);
+    view.set_has_items_below(true);
+    view.set_detail_title("Example System 15".into());
+    view.set_detail_wordmark(true);
+    view.set_detail_rows(slint::ModelRc::new(slint::VecModel::from(vec![
+        generated::DetailRow {
+            key: "category".into(),
+            value: "Consoles".into(),
+        },
+        generated::DetailRow {
+            key: "release_date".into(),
+            value: "1990".into(),
+        },
+        generated::DetailRow {
+            key: "manufacturer".into(),
+            value: "Example Corp".into(),
+        },
+    ])));
     view.set_category("Console".into());
     view.set_count(30);
     view.set_page(1);
@@ -935,7 +1010,6 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool) {
     view.set_has_pages_above(true);
     view.set_has_pages_below(true);
     view.set_selected_local(2);
-    view.set_list_index(2);
     view.set_label_name("Example System 15".into());
     view.set_label_hidden(true);
     view.set_focus_ready(true);

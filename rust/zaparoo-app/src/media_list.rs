@@ -9,6 +9,8 @@
 //! `BrowseList.qml`, `FocusedMediaDetailController.qml`, `Format.qml` and
 //! `models/games.rs`.
 
+use crate::layouts::{Axis, List};
+
 /// Rows a detailed list shows at once (`GamesScreen._listPageSize`).
 pub const LIST_VISIBLE_ROWS: usize = 10;
 /// Portrait non-CRT lists show more rows along their long axis.
@@ -289,6 +291,162 @@ pub fn prefetch_rows(count: usize, page_size: usize, first_visible_row: usize) -
     (first..current_end)
         .chain(current_end..next_end)
         .chain(previous_start..first)
+        .collect()
+}
+
+/// The screen numbers `list_geometry` needs beside the list profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListFrame {
+    pub screen_width: i32,
+    pub screen_height: i32,
+    pub header_bottom: i32,
+    pub status_top_margin: i32,
+    pub strip_height: i32,
+    pub help_bar_height: i32,
+    pub tier_240: bool,
+    /// `Sizing.pctH(6)`, the part of the 240p card bottom margin the help
+    /// bar already covers.
+    pub safe_bottom_gap: i32,
+    /// Rows the screen wants on screen (0 lets the row height decide).
+    pub target_rows: usize,
+    /// `Sizing.pctH(3)` and `Sizing.pctH(6)`.
+    pub min_row_height: i32,
+    pub default_row_height: i32,
+}
+
+/// The list card, its list and detail sections, and the row metrics
+/// (MediaListScreen.qml's card anchors through `BrowseListDetailView`
+/// and `BrowseList`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListGeometry {
+    pub card_x: i32,
+    pub card_y: i32,
+    pub card_width: i32,
+    pub card_height: i32,
+    pub list_x: i32,
+    pub list_y: i32,
+    pub list_width: i32,
+    pub list_height: i32,
+    pub detail_x: i32,
+    pub detail_y: i32,
+    pub detail_width: i32,
+    pub detail_height: i32,
+    pub row_height: i32,
+    pub visible_rows: usize,
+}
+
+/// The rows that fit the list section (`BrowseList.visibleRowCount`).
+pub fn list_visible_count(
+    content_height: i32,
+    row_height: i32,
+    row_spacing: i32,
+    target_rows: usize,
+) -> usize {
+    if target_rows > 0 {
+        return target_rows;
+    }
+    let stride = (row_height + row_spacing).max(1);
+    usize::try_from((content_height + row_spacing) / stride)
+        .unwrap_or(0)
+        .max(1)
+}
+
+pub fn list_geometry(list: &List, frame: &ListFrame) -> ListGeometry {
+    let card_x = list.card_side_margin;
+    let card_y =
+        frame.header_bottom + frame.status_top_margin + frame.strip_height + list.card_top_margin;
+    let bottom = if frame.tier_240 {
+        frame.help_bar_height + list.card_bottom_margin - frame.safe_bottom_gap
+    } else {
+        list.card_bottom_margin
+    };
+    let card_width = (frame.screen_width - 2 * card_x).max(0);
+    let card_height = (frame.screen_height - card_y - bottom).max(0);
+    let total = (list.list_share + list.detail_share).max(1);
+    let vertical = list.content_axis == Axis::Vertical;
+    let extent = if vertical { card_height } else { card_width };
+    let list_span =
+        ((extent - list.divider_width) * list.list_share / total + list.divider_margin).max(0);
+    let detail_span = (extent - list_span - list.divider_width).max(0);
+    let (list_width, list_height, detail_x, detail_y, detail_width, detail_height) = if vertical {
+        (
+            card_width,
+            list_span,
+            0,
+            list_span + list.divider_width,
+            card_width,
+            detail_span,
+        )
+    } else {
+        (
+            list_span,
+            card_height,
+            list_span + list.divider_width,
+            0,
+            detail_span,
+            card_height,
+        )
+    };
+    let content_height = (list_height - list.card_padding_top - list.card_padding_bottom).max(0);
+    let row_height = list_row_height(
+        list.row_height,
+        content_height,
+        list.row_spacing,
+        frame.target_rows,
+        frame.min_row_height,
+        frame.default_row_height,
+    );
+    ListGeometry {
+        card_x,
+        card_y,
+        card_width,
+        card_height,
+        list_x: 0,
+        list_y: 0,
+        list_width,
+        list_height,
+        detail_x,
+        detail_y,
+        detail_width,
+        detail_height,
+        row_height,
+        visible_rows: list_visible_count(
+            content_height,
+            row_height,
+            list.row_spacing,
+            frame.target_rows,
+        ),
+    }
+}
+
+/// The detail table's fixed media rows (`detail_tags_from_tags`): each key
+/// collects every tag whose type matches one of its aliases; empty rows
+/// drop out. `tags` carries `(type, display value)` pairs.
+pub fn detail_rows_from_tags(tags: &[(String, String)]) -> Vec<(&'static str, String)> {
+    const ROWS: &[(&str, &[&str])] = &[
+        ("year", &["year", "release date", "release_date"]),
+        ("genre", &["genre", "gamegenre"]),
+        ("players", &["players"]),
+        ("developer", &["developer"]),
+        ("publisher", &["publisher"]),
+        ("rating", &["rating"]),
+    ];
+    ROWS.iter()
+        .map(|(key, aliases)| {
+            let value = tags
+                .iter()
+                .filter(|(tag_type, value)| {
+                    aliases
+                        .iter()
+                        .any(|alias| tag_type.eq_ignore_ascii_case(alias))
+                        && !value.trim().is_empty()
+                })
+                .map(|(_, value)| value.trim().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            (*key, value)
+        })
+        .filter(|(_, value)| !value.is_empty())
         .collect()
 }
 
@@ -934,6 +1092,107 @@ mod tests {
         );
         assert_eq!(prefetch_rows(6, 4, 4), vec![4, 5, 0, 1, 2, 3]);
         assert!(prefetch_rows(0, 4, 0).is_empty());
+    }
+
+    fn frame() -> ListFrame {
+        ListFrame {
+            screen_width: 1280,
+            screen_height: 720,
+            header_bottom: 68,
+            status_top_margin: 7,
+            strip_height: 50,
+            help_bar_height: 43,
+            tier_240: false,
+            safe_bottom_gap: 43,
+            target_rows: 10,
+            min_row_height: 22,
+            default_row_height: 43,
+        }
+    }
+
+    #[test]
+    fn list_geometry_splits_the_card_by_shares_and_fits_the_target_rows() {
+        let inputs = crate::sizing::Inputs {
+            screen_width: 1280.0,
+            screen_height: 720.0,
+            crt_native_path: false,
+            bitmap_type: false,
+            swap_percentage_axes: false,
+            interface_profile: crate::sizing::InterfaceProfile::Standard,
+        };
+        let profile = crate::layouts::profile(
+            crate::layouts::ThemeId::Default,
+            crate::layouts::View::GamesList,
+            &inputs,
+        );
+        let crate::layouts::Body::List { list, .. } = profile.body else {
+            unreachable!("games list resolves to a list body");
+        };
+        let g = list_geometry(&list, &frame());
+        assert_eq!(g.card_x, list.card_side_margin);
+        assert_eq!(g.card_y, 68 + 7 + 50 + list.card_top_margin);
+        assert_eq!(g.card_width, 1280 - 2 * list.card_side_margin);
+        assert_eq!(g.card_height, 720 - g.card_y - list.card_bottom_margin);
+        assert_eq!(g.list_width, (g.card_width - 1) * 2 / 3);
+        assert_eq!(g.detail_x, g.list_width + 1);
+        assert_eq!(g.detail_width, g.card_width - g.list_width - 1);
+        assert_eq!(g.visible_rows, 10);
+        let content = g.list_height - list.card_padding_top - list.card_padding_bottom;
+        assert_eq!(g.row_height, (content - 9 * list.row_spacing) / 10);
+    }
+
+    #[test]
+    fn list_geometry_derives_the_row_count_without_a_target() {
+        let inputs = crate::sizing::Inputs {
+            screen_width: 1280.0,
+            screen_height: 720.0,
+            crt_native_path: false,
+            bitmap_type: false,
+            swap_percentage_axes: false,
+            interface_profile: crate::sizing::InterfaceProfile::Standard,
+        };
+        let profile = crate::layouts::profile(
+            crate::layouts::ThemeId::Default,
+            crate::layouts::View::SystemsList,
+            &inputs,
+        );
+        let crate::layouts::Body::List { list, .. } = profile.body else {
+            unreachable!("systems list resolves to a list body");
+        };
+        let g = list_geometry(
+            &list,
+            &ListFrame {
+                target_rows: 0,
+                ..frame()
+            },
+        );
+        assert_eq!(g.row_height, 43);
+        let content = g.list_height - list.card_padding_top - list.card_padding_bottom;
+        assert_eq!(
+            i32::try_from(g.visible_rows).unwrap_or(0),
+            (content + list.row_spacing) / (43 + list.row_spacing)
+        );
+        assert_eq!(list_visible_count(100, 43, 5, 0), 2);
+        assert_eq!(list_visible_count(10, 43, 5, 0), 1);
+    }
+
+    #[test]
+    fn detail_rows_collect_aliases_and_drop_empties() {
+        let tags = vec![
+            ("Year".to_string(), "1991".to_string()),
+            ("release_date".to_string(), "1991-06-23".to_string()),
+            ("genre".to_string(), " Platformer ".to_string()),
+            ("players".to_string(), String::new()),
+            ("cheevos".to_string(), "yes".to_string()),
+        ];
+        assert_eq!(
+            detail_rows_from_tags(&tags),
+            vec![
+                ("year", "1991, 1991-06-23".to_string()),
+                ("genre", "Platformer".to_string())
+            ]
+        );
+        assert!(detail_rows_from_tags(&[]).is_empty());
     }
 
     #[test]

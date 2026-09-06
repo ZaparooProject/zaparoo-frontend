@@ -50,6 +50,8 @@ export component MarqueeCaption inherits Rectangle {
     // above 16px even at the DRS motion res (540p-class).
     in property <length> caption-font-size: Sizing.font-size(3.0);
     in property <color> caption-color: Theme.text-primary;
+    in property <color> tags-color: Theme.text-variant;
+    in property <int> caption-weight: 400;
     // Tile captions center a fitting name; list rows left-align
     // (ScrollingCaption's centerContent: false).
     in property <bool> center-content: true;
@@ -119,6 +121,7 @@ export component MarqueeCaption inherits Rectangle {
         text: root.content;
         color: root.caption-color;
         font-size: root.caption-font-size;
+        font-weight: root.caption-weight;
     }
 
     if root.has-tags: suffix-view := Text {
@@ -127,8 +130,9 @@ export component MarqueeCaption inherits Rectangle {
         width: root.tags-render-w;
         overflow: elide;
         text: root.tags;
-        color: Theme.text-variant;
+        color: root.tags-color;
         font-size: root.caption-font-size;
+        font-weight: root.caption-weight;
     }
 
     // Hidden measuring twin for the suffix (preferred-width needs an
@@ -137,6 +141,7 @@ export component MarqueeCaption inherits Rectangle {
         visible: false;
         text: root.tags;
         font-size: root.caption-font-size;
+        font-weight: root.caption-weight;
     }
 }
 

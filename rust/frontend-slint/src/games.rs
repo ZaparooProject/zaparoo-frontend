@@ -92,9 +92,23 @@ pub struct GameRow {
     pub media_capable: bool,
     /// The roots page distinguisher, when siblings share a name.
     pub root_distinguisher: String,
+    /// The metadata rows Core sent with the row (the detail pane's
+    /// immediate peek before media.meta answers).
+    pub detail_rows: Vec<(&'static str, String)>,
     /// Display fields, recomputed when the naming settings change.
     pub display: String,
     pub suffix: String,
+}
+
+fn tag_pairs(tags: &[TagInfo]) -> Vec<(String, String)> {
+    tags.iter()
+        .map(|tag| {
+            (
+                tag.tag_type.clone(),
+                crate::tag_utils::tag_display_value(tag),
+            )
+        })
+        .collect()
 }
 
 impl GameRow {
@@ -155,6 +169,7 @@ impl From<&BrowseEntry> for GameRow {
             is_favorite: has_favorite_tag(&e.tags),
             media_capable: rules::is_media_capable(entry_type, e.media_id.is_some(), &e.zap_script),
             root_distinguisher: String::new(),
+            detail_rows: rules::detail_rows_from_tags(&tag_pairs(&e.tags)),
             display: String::new(),
             suffix: String::new(),
         }
@@ -177,6 +192,7 @@ impl From<&MediaItem> for GameRow {
             is_favorite: has_favorite_tag(&item.tags),
             media_capable: true,
             root_distinguisher: String::new(),
+            detail_rows: rules::detail_rows_from_tags(&tag_pairs(&item.tags)),
             display: String::new(),
             suffix: String::new(),
         }
@@ -201,6 +217,7 @@ impl From<&MediaHistoryEntry> for GameRow {
             is_favorite: false,
             media_capable: true,
             root_distinguisher: String::new(),
+            detail_rows: Vec::new(),
             display: String::new(),
             suffix: String::new(),
         }
@@ -370,6 +387,38 @@ fn page_size(ctx: &Ctx, app: &App, shared: &Shared) -> u32 {
     }
     let view = app.global::<GamesView>();
     (view.get_columns().max(1) * view.get_rows().max(1)) as u32
+}
+
+/// The list card's geometry from the games list profile (the TATE table
+/// on a rotated scene), with the screen's target row count.
+fn list_geometry(ctx: &Ctx, app: &App, shared: &Shared) -> rules::ListGeometry {
+    let inputs = crate::router::output_scene(app).inputs();
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let view = if rotated(shared) {
+        View::GamesListTate
+    } else {
+        View::GamesList
+    };
+    let profile = layouts::profile(ThemeId::current(&inputs), view, &inputs);
+    let Body::List { list, .. } = profile.body else {
+        unreachable!("the games list views resolve to a list body");
+    };
+    rules::list_geometry(
+        &list,
+        &rules::ListFrame {
+            screen_width: inputs.screen_width as i32,
+            screen_height: inputs.screen_height as i32,
+            header_bottom: derived.header_bottom,
+            status_top_margin: profile.status.top_margin,
+            strip_height: profile.status.strip_height,
+            help_bar_height: derived.help_bar_height,
+            tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
+            safe_bottom_gap: inputs.pct_h(6.0),
+            target_rows: list_rows_visible(ctx, shared),
+            min_row_height: inputs.pct_h(3.0),
+            default_row_height: inputs.pct_h(6.0),
+        },
+    )
 }
 
 fn favorites_tags(shared: &Shared) -> Vec<String> {
@@ -1323,6 +1372,7 @@ pub fn render(ctx: &Ctx, app: &App) {
             },
     );
     view.set_focus_ready(model.focus_armed || model.restore_done);
+    view.set_rapid_active(model.rapid_active);
 
     if list {
         view.set_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
@@ -1374,8 +1424,9 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_list_total_pages(i32::try_from(paging.total_pages).unwrap_or(1));
     view.set_has_items_above(paging.has_items_above);
     view.set_has_items_below(paging.has_items_below);
-    view.set_list_total(i32::try_from(count).unwrap_or(0));
     if list {
+        let list_geometry = list_geometry(ctx, app, &shared);
+        view.set_list_row_height(list_geometry.row_height as f32);
         let top = rules::list_view_top(model.grid.current_index(), count, visible, None);
         let rows: Vec<GridCell> = model
             .rows
@@ -1409,6 +1460,35 @@ pub fn render(ctx: &Ctx, app: &App) {
 
 /// The detail pane's identity fields for the focused row: title, path and
 /// the cached cover (misses stream in through `cover_landed`).
+fn detail_row(key: &str, value: &str) -> crate::DetailRow {
+    crate::DetailRow {
+        key: SharedString::from(key),
+        value: SharedString::from(value),
+    }
+}
+
+/// The metadata rows for a row: the flat lists lead with the system.
+fn detail_rows_for(
+    model: &GamesModel,
+    row: &GameRow,
+    rows: &[(&str, String)],
+) -> Vec<crate::DetailRow> {
+    let mut out = Vec::with_capacity(rows.len() + 1);
+    if model.mode != GamesMode::Browse {
+        let name = row.system_name.trim();
+        let system = if name.is_empty() {
+            row.system_id.as_str()
+        } else {
+            name
+        };
+        if !system.is_empty() {
+            out.push(detail_row("system", system));
+        }
+    }
+    out.extend(rows.iter().map(|(key, value)| detail_row(key, value)));
+    out
+}
+
 fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
     let view = app.global::<GamesView>();
     let Some(row) = model.current() else {
@@ -1595,15 +1675,23 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
         match step {
             DetailStep::Clear => {
                 view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
-                view.set_detail_description(SharedString::default());
+                view.set_detail_loading(false);
             }
-            DetailStep::Peek(_) => {
-                view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
-                view.set_detail_description(SharedString::default());
+            // The row's own metadata shows at once, so the table never
+            // holds the previous row's values through the load window.
+            DetailStep::Peek(index) => {
                 let shared = lock(&ctx.shared);
-                refresh_detail_cover(ctx, app, &shared.games);
+                let model = &shared.games;
+                let rows = model
+                    .rows
+                    .get(index)
+                    .map(|row| detail_rows_for(model, row, &row.detail_rows))
+                    .unwrap_or_default();
+                view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
+                refresh_detail_cover(ctx, app, model);
             }
             DetailStep::Arm => {
+                view.set_detail_loading(true);
                 let ctx = ctx.clone();
                 let weak = app.as_weak();
                 slint::Timer::single_shot(
@@ -1615,51 +1703,13 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
                     },
                 );
             }
-            DetailStep::Disarm => {}
+            DetailStep::Disarm => view.set_detail_loading(false),
         }
     }
 }
 
-/// Detail-table rows from media.meta tags: fixed label set, values
-/// resolved through the Qt alias lists, empty rows dropped. The flat
-/// lists prepend the row's system.
-fn detail_rows_from_tags(system_row: Option<&str>, source: &[TagInfo]) -> Vec<crate::DetailRow> {
-    let value_for = |aliases: &[&str]| -> String {
-        source
-            .iter()
-            .filter(|tag| {
-                aliases
-                    .iter()
-                    .any(|alias| tag.tag_type.eq_ignore_ascii_case(alias))
-            })
-            .map(crate::tag_utils::tag_display_value)
-            .filter(|value| !value.is_empty())
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let mut rows = Vec::new();
-    if let Some(system) = system_row.filter(|s| !s.is_empty()) {
-        rows.push(("System", system.to_string()));
-    }
-    rows.extend([
-        ("Year", value_for(&["year", "release date", "release_date"])),
-        ("Genre", value_for(&["genre", "gamegenre"])),
-        ("Players", value_for(&["players"])),
-        ("Developer", value_for(&["developer"])),
-        ("Publisher", value_for(&["publisher"])),
-        ("Rating", value_for(&["rating"])),
-    ]);
-    rows.into_iter()
-        .filter(|(_, value)| !value.is_empty())
-        .map(|(label, value)| crate::DetailRow {
-            label: SharedString::from(label),
-            value: SharedString::from(value.as_str()),
-        })
-        .collect()
-}
-
 fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
-    let (row, system, show_description, system_row) = {
+    let (row, system) = {
         let mut shared = lock(&ctx.shared);
         if shared.games.detail_seq != seq {
             return;
@@ -1671,24 +1721,18 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
             .map(|row| row.identity(&model.system_id))
             .unwrap_or_default();
         let Some(index) = model.detail.fire(enabled, &identity_now) else {
+            app.global::<GamesView>().set_detail_loading(false);
             return;
         };
         let Some(row) = model.rows.get(index).cloned() else {
+            app.global::<GamesView>().set_detail_loading(false);
             return;
         };
         let system = row.system_or(&model.system_id).to_string();
-        let flat = model.mode != GamesMode::Browse;
-        let system_row = flat.then(|| {
-            let name = row.system_name.trim();
-            if name.is_empty() {
-                row.system_id.clone()
-            } else {
-                name.to_string()
-            }
-        });
-        (row, system, flat, system_row)
+        (row, system)
     };
     if row.is_dir() {
+        app.global::<GamesView>().set_detail_loading(false);
         return;
     }
     let Some((client, handle)) = detail_ctx() else {
@@ -1702,27 +1746,30 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
     let weak = app.as_weak();
     let ctx = ctx.clone();
     handle.spawn(async move {
-        let Ok(result) = client.media_meta(params).await else {
-            return;
-        };
-        let rows = detail_rows_from_tags(system_row.as_deref(), &result.media.tags);
-        let description = if show_description {
-            result
-                .media
-                .properties
-                .get("property:description")
-                .map(|p| p.text.clone())
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
+        let result = client.media_meta(params).await;
         let _ = weak.upgrade_in_event_loop(move |app| {
-            if lock(&ctx.shared).games.detail_seq != seq {
-                return;
-            }
+            let rows = {
+                let shared = lock(&ctx.shared);
+                if shared.games.detail_seq != seq {
+                    return;
+                }
+                // The title-level tags describe the game; the media
+                // record's own tags stand in when Core sent none.
+                result.ok().map(|result| {
+                    let source = if result.media.title.tags.is_empty() {
+                        result.media.tags.as_slice()
+                    } else {
+                        result.media.title.tags.as_slice()
+                    };
+                    let pairs = rules::detail_rows_from_tags(&tag_pairs(source));
+                    detail_rows_for(&shared.games, &row, &pairs)
+                })
+            };
             let view = app.global::<GamesView>();
-            view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
-            view.set_detail_description(SharedString::from(description.as_str()));
+            if let Some(rows) = rows {
+                view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
+            }
+            view.set_detail_loading(false);
         });
     });
 }
@@ -2227,33 +2274,23 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> (f32, f32, f32, f32) {
     let model = &shared.games;
     let list = list_layout(&shared);
     if list {
-        // The list rows are laid out in the view; anchor the card's
-        // row band by the Layout profile the view reads.
+        let g = list_geometry(ctx, app, &shared);
         let layout = app.global::<crate::Layout>();
-        let sizing = app.global::<crate::Sizing>();
-        let visible = list_rows_visible(ctx, &shared);
-        let top = rules::list_view_top(model.grid.current_index(), model.rows.len(), visible, None);
+        let top = rules::list_view_top(
+            model.grid.current_index(),
+            model.rows.len(),
+            g.visible_rows,
+            None,
+        );
         let local = model.grid.current_index().saturating_sub(top) as f32;
-        let card_y = sizing.get_header_bottom()
-            + layout.get_top_margin()
-            + layout.get_strip_height()
-            + layout.get_card_top_margin();
-        let row_h = app.global::<GamesView>().get_cell_height().max(1.0);
-        let _ = row_h;
-        let stride = layout.get_row_spacing();
-        let height = if layout.get_row_height() > 0.0 {
-            layout.get_row_height()
-        } else {
-            (sizing.get_screen_height() * 0.06).round()
-        };
+        let row_h = g.row_height as f32;
         (
-            layout.get_card_side_margin() + layout.get_card_padding_left(),
-            card_y + layout.get_card_padding_top() + local * (height + stride),
-            sizing.get_screen_width()
-                - 2.0 * layout.get_card_side_margin()
-                - layout.get_card_padding_left()
-                - layout.get_card_padding_right(),
-            height,
+            (g.card_x + g.list_x) as f32 + layout.get_card_padding_left(),
+            (g.card_y + g.list_y) as f32
+                + layout.get_card_padding_top()
+                + local * (row_h + layout.get_row_spacing()),
+            g.list_width as f32 - layout.get_card_padding_left() - layout.get_card_padding_right(),
+            row_h,
         )
     } else {
         let geometry = geometry(app, model.mode);
@@ -2329,11 +2366,7 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
         return;
     }
     let (x, y, w, h) = cell_anchor(ctx, app);
-    let overlays = app.global::<crate::Overlays>();
-    overlays.set_context_anchor_x(x);
-    overlays.set_context_anchor_y(y);
-    overlays.set_context_anchor_w(w);
-    overlays.set_context_anchor_h(h);
+    crate::router::set_context_anchor(app, x, y, w, h);
     let index = lock(&ctx.shared).games.grid.current_index();
     crate::router::present_games_context_menu(ctx, app, index, entries);
     crate::router::refresh_readers(ctx);
@@ -2593,16 +2626,22 @@ mod tests {
 
     #[test]
     fn detail_rows_prepend_the_system_for_flat_lists() {
-        let tags = vec![TagInfo {
+        let mut model = GamesModel::new();
+        model.mode = GamesMode::Favorites;
+        let mut e = entry("media", "Sonic", "/g/Sonic.md");
+        e.tags = vec![TagInfo {
             tag_type: "year".into(),
             tag: "1991".into(),
             label: String::new(),
         }];
-        let rows = detail_rows_from_tags(Some("Genesis"), &tags);
+        let mut row = GameRow::from(&e);
+        row.system_name = "Genesis".into();
+        let rows = detail_rows_for(&model, &row, &row.detail_rows);
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].label.as_str(), "System");
+        assert_eq!(rows[0].key.as_str(), "system");
         assert_eq!(rows[0].value.as_str(), "Genesis");
-        assert_eq!(rows[1].label.as_str(), "Year");
-        assert_eq!(detail_rows_from_tags(None, &tags).len(), 1);
+        assert_eq!(rows[1].key.as_str(), "year");
+        model.mode = GamesMode::Browse;
+        assert_eq!(detail_rows_for(&model, &row, &row.detail_rows).len(), 1);
     }
 }

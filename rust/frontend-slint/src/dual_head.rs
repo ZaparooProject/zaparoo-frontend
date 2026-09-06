@@ -307,9 +307,24 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_label_hidden => set_label_hidden,
         get_activate_pulse => set_activate_pulse,
         get_release_pulse => set_release_pulse,
+        get_current_index => set_current_index,
         get_list_rows => set_list_rows,
-        get_list_index => set_list_index,
+        get_list_sel => set_list_sel,
+        get_list_view_top => set_list_view_top,
+        get_list_visible => set_list_visible,
+        get_list_page => set_list_page,
+        get_list_total_pages => set_list_total_pages,
+        get_has_items_above => set_has_items_above,
+        get_has_items_below => set_has_items_below,
+        get_detail_title => set_detail_title,
+        get_detail_has_cover => set_detail_has_cover,
+        get_detail_wordmark => set_detail_wordmark,
+        get_detail_rows => set_detail_rows,
     );
+    let detail_cover = source.get_detail_cover();
+    if !same_image(&target.get_detail_cover(), &detail_cover) {
+        target.set_detail_cover(detail_cover);
+    }
     {
         // The CRT head fits its own grid shape (already pushed by its
         // scene) inside its own layout band.
@@ -466,7 +481,6 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_list_rows => set_list_rows,
         get_list_sel => set_list_sel,
         get_list_view_top => set_list_view_top,
-        get_list_total => set_list_total,
         get_list_visible => set_list_visible,
         get_list_page => set_list_page,
         get_list_total_pages => set_list_total_pages,
@@ -477,7 +491,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_detail_has_cover => set_detail_has_cover,
         get_detail_cover_absent => set_detail_cover_absent,
         get_detail_rows => set_detail_rows,
-        get_detail_description => set_detail_description,
+        get_detail_loading => set_detail_loading,
+        get_rapid_active => set_rapid_active,
     );
     let detail_cover = source.get_detail_cover();
     if !same_image(&target.get_detail_cover(), &detail_cover) {

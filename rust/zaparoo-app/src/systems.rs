@@ -176,6 +176,8 @@ pub struct CatalogSystem {
     pub category: String,
     /// `zaparoo://...` launch URI for launch-only virtual systems.
     pub zap_script: String,
+    pub release_date: String,
+    pub manufacturer: String,
 }
 
 /// One Systems grid row.
@@ -189,9 +191,26 @@ pub struct SystemRow {
     /// User-hidden and shown only because Show hidden items is on.
     pub hidden: bool,
     pub zap_script: String,
+    pub release_date: String,
+    pub manufacturer: String,
 }
 
 impl SystemRow {
+    /// The detail pane's rows (`detail_tags_for_system`): category,
+    /// release date and manufacturer, blanks dropped so a launch-only
+    /// system shows only the fields it has.
+    pub fn detail_rows(&self) -> Vec<(&'static str, String)> {
+        [
+            ("category", self.category.trim()),
+            ("release_date", self.release_date.trim()),
+            ("manufacturer", self.manufacturer.trim()),
+        ]
+        .into_iter()
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(key, value)| (key, value.to_string()))
+        .collect()
+    }
+
     /// A launch-only system carries a launch URI instead of browsable
     /// media; whitespace never counts.
     pub fn is_launchable(&self) -> bool {
@@ -262,6 +281,8 @@ pub fn rows_for_category(
                 category: s.category.clone(),
                 hidden,
                 zap_script: s.zap_script.clone(),
+                release_date: s.release_date.clone(),
+                manufacturer: s.manufacturer.clone(),
             })
         })
         .collect();
@@ -397,7 +418,55 @@ mod tests {
             name: name.into(),
             category: category.into(),
             zap_script: String::new(),
+            release_date: String::new(),
+            manufacturer: String::new(),
         }
+    }
+
+    fn row(id: &str) -> SystemRow {
+        SystemRow {
+            id: id.into(),
+            name: id.into(),
+            cover_key: format!("systems/{id}"),
+            category: "Consoles".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn detail_rows_emit_fixed_rows() {
+        let mut system = row("NES");
+        system.release_date = "1983".into();
+        system.manufacturer = "Nintendo".into();
+        assert_eq!(
+            system.detail_rows(),
+            vec![
+                ("category", "Consoles".to_string()),
+                ("release_date", "1983".to_string()),
+                ("manufacturer", "Nintendo".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn detail_rows_omit_empty_metadata_rows() {
+        assert_eq!(
+            row("Chess").detail_rows(),
+            vec![("category", "Consoles".to_string())]
+        );
+    }
+
+    #[test]
+    fn detail_rows_keep_populated_rows_only() {
+        let mut system = row("NES");
+        system.manufacturer = " Nintendo ".into();
+        assert_eq!(
+            system.detail_rows(),
+            vec![
+                ("category", "Consoles".to_string()),
+                ("manufacturer", "Nintendo".to_string())
+            ]
+        );
     }
 
     #[test]

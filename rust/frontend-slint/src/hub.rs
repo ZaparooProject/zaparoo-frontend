@@ -796,6 +796,32 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
         shared.hub.menu_hub_index = entry.hub_index;
         shared.hub.menu_kind = Some(kind);
     }
+    {
+        // Anchor the menu on the focused tile.
+        let inputs = crate::router::output_scene(app).inputs();
+        let derived = zaparoo_app::sizing::derive(&inputs);
+        let geometry = rules::geometry(&inputs, &derived);
+        let (row, column) = {
+            let shared = lock(&ctx.shared);
+            (
+                shared.hub.grid.current_row(),
+                shared.hub.grid.current_column(),
+            )
+        };
+        let rect = zaparoo_app::paged_grid::cell_rect(
+            &geometry.fit,
+            &geometry.insets,
+            i32::try_from(row).unwrap_or(0),
+            i32::try_from(column).unwrap_or(0),
+        );
+        crate::router::set_context_anchor(
+            app,
+            rect.x as f32,
+            (geometry.grid_y + rect.y) as f32,
+            rect.width as f32,
+            rect.height as f32,
+        );
+    }
     crate::router::present_hub_context_menu(ctx, app, entries);
 }
 

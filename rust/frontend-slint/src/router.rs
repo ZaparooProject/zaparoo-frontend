@@ -2194,6 +2194,16 @@ pub(crate) fn present_systems_context_menu(ctx: &Ctx, app: &App, entries: Vec<cr
     present_context_menu(ctx, app, ContextOwner::Systems, 0, entries);
 }
 
+/// The scene rect of the row or tile a context menu is about; the menu
+/// panel and its scrim hole follow it.
+pub(crate) fn set_context_anchor(app: &App, x: f32, y: f32, w: f32, h: f32) {
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_context_anchor_x(x);
+    overlays.set_context_anchor_y(y);
+    overlays.set_context_anchor_w(w);
+    overlays.set_context_anchor_h(h);
+}
+
 pub(crate) fn present_games_context_menu(
     ctx: &Ctx,
     app: &App,
