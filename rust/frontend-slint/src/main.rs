@@ -331,11 +331,10 @@ fn seed_display_globals(
     app.global::<Sizing>().set_screen_height(scene_h as f32);
 }
 
-/// Demo isolation: redirect persisted state to state-slint.toml
-/// (unless already redirected) and install the launcher's logger with
-/// a demo-suffixed file, so the Qt frontend's state and log stay
-/// untouched. Returns the logger guard, which must live for the
-/// process lifetime.
+/// Install the launcher's logger with its own file
+/// (`frontend-slint.log`), so a side-by-side install never interleaves
+/// with the Qt frontend's log. Returns the logger guard, which must
+/// live for the process lifetime.
 fn init_demo_paths(config: &zaparoo_core::config::Config) -> zaparoo_core::logger::LoggerGuard {
     let mut log_path = platform_paths::log_file_path();
     log_path.set_file_name("frontend-slint.log");
@@ -350,9 +349,13 @@ fn init_demo_paths(config: &zaparoo_core::config::Config) -> zaparoo_core::logge
     reason = "startup wires independent runtime services in one ordered orchestration path"
 )]
 fn main() -> Result<(), slint::PlatformError> {
-    // Keep the demo's persisted state separate from the Qt frontend's
-    // state.toml unless the caller redirected it explicitly, so running
-    // the demo never clobbers the real launcher's restore state.
+    // Coexistence only: while both frontends ship side by side, keep
+    // this one's restore state in state-slint.toml so a Slint run never
+    // clobbers the Qt launcher's. Both write the same
+    // `zaparoo_core::persist` schema, so at the flip this redirect is
+    // simply deleted and the existing state.toml loads as it stands --
+    // there is no migration to write. An explicit ZAPAROO_STATE_FILE
+    // always wins, for tests and ad-hoc runs.
     if std::env::var_os("ZAPAROO_STATE_FILE").is_none() {
         let mut path = platform_paths::state_file_path();
         path.set_file_name("state-slint.toml");
