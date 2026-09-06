@@ -27,7 +27,7 @@ raw cargo as the default path; the justfile carries the expected environment.
 | MiSTer ARM32 build | `just arm32` |
 | ARM64 build | `just arm64` |
 | Deploy to MiSTer | `just deploy-mister` |
-| Slint frontend: dev run against mock Core | `just mock-core`, then `just slint-run-dev` |
+| Slint frontend: dev run against mock Core | `just slint-run-dev` (starts and stops the mock itself) |
 | Slint frontend: lint (host) | `just lint-slint` |
 | Slint frontend: tests (host) | `just test-slint` |
 | Slint frontend: MiSTer ARM32 static build | `just slint-arm32` |
