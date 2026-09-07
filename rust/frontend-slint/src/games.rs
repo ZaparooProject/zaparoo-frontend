@@ -1262,6 +1262,7 @@ fn media_key(row: &GameRow, fallback_system: &str, tier: u32) -> MediaKey {
         system: row.system_or(fallback_system).to_string(),
         path: row.path.clone(),
         max_size: tier,
+        image_type: None,
     }
 }
 

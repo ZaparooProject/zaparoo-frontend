@@ -11,6 +11,7 @@
 
 mod actions;
 mod alternates;
+mod card_write;
 mod customization;
 mod drs;
 #[cfg(feature = "mister")]
@@ -18,6 +19,8 @@ mod dual_head;
 mod fonts;
 #[cfg(any(feature = "mister", test))]
 mod frame_transition;
+mod game_info;
+mod game_info_data;
 mod games;
 mod glyphs;
 mod hub;
@@ -971,9 +974,12 @@ fn start_media_cache(
         move |key, image| {
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
-                apply_cover(&app, &key, &image);
-                hub::cover_landed(&ctx, &app, &key);
-                games::cover_landed(&ctx, &app, &key);
+                if key.image_type.is_some() {
+                    game_info::cover_landed(&ctx, &app, &key, &image);
+                } else {
+                    hub::cover_landed(&ctx, &app, &key);
+                    games::cover_landed(&ctx, &app, &key);
+                }
             });
         },
     );
@@ -1073,27 +1079,6 @@ fn boot_text(state: &ConnectionState, unreachable_long: bool) -> String {
             "Can't reach Zaparoo Core. Check your connection.".to_string()
         }
         _ => "Connecting to Zaparoo Core…".to_string(),
-    }
-}
-
-/// Patch a freshly-decoded cover into the game-info modal when it shows
-/// the same item. Matching is by path so a screen change between fetch
-/// and apply cannot mislabel it; the screens repaint through their own
-/// `cover_landed` hooks.
-pub(crate) fn apply_cover(
-    app: &App,
-    key: &media_cache::MediaKey,
-    decoded: &media_cache::DecodedImage,
-) {
-    if key.max_size == media_cache::THUMB_TIER {
-        return;
-    }
-    let modal = app.global::<GameInfoView>();
-    if modal.get_modal_open() && modal.get_modal_path().as_str() == key.path {
-        // The cache stores a refcounted pixel buffer; wrapping it is a
-        // refcount bump, not a copy.
-        modal.set_modal_cover(slint::Image::from_rgba8(decoded.buffer.clone()));
-        modal.set_modal_has_cover(true);
     }
 }
 

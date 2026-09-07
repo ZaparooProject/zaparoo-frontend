@@ -394,6 +394,36 @@ fn main() {
         ov.set_list_index(6);
         ov.set_list_open(true);
     }
+    if screen.ends_with("token-write") {
+        app.global::<generated::Overlays>()
+            .set_card_write_open(true);
+    }
+    if screen.ends_with("token-error") {
+        let ov = app.global::<generated::Overlays>();
+        ov.set_dialog_kind("action_error".into());
+        ov.set_dialog_detail("card_write".into());
+        ov.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
+            "retry".into()
+        ])));
+        ov.set_dialog_open(true);
+    }
+    if screen.contains("qr-") {
+        let docs = screen.ends_with("docs");
+        let payload = if docs {
+            "https://zaparoo.org/docs/frontend/".to_string()
+        } else {
+            qr::write_url("/games/SNES/Chrono Trigger.sfc")
+        };
+        let (image, modules) = qr::qr_image(&payload).expect("fixture QR encodes");
+        let ov = app.global::<generated::Overlays>();
+        ov.set_qr_image(image);
+        ov.set_qr_modules(i32::try_from(modules).unwrap());
+        ov.set_qr_documentation(docs);
+        ov.set_qr_open(true);
+    }
+    if screen.contains("game-info") {
+        fixture_game_info(&app, &screen);
+    }
     // "log-upload" renders the uploader's finished state with its link.
     if screen.contains("log-upload") {
         let lv = app.global::<generated::LogUploadView>();
@@ -454,6 +484,7 @@ fn main() {
         || screen == "letters"
         || (list && !screen.contains("systems"))
         || screen.contains("games")
+        || screen.contains("game-info")
     {
         "games"
     } else if screen.contains("favorite-systems") {
@@ -654,6 +685,50 @@ fn main() {
 
 /// Push a Hub page built from a representative layout through the same
 /// rules the app uses (`zaparoo_app::hub`), at the scene's geometry.
+fn fixture_game_info(app: &App, screen: &str) {
+    let view = app.global::<generated::GameInfoView>();
+    view.set_modal_open(true);
+    view.set_modal_name("Chrono Trigger".into());
+    view.set_loading(screen.ends_with("loading"));
+    view.set_failed(screen.ends_with("error"));
+    if view.get_loading() || view.get_failed() {
+        return;
+    }
+    let short = screen.ends_with("short");
+    let rows: Vec<_> = [
+        ("system", "Super Nintendo Entertainment System"),
+        ("release_date", "1995"),
+        ("genre", "Role-playing"),
+        ("players", "1"),
+        ("developer", "Square"),
+        ("publisher", "Square"),
+        ("filename", "Chrono Trigger (USA)"),
+    ]
+    .into_iter()
+    .take(if short { 2 } else { 7 })
+    .map(|(key, value)| generated::DetailRow {
+        key: key.into(),
+        value: value.into(),
+    })
+    .collect();
+    view.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+    if !short {
+        view.set_media_missing(true);
+        view.set_modal_description("A journey through time, from prehistoric lands to a distant future. Meet companions, explore unfamiliar places, and discover how each era connects to the next. Choices made along the way shape the adventure.\n\nThis long fixture checks that descriptions stay readable and can be scrolled rather than silently truncated.".into());
+        view.set_image_count(2);
+        let logo = slint::Image::load_from_path(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/systems/SNES.png"
+        )))
+        .expect("fixture logo");
+        view.set_modal_cover(logo);
+        view.set_modal_has_cover(true);
+        if screen.ends_with("scrolled") {
+            view.set_scroll_position(10.0);
+        }
+    }
+}
+
 fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize) {
     use zaparoo_app::hub::{self, LayoutItem, Live, Resolver};
     struct Names;

@@ -13,7 +13,7 @@ use std::collections::VecDeque;
 
 /// Every kind the alert vocabulary knows. An unknown kind still shows,
 /// with the generic copy.
-pub const KINDS: [&str; 11] = [
+pub const KINDS: [&str; 12] = [
     "launch",
     "favorite",
     "add_to_hub",
@@ -24,6 +24,7 @@ pub const KINDS: [&str; 11] = [
     "launcher",
     "alternate_discovery",
     "qr_code",
+    "card_write",
     "setting",
 ];
 
@@ -161,6 +162,20 @@ mod tests {
             "queued behind the first"
         );
         assert_eq!(q.dismiss(), Some(Entry::new("launch", "Altered Beast")));
+    }
+
+    #[test]
+    fn queued_token_failure_keeps_retry_payload_and_can_fail_again() {
+        let mut queue = ErrorQueue::new();
+        queue.present("launch", "game", true);
+        let payload = "**launch.system:SNES||/games/original.sfc";
+        assert_eq!(queue.present("card_write", payload, false), None);
+        assert_eq!(queue.dismiss(), Some(Entry::new("card_write", payload)));
+        assert_eq!(queue.dismiss(), None);
+        assert_eq!(
+            queue.present("card_write", payload, true),
+            Some(Entry::new("card_write", payload))
+        );
     }
 
     #[test]

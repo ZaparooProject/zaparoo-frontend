@@ -10,7 +10,7 @@
 // is Ready, then cached/native route motion commits the new screen.
 
 use crate::games::GameRow;
-use crate::media_cache::{MediaCache, MediaKey};
+use crate::media_cache::MediaCache;
 use crate::sizing;
 use crate::{App, Sizing};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
@@ -56,6 +56,7 @@ pub struct Shared {
     pub systems_model: crate::systems::SystemsModel,
     /// The games-style screens: rows, cursor, fetch and cue state.
     pub games: crate::games::GamesModel,
+    pub game_info: crate::game_info::GameInfoModel,
     /// The media-job setup panel's form state.
     pub setup: crate::media_setup::SetupModel,
     /// The log uploader's own panel state.
@@ -110,9 +111,7 @@ pub struct Shared {
     /// snapshot as instant completion.
     pub first_run_saw_indexing: bool,
     pub first_run_cancelling: bool,
-    /// Monotonic ticket for card writes: closing the menu bumps it so
-    /// an in-flight write's result is ignored (the Qt cancel rule).
-    pub card_write_seq: u64,
+    pub card_write: crate::card_write::Model,
     /// Jump-to-letter buckets for the open picker (cursor kept
     /// Rust-side; the UI only shows label + count).
     pub letter_buckets: Vec<zaparoo_core::media_types::BrowseIndexGroup>,
@@ -225,6 +224,7 @@ impl Shared {
             systems: Vec::new(),
             systems_model: crate::systems::SystemsModel::new(),
             games: crate::games::GamesModel::new(),
+            game_info: crate::game_info::GameInfoModel::default(),
             setup: crate::media_setup::SetupModel::new(),
             log_upload: crate::log_upload::LogUploadModel::new(),
             errors: action_error::ErrorQueue::new(),
@@ -248,7 +248,7 @@ impl Shared {
             first_run: FirstRunPhase::Idle,
             first_run_saw_indexing: false,
             first_run_cancelling: false,
-            card_write_seq: 0,
+            card_write: crate::card_write::Model::default(),
             letter_buckets: Vec::new(),
             letter_seq: 0,
             game_launcher_seq: 0,
@@ -522,6 +522,10 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
     let kind = overlays.get_dialog_kind().to_string();
     let len = overlays.get_dialog_buttons().row_count();
     let focus = overlays.get_dialog_focus().max(0) as usize;
+    let retry = (action == actions::ACCEPT
+        && kind == "action_error"
+        && overlays.get_dialog_detail() == "card_write")
+        .then(|| overlays.get_dialog_arg().to_string());
     match action {
         actions::LEFT if len > 1 && focus > 0 => {
             overlays.set_dialog_focus((focus - 1) as i32);
@@ -544,6 +548,11 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
         if let Some(entry) = next {
             show_action_error(app, &entry);
         }
+    }
+    // Retire the old alert before retrying: an empty payload can fail
+    // synchronously and must enqueue a fresh alert, not deduplicate away.
+    if let Some(text) = retry {
+        crate::card_write::begin(ctx, app, text);
     }
 }
 
@@ -983,10 +992,9 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         return;
     }
     if app.global::<crate::Overlays>().get_card_write_open() {
-        // Transient modal: Cancel only, everything else swallowed.
-        if action == actions::CANCEL {
-            lock(&ctx.shared).card_write_seq += 1;
-            app.global::<crate::Overlays>().set_card_write_open(false);
+        // Accept commits the focused Cancel button; Back cancels directly.
+        if action == actions::CANCEL || action == actions::ACCEPT {
+            crate::card_write::cancel(ctx, app);
         }
         return;
     }
@@ -1003,7 +1011,7 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         return;
     }
     if app.global::<crate::GameInfoView>().get_modal_open() {
-        modal_action(ctx, app, action);
+        crate::game_info::handle_action(ctx, app, action);
         return;
     }
     if app.global::<crate::Shell>().get_transitioning()
@@ -1500,6 +1508,7 @@ pub(crate) fn refresh_readers(ctx: &Ctx) {
 pub(crate) fn open_documentation_qr(app: &App) {
     const DOCS_URL: &str = "https://zaparoo.org/docs/frontend/";
     if let Some((image, modules)) = crate::qr::qr_image(DOCS_URL) {
+        app.global::<crate::Overlays>().set_qr_documentation(true);
         app.global::<crate::Overlays>().set_qr_image(image);
         app.global::<crate::Overlays>()
             .set_qr_modules(i32::try_from(modules).unwrap_or(0));
@@ -1524,6 +1533,7 @@ pub(crate) fn open_qr_code(ctx: &Ctx, app: &App, entry: &GameRow) {
         return;
     };
     let overlays = app.global::<crate::Overlays>();
+    overlays.set_qr_documentation(false);
     overlays.set_qr_image(image);
     overlays.set_qr_modules(i32::try_from(modules).unwrap_or(0));
     overlays.set_qr_open(true);
@@ -1797,7 +1807,19 @@ pub(crate) fn report_action_error(ctx: &Ctx, app: &App, kind: &str, context: &st
 }
 
 fn show_action_error(app: &App, entry: &action_error::Entry) {
-    open_dialog(app, "action_error", &entry.kind, &entry.context, &["ok"], 0);
+    let button = if entry.kind == "card_write" {
+        "retry"
+    } else {
+        "ok"
+    };
+    open_dialog(
+        app,
+        "action_error",
+        &entry.kind,
+        &entry.context,
+        &[button],
+        0,
+    );
 }
 
 /// Accept on a category tile while the catalog errored: refetch it.
@@ -1845,7 +1867,7 @@ fn close_context_menu(ctx: &Ctx, app: &App) {
     // still looking for a menu to fill.
     {
         let mut shared = lock(&ctx.shared);
-        shared.card_write_seq += 1;
+        shared.card_write.cancel();
         shared.alternates.seq += 1;
         shared.alternates.showing = false;
         shared.alternates.rows.clear();
@@ -1878,6 +1900,8 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                 let ov = app.global::<crate::Overlays>();
                 let row = index as usize;
                 match kind.as_str() {
+                    "card-write"
+                        if !ov.get_dialog_open() && ov.get_card_write_open() && row == 0 => {}
                     "dialog"
                         if ov.get_dialog_open() && row < ov.get_dialog_buttons().row_count() =>
                     {
@@ -2018,142 +2042,19 @@ pub(crate) fn start_index(ctx: &Ctx, app: &App, systems: Option<Vec<String>>) {
     });
 }
 
-/// Card write through the Qt "transient" modal flow: the menu closes,
-/// the modal shows the tap prompt while Core waits for a token, and B
-/// cancels (result ignored via the seq ticket). Success closes the
-/// modal silently; failure swaps the title to the failure text and
-/// waits for Cancel - no toasts, exactly the Qt surfaces.
+/// Snapshot the portable command before handing ownership to the transient.
 pub(crate) fn begin_card_write(ctx: &Ctx, app: &App, entry: &GameRow) {
-    use zaparoo_core::endpoints::readers_write::ReadersWriteMutation;
-    use zaparoo_core::media_types::ReadersWriteParams;
-
-    // Portable payload: zapscript when Core provided one, else path.
     let text = if entry.zap_script.trim().is_empty() {
         entry.path.clone()
     } else {
         entry.zap_script.clone()
     };
-    app.global::<crate::Overlays>().set_card_write_failed(false);
-    app.global::<crate::Overlays>().set_card_write_open(true);
-    if text.is_empty() {
-        tracing::warn!("card write for {} has no launch payload", entry.name);
-        app.global::<crate::Overlays>().set_card_write_failed(true);
-        return;
-    }
-
-    let ticket = {
-        let mut guard = lock(&ctx.shared);
-        guard.card_write_seq += 1;
-        guard.card_write_seq
-    };
-    let store = ctx.store.clone();
-    let shared = ctx.shared.clone();
-    let weak = app.as_weak();
-    let name = entry.name.clone();
-    ctx.handle.spawn(async move {
-        let result = store
-            .run_mutation::<ReadersWriteMutation>(ReadersWriteParams { text })
-            .await;
-        let _ = weak.upgrade_in_event_loop(move |app| {
-            if lock(&shared).card_write_seq != ticket {
-                return;
-            }
-            match result {
-                Ok(()) => app.global::<crate::Overlays>().set_card_write_open(false),
-                Err(e) => {
-                    tracing::warn!("card write failed for {name}: {}", e.message);
-                    app.global::<crate::Overlays>().set_card_write_failed(true);
-                }
-            }
-        });
-    });
+    crate::card_write::begin(ctx, app, text);
 }
 
-/// Game-info modal: opened with the context-menu action on a
-/// games-style row. Shows the detail-tier cover immediately from the
-/// row data, then fills tags/description from a one-shot `media.meta`
-/// (no cache - the modal is transient, like the Qt `GameInfoModal`).
+/// Details remains a router-owned modal; its driver owns transient data.
 pub(crate) fn open_game_info(ctx: &Ctx, app: &App, entry: &GameRow) {
-    app.global::<crate::GameInfoView>()
-        .set_modal_name(SharedString::from(entry.name.as_str()));
-    app.global::<crate::GameInfoView>()
-        .set_modal_system(SharedString::from(entry.system_id.as_str()));
-    app.global::<crate::GameInfoView>()
-        .set_modal_path(SharedString::from(entry.path.as_str()));
-    app.global::<crate::GameInfoView>()
-        .set_modal_tags(SharedString::from(entry.tag_labels.join(" ").as_str()));
-    app.global::<crate::GameInfoView>()
-        .set_modal_description(SharedString::default());
-    app.global::<crate::GameInfoView>()
-        .set_modal_has_cover(false);
-    app.global::<crate::GameInfoView>().set_modal_open(true);
-
-    // Detail-tier cover through the shared cache; apply_cover in
-    // main.rs patches the modal when the decode lands.
-    let tier = sizing::detail_cover_source_size(output_scene(app));
-    let system = if entry.system_id.is_empty() {
-        lock(&ctx.shared).games.system_id.clone()
-    } else {
-        entry.system_id.clone()
-    };
-    ctx.media.enqueue(MediaKey {
-        media_id: entry.media_id,
-        system: system.clone(),
-        path: entry.path.clone(),
-        max_size: tier,
-    });
-
-    let client = ctx.store.client();
-    let weak = app.as_weak();
-    let params = zaparoo_core::media_types::MediaMetaParams {
-        media_id: entry.media_id,
-        system,
-        path: entry.path.clone(),
-    };
-    let opened_path = entry.path.clone();
-    ctx.handle.spawn(async move {
-        let Ok(result) = client.media_meta(params).await else {
-            return;
-        };
-        let description = result
-            .media
-            .properties
-            .get("property:description")
-            .map(|p| p.text.clone())
-            .unwrap_or_default();
-        let tags = crate::tag_utils::disambiguating_tag_labels(&result.media.tags).join(" ");
-        let _ = weak.upgrade_in_event_loop(move |app| {
-            // The modal may have moved on to another row (or closed)
-            // while the RPC was in flight.
-            if !app.global::<crate::GameInfoView>().get_modal_open()
-                || app
-                    .global::<crate::GameInfoView>()
-                    .get_modal_path()
-                    .as_str()
-                    != opened_path
-            {
-                return;
-            }
-            if !description.is_empty() {
-                app.global::<crate::GameInfoView>()
-                    .set_modal_description(SharedString::from(description.as_str()));
-            }
-            if !tags.is_empty() {
-                app.global::<crate::GameInfoView>()
-                    .set_modal_tags(SharedString::from(tags.as_str()));
-            }
-        });
-    });
-}
-
-/// Input while the game-info modal is open: Accept launches the shown
-/// item, Cancel/context-menu closes. Directional input is swallowed.
-fn modal_action(_ctx: &Ctx, app: &App, action: &str) {
-    // Info-only, like the Qt GameInfoModal: B (or North again)
-    // closes; launching lives in the context menu's Launch entry.
-    if matches!(action, actions::CANCEL | actions::CONTEXT_MENU) {
-        app.global::<crate::GameInfoView>().set_modal_open(false);
-    }
+    crate::game_info::open(ctx, app, entry);
 }
 
 /// Update action: fire `media.generate` for all systems. Progress

@@ -83,8 +83,11 @@ pub fn current(app: &App) -> Option<Target> {
             &setup.get_rows(),
         );
     }
-    if ov.get_qr_open() || ov.get_card_write_open() {
+    if ov.get_qr_open() {
         return None;
+    }
+    if ov.get_card_write_open() {
+        return Some(target("card-write", 0, ov.get_card_write_key().to_string()));
     }
     if ov.get_letter_open() {
         let index = ov.get_letter_index();

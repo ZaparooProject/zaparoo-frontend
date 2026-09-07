@@ -173,6 +173,7 @@ export global DialogLabels {
         if (key == "yes") { return @tr("Yes"); }
         if (key == "no") { return @tr("No"); }
         if (key == "ok") { return @tr("OK"); }
+        if (key == "retry") { return @tr("Retry"); }
         if (key == "cancel") { return @tr("Cancel"); }
         if (key == "i_understand") { return @tr("I understand"); }
         if (key == "start_scan") { return @tr("Start scan"); }
@@ -192,6 +193,7 @@ export global DialogLabels {
         if (kind == "launcher") { return @tr("Launcher update failed"); }
         if (kind == "alternate_discovery") { return @tr("Alternate versions unavailable"); }
         if (kind == "qr_code") { return @tr("QR code failed"); }
+        if (kind == "card_write") { return @tr("Token write failed"); }
         if (kind == "setting") { return @tr("Setting not saved"); }
         return @tr("Action failed");
     }
@@ -213,6 +215,7 @@ export global DialogLabels {
         if (kind == "launcher") { return @tr("Could not change the launcher. Check Zaparoo Core and try again."); }
         if (kind == "alternate_discovery") { return @tr("Could not find alternate versions. Check Zaparoo Core and try again."); }
         if (kind == "qr_code") { return @tr("Could not create the QR code for this item."); }
+        if (kind == "card_write") { return @tr("Could not write to this token. Check that it is writable and try again."); }
         if (kind == "setting") { return @tr("Could not save this setting. Try again."); }
         return @tr("The action could not be completed. Check Zaparoo Core and try again.");
     }

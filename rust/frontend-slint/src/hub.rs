@@ -165,6 +165,7 @@ impl Resolver for SharedResolver<'_> {
             system: system.to_string(),
             path: path.to_string(),
             max_size: HUB_COVER_TIER,
+            image_type: None,
         };
         if self.media.get(&key).is_some() {
             return format!("{MEDIA_PREFIX}{system}\u{1f}{path}");
@@ -303,6 +304,7 @@ fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
                 system: system.to_string(),
                 path: path.to_string(),
                 max_size: HUB_COVER_TIER,
+                image_type: None,
             };
             if let Some(decoded) = ctx.media.get(&media_key) {
                 cell.cover = slint::Image::from_rgba8(decoded.buffer);

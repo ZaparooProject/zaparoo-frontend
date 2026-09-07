@@ -26,11 +26,6 @@ use zaparoo_core::media_types::MediaImageParams;
 const CACHE_CAP_BYTES: usize = 128 * 1024 * 1024;
 const NEGATIVE_CAP: usize = 4096;
 
-/// Tiny-preview tier: Core's small-thumbnail API size. A whole page
-/// of these costs less disk time than one full cover, so they paint
-/// first and the full cover fades in over them.
-pub const THUMB_TIER: u32 = 32;
-
 /// Cache key, mirroring the Qt `MediaKey`: `media_id` when Core
 /// provided one, otherwise the canonical `(system, path)` pair, with
 /// the requested bounding-box size baked in.
@@ -40,6 +35,8 @@ pub struct MediaKey {
     pub system: String,
     pub path: String,
     pub max_size: u32,
+    /// Explicit carousel slot; None retains the browse artwork preference ladder.
+    pub image_type: Option<String>,
 }
 
 /// Decoded pixels stored directly as a Slint pixel buffer: it is
@@ -302,6 +299,9 @@ pub fn spawn_driver(
                 image_types.retain(|t| *t != preferred);
                 image_types.insert(0, preferred);
             }
+            if let Some(kind) = &key.image_type {
+                image_types = vec![kind.clone()];
+            }
             // On a colocated MiSTer the bytes are already on the SD
             // card: ask for the path and read it here rather than
             // making Core base64 a file we can open ourselves.
@@ -422,7 +422,30 @@ mod tests {
             system: String::new(),
             path: format!("/g/{id}"),
             max_size: 256,
+            image_type: None,
         }
+    }
+
+    #[test]
+    fn carousel_types_do_not_alias_each_other_or_browse_art() {
+        let (cache, _) = MediaCache::new();
+        let browse = key(1);
+        let boxart = MediaKey {
+            image_type: Some("boxart".into()),
+            ..browse.clone()
+        };
+        let screenshot = MediaKey {
+            image_type: Some("screenshot".into()),
+            ..browse.clone()
+        };
+        cache.seed(boxart.clone(), img(16));
+        assert!(cache.get(&boxart).is_some());
+        assert!(cache.get(&browse).is_none());
+        assert!(cache.get(&screenshot).is_none());
+        cache.insert_negative(screenshot.clone());
+        assert!(cache.is_negative(&screenshot));
+        assert!(!cache.is_negative(&boxart));
+        assert!(!cache.is_negative(&browse));
     }
 
     fn img(bytes: usize) -> DecodedImage {

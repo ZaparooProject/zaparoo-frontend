@@ -101,6 +101,7 @@ fn entry_key(entry: &ManifestEntry) -> MediaKey {
         system: entry.system_id.clone(),
         path: entry.path.clone(),
         max_size: entry.max_size,
+        image_type: None,
     }
 }
 

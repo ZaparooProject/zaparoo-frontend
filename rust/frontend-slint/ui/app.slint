@@ -15,6 +15,7 @@ import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
+import { GameInfoView, GameInfoModal } from "game_info.slint";
 
 // Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
 // 6x8 bitmap font for the CRT native path (family names must match
@@ -28,7 +29,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SetupPickerRow }
+export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SetupPickerRow, GameInfoView }
 
 // Context-menu row: `id` is the dispatch key the router switches on
 // (ContextMenu.qml's rule - position-keyed dispatch was a footgun).
@@ -410,18 +411,6 @@ export global GamesInput {
     callback wheel(int);
 }
 
-// Game-info modal state.
-export global GameInfoView {
-    in-out property <bool> modal-open: false;
-    in-out property <string> modal-name: "";
-    in-out property <string> modal-system: "";
-    in-out property <string> modal-path: "";
-    in-out property <string> modal-tags: "";
-    in-out property <string> modal-description: "";
-    in-out property <image> modal-cover;
-    in-out property <bool> modal-has-cover: false;
-}
-
 // One pending commitment, owned by the router and mirrored to the CRT.
 export global PressFeedback {
     in-out property <string> owner: "";
@@ -458,11 +447,12 @@ export global Overlays {
     out property <int> letter-columns: Sizing.fit-letter-columns(self.letter-buckets.length,
         Sizing.pct-w(78) - 2 * Sizing.pct-w(4), Sizing.pct-h(52), Sizing.pct-w(1));
     in-out property <bool> card-write-open: false;
-    in-out property <bool> card-write-failed: false;
+    in-out property <string> card-write-key: "";
     // QR write deep-link modal: the matrix image is rendered by Rust
     // at module resolution (quiet zone baked in) and scaled up
     // pixelated to the largest whole multiple.
     in-out property <bool> qr-open: false;
+    in-out property <bool> qr-documentation: false;
     in-out property <image> qr-image;
     in-out property <int> qr-modules: 0;
     // Decision dialog (Modal.qml's confirm/action_error kinds plus
@@ -1057,9 +1047,16 @@ component ListPickerModal inherits Rectangle {
     property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
     property <length> viewport-h: root.visible-rows * root.row-h
         + Math.max(0, root.visible-rows - 1) * root.row-sp;
-    // The window keeps the cursor centered until it reaches an end.
-    property <int> top: Math.max(0, Math.min(root.entries.length - root.visible-rows,
-        root.current-index - Math.floor((root.visible-rows - 1) / 2)));
+    // Preserve the viewport until focus crosses an edge (Qt PickerList).
+    property <int> top: 0;
+    function reveal-current() {
+        root.top = Math.max(0, Math.min(Math.max(0, root.entries.length - root.visible-rows),
+            Math.min(root.current-index, Math.max(root.top, root.current-index - root.visible-rows + 1))));
+    }
+    changed current-index => { root.reveal-current(); }
+    changed visible-rows => { root.reveal-current(); }
+    changed entries => { root.top = 0; root.reveal-current(); }
+    init => { root.reveal-current(); }
     pure function entry-label(entry: MenuEntry) -> string {
         return root.setting-id != "" ? SettingsLabels.value(root.setting-id, entry.id)
             : (entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label);
@@ -1263,51 +1260,60 @@ component LetterJumpModal inherits Rectangle {
     }
 }
 
-// Card-writer modal, the Qt Modal's "transient" flavor: scrim +
-// small centered panel with only a title line. Title swaps to the
-// failure text when the write errors; B cancels either way (the
-// help bar carries the cue, controller-first like everything else).
+// Qt transient: a tap prompt and focused Cancel surface. Failures
+// replace this modal with the router's Retry alert.
 component CardWriteModal inherits Rectangle {
-    in property <bool> failed;
 
     background: Theme.scrim;
 
     Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: Math.min(Sizing.pct-w(60), Math.round(title.preferred-width / 1px) * 1px + 2 * Sizing.pct-w(4));
-        height: Sizing.pct-h(16);
+        width: Math.round(Math.min(Math.min(parent.width * 0.92, Sizing.pct-h(90)), Math.max(Sizing.pct-w(30), title.preferred-width + 2 * Sizing.pct-w(4))) / 1px) * 1px;
+        height: Math.ceil(title.preferred-height / 1px) * 1px + Sizing.pct-h(19);
         background: Theme.bg-panel;
         border-radius: Sizing.radius-md;
-        border-width: Sizing.stroke(0.3);
-        border-color: root.failed ? Theme.accent : Theme.border-mid;
 
         title := Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
-            max-width: parent.width - 2 * Sizing.pct-w(3);
-            overflow: elide;
-            text: root.failed
-                ? @tr("Writing failed")
-                : @tr("Put a writable card near the reader");
+            y: Sizing.pct-h(4);
+            width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width - 2 * Sizing.pct-w(4));
+            wrap: word-wrap;
+            text: @tr("Hold a writable token near the reader");
             color: Theme.text-primary;
-            font-size: Sizing.font-size(3);
-            font-weight: 500;
+            font-size: Sizing.font-title;
+        }
+        cancel-button := PressableSurface {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.height - Sizing.pct-h(11);
+            width: Math.min(Sizing.pct-w(28), parent.width - 2 * Sizing.pct-w(4));
+            height: Sizing.pct-h(7);
+            focused: true;
+            pressed: PressFeedback.active("card-write", 0);
+            Text {
+                x: Math.round((parent.width - self.width) / 2px) * 1px;
+                y: Math.round((cancel-button.face-height - self.height) / 2px) * 1px;
+                text: @tr("Cancel");
+                color: Theme.text-primary;
+                font-size: Sizing.font-body;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Overlays.pointer-choice("card-write", 0, true); }
+            }
         }
     }
 }
 
-// QR write deep-link modal (QrCodeModal.qml): white card centered
-// over the scrim, matrix scaled to the largest whole module multiple
-// within min(42%w, 68%h) so modules stay square. The image already
-// carries the 4-module quiet zone in white.
+// Qt's QR shell: translated purpose and instructions above an integer
+// module matrix, with a readable documentation URL for composite video.
 component QrCodeModal inherits Rectangle {
     in property <image> qr;
     in property <int> modules;
 
     background: Theme.scrim;
 
-    property <length> max-px: Math.min(Sizing.pct-w(42), Sizing.pct-h(68));
+    property <length> max-px: Math.min(Sizing.pct-w(36), Sizing.pct-h(48));
     property <length> module-px: root.modules > 0
         ? Math.max(1, Math.floor(root.max-px / root.modules / 1px)) * 1px
         : 1px;
@@ -1316,19 +1322,66 @@ component QrCodeModal inherits Rectangle {
     Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: root.qr-px;
-        height: root.qr-px;
-        background: white;
-        border-width: Sizing.stroke(root.module-px * 0.18 / 1px);
-        border-color: Theme.border-subtle;
+        width: Math.round(Math.min(parent.width * 0.92, Sizing.pct-h(105)) / 1px) * 1px;
+        height: Math.ceil(content.preferred-height / 1px) * 1px + 2 * Sizing.pct-h(4);
+        background: Theme.bg-panel;
+        border-radius: Sizing.radius-md;
 
-        Image {
-            x: 0;
-            y: 0;
-            width: parent.width;
-            height: parent.height;
-            source: root.qr;
-            image-rendering: pixelated;
+        content := VerticalLayout {
+            x: Sizing.pct-w(4);
+            y: Sizing.pct-h(4);
+            width: parent.width - 2 * self.x;
+            height: self.preferred-height;
+            spacing: Sizing.pct-h(2);
+            Rectangle {
+                height: Math.ceil(title.preferred-height / 1px) * 1px;
+                title := Text {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: 0px;
+                    width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
+                    text: Overlays.qr-documentation ? @tr("Documentation") : @tr("Write with App");
+                    color: Theme.text-primary;
+                    font-size: Sizing.font-title;
+                    overflow: elide;
+                }
+            }
+            Rectangle {
+                height: Math.ceil(instructions.preferred-height / 1px) * 1px;
+                instructions := Text {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: 0px;
+                    width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
+                    text: Overlays.qr-documentation
+                        ? @tr("Scan this code to open the Zaparoo Frontend guide on your phone.")
+                        : @tr("Scan this code with the Zaparoo App to write this game to a Zaparoo token.");
+                    color: Theme.text-primary;
+                    font-size: Sizing.font-caption;
+                    wrap: word-wrap;
+                }
+            }
+            Rectangle {
+                height: root.qr-px;
+                Image {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: 0px;
+                    width: root.qr-px;
+                    height: root.qr-px;
+                    source: root.qr;
+                    image-rendering: pixelated;
+                }
+            }
+            if Overlays.qr-documentation: Rectangle {
+                height: Math.ceil(url.preferred-height / 1px) * 1px;
+                url := Text {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: 0px;
+                    width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
+                    text: "zaparoo.org/docs/frontend";
+                    color: Theme.text-label;
+                    font-size: Sizing.font-small;
+                    wrap: char-wrap;
+                }
+            }
         }
     }
 }
@@ -1343,7 +1396,39 @@ component DialogModal inherits Rectangle {
     // Modal.qml's own panel rule: as wide as the copy needs, capped at
     // 92% of the screen and at a height-derived maximum, so a long body
     // does not stack up into extra lines on a 240p screen.
-    property <length> panel-w: Math.min(root.width * 0.92, Sizing.pct-h(110));
+    property <length> pad-x: Sizing.pct-w(4);
+    title-measure := Text {
+        visible: false;
+        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
+        font-size: Sizing.font-size(3.2);
+        font-weight: 600;
+    }
+    body-measure := Text {
+        visible: false;
+        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-detail, Overlays.dialog-arg);
+        font-size: Sizing.font-size(2.4);
+    }
+    line-measure := Text {
+        visible: false;
+        text: "abcdefghijklmnopqrstuvwxyz";
+        font-size: Sizing.font-size(2.4);
+    }
+    button-measure := HorizontalLayout {
+        visible: false;
+        spacing: root.btn-gap;
+        for label in Overlays.dialog-buttons: Rectangle {
+            width: caption.preferred-width + Sizing.pct-w(8);
+            caption := Text { text: DialogLabels.button(label); font-size: Sizing.font-body; }
+        }
+    }
+    property <length> desired-w: Math.max(title-measure.preferred-width,
+        Math.max(Math.min(body-measure.preferred-width, line-measure.preferred-width * 45 / 26),
+            button-measure.preferred-width)) + 2 * root.pad-x;
+    // CommercialNoticeModal uses a wider shell for its long legal copy.
+    property <length> panel-w: Math.ceil((Overlays.dialog-kind == "notice"
+        ? Math.min(root.width * 0.78, Sizing.pct-h(110))
+        : Math.min(Math.min(root.width * 0.92, Sizing.pct-h(90)),
+            Math.max(Sizing.pct-w(30), root.desired-w))) / 1px) * 1px;
     property <length> pad: Sizing.pct-h(3);
     property <length> btn-h: Sizing.pct-h(7);
     property <length> btn-gap: Sizing.pct-w(2);
@@ -1365,7 +1450,7 @@ component DialogModal inherits Rectangle {
         Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: root.pad;
-            max-width: parent.width - 2 * root.pad;
+            max-width: parent.width - 2 * root.pad-x;
             overflow: elide;
             text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
             color: Theme.text-primary;
@@ -1374,14 +1459,14 @@ component DialogModal inherits Rectangle {
         }
 
         body-t := Text {
-            x: root.pad;
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: root.pad + Sizing.font-size(3.2) + Sizing.pct-h(2);
-            width: parent.width - 2 * root.pad;
+            width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, parent.width - 2 * root.pad-x);
             wrap: word-wrap;
             text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-detail, Overlays.dialog-arg);
             color: Theme.text-primary;
             font-size: Sizing.font-size(2.4);
-            horizontal-alignment: center;
+            horizontal-alignment: left;
         }
 
         if Overlays.dialog-status != "": Text {
@@ -1396,7 +1481,7 @@ component DialogModal inherits Rectangle {
         }
 
         // Same raised surfaces and safe-area width cap as Modal.qml.
-        property <length> btn-w: Math.min(Sizing.pct-w(28), Math.floor((root.panel-w - 2 * root.pad
+        property <length> btn-w: Math.min(Sizing.pct-w(28), Math.floor((root.panel-w - 2 * root.pad-x
             - Math.max(0, Overlays.dialog-buttons.length - 1) * root.btn-gap)
             / Math.max(1, Overlays.dialog-buttons.length) / 1px) * 1px);
         for label[i] in Overlays.dialog-buttons: button := PressableSurface {
@@ -2024,6 +2109,8 @@ component RouteScreen inherits Rectangle {
 }
 
 export component App inherits Window {
+    callback game-info-scroll(string);
+    game-info-scroll(action) => { info-modal.scroll(action); }
     title: "Zaparoo Frontend (Slint demo)";
     background: Theme.bg-deep;
     default-font-family: Theme.font-ui;
@@ -2136,10 +2223,26 @@ export component App inherits Window {
             return [{ buttons: ["ButtonB"], label: @tr("Close") }];
         }
         if (GameInfoView.modal-open) {
-            return [
-                { buttons: ["Dpad"], label: @tr("Scroll") },
-                { buttons: ["ButtonB"], label: @tr("Close") },
-            ];
+            if (info-modal.scrollable && GameInfoView.image-count > 1) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Scroll") },
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            if (GameInfoView.image-count > 1) {
+                return [
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            if (info-modal.scrollable) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Scroll") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            return [{ buttons: ["ButtonB"], label: @tr("Close") }];
         }
         if (Overlays.list-open || Overlays.letter-open) {
             return [
@@ -2469,87 +2572,14 @@ export component App inherits Window {
     // full-screen translucent surface costs ~100ms frames - the Qt
     // rulebook's ban earns its place back at this resolution. The
     // one-frame repaint on open is fine.
-    if GameInfoView.modal-open: Rectangle {
+    info-modal := GameInfoModal {
         width: 100%;
         height: 100%;
-        background: Theme.scrim;
-
-        Rectangle {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
-            width: Sizing.pct-w(70);
-            height: Sizing.pct-h(64);
-            background: Theme.bg-panel;
-            border-radius: Sizing.radius-md;
-            border-width: Sizing.stroke(0.3);
-            border-color: Theme.border-mid;
-
-            property <length> pad: Sizing.pct-h(3);
-            property <length> cover-w: Math.round(self.width * 0.38 / 1px) * 1px;
-
-            if GameInfoView.modal-has-cover: Image {
-                x: parent.pad;
-                y: parent.pad;
-                width: parent.cover-w - parent.pad;
-                height: parent.height - 2 * parent.pad;
-                source: GameInfoView.modal-cover;
-                image-fit: contain;
-            }
-            if !GameInfoView.modal-has-cover: Rectangle {
-                x: parent.pad;
-                y: parent.pad;
-                width: parent.cover-w - parent.pad;
-                height: parent.height - 2 * parent.pad;
-                background: Theme.surface-card;
-                border-radius: Sizing.pct-h(1.5);
-            }
-
-            Text {
-                x: parent.cover-w + parent.pad;
-                y: parent.pad;
-                width: parent.width - parent.cover-w - 2 * parent.pad;
-                overflow: elide;
-                text: GameInfoView.modal-name;
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(3.4);
-                font-weight: 600;
-            }
-            Text {
-                x: parent.cover-w + parent.pad;
-                y: parent.pad + Sizing.font-size(3.4) + Sizing.pct-h(1);
-                width: parent.width - parent.cover-w - 2 * parent.pad;
-                overflow: elide;
-                text: GameInfoView.modal-system;
-                color: Theme.text-variant;
-                font-size: Sizing.font-size(2.4);
-            }
-            if GameInfoView.modal-tags != "": Text {
-                x: parent.cover-w + parent.pad;
-                y: parent.pad + Sizing.font-size(3.4) + Sizing.font-size(2.4) + Sizing.pct-h(2);
-                width: parent.width - parent.cover-w - 2 * parent.pad;
-                overflow: elide;
-                text: GameInfoView.modal-tags;
-                color: Theme.text-label;
-                font-size: Sizing.font-size(2.2);
-            }
-            Text {
-                x: parent.cover-w + parent.pad;
-                y: parent.pad + Sizing.font-size(3.4) + Sizing.font-size(2.4) + Sizing.font-size(2.2) + Sizing.pct-h(3.5);
-                width: parent.width - parent.cover-w - 2 * parent.pad;
-                height: parent.height - self.y - parent.pad;
-                wrap: word-wrap;
-                overflow: elide;
-                text: GameInfoView.modal-description;
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(2.3);
-            }
-        }
     }
 
     if Overlays.card-write-open: CardWriteModal {
         width: 100%;
         height: 100%;
-        failed: Overlays.card-write-failed;
     }
 
     if Overlays.qr-open: QrCodeModal {
