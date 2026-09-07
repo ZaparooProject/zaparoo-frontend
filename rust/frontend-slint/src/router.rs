@@ -428,6 +428,7 @@ fn set_dialog_status(app: &App, key: &str, step: i32, total: i32, name: &str) {
 }
 
 fn close_dialog(app: &App) {
+    crate::press_feedback::cancel(app);
     let overlays = app.global::<crate::Overlays>();
     overlays.set_dialog_open(false);
     overlays.set_dialog_kind(SharedString::default());
@@ -912,6 +913,27 @@ pub(crate) fn transition_to_screen(app: &App, target: &str, direction: i32) {
 }
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
+    if crate::press_feedback::pending(app) {
+        if action == actions::CANCEL || app.global::<crate::Shell>().get_saver_armed() {
+            crate::press_feedback::cancel(app);
+        } else {
+            return;
+        }
+    }
+    if action == actions::ACCEPT {
+        if let Some(target) = crate::press_feedback::current(app) {
+            reset_idle(ctx, app);
+            let ctx = ctx.clone();
+            crate::press_feedback::defer(app, target, move |app| {
+                dispatch_action(&ctx, app, actions::ACCEPT);
+            });
+            return;
+        }
+    }
+    dispatch_action(ctx, app, action);
+}
+
+fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     // Screensaver eats the waking press whole (the Qt dismiss path):
     // disarm, restart the idle clock, swallow.
     if app.global::<crate::Shell>().get_saver_armed() {
@@ -1400,6 +1422,7 @@ fn open_letter_jump(_ctx: &Ctx, app: &App) {
 }
 
 fn close_letter_jump(ctx: &Ctx, app: &App) {
+    crate::press_feedback::cancel(app);
     lock(&ctx.shared).letter_seq += 1;
     app.global::<crate::Overlays>().set_letter_open(false);
 }
@@ -1816,6 +1839,7 @@ fn present_context_menu(
 }
 
 fn close_context_menu(ctx: &Ctx, app: &App) {
+    crate::press_feedback::cancel(app);
     // Bumping the seq abandons any in-flight card write (its result
     // is ignored on arrival - the Qt cancel rule), and any discovery
     // still looking for a menu to fill.
@@ -1838,7 +1862,10 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
         app.global::<crate::Overlays>()
             .on_pointer_choice(move |kind, index, accept| {
                 let Some(app) = weak.upgrade() else { return };
-                if index < 0 || !lock(&ctx.shared).persist.settings.mouse_enabled {
+                if index < 0
+                    || !lock(&ctx.shared).persist.settings.mouse_enabled
+                    || crate::press_feedback::pending(&app)
+                {
                     return;
                 }
                 if kind == "wake" {
@@ -1886,7 +1913,9 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
             let Some(app) = weak.upgrade() else {
                 return;
             };
-            if !lock(&ctx.shared).persist.settings.mouse_enabled {
+            if !lock(&ctx.shared).persist.settings.mouse_enabled
+                || crate::press_feedback::pending(&app)
+            {
                 return;
             }
             app.global::<crate::Overlays>().set_context_index(index);
@@ -1898,17 +1927,12 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
         let Some(app) = weak.upgrade() else {
             return;
         };
-        if !lock(&ctx.shared).persist.settings.mouse_enabled {
+        if !lock(&ctx.shared).persist.settings.mouse_enabled || crate::press_feedback::pending(&app)
+        {
             return;
         }
         app.global::<crate::Overlays>().set_context_index(index);
-        let entry = app
-            .global::<crate::Overlays>()
-            .get_context_entries()
-            .row_data(usize::try_from(index).unwrap_or(0));
-        if let Some(entry) = entry {
-            context_accept(&ctx, &app, entry.id.as_str());
-        }
+        handle_action(&ctx, &app, actions::ACCEPT);
     });
 }
 

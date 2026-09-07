@@ -422,6 +422,15 @@ export global GameInfoView {
     in-out property <bool> modal-has-cover: false;
 }
 
+// One pending commitment, owned by the router and mirrored to the CRT.
+export global PressFeedback {
+    in-out property <string> owner: "";
+    in-out property <int> index: -1;
+    public pure function active(owner: string, index: int) -> bool {
+        return self.owner == owner && self.index == index;
+    }
+}
+
 // Context menu, View menu, letter picker, and card-writer state.
 export global Overlays {
     callback pointer-choice(string, int, bool);
@@ -1120,6 +1129,7 @@ component ListPickerModal inherits Rectangle {
                     width: 100%;
                     height: 100%;
                     active: i == root.current-index;
+                    press-held: PressFeedback.active("list", i);
                 }
                 Text {
                     x: root.swatches ? Sizing.pct-w(2) : Math.round((parent.width - self.width) / 2px) * 1px;
@@ -1226,10 +1236,11 @@ component LetterJumpModal inherits Rectangle {
                 width: root.cell;
                 height: root.cell;
                 focused: i == root.current-index;
+                pressed: PressFeedback.active("letter", i);
 
                 Text {
                     x: Math.round((parent.width - self.width) / 2px) * 1px;
-                    y: cell.face-y + Math.round((cell.face-height * 0.52 - self.height) / 2px) * 1px;
+                    y: Math.round((cell.face-height * 0.52 - self.height) / 2px) * 1px;
                     text: bucket.label;
                     color: cell.focused ? Theme.text-primary : Theme.text-label;
                     font-size: Sizing.font-size(3.4);
@@ -1237,7 +1248,7 @@ component LetterJumpModal inherits Rectangle {
                 }
                 Text {
                     x: Math.round((parent.width - self.width) / 2px) * 1px;
-                    y: cell.face-y + cell.face-height - self.height - Sizing.pct-h(0.8);
+                    y: cell.face-height - self.height - Sizing.pct-h(0.8);
                     text: bucket.count;
                     color: Theme.text-label;
                     font-size: Sizing.font-size(2.2);
@@ -1398,10 +1409,11 @@ component DialogModal inherits Rectangle {
             width: parent.btn-w;
             height: root.btn-h;
             focused: i == Overlays.dialog-focus;
+            pressed: PressFeedback.active("dialog", i);
 
             Text {
                 x: Math.round((parent.width - self.width) / 2px) * 1px;
-                y: button.face-y + Math.round((button.face-height - self.height) / 2px) * 1px;
+                y: Math.round((button.face-height - self.height) / 2px) * 1px;
                 max-width: parent.width - Sizing.pct-w(1);
                 overflow: elide;
                 text: DialogLabels.button(label);
@@ -1582,6 +1594,7 @@ component ContextMenu inherits Rectangle {
                 width: 100%;
                 height: 100%;
                 active: i == root.current-index;
+                press-held: PressFeedback.active("context", i);
                 radius: Sizing.radius-sm;
             }
 
@@ -2550,6 +2563,7 @@ export component App inherits Window {
         width: 100%;
         height: 100%;
         phase: LogUploadView.phase;
+        button-pressed: PressFeedback.active("log", 0);
         url: LogUploadView.url;
         qr: LogUploadView.qr;
         qr-modules: LogUploadView.qr-modules;

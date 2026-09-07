@@ -500,7 +500,9 @@ pub fn render(ctx: &Ctx, app: &App) {
     let model = &shared.systems_model;
     let page = model.grid.current_page();
     let start = page * model.grid.page_size();
-    view.set_cells(ModelRc::new(VecModel::from(page_cells(&shared, page))));
+    crate::view_model::publish_cells(&view.get_cells(), page_cells(&shared, page), |rows| {
+        view.set_cells(rows);
+    });
     view.set_next_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
     view.set_selected_local(
         i32::try_from(model.grid.current_index().saturating_sub(start)).unwrap_or(0),
@@ -523,8 +525,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_total_pages(i32::try_from(model.grid.total_page_count()).unwrap_or(1));
     view.set_has_pages_above(model.grid.has_pages_above());
     view.set_has_pages_below(model.grid.has_pages_below());
-    view.set_activate_pulse(model.activate_pulse);
-    view.set_release_pulse(model.release_pulse);
+    publish_press(app, model.activate_pulse, model.release_pulse);
     if let Some(row) = model.current() {
         view.set_label_name(SharedString::from(row.name.as_str()));
         view.set_label_hidden(row.hidden);
@@ -566,7 +567,9 @@ fn render_list(app: &App, shared: &Shared) {
             .take(visible)
             .map(|row| cell_for(row, &shared.persist.settings.system_logo_style))
             .collect();
-        view.set_list_rows(ModelRc::new(VecModel::from(rows)));
+        crate::view_model::publish_cells(&view.get_list_rows(), rows, |rows| {
+            view.set_list_rows(rows);
+        });
         view.set_list_sel(i32::try_from(current.saturating_sub(top)).unwrap_or(0));
         view.set_list_view_top(i32::try_from(top).unwrap_or(0));
         if let Some(row) = model.current() {
@@ -848,16 +851,28 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     }
 }
 
+/// Press feedback changes no row content. Rebuilding logo Images here
+/// would replace the page model and destroy the delegates being animated.
+pub(crate) fn publish_press(app: &App, activate: i32, release: i32) {
+    let view = app.global::<SystemsView>();
+    view.set_activate_pulse(activate);
+    view.set_release_pulse(release);
+}
+
 fn activate_current(ctx: &Ctx, app: &App) {
-    {
+    let (activate, release) = {
         let mut shared = lock(&ctx.shared);
         if shared.systems_model.current().is_none() {
             return;
         }
         shared.systems_model.activate_pulse += 1;
-    }
+        (
+            shared.systems_model.activate_pulse,
+            shared.systems_model.release_pulse,
+        )
+    };
     persist_selection(ctx);
-    render(ctx, app);
+    publish_press(app, activate, release);
     let delay = if app.global::<crate::Motion>().get_enabled() {
         34
     } else {
@@ -894,8 +909,15 @@ fn activate_current(ctx: &Ctx, app: &App) {
             lock(&ctx.shared).persist.games.entered_from_hub = false;
             crate::games::enter(&ctx, &app, &system);
             if !system.zap_script.is_empty() {
-                lock(&ctx.shared).systems_model.release_pulse += 1;
-                render(&ctx, &app);
+                let (activate, release) = {
+                    let mut shared = lock(&ctx.shared);
+                    shared.systems_model.release_pulse += 1;
+                    (
+                        shared.systems_model.activate_pulse,
+                        shared.systems_model.release_pulse,
+                    )
+                };
+                publish_press(&app, activate, release);
             }
         }
     });

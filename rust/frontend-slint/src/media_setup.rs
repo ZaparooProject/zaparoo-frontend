@@ -163,7 +163,7 @@ pub fn render(ctx: &Ctx, app: &App) {
             out
         })
         .collect();
-    view.set_rows(ModelRc::new(VecModel::from(rows)));
+    crate::view_model::publish(&view.get_rows(), rows, |rows| view.set_rows(rows));
 
     let Some(page) = model.picker else {
         view.set_picker_page(false);
@@ -497,6 +497,9 @@ pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
             let Some(app) = weak.upgrade() else {
                 return;
             };
+            if crate::press_feedback::pending(&app) {
+                return;
+            }
             if let Ok(index) = usize::try_from(i) {
                 let len = {
                     let shared = lock(&ctx.shared);
@@ -517,8 +520,12 @@ pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
                 return;
             };
             if let Ok(index) = usize::try_from(i) {
+                if crate::press_feedback::pending(&app) {
+                    return;
+                }
                 lock(&ctx.shared).setup.index = index;
-                accept(&ctx, &app);
+                render(&ctx, &app);
+                crate::router::handle_action(&ctx, &app, actions::ACCEPT);
             }
         });
     }

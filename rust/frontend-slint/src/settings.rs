@@ -282,7 +282,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         .min((total - viewport as f32).max(0.0));
     view.set_rows_height(viewport as f32);
     view.set_scroll(scroll);
-    view.set_rows(ModelRc::new(VecModel::from(rows)));
+    crate::view_model::publish(&view.get_rows(), rows, |rows| view.set_rows(rows));
 
     if page.is_empty() {
         let cells: Vec<GridCell> = rules::PAGES
@@ -294,7 +294,7 @@ pub fn render(ctx: &Ctx, app: &App) {
             })
             .collect();
         let (columns, grid_rows, grid_y, grid_height, _, fit) = root_geometry(ctx, app);
-        view.set_cells(ModelRc::new(VecModel::from(cells)));
+        crate::view_model::publish_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
         view.set_columns(columns);
         view.set_rows_count(grid_rows);
         view.set_cell_width(fit.cell_width as f32);
@@ -369,7 +369,6 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             }
             actions::ACCEPT => {
                 if let Some(row) = rows.get(index) {
-                    view.set_activate_pulse(view.get_activate_pulse() + 1);
                     open_page(ctx, app, row.id());
                 }
             }
@@ -404,7 +403,6 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         }
         actions::ACCEPT => {
             if let Some(Row::Field { id, control }) = rows.get(index) {
-                view.set_activate_pulse(view.get_activate_pulse() + 1);
                 accept(ctx, app, id, *control);
             }
         }
@@ -701,6 +699,9 @@ pub fn save(ctx: &Ctx, app: &App) {
 // ---------- Pointer ----------
 
 fn focus(ctx: &Ctx, app: &App, index: usize) -> bool {
+    if crate::press_feedback::pending(app) {
+        return false;
+    }
     let (_, rows, _) = page_rows_now(ctx, app);
     if !rows.get(index).is_some_and(|r| r.is_field()) {
         return false;
@@ -723,7 +724,7 @@ pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
                 return;
             };
             if focus(&ctx, &app, index) && accept {
-                handle_action(&ctx, &app, actions::ACCEPT);
+                crate::router::handle_action(&ctx, &app, actions::ACCEPT);
             }
         };
         if hover {

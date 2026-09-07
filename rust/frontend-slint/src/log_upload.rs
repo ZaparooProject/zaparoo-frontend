@@ -268,7 +268,7 @@ pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
     let weak = app.as_weak();
     app.global::<crate::LogUploadInput>().on_confirmed(move || {
         if let Some(app) = weak.upgrade() {
-            handle_action(&ctx, &app, actions::ACCEPT);
+            crate::router::handle_action(&ctx, &app, actions::ACCEPT);
         }
     });
 }

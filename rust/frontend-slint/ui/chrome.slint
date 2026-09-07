@@ -807,11 +807,12 @@ export component SelectionBar inherits Rectangle {
     in property <int> activate-pulse: 0;
     in property <int> release-pulse: 0;
     in property <bool> screen-settling: false;
+    in property <bool> press-held: false;
     in property <length> radius: Sizing.radius-sm;
 
-    out property <bool> flashing: root.flash;
-    out property <color> bar-color: root.flash ? Theme.on-accent : Theme.selection-fill;
-    out property <color> content-color: root.flash ? Theme.selection-fill : Theme.on-accent;
+    out property <bool> flashing: root.flash || root.press-held;
+    out property <color> bar-color: root.flashing ? Theme.on-accent : Theme.selection-fill;
+    out property <color> content-color: root.flashing ? Theme.selection-fill : Theme.on-accent;
     // Dark-on-light text reads thinner than light-on-dark at the same
     // weight, so a selected row steps up to Medium; a no-op on the
     // single-strike bitmap face.

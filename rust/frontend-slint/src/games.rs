@@ -1422,9 +1422,11 @@ pub fn render(ctx: &Ctx, app: &App) {
     if list {
         view.set_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
     } else {
-        view.set_cells(ModelRc::new(VecModel::from(page_cells(
-            ctx, model, page, tier,
-        ))));
+        crate::view_model::publish_cells(
+            &view.get_cells(),
+            page_cells(ctx, model, page, tier),
+            |rows| view.set_cells(rows),
+        );
     }
     view.set_next_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
     view.set_selected_local(
@@ -1480,7 +1482,9 @@ pub fn render(ctx: &Ctx, app: &App) {
             .take(visible)
             .map(|row| cell_for(ctx, model, row, tier))
             .collect();
-        view.set_list_rows(ModelRc::new(VecModel::from(rows)));
+        crate::view_model::publish_cells(&view.get_list_rows(), rows, |rows| {
+            view.set_list_rows(rows);
+        });
         view.set_list_sel(
             i32::try_from(model.grid.current_index().saturating_sub(top)).unwrap_or(0),
         );

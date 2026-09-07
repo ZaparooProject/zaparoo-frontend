@@ -132,6 +132,280 @@ fn boot() -> (App, Rc<MinimalSoftwareWindow>) {
 }
 
 #[test]
+fn tile_press_survives_an_unchanged_model_publication() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let hub = app.global::<HubView>();
+    hub.set_cell_width(50.0);
+    hub.set_cell_height(40.0);
+    hub.set_grid_y(40.0);
+    hub.set_grid_height(100.0);
+    settle(&window);
+    app.window().request_redraw();
+    let resting = frame(&window);
+    assert!(app.global::<Sizing>().get_press_edge_height() > 0.0);
+    let hub = app.global::<HubView>();
+    // Activation renders the current page again before publishing its pulse.
+    crate::view_model::publish_cells(
+        &hub.get_cells(),
+        cells(10, "Category").iter().collect(),
+        |rows| hub.set_cells(rows),
+    );
+    hub.set_activate_pulse(1);
+    distinct_frames(&window, 4);
+    app.window().request_redraw();
+    let pressed = frame(&window);
+    assert_ne!(resting, pressed, "the selected tile must push down");
+    hub.set_release_pulse(1);
+    settle(&window);
+    app.window().request_redraw();
+    assert_eq!(
+        resting,
+        frame(&window),
+        "release must restore the raised face"
+    );
+}
+
+#[allow(
+    clippy::panic,
+    reason = "missing commitment target is a broken test fixture"
+)]
+fn arm_feedback(app: &App, commits: &Rc<Cell<u32>>) {
+    let Some(target) = crate::press_feedback::current(app) else {
+        panic!("fixture has no commitment target");
+    };
+    let commits = commits.clone();
+    crate::press_feedback::defer(app, target, move |_| commits.set(commits.get() + 1));
+}
+
+#[test]
+#[allow(
+    clippy::expect_used,
+    reason = "embedded logo is a required test fixture"
+)]
+fn system_logo_tile_push_preserves_images_and_paints_before_navigation() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen("systems".into());
+    let pixels = crate::system_logos::logo_for("SNES").expect("embedded SNES logo");
+    let image = || {
+        slint::Image::from_rgba8(
+            slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+                &pixels.rgba,
+                pixels.width,
+                pixels.height,
+            ),
+        )
+    };
+    let logo = image();
+    let cell = GridCell {
+        name: "Super Nintendo".into(),
+        cover: logo.clone(),
+        cover_focus: logo,
+        has_cover: true,
+        has_cover_focus: true,
+        wordmark: true,
+        ..Default::default()
+    };
+    let rebuilt = GridCell {
+        cover: image(),
+        cover_focus: image(),
+        ..cell.clone()
+    };
+    assert!(
+        !crate::view_model::same_cell(&cell, &rebuilt),
+        "rebuilding equal pixels changes Slint image identity"
+    );
+    let page = ModelRc::new(VecModel::from(vec![cell]));
+    let systems = app.global::<SystemsView>();
+    systems.set_cells(page.clone());
+    systems.set_count(1);
+    systems.set_focus_ready(true);
+    systems.set_cell_width(70.0);
+    systems.set_cell_height(60.0);
+    systems.set_grid_y(40.0);
+    systems.set_grid_height(90.0);
+    settle(&window);
+    app.window().request_redraw();
+    let resting = frame(&window);
+    crate::systems::publish_press(&app, 1, 0);
+    assert!(
+        systems.get_cells() == page,
+        "activation must not replace the logo page"
+    );
+    frame(&window);
+    distinct_frames(&window, 2);
+    app.window().request_redraw();
+    assert_ne!(
+        resting,
+        frame(&window),
+        "system tile must push before the 34 ms navigation delay"
+    );
+    crate::systems::publish_press(&app, 1, 1);
+    assert!(
+        systems.get_cells() == page,
+        "release must preserve the same delegates"
+    );
+    settle(&window);
+    app.window().request_redraw();
+    assert_eq!(
+        resting,
+        frame(&window),
+        "release must animate back to the raised face"
+    );
+}
+
+#[test]
+fn dialog_push_paints_before_commit_and_then_settles() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::router::open_quit_confirm(&app);
+    settle(&window);
+    app.window().request_redraw();
+    let resting = frame(&window);
+    let commits = Rc::new(Cell::new(0));
+    arm_feedback(&app, &commits);
+    frame(&window);
+    distinct_frames(&window, 2);
+    app.window().request_redraw();
+    assert_ne!(
+        resting,
+        frame(&window),
+        "button must depress before dispatch"
+    );
+    assert_eq!(commits.get(), 0, "accept must wait for the 34 ms press cue");
+    distinct_frames(&window, 1);
+    assert_eq!(commits.get(), 1);
+    assert!(!crate::press_feedback::pending(&app));
+    settle(&window);
+    app.window().request_redraw();
+    assert_eq!(resting, frame(&window));
+}
+
+#[test]
+fn deferred_accept_cannot_hit_a_changed_or_canceled_target() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::router::open_quit_confirm(&app);
+    settle(&window);
+    let commits = Rc::new(Cell::new(0));
+    arm_feedback(&app, &commits);
+    app.global::<crate::Overlays>().set_dialog_focus(1);
+    settle(&window);
+    assert_eq!(commits.get(), 0, "a later Yes must not inherit No's accept");
+    arm_feedback(&app, &commits);
+    crate::press_feedback::cancel(&app);
+    settle(&window);
+    assert_eq!(
+        commits.get(),
+        0,
+        "cancel must invalidate the deferred ticket"
+    );
+    assert!(!crate::press_feedback::pending(&app));
+    app.global::<crate::Motion>().set_enabled(false);
+    arm_feedback(&app, &commits);
+    assert_eq!(commits.get(), 1, "Reduce motion dispatches synchronously");
+    assert!(!crate::press_feedback::pending(&app));
+}
+
+#[test]
+fn letter_and_log_buttons_paint_their_pending_press() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let ov = app.global::<crate::Overlays>();
+    ov.set_letter_buckets(ModelRc::new(VecModel::from(vec![crate::LetterBucket {
+        label: "A".into(),
+        count: 2,
+    }])));
+    ov.set_letter_open(true);
+    let commits = Rc::new(Cell::new(0));
+    for owner in ["letter", "log"] {
+        if owner == "log" {
+            ov.set_letter_open(false);
+            let log = app.global::<crate::LogUploadView>();
+            log.set_open(true);
+            log.set_phase("failed".into());
+        }
+        settle(&window);
+        app.window().request_redraw();
+        let resting = frame(&window);
+        arm_feedback(&app, &commits);
+        frame(&window);
+        distinct_frames(&window, 2);
+        app.window().request_redraw();
+        assert_eq!(
+            app.global::<crate::PressFeedback>().get_owner().as_str(),
+            owner
+        );
+        assert_ne!(resting, frame(&window), "{owner} button must push down");
+        settle(&window);
+    }
+    assert_eq!(commits.get(), 2);
+}
+
+#[test]
+fn settings_category_push_and_picker_blink_precede_accept() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen("settings".into());
+    let settings = app.global::<crate::SettingsView>();
+    settings.set_cells(cells(1, "Settings"));
+    settings.set_cell_width(60.0);
+    settings.set_cell_height(50.0);
+    settings.set_grid_y(40.0);
+    settings.set_grid_height(80.0);
+    settings.set_rows(ModelRc::new(VecModel::from(vec![crate::SettingsRow {
+        kind: "field".into(),
+        control: "navigate".into(),
+        id: "pageDisplayInterface".into(),
+        enabled: true,
+        ..Default::default()
+    }])));
+    let commits = Rc::new(Cell::new(0));
+    for owner in ["settings", "list"] {
+        if owner == "list" {
+            let ov = app.global::<crate::Overlays>();
+            ov.set_list_entries(ModelRc::new(VecModel::from(vec![crate::MenuEntry {
+                id: "one".into(),
+                label: "One".into(),
+                ..Default::default()
+            }])));
+            ov.set_list_open(true);
+        }
+        settle(&window);
+        app.window().request_redraw();
+        let resting = frame(&window);
+        arm_feedback(&app, &commits);
+        frame(&window);
+        distinct_frames(&window, 2);
+        app.window().request_redraw();
+        assert_eq!(
+            app.global::<crate::PressFeedback>().get_owner().as_str(),
+            owner
+        );
+        assert_ne!(
+            resting,
+            frame(&window),
+            "{owner} must show feedback before leaving"
+        );
+        settle(&window);
+    }
+    assert_eq!(commits.get(), 2);
+}
+
+#[test]
 fn picker_selected_text_uses_on_accent_and_palette_previews_paint() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();

@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, SharedString};
 use zaparoo_app::hub::{self as rules, Entry, Kind, LayoutItem, Live, Resolver, Saved};
 use zaparoo_app::paged_grid::Grid;
 use zaparoo_core::hub_layout::{load_hub_layout, save_hub_layout, HubLayout};
@@ -350,7 +350,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         .take(page_size)
         .map(|entry| cell_for(ctx, entry))
         .collect();
-    view.set_cells(ModelRc::new(VecModel::from(cells)));
+    crate::view_model::publish_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
     view.set_selected_local(i32::try_from(hub.grid.current_index() - start).unwrap_or(0));
     view.set_columns(geometry.columns);
     view.set_rows(geometry.rows);

@@ -347,8 +347,15 @@ After changing a preset, run `cmake --preset <name>` once by hand, or
 
 The `_lint` recipe bind-mounts three host dirs into the otherwise
 ephemeral container: the cargo registry (index + crate sources),
-cargo-deny's advisory DB, and ccache's object dir. Delete
-`.docker-cache/` to reset them; it is gitignored. Do **not** add a
+cargo-deny's advisory DB, and ccache's object dir. Direct Rust lint also
+stores Cargo artifacts in `.docker-cache/rust-target`, available through
+the repository bind mount. It must not share the host's `rust/target`:
+container source and registry paths differ, invalidating Cargo fingerprints
+when switching between Docker lint and host builds. This target-directory
+setting applies only to the Rust lint command; CMake/Corrosion keeps its
+existing separate build directories.
+
+Delete `.docker-cache/` to reset these caches; it is gitignored. Do **not** add a
 mount over `/usr/local/rustup` — it would shadow the toolchains baked
 into the lint image and break the cmake-driven lint path, which needs
 a resolvable toolchain before `/workdir` is even consulted.

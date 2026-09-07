@@ -41,6 +41,7 @@ mod mister_battery;
 mod qr;
 // Route motion has to be checked by rendering, and that needs the
 // software renderer, which only the MiSTer feature set links.
+mod press_feedback;
 #[cfg(all(test, feature = "mister"))]
 mod route_motion;
 mod router;
@@ -52,6 +53,7 @@ mod system_status;
 mod systems;
 mod tag_utils;
 mod theme;
+mod view_model;
 
 #[cfg(all(feature = "desktop", feature = "mister"))]
 compile_error!("features `desktop` and `mister` are mutually exclusive; build the MiSTer target with --no-default-features --features mister");

@@ -154,9 +154,12 @@ _lint-translations-internal:
 # fontconfig and wayland dev packages Slint's desktop backend links against;
 # `just lint-slint` covers it on the host and CI's `slint` job does the same.
 # fmt and deny need no build, so they stay whole-workspace.
+# Container source/registry paths differ from the host's. Keep these Cargo
+# artifacts separate or each lint run invalidates the host's fingerprints.
+# Scope isolation to this command; CMake/Corrosion owns its own target dirs.
 _lint-rust-internal:
     cd rust && cargo fmt --all --check
-    cd rust && cargo clippy --workspace --exclude frontend-slint --all-targets -- -D warnings
+    cd rust && cargo clippy --target-dir ../.docker-cache/rust-target --workspace --exclude frontend-slint --all-targets -- -D warnings
     cd rust && cargo deny check
     bash scripts/check-toolkit-free.sh
 

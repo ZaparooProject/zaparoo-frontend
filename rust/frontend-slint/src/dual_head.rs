@@ -38,19 +38,7 @@ fn same_image(left: &slint::Image, right: &slint::Image) -> bool {
 
 impl MirrorRow for GridCell {
     fn same_content(&self, other: &Self) -> bool {
-        self.label_key == other.label_key
-            && self.name == other.name
-            && self.glyph_key == other.glyph_key
-            && same_image(&self.cover, &other.cover)
-            && same_image(&self.cover_focus, &other.cover_focus)
-            && self.has_cover == other.has_cover
-            && self.hidden == other.hidden
-            && self.disabled == other.disabled
-            && self.favorite == other.favorite
-            && self.tags == other.tags
-            && self.top_label == other.top_label
-            && self.wordmark == other.wordmark
-            && self.is_empty == other.is_empty
+        crate::view_model::same_cell(self, other)
     }
 }
 
@@ -635,6 +623,13 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
             set_if_changed!(target, get_slide_anim => set_slide_anim, true);
         }
     }
+
+    let source = primary.global::<crate::PressFeedback>();
+    let target = crt.global::<crate::PressFeedback>();
+    copy_properties!(source, target;
+        get_index => set_index,
+        get_owner => set_owner,
+    );
 
     let source = primary.global::<GameInfoView>();
     let target = crt.global::<GameInfoView>();
