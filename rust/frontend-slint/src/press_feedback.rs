@@ -97,6 +97,9 @@ pub fn current(app: &App) -> Option<Target> {
         return Some(target("letter", index, format!("{row:?}")));
     }
     if ov.get_list_open() {
+        if ov.get_launcher_saving() {
+            return None;
+        }
         let index = ov.get_list_index();
         let row = ov
             .get_list_entries()

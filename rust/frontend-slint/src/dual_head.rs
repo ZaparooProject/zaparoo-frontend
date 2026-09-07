@@ -173,7 +173,6 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_status_icons_enabled => set_status_icons_enabled,
         get_has_battery => set_has_battery,
         get_battery_percent => set_battery_percent,
-        get_about_version_line => set_about_version_line,
         get_boot_curtain => set_boot_curtain,
         get_boot_complete => set_boot_complete,
         get_boot_text => set_boot_text,
@@ -631,6 +630,16 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_owner => set_owner,
     );
 
+    let source = primary.global::<crate::AboutView>();
+    let target = crt.global::<crate::AboutView>();
+    copy_properties!(source, target;
+        get_version => set_version,
+        get_commit => set_commit,
+        get_channel => set_channel,
+        get_build_date => set_build_date,
+        get_scroll_milli => set_scroll_milli,
+    );
+
     let source = primary.global::<GameInfoView>();
     let target = crt.global::<GameInfoView>();
     copy_properties!(source, target;
@@ -664,6 +673,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_context_anchor_w => set_context_anchor_w,
         get_context_anchor_h => set_context_anchor_h,
         get_list_open => set_list_open,
+        get_launcher_saving => set_launcher_saving,
+        get_launcher_saving_visible => set_launcher_saving_visible,
         get_list_title => set_list_title,
         get_list_entries => set_list_entries,
         get_list_index => set_list_index,

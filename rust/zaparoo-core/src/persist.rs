@@ -25,6 +25,8 @@ use tracing::warn;
 #[serde(default)]
 pub struct PersistedState {
     pub active_screen: String,
+    /// About scroll-range fraction (0..=1000); absent in older state files.
+    pub about_scroll_milli: u32,
     pub hub: HubState,
     pub systems: SystemsState,
     pub games: GamesState,
@@ -454,6 +456,18 @@ mod tests {
     use std::thread;
 
     #[test]
+    fn about_scroll_defaults_for_old_state_and_round_trips() {
+        let old: PersistedState = toml::from_str("active_screen = 'about'").unwrap();
+        assert_eq!(old.about_scroll_milli, 0);
+        let state = PersistedState {
+            about_scroll_milli: 1234,
+            ..old
+        };
+        let decoded: PersistedState = toml::from_str(&toml::to_string(&state).unwrap()).unwrap();
+        assert_eq!(decoded, state);
+    }
+
+    #[test]
     fn load_returns_default_on_missing_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("missing.toml");
@@ -466,6 +480,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("state.toml");
         let original = PersistedState {
+            about_scroll_milli: 1234,
             active_screen: "games".into(),
             hub: HubState {
                 category: "Console".into(),
@@ -635,6 +650,7 @@ resolution = "1920x1080"
                 thread::spawn(move || {
                     for j in 0..20 {
                         let state = PersistedState {
+                            about_scroll_milli: 0,
                             active_screen: format!("screen-{i}"),
                             hub: HubState {
                                 category: format!("cat-{i}-{j}"),

@@ -9,6 +9,7 @@
 // binding differs (watch channels project into Slint properties via
 // `upgrade_in_event_loop` instead of `qt_thread.queue`).
 
+mod about;
 mod actions;
 mod alternates;
 mod card_write;

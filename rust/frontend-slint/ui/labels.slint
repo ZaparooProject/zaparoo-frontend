@@ -37,6 +37,12 @@ export global Labels {
     public pure function count(n: int) -> string {
         return n;
     }
+    public pure function favorite-systems(n: int) -> string {
+        return @tr("{n} system with favorites" | "{n} systems with favorites" % n);
+    }
+    public pure function favorites(n: int) -> string {
+        return @tr("{n} favorite" | "{n} favorites" % n);
+    }
     // The values the two favorites rows can carry, named on their own so
     // the row that shows one can compose it (a Slint function cannot
     // call itself).
@@ -190,7 +196,7 @@ export global DialogLabels {
         if (kind == "media_scrape") { return @tr("Update metadata failed"); }
         if (kind == "media_scrapers") { return @tr("Source list unavailable"); }
         if (kind == "media_cancel") { return @tr("Cancel failed"); }
-        if (kind == "launcher") { return @tr("Launcher update failed"); }
+        if (kind == "launcher" || kind == "launcher_save") { return @tr("Launcher update failed"); }
         if (kind == "alternate_discovery") { return @tr("Alternate versions unavailable"); }
         if (kind == "qr_code") { return @tr("QR code failed"); }
         if (kind == "card_write") { return @tr("Token write failed"); }
@@ -212,7 +218,7 @@ export global DialogLabels {
         if (kind == "media_scrape") { return @tr("Could not start updating metadata. Check Zaparoo Core and try again."); }
         if (kind == "media_scrapers") { return @tr("Could not load the list of metadata sources. Check Zaparoo Core and try again."); }
         if (kind == "media_cancel") { return @tr("Could not cancel the media operation. Check Zaparoo Core and try again."); }
-        if (kind == "launcher") { return @tr("Could not change the launcher. Check Zaparoo Core and try again."); }
+        if (kind == "launcher" || kind == "launcher_save") { return @tr("Could not change the launcher. Check Zaparoo Core and try again."); }
         if (kind == "alternate_discovery") { return @tr("Could not find alternate versions. Check Zaparoo Core and try again."); }
         if (kind == "qr_code") { return @tr("Could not create the QR code for this item."); }
         if (kind == "card_write") { return @tr("Could not write to this token. Check that it is writable and try again."); }

@@ -112,6 +112,7 @@ pub struct Shared {
     pub first_run_saw_indexing: bool,
     pub first_run_cancelling: bool,
     pub card_write: crate::card_write::Model,
+    pub launcher_save_seq: u64,
     /// Jump-to-letter buckets for the open picker (cursor kept
     /// Rust-side; the UI only shows label + count).
     pub letter_buckets: Vec<zaparoo_core::media_types::BrowseIndexGroup>,
@@ -249,6 +250,7 @@ impl Shared {
             first_run_saw_indexing: false,
             first_run_cancelling: false,
             card_write: crate::card_write::Model::default(),
+            launcher_save_seq: 0,
             letter_buckets: Vec::new(),
             letter_seq: 0,
             game_launcher_seq: 0,
@@ -526,6 +528,10 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
         && kind == "action_error"
         && overlays.get_dialog_detail() == "card_write")
         .then(|| overlays.get_dialog_arg().to_string());
+    let launcher_retry = (action == actions::ACCEPT
+        && kind == "action_error"
+        && overlays.get_dialog_detail() == "launcher_save")
+        .then(|| overlays.get_dialog_arg().to_string());
     match action {
         actions::LEFT if len > 1 && focus > 0 => {
             overlays.set_dialog_focus((focus - 1) as i32);
@@ -553,6 +559,9 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
     // synchronously and must enqueue a fresh alert, not deduplicate away.
     if let Some(text) = retry {
         crate::card_write::begin(ctx, app, text);
+    }
+    if let Some(payload) = launcher_retry {
+        crate::launchers::retry(ctx, app, &payload);
     }
 }
 
@@ -1021,7 +1030,9 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     }
     // A fresh press always keeps (or restores) the live grid; only the
     // repeat path may set the flag.
-    crate::input::note_rapid(ctx, app, action, false);
+    if !crate::input::rapid_page(ctx) {
+        crate::input::note_rapid(ctx, app, action, false);
+    }
     match app.global::<crate::Shell>().get_active_screen().as_str() {
         "hub" => crate::hub::handle_action(ctx, app, action),
         "systems" | "favorite-systems" => crate::systems::handle_action(ctx, app, action),
@@ -1056,17 +1067,15 @@ pub(crate) fn media_state(ctx: &Ctx) -> zaparoo_core::store::MediaStatusState {
 pub fn enter_about(ctx: &Ctx, app: &App) {
     lock(&ctx.shared).persist.active_screen = "about".to_string();
     save_persist(&ctx.shared);
-    app.global::<crate::Shell>()
-        .set_about_version_line(SharedString::from(
-            concat!("Version ", env!("CARGO_PKG_VERSION"), " \u{b7} Slint demo")
-                .to_string()
-                .as_str(),
-        ));
     transition_to_screen(app, "about", 1);
 }
 
 fn about_action(ctx: &Ctx, app: &App, action: &str) {
-    if action == actions::CANCEL {
+    if action == actions::UP {
+        app.global::<crate::AboutView>().invoke_move(-80);
+    } else if action == actions::DOWN {
+        app.global::<crate::AboutView>().invoke_move(80);
+    } else if action == actions::CANCEL {
         // About is reached from the Support page; Back lands there.
         crate::settings::return_from_about(ctx, app);
     }
@@ -1303,6 +1312,9 @@ pub(crate) fn open_view_menu(ctx: &Ctx, app: &App) {
 }
 
 fn list_action(ctx: &Ctx, app: &App, action: &str) {
+    if app.global::<crate::Overlays>().get_launcher_saving() {
+        return;
+    }
     let len = app
         .global::<crate::Overlays>()
         .get_list_entries()
@@ -1324,8 +1336,13 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 .row_data(index)
                 .map(|e| e.id.to_string());
             if let Some(id) = id {
-                app.global::<crate::Overlays>().set_list_open(false);
                 let context = lock(&ctx.shared).list_context.clone();
+                if !matches!(
+                    context,
+                    ListContext::SystemLauncher(_) | ListContext::GameLauncher(_, _)
+                ) {
+                    app.global::<crate::Overlays>().set_list_open(false);
+                }
                 match context {
                     ListContext::ViewMenu => {
                         if id == "jump_letter" {
@@ -1807,7 +1824,7 @@ pub(crate) fn report_action_error(ctx: &Ctx, app: &App, kind: &str, context: &st
 }
 
 fn show_action_error(app: &App, entry: &action_error::Entry) {
-    let button = if entry.kind == "card_write" {
+    let button = if matches!(entry.kind.as_str(), "card_write" | "launcher_save") {
         "retry"
     } else {
         "ok"
@@ -1878,6 +1895,7 @@ fn close_context_menu(ctx: &Ctx, app: &App) {
 /// Pointer input on the context menu's rows: hover moves focus, a click
 /// accepts (ContextMenu.qml's own per-row mouse areas).
 pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
+    crate::about::bind(ctx, app);
     {
         let ctx = ctx.clone();
         let weak = app.as_weak();
@@ -1910,6 +1928,7 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                     "list"
                         if !ov.get_dialog_open()
                             && ov.get_list_open()
+                            && !ov.get_launcher_saving()
                             && row < ov.get_list_entries().row_count() =>
                     {
                         ov.set_list_index(index);

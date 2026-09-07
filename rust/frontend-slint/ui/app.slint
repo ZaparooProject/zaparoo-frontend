@@ -16,6 +16,7 @@ import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
 import { GameInfoView, GameInfoModal } from "game_info.slint";
+import { AboutView, AboutScreen } from "about.slint";
 
 // Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
 // 6x8 bitmap font for the CRT native path (family names must match
@@ -29,7 +30,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SetupPickerRow, GameInfoView }
+export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SetupPickerRow, GameInfoView, Labels, AboutView }
 
 // Context-menu row: `id` is the dispatch key the router switches on
 // (ContextMenu.qml's rule - position-keyed dispatch was a footgun).
@@ -91,7 +92,6 @@ export global Shell {
     in-out property <bool> status-icons-enabled: false;
     in-out property <bool> has-battery: false;
     in-out property <int> battery-percent: 0;
-    in-out property <string> about-version-line: "";
     // Cold-launch curtain (BootOverlay port). `boot-curtain` is true
     // only while the persisted restore target is a Core-dependent
     // data screen and the catalog has not reported Ready: hub restores
@@ -434,6 +434,8 @@ export global Overlays {
     in-out property <length> context-anchor-h: 0px;
     in-out property <bool> list-open: false;
     in-out property <string> list-title: "";
+    in-out property <bool> launcher-saving: false;
+    in-out property <bool> launcher-saving-visible: false;
     // Non-empty while the picker is choosing a settings value: its rows
     // and title read through the settings vocabulary rather than the
     // plain labels the other pickers carry.
@@ -720,93 +722,6 @@ component HubScreen inherits Rectangle {
     }
 }
 
-// About / License screen, ported from AboutScreen.qml: centered card
-// with the brand mark, version, copyright, and license text. Reached
-// from Settings; Back returns there.
-component AboutScreen inherits Rectangle {
-    // Data dependencies, read straight from the state globals.
-    property <string> version-line: Shell.about-version-line;
-
-    TopStatusStrip {
-        x: 0;
-        y: Sizing.header-bottom + Sizing.pct-h(1);
-        width: parent.width;
-        height: Sizing.pct-h(7);
-        title: @tr("About / License");
-        show-page-counter: false;
-    }
-
-    Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Sizing.header-bottom + Sizing.pct-h(10);
-        width: Math.min(parent.width - Sizing.pct-w(10), Sizing.pct-w(50));
-        height: parent.height - Sizing.header-bottom - Sizing.pct-h(18);
-        background: Theme.bg-panel;
-        border-radius: Sizing.radius-md;
-        border-width: Sizing.stroke(1);
-        border-color: Theme.border-mid;
-
-        property <length> pad: Sizing.pct-h(4);
-        property <length> logo-w: Math.min(self.width - 2 * self.pad, Sizing.pct-h(35));
-
-        VerticalLayout {
-            x: parent.pad;
-            y: parent.pad;
-            width: parent.width - 2 * parent.pad;
-            spacing: Sizing.pct-h(2);
-            alignment: start;
-
-            Image {
-                source: Brand.logo(Theme.light-surface, self.width);
-                width: parent.width;
-                height: Sizing.pct-h(8);
-                image-fit: contain;
-            }
-            Text {
-                horizontal-alignment: center;
-                text: @tr("Zaparoo Frontend");
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(4);
-                font-weight: 500;
-            }
-            Text {
-                horizontal-alignment: center;
-                text: root.version-line;
-                color: Theme.text-label;
-                font-size: Sizing.font-size(2.4);
-            }
-            Text {
-                horizontal-alignment: center;
-                wrap: word-wrap;
-                text: @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.");
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(2.6);
-            }
-            Text {
-                horizontal-alignment: center;
-                wrap: word-wrap;
-                text: @tr("Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license.");
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(2.6);
-            }
-            Text {
-                horizontal-alignment: center;
-                wrap: word-wrap;
-                text: @tr("Commercial licensing: legal@zaparoo.org");
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(2.6);
-            }
-            Text {
-                horizontal-alignment: center;
-                wrap: word-wrap;
-                text: @tr("Project: https://zaparoo.org");
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(2.6);
-            }
-        }
-    }
-}
-
 // Systems screen (SystemsScreen.qml): the three-slot top strip, the
 // paged grid of logo tiles between it and the footer caption, and the
 // state cue. Rust projects the rows and owns the cursor; the swoop
@@ -830,7 +745,7 @@ component SystemsScreen inherits Rectangle {
         : (Sizing.tier-240
             ? Labels.count(SystemsView.count)
             : (root.favorites
-                ? @tr("{} systems with favorites", Labels.count(SystemsView.count))
+                ? Labels.favorite-systems(SystemsView.count)
                 : @tr("{} systems", Labels.count(SystemsView.count))));
 
     TopStatusStrip {
@@ -975,7 +890,7 @@ component SystemsScreen inherits Rectangle {
         side-inset: root.page-cue-in-footer ? Math.max(root.footer-left-inset, root.footer-right-inset) : Sizing.pct-w(3);
         text: SystemsView.label-name;
         tags: root.favorites
-            ? (SystemsView.label-count >= 0 ? @tr("{} favorites", Labels.count(SystemsView.label-count)) : "")
+            ? (SystemsView.label-count >= 0 ? Labels.favorites(SystemsView.label-count) : "")
             : (SystemsView.label-hidden ? @tr("Hidden") : "");
         visible: !root.gate-hide;
     }
@@ -1133,7 +1048,7 @@ component ListPickerModal inherits Rectangle {
                     y: Math.round((parent.height - self.height) / 2px) * 1px;
                     width: Math.min(self.preferred-width, Math.max(0px, parent.width - 2 * Sizing.pct-w(2) - root.swatch-band));
                     overflow: elide;
-                    text: root.entry-label(entry);
+                    text: Overlays.launcher-saving-visible && i == root.current-index ? @tr("Saving…") : root.entry-label(entry);
                     color: bar.active ? bar.content-color : Theme.text-primary;
                     font-size: Sizing.font-body;
                     font-weight: bar.content-weight;
@@ -2339,6 +2254,7 @@ export component App inherits Window {
             ];
         }
         if (Shell.active-screen == "about") {
+            if (AboutView.maximum-scroll-milli <= 0) { return [{ buttons: ["ButtonB"], label: @tr("Back") }]; }
             return [
                 { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
                 { buttons: ["ButtonB"], label: @tr("Back") },

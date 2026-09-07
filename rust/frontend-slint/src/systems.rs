@@ -658,6 +658,7 @@ fn request_cached_page_transition(_app: &App, _direction: i32, _columns: i32, _r
 /// A cursor move landed on another page: swoop the strip one period in
 /// `dir`, then commit the new page. Reduce motion cuts instead.
 fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
+    let rapid = crate::input::rapid_page(ctx);
     let (to_page, columns, rows, reduce_motion) = {
         let mut shared = lock(&ctx.shared);
         let reduce_motion = shared.persist.settings.reduce_motion;
@@ -679,7 +680,7 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
     };
     view.set_slide_dir(dir);
     view.set_transition_target_index(i32::try_from(target_local).unwrap_or(0));
-    if reduce_motion {
+    if reduce_motion || rapid {
         lock(&ctx.shared).systems_model.sliding = false;
         render(ctx, app);
         return;

@@ -109,6 +109,18 @@ def map_msgid(s: str) -> str:
     return s.replace("%n", "{n}")
 
 
+def map_plural_ids(source: str, plural_source: str | None) -> tuple[str, str | None]:
+    # Qt uses one English '(s)' source; gettext needs explicit singular
+    # and plural ids. Preserve every translated form and its language rule.
+    aliases = {
+        "%n system(s) with favorites": ("{n} system with favorites", "{n} systems with favorites"),
+        "%n favorite(s)": ("{n} favorite", "{n} favorites"),
+    }
+    if plural_source is not None and source in aliases:
+        return aliases[source]
+    return map_msgid(source), map_msgid(plural_source) if plural_source is not None else None
+
+
 def map_msgstr(s: str) -> str:
     s = s.replace("{", "{{").replace("}", "}}")
     s = re.sub(r"%(\d)", lambda m: "{" + str(int(m.group(1)) - 1) + "}", s)
@@ -136,8 +148,7 @@ def convert(lang: str, ts: Path, workdir: Path) -> tuple[int, int, list[str]]:
         msgid = e.get("msgid", "")
         if msgid == "":
             continue
-        mid = map_msgid(msgid)
-        plural = map_msgid(e["msgid_plural"]) if "msgid_plural" in e else None
+        mid, plural = map_plural_ids(msgid, e.get("msgid_plural"))
         strs = {i: map_msgstr(v) for i, v in e.get("msgstr", {}).items()}
         if mid not in merged:
             merged[mid] = {"plural": plural, "msgstr": strs}

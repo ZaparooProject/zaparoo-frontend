@@ -16,6 +16,73 @@ use zaparoo_core::media_types::{MediaMetaParams, MediaMetaUpdateParams};
 use crate::router::{lock, Ctx, ListContext};
 use crate::App;
 
+/// Keep the full picker stable while saving; only its selected caption
+/// changes after Qt's 300 ms delay. The ticket retires stale timers/results.
+pub(crate) fn begin_save(ctx: &Ctx, app: &App) -> u64 {
+    let ticket = {
+        let mut shared = lock(&ctx.shared);
+        shared.launcher_save_seq = shared.launcher_save_seq.wrapping_add(1);
+        shared.launcher_save_seq
+    };
+    let ov = app.global::<crate::Overlays>();
+    ov.set_launcher_saving(true);
+    ov.set_launcher_saving_visible(false);
+    let weak = app.as_weak();
+    let shared = ctx.shared.clone();
+    slint::Timer::single_shot(std::time::Duration::from_millis(300), move || {
+        if lock(&shared).launcher_save_seq != ticket {
+            return;
+        }
+        if let Some(app) = weak.upgrade() {
+            let ov = app.global::<crate::Overlays>();
+            if ov.get_launcher_saving() && ov.get_list_open() {
+                ov.set_launcher_saving_visible(true);
+            }
+        }
+    });
+    ticket
+}
+
+pub(crate) fn finish_save(ctx: &Ctx, app: &App, ticket: u64, failure: Option<&str>) {
+    {
+        let mut shared = lock(&ctx.shared);
+        if shared.launcher_save_seq != ticket {
+            return;
+        }
+        shared.launcher_save_seq = shared.launcher_save_seq.wrapping_add(1);
+    }
+    let ov = app.global::<crate::Overlays>();
+    ov.set_launcher_saving(false);
+    ov.set_launcher_saving_visible(false);
+    ov.set_list_open(false);
+    if let Some(payload) = failure {
+        crate::router::report_action_error(ctx, app, "launcher_save", payload);
+    }
+}
+
+pub(crate) fn retry(ctx: &Ctx, app: &App, payload: &str) {
+    let Ok([kind, system, path, selected]) = serde_json::from_str::<[String; 4]>(payload) else {
+        return;
+    };
+    let context = if kind == "system" {
+        ListContext::SystemLauncher(system.clone())
+    } else {
+        ListContext::GameLauncher(system.clone(), path.clone())
+    };
+    present(
+        ctx,
+        app,
+        context,
+        &launcher_ids(ctx, &system),
+        Some(&selected),
+    );
+    if kind == "system" {
+        set_system_launcher(ctx, app, &system, &selected);
+    } else {
+        set_game_launcher(ctx, app, &system, &path, &selected);
+    }
+}
+
 /// The launcher ids Core offers for a system.
 fn launcher_ids(ctx: &Ctx, system_id: &str) -> Vec<String> {
     lock(&ctx.shared)
@@ -28,6 +95,9 @@ fn launcher_ids(ctx: &Ctx, system_id: &str) -> Vec<String> {
 
 /// Present the picker for a launcher list and the stored choice.
 fn present(ctx: &Ctx, app: &App, context: ListContext, ids: &[String], current: Option<&str>) {
+    if app.global::<crate::Overlays>().get_launcher_saving() {
+        return;
+    }
     let rows = rules::picker_rows(ids, current);
     let index = rules::picker_index(&rows, current);
     let entries: Vec<crate::MenuEntry> = rows
@@ -75,6 +145,8 @@ pub fn set_system_launcher(ctx: &Ctx, app: &App, system_id: &str, launcher_id: &
     use zaparoo_core::endpoints::system_launcher_default::{
         SetSystemLauncherDefaultArgs, SetSystemLauncherDefaultMutation,
     };
+    let ticket = begin_save(ctx, app);
+    let payload = serde_json::json!(["system", system_id, "", launcher_id]).to_string();
     let launcher = rules::stored_value(launcher_id).unwrap_or_default();
     let store = ctx.store.clone();
     let shared = ctx.shared.clone();
@@ -86,10 +158,11 @@ pub fn set_system_launcher(ctx: &Ctx, app: &App, system_id: &str, launcher_id: &
             system_id: system_id.clone(),
             launcher: launcher.clone(),
         };
-        match store
+        let result = store
             .run_mutation::<SetSystemLauncherDefaultMutation>(args)
-            .await
-        {
+            .await;
+        let succeeded = result.is_ok();
+        match result {
             Ok(()) => {
                 let mut guard = lock(&shared);
                 if let Some(existing) = guard
@@ -110,11 +183,16 @@ pub fn set_system_launcher(ctx: &Ctx, app: &App, system_id: &str, launcher_id: &
             }
             Err(e) => {
                 tracing::warn!("set launcher failed: {}", e.message);
-                let _ = weak.upgrade_in_event_loop(move |app| {
-                    crate::router::report_action_error(&ctx2, &app, "launcher", "");
-                });
             }
         }
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            finish_save(
+                &ctx2,
+                &app,
+                ticket,
+                (!succeeded).then_some(payload.as_str()),
+            );
+        });
     });
 }
 
@@ -169,6 +247,8 @@ pub fn open_game_picker(ctx: &Ctx, app: &App, system_id: &str, path: &str, media
 /// Write the per-game override (`media.meta.update`); the sentinel row
 /// clears it and the game falls back to its system's launcher.
 pub fn set_game_launcher(ctx: &Ctx, app: &App, system_id: &str, path: &str, launcher_id: &str) {
+    let ticket = begin_save(ctx, app);
+    let payload = serde_json::json!(["game", system_id, path, launcher_id]).to_string();
     let params = MediaMetaUpdateParams::for_media(
         system_id.to_string(),
         path.to_string(),
@@ -179,11 +259,17 @@ pub fn set_game_launcher(ctx: &Ctx, app: &App, system_id: &str, path: &str, laun
     let weak = app.as_weak();
     let path = path.to_string();
     ctx.handle.spawn(async move {
-        if let Err(e) = client.media_meta_update(params).await {
+        let result = client.media_meta_update(params).await;
+        if let Err(e) = &result {
             tracing::warn!("launcher override write failed for {path}: {}", e.message);
-            let _ = weak.upgrade_in_event_loop(move |app| {
-                crate::router::report_action_error(&ctx2, &app, "launcher", "");
-            });
         }
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            finish_save(
+                &ctx2,
+                &app,
+                ticket,
+                result.is_err().then_some(payload.as_str()),
+            );
+        });
     });
 }

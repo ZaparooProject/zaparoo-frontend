@@ -259,15 +259,12 @@ fn system_logo_tile_push_preserves_images_and_paints_before_navigation() {
     );
 }
 
-#[test]
 #[allow(
     clippy::expect_used,
     reason = "offline router fixture must construct its runtime"
 )]
-fn token_empty_retry_replaces_alert_and_cancel_drains_queue() {
+fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
     use std::sync::{Arc, Mutex};
-    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
-    let (app, _) = boot();
     // Never drive this current-thread runtime: no network tasks or writes run.
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -294,6 +291,157 @@ fn token_empty_retry_replaces_alert_and_cancel_drains_queue() {
         is_mister: false,
         framebuffer_size: (W, H),
     };
+    (runtime, ctx)
+}
+
+#[test]
+fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen("games".into());
+    {
+        let mut state = crate::router::lock(&ctx.shared);
+        state.persist.settings.reduce_motion = false;
+        state.games.loading = false;
+        state.games.rows = (0..200)
+            .map(|i| crate::games::GameRow {
+                media_id: None,
+                name: format!("Game {i}"),
+                path: String::new(),
+                entry_type: zaparoo_app::media_list::EntryType::Media,
+                file_count: 0,
+                system_id: String::new(),
+                system_name: String::new(),
+                zap_script: String::new(),
+                tag_labels: vec![],
+                has_cover: false,
+                is_favorite: false,
+                media_capable: false,
+                root_distinguisher: String::new(),
+                detail_rows: vec![],
+                display: format!("Game {i}"),
+                suffix: String::new(),
+            })
+            .collect();
+        state.games.grid.set_item_count(200);
+    }
+    crate::games::render(&ctx, &app);
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert!(crate::router::lock(&ctx.shared).games.sliding);
+    let first = crate::router::lock(&ctx.shared).games.grid.current_page();
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).games.grid.current_page(),
+        first,
+        "in-flight slide must retain its gate"
+    );
+    distinct_frames(&window, 18);
+    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    for expected in first + 1..=first + 5 {
+        crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
+        let state = crate::router::lock(&ctx.shared);
+        assert_eq!(state.games.grid.current_page(), expected);
+        assert!(
+            !state.games.sliding,
+            "rapid pages must not arm a 260 ms gate"
+        );
+        drop(state);
+        assert!(
+            !crate::input::rapid_page(&ctx),
+            "repeat context must not leak"
+        );
+        CLOCK.with(|clock| clock.set(clock.get() + 90));
+        slint::platform::update_timers_and_animations();
+        frame(&window);
+    }
+    app.global::<crate::Overlays>().set_list_open(true);
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).games.grid.current_page(),
+        first + 5,
+        "modal-owned repeats must not page the background"
+    );
+    assert!(!crate::input::rapid_page(&ctx));
+    app.global::<crate::Overlays>().set_list_open(false);
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert!(
+        crate::router::lock(&ctx.shared).games.sliding,
+        "ordinary taps retain motion"
+    );
+    distinct_frames(&window, 18);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).games.grid.current_page(),
+        first + 6
+    );
+}
+
+#[test]
+fn launcher_save_keeps_picker_locked_delays_cue_and_retries_original_choice() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    let ov = app.global::<crate::Overlays>();
+    ov.set_list_open(true);
+    ov.set_list_entries(ModelRc::new(VecModel::from(vec![
+        crate::router::menu_entry("default", "Default"),
+        crate::router::menu_entry("alternate", "Alternate"),
+    ])));
+    ov.set_list_index(1);
+    let rows = ov.get_list_entries();
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .mouse_enabled = true;
+    crate::router::bind_context_input(&std::sync::Arc::new(ctx.clone()), &app);
+    let ticket = crate::launchers::begin_save(&ctx, &app);
+    ov.invoke_pointer_choice("list".into(), 0, true);
+    crate::router::handle_action(&ctx, &app, "up");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(ov.get_list_index(), 1);
+    assert!(ov.get_list_open());
+    assert_eq!(ov.get_list_entries(), rows);
+    assert!(crate::press_feedback::current(&app).is_none());
+    CLOCK.with(|clock| clock.set(clock.get() + 299));
+    slint::platform::update_timers_and_animations();
+    assert!(!ov.get_launcher_saving_visible());
+    CLOCK.with(|clock| clock.set(clock.get() + 1));
+    slint::platform::update_timers_and_animations();
+    assert!(ov.get_launcher_saving_visible());
+    let payload = serde_json::json!(["system", "SNES", "", "alternate"]).to_string();
+    crate::launchers::finish_save(&ctx, &app, ticket, Some(&payload));
+    assert!(!ov.get_list_open());
+    assert_eq!(ov.get_dialog_detail(), "launcher_save");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(ov.get_list_open() && ov.get_launcher_saving());
+    let selected = ov.get_list_entries().row_data(ov.get_list_index() as usize);
+    assert_eq!(selected.map(|entry| entry.id), Some("alternate".into()));
+    let retry_ticket = crate::router::lock(&ctx.shared).launcher_save_seq;
+    crate::launchers::finish_save(&ctx, &app, ticket, None);
+    assert!(
+        ov.get_launcher_saving(),
+        "stale completion cannot close retry"
+    );
+    crate::launchers::finish_save(&ctx, &app, retry_ticket, None);
+    CLOCK.with(|clock| clock.set(clock.get() + 300));
+    slint::platform::update_timers_and_animations();
+    assert!(
+        !ov.get_launcher_saving_visible(),
+        "fast completion retires delayed cue"
+    );
+    assert!(!ov.get_list_open());
+}
+
+#[test]
+fn token_empty_retry_replaces_alert_and_cancel_drains_queue() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
     crate::card_write::begin(&ctx, &app, String::new());
     let ov = app.global::<crate::Overlays>();
@@ -558,6 +706,67 @@ fn game_info_scrolls_long_content_but_not_short_or_loading_content() {
         0.0,
         "loading content must not scroll"
     );
+}
+
+#[test]
+fn about_seeds_scroll_before_paint_and_scrolls_with_clamped_geometry() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::router::lock(&ctx.shared).persist.about_scroll_milli = 713;
+    crate::about::bind(&std::sync::Arc::new(ctx), &app);
+    let view = app.global::<crate::AboutView>();
+    assert_eq!(
+        view.get_scroll_milli(),
+        713,
+        "cold state must be seeded before first paint"
+    );
+    assert_eq!(view.get_commit(), zaparoo_build_info::COMMIT);
+    assert_eq!(view.get_build_date(), zaparoo_build_info::BUILD_DATE);
+    // Render/input probe replaces disk publication; persistence serialization
+    // is covered by zaparoo-core's backward-compatible round-trip test.
+    let weak = app.as_weak();
+    view.on_scroll_requested(move |value| {
+        if let Some(app) = weak.upgrade() {
+            app.global::<crate::AboutView>().set_scroll_milli(value);
+        }
+    });
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen("about".into());
+    view.set_scroll_milli(0);
+    settle(&window);
+    assert!(view.get_maximum_scroll_milli() > 0);
+    app.window().request_redraw();
+    let top = frame(&window);
+    view.invoke_move(80);
+    assert!(view.get_scroll_milli() > 0);
+    assert_ne!(top, frame(&window));
+    view.invoke_move(1_000_000);
+    assert_eq!(view.get_scroll_milli(), 1000);
+    view.set_scroll_milli(1_000_000);
+    view.invoke_move(-80);
+    assert!(
+        view.get_scroll_milli() < 1000,
+        "smaller viewport must not trap a restored oversized offset"
+    );
+}
+
+#[test]
+fn favorite_count_labels_use_real_plural_forms() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let labels = app.global::<crate::Labels>();
+    assert_eq!(labels.invoke_favorite_systems(1), "1 system with favorites");
+    assert_eq!(
+        labels.invoke_favorite_systems(2),
+        "2 systems with favorites"
+    );
+    assert_eq!(labels.invoke_favorites(0), "0 favorites");
+    assert_eq!(labels.invoke_favorites(1), "1 favorite");
+    assert_eq!(labels.invoke_favorites(2), "2 favorites");
 }
 
 #[test]

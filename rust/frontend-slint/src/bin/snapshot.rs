@@ -289,8 +289,14 @@ fn main() {
         app.global::<generated::Overlays>().set_letter_index(4);
         app.global::<generated::Overlays>().set_letter_open(true);
     }
-    app.global::<Shell>()
-        .set_about_version_line("Version 1.2.2 (Slint demo)".into());
+    let about = app.global::<generated::AboutView>();
+    about.set_version("1.3.0".into());
+    about.set_commit("0123456".into());
+    about.set_channel("dev".into());
+    about.set_build_date("2026-09-07".into());
+    if screen.contains("about-scrolled") {
+        about.set_scroll_milli(1000);
+    }
     // Systems fixtures: a paged category (page 2 of 3) with no logo
     // files on disk, so the wordmark fallback renders.
     fixture_systems(
@@ -393,6 +399,26 @@ fn main() {
         ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(entries)));
         ov.set_list_index(6);
         ov.set_list_open(true);
+    }
+    if screen.ends_with("launcher-saving") {
+        let ov = app.global::<generated::Overlays>();
+        ov.set_list_title("title:change_launcher".into());
+        ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(vec![
+            MenuEntry {
+                id: "default".into(),
+                label: "Default".into(),
+                label_key: "".into(),
+            },
+            MenuEntry {
+                id: "alternate".into(),
+                label: "Alternate launcher".into(),
+                label_key: "".into(),
+            },
+        ])));
+        ov.set_list_index(1);
+        ov.set_list_open(true);
+        ov.set_launcher_saving(true);
+        ov.set_launcher_saving_visible(true);
     }
     if screen.ends_with("token-write") {
         app.global::<generated::Overlays>()
@@ -505,6 +531,8 @@ fn main() {
         || screen == "calibration"
     {
         "hub"
+    } else if screen.contains("about") {
+        "about"
     } else if screen.contains("systems") {
         "systems"
     } else if screen.contains("hub") {
@@ -637,8 +665,8 @@ fn main() {
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
-        app.global::<Shell>()
-            .set_about_version_line("Probe Version".into());
+        app.global::<generated::AboutView>()
+            .set_version("Probe Version".into());
         let dirty_about = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });

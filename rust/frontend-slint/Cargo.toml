@@ -62,6 +62,7 @@ snapshot = ["desktop", "slint/renderer-software"]
 [dependencies]
 zaparoo-core = { path = "../zaparoo-core" }
 zaparoo-app = { path = "../zaparoo-app" }
+zaparoo-build-info = { path = "../build-info" }
 # `unstable-fontique-010` exposes the shared font collection so the embedded
 # script faces can be registered for fallback (src/fonts.rs).
 slint = { version = "=1.17.1", default-features = false, features = ["compat-1-2", "unstable-fontique-010"] }

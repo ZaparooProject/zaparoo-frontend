@@ -1792,6 +1792,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "zaparoo-app",
+ "zaparoo-build-info",
  "zaparoo-core",
 ]
 

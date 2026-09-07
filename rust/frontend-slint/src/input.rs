@@ -31,6 +31,8 @@ pub struct InputModel {
     repeat_seq: u64,
     /// The same ticket for the rapid navigation quiet tail.
     quiet_seq: u64,
+    /// True only during a qualified held-repeat dispatch, never its async tail.
+    rapid_dispatch: bool,
 }
 
 impl InputModel {
@@ -42,6 +44,7 @@ impl InputModel {
             epoch: Instant::now(),
             repeat_seq: 0,
             quiet_seq: 0,
+            rapid_dispatch: false,
         }
     }
 
@@ -197,17 +200,28 @@ fn repeat_fire(ctx: &Ctx, app: &App) {
     let Some((action, long_enough)) = fired else {
         return;
     };
+    dispatch_repeat(ctx, app, &action, long_enough);
+    schedule_repeat(ctx, app, rules::REPEAT_TICK_MS);
+}
+
+pub(crate) fn rapid_page(ctx: &Ctx) -> bool {
+    lock(&ctx.shared).input.rapid_dispatch
+}
+
+/// Keep repeat identity through screen dispatch; rapid rendering state is
+/// not suitable because ordinary actions reset it before navigating.
+pub(crate) fn dispatch_repeat(ctx: &Ctx, app: &App, action: &str, long_enough: bool) {
     // Read before dispatch: a modal that owns input keeps this repeat
     // off the rapid flag even though the action still routes to it.
     let owns_input = !modal_open(app);
-    crate::router::handle_action(ctx, app, &action);
+    lock(&ctx.shared).input.rapid_dispatch = owns_input && long_enough;
+    crate::router::handle_action(ctx, app, action);
+    lock(&ctx.shared).input.rapid_dispatch = false;
     if owns_input {
-        // `handle_action` recorded this dispatch as an ordinary
-        // navigation action; override that only now, once the hold has
-        // earned it.
-        note_rapid(ctx, app, &action, long_enough);
+        // Publish the held state after dispatch. Qualified repeats preserve
+        // the previous rapid state; early repeats still behave like taps.
+        note_rapid(ctx, app, action, long_enough);
     }
-    schedule_repeat(ctx, app, rules::REPEAT_TICK_MS);
 }
 
 /// A navigation action was dispatched to a screen (`handle_action`'s
