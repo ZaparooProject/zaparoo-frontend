@@ -363,6 +363,25 @@ mod version_gate_tests {
     use super::version_supported;
 
     #[test]
+    fn letter_jump_uses_core_offset_not_a_count_sum() {
+        use zaparoo_core::media_types::BrowseIndexGroup;
+        let groups = [
+            BrowseIndexGroup {
+                count: 4,
+                offset: 0,
+                ..Default::default()
+            },
+            BrowseIndexGroup {
+                count: 3,
+                offset: 100,
+                ..Default::default()
+            },
+        ];
+        assert_eq!(super::letter_offset(&groups, 1), Some(100));
+        assert_eq!(super::letter_offset(&groups, 2), None);
+    }
+
+    #[test]
     fn dev_and_unparseable_fail_open() {
         assert!(version_supported("DEVELOPMENT"));
         assert!(version_supported("2.14.0-dev"));
@@ -420,7 +439,7 @@ fn close_dialog(app: &App) {
 /// can't kill the frontend (Main.qml's quit-confirm rule). Default
 /// focus is "No".
 pub(crate) fn open_quit_confirm(app: &App) {
-    open_dialog(app, "quit_confirm", "", "", &["yes", "no"], 1);
+    open_dialog(app, "quit_confirm", "", "", &["no", "yes"], 0);
 }
 
 /// Advance the sequential startup chain: commercial notice ->
@@ -528,9 +547,14 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
 }
 
 fn dialog_accept(ctx: &Ctx, app: &App, kind: &str, focus: usize) {
+    let confirmed = app
+        .global::<crate::Overlays>()
+        .get_dialog_buttons()
+        .row_data(focus)
+        .is_some_and(|id| id == "yes");
     match kind {
         "quit_confirm" => {
-            if focus == 0 {
+            if confirmed {
                 let _ = slint::quit_event_loop();
             } else {
                 close_dialog(app);
@@ -550,7 +574,7 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: &str, focus: usize) {
         }
         "first_run" => first_run_accept(ctx, app),
         "restart_setting" => {
-            if focus == 0 {
+            if confirmed {
                 confirm_pending_restart(ctx, app);
             } else {
                 lock(&ctx.shared).pending_restart = None;
@@ -723,8 +747,60 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
     });
 }
 
-const ROUTE_PREPARE_MS: u64 = 34;
 const ROUTE_SETTLE_MS: u64 = 190;
+
+/// Grace window before the forward-transition cue paints, matching
+/// `MainLayout.loadingIndicatorDelayMs`. A fill that answers inside it
+/// never blanks the screen the user is still looking at.
+const LOADING_CUE_DELAY_MS: u64 = 300;
+
+thread_local! {
+    /// Grace-window ticket. Pending fills start and end on the Slint
+    /// event loop and nowhere else, so this never leaves the UI thread
+    /// and does not belong in the shared, lock-guarded state.
+    static CUE_SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// A forward fill has started: gate input now, but leave the screen
+/// alone until the grace window is up. Qt's `pendingTransition` plus
+/// `DelayedLoadingIndicator`, in one call.
+pub(crate) fn begin_pending(app: &App, target: &str) {
+    let shell = app.global::<crate::Shell>();
+    if shell.get_transitioning() {
+        return;
+    }
+    shell.set_transition_target(SharedString::from(target));
+    shell.set_transitioning(true);
+    let ticket = CUE_SEQ.with(|c| {
+        c.set(c.get() + 1);
+        c.get()
+    });
+    let weak = app.as_weak();
+    slint::Timer::single_shot(
+        std::time::Duration::from_millis(LOADING_CUE_DELAY_MS),
+        move || {
+            if CUE_SEQ.with(std::cell::Cell::get) != ticket {
+                return;
+            }
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let shell = app.global::<crate::Shell>();
+            if shell.get_transitioning() {
+                shell.set_transition_cue(true);
+            }
+        },
+    );
+}
+
+/// The fill answered (or was abandoned): drop the gate and the cue, and
+/// retire a grace window still counting down.
+fn clear_pending(app: &App) {
+    CUE_SEQ.with(|c| c.set(c.get() + 1));
+    let shell = app.global::<crate::Shell>();
+    shell.set_transitioning(false);
+    shell.set_transition_cue(false);
+}
 
 #[cfg(feature = "mister")]
 fn request_cached_route_transition(app: &App, direction: i32) -> bool {
@@ -753,6 +829,7 @@ fn finish_route_transition(app: &App) {
     shell.set_active_screen(target);
     refresh_layout(app);
     shell.set_route_cached_transition(false);
+    shell.set_route_from_gated(false);
     shell.set_route_page_slide(0.0);
     shell.set_route_from_screen(SharedString::default());
     shell.set_route_to_screen(SharedString::default());
@@ -797,18 +874,20 @@ fn begin_route_transition(app: &App) {
     );
 }
 
-/// Navigate one level through the screen hierarchy. Async fills currently
-/// show a Loading cue; clear it and allow two clean source frames before
-/// caching so that cue never rides out with the old page.
+/// Navigate one level through the screen hierarchy: the destination is
+/// staged one screen-width away on the side we are travelling toward and
+/// the strip slides onto it. `direction` is +1 going down into the
+/// hub-and-spoke and -1 coming back up, so a level always enters from
+/// the same side it will later leave by.
 pub(crate) fn transition_to_screen(app: &App, target: &str, direction: i32) {
     let shell = app.global::<crate::Shell>();
     let current = shell.get_active_screen();
     if current.as_str() == target {
-        shell.set_transitioning(false);
+        clear_pending(app);
         return;
     }
     if shell.get_reduce_motion() {
-        shell.set_transitioning(false);
+        clear_pending(app);
         shell.set_active_screen(SharedString::from(target));
         refresh_layout(app);
         return;
@@ -817,26 +896,19 @@ pub(crate) fn transition_to_screen(app: &App, target: &str, direction: i32) {
         return;
     }
 
+    // Whatever the user is looking at right now is what slides out, cue
+    // and all. Read the gate before clearing it.
+    shell.set_route_from_gated(shell.get_transition_cue());
+    clear_pending(app);
+
     shell.set_route_transitioning(true);
     shell.set_route_from_screen(current);
     shell.set_route_to_screen(SharedString::from(target));
     shell.set_route_slide_dir(if direction > 0 { 1 } else { -1 });
-    shell.set_route_page_slide(0.0);
-
-    if shell.get_transitioning() {
-        shell.set_transitioning(false);
-        let weak = app.as_weak();
-        slint::Timer::single_shot(
-            std::time::Duration::from_millis(ROUTE_PREPARE_MS),
-            move || {
-                if let Some(app) = weak.upgrade() {
-                    begin_route_transition(&app);
-                }
-            },
-        );
-    } else {
-        begin_route_transition(app);
-    }
+    // The strip is already mounted and settled at 0, so moving the
+    // offset now is a change `animate x` can act on, whether we got
+    // here straight off a keypress or out of a completed fetch.
+    begin_route_transition(app);
 }
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
@@ -972,7 +1044,7 @@ fn about_action(ctx: &Ctx, app: &App, action: &str) {
 
 pub(crate) fn stage_restart(ctx: &Ctx, app: &App, pending: PendingRestart) {
     lock(&ctx.shared).pending_restart = Some(pending);
-    open_dialog(app, "restart_setting", "", "", &["yes", "no"], 1);
+    open_dialog(app, "restart_setting", "", "", &["no", "yes"], 0);
 }
 
 #[cfg(feature = "mister")]
@@ -1305,10 +1377,7 @@ fn fetch_letter_index(ctx: &Ctx, app: &App) {
                             count: i32::try_from(g.count).unwrap_or(i32::MAX),
                         })
                         .collect();
-                    let columns = rows.len().clamp(1, 9);
                     lock(&shared).letter_buckets = result.groups;
-                    app.global::<crate::Overlays>()
-                        .set_letter_columns(columns as i32);
                     app.global::<crate::Overlays>()
                         .set_letter_buckets(ModelRc::new(VecModel::from(rows)));
                     app.global::<crate::Overlays>().set_letter_loading(false);
@@ -1335,6 +1404,13 @@ fn close_letter_jump(ctx: &Ctx, app: &App) {
     app.global::<crate::Overlays>().set_letter_open(false);
 }
 
+fn letter_offset(
+    groups: &[zaparoo_core::media_types::BrowseIndexGroup],
+    index: usize,
+) -> Option<u32> {
+    groups.get(index).map(|group| group.offset)
+}
+
 fn letter_action(ctx: &Ctx, app: &App, action: &str) {
     let len = app
         .global::<crate::Overlays>()
@@ -1343,42 +1419,21 @@ fn letter_action(ctx: &Ctx, app: &App, action: &str) {
     let index = app.global::<crate::Overlays>().get_letter_index().max(0) as usize;
     let cols = app.global::<crate::Overlays>().get_letter_columns().max(1) as usize;
     match action {
-        actions::LEFT if len > 0 => {
+        actions::LEFT | actions::RIGHT | actions::UP | actions::DOWN => {
             app.global::<crate::Overlays>()
-                .set_letter_index(((index + len - 1) % len) as i32);
-        }
-        actions::RIGHT if len > 0 => {
-            app.global::<crate::Overlays>()
-                .set_letter_index(((index + 1) % len) as i32);
-        }
-        actions::UP if len > 0 => {
-            if index >= cols {
-                app.global::<crate::Overlays>()
-                    .set_letter_index((index - cols) as i32);
-            }
-        }
-        actions::DOWN if len > 0 => {
-            if index + cols < len {
-                app.global::<crate::Overlays>()
-                    .set_letter_index((index + cols) as i32);
-            }
+                .set_letter_index(
+                    zaparoo_app::letter_jump::next_index(action, index, len, cols) as i32,
+                );
         }
         actions::ACCEPT if len > 0 => {
-            // Bucket offset = cumulative count of all earlier buckets
-            // (the Qt LetterJumpModal's accepted(itemOffset) rule; the
-            // per-bucket cursor stays unused - this is a position
-            // jump, not a forward-only seek).
+            // Core supplies the authoritative browse-order position.
+            // Counts need not reconstruct it (LetterJumpModal._offsetForIndex).
             let offset: u32 = {
                 let guard = lock(&ctx.shared);
-                if index >= guard.letter_buckets.len() {
+                let Some(offset) = letter_offset(&guard.letter_buckets, index) else {
                     return;
-                }
-                guard
-                    .letter_buckets
-                    .iter()
-                    .take(index)
-                    .map(|g| g.count)
-                    .sum()
+                };
+                offset
             };
             close_letter_jump(ctx, app);
             crate::games::jump_to_item(ctx, app, offset);
@@ -1777,6 +1832,52 @@ fn close_context_menu(ctx: &Ctx, app: &App) {
 /// Pointer input on the context menu's rows: hover moves focus, a click
 /// accepts (ContextMenu.qml's own per-row mouse areas).
 pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
+    {
+        let ctx = ctx.clone();
+        let weak = app.as_weak();
+        app.global::<crate::Overlays>()
+            .on_pointer_choice(move |kind, index, accept| {
+                let Some(app) = weak.upgrade() else { return };
+                if index < 0 || !lock(&ctx.shared).persist.settings.mouse_enabled {
+                    return;
+                }
+                if kind == "wake" {
+                    if app.global::<crate::Shell>().get_saver_armed() {
+                        app.global::<crate::Shell>().set_saver_armed(false);
+                        reset_idle(&ctx, &app);
+                    }
+                    return;
+                }
+                let ov = app.global::<crate::Overlays>();
+                let row = index as usize;
+                match kind.as_str() {
+                    "dialog"
+                        if ov.get_dialog_open() && row < ov.get_dialog_buttons().row_count() =>
+                    {
+                        ov.set_dialog_focus(index);
+                    }
+                    "list"
+                        if !ov.get_dialog_open()
+                            && ov.get_list_open()
+                            && row < ov.get_list_entries().row_count() =>
+                    {
+                        ov.set_list_index(index);
+                    }
+                    "letter"
+                        if !ov.get_dialog_open()
+                            && ov.get_letter_open()
+                            && row < ov.get_letter_buckets().row_count() =>
+                    {
+                        ov.set_letter_index(index);
+                    }
+                    _ => return,
+                }
+                reset_idle(&ctx, &app);
+                if accept {
+                    handle_action(&ctx, &app, actions::ACCEPT);
+                }
+            });
+    }
     let input = app.global::<crate::ContextInput>();
     {
         let ctx = ctx.clone();

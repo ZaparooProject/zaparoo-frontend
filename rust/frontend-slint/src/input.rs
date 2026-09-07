@@ -45,6 +45,15 @@ impl InputModel {
         }
     }
 
+    /// Retire the repeat ticket and report whether release needs a persist flush.
+    fn release(&mut self, key: &str) -> bool {
+        if !self.hold.release(key) {
+            return false;
+        }
+        self.repeat_seq += 1;
+        true
+    }
+
     fn now_ms(&self) -> u64 {
         u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
@@ -117,9 +126,11 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
 /// The key came up. Only the key that started the repeat cancels it; a
 /// release of any other key in flight is ignored.
 fn key_released(ctx: &Ctx, key: &str) {
-    let stopped = lock(&ctx.shared).input.hold.release(key);
+    let stopped = lock(&ctx.shared).input.release(key);
     if stopped {
-        stop_repeat(ctx);
+        // Hold::release already cleared the hold. Stopping it again would
+        // report false and skip the final selection's synchronous flush.
+        crate::games::flush_persist(ctx);
     }
 }
 
@@ -267,4 +278,22 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
     app.on_key_released(move |text| key_released(&released_ctx, &text));
     let lost_ctx = ctx.clone();
     app.on_input_lost(move || stop_repeat(&lost_ctx));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::InputModel;
+
+    #[test]
+    fn held_key_release_retires_timer_and_requests_exactly_one_flush() {
+        let mut model = InputModel::new();
+        model.hold.arm("down", "ArrowDown", 0);
+        let ticket = model.repeat_seq;
+        assert!(!model.release("ArrowUp"));
+        assert_eq!(model.repeat_seq, ticket);
+        assert!(model.release("ArrowDown"));
+        assert!(model.repeat_seq > ticket);
+        assert!(model.hold.tick(1000).is_none());
+        assert!(!model.release("ArrowDown"));
+    }
 }

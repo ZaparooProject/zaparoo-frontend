@@ -67,7 +67,7 @@ export component MarqueeCaption inherits Rectangle {
     property <length> tags-full-w: root.has-tags ? suffix.preferred-width : 0px;
     property <length> full-w: root.name-full-w + root.gap-w + root.tags-full-w;
     property <bool> overflows: root.full-w > root.width;
-    property <bool> marquee: root.focused && root.overflows;
+    property <bool> marquee: root.focused && root.overflows && Motion.enabled;
     property <int> scroll-dist: Math.max(0, Math.round((root.full-w - root.width) / 1px));
 
     // Static-overflow width policy (ScrollingCaption's minNameFraction

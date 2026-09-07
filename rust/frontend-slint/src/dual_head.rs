@@ -144,6 +144,11 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
             get_route_cached_transition => set_route_cached_transition,
             false
         );
+        set_if_changed!(
+            target,
+            get_route_from_gated => set_route_from_gated,
+            source.get_route_from_gated()
+        );
         if route_motion && state.route != TransitionPhase::Active {
             target.set_active_screen(source.get_route_from_screen());
             target.set_route_slide_anim(true);
@@ -153,6 +158,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     } else if state.route == TransitionPhase::Active || target.get_route_transitioning() {
         target.set_route_slide_anim(false);
         target.set_active_screen(source.get_active_screen());
+        target.set_route_from_gated(false);
         target.set_route_page_slide(0.0);
         target.set_route_from_screen(slint::SharedString::default());
         target.set_route_to_screen(slint::SharedString::default());
@@ -170,6 +176,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     }
     copy_properties!(source, target;
         get_transitioning => set_transitioning,
+        get_transition_cue => set_transition_cue,
+        get_transition_target => set_transition_target,
         get_status_text => set_status_text,
         get_clock_text => set_clock_text,
         get_clock_sample => set_clock_sample,
@@ -182,6 +190,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_boot_complete => set_boot_complete,
         get_boot_text => set_boot_text,
         get_reduce_motion => set_reduce_motion,
+        get_mouse_enabled => set_mouse_enabled,
         get_saver_armed => set_saver_armed,
         get_orientation => set_orientation,
         get_browse_list_layout => set_browse_list_layout,
@@ -661,7 +670,6 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_letter_buckets => set_letter_buckets,
         get_letter_index => set_letter_index,
         get_letter_loading => set_letter_loading,
-        get_letter_columns => set_letter_columns,
         get_card_write_open => set_card_write_open,
         get_card_write_failed => set_card_write_failed,
         get_qr_open => set_qr_open,

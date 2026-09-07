@@ -25,6 +25,7 @@ pub mod hub;
 pub mod input;
 pub mod launchers;
 pub mod layouts;
+pub mod letter_jump;
 pub mod log_upload;
 pub mod media_list;
 pub mod media_setup;

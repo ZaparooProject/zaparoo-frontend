@@ -8,6 +8,13 @@
 
 // Key-to-copy vocabulary for labels Rust hands over as stable ids.
 export global Labels {
+    public pure function loading(target: string) -> string {
+        if (target == "systems") { return @tr("Loading systems…"); }
+        if (target == "games") { return @tr("Loading games…"); }
+        if (target == "favorites") { return @tr("Loading favorites…"); }
+        if (target == "recents") { return @tr("Loading recently played…"); }
+        return @tr("Loading…");
+    }
     public pure function hub(key: string, name: string) -> string {
         if (key == "category:Arcade") { return @tr("Arcade"); }
         // Core sends the canonical singular ids; the plurals are what an
@@ -65,7 +72,7 @@ export global Labels {
         if (key == "hide:unhide") { return @tr("Unhide"); }
         if (key == "index_category" || key == "index_system") { return @tr("Update media database"); }
         if (key == "scrape_category" || key == "scrape_system") { return @tr("Update metadata"); }
-        if (key == "jump_letter") { return @tr("Go to..."); }
+        if (key == "jump_letter") { return @tr("Go to…"); }
         // Hub rows and its View menu.
         if (key == "hub_add") { return @tr("Add item…"); }
         if (key == "hub_move") { return @tr("Move"); }

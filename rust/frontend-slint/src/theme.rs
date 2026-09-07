@@ -27,6 +27,9 @@ fn color(value: Rgb16) -> slint::Color {
 pub fn apply_palette(app: &App, scheme: &str, intensity: &str) -> Palette {
     let p = palette::palette(scheme, intensity);
     let theme = app.global::<Theme>();
+    theme.on_preview_color(|id, index| {
+        color(palette::preview_colors(id.as_str())[index.clamp(0, 2) as usize])
+    });
     theme.set_bg_deep(color(p.bg_deep));
     theme.set_bg_panel(color(p.bg_panel));
     theme.set_bg_bar(color(p.bg_bar));

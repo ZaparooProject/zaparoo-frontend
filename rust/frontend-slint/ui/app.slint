@@ -54,7 +54,18 @@ export struct LetterBucket {
 
 export global Shell {
     in-out property <string> active-screen: "hub";
+    // A forward fill is pending (Main.qml's `pendingTransition`): gates
+    // input and the screensaver, but paints nothing on its own.
     in-out property <bool> transitioning: false;
+    // The "Loading…" cue is actually on screen. Qt only raises this
+    // after `loadingIndicatorDelayMs`, and only this hides the source
+    // screen's content - a fill that answers inside the grace window
+    // never blanks anything. See DelayedLoadingIndicator.qml.
+    in-out property <bool> transition-cue: false;
+    in-out property <string> transition-target;
+    // The screen sliding out was already gated when the route change
+    // began, so it must not un-gate for the length of the slide.
+    in-out property <bool> route-from-gated: false;
     // Screen-route motion is separate from asynchronous Loading state.
     // Cached HDMI renders only the destination endpoint; native backends
     // use the same state to push two screen layers at their own geometry.
@@ -96,6 +107,7 @@ export global Shell {
     // instant cut (swoops, focus-ring glides). Marquee scrolling is
     // exempt - it is the only way long names become readable.
     in-out property <bool> reduce-motion: false;
+    in-out property <bool> mouse-enabled: false;
     // Screensaver armed (idle timeout elapsed); any input disarms via
     // the router. Exempt from reduce-motion: burn protection needs
     // the logo to keep moving.
@@ -412,6 +424,7 @@ export global GameInfoView {
 
 // Context menu, View menu, letter picker, and card-writer state.
 export global Overlays {
+    callback pointer-choice(string, int, bool);
     in-out property <bool> context-open: false;
     in-out property <[MenuEntry]> context-entries: [];
     in-out property <int> context-index: 0;
@@ -433,7 +446,8 @@ export global Overlays {
     in-out property <[LetterBucket]> letter-buckets: [];
     in-out property <int> letter-index: 0;
     in-out property <bool> letter-loading: false;
-    in-out property <int> letter-columns: 9;
+    out property <int> letter-columns: Sizing.fit-letter-columns(self.letter-buckets.length,
+        Sizing.pct-w(78) - 2 * Sizing.pct-w(4), Sizing.pct-h(52), Sizing.pct-w(1));
     in-out property <bool> card-write-open: false;
     in-out property <bool> card-write-failed: false;
     // QR write deep-link modal: the matrix image is rendered by Rust
@@ -631,6 +645,7 @@ component SettingsScreen inherits Rectangle {
 // cue. Rust owns the entries, the cursor and the geometry.
 component HubScreen inherits Rectangle {
     background: transparent;
+    in property <bool> gated: false;
     property <bool> error: HubView.hub-error != "";
 
     grid := PagedGridView {
@@ -659,7 +674,7 @@ component HubScreen inherits Rectangle {
         skip-empty-cells: !HubView.move-armed;
         // Hidden on a forward transition and while the load error shows,
         // so the cue paints alone against the background.
-        visible: !Shell.transitioning && !root.error;
+        visible: !Shell.transition-cue && !root.gated && !root.error;
         caption-for(cell) => { return Labels.hub(cell.label-key, cell.name); }
         cell-hovered(i) => { HubInput.cell-hovered(i); }
         cell-clicked(i) => { HubInput.cell-clicked(i); }
@@ -677,7 +692,7 @@ component HubScreen inherits Rectangle {
         side-inset: indicator.width + Sizing.hub-grid-side-inset;
         text: Labels.hub(HubView.label-key, HubView.label-name);
         tags: Labels.hub-reason(HubView.label-reason);
-        visible: !Shell.transitioning && HubView.label-visible;
+        visible: !Shell.transition-cue && !root.gated && HubView.label-visible;
     }
 
     indicator := PageIndicator {
@@ -799,11 +814,12 @@ component AboutScreen inherits Rectangle {
 // strip slides one page period when a page turns.
 component SystemsScreen inherits Rectangle {
     background: transparent;
+    in property <bool> gated: false;
     property <bool> list-layout: Shell.systems-list-layout;
     property <bool> tate-list: self.list-layout && Shell.orientation != "horizontal";
     property <string> state: SystemsView.error != "" ? "error"
         : (SystemsView.loading ? "loading" : (SystemsView.count == 0 ? "empty" : ""));
-    property <bool> gate-hide: Shell.transitioning || SystemsView.loading || cue.loading-visible || SystemsView.error != "";
+    property <bool> gate-hide: Shell.transition-cue || root.gated || SystemsView.loading || cue.loading-visible || SystemsView.error != "";
     property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
     property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
     property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
@@ -1035,7 +1051,27 @@ component ListPickerModal inherits Rectangle {
     // The window keeps the cursor centered until it reaches an end.
     property <int> top: Math.max(0, Math.min(root.entries.length - root.visible-rows,
         root.current-index - Math.floor((root.visible-rows - 1) / 2)));
-    property <length> panel-w: Math.max(Sizing.pct-w(24), Sizing.pct-h(32));
+    pure function entry-label(entry: MenuEntry) -> string {
+        return root.setting-id != "" ? SettingsLabels.value(root.setting-id, entry.id)
+            : (entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label);
+    }
+    property <bool> swatches: root.setting-id == "colorScheme";
+    property <length> swatch-size: Sizing.pct-h(2.4);
+    property <length> swatch-gap: Sizing.pct-w(0.6);
+    property <length> swatch-band: root.swatches ? 3 * root.swatch-size + 2 * root.swatch-gap + Sizing.pct-w(2) : 0px;
+    property <length> pad-x: Sizing.pct-w(4);
+    measure := VerticalLayout {
+        visible: false;
+        for entry in root.entries: Text {
+            text: root.entry-label(entry);
+            font-size: Sizing.font-body;
+            font-weight: 500;
+        }
+    }
+    property <length> desired-w: Math.max(measure.preferred-width + root.swatch-band
+        + 2 * Sizing.pct-w(2) + Sizing.stroke(2), title.preferred-width)
+        + 2 * root.pad-x + Math.round(Sizing.font-body * 1.5 / 1px) * 1px;
+    property <length> panel-w: Math.min(Sizing.pct-w(92), Math.max(Sizing.pct-w(30), Math.ceil(root.desired-w / 1px) * 1px));
     property <length> panel-h: root.title-h + root.viewport-h + 2 * root.arrow-band + Sizing.pct-h(4);
 
     Rectangle {
@@ -1049,9 +1085,11 @@ component ListPickerModal inherits Rectangle {
         border-color: Theme.border-mid;
         clip: true;
 
-        Text {
+        title := Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+            overflow: elide;
             text: root.setting-id != "" ? SettingsLabels.label(root.setting-id) : root.title;
             color: Theme.text-primary;
             font-size: Sizing.font-size(4);
@@ -1067,9 +1105,9 @@ component ListPickerModal inherits Rectangle {
         }
 
         Rectangle {
-            x: Sizing.pct-w(1);
+            x: root.pad-x;
             y: root.title-h + root.arrow-band;
-            width: parent.width - 2 * Sizing.pct-w(1);
+            width: parent.width - 2 * root.pad-x;
             height: root.viewport-h;
             clip: true;
 
@@ -1078,21 +1116,39 @@ component ListPickerModal inherits Rectangle {
                 y: (i - root.top) * root.stride;
                 width: parent.width;
                 height: root.row-h;
-                background: i == root.current-index ? Theme.selection-fill : transparent;
-                border-radius: Sizing.pct-h(1);
-                border-width: i == root.current-index ? Sizing.stroke(0.4) : 0px;
-                border-color: Theme.accent;
-
+                bar := SelectionBar {
+                    width: 100%;
+                    height: 100%;
+                    active: i == root.current-index;
+                }
                 Text {
-                    x: Sizing.pct-w(2);
+                    x: root.swatches ? Sizing.pct-w(2) : Math.round((parent.width - self.width) / 2px) * 1px;
                     y: Math.round((parent.height - self.height) / 2px) * 1px;
-                    max-width: parent.width - 2 * Sizing.pct-w(2);
+                    width: Math.min(self.preferred-width, Math.max(0px, parent.width - 2 * Sizing.pct-w(2) - root.swatch-band));
                     overflow: elide;
-                    text: root.setting-id != ""
-                        ? SettingsLabels.value(root.setting-id, entry.id)
-                        : (entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label);
-                    color: Theme.text-primary;
-                    font-size: Sizing.font-size(2.6);
+                    text: root.entry-label(entry);
+                    color: bar.active ? bar.content-color : Theme.text-primary;
+                    font-size: Sizing.font-body;
+                    font-weight: bar.content-weight;
+                }
+                if root.swatches: Rectangle {
+                    x: parent.width - Sizing.pct-w(2) - self.width;
+                    y: Math.round((parent.height - self.height) / 2px) * 1px;
+                    width: 3 * root.swatch-size + 2 * root.swatch-gap;
+                    height: root.swatch-size;
+                    for n in 3: Rectangle {
+                        x: n * (root.swatch-size + root.swatch-gap);
+                        width: root.swatch-size;
+                        height: root.swatch-size;
+                        background: Theme.preview-color(entry.id, n);
+                        border-width: Sizing.stroke(1);
+                        border-color: bar.active ? bar.content-color : Theme.text-label;
+                    }
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice("list", i, false); } }
+                    clicked => { Overlays.pointer-choice("list", i, true); }
                 }
             }
         }
@@ -1123,8 +1179,9 @@ component LetterJumpModal inherits Rectangle {
     property <length> panel-w: Sizing.pct-w(78);
     property <length> content-w: root.panel-w - 2 * Sizing.pct-w(4);
     property <int> rows: Math.max(1, Math.ceil(root.buckets.length / Math.max(1, root.columns)));
-    property <length> cell: Math.round(Math.min(Sizing.pct-w(13) / 1px, Math.max(Sizing.pct-w(7) / 1px,
-        (root.content-w - (root.columns - 1) * root.gap) / Math.max(1, root.columns) / 1px))) * 1px;
+    property <length> cell: Math.round(Math.max(Sizing.pct-w(7), Math.min(Sizing.pct-w(13),
+        Math.min((root.content-w - (root.columns - 1) * root.gap) / Math.max(1, root.columns),
+            (Sizing.pct-h(52) - (root.rows - 1) * root.gap) / root.rows))) / 1px) * 1px;
     property <length> title-h: Sizing.pct-h(8);
     property <length> grid-h: root.rows * root.cell + (root.rows - 1) * root.gap;
     property <length> grid-w: root.columns * root.cell + (root.columns - 1) * root.gap;
@@ -1143,18 +1200,18 @@ component LetterJumpModal inherits Rectangle {
         Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((root.title-h - self.height) / 2px) * 1px;
-            text: @tr("Go to...");
+            text: @tr("Go to…");
             color: Theme.text-primary;
             font-size: Sizing.font-size(4);
             font-weight: 500;
         }
 
-        if root.loading: Text {
+        if root.buckets.length == 0: Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: root.title-h + Math.round((root.grid-h - self.height) / 2px) * 1px;
-            text: @tr("Loading…");
+            text: root.loading ? @tr("Loading…") : @tr("No sections");
             color: Theme.text-label;
-            font-size: Sizing.font-size(2.6);
+            font-size: Sizing.font-body;
         }
 
         Rectangle {
@@ -1163,30 +1220,32 @@ component LetterJumpModal inherits Rectangle {
             width: root.grid-w;
             height: root.grid-h;
 
-            for bucket[i] in root.buckets: Rectangle {
+            for bucket[i] in root.buckets: cell := PressableSurface {
                 x: Math.mod(i, root.columns) * (root.cell + root.gap);
                 y: Math.floor(i / root.columns) * (root.cell + root.gap);
                 width: root.cell;
                 height: root.cell;
-                background: i == root.current-index ? Theme.selection-fill : Theme.surface-card;
-                border-radius: Sizing.pct-h(1);
-                border-width: i == root.current-index ? Sizing.stroke(0.4) : Sizing.stroke(0.2);
-                border-color: i == root.current-index ? Theme.accent : Theme.border-mid;
+                focused: i == root.current-index;
 
                 Text {
                     x: Math.round((parent.width - self.width) / 2px) * 1px;
-                    y: Math.round((parent.height * 0.52 - self.height) / 2px) * 1px;
+                    y: cell.face-y + Math.round((cell.face-height * 0.52 - self.height) / 2px) * 1px;
                     text: bucket.label;
-                    color: Theme.text-primary;
+                    color: cell.focused ? Theme.text-primary : Theme.text-label;
                     font-size: Sizing.font-size(3.4);
                     font-weight: 500;
                 }
                 Text {
                     x: Math.round((parent.width - self.width) / 2px) * 1px;
-                    y: parent.height - self.height - Sizing.pct-h(0.8);
+                    y: cell.face-y + cell.face-height - self.height - Sizing.pct-h(0.8);
                     text: bucket.count;
                     color: Theme.text-label;
                     font-size: Sizing.font-size(2.2);
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice("letter", i, false); } }
+                    clicked => { Overlays.pointer-choice("letter", i, true); }
                 }
             }
         }
@@ -1265,8 +1324,7 @@ component QrCodeModal inherits Rectangle {
 
 // Decision dialog (Modal.qml port): rounded panel over the scrim
 // with title, wrapped body, an optional status line, and a centered
-// button row. Focus is a filled accent pill; unfocused buttons keep
-// the outline treatment. Purely presentational - the router owns
+// row of raised commitment buttons. Purely presentational - the router owns
 // which buttons exist and what they mean.
 component DialogModal inherits Rectangle {
     background: Theme.scrim;
@@ -1276,7 +1334,7 @@ component DialogModal inherits Rectangle {
     // does not stack up into extra lines on a 240p screen.
     property <length> panel-w: Math.min(root.width * 0.92, Sizing.pct-h(110));
     property <length> pad: Sizing.pct-h(3);
-    property <length> btn-h: Sizing.pct-h(6);
+    property <length> btn-h: Sizing.pct-h(7);
     property <length> btn-gap: Sizing.pct-w(2);
     property <length> body-h: body-t.preferred-height;
     property <length> status-h: Overlays.dialog-status != "" ? Sizing.font-size(2.4) + Sizing.pct-h(1) : 0px;
@@ -1326,10 +1384,11 @@ component DialogModal inherits Rectangle {
             font-size: Sizing.font-size(2.4);
         }
 
-        // Centered button row: fixed-width pills (two at most in the
-        // Qt kinds), focused pill filled accent.
-        property <length> btn-w: Sizing.pct-w(14);
-        for label[i] in Overlays.dialog-buttons: Rectangle {
+        // Same raised surfaces and safe-area width cap as Modal.qml.
+        property <length> btn-w: Math.min(Sizing.pct-w(28), Math.floor((root.panel-w - 2 * root.pad
+            - Math.max(0, Overlays.dialog-buttons.length - 1) * root.btn-gap)
+            / Math.max(1, Overlays.dialog-buttons.length) / 1px) * 1px);
+        for label[i] in Overlays.dialog-buttons: button := PressableSurface {
             x: Math.round((parent.width
                 - (Overlays.dialog-buttons.length * parent.btn-w
                     + (Overlays.dialog-buttons.length - 1) * root.btn-gap))
@@ -1338,20 +1397,20 @@ component DialogModal inherits Rectangle {
             y: root.panel-h - root.pad - root.btn-h;
             width: parent.btn-w;
             height: root.btn-h;
-            border-radius: self.height / 2;
-            background: i == Overlays.dialog-focus ? Theme.accent : Theme.surface-card;
-            border-width: Sizing.stroke(0.3);
-            border-color: i == Overlays.dialog-focus ? Theme.accent : Theme.border-mid;
+            focused: i == Overlays.dialog-focus;
 
             Text {
                 x: Math.round((parent.width - self.width) / 2px) * 1px;
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                y: button.face-y + Math.round((button.face-height - self.height) / 2px) * 1px;
                 max-width: parent.width - Sizing.pct-w(1);
                 overflow: elide;
                 text: DialogLabels.button(label);
-                color: i == Overlays.dialog-focus ? Theme.bg-bar : Theme.text-primary;
-                font-size: Sizing.font-size(2.6);
-                font-weight: 600;
+                color: button.focused ? Theme.text-primary : Theme.text-label;
+                font-size: Sizing.font-body;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Overlays.pointer-choice("dialog", i, true); }
             }
         }
     }
@@ -1557,6 +1616,7 @@ component ContextMenu inherits Rectangle {
 // MediaList row lands.
 component GamesScreen inherits Rectangle {
     background: transparent;
+    in property <bool> gated: false;
     property <bool> list-layout: Shell.browse-list-layout;
     property <bool> tate-list: self.list-layout && Shell.orientation != "horizontal";
     property <bool> is-games: GamesView.mode == "games";
@@ -1564,7 +1624,7 @@ component GamesScreen inherits Rectangle {
         : (GamesView.mode == "recents" ? @tr("Recently played") : GamesView.title);
     property <string> state: GamesView.error != "" ? "error"
         : (GamesView.loading ? "loading" : (GamesView.count == 0 ? "empty" : ""));
-    property <bool> gate-hide: Shell.transitioning || GamesView.loading || cue.loading-visible || GamesView.error != "";
+    property <bool> gate-hide: Shell.transition-cue || root.gated || GamesView.loading || cue.loading-visible || GamesView.error != "";
     property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
     property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
     property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
@@ -1916,15 +1976,20 @@ component CrtCalibrationPattern inherits Rectangle {
 
 component RouteScreen inherits Rectangle {
     in property <string> screen-token;
+    // Hold this screen's content hidden even though the global cue is
+    // down: set on the outgoing half of a route slide.
+    in property <bool> gated: false;
 
     if root.screen-token == "hub" && !Shell.boot-curtain: HubScreen {
         width: 100%;
         height: 100%;
+        gated: root.gated;
     }
 
     if root.screen-token == "systems" || root.screen-token == "favorite-systems": SystemsScreen {
         width: 100%;
         height: 100%;
+        gated: root.gated;
     }
 
     if root.screen-token == "settings": SettingsScreen {
@@ -1941,6 +2006,7 @@ component RouteScreen inherits Rectangle {
         || root.screen-token == "recents": GamesScreen {
         width: 100%;
         height: 100%;
+        gated: root.gated;
     }
 }
 
@@ -2281,16 +2347,24 @@ export component App inherits Window {
     // Cached HDMI exposes only the committed destination to Slint; the
     // presenter moves RGB565 endpoints. Native backends render the same
     // hierarchy as a clipped two-screen strip, preserving CRT animation.
-    if !Shell.route-transitioning || Shell.route-cached-transition: RouteScreen {
+    //
+    // The strip is mounted for the whole run, never behind an `if`, and
+    // that is load-bearing: `animate x` only animates a *change*, and a
+    // strip created after `route-page-slide` had already moved would
+    // evaluate `x` straight to its end value and cut. Mounted, `x` is
+    // always a settled 0, so a route change that starts in the same
+    // event-loop turn it was requested still slides. Slot 0 holds the
+    // screen currently on view; the incoming one waits one screen-width
+    // away on the side we are travelling toward, and only exists while
+    // a native (non-cached) route change is running.
+    stage := Rectangle {
         width: 100%;
         height: 100%;
-        screen-token: Shell.active-screen;
-    }
-
-    if Shell.route-transitioning && !Shell.route-cached-transition: Rectangle {
-        width: 100%;
-        height: 100%;
+        // A square clip is a scissor rect, not a render target, so this
+        // costs nothing when nothing is sliding.
         clip: true;
+
+        property <bool> sliding: Shell.route-transitioning && !Shell.route-cached-transition;
 
         strip := Rectangle {
             x: -Shell.route-page-slide * parent.width;
@@ -2305,10 +2379,15 @@ export component App inherits Window {
                 x: 0;
                 width: parent.width;
                 height: parent.height;
-                screen-token: Shell.route-from-screen;
+                screen-token: stage.sliding ? Shell.route-from-screen : Shell.active-screen;
+                // The screen we are leaving keeps whatever the user was
+                // actually looking at. Without this a slow fill hides
+                // the source rows behind the cue, then pops them back
+                // for the length of the slide - the blink.
+                gated: stage.sliding && Shell.route-from-gated;
             }
 
-            RouteScreen {
+            if stage.sliding: RouteScreen {
                 x: Shell.route-slide-dir * parent.width;
                 width: parent.width;
                 height: parent.height;
@@ -2336,14 +2415,16 @@ export component App inherits Window {
     }
 
     // Global loading cue: transparent Item plus one Text, no painted
-    // background, exactly like the QML overlay contract.
-    if Shell.transitioning: Rectangle {
+    // background, exactly like the QML overlay contract. It rides the
+    // delayed flag, so a fill that answers inside the grace window
+    // never flashes it.
+    if Shell.transition-cue: Rectangle {
         width: 100%;
         height: 100%;
         Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((parent.height - self.height) / 2px) * 1px;
-            text: @tr("Loading…");
+            text: Labels.loading(Shell.transition-target);
             color: Theme.text-primary;
             font-size: Sizing.font-size(3.2);
         }
@@ -2361,6 +2442,13 @@ export component App inherits Window {
         battery-percent: Shell.battery-percent;
         browse-title: root.browse-header-title();
         app-text: Labels.status(Shell.status-text);
+    }
+
+    // Modal scrims swallow pointer events rather than forwarding them to
+    // the screen underneath. Modal controls paint after this blocker.
+    if root.has-modal(): TouchArea {
+        width: 100%; height: 100%;
+        scroll-event(event) => { return accept; }
     }
 
     // Game-info modal, mounted above the screens like the Qt modal
@@ -2498,11 +2586,6 @@ export component App inherits Window {
         anchor-h: Overlays.context-anchor-h;
     }
 
-    if Overlays.dialog-open: DialogModal {
-        width: 100%;
-        height: 100%;
-    }
-
     if Overlays.list-open: ListPickerModal {
         width: 100%;
         height: 100%;
@@ -2522,6 +2605,13 @@ export component App inherits Window {
     }
 
 
+    // Alerts own input above every other modal, matching the router.
+    if Overlays.dialog-open: TouchArea {
+        width: 100%; height: 100%;
+        scroll-event(event) => { return accept; }
+    }
+    if Overlays.dialog-open: DialogModal { width: 100%; height: 100%; }
+
     HelpBar {
         x: 0;
         y: parent.height - self.height;
@@ -2538,6 +2628,15 @@ export component App inherits Window {
         width: 100%;
         height: 100%;
     }
+    }
+
+    // Pointer input is disabled globally, including modal controls, while
+    // the setting is off or a screen transition owns input.
+    if !Shell.mouse-enabled || Shell.saver-armed
+        || ((Shell.boot-curtain || Shell.transitioning || Shell.route-transitioning) && !root.has-modal()): TouchArea {
+        width: 100%; height: 100%;
+        clicked => { Overlays.pointer-choice("wake", 0, true); }
+        scroll-event(event) => { return accept; }
     }
 
     // Calibration deliberately bypasses scene rotation and the CRT safe

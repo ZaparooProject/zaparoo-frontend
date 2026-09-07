@@ -10,6 +10,7 @@
 // at every resolution, exactly as in the QML app.
 
 export global Theme {
+    pure callback preview-color(string, int) -> color;
     in-out property <bool> crt: false;
 
     // The palette roles Theme.qml publishes, pushed by Rust
@@ -78,6 +79,7 @@ export global Motion {
 }
 
 export global Sizing {
+    pure callback fit-letter-columns(int, length, length, length) -> int;
     // Bound to the Window dimensions by App; every derived length is
     // rounded to whole pixels.
     in-out property <length> screen-width: 1280px;

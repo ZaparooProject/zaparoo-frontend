@@ -26,6 +26,8 @@ export struct SettingsRow {
     enabled: bool,
     // An action whose job is already running says so under its label.
     busy: bool,
+    status-key: string,
+    status-count: string,
     // Where the row sits in the card and how tall it is; Rust stacks
     // them so a busy action's taller box shifts everything below it.
     y-offset: length,
@@ -38,6 +40,14 @@ export struct SettingsRow {
 // SettingsScreen.qml's string table: labels, the hint line under the
 // list, and the display name of every canonical value.
 export global SettingsLabels {
+    public pure function action-status(key: string, count: string) -> string {
+        if (key == "optimizing") { return @tr("Optimizing"); }
+        if (key == "paused") { return @tr("Paused"); }
+        if (key == "running") { return @tr("In progress"); }
+        if (key == "indexed") { return @tr("{} indexed", count); }
+        if (key == "imported") { return @tr("{} imported", count); }
+        return "";
+    }
     public pure function page-title(id: string) -> string {
         if (id == "") { return @tr("Settings"); }
         return SettingsLabels.label(id);
@@ -315,12 +325,19 @@ export component SettingsRowView inherits Rectangle {
         radius: Layout.row-radius;
     }
 
+    label-measure := Text {
+        visible: false;
+        text: SettingsLabels.label(root.entry.id);
+        font-size: Sizing.font-body;
+        font-weight: 500;
+    }
     label := Text {
         x: root.is-action ? Math.round((parent.width - self.width) / 2px) * 1px : root.pad;
-        y: root.entry.busy
+        y: root.entry.status-key != ""
             ? Sizing.pct-h(1)
             : Math.round((parent.height - self.height) / 2px) * 1px;
-        width: Math.min(self.preferred-width, parent.width - 2 * root.pad);
+        width: Math.min(Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2),
+            parent.width - 2 * root.pad);
         overflow: elide;
         text: SettingsLabels.label(root.entry.id);
         color: bar.active ? bar.content-color : (root.is-action ? Theme.accent : Theme.text-primary);
@@ -329,10 +346,12 @@ export component SettingsRowView inherits Rectangle {
     }
 
     // A running media job reports under its own row.
-    if root.entry.busy: Text {
+    if root.entry.status-key != "": Text {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: label.y + label.height + Sizing.pct-h(0.3);
-        text: @tr("Running…");
+        width: Math.min(self.preferred-width, parent.width - 2 * root.pad);
+        overflow: elide;
+        text: SettingsLabels.action-status(root.entry.status-key, root.entry.status-count);
         color: bar.active ? bar.content-color : Theme.text-label;
         font-size: Sizing.font-caption;
         font-weight: bar.content-weight;
@@ -345,22 +364,11 @@ export component SettingsRowView inherits Rectangle {
     if root.entry.control == "picker": Text {
         x: parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
         y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: Math.min(self.preferred-width, parent.width * 0.5);
-        horizontal-alignment: right;
+        width: Math.min(self.preferred-width, Math.max(0px,
+            chevron.x - Sizing.pct-w(2) - label.x - label.width - Sizing.pct-w(2)));
         overflow: elide;
         text: root.value-text;
         color: bar.active ? bar.content-color : Theme.text-primary;
-        font-size: Sizing.font-body;
-        font-weight: bar.content-weight;
-    }
-
-    // The setup forms' Start row is its own button: the centered label
-    // says what it does, so it carries no right-hand action text.
-    if root.entry.control == "action" && root.entry.value != "": Text {
-        x: parent.width - self.width - root.pad;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        text: SettingsLabels.action(root.entry.value);
-        color: bar.active ? bar.content-color : Theme.accent;
         font-size: Sizing.font-body;
         font-weight: bar.content-weight;
     }

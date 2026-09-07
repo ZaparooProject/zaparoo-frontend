@@ -109,11 +109,31 @@ fn metrics(app: &App) -> Metrics {
     }
 }
 
+/// `SettingsScreen`'s live caption ladder, including idle totals.
+fn action_status(ms: &zaparoo_core::store::MediaStatusState, id: &str) -> (&'static str, i32) {
+    match id {
+        "updateMediaDb" if ms.optimizing => ("optimizing", 0),
+        "updateMediaDb" if ms.indexing => (if ms.paused { "paused" } else { "running" }, 0),
+        "updateMediaDb" if ms.total_media > 0 => ("indexed", ms.total_media),
+        "runScraper" if ms.scraping => (
+            if ms.scrape_paused {
+                "paused"
+            } else {
+                "running"
+            },
+            0,
+        ),
+        "runScraper" if ms.scrape_total_scraped > 0 => ("imported", ms.scrape_total_scraped),
+        _ => ("", 0),
+    }
+}
+
 /// Build the rows of the open page, with their stacked geometry.
 fn rows(ctx: &Ctx, app: &App, page: &str) -> Vec<SettingsRow> {
     let ms = crate::router::media_state(ctx);
     let index_busy = ms.indexing || ms.optimizing;
     let m = metrics(app);
+    let language = lock(&ctx.shared).persist.settings.language.clone();
     let mut offset = 0;
     rules::page_rows(page, &inputs(ctx))
         .into_iter()
@@ -144,13 +164,17 @@ fn rows(ctx: &Ctx, app: &App, page: &str) -> Vec<SettingsRow> {
                             out.busy = busy;
                             out.enabled = !rules::action_disabled(id, index_busy, ms.scraping);
                             out.value = SharedString::from(rules::action_label_key(id, busy));
+                            let (status, count) = action_status(&ms, id);
+                            out.status_key = SharedString::from(status);
+                            out.status_count =
+                                zaparoo_app::format::count(i64::from(count), &language).into();
                         }
                         Control::Navigate => {}
                     }
-                    if out.busy {
-                        m.row + m.action_band
-                    } else {
+                    if out.status_key.is_empty() {
                         m.row
+                    } else {
+                        m.row + m.action_band
                     }
                 }
             };
@@ -499,6 +523,7 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
             app.global::<crate::Shell>().set_reduce_motion(value);
             app.global::<crate::Motion>().set_enabled(!value);
         }
+        "mouseEnabled" => app.global::<crate::Shell>().set_mouse_enabled(value),
         "swapConfirmCancel" | "swapOptionsView" => crate::apply_buttons(ctx, app),
         _ => {}
     }
@@ -708,5 +733,37 @@ pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
             input.on_row_clicked(handler.clone());
             input.on_cell_clicked(handler);
         }
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::action_status;
+    use zaparoo_core::store::MediaStatusState;
+
+    #[test]
+    fn qt_action_status_priority_and_idle_counts() {
+        let mut ms = MediaStatusState {
+            total_media: 1000,
+            scrape_total_scraped: 200,
+            ..Default::default()
+        };
+        assert_eq!(action_status(&ms, "updateMediaDb"), ("indexed", 1000));
+        assert_eq!(action_status(&ms, "runScraper"), ("imported", 200));
+        ms.indexing = true;
+        assert_eq!(action_status(&ms, "updateMediaDb"), ("running", 0));
+        ms.paused = true;
+        assert_eq!(action_status(&ms, "updateMediaDb"), ("paused", 0));
+        ms.optimizing = true;
+        assert_eq!(action_status(&ms, "updateMediaDb"), ("optimizing", 0));
+        ms.scraping = true;
+        assert_eq!(action_status(&ms, "runScraper"), ("running", 0));
+        ms.scrape_paused = true;
+        assert_eq!(action_status(&ms, "runScraper"), ("paused", 0));
+        assert_eq!(action_status(&ms, "uploadLog"), ("", 0));
+        assert_eq!(
+            action_status(&MediaStatusState::default(), "runScraper"),
+            ("", 0)
+        );
     }
 }

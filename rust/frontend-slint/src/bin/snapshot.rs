@@ -270,7 +270,7 @@ fn main() {
         app.global::<generated::Overlays>().set_context_open(true);
     }
     // "letters" renders the games screen with the letter picker open.
-    if screen == "letters" {
+    if screen.contains("letters") {
         let labels = [
             "#", "A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "R", "S",
             "T", "V", "W", "Y", "Z",
@@ -286,7 +286,6 @@ fn main() {
                     })
                     .collect::<Vec<_>>(),
             )));
-        app.global::<generated::Overlays>().set_letter_columns(9);
         app.global::<generated::Overlays>().set_letter_index(4);
         app.global::<generated::Overlays>().set_letter_open(true);
     }
@@ -374,9 +373,15 @@ fn main() {
     }
     // "picker" renders the shared list picker over a long option list,
     // to check its scrolling window.
-    if screen == "picker" || screen == "crt-picker" {
+    if screen == "picker" || screen == "crt-picker" || screen.contains("palette-picker") {
         let ov = app.global::<generated::Overlays>();
-        let entries: Vec<MenuEntry> = zaparoo_app::settings::LANGUAGES
+        let palette = screen.contains("palette-picker");
+        let values: Vec<&str> = if palette {
+            zaparoo_app::palette::ids().collect()
+        } else {
+            zaparoo_app::settings::LANGUAGES.to_vec()
+        };
+        let entries: Vec<MenuEntry> = values
             .iter()
             .map(|value| MenuEntry {
                 id: (*value).into(),
@@ -384,7 +389,7 @@ fn main() {
                 label_key: "".into(),
             })
             .collect();
-        ov.set_list_setting_id("language".into());
+        ov.set_list_setting_id(if palette { "colorScheme" } else { "language" }.into());
         ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(entries)));
         ov.set_list_index(6);
         ov.set_list_open(true);
@@ -410,15 +415,15 @@ fn main() {
     // "dialog" renders the two-button decision dialog; "alert" renders
     // the one-button failure alert, both through the same vocabulary
     // the router drives.
-    if screen == "dialog" || screen == "alert" || screen == "notice" {
+    if screen.ends_with("dialog") || screen.ends_with("alert") || screen.ends_with("notice") {
         let overlays = app.global::<generated::Overlays>();
-        if screen == "notice" {
+        if screen.ends_with("notice") {
             overlays.set_dialog_kind("notice".into());
             overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
                 slint::SharedString::from("i_understand"),
             ])));
             overlays.set_dialog_focus(0);
-        } else if screen == "alert" {
+        } else if screen.ends_with("alert") {
             overlays.set_dialog_kind("action_error".into());
             overlays.set_dialog_detail("launch".into());
             overlays.set_dialog_arg("Sonic the Hedgehog".into());
@@ -429,10 +434,10 @@ fn main() {
         } else {
             overlays.set_dialog_kind("quit_confirm".into());
             overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
-                slint::SharedString::from("yes"),
                 slint::SharedString::from("no"),
+                slint::SharedString::from("yes"),
             ])));
-            overlays.set_dialog_focus(1);
+            overlays.set_dialog_focus(0);
         }
         overlays.set_dialog_open(true);
     }
@@ -845,6 +850,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
                         }
                         Control::Action => {
                             out.busy = id == "runScraper";
+                            out.status_key = if out.busy { "running" } else { "" }.into();
                             out.value = rules::action_label_key(id, out.busy).into();
                         }
                         Control::Navigate => {}

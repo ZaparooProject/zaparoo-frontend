@@ -39,6 +39,10 @@ mod mister;
 )]
 mod mister_battery;
 mod qr;
+// Route motion has to be checked by rendering, and that needs the
+// software renderer, which only the MiSTer feature set links.
+#[cfg(all(test, feature = "mister"))]
+mod route_motion;
 mod router;
 mod settings;
 mod sizing;
@@ -1168,6 +1172,8 @@ fn seed_startup_state(app: &App, persisted: &persist::PersistedState, boot_curta
         .set_boot_text(SharedString::from("Connecting to Zaparoo Core…"));
     app.global::<Shell>()
         .set_reduce_motion(persisted.settings.reduce_motion);
+    app.global::<Shell>()
+        .set_mouse_enabled(persisted.settings.mouse_enabled);
 }
 
 /// Launcher inventory + per-system defaults for the "Change launcher"

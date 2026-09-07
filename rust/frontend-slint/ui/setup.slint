@@ -9,6 +9,7 @@
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, SectionHeader, SelectionBar } from "chrome.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
+import { PressableSurface } from "tiles.slint";
 
 // One row of the picker page: the same (kind, name) pair the form's own
 // scope row carries, so both read through one vocabulary.
@@ -277,19 +278,18 @@ export component LogUploadModal inherits Rectangle {
             font-size: Sizing.font-small;
         }
 
-        if root.phase != "uploading": Rectangle {
+        if root.phase != "uploading": button := PressableSurface {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: parent.height - root.pad-y - root.button-h;
             width: Math.min(Sizing.pct-w(28), parent.width - 2 * root.pad-x);
             height: root.button-h;
-            background: Theme.selection-fill;
-            border-radius: Layout.row-radius;
+            focused: true;
 
             Text {
                 x: Math.round((parent.width - self.width) / 2px) * 1px;
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                y: button.face-y + Math.round((button.face-height - self.height) / 2px) * 1px;
                 text: root.failed ? @tr("Retry") : @tr("Done");
-                color: Theme.on-accent;
+                color: Theme.text-primary;
                 font-size: Sizing.font-body;
                 font-weight: 500;
             }

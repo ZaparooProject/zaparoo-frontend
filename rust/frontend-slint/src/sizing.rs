@@ -121,6 +121,15 @@ fn current_view(app: &App) -> View {
 }
 
 fn apply_layout(app: &App, inputs: &Inputs) {
+    app.global::<SizingGlobal>()
+        .on_fit_letter_columns(|count, width, height, gap| {
+            zaparoo_app::letter_jump::fit_columns(
+                count.max(0) as usize,
+                f64::from(width),
+                f64::from(height),
+                f64::from(gap),
+            ) as i32
+        });
     let profile = layouts::profile(ThemeId::current(inputs), current_view(app), inputs);
     push_profile(app, &profile);
 }

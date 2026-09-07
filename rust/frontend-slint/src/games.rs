@@ -624,7 +624,14 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
         (begin_fill(model), size, sort, scope)
     };
     if flip {
-        app.global::<crate::Shell>().set_transitioning(true);
+        crate::router::begin_pending(
+            app,
+            if mode == GamesMode::Favorites {
+                "favorites"
+            } else {
+                "recents"
+            },
+        );
     } else {
         render(ctx, app);
     }
@@ -740,7 +747,7 @@ fn browse(ctx: &Ctx, app: &App, path: &str, flip: bool) {
     };
     crate::router::save_persist(&ctx.shared);
     if flip {
-        app.global::<crate::Shell>().set_transitioning(true);
+        crate::router::begin_pending(app, "games");
     } else {
         render(ctx, app);
     }
