@@ -8,6 +8,7 @@
 
 #include "baked_icon_atlas.h"
 #include "custom_image_provider.h"
+#include "fb_mmap_fallback.h"
 #include "frontend_arguments.h"
 #include "media_image_provider.h"
 #include "native_video_writer.h"
@@ -243,6 +244,10 @@ int main(int argc, char* argv[]) // NOLINT
 
     QGuiApplication app(qtArgc, qtArgv);
     startupTrace("cpp:QGuiApplication constructed");
+    // The linuxfb plugin maps the framebuffer while QGuiApplication is being
+    // constructed, so this is the first point at which the shim's outcome is
+    // known. The message handler is already installed, so it reaches the log.
+    logFbMmapFallbackStatus();
 
     // addApplicationFont returns -1 on failure (broken qrc path,
     // unreadable file). Logging the failure mode keeps a refactor that
@@ -508,6 +513,19 @@ int main(int argc, char* argv[]) // NOLINT
                          });
     }
 
+    // Staged fallback mode renders into RAM, so the framebuffer only changes
+    // when this runs. Queued for the same reason as the CRT copy below: the
+    // linuxfb QPA blits in `QFbScreen::doRedraw()` on a later event-loop
+    // iteration, so a direct connection would publish the previous frame.
+    // No-op in the default direct mode, where Qt composites into framebuffer
+    // memory itself and there is nothing to publish.
+    if (fbMmapFallbackActive() && rootWindow != nullptr)
+    {
+        QObject::connect(
+            rootWindow, &QQuickWindow::frameSwapped, rootWindow, []() { flushFbMmapFallback(); },
+            Qt::QueuedConnection);
+    }
+
     if (crtNativePathEnabled)
     {
         qInfo("CRT startup decision: initialising native video writer");
@@ -561,6 +579,7 @@ int main(int argc, char* argv[]) // NOLINT
                      {
                          zaparoo_rust_shutdown();
                          stopNativeVideoWriter();
+                         stopFbMmapFallback();
                          qInstallMessageHandler(nullptr);
                      });
 
