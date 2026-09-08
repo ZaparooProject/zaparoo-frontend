@@ -62,6 +62,10 @@ struct Entry
     // staged mode it is cached anonymous RAM copied out by the flush.
     void* handed;
     void* physMap;
+    // Borrowers currently holding `handed`. Qt's screen and the CRT writer map
+    // the same surface independently, so the mapping outlives whichever of
+    // them releases first.
+    int refs;
 };
 
 std::mutex g_mutex;
@@ -140,6 +144,7 @@ void* redirect(size_t length, int fd, int64_t offset)
     {
         if (g_entries[i].physStart == physStart && length <= g_entries[i].length)
         {
+            ++g_entries[i].refs;
             return g_entries[i].handed;
         }
     }
@@ -189,7 +194,7 @@ void* redirect(size_t length, int fd, int64_t offset)
         handed = staging;
     }
 
-    g_entries[g_entryCount] = Entry{physStart, length, handed, physMap};
+    g_entries[g_entryCount] = Entry{physStart, length, handed, physMap, 1};
     ++g_entryCount;
     g_active = true;
     setStatus("framebuffer mmap fallback: engaged in %s mode, %zu bytes at 0x%lx via /dev/mem "
@@ -243,10 +248,20 @@ extern "C" int __wrap_munmap(void* addr, size_t length)
             {
                 continue;
             }
-            // Qt unmaps its surface when the screen goes away. Drop the entry
-            // first so a queued flush cannot write through a stale pointer,
-            // and release the /dev/mem mapping the caller knows nothing about.
+            // Only the last borrower may tear the mapping down. Releasing on
+            // the first unmap would hand the survivor freed address space:
+            // `stopNativeVideoWriter()` runs before Qt's screen destructor, so
+            // in the CRT geometries the writer always releases first.
+            if (--g_entries[i].refs > 0)
+            {
+                return 0;
+            }
+            // Drop the entry before unmapping so a queued flush cannot write
+            // through a stale pointer, and release the /dev/mem mapping the
+            // caller knows nothing about.
             void* physMap = g_entries[i].physMap;
+            // The entry's length, not the caller's: a borrower that mapped
+            // less than the surface would otherwise leave part of it mapped.
             const size_t mapped = g_entries[i].length;
             const bool staged = g_entries[i].handed != physMap;
             g_entries[i] = g_entries[g_entryCount - 1];
@@ -258,11 +273,10 @@ extern "C" int __wrap_munmap(void* addr, size_t length)
             if (staged)
             {
                 __real_munmap(physMap, mapped);
-                return __real_munmap(addr, length);
             }
-            // Direct mode: `addr` is the /dev/mem mapping itself, so the
-            // caller's own munmap below releases it.
-            break;
+            // Direct mode: `addr` is the /dev/mem mapping itself, so this
+            // single unmap releases it.
+            return __real_munmap(addr, mapped);
         }
     }
     return __real_munmap(addr, length);
