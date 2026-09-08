@@ -99,6 +99,8 @@ qt_add_executable(
     "${CMAKE_SOURCE_DIR}/src/app/custom_image_provider.cpp"
     "${CMAKE_SOURCE_DIR}/src/app/native_video_writer.h"
     "${CMAKE_SOURCE_DIR}/src/app/native_video_writer.cpp"
+    "${CMAKE_SOURCE_DIR}/src/app/fb_mmap_fallback.h"
+    "${CMAKE_SOURCE_DIR}/src/app/fb_mmap_fallback.cpp"
 )
 target_include_directories(
     frontend
@@ -109,6 +111,19 @@ target_compile_definitions(
     frontend PRIVATE ZAPAROO_VERSION="${CMAKE_PROJECT_VERSION}"
                      ZAPAROO_DEFAULT_INTERFACE_PROFILE="${ZAPAROO_DEFAULT_INTERFACE_PROFILE}"
 )
+
+# MiSTer kernels from 6.18 carry a MiSTer_fb driver with no `fb_mmap`, so mmap() on /dev/fb0 returns
+# ENODEV and Qt's linuxfb plugin aborts startup with "no screens available". --wrap redirects the
+# mmap/munmap calls made from Qt's statically linked linuxfb plugin (and from
+# native_video_writer.cpp) into src/app/fb_mmap_fallback.cpp, which reaches the same physical pixels
+# through /dev/mem. This keeps the workaround in our tree instead of forking Qt. glibc is linked
+# dynamically, so libc's internal mmap calls resolve inside libc.so and are not affected. See
+# src/app/fb_mmap_fallback.h.
+if(ZAPAROO_EMBEDDED)
+    target_link_options(
+        frontend PRIVATE "LINKER:--wrap=mmap" "LINKER:--wrap=mmap64" "LINKER:--wrap=munmap"
+    )
+endif()
 
 # For static Qt (ARM32): define QT_STATIC so main.cpp's #ifdef fires. Qt itself defines this in its
 # headers, but the compiler may not see it before the first #include unless we make it explicit here
