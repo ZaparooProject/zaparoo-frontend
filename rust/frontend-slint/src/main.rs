@@ -14,9 +14,11 @@ mod actions;
 mod alternates;
 mod card_write;
 mod customization;
+mod display;
 mod drs;
 #[cfg(feature = "mister")]
 mod dual_head;
+mod folder_motion;
 mod fonts;
 #[cfg(any(feature = "mister", test))]
 mod frame_transition;
@@ -125,6 +127,11 @@ static EXIT_ACTION: AtomicU8 = AtomicU8::new(EXIT_NONE);
 /// Quit the Slint loop, then exec this binary again after the runtime
 /// and presenter have shut down. Used by restart-applied HDMI settings.
 pub(crate) fn request_restart() {
+    #[cfg(feature = "mister")]
+    if mister::lease::managed() {
+        request_main_reload();
+        return;
+    }
     EXIT_ACTION.store(EXIT_RESTART, Ordering::SeqCst);
     let _ = slint::quit_event_loop();
 }
@@ -217,9 +224,11 @@ fn merge_config_settings(
     config: &zaparoo_core::config::Config,
 ) {
     let s = &mut persisted.settings;
-    if config.video_explicit {
-        s.resolution = format!("{}x{}", config.video_width, config.video_height);
-    }
+    s.resolution = if config.video_explicit {
+        format!("{}x{}", config.video_width, config.video_height)
+    } else {
+        String::new()
+    };
     let c = &config.settings;
     if let Some(v) = &c.orientation {
         s.orientation = if matches!(v.as_str(), "cw" | "ccw") {
@@ -315,16 +324,22 @@ fn seed_display_globals(
         .set_systems_list_layout(persisted.settings.systems_browse_layout == "list");
     app.global::<Sizing>()
         .set_handheld(persisted.settings.interface_profile == "handheld");
-    app.global::<Motion>()
-        .set_enabled(!persisted.settings.reduce_motion);
+    app.global::<Motion>().set_enabled(display::motion_enabled(
+        persisted.settings.reduce_motion,
+        cfg!(feature = "mister"),
+        visual_crt,
+        framebuffer_size.1,
+    ));
+    display::register_labels(app);
     app.global::<Shell>()
         .set_is_mister(cfg!(feature = "mister"));
     app.global::<Shell>().set_crt_enabled(crt_enabled);
     app.global::<Shell>().set_crt_standard(SharedString::from(
         persisted.settings.crt_video_standard.as_str(),
     ));
-    #[cfg(feature = "mister")]
-    app.global::<Sizing>().set_bitmap_fonts(true);
+    let bitmap = display::bitmap_type(cfg!(feature = "mister"), visual_crt, framebuffer_size.1);
+    app.global::<Sizing>().set_bitmap_fonts(bitmap);
+    app.global::<Theme>().set_bitmap_fonts(bitmap);
     #[cfg(not(feature = "mister"))]
     {
         let (w, h) = if rotated {
@@ -379,6 +394,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let config = zaparoo_core::config::load_config(&platform_paths::config_file_path());
     let _log_guard = init_demo_paths(&config);
     tracing::info!(endpoint = %config.core_endpoint, "Zaparoo Slint demo starting");
+    #[cfg(feature = "mister")]
+    let scanout_offer = mister::lease::configure();
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -415,16 +432,30 @@ fn main() -> Result<(), slint::PlatformError> {
     // direct_video, leaving fb0 available for an independent HDMI UI.
     let crt = args.iter().any(|a| a == "--crt");
     let dual_head = cfg!(feature = "mister") && crt && args.iter().any(|a| a == "--dual-head");
-    // Passed by patched Main only when it grants the uio latch lease.
-    let latch = args.iter().any(|a| a == "--latch");
-    // Main selects fixed 720p rendering by default on MiSTer; the
-    // adaptive policy remains available for explicit experiments.
-    let fixed_render = args.iter().any(|a| a == "--fixed-render");
+    // An inherited Main offer is not ownership: the presenter waits for an
+    // acknowledged grant after mode setup. A manual --latch grants nothing.
+    #[cfg(feature = "mister")]
+    let latch = scanout_offer && !args.iter().any(|a| a == "--no-latch");
+    #[cfg(not(feature = "mister"))]
+    let latch = false;
+    let adaptive_render = args.iter().any(|a| a == "--adaptive-render")
+        && !args.iter().any(|a| a == "--fixed-render");
 
     let hdmi_framebuffer_size = (config.video_width, config.video_height);
     let crt_framebuffer_size =
         zaparoo_core::config::crt_video_dimensions(&persisted.settings.crt_video_standard);
     let visual_crt = crt && !dual_head;
+    #[cfg(feature = "mister")]
+    let hdmi_framebuffer_size = if visual_crt {
+        hdmi_framebuffer_size
+    } else {
+        let resolved =
+            mister::video_mode::resolve(config.video_explicit.then_some(hdmi_framebuffer_size));
+        if !resolved.explicit_applied {
+            persisted.settings.resolution.clear();
+        }
+        resolved.render
+    };
     let framebuffer_size = if visual_crt {
         crt_framebuffer_size
     } else {
@@ -440,23 +471,25 @@ fn main() -> Result<(), slint::PlatformError> {
         // Ask for Core before the window exists, so its boot overlaps
         // ours the way the Qt build's post-init hook does.
         mister::ensure_core_running();
-        mister::prepare_video_mode(crt, dual_head, hdmi_framebuffer_size, crt_framebuffer_size);
+        if visual_crt {
+            mister::prepare_crt_mode(crt_framebuffer_size);
+        }
         mister::install_platform(
             crt,
             crt_framebuffer_size,
             offsets,
             latch,
             dual_head,
-            if fixed_render {
-                mister::ResolutionPolicy::Fixed(1280, 720)
-            } else {
+            if adaptive_render {
                 mister::ResolutionPolicy::Adaptive
+            } else {
+                mister::ResolutionPolicy::Fixed(framebuffer_size.0, framebuffer_size.1)
             },
             &persisted.settings.orientation,
         )?;
     }
     #[cfg(not(feature = "mister"))]
-    let _ = (latch, dual_head, fixed_render);
+    let _ = (latch, dual_head, adaptive_render);
 
     let ui_framebuffer_size = if cfg!(feature = "mister") || crt {
         framebuffer_size
@@ -1294,6 +1327,9 @@ mod tests {
         merge_config_settings(&mut persisted, &config);
 
         assert_eq!(persisted.settings.resolution, "1024x768");
+        config.video_explicit = false;
+        merge_config_settings(&mut persisted, &config);
+        assert!(persisted.settings.resolution.is_empty());
         assert_eq!(persisted.settings.orientation, "cw");
         assert_eq!(persisted.settings.crt_video_standard, "pal");
         // Offsets clamp to whatever range Core's config currently honors

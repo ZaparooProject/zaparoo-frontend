@@ -14,13 +14,16 @@
 
 mod ddr;
 mod fb0;
+mod fb_mapping;
 mod input;
 mod latch;
+pub mod lease;
 mod platform;
 mod service;
 mod transition;
 mod tty;
 mod uio;
+pub mod video_mode;
 
 pub use platform::{install_platform, set_orientation, ResolutionPolicy};
 pub use service::ensure_core_running;
@@ -72,33 +75,19 @@ pub fn request_route_transition(
     })
 }
 
-/// Apply startup fb geometry before presenters inspect `/dev/fb0`.
-/// Direct-video CRT uses its native raster; dual-head keeps fb0 at
-/// full HDMI resolution because CRT pixels travel through DDR.
-pub fn prepare_video_mode(crt: bool, dual_head: bool, hdmi_size: (u32, u32), crt_size: (u32, u32)) {
-    if crt && !dual_head {
-        const FB_MODE_PATH: &str = "/sys/module/MiSTer_fb/parameters/mode";
-        let (width, height) = crt_size;
-        let mode = format!("8888 1 {width} {height} {}", width * 4);
-        match std::fs::read_to_string(FB_MODE_PATH) {
-            Ok(current) if current.trim() == mode => {}
-            Ok(_) => {
-                if let Err(e) = std::fs::write(FB_MODE_PATH, format!("{mode}\n")) {
-                    tracing::warn!("could not set CRT fb mode via {FB_MODE_PATH}: {e}");
-                }
+/// Direct-video CRT bypasses vmode: Main's command loop is unavailable
+/// while the alt launcher owns analog video. Dual-head CRT travels via DDR.
+pub fn prepare_crt_mode((width, height): (u32, u32)) {
+    const FB_MODE_PATH: &str = "/sys/module/MiSTer_fb/parameters/mode";
+    let mode = format!("8888 1 {width} {height} {}", width * 4);
+    match std::fs::read_to_string(FB_MODE_PATH) {
+        Ok(current) if current.trim() == mode => {}
+        Ok(_) => {
+            if let Err(e) = std::fs::write(FB_MODE_PATH, format!("{mode}\n")) {
+                tracing::warn!("could not set CRT fb mode via {FB_MODE_PATH}: {e}");
             }
-            Err(e) => tracing::warn!("could not inspect {FB_MODE_PATH}: {e}"),
         }
-    } else {
-        let (width, height) = hdmi_size;
-        match std::process::Command::new("vmode")
-            .args(["-r", &width.to_string(), &height.to_string(), "rgb32"])
-            .status()
-        {
-            Ok(status) if status.success() => {}
-            Ok(status) => tracing::warn!("vmode exited with {:?}", status.code()),
-            Err(e) => tracing::warn!("could not run vmode: {e}"),
-        }
+        Err(e) => tracing::warn!("could not inspect {FB_MODE_PATH}: {e}"),
     }
 }
 

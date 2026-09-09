@@ -52,9 +52,9 @@ export global Theme {
     // logo and any on-surface art pick their on-light variants.
     in-out property <bool> light-surface: false;
 
-    // CRT native path renders the 6x8 bitmap font, exactly like
-    // Theme.qml's fontUi switch.
-    out property <string> font-ui: crt ? "MxPlus HP 100LX 6x8" : "Noto Sans";
+    // CRT and embedded sub-400p use the same face as Qt's bitmapType.
+    in-out property <bool> bitmap-fonts: crt;
+    out property <string> font-ui: bitmap-fonts ? "MxPlus HP 100LX 6x8" : "Noto Sans";
 
     // Distance from the top of a Text box to its baseline for a font size:
     // Noto Sans has a 1.069 em ascender (hhea and OS/2 agree); the 6x8
@@ -90,12 +90,8 @@ export global Sizing {
     // Sizing.swapPercentageAxes contract and prevents portrait mode
     // from inflating type/vertical chrome against the long axis.
     in-out property <bool> swap-axes: false;
-    // MiSTer builds snap type onto a fixed ladder (8, 12, 16, 20, 24 and
-    // their doubles). Fonts rasterize at runtime now, so the ladder is no
-    // longer a glyph-embedding constraint; it stays because the DRS
-    // pairing below needs the sharp size to be exactly twice the motion
-    // size, which plain percent rounding does not guarantee.
-    in-out property <bool> bitmap-fonts: false;
+    // Bitmap type has only two usable sizes; HDMI uses the semantic ladder.
+    in-out property <bool> bitmap-fonts: crt;
 
     public pure function pct-h(p: float) -> length {
         return Math.round(p / 100 * (self.swap-axes ? self.screen-width : self.screen-height) / 1px) * 1px;
@@ -110,29 +106,7 @@ export global Sizing {
         return self.quantize(Math.max(8, self.pct-h(p) / 1px)) * 1px;
     }
     pure function quantize(size: int) -> int {
-        if (self.crt) {
-            return size < 12 ? 8 : 16;
-        }
-        if (!self.bitmap-fonts) {
-            return size;
-        }
-        // Dynamic-resolution pairing: the idle-sharp geometry is
-        // exactly 2x the motion geometry, so its snap must be exactly
-        // 2x the motion snap - same layout, same line breaks, a res
-        // switch changes only fidelity. All doubled values (16, 24,
-        // 32, 40, 48) are on the embedded ladder.
-        if ((self.swap-axes ? self.screen-width : self.screen-height) >= 1000px) {
-            return 2 * self.quantize-low(Math.round(size / 2));
-        }
-        return self.quantize-low(size);
-    }
-    // Snap down onto the low half of the ladder (8, 12, 16, 20, 24).
-    pure function quantize-low(size: int) -> int {
-        if (size < 12) { return 8; }
-        if (size < 16) { return 12; }
-        if (size < 20) { return 16; }
-        if (size < 24) { return 20; }
-        return 24;
+        return self.bitmap-fonts ? (size < 12 ? 8 : 16) : size;
     }
     // Stroke width that never rounds to zero.
     // Hairline width in device pixels, exactly as `Sizing.stroke` in

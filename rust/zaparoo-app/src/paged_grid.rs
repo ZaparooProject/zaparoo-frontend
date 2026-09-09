@@ -473,7 +473,9 @@ impl Grid {
             page
         };
         let target_idx = target_page * self.page_size() + row * self.columns + col;
-        if target_idx >= self.item_count {
+        if target_idx >= self.item_count
+            || (self.has_more_pages && target_page >= self.page_count())
+        {
             if self.has_more_pages {
                 if !self.loading_more {
                     self.request_load(true);

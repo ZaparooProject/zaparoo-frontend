@@ -208,13 +208,19 @@ pub(crate) fn rapid_page(ctx: &Ctx) -> bool {
     lock(&ctx.shared).input.rapid_dispatch
 }
 
+/// Async page fills use the input state, never its mirrored render flag.
+pub(crate) fn rapid_navigation(ctx: &Ctx) -> bool {
+    lock(&ctx.shared).input.rapid.active()
+}
+
 /// Keep repeat identity through screen dispatch; rapid rendering state is
 /// not suitable because ordinary actions reset it before navigating.
 pub(crate) fn dispatch_repeat(ctx: &Ctx, app: &App, action: &str, long_enough: bool) {
     // Read before dispatch: a modal that owns input keeps this repeat
     // off the rapid flag even though the action still routes to it.
     let owns_input = !modal_open(app);
-    lock(&ctx.shared).input.rapid_dispatch = owns_input && long_enough;
+    lock(&ctx.shared).input.rapid_dispatch =
+        owns_input && long_enough && rules::is_rapid_navigation_action(action);
     crate::router::handle_action(ctx, app, action);
     lock(&ctx.shared).input.rapid_dispatch = false;
     if owns_input {

@@ -12,7 +12,7 @@
 // `zaparoo_app::media_list`.
 
 use std::sync::{Arc, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use tokio::runtime::Handle;
@@ -37,8 +37,8 @@ use crate::router::{lock, Ctx, Shared};
 use crate::{App, GamesInput, GamesView, GridCell};
 
 /// Swoop duration and the settle before the strip re-arms.
-const SWOOP_MS: u64 = 260;
-const REARM_MS: u64 = 50;
+pub(crate) const SWOOP_MS: u64 = 260;
+pub(crate) const REARM_MS: u64 = 50;
 const FAVORITE_TAG: &str = "user:favorite";
 const FILE_GLYPH: &str = "icons/File";
 const FOLDER_GLYPH: &str = "icons/Folder";
@@ -262,12 +262,13 @@ pub struct GamesModel {
     pub detail: FocusedDetail,
     pub detail_seq: u64,
     pub rapid_active: bool,
-    pub rapid_last_flip: Option<Instant>,
     pub rapid_seq: u64,
     pub activate_pulse: i32,
     pub release_pulse: i32,
     /// A page swoop is in flight; input waits for the commit.
     pub sliding: bool,
+    pub folder_direction: i32,
+    pub folder_sliding: bool,
     /// A jump walk is loading its target pages.
     pub jump_loading: bool,
     /// Accept's deferred leg is pending; repeats are ignored.
@@ -303,11 +304,12 @@ impl GamesModel {
             detail: FocusedDetail::new(),
             detail_seq: 0,
             rapid_active: false,
-            rapid_last_flip: None,
             rapid_seq: 0,
             activate_pulse: 0,
             release_pulse: 0,
             sliding: false,
+            folder_direction: 0,
+            folder_sliding: false,
             jump_loading: false,
             press_pending: false,
             press_seq: 0,
@@ -717,6 +719,9 @@ fn next_cursor(pagination: Option<&zaparoo_core::media_types::Pagination>) -> Op
 /// targets drop, the detail pane resets).
 fn begin_fill(model: &mut GamesModel) -> u64 {
     model.ticket += 1;
+    model.sliding = false;
+    model.folder_direction = 0;
+    model.folder_sliding = false;
     model.loading = true;
     model.error.clear();
     model.persist.begin_replacement();
@@ -731,9 +736,14 @@ fn begin_fill(model: &mut GamesModel) -> u64 {
 }
 
 /// Browse (`system_id`, `path`). `flip` selects the deferred route entry
-/// (input gate plus screen push on Ready); folder navigation inside the
-/// screen passes false and shows the in-screen cue instead.
+/// (input gate plus screen push on Ready). Folder entry uses
+/// `browse_with_motion` to retain the outgoing grid during the fill.
 fn browse(ctx: &Ctx, app: &App, path: &str, flip: bool) {
+    browse_with_motion(ctx, app, path, flip, 0);
+}
+
+fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i32) {
+    crate::folder_motion::capture(app, direction);
     let (ticket, system_id, tags, page_size) = {
         let mut shared = lock(&ctx.shared);
         let size = page_size(ctx, app, &shared);
@@ -743,6 +753,7 @@ fn browse(ctx: &Ctx, app: &App, path: &str, flip: bool) {
         model.browse_path = path.to_string();
         model.total_known = true;
         let ticket = begin_fill(model);
+        model.folder_direction = direction;
         (ticket, model.system_id.clone(), tags, size)
     };
     crate::router::save_persist(&ctx.shared);
@@ -832,7 +843,8 @@ fn on_browse_ready(
             shared.persist.games.path_stack = vec![root_path.clone()];
             shared.persist.games.selected_at_level = vec![String::new()];
         }
-        browse(ctx, app, &root_path, flip);
+        let direction = lock(&ctx.shared).games.folder_direction;
+        browse_with_motion(ctx, app, &root_path, flip, direction);
         return;
     }
     let total_dirs = result.total_dirs.unwrap_or(0);
@@ -922,6 +934,7 @@ fn apply_fill(
             .set_status_text(SharedString::default());
     }
     render(ctx, app);
+    crate::folder_motion::start(ctx, app);
     schedule_detail(ctx, app, false);
     if restore_fetch {
         fetch_more(ctx, app, rules::RAPID_FETCH_CHUNK, true);
@@ -931,6 +944,8 @@ fn apply_fill(
             page_size(ctx, app, &shared)
         };
         fetch_more(ctx, app, size, false);
+    } else {
+        drain_load_requests(ctx, app);
     }
 }
 
@@ -948,6 +963,7 @@ fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip: bool) {
         model.loading = false;
         model.loading_more = false;
         model.error = message.to_string();
+        model.folder_direction = 0;
         model.persist.end_replacement();
         model.mode.token()
     };
@@ -1051,19 +1067,21 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
     });
 }
 
-fn on_append(
+pub(crate) fn on_append(
     ctx: &Ctx,
     app: &App,
     ticket: u64,
     outcome: Result<(Vec<GameRow>, Option<String>), String>,
 ) {
-    let (restore_again, landed_restore) = {
+    let (restore_again, landed_restore, from_page, changed_page) = {
         let mut shared = lock(&ctx.shared);
         if shared.games.ticket != ticket {
             return;
         }
         let saved = saved_path(&shared);
+        let list = list_layout(&shared);
         let model = &mut shared.games;
+        let from_page = model.grid.current_page();
         model.loading_more = false;
         model.covers_paused = false;
         let (rows, cursor) = match outcome {
@@ -1109,17 +1127,23 @@ fn on_append(
                 model.pending_restore_path.clear();
             }
         }
+        let changed_page = !list && model.grid.current_page() != from_page;
         drop(shared);
         let mut shared = lock(&ctx.shared);
         refresh_display(&mut shared);
-        (restore_again, landed)
+        (restore_again, landed, from_page, changed_page)
     };
     app.global::<crate::Shell>()
         .set_status_text(SharedString::default());
     if landed_restore {
         persist_now(ctx);
     }
-    render(ctx, app);
+    if changed_page && !landed_restore {
+        persist_current(ctx);
+        slide_to_current_page(ctx, app, from_page);
+    } else {
+        render(ctx, app);
+    }
     schedule_detail(ctx, app, false);
     if restore_again {
         fetch_more(ctx, app, rules::RAPID_FETCH_CHUNK, true);
@@ -1130,12 +1154,25 @@ fn on_append(
 
 /// Run the fetches the grid asked for: a jump loads up to its target in
 /// bulk, held rapid scrolling takes bigger chunks, everything else one page.
-fn drain_load_requests(ctx: &Ctx, app: &App) {
+pub(crate) fn drain_load_requests(ctx: &Ctx, app: &App) {
     let (limit, bulk) = {
         let mut shared = lock(&ctx.shared);
         let size = page_size(ctx, app, &shared) as usize;
+        let list = list_layout(&shared);
         let model = &mut shared.games;
-        if model.grid.take_load_requests().is_empty() {
+        if model.loading || model.loading_more {
+            return;
+        }
+        let urgent = model
+            .grid
+            .take_load_requests()
+            .iter()
+            .any(|request| request.urgent);
+        // Prime the current page plus a bounded lookahead, even before the
+        // first keypress. Cover prefetch can then queue that page's artwork.
+        let needed = (model.grid.current_page() + 1 + model.grid.load_ahead_pages)
+            .saturating_mul(model.grid.page_size());
+        if !urgent && (list || !model.has_more() || model.rows.len() >= needed) {
             return;
         }
         if let Some(target) = model.grid.pending_jump_index() {
@@ -1144,7 +1181,13 @@ fn drain_load_requests(ctx: &Ctx, app: &App) {
                 true,
             )
         } else if model.rapid_active {
-            (rules::RAPID_FETCH_CHUNK, false)
+            let limit = if urgent {
+                rules::RAPID_FETCH_CHUNK
+            } else {
+                rules::RAPID_FETCH_CHUNK
+                    .min(u32::try_from(needed.saturating_sub(model.rows.len())).unwrap_or(u32::MAX))
+            };
+            (limit, false)
         } else {
             (u32::try_from(size).unwrap_or(12), false)
         }
@@ -1365,6 +1408,14 @@ fn request_covers(
     reason = "one setter per GamesView property keeps the inventory reviewable"
 )]
 pub fn render(ctx: &Ctx, app: &App) {
+    {
+        let shared = lock(&ctx.shared);
+        // A folder fill owns new navigation state but not the visible grid yet.
+        // Publishing Loading here hides the outgoing frame before its slide.
+        if shared.games.loading && shared.games.folder_direction != 0 && !list_layout(&shared) {
+            return;
+        }
+    }
     let mode = lock(&ctx.shared).games.mode;
     let geometry = geometry(app, mode);
     let tier = cover_tier(app);
@@ -1420,7 +1471,22 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_focus_ready(model.focus_armed || model.restore_done);
     view.set_rapid_active(model.rapid_active);
 
-    if list {
+    if !model.folder_sliding {
+        if view.get_folder_slide() {
+            crate::folder_motion::clear(app);
+        }
+        if model.folder_direction == 0 {
+            view.set_folder_from_cells(ModelRc::default());
+        }
+    }
+    let strip_sliding = model.sliding && !view.get_cached_transition();
+    if strip_sliding {
+        crate::view_model::publish_cells(
+            &view.get_next_cells(),
+            page_cells(ctx, model, page, tier),
+            |rows| view.set_next_cells(rows),
+        );
+    } else if list {
         view.set_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
     } else {
         crate::view_model::publish_cells(
@@ -1429,10 +1495,14 @@ pub fn render(ctx: &Ctx, app: &App) {
             |rows| view.set_cells(rows),
         );
     }
-    view.set_next_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
-    view.set_selected_local(
-        i32::try_from(model.grid.current_index().saturating_sub(start)).unwrap_or(0),
-    );
+    if !strip_sliding {
+        view.set_next_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
+    }
+    view.set_selected_local(if strip_sliding {
+        -1
+    } else {
+        i32::try_from(model.grid.current_index().saturating_sub(start)).unwrap_or(0)
+    });
     view.set_current_index(i32::try_from(model.grid.current_index()).unwrap_or(0));
     view.set_columns(geometry.columns);
     view.set_rows(geometry.rows);
@@ -1827,7 +1897,7 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
 // ---------- Input ----------
 
 #[cfg(feature = "mister")]
-fn request_cached_page_transition(app: &App, direction: i32, columns: i32, rows: i32) -> bool {
+fn request_cached_page_transition(app: &App, direction: i32, _columns: i32, _rows: i32) -> bool {
     let shell = app.global::<crate::Shell>();
     if shell.get_orientation().as_str() != "horizontal" || shell.get_browse_list_layout() {
         return false;
@@ -1838,8 +1908,8 @@ fn request_cached_page_transition(app: &App, direction: i32, columns: i32, rows:
     let Some(geometry) = crate::sizing::mister_browse_grid_transition_geometry(
         width,
         height,
-        columns.max(0) as u32,
-        rows.max(0) as u32,
+        app.global::<GamesView>().get_grid_y().round().max(0.0) as u32,
+        app.global::<GamesView>().get_grid_height().round().max(0.0) as u32,
     ) else {
         return false;
     };
@@ -1854,10 +1924,11 @@ fn request_cached_page_transition(_app: &App, _direction: i32, _columns: i32, _r
 /// A cursor move landed on another page: swoop the strip one period in
 /// `dir`, then commit. Reduce motion cuts instead.
 fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
-    let rapid = crate::input::rapid_page(ctx);
+    let rapid = crate::input::rapid_page(ctx) || crate::input::rapid_navigation(ctx);
     let (to_page, columns, rows, reduce_motion, tier) = {
         let mut shared = lock(&ctx.shared);
-        let reduce_motion = shared.persist.settings.reduce_motion;
+        let reduce_motion =
+            shared.persist.settings.reduce_motion || !app.global::<crate::Motion>().get_enabled();
         let model = &mut shared.games;
         model.sliding = true;
         (
@@ -1869,7 +1940,7 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         )
     };
     let dir: i32 = if to_page > from_page { 1 } else { -1 };
-    note_rapid_flip(ctx, app);
+    note_rapid_flip(ctx, app, rapid);
     let view = app.global::<GamesView>();
     let target_local = {
         let shared = lock(&ctx.shared);
@@ -1883,6 +1954,7 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         render(ctx, app);
         return;
     }
+    let ticket = lock(&ctx.shared).games.ticket;
     if request_cached_page_transition(app, dir, columns, rows) {
         view.set_slide_anim(false);
         view.set_cached_transition(true);
@@ -1891,6 +1963,9 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         let ctx = ctx.clone();
         slint::Timer::single_shot(Duration::from_millis(SWOOP_MS), move || {
             if let Some(app) = weak.upgrade() {
+                if lock(&ctx.shared).games.ticket != ticket {
+                    return;
+                }
                 lock(&ctx.shared).games.sliding = false;
                 let view = app.global::<GamesView>();
                 view.set_cached_transition(false);
@@ -1915,6 +1990,9 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         let Some(app) = weak.upgrade() else {
             return;
         };
+        if lock(&ctx.shared).games.ticket != ticket {
+            return;
+        }
         lock(&ctx.shared).games.sliding = false;
         let view = app.global::<GamesView>();
         view.set_slide_anim(false);
@@ -1922,6 +2000,9 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         view.set_page_slide(0.0);
         let weak = app.as_weak();
         slint::Timer::single_shot(Duration::from_millis(REARM_MS), move || {
+            if lock(&ctx.shared).games.ticket != ticket {
+                return;
+            }
             if let Some(app) = weak.upgrade() {
                 app.global::<GamesView>().set_slide_anim(true);
             }
@@ -1929,17 +2010,16 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
     });
 }
 
-/// `RapidScrollIndicator`: a second page flip within the window shows the
-/// landing row's first letter, cleared after the hold.
-fn note_rapid_flip(ctx: &Ctx, app: &App) {
-    let now = Instant::now();
-    let (rapid, seq, letter) = {
+/// Only a qualified held navigation may show the landing letter. Page-flip
+/// frequency is not hold intent: quick taps must keep normal presentation.
+fn note_rapid_flip(ctx: &Ctx, app: &App, rapid: bool) {
+    if !rapid {
+        clear_rapid_letter(ctx, app);
+        return;
+    }
+    let (seq, letter) = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
-        let since = model
-            .rapid_last_flip
-            .map(|t| u64::try_from(now.duration_since(t).as_millis()).unwrap_or(u64::MAX));
-        model.rapid_last_flip = Some(now);
         model.rapid_seq += 1;
         let page_start = model.grid.current_page() * model.grid.page_size();
         let letter = model
@@ -1947,11 +2027,8 @@ fn note_rapid_flip(ctx: &Ctx, app: &App) {
             .get(page_start)
             .map(|row| rules::rapid_letter(&row.display))
             .unwrap_or_default();
-        (rules::rapid_flip(since), model.rapid_seq, letter)
+        (model.rapid_seq, letter)
     };
-    if !rapid {
-        return;
-    }
     app.global::<GamesView>()
         .set_rapid_letter(SharedString::from(letter.as_str()));
     let weak = app.as_weak();
@@ -1970,9 +2047,20 @@ fn note_rapid_flip(ctx: &Ctx, app: &App) {
     );
 }
 
+fn clear_rapid_letter(ctx: &Ctx, app: &App) {
+    lock(&ctx.shared).games.rapid_seq += 1;
+    app.global::<GamesView>()
+        .set_rapid_letter(SharedString::default());
+}
+
 /// Held rapid navigation (Main.qml's `rapidNavigationActive`): covers
 /// pause and the detail pane clears while it runs.
 pub fn set_rapid(ctx: &Ctx, app: &App, active: bool) {
+    if !active {
+        // Retire the badge even when render state was already inactive; otherwise
+        // invalidating its timer on a later ordinary flip can strand the letter.
+        clear_rapid_letter(ctx, app);
+    }
     {
         let mut shared = lock(&ctx.shared);
         if shared.games.rapid_active == active {
@@ -2059,6 +2147,9 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
 
 /// MediaListScreen.qml's `handleAction` with GamesScreen.qml's overrides.
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
+    if lock(&ctx.shared).games.sliding {
+        return;
+    }
     let is_move = matches!(
         action,
         actions::LEFT | actions::RIGHT | actions::UP | actions::DOWN | actions::CONTEXT_MENU
@@ -2239,7 +2330,7 @@ fn navigate_into_folder(ctx: &Ctx, app: &App, path: &str) {
         // Cut the accept flash before the rows swap.
         shared.games.release_pulse += 1;
     }
-    browse(ctx, app, path, false);
+    browse_with_motion(ctx, app, path, false, 1);
 }
 
 /// Pop one level and re-browse the parent. False at the root.
@@ -2259,7 +2350,7 @@ fn navigate_out_of_folder(ctx: &Ctx, app: &App) -> bool {
             .cloned()
             .unwrap_or_default()
     };
-    browse(ctx, app, &target, false);
+    browse_with_motion(ctx, app, &target, false, -1);
     true
 }
 
@@ -2577,7 +2668,7 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
         let list = list_layout(&shared);
         let visible = list_rows_visible(ctx, &shared);
         let model = &mut shared.games;
-        if model.sliding {
+        if model.sliding || model.loading {
             return false;
         }
         let Ok(local) = usize::try_from(local) else {

@@ -830,7 +830,12 @@ fn request_cached_route_transition(app: &App, direction: i32) -> bool {
     let sizing = app.global::<Sizing>();
     let width = sizing.get_screen_width().round().max(0.0) as u32;
     let height = sizing.get_screen_height().round().max(0.0) as u32;
-    let Some(geometry) = sizing::mister_route_transition_geometry(width, height) else {
+    let Some(geometry) = sizing::mister_route_transition_geometry(
+        width,
+        height,
+        sizing.get_header_bottom().round().max(0.0) as u32,
+        sizing.get_help_bar_height().round().max(0.0) as u32,
+    ) else {
         return false;
     };
     crate::mister::request_route_transition(geometry, direction)
@@ -899,13 +904,21 @@ fn begin_route_transition(app: &App) {
 /// hub-and-spoke and -1 coming back up, so a level always enters from
 /// the same side it will later leave by.
 pub(crate) fn transition_to_screen(app: &App, target: &str, direction: i32) {
+    transition_route(app, target, direction, false);
+}
+
+pub(crate) fn transition_settings_page(app: &App, direction: i32) {
+    transition_route(app, "settings", direction, true);
+}
+
+fn transition_route(app: &App, target: &str, direction: i32, settings_page: bool) {
     let shell = app.global::<crate::Shell>();
     let current = shell.get_active_screen();
-    if current.as_str() == target {
+    if current.as_str() == target && !settings_page {
         clear_pending(app);
         return;
     }
-    if shell.get_reduce_motion() {
+    if shell.get_reduce_motion() || !app.global::<crate::Motion>().get_enabled() {
         clear_pending(app);
         shell.set_active_screen(SharedString::from(target));
         refresh_layout(app);
@@ -913,6 +926,10 @@ pub(crate) fn transition_to_screen(app: &App, target: &str, direction: i32) {
     }
     if shell.get_route_transitioning() {
         return;
+    }
+
+    if current.as_str() == "settings" && !settings_page {
+        crate::settings::capture_outgoing(app);
     }
 
     // Whatever the user is looking at right now is what slides out, cue

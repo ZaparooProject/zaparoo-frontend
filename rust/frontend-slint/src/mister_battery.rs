@@ -27,9 +27,9 @@ use std::os::unix::io::RawFd;
 use std::time::Duration;
 
 #[cfg(feature = "mister")]
-const I2C_SLAVE: libc::c_ulong = 0x0703;
+const I2C_SLAVE: libc::Ioctl = 0x0703;
 #[cfg(feature = "mister")]
-const I2C_SMBUS: libc::c_ulong = 0x0720;
+const I2C_SMBUS: libc::Ioctl = 0x0720;
 #[cfg(feature = "mister")]
 const I2C_SMBUS_READ: u8 = 1;
 #[cfg(feature = "mister")]

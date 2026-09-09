@@ -469,17 +469,21 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     let target = crt.global::<SettingsView>();
     copy_properties!(source, target;
         get_page => set_page,
-        get_rows => set_rows,
+        get_outgoing_page => set_outgoing_page,
+        get_outgoing_index => set_outgoing_index,
         get_index => set_index,
         get_cells => set_cells,
         get_activate_pulse => set_activate_pulse,
         get_release_pulse => set_release_pulse,
     );
 
+    crate::settings::mirror_geometry(primary, crt);
+
     let source = primary.global::<GamesView>();
     let target = crt.global::<GamesView>();
     copy_properties!(source, target;
         get_mode => set_mode,
+        get_folder_slide => set_folder_slide,
         get_title => set_title,
         get_loading => set_loading,
         get_loading_more => set_loading_more,
@@ -559,6 +563,18 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     let transition_requested = cached_transition || strip_transition;
     if transition_requested {
         if state.games != TransitionPhase::Active {
+            if source.get_folder_slide() {
+                let (outgoing, _, _) = project_page(
+                    &source.get_cells(),
+                    &target.get_cells(),
+                    source.get_folder_from_index(),
+                    capacity,
+                );
+                if let Some(outgoing) = outgoing {
+                    target.set_cells(outgoing);
+                }
+                target.set_selected_local(-1);
+            }
             let incoming = if cached_transition {
                 source.get_cells()
             } else {
@@ -762,6 +778,49 @@ mod tests {
         fn duration_since_start(&self) -> std::time::Duration {
             std::time::Duration::ZERO
         }
+    }
+
+    #[test]
+    fn settings_routes_keep_outgoing_rows_and_fit_each_output() -> Result<(), slint::PlatformError>
+    {
+        assert!(slint::platform::set_platform(Box::new(TestPlatform)).is_ok());
+        let primary = App::new()?;
+        let crt = App::new()?;
+        primary.global::<crate::Sizing>().set_screen_width(960.0);
+        primary.global::<crate::Sizing>().set_screen_height(540.0);
+        crt.global::<crate::Sizing>().set_screen_width(352.0);
+        crt.global::<crate::Sizing>().set_screen_height(240.0);
+        let view = primary.global::<SettingsView>();
+        view.set_page("pageSupportAbout".into());
+        view.set_rows(ModelRc::new(VecModel::from(vec![crate::SettingsRow {
+            kind: "field".into(),
+            id: "aboutLicense".into(),
+            height: 100.0,
+            ..Default::default()
+        }])));
+        crate::settings::capture_outgoing(&primary);
+        primary
+            .global::<Shell>()
+            .set_active_screen("settings".into());
+        crate::router::transition_settings_page(&primary, -1);
+        let mut state = SyncState::default();
+        sync_with_state(&primary, &crt, &mut state);
+        let target = crt.global::<SettingsView>();
+        assert_eq!(target.get_outgoing_page().as_str(), "pageSupportAbout");
+        assert!(target
+            .get_outgoing_rows()
+            .row_data(0)
+            .is_some_and(|row| row.id.as_str() == "aboutLicense"
+                && row.height > 0.0
+                && row.height < 100.0));
+        assert!(target.get_rows_height() > 0.0 && target.get_rows_height() < 240.0);
+        assert!(target.get_cell_width() > 0.0 && target.get_cell_width() < 352.0);
+        assert!(crt.global::<Shell>().get_route_transitioning());
+        assert_eq!(crt.global::<Shell>().get_route_slide_dir(), -1);
+        let rows = target.get_rows();
+        sync_with_state(&primary, &crt, &mut state);
+        assert_eq!(target.get_rows(), rows);
+        Ok(())
     }
 
     #[test]

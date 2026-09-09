@@ -28,7 +28,7 @@ thread_local! {
 
 /// A platform whose clock only moves when the test moves it, so a
 /// 170 ms animation is the same number of frames on every machine.
-struct ProbePlatform;
+pub(crate) struct ProbePlatform;
 
 impl Platform for ProbePlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
@@ -333,6 +333,21 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
     crate::games::render(&ctx, &app);
     crate::router::handle_action(&ctx, &app, "page_next");
     assert!(crate::router::lock(&ctx.shared).games.sliding);
+    let view = app.global::<crate::GamesView>();
+    let outgoing = view.get_cells().row_data(0).map(|cell| cell.name);
+    let incoming = view.get_next_cells().row_data(0).map(|cell| cell.name);
+    assert!(incoming.is_some());
+    crate::games::render(&ctx, &app);
+    assert_eq!(
+        view.get_cells().row_data(0).map(|cell| cell.name),
+        outgoing,
+        "redraw must retain outgoing page"
+    );
+    assert_eq!(
+        view.get_next_cells().row_data(0).map(|cell| cell.name),
+        incoming,
+        "redraw must not erase the incoming page"
+    );
     let first = crate::router::lock(&ctx.shared).games.grid.current_page();
     crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
     assert_eq!(
@@ -378,6 +393,446 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
         crate::router::lock(&ctx.shared).games.grid.current_page(),
         first + 6
     );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one platform-owned matrix inventories every root route and Settings category"
+)]
+fn every_screen_route_and_settings_category_slides_forward_and_back() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    seat_folder(&ctx, &app, "Game", 0);
+    let shell = app.global::<Shell>();
+    for (from, to) in [
+        ("hub", "systems"),
+        ("systems", "games"),
+        ("hub", "games"),
+        ("hub", "favorite-systems"),
+        ("favorite-systems", "favorites"),
+        ("hub", "favorites"),
+        ("hub", "recents"),
+        ("hub", "settings"),
+        ("settings", "about"),
+    ] {
+        shell.set_active_screen(from.into());
+        app.global::<SystemsView>().set_mode(
+            if from == "favorite-systems" || to == "favorite-systems" {
+                "favorite-systems"
+            } else {
+                "systems"
+            }
+            .into(),
+        );
+        app.global::<crate::GamesView>().set_mode(
+            if ["games", "favorites", "recents"].contains(&to) {
+                to
+            } else {
+                "games"
+            }
+            .into(),
+        );
+        crate::settings::open_page(
+            &ctx,
+            &app,
+            if to == "about" {
+                "pageSupportAbout"
+            } else {
+                ""
+            },
+        );
+        crate::router::refresh_layout(&app);
+        settle(&window);
+        crate::router::transition_to_screen(&app, to, 1);
+        assert_eq!(shell.get_route_slide_dir(), 1);
+        assert!(
+            distinct_frames(&window, SETTLE_TICKS) > 6,
+            "{from} -> {to} must slide"
+        );
+        assert_eq!(shell.get_active_screen().as_str(), to);
+        settle(&window);
+        if to == "about" {
+            crate::settings::show_about_return(&ctx, &app);
+        } else {
+            crate::router::transition_to_screen(&app, from, -1);
+        }
+        assert_eq!(shell.get_route_slide_dir(), -1);
+        assert!(
+            distinct_frames(&window, SETTLE_TICKS) > 6,
+            "{to} -> {from} must slide back"
+        );
+        assert_eq!(shell.get_active_screen().as_str(), from);
+        settle(&window);
+    }
+    shell.set_active_screen("settings".into());
+    crate::settings::open_page(&ctx, &app, "");
+    let settings = app.global::<crate::SettingsView>();
+    for (index, page) in zaparoo_app::settings::PAGES.iter().enumerate() {
+        settings.set_index(index as i32);
+        settle(&window);
+        crate::settings::handle_action(&ctx, &app, "accept");
+        assert!(
+            shell.get_route_transitioning(),
+            "{} must open with a route",
+            page.id
+        );
+        assert!(settings.get_outgoing_page().is_empty());
+        assert_eq!(settings.get_page().as_str(), page.id);
+        assert!(distinct_frames(&window, SETTLE_TICKS) > 6);
+        settle(&window);
+        crate::settings::handle_action(&ctx, &app, "cancel");
+        assert_eq!(settings.get_outgoing_page().as_str(), page.id);
+        assert_eq!(shell.get_route_slide_dir(), -1);
+        assert!(distinct_frames(&window, SETTLE_TICKS) > 6);
+        assert!(settings.get_page().is_empty());
+        assert_eq!(
+            settings.get_index(),
+            index as i32,
+            "Back restores the category tile"
+        );
+    }
+    shell.set_reduce_motion(true);
+    crate::settings::navigate_page(&ctx, &app, "pageSupportAbout");
+    assert!(!shell.get_route_transitioning());
+    crate::settings::navigate_page(&ctx, &app, "");
+    assert!(!shell.get_route_transitioning());
+}
+
+fn game_rows(name: &str, count: usize) -> Vec<crate::games::GameRow> {
+    (0..count)
+        .map(|i| {
+            let mut row = crate::games::GameRow::from(&zaparoo_core::media_types::BrowseEntry {
+                name: format!("{name} {i}"),
+                entry_type: "media".into(),
+                has_cover: false,
+                ..Default::default()
+            });
+            row.display.clone_from(&row.name);
+            row
+        })
+        .collect()
+}
+
+fn seat_folder(ctx: &crate::router::Ctx, app: &App, name: &str, index: usize) {
+    let mut shared = crate::router::lock(&ctx.shared);
+    shared.games.rows = game_rows(name, 8);
+    shared.games.grid.set_item_count(8);
+    shared.games.grid.set_current_index_immediate(index);
+    drop(shared);
+    crate::games::render(ctx, app);
+}
+
+#[test]
+fn page_lookahead_is_bounded_and_delayed_partial_pages_wait_then_slide() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen("games".into());
+    seat_folder(&ctx, &app, "First", 0);
+    let size = crate::router::lock(&ctx.shared).games.grid.page_size();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        let model = &mut shared.games;
+        model.rows.truncate(size);
+        model.grid.total_items_override = Some(size * 5);
+        model.total_files = (size * 5) as u32;
+        model.grid.set_item_count(size);
+        model.grid.set_has_more_pages(true);
+        model.next_cursor = Some("next".into());
+    }
+    crate::games::render(&ctx, &app);
+    settle(&window);
+    crate::games::drain_load_requests(&ctx, &app);
+    assert!(
+        crate::router::lock(&ctx.shared).games.loading_more,
+        "lookahead starts before a keypress"
+    );
+    crate::games::on_append(
+        &ctx,
+        &app,
+        0,
+        Ok((game_rows("Second", size), Some("next".into()))),
+    );
+    assert!(crate::router::lock(&ctx.shared).games.loading_more);
+    crate::games::on_append(
+        &ctx,
+        &app,
+        0,
+        Ok((game_rows("Third", size), Some("next".into()))),
+    );
+    assert!(
+        !crate::router::lock(&ctx.shared).games.loading_more,
+        "stop at two pages ahead"
+    );
+    let view = app.global::<crate::GamesView>();
+    let outgoing = view.get_cells().row_data(0).map(|cell| cell.name);
+    crate::games::handle_action(&ctx, &app, "page_prev");
+    assert!(crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .has_pending_target());
+    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    crate::games::on_append(&ctx, &app, 0, Err("offline".into()));
+    assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
+    crate::games::handle_action(&ctx, &app, "page_prev");
+    crate::games::on_append(
+        &ctx,
+        &app,
+        0,
+        Ok((game_rows("Fourth", size), Some("next".into()))),
+    );
+    crate::games::on_append(
+        &ctx,
+        &app,
+        0,
+        Ok((game_rows("Last", 1), Some("next".into()))),
+    );
+    assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
+    assert!(
+        !crate::router::lock(&ctx.shared).games.sliding,
+        "a partial nonterminal page must wait"
+    );
+    crate::games::on_append(&ctx, &app, 0, Ok((game_rows("Last", size - 1), None)));
+    assert!(crate::router::lock(&ctx.shared).games.sliding);
+    assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
+    assert_eq!(view.get_next_cells().row_count(), size);
+    assert!(distinct_frames(&window, 18) > 5);
+    assert_eq!(view.get_page(), 4);
+    assert!(!crate::router::lock(&ctx.shared).games.loading_more);
+}
+
+#[test]
+fn rapid_letter_requires_a_qualified_hold_and_clears_on_taps_and_quiet() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen("games".into());
+    seat_folder(&ctx, &app, "Game", 0);
+    settle(&window);
+    let view = app.global::<crate::GamesView>();
+    for _ in 0..3 {
+        crate::router::handle_action(&ctx, &app, "page_next");
+        assert!(crate::router::lock(&ctx.shared).games.sliding);
+        assert!(!view.get_rapid_active());
+        assert!(
+            view.get_rapid_letter().is_empty(),
+            "ordinary taps must not show the rapid badge"
+        );
+        distinct_frames(&window, 18);
+    }
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
+    assert!(view.get_rapid_active());
+    assert!(!view.get_rapid_letter().is_empty());
+    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    crate::router::handle_action(&ctx, &app, "page_prev");
+    assert!(!view.get_rapid_active());
+    assert!(
+        view.get_rapid_letter().is_empty(),
+        "a fresh tap must retire the held badge"
+    );
+    assert!(crate::router::lock(&ctx.shared).games.sliding);
+    distinct_frames(&window, 18);
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
+    assert!(!view.get_rapid_letter().is_empty());
+    CLOCK.with(|clock| clock.set(clock.get() + zaparoo_app::input::RAPID_QUIET_MS));
+    slint::platform::update_timers_and_animations();
+    assert!(!view.get_rapid_active());
+    assert!(
+        view.get_rapid_letter().is_empty(),
+        "quiet must clear the letter as well as rapid mode"
+    );
+    crate::router::handle_action(&ctx, &app, "page_next");
+    settle(&window);
+    assert!(
+        view.get_rapid_letter().is_empty(),
+        "later nonrapid flips cannot strand an old badge"
+    );
+}
+
+#[test]
+fn systems_redraw_retains_both_pages_during_a_slide() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen("systems".into());
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems_model.rows = (0..40)
+            .map(|i| zaparoo_app::systems::SystemRow {
+                id: format!("System{i}"),
+                name: format!("System {i}"),
+                cover_key: String::new(),
+                category: String::new(),
+                hidden: false,
+                zap_script: String::new(),
+                release_date: String::new(),
+                manufacturer: String::new(),
+                media_count: None,
+            })
+            .collect();
+        shared.systems_model.grid.set_item_count(40);
+    }
+    crate::systems::render(&ctx, &app);
+    settle(&window);
+    let view = app.global::<SystemsView>();
+    for direction in [1, -1] {
+        let from = crate::router::lock(&ctx.shared)
+            .systems_model
+            .grid
+            .current_page();
+        let outgoing = view.get_cells().row_data(0).map(|cell| cell.name);
+        assert!(crate::router::lock(&ctx.shared)
+            .systems_model
+            .grid
+            .page_by(direction));
+        crate::systems::slide_to_current_page(&ctx, &app, from);
+        let incoming = view.get_next_cells().row_data(0).map(|cell| cell.name);
+        assert!(incoming.is_some());
+        crate::systems::render(&ctx, &app);
+        assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
+        assert_eq!(
+            view.get_next_cells().row_data(0).map(|cell| cell.name),
+            incoming
+        );
+        assert!(distinct_frames(&window, 18) > 5);
+        settle(&window);
+    }
+}
+
+fn folder_fill(ctx: &crate::router::Ctx, app: &App, direction: i32, name: &str, index: usize) {
+    crate::folder_motion::capture(app, direction);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.ticket += 1;
+        shared.games.folder_direction = direction;
+        shared.games.folder_sliding = false;
+        shared.games.sliding = false;
+    }
+    seat_folder(ctx, app, name, index);
+    crate::folder_motion::start(ctx, app);
+}
+
+#[test]
+fn folder_grids_slide_both_ways_retain_selection_and_reject_stale_commits() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen("games".into());
+    let view = app.global::<crate::GamesView>();
+    seat_folder(&ctx, &app, "Parent", 3);
+    crate::games::bind_input(&std::sync::Arc::new(ctx.clone()), &app);
+    settle(&window);
+    for (direction, name, index) in [(1, "Child", 0), (-1, "Parent", 3)] {
+        let outgoing = view.get_cells().row_data(0).map(|cell| cell.name);
+        assert!(outgoing.is_some());
+        app.window().request_redraw();
+        let before_load = frame(&window);
+        {
+            let mut shared = crate::router::lock(&ctx.shared);
+            shared.games.folder_direction = direction;
+            shared.games.loading = true;
+        }
+        crate::games::render(&ctx, &app);
+        app.window().request_redraw();
+        assert_eq!(
+            frame(&window),
+            before_load,
+            "folder loading must not blank the outgoing frame"
+        );
+        let selected = crate::router::lock(&ctx.shared).games.grid.current_index();
+        app.global::<crate::GamesInput>().invoke_cell_clicked(1);
+        crate::games::handle_action(&ctx, &app, "right");
+        assert_eq!(
+            crate::router::lock(&ctx.shared).games.grid.current_index(),
+            selected,
+            "visible outgoing rows must not accept input during loading"
+        );
+        settle(&window);
+        crate::router::lock(&ctx.shared).games.loading = false;
+        folder_fill(&ctx, &app, direction, name, index);
+        assert!(view.get_folder_slide());
+        assert_eq!(view.get_slide_dir(), direction);
+        assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
+        // Cover/detail publications must update incoming cells, not tear down outgoing delegates.
+        crate::games::render(&ctx, &app);
+        assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
+        crate::games::handle_action(&ctx, &app, "right");
+        assert_eq!(
+            crate::router::lock(&ctx.shared).games.grid.current_index(),
+            index
+        );
+        assert!(
+            distinct_frames(&window, 18) > 5,
+            "folder direction {direction} must animate, not cut"
+        );
+        assert!(!view.get_folder_slide());
+        assert_eq!(view.get_current_index(), index as i32);
+        assert_eq!(view.get_folder_from_cells().row_count(), 0);
+        settle(&window);
+    }
+    // An invalidated fill cannot let its old timer commit over a newer folder.
+    folder_fill(&ctx, &app, 1, "Old", 0);
+    CLOCK.with(|clock| clock.set(clock.get() + 100));
+    slint::platform::update_timers_and_animations();
+    folder_fill(&ctx, &app, -1, "New", 2);
+    CLOCK.with(|clock| clock.set(clock.get() + crate::games::SWOOP_MS - 100));
+    slint::platform::update_timers_and_animations();
+    assert!(crate::router::lock(&ctx.shared).games.folder_sliding);
+    assert!(view.get_folder_slide());
+    settle(&window);
+    assert_eq!(view.get_current_index(), 2);
+    assert!(view
+        .get_cells()
+        .row_data(0)
+        .is_some_and(|cell| cell.name.starts_with("New")));
+    // Empty folders still slide the outgoing grid away before showing Empty.
+    crate::folder_motion::capture(&app, 1);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.ticket += 1;
+        shared.games.folder_direction = 1;
+        shared.games.rows.clear();
+        shared.games.grid.set_item_count(0);
+    }
+    crate::games::render(&ctx, &app);
+    crate::folder_motion::start(&ctx, &app);
+    assert!(distinct_frames(&window, 18) > 5);
+    assert!(!view.get_folder_slide());
+    assert_eq!(view.get_count(), 0);
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .reduce_motion = true;
+    app.global::<Shell>().set_reduce_motion(true);
+    folder_fill(&ctx, &app, 1, "Cut", 0);
+    assert!(!view.get_folder_slide());
+    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    assert!(view
+        .get_cells()
+        .row_data(0)
+        .is_some_and(|cell| cell.name.starts_with("Cut")));
 }
 
 #[test]

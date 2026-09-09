@@ -20,10 +20,6 @@ use zaparoo_core::persist;
 use crate::router::{lock, Ctx, ListContext, PendingRestart};
 use crate::{App, GridCell, SettingsInput, SettingsRow, SettingsView};
 
-/// `MiSTer`'s HDMI modes; the host offers these rather than probing, as
-/// the Qt build does through its own output table.
-const MISTER_RESOLUTIONS: &[&str] = &["", "640x480", "1280x720", "1920x1080"];
-
 /// What the registry needs to know about this machine.
 fn inputs(ctx: &Ctx) -> rules::Inputs {
     rules::Inputs {
@@ -81,10 +77,13 @@ fn options(ctx: &Ctx, id: &str) -> Vec<String> {
         return values.into_iter().map(str::to_string).collect();
     }
     match id {
-        "resolution" => MISTER_RESOLUTIONS
-            .iter()
-            .map(|v| (*v).to_string())
-            .collect(),
+        "resolution" => {
+            #[cfg(feature = "mister")]
+            let output = crate::mister::video_mode::output_size();
+            #[cfg(not(feature = "mister"))]
+            let output = None;
+            crate::display::resolution_options(output)
+        }
         "colorScheme" => zaparoo_app::palette::ids().map(str::to_string).collect(),
         _ => Vec::new(),
     }
@@ -191,10 +190,18 @@ fn rows(ctx: &Ctx, app: &App, page: &str) -> Vec<SettingsRow> {
 /// a bottom margin that clears the active label, and cells capped at the
 /// Hub's resolved tile size so both grids read as the same object.
 fn root_geometry(ctx: &Ctx, app: &App) -> (i32, i32, i32, i32, Insets, paged_grid::Fit) {
-    let scene = crate::router::output_scene(app);
-    let inputs = scene.inputs();
-    let derived = zaparoo_app::sizing::derive(&inputs);
-    let profile = layouts::profile(ThemeId::current(&inputs), View::GamesGrid, &inputs);
+    root_geometry_for(
+        &crate::router::output_scene(app).inputs(),
+        lock(&ctx.shared).persist.settings.orientation != "horizontal",
+    )
+}
+
+fn root_geometry_for(
+    inputs: &zaparoo_app::sizing::Inputs,
+    rotated: bool,
+) -> (i32, i32, i32, i32, Insets, paged_grid::Fit) {
+    let derived = zaparoo_app::sizing::derive(inputs);
+    let profile = layouts::profile(ThemeId::current(inputs), View::GamesGrid, inputs);
     let compact = derived.tier == zaparoo_app::sizing::Tier::T240;
     let top_margin = inputs.pct_h(if compact { 1.0 } else { 2.0 });
     let grid_y = derived.header_bottom
@@ -215,7 +222,6 @@ fn root_geometry(ctx: &Ctx, app: &App) -> (i32, i32, i32, i32, Insets, paged_gri
         column_gap: derived.hub_grid_column_gap,
         row_gap: derived.hub_grid_row_gap,
     };
-    let rotated = lock(&ctx.shared).persist.settings.orientation != "horizontal";
     let (columns, grid_rows) = rules::root_grid_shape(rules::PAGES.len(), rotated);
     let columns = i32::try_from(columns).unwrap_or(3);
     let grid_rows = i32::try_from(grid_rows).unwrap_or(2);
@@ -246,9 +252,12 @@ fn root_geometry(ctx: &Ctx, app: &App) -> (i32, i32, i32, i32, Insets, paged_gri
 /// The rows viewport inside the page card: what is left once the hint
 /// band and the paddings are taken out.
 fn rows_viewport(app: &App) -> i32 {
-    let inputs = crate::router::output_scene(app).inputs();
-    let derived = zaparoo_app::sizing::derive(&inputs);
-    let profile = layouts::profile(ThemeId::current(&inputs), View::GamesGrid, &inputs);
+    rows_viewport_for(&crate::router::output_scene(app).inputs())
+}
+
+fn rows_viewport_for(inputs: &zaparoo_app::sizing::Inputs) -> i32 {
+    let derived = zaparoo_app::sizing::derive(inputs);
+    let profile = layouts::profile(ThemeId::current(inputs), View::GamesGrid, inputs);
     let card_y = derived.header_bottom
         + profile.status.top_margin
         + profile.status.strip_height
@@ -323,6 +332,34 @@ pub fn open_page(ctx: &Ctx, app: &App, page: &str) {
     render(ctx, app);
 }
 
+pub(crate) fn capture_outgoing(app: &App) {
+    let view = app.global::<SettingsView>();
+    view.set_outgoing_page(view.get_page());
+    view.set_outgoing_rows(view.get_rows());
+    view.set_outgoing_index(view.get_index());
+    view.set_outgoing_scroll(view.get_scroll());
+    view.set_outgoing_rows_height(view.get_rows_height());
+}
+
+/// A category is another level of Settings, not an in-place repaint.
+pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: &str) {
+    let view = app.global::<SettingsView>();
+    if view.get_page().as_str() == page {
+        return;
+    }
+    let from = view.get_page();
+    capture_outgoing(app);
+    open_page(ctx, app, page);
+    if page.is_empty() {
+        let index = rules::PAGES
+            .iter()
+            .position(|page| page.id == from.as_str())
+            .unwrap_or(0);
+        view.set_index(i32::try_from(index).unwrap_or(0));
+    }
+    crate::router::transition_settings_page(app, if page.is_empty() { -1 } else { 1 });
+}
+
 pub fn enter(ctx: &Ctx, app: &App) {
     enter_with_direction(ctx, app, 1);
 }
@@ -336,8 +373,15 @@ pub fn enter_with_direction(ctx: &Ctx, app: &App, direction: i32) {
 
 /// Back out of the About screen onto the page that opened it.
 pub fn return_from_about(ctx: &Ctx, app: &App) {
-    enter_with_direction(ctx, app, -1);
+    lock(&ctx.shared).persist.active_screen = "settings".to_string();
+    crate::router::save_persist(&ctx.shared);
+    show_about_return(ctx, app);
+}
+
+pub(crate) fn show_about_return(ctx: &Ctx, app: &App) {
+    // Stage the actual destination before arming the route, not a temporary root grid.
     open_page(ctx, app, "pageSupportAbout");
+    crate::router::transition_to_screen(app, "settings", -1);
 }
 
 // ---------- Input ----------
@@ -369,7 +413,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             }
             actions::ACCEPT => {
                 if let Some(row) = rows.get(index) {
-                    open_page(ctx, app, row.id());
+                    navigate_page(ctx, app, row.id());
                 }
             }
             actions::CANCEL => {
@@ -406,7 +450,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
                 accept(ctx, app, id, *control);
             }
         }
-        actions::CANCEL => open_page(ctx, app, ""),
+        actions::CANCEL => navigate_page(ctx, app, ""),
         _ => {}
     }
 }
@@ -519,7 +563,14 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
         "showOriginalFilenames" => crate::games::reproject(ctx, app),
         "reduceMotion" => {
             app.global::<crate::Shell>().set_reduce_motion(value);
-            app.global::<crate::Motion>().set_enabled(!value);
+            let scene = crate::router::output_scene(app);
+            app.global::<crate::Motion>()
+                .set_enabled(crate::display::motion_enabled(
+                    value,
+                    ctx.is_mister,
+                    scene.crt,
+                    scene.inputs().resolution_height().max(0) as u32,
+                ));
         }
         "mouseEnabled" => app.global::<crate::Shell>().set_mouse_enabled(value),
         "swapConfirmCancel" | "swapOptionsView" => crate::apply_buttons(ctx, app),
@@ -696,10 +747,94 @@ pub fn save(ctx: &Ctx, app: &App) {
     }
 }
 
+/// Mirror semantic rows, then fit both route endpoints to the CRT's own geometry.
+#[cfg(feature = "mister")]
+pub(crate) fn mirror_geometry(primary: &App, crt: &App) {
+    let source = primary.global::<SettingsView>();
+    let target = crt.global::<SettingsView>();
+    let sizing = crt.global::<crate::Sizing>();
+    let inputs = crate::sizing::Scene::of(
+        crt,
+        f64::from(sizing.get_screen_width()),
+        f64::from(sizing.get_screen_height()),
+        true,
+    )
+    .inputs();
+    let (columns, rows, y, height, _, fit) = root_geometry_for(
+        &inputs,
+        crt.global::<crate::Shell>().get_orientation().as_str() != "horizontal",
+    );
+    target.set_columns(columns);
+    target.set_rows_count(rows);
+    target.set_cell_width(fit.cell_width as f32);
+    target.set_cell_height(fit.cell_height as f32);
+    target.set_block_offset_x(fit.block_offset_x as f32);
+    target.set_block_offset_y(fit.block_offset_y as f32);
+    target.set_grid_y(y as f32);
+    target.set_grid_height(height as f32);
+    let viewport = rows_viewport_for(&inputs) as f32;
+    let (rows, scroll) = mirrored_rows(&source.get_rows(), source.get_index(), viewport, &inputs);
+    crate::view_model::publish(&target.get_rows(), rows, |rows| target.set_rows(rows));
+    target.set_scroll(scroll);
+    target.set_rows_height(viewport);
+    let (rows, scroll) = mirrored_rows(
+        &source.get_outgoing_rows(),
+        source.get_outgoing_index(),
+        viewport,
+        &inputs,
+    );
+    crate::view_model::publish(&target.get_outgoing_rows(), rows, |rows| {
+        target.set_outgoing_rows(rows);
+    });
+    target.set_outgoing_scroll(scroll);
+    target.set_outgoing_rows_height(viewport);
+}
+
+#[cfg(feature = "mister")]
+fn mirrored_rows(
+    rows: &ModelRc<SettingsRow>,
+    index: i32,
+    viewport: f32,
+    inputs: &zaparoo_app::sizing::Inputs,
+) -> (Vec<SettingsRow>, f32) {
+    use slint::Model;
+    let mut offset = 0;
+    let rows: Vec<_> = rows
+        .iter()
+        .map(|mut row| {
+            let height = if row.kind.as_str() == "header" {
+                inputs.pct_h(5.0)
+            } else {
+                inputs.pct_h(8.0)
+                    + if row.status_key.is_empty() {
+                        0
+                    } else {
+                        inputs.pct_h(3.2)
+                    }
+            };
+            row.y_offset = offset as f32;
+            row.height = height as f32;
+            offset += height;
+            row
+        })
+        .collect();
+    let focused = rows
+        .get(index.max(0) as usize)
+        .map_or(0.0, |row| row.y_offset + row.height);
+    let scroll = (focused - viewport)
+        .max(0.0)
+        .min((offset as f32 - viewport).max(0.0));
+    (rows, scroll)
+}
+
 // ---------- Pointer ----------
 
 fn focus(ctx: &Ctx, app: &App, index: usize) -> bool {
-    if crate::press_feedback::pending(app) {
+    let shell = app.global::<crate::Shell>();
+    if shell.get_route_transitioning()
+        || shell.get_transitioning()
+        || crate::press_feedback::pending(app)
+    {
         return false;
     }
     let (_, rows, _) = page_rows_now(ctx, app);

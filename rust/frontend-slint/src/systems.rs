@@ -63,6 +63,7 @@ pub struct SystemsModel {
     pub release_pulse: i32,
     /// A page swoop is in flight; input waits for the commit.
     pub sliding: bool,
+    pub transition_seq: u64,
 }
 
 impl SystemsModel {
@@ -79,6 +80,7 @@ impl SystemsModel {
             activate_pulse: 0,
             release_pulse: 0,
             sliding: false,
+            transition_seq: 0,
         }
     }
 
@@ -178,6 +180,7 @@ pub fn enter(ctx: &Ctx, app: &App, category: &str, animate: bool) {
         model.grid.set_current_index_immediate(index);
         model.restore_done = true;
         model.sliding = false;
+        model.transition_seq += 1;
     }
     crate::router::save_persist(&ctx.shared);
     let view = app.global::<SystemsView>();
@@ -215,6 +218,7 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
         model.focus_armed = false;
         model.restore_done = false;
         model.sliding = false;
+        model.transition_seq += 1;
         model.grid.prepare_for_model_replacement();
         let rows = project_favorites(&shared);
         seat_favorites(&mut shared, rows);
@@ -500,13 +504,29 @@ pub fn render(ctx: &Ctx, app: &App) {
     let model = &shared.systems_model;
     let page = model.grid.current_page();
     let start = page * model.grid.page_size();
-    crate::view_model::publish_cells(&view.get_cells(), page_cells(&shared, page), |rows| {
-        view.set_cells(rows);
+    if !model.sliding && view.get_page_slide().abs() > f32::EPSILON {
+        view.set_slide_anim(false);
+        view.set_page_slide(0.0);
+        view.set_cached_transition(false);
+    }
+    let strip_sliding = model.sliding && !view.get_cached_transition();
+    if strip_sliding {
+        crate::view_model::publish_cells(
+            &view.get_next_cells(),
+            page_cells(&shared, page),
+            |rows| view.set_next_cells(rows),
+        );
+    } else {
+        crate::view_model::publish_cells(&view.get_cells(), page_cells(&shared, page), |rows| {
+            view.set_cells(rows);
+        });
+        view.set_next_cells(ModelRc::default());
+    }
+    view.set_selected_local(if strip_sliding {
+        -1
+    } else {
+        i32::try_from(model.grid.current_index().saturating_sub(start)).unwrap_or(0)
     });
-    view.set_next_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
-    view.set_selected_local(
-        i32::try_from(model.grid.current_index().saturating_sub(start)).unwrap_or(0),
-    );
     view.set_mode(SharedString::from(model.mode.token()));
     view.set_count(i32::try_from(model.rows.len()).unwrap_or(0));
     view.set_favorites_total(
@@ -631,7 +651,7 @@ fn persist_selection(ctx: &Ctx) {
 }
 
 #[cfg(feature = "mister")]
-fn request_cached_page_transition(app: &App, direction: i32, columns: i32, rows: i32) -> bool {
+fn request_cached_page_transition(app: &App, direction: i32, _columns: i32, _rows: i32) -> bool {
     let shell = app.global::<crate::Shell>();
     if shell.get_orientation().as_str() != "horizontal" || shell.get_systems_list_layout() {
         return false;
@@ -642,8 +662,11 @@ fn request_cached_page_transition(app: &App, direction: i32, columns: i32, rows:
     let Some(geometry) = crate::sizing::mister_browse_grid_transition_geometry(
         width,
         height,
-        columns.max(0) as u32,
-        rows.max(0) as u32,
+        app.global::<SystemsView>().get_grid_y().round().max(0.0) as u32,
+        app.global::<SystemsView>()
+            .get_grid_height()
+            .round()
+            .max(0.0) as u32,
     ) else {
         return false;
     };
@@ -657,11 +680,12 @@ fn request_cached_page_transition(_app: &App, _direction: i32, _columns: i32, _r
 
 /// A cursor move landed on another page: swoop the strip one period in
 /// `dir`, then commit the new page. Reduce motion cuts instead.
-fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
+pub(crate) fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
     let rapid = crate::input::rapid_page(ctx);
     let (to_page, columns, rows, reduce_motion) = {
         let mut shared = lock(&ctx.shared);
-        let reduce_motion = shared.persist.settings.reduce_motion;
+        let reduce_motion =
+            shared.persist.settings.reduce_motion || !app.global::<crate::Motion>().get_enabled();
         let model = &mut shared.systems_model;
         model.sliding = true;
         (
@@ -685,6 +709,7 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         render(ctx, app);
         return;
     }
+    let seq = lock(&ctx.shared).systems_model.transition_seq;
     if request_cached_page_transition(app, dir, columns, rows) {
         view.set_slide_anim(false);
         view.set_cached_transition(true);
@@ -693,6 +718,9 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         let ctx = ctx.clone();
         slint::Timer::single_shot(std::time::Duration::from_millis(SWOOP_MS), move || {
             if let Some(app) = weak.upgrade() {
+                if lock(&ctx.shared).systems_model.transition_seq != seq {
+                    return;
+                }
                 lock(&ctx.shared).systems_model.sliding = false;
                 let view = app.global::<SystemsView>();
                 view.set_cached_transition(false);
@@ -717,6 +745,9 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         let Some(app) = weak.upgrade() else {
             return;
         };
+        if lock(&ctx.shared).systems_model.transition_seq != seq {
+            return;
+        }
         lock(&ctx.shared).systems_model.sliding = false;
         let view = app.global::<SystemsView>();
         view.set_slide_anim(false);
@@ -724,6 +755,9 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         view.set_page_slide(0.0);
         let weak = app.as_weak();
         slint::Timer::single_shot(std::time::Duration::from_millis(REARM_MS), move || {
+            if lock(&ctx.shared).systems_model.transition_seq != seq {
+                return;
+            }
             if let Some(app) = weak.upgrade() {
                 app.global::<SystemsView>().set_slide_anim(true);
             }
@@ -789,6 +823,9 @@ fn move_cursor(ctx: &Ctx, app: &App, action: &str) -> Option<(bool, usize)> {
 
 /// SystemsScreen.qml's `handleAction`.
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
+    if lock(&ctx.shared).systems_model.sliding {
+        return;
+    }
     let loading_cue = app.global::<SystemsView>().get_loading();
     let is_move = matches!(
         action,

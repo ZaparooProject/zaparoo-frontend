@@ -121,9 +121,8 @@ impl Default for FbFixScreeninfo {
 
 pub struct Fb0Presenter {
     file: File,
-    /// mmap of the fb aperture.
-    fb_ptr: *mut u8,
-    fb_len: usize,
+    /// Native fbdev mapping, or the same physical aperture via /dev/mem.
+    mapping: super::fb_mapping::FbMapping,
     line_length: usize,
     width: u32,
     height: u32,
@@ -156,27 +155,17 @@ impl Fb0Presenter {
             )));
         }
 
-        let fb_len = fix.smem_len as usize;
-        // SAFETY: mapping the fb device the kernel advertised with
-        // smem_len bytes; MAP_SHARED so stores reach scanout memory.
-        let fb_ptr = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                fb_len,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED,
-                fd,
-                0,
-            )
-        };
-        if fb_ptr == libc::MAP_FAILED {
-            return Err(slint::PlatformError::Other("mmap /dev/fb0 failed".into()));
+        if !fix.line_length.is_multiple_of(4) {
+            return Err(slint::PlatformError::Other(
+                "framebuffer stride must be aligned to 32-bit pixels".into(),
+            ));
         }
+        let mut mapping = super::fb_mapping::FbMapping::open(&file, &fix)
+            .map_err(|error| slint::PlatformError::Other(format!("map framebuffer: {error}")))?;
         // Wipe whatever the console left behind: our per-frame blits
         // only cover rows the scene dirties, so stale text outside the
         // UI would otherwise persist for the whole session.
-        // SAFETY: the mapping is fb_len bytes and writable.
-        unsafe { std::ptr::write_bytes(fb_ptr.cast::<u8>(), 0, fb_len) };
+        mapping.clear();
 
         let width = var.xres;
         let height = var.yres;
@@ -190,8 +179,7 @@ impl Fb0Presenter {
         );
         Ok(Self {
             file,
-            fb_ptr: fb_ptr.cast(),
-            fb_len,
+            mapping,
             line_length: fix.line_length as usize,
             width,
             height,
@@ -207,22 +195,20 @@ impl Fb0Presenter {
         let stride = self.width as usize;
         let src = &self.buffer[row * stride + x0..row * stride + x0 + w];
         let byte_off = row * self.line_length + x0 * 4;
-        if byte_off + w * 4 > self.fb_len {
+        if byte_off + w * 4 > self.mapping.len() {
             return;
         }
         // xRGB memory order (red at bit 16) means bytes B,G,R,X on
         // little-endian; xBGR means bytes R,G,B,X.
         let rgb_order_matches = self.red_offset == 0;
-        // SAFETY: byte_off + w*4 is bounds-checked against the
-        // mapping length above; the mapping lives as long as self.
-        let dst = unsafe { std::slice::from_raw_parts_mut(self.fb_ptr.add(byte_off), w * 4) };
         for (i, px) in src.iter().enumerate() {
             let out = if rgb_order_matches {
                 [px.red, px.green, px.blue, 0]
             } else {
                 [px.blue, px.green, px.red, 0]
             };
-            dst[i * 4..i * 4 + 4].copy_from_slice(&out);
+            self.mapping
+                .write_word(byte_off + i * 4, u32::from_ne_bytes(out));
         }
     }
 }
@@ -266,15 +252,5 @@ impl Presenter for Fb0Presenter {
             }
         }
         render_time + copy_start.elapsed()
-    }
-}
-
-impl Drop for Fb0Presenter {
-    fn drop(&mut self) {
-        // SAFETY: unmapping the region mapped in open(); the pointer
-        // and length come from that mmap call.
-        unsafe {
-            libc::munmap(self.fb_ptr.cast(), self.fb_len);
-        }
     }
 }

@@ -5,13 +5,13 @@
 // Vblank-latch presenter: guaranteed tear-free page flips on the HDMI
 // scaler path. Renders RGB565 into cached RAM, copies the stale
 // region into one of two hidden write-combined slots provided by the
-// `mister-magik-scanout-slots` kernel module, then posts the slot's
+// `zaparoo_scanout` kernel module, then posts the slot's
 // physical address through the menu core's latch protocol (io_uio
 // command 0x57); the FPGA latches the new base at vblank, so scanout
 // never observes a partial frame.
 //
-// Engaged only when Main spawned us with --latch (it gates its own
-// FPGA writes for our lifetime - see the Main fork's uio lease). Both
+// Engaged only after Main acknowledges an inherited bus-lease request.
+// Main suppresses its FPGA writes until the lease socket closes. Both
 // the module and the latch-capable menu RBF are probed at open();
 // any missing piece falls back to the fb0 presenter, loudly.
 //
@@ -30,22 +30,21 @@ use std::fs::{File, OpenOptions};
 use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
-const DEVICE_PATH: &str = "/dev/mister-magik-scanout-slots";
+const DEVICE_PATH: &str = "/dev/zaparoo-scanout";
 const SLOT_COUNT: usize = 2;
-const ABI_VERSION: u32 = 3;
+const ABI_VERSION: u32 = 1;
 const MODE_ENABLE: u16 = 0x8000;
 /// Scaler filter enable (`route_flt`, the stock fbuf's `FB_FLT` bit):
 /// without it the ascal upscales nearest-neighbor and any non-integer
-/// scale renders jagged. Set whenever the render size differs from
-/// the output raster.
+/// scale renders jagged. Integer upscaling keeps nearest-neighbor sampling.
 const MODE_FILTER: u16 = 0x4000;
 const MODE_FMT_RGB565: u16 = 0x0014;
 /// Theme.bg (`#0f0f23`) encoded as RGB565 for the inter-page gap.
 const TRANSITION_BACKGROUND: Rgb565Pixel = Rgb565Pixel(0x0864);
 
-// UAPI struct from mister_magik_scanout_slots_uapi.h (ABI v3).
+// Public Zaparoo scanout ABI v1: fixed-width layout, distinct ioctl namespace.
 #[repr(C)]
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 struct SlotsLayout {
     abi_version: u32,
     slot_count: u32,
@@ -59,10 +58,42 @@ struct SlotsLayout {
     reserved: [u32; 4],
 }
 
-// _IOR('M', 0x01, struct mister_magik_scanout_slots_layout):
-// direction READ (2) << 30 | size << 16 | 'M' << 8 | nr.
+// _IOR('Z', 0x01, layout): READ << 30 | size << 16 | 'Z' << 8 | nr.
 const GET_LAYOUT: libc::Ioctl =
-    (2 << 30) | ((size_of::<SlotsLayout>() as libc::Ioctl) << 16) | (0x4D << 8) | 0x01;
+    (2 << 30) | ((size_of::<SlotsLayout>() as libc::Ioctl) << 16) | (0x5A << 8) | 0x01;
+
+fn expected_layout() -> SlotsLayout {
+    SlotsLayout {
+        abi_version: ABI_VERSION,
+        slot_count: 2,
+        max_width: 1920,
+        max_height: 1080,
+        max_stride_bytes: 3840,
+        slot_capacity_bytes: 4_147_200,
+        map_bytes: 4_149_248,
+        flags: 3, // write-combined, exclusive mapping-lifetime owner
+        slots: [[0x2300_0000, 0], [0x2340_0000, 8_294_400]],
+        reserved: [0; 4],
+    }
+}
+
+struct SlotMappings {
+    ptrs: [*mut u8; SLOT_COUNT],
+    len: usize,
+}
+
+impl Drop for SlotMappings {
+    fn drop(&mut self) {
+        for ptr in self.ptrs {
+            if !ptr.is_null() {
+                // SAFETY: each initialized entry owns exactly len mapped bytes.
+                unsafe {
+                    libc::munmap(ptr.cast(), self.len);
+                }
+            }
+        }
+    }
+}
 
 /// Damage bounding box in buffer pixels, inclusive-exclusive.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,11 +126,11 @@ impl Damage {
 
 pub struct LatchPresenter {
     uio: Uio,
-    /// Keeps the module device open; the mappings live independently.
+    // Fields drop in this order after route disable: unmap, close the slot
+    // owner, then release Main's bus lease. Failed setup uses the same RAII.
+    maps: SlotMappings,
     _slots_file: File,
-    /// One write-combined mapping per slot (see `open_slots`).
-    maps: [*mut u8; SLOT_COUNT],
-    map_bytes: usize,
+    _lease: super::lease::Lease,
     slot_phys: [u32; SLOT_COUNT],
     /// Canonical Slint render target (RGB565, `width` px stride), sized
     /// for the largest geometry; low-res renders use a prefix slice.
@@ -141,7 +172,7 @@ unsafe impl Send for LatchPresenter {}
 /// `map_bytes`-sized shared mappings whose file offset selects the
 /// slot (slot0 at offset 0, slot1 at its `mmap_offset_bytes`); a
 /// single combined mapping does not exist.
-fn open_slots() -> Result<(File, SlotsLayout, [*mut u8; SLOT_COUNT]), slint::PlatformError> {
+fn open_slots() -> Result<(File, SlotsLayout, SlotMappings), slint::PlatformError> {
     let err = slint::PlatformError::Other;
     let slots_file = OpenOptions::new()
         .read(true)
@@ -157,24 +188,27 @@ fn open_slots() -> Result<(File, SlotsLayout, [*mut u8; SLOT_COUNT]), slint::Pla
             std::io::Error::last_os_error()
         )));
     }
-    if layout.abi_version != ABI_VERSION || layout.slot_count as usize != SLOT_COUNT {
+    if layout != expected_layout() {
         return Err(err(format!(
             "scanout-slots ABI mismatch: version {} slots {}",
             layout.abi_version, layout.slot_count
         )));
     }
-    let mut maps = [std::ptr::null_mut::<u8>(); SLOT_COUNT];
-    for (i, map) in maps.iter_mut().enumerate() {
+    let mut maps = SlotMappings {
+        ptrs: [std::ptr::null_mut(); SLOT_COUNT],
+        len: layout.map_bytes as usize,
+    };
+    for (i, map) in maps.ptrs.iter_mut().enumerate() {
         // SAFETY: mapping one slot exactly as the module's handler
         // requires; write-combine attributes applied module-side.
         let p = unsafe {
-            libc::mmap(
+            libc::mmap64(
                 std::ptr::null_mut(),
                 layout.map_bytes as usize,
                 libc::PROT_READ | libc::PROT_WRITE,
                 libc::MAP_SHARED,
                 slots_file.as_raw_fd(),
-                libc::off_t::from(layout.slots[i][1]),
+                i64::from(layout.slots[i][1]),
             )
         };
         if p == libc::MAP_FAILED {
@@ -243,6 +277,11 @@ fn select_geometry(
     output: (u32, u32),
     policy: ResolutionPolicy,
 ) -> Result<(u32, u32), slint::PlatformError> {
+    if output.0 == 0 || output.1 == 0 || output.0 > 4096 || output.1 > 4096 {
+        return Err(slint::PlatformError::Other(
+            "HDMI timing exceeds latch destination bounds".into(),
+        ));
+    }
     let sharpest = choose_geometry(caps, output.0, output.1)?;
     match policy {
         ResolutionPolicy::Adaptive => Ok(sharpest),
@@ -273,39 +312,19 @@ impl LatchPresenter {
     ) -> Result<Self, slint::PlatformError> {
         let err = slint::PlatformError::Other;
 
-        // 1. Kernel module: hidden slot layout + per-slot mappings.
+        let output = super::video_mode::output_size()
+            .ok_or_else(|| err("HDMI output timing was not verified".into()))?;
+        // No FPGA traffic before Main confirms it has stopped its own writes.
+        let lease = super::lease::acquire().map_err(|e| err(format!("scanout lease: {e}")))?;
         let (slots_file, layout, maps) = open_slots()?;
-        let map_bytes = layout.map_bytes as usize;
 
-        // 2. Menu core: latch caps probe. A stock menu RBF answers
-        // garbage that fails the CRC and we fall back to fb0. Retried
-        // for a few seconds: we start probing right after exec, but
-        // Main's uio abstention only engages at finalize_spawn (tty
-        // ready), and until then its poll traffic interleaves with
-        // ours and resets the bridge framing mid-transaction.
+        // A verified lease removes the demo's concurrent CAPS/startup race.
         let mut uio = Uio::open().map_err(|e| err(format!("uio open: {e}")))?;
-        let caps = {
-            let mut last_err = String::new();
-            let mut found = None;
-            for attempt in 0..14 {
-                std::thread::sleep(Duration::from_millis(250));
-                let mut caps_words = [0_u16; 6];
-                match uio.transact(CMD_CAPS, &mut caps_words) {
-                    Err(e) => last_err = format!("latch caps probe: {e}"),
-                    Ok(()) => match parse_caps(&caps_words) {
-                        Ok(caps) => {
-                            if attempt > 0 {
-                                tracing::info!(attempt, "latch caps answered after retry");
-                            }
-                            found = Some(caps);
-                            break;
-                        }
-                        Err(e) => last_err = format!("no latch in loaded menu core (caps {e:?})"),
-                    },
-                }
-            }
-            found.ok_or_else(|| err(last_err))?
-        };
+        let mut caps_words = [0_u16; 6];
+        uio.transact(CMD_CAPS, &mut caps_words)
+            .map_err(|e| err(format!("latch caps probe: {e}")))?;
+        let caps = parse_caps(&caps_words)
+            .map_err(|e| err(format!("no compatible latch in loaded menu core: {e:?}")))?;
         if caps.version != latch_protocol::PROTOCOL_VERSION {
             return Err(err(format!(
                 "latch protocol version {} (need {})",
@@ -314,14 +333,14 @@ impl LatchPresenter {
             )));
         }
 
-        // 3. Output geometry from the fb the menu core scans today.
+        // fb0 is the render raster, not HDMI timing. Keep its fd for pacing.
         let fb0 = OpenOptions::new()
             .read(true)
             .write(true)
             .open("/dev/fb0")
             .map_err(|e| err(format!("open /dev/fb0: {e}")))?;
         let (var, _fix) = query_fb(fb0.as_raw_fd())?;
-        let (width, height) = select_geometry(&caps, (var.xres, var.yres), resolution_policy)?;
+        let (width, height) = select_geometry(&caps, output, resolution_policy)?;
         let frame_bytes = width * 2 * height;
         if frame_bytes > layout.slot_capacity_bytes {
             return Err(err(format!(
@@ -329,14 +348,12 @@ impl LatchPresenter {
                 layout.slot_capacity_bytes
             )));
         }
-        let _ = super::OUTPUT_SIZE.set((var.xres, var.yres));
+        let _ = super::OUTPUT_SIZE.set((width, height));
 
         // Adaptive mode uses an exact half-output motion raster and
         // returns to the sharpest supported settled geometry.
         let res_modes = match resolution_policy {
-            ResolutionPolicy::Adaptive => {
-                dynamic_resolution_pair((width, height), (var.xres, var.yres))
-            }
+            ResolutionPolicy::Adaptive => dynamic_resolution_pair((width, height), output),
             ResolutionPolicy::Fixed(_, _) => None,
         };
         let settled = (width, height);
@@ -346,8 +363,10 @@ impl LatchPresenter {
         tracing::info!(
             width,
             height,
-            output_w = var.xres,
-            output_h = var.yres,
+            output_w = output.0,
+            output_h = output.1,
+            framebuffer_w = var.xres,
+            framebuffer_h = var.yres,
             drs = res_modes.is_some(),
             cached_transitions = cached_transitions_available,
             slot0 = format!("{:#010x}", layout.slots[0][0]),
@@ -360,9 +379,9 @@ impl LatchPresenter {
         super::transition::set_available(cached_transitions_available);
         Ok(Self {
             uio,
-            _slots_file: slots_file,
             maps,
-            map_bytes,
+            _slots_file: slots_file,
+            _lease: lease,
             slot_phys: [layout.slots[0][0], layout.slots[1][0]],
             frame: vec![Rgb565Pixel::default(); frame_capacity as usize],
             transition_frame: vec![Rgb565Pixel::default(); frame_capacity as usize],
@@ -370,8 +389,8 @@ impl LatchPresenter {
             cached_transitions_available,
             width,
             height,
-            out_width: var.xres,
-            out_height: var.yres,
+            out_width: output.0,
+            out_height: output.1,
             res_modes,
             // Both slots start unwritten: first two frames copy fully.
             stale: [
@@ -424,7 +443,7 @@ impl LatchPresenter {
             // SAFETY: the slot mapping is map_bytes >= slot capacity
             // >= width*height*2; x/y are clamped above.
             unsafe {
-                let dst = self.maps[slot]
+                let dst = self.maps.ptrs[slot]
                     .add((y * width + x0) * 2)
                     .cast::<Rgb565Pixel>();
                 std::ptr::copy_nonoverlapping(src.as_ptr(), dst, row_px);
@@ -715,16 +734,42 @@ impl Drop for LatchPresenter {
         if let Err(e) = self.uio.transact(CMD_SET, &mut words) {
             tracing::warn!(error = %e, "latch disable post failed on shutdown");
         }
-        for map in self.maps {
-            // SAFETY: each map came from mmap(map_bytes) in open_slots().
-            unsafe { libc::munmap(map.cast(), self.map_bytes) };
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::dynamic_resolution_pair;
+    use super::{dynamic_resolution_pair, expected_layout, select_geometry, ResolutionPolicy};
+
+    #[test]
+    fn automatic_render_size_is_not_hdmi_timing() -> Result<(), Box<dyn std::error::Error>> {
+        let caps = super::parse_caps(&[4, 0x1ff, 1920, 1080, 3840, 0x2984])
+            .map_err(|error| format!("qualified Menu CAPS golden: {error:?}"))?;
+        for (output, render) in [
+            ((1920, 1080), (960, 540)),
+            ((2560, 1440), (1280, 720)),
+            ((3840, 2160), (1280, 720)),
+        ] {
+            assert_eq!(
+                select_geometry(&caps, output, ResolutionPolicy::Fixed(render.0, render.1))?,
+                render
+            );
+        }
+        assert!(select_geometry(&caps, (1920, 1080), ResolutionPolicy::Fixed(640, 480)).is_err());
+        assert!(select_geometry(&caps, (7680, 4320), ResolutionPolicy::Fixed(1280, 720)).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn namespaced_layout_matches_qualified_kernel_abi() {
+        let layout = expected_layout();
+        assert_eq!(size_of::<super::SlotsLayout>(), 64);
+        assert_eq!(super::GET_LAYOUT, 0x8040_5a01);
+        assert_eq!(layout.slots, [[0x2300_0000, 0], [0x2340_0000, 8_294_400]]);
+        assert_eq!(layout.map_bytes % 4096, 0);
+        assert!(layout.map_bytes >= layout.max_stride_bytes * layout.max_height);
+        assert!(layout.slots[0][0] + layout.map_bytes <= layout.slots[1][0]);
+    }
 
     #[test]
     fn enables_motion_pair_when_1080p_settles_at_720p() {

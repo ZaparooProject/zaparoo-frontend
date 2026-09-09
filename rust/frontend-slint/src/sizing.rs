@@ -334,11 +334,9 @@ pub struct RouteTransitionGeometry {
     pub height: u32,
 }
 
-/// Exact non-CRT Systems grid viewport in Slint render pixels. Cached
-/// transitions use this rectangle only when the scene is horizontal and
-/// rendered one-to-one, leaving header, counter, active label, and help bar
-/// stationary. Keep the arithmetic synchronized with `SystemsScreen` and
-/// `Sizing` in `ui/app.slint` / `ui/theme.slint`.
+/// Published non-CRT browse viewport in Slint render pixels. Horizontal,
+/// one-to-one cached scenes move the same full-width band as the live UI,
+/// leaving header, counter, active label and help bar stationary.
 #[cfg_attr(
     not(feature = "mister"),
     allow(
@@ -349,78 +347,26 @@ pub struct RouteTransitionGeometry {
 pub fn mister_browse_grid_transition_geometry(
     screen_width: u32,
     screen_height: u32,
-    columns: u32,
-    rows: u32,
+    grid_top: u32,
+    grid_height: u32,
 ) -> Option<BrowseGridTransitionGeometry> {
-    if screen_width == 0 || screen_height == 0 || columns == 0 || rows == 0 {
+    if screen_width == 0 || grid_height == 0 || grid_top.checked_add(grid_height)? > screen_height {
         return None;
     }
-
-    let pct_w = |percent: f64| (f64::from(screen_width) * percent / 100.0).round() as u32;
-    let pct_h = |percent: f64| (f64::from(screen_height) * percent / 100.0).round() as u32;
-    let quantize_low = |size: u32| {
-        if size < 12 {
-            8
-        } else if size < 16 {
-            12
-        } else if size < 20 {
-            16
-        } else if size < 24 {
-            20
-        } else {
-            24
-        }
-    };
-    let raw_font = pct_h(3.4).max(8);
-    let header_row = if screen_height >= 1000 {
-        2 * quantize_low((f64::from(raw_font) / 2.0).round() as u32)
-    } else {
-        quantize_low(raw_font)
-    };
-    let header_bottom = pct_h(2.0) + 2 * header_row + pct_h(0.8);
-    let grid_top = header_bottom + pct_h(8.0);
-    let bottom_margin = pct_h(15.0);
-    let side_budget = pct_w(8.0);
-    let gap = pct_w(1.2);
-    let horizontal_gaps = columns.saturating_sub(1).checked_mul(gap)?;
-    let vertical_gaps = rows.saturating_sub(1).checked_mul(gap)?;
-    let tile_width = screen_width
-        .checked_sub(side_budget)?
-        .checked_sub(horizontal_gaps)?
-        / columns;
-    let tile_height = screen_height
-        .checked_sub(grid_top)?
-        .checked_sub(bottom_margin)?
-        .checked_sub(vertical_gaps)?
-        / rows;
-    if tile_width == 0 || tile_height == 0 {
-        return None;
-    }
-    let grid_width = tile_width
-        .checked_mul(columns)?
-        .checked_add(horizontal_gaps)?;
-    let period = tile_height.checked_add(gap)?.checked_mul(rows)?;
-    let grid_height = period.checked_sub(gap)?;
-    let x = ((f64::from(screen_width) - f64::from(grid_width)) / 2.0).round() as u32;
-    let bottom = grid_top.checked_add(grid_height)?;
-    let right = x.checked_add(grid_width)?;
-    if right > screen_width || bottom > screen_height {
-        return None;
-    }
-
+    // Slint clips the whole screen-width band, not the centered tile block.
+    // Its page period is exactly grid-height, without an extra row gap.
     Some(BrowseGridTransitionGeometry {
-        x,
+        x: 0,
         y: grid_top,
-        width: grid_width,
+        width: screen_width,
         height: grid_height,
-        gap,
+        gap: 0,
     })
 }
 
 /// Exact horizontal route-content viewport in Slint render pixels. Header
 /// and help chrome remain stationary while cached screen content pushes
-/// between them. Keep arithmetic synchronized with `HeaderBar`, `HelpBar`,
-/// and `Sizing.header-bottom()` in Slint.
+/// between them. Callers provide live `Sizing` header/help boundaries.
 #[cfg_attr(
     not(feature = "mister"),
     allow(
@@ -431,33 +377,15 @@ pub fn mister_browse_grid_transition_geometry(
 pub fn mister_route_transition_geometry(
     screen_width: u32,
     screen_height: u32,
+    header_bottom: u32,
+    help_bar_height: u32,
 ) -> Option<RouteTransitionGeometry> {
     if screen_width == 0 || screen_height == 0 {
         return None;
     }
-
-    let pct_h = |percent: f64| (f64::from(screen_height) * percent / 100.0).round() as u32;
-    let quantize_low = |size: u32| {
-        if size < 12 {
-            8
-        } else if size < 16 {
-            12
-        } else if size < 20 {
-            16
-        } else if size < 24 {
-            20
-        } else {
-            24
-        }
-    };
-    let raw_font = pct_h(3.4).max(8);
-    let header_row = if screen_height >= 1000 {
-        2 * quantize_low((f64::from(raw_font) / 2.0).round() as u32)
-    } else {
-        quantize_low(raw_font)
-    };
-    let y = pct_h(2.0) + 2 * header_row + pct_h(0.8);
-    let help_top = screen_height.checked_sub(pct_h(6.0))?;
+    // Use the published chrome geometry, including proportional font sizing.
+    let y = header_bottom;
+    let help_top = screen_height.checked_sub(help_bar_height)?;
     let height = help_top.checked_sub(y)?;
     (height > 0).then_some(RouteTransitionGeometry {
         x: 0,
@@ -474,26 +402,26 @@ mod tests {
     #[test]
     fn fixed_720_browse_transition_matches_slint_grid_viewport() {
         assert_eq!(
-            mister_browse_grid_transition_geometry(1280, 720, 4, 3),
+            mister_browse_grid_transition_geometry(1280, 720, 126, 486),
             Some(BrowseGridTransitionGeometry {
-                x: 52,
+                x: 0,
                 y: 126,
-                width: 1177,
+                width: 1280,
                 height: 486,
-                gap: 15,
+                gap: 0,
             })
         );
     }
 
     #[test]
     fn browse_transition_rejects_impossible_geometry() {
-        assert_eq!(mister_browse_grid_transition_geometry(64, 32, 5, 5), None);
+        assert_eq!(mister_browse_grid_transition_geometry(64, 32, 30, 5), None);
     }
 
     #[test]
     fn fixed_720_route_transition_leaves_header_and_help_stationary() {
         assert_eq!(
-            mister_route_transition_geometry(1280, 720),
+            mister_route_transition_geometry(1280, 720, 68, 43),
             Some(RouteTransitionGeometry {
                 x: 0,
                 y: 68,
@@ -504,8 +432,39 @@ mod tests {
     }
 
     #[test]
+    fn cached_540p_bounds_follow_live_chrome_and_include_left_edge() {
+        for header_bottom in [48, 62, 74] {
+            let route = mister_route_transition_geometry(960, 540, header_bottom, 32);
+            assert_eq!(
+                route,
+                Some(RouteTransitionGeometry {
+                    x: 0,
+                    y: header_bottom,
+                    width: 960,
+                    height: 508 - header_bottom,
+                })
+            );
+        }
+        assert_eq!(
+            mister_browse_grid_transition_geometry(960, 540, 110, 350),
+            Some(BrowseGridTransitionGeometry {
+                x: 0,
+                y: 110,
+                width: 960,
+                height: 350,
+                gap: 0,
+            })
+        );
+        assert_eq!(mister_route_transition_geometry(960, 540, 520, 32), None);
+        assert_eq!(
+            mister_browse_grid_transition_geometry(960, 540, u32::MAX, 350),
+            None
+        );
+    }
+
+    #[test]
     fn route_transition_rejects_empty_geometry() {
-        assert_eq!(mister_route_transition_geometry(0, 720), None);
-        assert_eq!(mister_route_transition_geometry(1280, 0), None);
+        assert_eq!(mister_route_transition_geometry(0, 720, 68, 43), None);
+        assert_eq!(mister_route_transition_geometry(1280, 0, 68, 43), None);
     }
 }

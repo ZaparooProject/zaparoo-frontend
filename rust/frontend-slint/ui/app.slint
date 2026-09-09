@@ -30,7 +30,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SetupPickerRow, GameInfoView, Labels, AboutView }
+export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, Labels, AboutView }
 
 // Context-menu row: `id` is the dispatch key the router switches on
 // (ContextMenu.qml's rule - position-keyed dispatch was a footgun).
@@ -265,6 +265,11 @@ export global SettingsView {
     // The open page ("" is the root category grid), its rows, and the
     // cursor. The root grid renders as tiles through the shared grid.
     in-out property <string> page: "";
+    in-out property <string> outgoing-page: "";
+    in-out property <[SettingsRow]> outgoing-rows: [];
+    in-out property <int> outgoing-index: 0;
+    in-out property <length> outgoing-scroll: 0px;
+    in-out property <length> outgoing-rows-height: 0px;
     in-out property <[SettingsRow]> rows: [];
     in-out property <int> index: 0;
     in-out property <[GridCell]> cells: [];
@@ -370,6 +375,10 @@ export global GamesView {
     in-out property <string> label-tags: "";
     in-out property <int> activate-pulse: 0;
     in-out property <int> release-pulse: 0;
+    // Folder changes reuse the mounted strip horizontally; page changes move vertically.
+    in-out property <[GridCell]> folder-from-cells: [];
+    in-out property <int> folder-from-index: 0;
+    in-out property <bool> folder-slide: false;
     // Page swoop: the incoming page, its direction and the strip's
     // animated progress; slide-anim gates the post-commit snap.
     in-out property <[GridCell]> next-cells: [];
@@ -488,10 +497,14 @@ export global Overlays {
 // category tiles; a page is a card of rows over a two-line hint band
 // carrying the focused row's description.
 component SettingsScreen inherits Rectangle {
+    in property <bool> outgoing: false;
     background: transparent;
-    property <bool> root-grid: SettingsView.page == "";
-    property <[SettingsRow]> rows: SettingsView.rows;
-    property <int> index: SettingsView.index;
+    property <string> page: root.outgoing ? SettingsView.outgoing-page : SettingsView.page;
+    property <bool> root-grid: root.page == "";
+    property <[SettingsRow]> rows: root.outgoing ? SettingsView.outgoing-rows : SettingsView.rows;
+    property <int> index: root.outgoing ? SettingsView.outgoing-index : SettingsView.index;
+    property <length> rows-height: root.outgoing ? SettingsView.outgoing-rows-height : SettingsView.rows-height;
+    property <length> scroll: root.outgoing ? SettingsView.outgoing-scroll : SettingsView.scroll;
 
     TopStatusStrip {
         x: 0;
@@ -499,7 +512,7 @@ component SettingsScreen inherits Rectangle {
         width: parent.width;
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
-        title: SettingsLabels.page-title(SettingsView.page);
+        title: SettingsLabels.page-title(root.page);
         show-page-counter: false;
         visible: Layout.top-strip-visible;
     }
@@ -578,12 +591,12 @@ component SettingsScreen inherits Rectangle {
             x: root.pad-x;
             y: root.pad-y;
             width: root.card-w - 2 * root.pad-x;
-            height: SettingsView.rows-height;
+            height: root.rows-height;
             clip: true;
 
         for row[i] in root.rows: Rectangle {
             x: 0;
-            y: row.y-offset - SettingsView.scroll;
+            y: row.y-offset - root.scroll;
             width: parent.width;
             height: row.height;
 
@@ -786,7 +799,7 @@ component SystemsScreen inherits Rectangle {
             y: -SystemsView.page-slide * root.period;
             width: parent.width;
             height: parent.height;
-            animate y { duration: SystemsView.slide-anim && !Shell.reduce-motion ? 240ms : 0ms; easing: ease-in-out; }
+            animate y { duration: SystemsView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
 
             PagedGridView {
                 x: 0;
@@ -973,7 +986,7 @@ component ListPickerModal inherits Rectangle {
     changed entries => { root.top = 0; root.reveal-current(); }
     init => { root.reveal-current(); }
     pure function entry-label(entry: MenuEntry) -> string {
-        return root.setting-id != "" ? SettingsLabels.value(root.setting-id, entry.id)
+        return root.setting-id != "" ? SettingsLabels.picker-value(root.setting-id, entry.id)
             : (entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label);
     }
     property <bool> swatches: root.setting-id == "colorScheme";
@@ -1685,11 +1698,12 @@ component GamesScreen inherits Rectangle {
         visible: !root.gate-hide;
 
         Rectangle {
-            x: 0;
-            y: -GamesView.page-slide * root.period;
+            x: GamesView.folder-slide ? -GamesView.page-slide * parent.width : 0px;
+            y: GamesView.folder-slide ? 0px : -GamesView.page-slide * root.period;
+            animate x { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
             width: parent.width;
             height: parent.height;
-            animate y { duration: GamesView.slide-anim && !Shell.reduce-motion ? 240ms : 0ms; easing: ease-in-out; }
+            animate y { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
 
             PagedGridView {
                 x: 0;
@@ -1721,8 +1735,8 @@ component GamesScreen inherits Rectangle {
                 wheel(delta) => { GamesInput.wheel(delta); }
             }
             PagedGridView {
-                x: 0;
-                y: GamesView.slide-dir * root.period;
+                x: GamesView.folder-slide ? GamesView.slide-dir * parent.width : 0px;
+                y: GamesView.folder-slide ? 0px : GamesView.slide-dir * root.period;
                 width: parent.width;
                 height: parent.height;
                 cells: GamesView.next-cells;
@@ -1857,8 +1871,8 @@ component GamesScreen inherits Rectangle {
     }
 
     // RapidScrollIndicator.qml: the landing row's first letter on an
-    // 18%h card over the grid while page flips chain quickly.
-    if !root.gate-hide && !root.list-layout && GamesView.rapid-letter != "" && GamesView.count > 0: Rectangle {
+    // 18%h card over the grid only during qualified held navigation.
+    if !root.gate-hide && !root.list-layout && GamesView.rapid-active && GamesView.rapid-letter != "" && GamesView.count > 0: Rectangle {
         property <length> s: Sizing.pct-h(18);
         x: Math.round((parent.width - self.s) / 2px) * 1px;
         y: GamesView.grid-y + Math.round((GamesView.grid-height - self.s) / 2px) * 1px;
@@ -1884,7 +1898,7 @@ component GamesScreen inherits Rectangle {
         width: parent.width;
         height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : GamesView.grid-height;
         cue-center-y: root.height / 2 - self.y;
-        state: root.state;
+        state: GamesView.folder-slide ? "" : root.state;
         empty-text: GamesView.mode == "favorites" ? @tr("No favorites yet")
             : (GamesView.mode == "recents" ? @tr("Nothing played yet") : @tr("No games in this system"));
         loading-text: GamesView.mode == "favorites" ? @tr("Loading favorites…")
@@ -1989,6 +2003,7 @@ component CrtCalibrationPattern inherits Rectangle {
 
 component RouteScreen inherits Rectangle {
     in property <string> screen-token;
+    in property <bool> outgoing: false;
     // Hold this screen's content hidden even though the global cue is
     // down: set on the outgoing half of a route slide.
     in property <bool> gated: false;
@@ -2008,6 +2023,7 @@ component RouteScreen inherits Rectangle {
     if root.screen-token == "settings": SettingsScreen {
         width: 100%;
         height: 100%;
+        outgoing: root.outgoing;
     }
 
     if root.screen-token == "about": AboutScreen {
@@ -2403,7 +2419,7 @@ export component App inherits Window {
             width: parent.width;
             height: parent.height;
             animate x {
-                duration: Shell.route-slide-anim && !Shell.reduce-motion ? 170ms : 0ms;
+                duration: Shell.route-slide-anim && !Shell.reduce-motion && Motion.enabled ? 170ms : 0ms;
                 easing: ease-in-out;
             }
 
@@ -2412,6 +2428,7 @@ export component App inherits Window {
                 width: parent.width;
                 height: parent.height;
                 screen-token: stage.sliding ? Shell.route-from-screen : Shell.active-screen;
+                outgoing: stage.sliding;
                 // The screen we are leaving keeps whatever the user was
                 // actually looking at. Without this a slow fill hides
                 // the source rows behind the cue, then pops them back

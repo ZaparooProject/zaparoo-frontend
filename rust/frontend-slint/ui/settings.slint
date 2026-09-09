@@ -40,6 +40,18 @@ export struct SettingsRow {
 // SettingsScreen.qml's string table: labels, the hint line under the
 // list, and the display name of every canonical value.
 export global SettingsLabels {
+    pure callback resolution-width(string) -> string;
+    pure callback resolution-height(string) -> string;
+
+    public pure function picker-value(id: string, value: string) -> string {
+        if (id == "resolution") {
+            if (value == "") { return @tr("Automatic (Recommended)"); }
+            if (self.resolution-height(value).to-float() >= 1080) {
+                return @tr("{} (Animations off)", self.value(id, value));
+            }
+        }
+        return self.value(id, value);
+    }
     public pure function action-status(key: string, count: string) -> string {
         if (key == "optimizing") { return @tr("Optimizing"); }
         if (key == "paused") { return @tr("Paused"); }
@@ -169,6 +181,10 @@ export global SettingsLabels {
     }
 
     public pure function value(id: string, value: string) -> string {
+        if (id == "resolution") {
+            if (value == "") { return @tr("Automatic"); }
+            return @tr("{} × {}", self.resolution-width(value), self.resolution-height(value));
+        }
         if (id == "language") { return SettingsLabels.language(value); }
         if (id == "colorScheme") { return SettingsLabels.color-scheme(value); }
         if (id == "screensaverTimeout") { return SettingsLabels.screensaver(value); }
@@ -223,7 +239,6 @@ export global SettingsLabels {
             if (value == "system") { return @tr("System"); }
             return @tr("None");
         }
-        // Resolutions arrive as "1280x720"; the host formats them.
         return value;
     }
 
