@@ -1,0 +1,211 @@
+import { Theme, Sizing } from "theme.slint";
+import { DetailRow, MetaLabels } from "browse_list.slint";
+import { GlyphSource, SectionHeader } from "chrome.slint";
+
+export global GameInfoView {
+    in-out property <bool> modal-open: false;
+    in-out property <string> modal-name: "";
+    in-out property <string> modal-system: "";
+    in-out property <string> modal-path: "";
+    in-out property <string> modal-description: "";
+    in-out property <[DetailRow]> rows: [];
+    in-out property <bool> loading: false;
+    in-out property <bool> failed: false;
+    in-out property <bool> media-missing: false;
+    in-out property <image> modal-cover;
+    in-out property <bool> modal-has-cover: false;
+    in-out property <int> image-index: 0;
+    in-out property <int> image-count: 0;
+    // Screen-height units keep mirrored windows independent of pixel density.
+    in-out property <float> scroll-position: 0;
+}
+
+export component GameInfoModal inherits Rectangle {
+    background: Theme.scrim;
+    visible: GameInfoView.modal-open;
+    property <length> pad-x: Sizing.pct-w(4);
+    property <length> margin-y: Sizing.pct-h(4);
+    property <length> line-h: Math.ceil(Sizing.font-body * 1.362 / 1px) * 1px;
+    property <length> body-h: GameInfoView.loading ? loading-label.preferred-height
+        : GameInfoView.failed ? error-label.preferred-height : contents.preferred-height;
+    out property <length> viewport-height: Math.max(0px, panel.height - root.chrome-h);
+    out property <length> maximum-scroll: Math.max(0px, root.body-h - root.viewport-height);
+    out property <bool> scrollable: !GameInfoView.loading && !GameInfoView.failed && root.maximum-scroll > 0px;
+    property <length> chrome-h: root.margin-y * 3 + title.height;
+    property <length> scroll-y: Math.round(Math.min(root.maximum-scroll, Math.max(0px, GameInfoView.scroll-position * Sizing.screen-height)) / 1px) * 1px;
+
+    public function move-scroll(delta: length) {
+        if (!GameInfoView.loading && !GameInfoView.failed) {
+            GameInfoView.scroll-position = Math.round(Math.max(0px, Math.min(root.maximum-scroll, root.scroll-y + delta)) / 1px)
+                / Math.max(1, Sizing.screen-height / 1px);
+        }
+    }
+    public function scroll(action: string) {
+        if (action == "up") { root.move-scroll(-Sizing.pct-h(8)); }
+        if (action == "down") { root.move-scroll(Sizing.pct-h(8)); }
+        if (action == "page_prev") { root.move-scroll(-Math.max(Sizing.pct-h(12), root.viewport-height - Sizing.pct-h(8))); }
+        if (action == "page_next") { root.move-scroll(Math.max(Sizing.pct-h(12), root.viewport-height - Sizing.pct-h(8))); }
+    }
+
+    label-measure := VerticalLayout {
+        visible: false;
+        for key in ["system", "platform", "year", "release_date", "genre", "players", "play_mode", "cooperative", "developer", "publisher", "rating", "filename"]: Text {
+            text: MetaLabels.label(key);
+            font-size: Sizing.font-body;
+        }
+    }
+    property <length> label-w: Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2);
+
+    panel := Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: Math.round(Math.min(Math.min(parent.width * 0.92, Sizing.pct-h(150)), parent.width - Sizing.pct-w(6)) / 1px) * 1px;
+        height: Math.round(Math.min(Math.max(0px, parent.height - Sizing.pct-h(16)), root.chrome-h + root.body-h) / 1px) * 1px;
+        background: Theme.bg-panel;
+        border-radius: Sizing.radius-md;
+
+        title := Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.margin-y;
+            width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px + Sizing.stroke(2), parent.width - 2 * root.pad-x);
+            height: Math.ceil(self.preferred-height / 1px) * 1px;
+            text: GameInfoView.modal-name;
+            font-size: Sizing.font-title;
+            color: Theme.text-primary;
+            overflow: elide;
+        }
+        loading-label := Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: title.y + title.height + root.margin-y;
+            text: @tr("Loading details…");
+            font-size: Sizing.font-body;
+            color: Theme.text-primary;
+            visible: GameInfoView.loading;
+        }
+        error-label := Text {
+            x: root.pad-x;
+            y: title.y + title.height + root.margin-y;
+            width: parent.width - 2 * root.pad-x;
+            text: @tr("Could not load details. Check Zaparoo Core and try again.");
+            font-size: Sizing.font-body;
+            color: Theme.text-primary;
+            wrap: word-wrap;
+            visible: !GameInfoView.loading && GameInfoView.failed;
+        }
+
+        viewport := Rectangle {
+            x: root.pad-x;
+            y: title.y + title.height + root.margin-y;
+            width: parent.width - 2 * root.pad-x;
+            height: root.viewport-height;
+            clip: true;
+            visible: !GameInfoView.loading && !GameInfoView.failed;
+
+            contents := VerticalLayout {
+                y: -root.scroll-y;
+                width: parent.width;
+                height: self.preferred-height;
+                spacing: Sizing.pct-h(2.4);
+
+                if GameInfoView.image-count > 0: Rectangle {
+                    height: Sizing.pct-h(32);
+                    property <length> gutter: GameInfoView.image-count > 1 ? Sizing.pct-w(4) : 0px;
+                    Image {
+                        x: parent.gutter;
+                        width: parent.width - 2 * parent.gutter;
+                        height: parent.height;
+                        source: GameInfoView.modal-cover;
+                        image-fit: contain;
+                        visible: GameInfoView.modal-has-cover;
+                    }
+                    Text {
+                        x: Math.round((parent.width - self.width) / 2px) * 1px;
+                        y: Math.round((parent.height - self.height) / 2px) * 1px;
+                        text: @tr("Loading image…");
+                        color: Theme.text-primary;
+                        font-size: Sizing.font-caption;
+                        visible: !GameInfoView.modal-has-cover;
+                    }
+                    for next in [false, true]: Image {
+                        x: next ? parent.width - self.width : 0px;
+                        y: Math.round((parent.height - self.height) / 2px) * 1px;
+                        width: Sizing.pct-h(4);
+                        height: self.width;
+                        property <bool> enabled: next ? GameInfoView.image-index + 1 < GameInfoView.image-count : GameInfoView.image-index > 0;
+                        source: GlyphSource.glyph(next ? "icons/NavRight" : "icons/NavLeft", self.width, self.enabled ? Theme.text-primary : Theme.text-label);
+                        visible: GameInfoView.image-count > 1;
+                    }
+                }
+                if GameInfoView.media-missing: Text {
+                    text: @tr("This game's file is missing.");
+                    color: Theme.error;
+                    font-size: Sizing.font-body;
+                    wrap: word-wrap;
+                }
+                if GameInfoView.rows.length > 0: VerticalLayout {
+                    spacing: Sizing.pct-h(0.8);
+                    for row[i] in GameInfoView.rows: Rectangle {
+                        property <length> top: i > 0 ? Sizing.pct-h(0.8) : 0px;
+                        height: Math.round((Math.max(Sizing.pct-h(3), value.height) + self.top) / 1px) * 1px;
+                        if i > 0: Rectangle { y: 0px; width: parent.width; height: Sizing.stroke(1); background: Theme.border-subtle; }
+                        Text {
+                            x: 0px;
+                            y: parent.top;
+                            width: Math.min(root.label-w, parent.width);
+                            text: MetaLabels.label(row.key);
+                            font-size: Sizing.font-body;
+                            color: Theme.text-label;
+                            overflow: elide;
+                        }
+                        value := Text {
+                            x: root.label-w + Sizing.pct-w(1.4);
+                            y: parent.top;
+                            width: Math.max(0px, parent.width - self.x);
+                            height: Math.min(Math.ceil(self.preferred-height / 1px) * 1px, root.line-h * 2);
+                            text: row.value;
+                            font-size: Sizing.font-body;
+                            color: Theme.text-primary;
+                            wrap: word-wrap;
+                            overflow: elide;
+                        }
+                    }
+                }
+                if GameInfoView.modal-description != "": SectionHeader {
+                    label-inset: 0px;
+                    label: @tr("Description");
+                }
+                if GameInfoView.modal-description != "": Text {
+                    text: GameInfoView.modal-description;
+                    font-size: Sizing.font-body;
+                    color: Theme.text-primary;
+                    wrap: word-wrap;
+                }
+            }
+            TouchArea {
+                property <length> drag-y;
+                property <float> drag-scroll;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                        self.drag-y = self.mouse-y;
+                        self.drag-scroll = GameInfoView.scroll-position;
+                    }
+                }
+                changed mouse-y => {
+                    if (self.pressed) {
+                        root.move-scroll(self.drag-scroll * Sizing.screen-height - (self.mouse-y - self.drag-y) - root.scroll-y);
+                    }
+                }
+                scroll-event(event) => { root.move-scroll(-event.delta-y); return accept; }
+            }
+        }
+        for down in [false, true]: Image {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: down ? viewport.y + viewport.height + Sizing.pct-h(0.5) : viewport.y - self.height - Sizing.pct-h(0.5);
+            width: Sizing.pct-h(3);
+            height: self.width;
+            property <bool> active: down ? root.scroll-y < root.maximum-scroll : root.scroll-y > 0px;
+            source: GlyphSource.glyph(down ? "icons/ScrollDown" : "icons/ScrollUp", self.width, self.active ? Theme.text-primary : Theme.text-label);
+            visible: !GameInfoView.loading && !GameInfoView.failed && root.maximum-scroll > 0px;
+        }
+    }
+}

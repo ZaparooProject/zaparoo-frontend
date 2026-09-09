@@ -148,11 +148,20 @@ _lint-translations-internal:
     test -f build-docker/build.ninja || cmake --preset desktop-docker-debug
     bash scripts/check-translations-updated.sh build-docker
 
-# Container-internal: the rust lint surface (fmt --check + clippy + deny).
+# Container-internal: the rust lint surface (fmt --check + clippy + deny), plus
+# the guard that keeps `zaparoo-app` free of any UI toolkit. `frontend-slint`
+# is excluded from the in-container clippy because the lint image lacks the
+# fontconfig and wayland dev packages Slint's desktop backend links against;
+# `just lint-slint` covers it on the host and CI's `slint` job does the same.
+# fmt and deny need no build, so they stay whole-workspace.
+# Container source/registry paths differ from the host's. Keep these Cargo
+# artifacts separate or each lint run invalidates the host's fingerprints.
+# Scope isolation to this command; CMake/Corrosion owns its own target dirs.
 _lint-rust-internal:
     cd rust && cargo fmt --all --check
-    cd rust && cargo clippy --workspace --all-targets -- -D warnings
+    cd rust && cargo clippy --target-dir ../.docker-cache/rust-target --workspace --exclude frontend-slint --all-targets -- -D warnings
     cd rust && cargo deny check
+    bash scripts/check-toolkit-free.sh
 
 # Container-internal: fail if the committed icon atlas no longer matches the
 # SVGs in the tree. Pure coreutils, so it costs nothing on every lint run;
@@ -238,6 +247,68 @@ install-tools:
 # --- deploy ---
 deploy-mister *args:
     ./scripts/deploy-mister.sh {{args}}
+
+# --- slint frontend (migration branch, see docs/plans/slint-migration.md) ---
+# Desktop run against the mock Core, started and stopped with the frontend
+slint-run-dev *args:
+    ./scripts/run-slint-dev.sh {{args}}
+
+# Host-side lint for the Slint crates: fmt, clippy, and the toolkit-free guard.
+# Runs on the host because the lint image lacks Slint's desktop system libs.
+lint-slint:
+    cd rust && cargo fmt -p frontend-slint -p zaparoo-app --check
+    cd rust && cargo clippy -p frontend-slint -p zaparoo-app --all-targets -- -D warnings
+    # The MiSTer feature set compiles different modules (the presenters,
+    # the dual-head mirror); lint it too or their tests rot unseen.
+    cd rust && cargo clippy -p frontend-slint --no-default-features --features mister --all-targets -- -D warnings
+    bash scripts/check-toolkit-free.sh
+    bash scripts/check-slint-translations.sh
+
+# Regenerate the Slint binary's third-party notices (needs cargo-about)
+slint-notices:
+    bash scripts/generate-slint-notices.sh
+
+# Regenerate the gettext template from the .slint files (needs
+# `cargo install slint-tr-extractor --version 1.17.1`). Run after any @tr edit.
+slint-tr-extract:
+    bash scripts/extract-slint-translations.sh
+
+# Re-harvest the Qt Linguist catalogs into translations/<lang>/LC_MESSAGES/
+# (needs lconvert-qt6 and gettext). Run after slint-tr-extract while screens
+# are being ported so identical source strings pick up their translations.
+slint-tr-convert:
+    python3 scripts/convert-ts-catalogs.py
+
+# Host-side tests for the Slint crates (also part of `test-rust`).
+test-slint:
+    cd rust && cargo nextest run -p frontend-slint -p zaparoo-app
+    # The MiSTer feature set has its own modules and tests (presenters,
+    # dual head); they only build under that feature.
+    cd rust && cargo nextest run -p frontend-slint --no-default-features --features mister
+
+# Static ARM32 musl MiSTer build via `cross` (Cortex-A9 tuning). Static musl
+# because the MiSTer rootfs glibc is older than cross's gnueabihf image.
+slint-arm32:
+    cd rust && ZAPAROO_RESOURCES_DIR="$PWD/../resources" RUSTFLAGS="-C target-cpu=cortex-a9" cross build -p frontend-slint --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
+
+# MiSTer release bundle for the Slint frontend (zaparoo-frontend-<tag>-slint.zip);
+# same wrapper and layout as `release-zip`, one static binary with everything embedded.
+slint-release-zip *args:
+    ./scripts/package-mister-release.sh --slint {{args}}
+
+# Render every screen offline at the ledger's tiers into output/snapshots/
+# (software renderer, no window). Optional language argument, e.g. `de`.
+slint-snapshots *args:
+    bash scripts/render-slint-snapshots.sh {{args}}
+
+# Desktop tarball of the release cargo build with its runtime files.
+slint-package-desktop *args:
+    ./scripts/package-slint-desktop.sh {{args}}
+
+# Build and deploy the Slint frontend side by side as /media/fat/zaparoo/frontend-slint.
+# `--replace` installs it over the Qt binary (backed up once as frontend.qt-backup).
+deploy-mister-slint *args:
+    ./scripts/deploy-mister-slint.sh {{args}}
 
 # --- clean ---
 clean:

@@ -1,0 +1,2625 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// Slint migration demo UI. Screens are pure views: every key press is
+// forwarded to Rust as a raw key string, the Rust router maps it to an
+// action and mutates the state properties below. No screen owns
+// routing logic, matching the QML app's "screens are pure input
+// dispatchers, Main.qml owns forward orchestration" contract.
+
+import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, SelectionBar, StateCue } from "chrome.slint";
+import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
+import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
+import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
+import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
+import { Labels, DialogLabels } from "labels.slint";
+import { GameInfoView, GameInfoModal } from "game_info.slint";
+import { AboutView, AboutScreen } from "about.slint";
+
+// Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
+// 6x8 bitmap font for the CRT native path (family names must match
+// Theme.qml's fontUi strings).
+import "../../../resources/fonts/NotoSans.ttf";
+// Static instances of the variable font's Medium/DemiBold weights:
+// the Qt frontend uses these all over (ActiveLabel, header, tile
+// fallback text); Slint's embedded renderer only rasterizes a
+// variable font's default instance, which read as the wrong typeface.
+import "../../../resources/fonts/NotoSans-Medium.ttf";
+import "../../../resources/fonts/NotoSans-DemiBold.ttf";
+import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
+
+export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, Labels, AboutView }
+
+// Context-menu row: `id` is the dispatch key the router switches on
+// (ContextMenu.qml's rule - position-keyed dispatch was a footgun).
+export struct MenuEntry {
+    id: string,
+    label: string,
+    // Translatable label id (see `Labels`); empty rows show `label`.
+    label-key: string,
+}
+
+// One first-character bucket of the jump-to-letter picker.
+export struct LetterBucket {
+    label: string,
+    count: int,
+}
+
+// ── UI state globals ────────────────────────────────────────────────
+// Host-interop shape recommended by Slint (and the analogue of the Qt
+// frontend's Zaparoo.Browse singletons): Rust pushes state into these
+// globals and screens read them directly, instead of threading ~50
+// properties through the App root. Property names keep their original
+// app-level names so every Rust call site maps 1:1.
+
+export global Shell {
+    in-out property <string> active-screen: "hub";
+    // A forward fill is pending (Main.qml's `pendingTransition`): gates
+    // input and the screensaver, but paints nothing on its own.
+    in-out property <bool> transitioning: false;
+    // The "Loading…" cue is actually on screen. Qt only raises this
+    // after `loadingIndicatorDelayMs`, and only this hides the source
+    // screen's content - a fill that answers inside the grace window
+    // never blanks anything. See DelayedLoadingIndicator.qml.
+    in-out property <bool> transition-cue: false;
+    in-out property <string> transition-target;
+    // The screen sliding out was already gated when the route change
+    // began, so it must not un-gate for the length of the slide.
+    in-out property <bool> route-from-gated: false;
+    // Screen-route motion is separate from asynchronous Loading state.
+    // Cached HDMI renders only the destination endpoint; native backends
+    // use the same state to push two screen layers at their own geometry.
+    in-out property <bool> route-transitioning: false;
+    in-out property <bool> route-cached-transition: false;
+    in-out property <string> route-from-screen: "";
+    in-out property <string> route-to-screen: "";
+    in-out property <int> route-slide-dir: 1;
+    in-out property <float> route-page-slide: 0;
+    in-out property <bool> route-slide-anim: true;
+    // Transient light cue / error line (the CoreStatusPill slot).
+    // The header's transient app line, as a `Labels.status` key.
+    in-out property <string> status-text: "";
+    in-out property <string> clock-text: "";
+    // Widest reading for the clock format, so its slot never reflows.
+    in-out property <string> clock-sample: "23:59";
+    // Header HUD status icon keys in display order (NFC / WiFi /
+    // WiredNetwork / Bluetooth), visible ones only, plus the optional
+    // battery reading. `status-icons-enabled` mirrors MainLayout's
+    // post-first-frame gate.
+    in-out property <[string]> status-keys: [];
+    in-out property <bool> status-icons-enabled: false;
+    in-out property <bool> has-battery: false;
+    in-out property <int> battery-percent: 0;
+    // Cold-launch curtain (BootOverlay port). `boot-curtain` is true
+    // only while the persisted restore target is a Core-dependent
+    // data screen and the catalog has not reported Ready: hub restores
+    // paint optimistically and Settings/About are core-independent,
+    // matching MainLayout's optimisticHubVisible /
+    // coreIndependentStartupVisible split. `boot-complete` is the
+    // one-shot "catalog has been Ready at least once" latch that also
+    // gates the Hub's empty-library cue so "No systems available"
+    // cannot flash before the first load settles.
+    in-out property <bool> boot-curtain: false;
+    in-out property <bool> boot-complete: false;
+    in-out property <string> boot-text: "";
+    // Reduce motion setting: every screen animation collapses to an
+    // instant cut (swoops, focus-ring glides). Marquee scrolling is
+    // exempt - it is the only way long names become readable.
+    in-out property <bool> reduce-motion: false;
+    in-out property <bool> mouse-enabled: false;
+    // Screensaver armed (idle timeout elapsed); any input disarms via
+    // the router. Exempt from reduce-motion: burn protection needs
+    // the logo to keep moving.
+    in-out property <bool> saver-armed: false;
+    // Display settings. Orientation rotates the complete logical scene
+    // while App keeps the physical framebuffer fixed. Browse layout is
+    // shared by Systems and games-style screens.
+    in-out property <string> orientation: "horizontal";
+    in-out property <bool> browse-list-layout: false;
+    in-out property <bool> systems-list-layout: false;
+    in-out property <bool> is-mister: false;
+    in-out property <bool> crt-enabled: false;
+    in-out property <string> crt-standard: "ntsc";
+}
+
+// Hub state (HubScreen.qml over `zaparoo_app::hub`): Rust resolves the
+// layout into entries, projects the current page's cells, and pushes the
+// geometry it solved (`zaparoo_app::hub::geometry`). Labels arrive as
+// translatable keys so the catalogs own the words.
+export global HubView {
+    // Terminal catalog error; the grid hides and the cue paints alone.
+    in-out property <string> hub-error: "";
+    // Core has answered with a category list this launch.
+    in-out property <bool> loaded: false;
+    in-out property <bool> catalog-empty: false;
+    in-out property <bool> indexing: false;
+    in-out property <[GridCell]> cells: [];
+    in-out property <int> selected-local: 0;
+    in-out property <int> columns: 5;
+    in-out property <int> rows: 2;
+    in-out property <length> cell-width: 0px;
+    in-out property <length> cell-height: 0px;
+    in-out property <length> block-offset-x: 0px;
+    in-out property <length> block-offset-y: 0px;
+    in-out property <length> grid-y: 0px;
+    in-out property <length> grid-height: 0px;
+    in-out property <length> label-y: 0px;
+    in-out property <length> label-height: 0px;
+    in-out property <int> page: 0;
+    in-out property <int> total-pages: 1;
+    in-out property <bool> has-pages-above: false;
+    in-out property <bool> has-pages-below: false;
+    // The focused entry's caption: label key plus free text, and the
+    // worded reason while it is disabled.
+    in-out property <string> label-key: "";
+    in-out property <string> label-name: "";
+    in-out property <string> label-reason: "";
+    in-out property <bool> label-visible: true;
+    in-out property <bool> focused-is-category: false;
+    // Focus paints only once the restore or the first input has seated it.
+    in-out property <bool> focus-ready: false;
+    in-out property <bool> move-armed: false;
+    in-out property <int> held-local: -1;
+    in-out property <bool> options-available: false;
+    in-out property <int> activate-pulse: 0;
+    in-out property <int> release-pulse: 0;
+}
+
+// Pointer and page-cue events from the Hub, handled by the Rust router.
+// Context menu pointer input (ContextMenu.qml's per-row MouseAreas):
+// hover moves focus, a click accepts that row.
+export global ContextInput {
+    callback row-hovered(int);
+    callback row-clicked(int);
+}
+
+export global HubInput {
+    callback cell-hovered(int);
+    callback cell-clicked(int);
+    callback cell-right-clicked(int);
+    callback page-requested(int);
+    callback wheel(int);
+}
+
+// Systems state (SystemsScreen.qml over `zaparoo_app::systems` and
+// `paged_grid`): Rust projects the category's rows, drives the cursor,
+// and pushes the current page's cells at the geometry it resolved. The
+// page-swoop strip state is shared with the games grid.
+export global SystemsView {
+    // "systems" | "favorite-systems": the category list, or the systems
+    // that hold favorites (FavoriteSystemsScreen.qml).
+    in-out property <string> mode: "systems";
+    in-out property <[GridCell]> cells: [];
+    in-out property <int> selected-local: 0;
+    in-out property <string> category: "";
+    in-out property <int> count: 0;
+    // Favorites across every listed system; -1 when Core left any of
+    // them uncounted, so no total is shown.
+    in-out property <int> favorites-total: -1;
+    in-out property <bool> loading: false;
+    in-out property <string> error: "";
+    in-out property <bool> focus-ready: false;
+    in-out property <int> columns: 4;
+    in-out property <int> rows: 3;
+    in-out property <length> cell-width: 0px;
+    in-out property <length> cell-height: 0px;
+    in-out property <length> block-offset-x: 0px;
+    in-out property <length> block-offset-y: 0px;
+    in-out property <length> grid-y: 0px;
+    in-out property <length> grid-height: 0px;
+    in-out property <int> page: 0;
+    in-out property <int> total-pages: 1;
+    in-out property <bool> has-pages-above: false;
+    in-out property <bool> has-pages-below: false;
+    // Focused row caption and its hidden flag (the worded reason).
+    in-out property <string> label-name: "";
+    in-out property <bool> label-hidden: false;
+    // Favorites in the focused system; -1 when unknown.
+    in-out property <int> label-count: -1;
+    in-out property <int> activate-pulse: 0;
+    in-out property <int> release-pulse: 0;
+    // Page swoop: the incoming page's cells and the strip phase.
+    in-out property <[GridCell]> next-cells: [];
+    in-out property <int> slide-dir: 1;
+    in-out property <float> page-slide: 0;
+    in-out property <bool> slide-anim: true;
+    // Selection within the incoming HDMI page; dual-head projection
+    // uses it to choose the matching CRT-sized page and focused item.
+    in-out property <int> transition-target-index: 0;
+    // Input-only gate while the latch presenter animates cached RGB565
+    // endpoints. It deliberately has no visual binding in Slint.
+    in-out property <bool> cached-transition: false;
+    // Detailed list: the window Rust centers on the selection, its row
+    // metrics and cues, and the detail pane (logo, name, metadata).
+    in-out property <int> current-index: 0;
+    in-out property <[GridCell]> list-rows: [];
+    in-out property <int> list-sel: 0;
+    in-out property <int> list-view-top: 0;
+    in-out property <int> list-visible: 10;
+    in-out property <length> list-row-height: 0px;
+    in-out property <int> list-page: 0;
+    in-out property <int> list-total-pages: 1;
+    in-out property <bool> has-items-above: false;
+    in-out property <bool> has-items-below: false;
+    in-out property <string> detail-title: "";
+    in-out property <image> detail-cover;
+    in-out property <bool> detail-has-cover: false;
+    in-out property <bool> detail-wordmark: false;
+    in-out property <[DetailRow]> detail-rows: [];
+}
+
+// Pointer and page-cue events from the Systems screen.
+export global SystemsInput {
+    callback cell-hovered(int);
+    callback cell-clicked(int);
+    callback cell-right-clicked(int);
+    callback page-requested(int);
+    callback wheel(int);
+}
+
+export global SettingsView {
+    // "" = the root category grid; otherwise the open subpage token
+    // (pageDisplayInterface / pageBrowsing / ...).
+    // The open page ("" is the root category grid), its rows, and the
+    // cursor. The root grid renders as tiles through the shared grid.
+    in-out property <string> page: "";
+    in-out property <string> outgoing-page: "";
+    in-out property <[SettingsRow]> outgoing-rows: [];
+    in-out property <int> outgoing-index: 0;
+    in-out property <length> outgoing-scroll: 0px;
+    in-out property <length> outgoing-rows-height: 0px;
+    in-out property <[SettingsRow]> rows: [];
+    in-out property <int> index: 0;
+    in-out property <[GridCell]> cells: [];
+    in-out property <int> columns: 3;
+    in-out property <int> rows-count: 2;
+    in-out property <length> cell-width: 0px;
+    in-out property <length> cell-height: 0px;
+    in-out property <length> block-offset-x: 0px;
+    in-out property <length> block-offset-y: 0px;
+    in-out property <length> grid-y: 0px;
+    in-out property <length> grid-height: 0px;
+    // The rows viewport and how far it has scrolled to keep the focused
+    // row inside it.
+    in-out property <length> rows-height: 0px;
+    in-out property <length> scroll: 0px;
+    in-out property <int> activate-pulse: 0;
+    in-out property <int> release-pulse: 0;
+}
+
+// The media-job setup panel (Update media database, Update metadata).
+export global SetupModalView {
+    in-out property <bool> open: false;
+    in-out property <string> kind: "index";
+    in-out property <bool> picker-page: false;
+    in-out property <string> picker-title: "systems";
+    in-out property <[SettingsRow]> rows: [];
+    in-out property <int> index: 0;
+    in-out property <[SetupPickerRow]> picker-rows: [];
+    in-out property <int> picker-sel: 0;
+    in-out property <bool> has-above: false;
+    in-out property <bool> has-below: false;
+    in-out property <int> activate-pulse: 0;
+}
+
+export global SetupInput {
+    callback row-hovered(int);
+    callback row-clicked(int);
+    callback picker-hovered(int);
+    callback picker-clicked(int);
+}
+
+// The log uploader panel.
+export global LogUploadView {
+    in-out property <bool> open: false;
+    // "uploading" | "done" | "failed"
+    in-out property <string> phase: "uploading";
+    in-out property <string> url: "";
+    in-out property <image> qr;
+    in-out property <int> qr-modules: 0;
+}
+
+export global LogUploadInput {
+    callback confirmed();
+}
+
+// Pointer input from the settings screen.
+export global SettingsInput {
+    callback cell-hovered(int);
+    callback cell-clicked(int);
+    callback row-hovered(int);
+    callback row-clicked(int);
+}
+
+export global GamesView {
+    // "games" | "favorites" | "recents": the mode picks the title, the
+    // empty and loading copy and the back route.
+    in-out property <string> mode: "games";
+    // Games: the system's display name, or the folder's own name below
+    // the system root. The flat lists compose their titles in the view.
+    in-out property <string> title: "";
+    in-out property <bool> loading: false;
+    in-out property <bool> loading-more: false;
+    in-out property <string> error: "";
+    // Loaded rows, Core's totals and whether the total is final.
+    in-out property <int> count: 0;
+    in-out property <int> total-items: 0;
+    in-out property <bool> total-known: true;
+    in-out property <int> total-files: 0;
+    in-out property <bool> has-more: false;
+    // A page fetch the user is waiting on (a wrap, jump or list tail).
+    in-out property <bool> page-loading: false;
+    in-out property <bool> focus-ready: false;
+    // The page on screen and its fit (src/games.rs render).
+    in-out property <[GridCell]> cells: [];
+    in-out property <int> selected-local: 0;
+    in-out property <int> current-index: 0;
+    in-out property <int> columns: 4;
+    in-out property <int> rows: 3;
+    in-out property <length> cell-width: 0px;
+    in-out property <length> cell-height: 0px;
+    in-out property <length> block-offset-x: 0px;
+    in-out property <length> block-offset-y: 0px;
+    in-out property <length> grid-y: 0px;
+    in-out property <length> grid-height: 0px;
+    in-out property <length> label-y: 0px;
+    in-out property <length> label-height: 0px;
+    in-out property <int> page: 0;
+    in-out property <int> total-pages: 1;
+    in-out property <bool> has-pages-above: false;
+    in-out property <bool> has-pages-below: false;
+    // Footer: the focused row's name and dim suffix.
+    in-out property <string> label-name: "";
+    in-out property <string> label-tags: "";
+    in-out property <int> activate-pulse: 0;
+    in-out property <int> release-pulse: 0;
+    // Folder changes reuse the mounted strip horizontally; page changes move vertically.
+    in-out property <[GridCell]> folder-from-cells: [];
+    in-out property <int> folder-from-index: 0;
+    in-out property <bool> folder-slide: false;
+    // Page swoop: the incoming page, its direction and the strip's
+    // animated progress; slide-anim gates the post-commit snap.
+    in-out property <[GridCell]> next-cells: [];
+    in-out property <int> slide-dir: 1;
+    in-out property <float> page-slide: 0;
+    in-out property <bool> slide-anim: true;
+    in-out property <int> transition-target-index: 0;
+    in-out property <bool> cached-transition: false;
+    // RapidScrollIndicator: the landing row's first letter while page
+    // flips chain quickly.
+    in-out property <string> rapid-letter: "";
+    // Detailed list: the window Rust centers on the selection, its row
+    // metrics and cues, and the detail pane.
+    in-out property <[GridCell]> list-rows: [];
+    in-out property <int> list-sel: 0;
+    in-out property <int> list-view-top: 0;
+    in-out property <int> list-visible: 10;
+    in-out property <length> list-row-height: 0px;
+    in-out property <int> list-page: 0;
+    in-out property <int> list-total-pages: 1;
+    in-out property <bool> has-items-above: false;
+    in-out property <bool> has-items-below: false;
+    in-out property <string> detail-title: "";
+    in-out property <string> detail-path: "";
+    in-out property <image> detail-cover;
+    in-out property <bool> detail-has-cover: false;
+    in-out property <bool> detail-cover-absent: false;
+    in-out property <[DetailRow]> detail-rows: [];
+    in-out property <bool> detail-loading: false;
+    in-out property <bool> rapid-active: false;
+}
+
+// Pointer and page-cue input from the games-style screens.
+export global GamesInput {
+    callback cell-hovered(int);
+    callback cell-clicked(int);
+    callback cell-right-clicked(int);
+    callback page-requested(int);
+    callback wheel(int);
+}
+
+// One pending commitment, owned by the router and mirrored to the CRT.
+export global PressFeedback {
+    in-out property <string> owner: "";
+    in-out property <int> index: -1;
+    public pure function active(owner: string, index: int) -> bool {
+        return self.owner == owner && self.index == index;
+    }
+}
+
+// Context menu, View menu, letter picker, and card-writer state.
+export global Overlays {
+    callback pointer-choice(string, int, bool);
+    in-out property <bool> context-open: false;
+    in-out property <[MenuEntry]> context-entries: [];
+    in-out property <int> context-index: 0;
+    // The scene rect of the row or tile the menu is about; the scrim
+    // hole and the panel placement follow it.
+    in-out property <length> context-anchor-x: 0px;
+    in-out property <length> context-anchor-y: 0px;
+    in-out property <length> context-anchor-w: 0px;
+    in-out property <length> context-anchor-h: 0px;
+    in-out property <bool> list-open: false;
+    in-out property <string> list-title: "";
+    in-out property <bool> launcher-saving: false;
+    in-out property <bool> launcher-saving-visible: false;
+    // Non-empty while the picker is choosing a settings value: its rows
+    // and title read through the settings vocabulary rather than the
+    // plain labels the other pickers carry.
+    in-out property <string> list-setting-id: "";
+    in-out property <[MenuEntry]> list-entries: [];
+    in-out property <int> list-index: 0;
+    in-out property <bool> letter-open: false;
+    in-out property <[LetterBucket]> letter-buckets: [];
+    in-out property <int> letter-index: 0;
+    in-out property <bool> letter-loading: false;
+    out property <int> letter-columns: Sizing.fit-letter-columns(self.letter-buckets.length,
+        Sizing.pct-w(78) - 2 * Sizing.pct-w(4), Sizing.pct-h(52), Sizing.pct-w(1));
+    in-out property <bool> card-write-open: false;
+    in-out property <string> card-write-key: "";
+    // QR write deep-link modal: the matrix image is rendered by Rust
+    // at module resolution (quiet zone baked in) and scaled up
+    // pixelated to the largest whole multiple.
+    in-out property <bool> qr-open: false;
+    in-out property <bool> qr-documentation: false;
+    in-out property <image> qr-image;
+    in-out property <int> qr-modules: 0;
+    // Decision dialog (Modal.qml's confirm/action_error kinds plus
+    // the commercial notice and first-run bodies). Kinds never stack;
+    // the Qt startup chain is strictly sequential: quit_confirm,
+    // notice, core_version, first_run.
+    in-out property <bool> dialog-open: false;
+    in-out property <string> dialog-kind: "";
+    // The sub-kind (an alert's failure kind, the first-run phase) and
+    // the one runtime value the copy needs; `DialogLabels` composes the
+    // words from these so every dialog string can be translated.
+    in-out property <string> dialog-detail: "";
+    in-out property <string> dialog-arg: "";
+    // First-run progress line, as a key plus its numbers.
+    in-out property <string> dialog-status: "";
+    in-out property <int> dialog-status-step: 0;
+    in-out property <int> dialog-status-total: 0;
+    in-out property <string> dialog-status-name: "";
+    // Button keys, resolved through `DialogLabels.button`.
+    in-out property <[string]> dialog-buttons: [];
+    in-out property <int> dialog-focus: 0;
+    // Full-framebuffer CRT calibration pattern. Unlike normal modals,
+    // this mounts outside the safe-area/rotation scene so its edge and
+    // safe-area guides represent real scanout pixels.
+    in-out property <bool> crt-calibration-open: false;
+    in-out property <int> crt-h-offset: 0;
+    in-out property <int> crt-v-offset: 0;
+}
+
+// Settings, ported from SettingsScreen.qml: the root is a grid of six
+// category tiles; a page is a card of rows over a two-line hint band
+// carrying the focused row's description.
+component SettingsScreen inherits Rectangle {
+    in property <bool> outgoing: false;
+    background: transparent;
+    property <string> page: root.outgoing ? SettingsView.outgoing-page : SettingsView.page;
+    property <bool> root-grid: root.page == "";
+    property <[SettingsRow]> rows: root.outgoing ? SettingsView.outgoing-rows : SettingsView.rows;
+    property <int> index: root.outgoing ? SettingsView.outgoing-index : SettingsView.index;
+    property <length> rows-height: root.outgoing ? SettingsView.outgoing-rows-height : SettingsView.rows-height;
+    property <length> scroll: root.outgoing ? SettingsView.outgoing-scroll : SettingsView.scroll;
+
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        width: parent.width;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: SettingsLabels.page-title(root.page);
+        show-page-counter: false;
+        visible: Layout.top-strip-visible;
+    }
+
+    // Root: the category tiles, on the shared grid.
+    if root.root-grid: PagedGridView {
+        x: 0;
+        y: SettingsView.grid-y;
+        width: parent.width;
+        height: SettingsView.grid-height;
+        cells: SettingsView.cells;
+        columns: SettingsView.columns;
+        cell-width: SettingsView.cell-width;
+        cell-height: SettingsView.cell-height;
+        block-offset-x: SettingsView.block-offset-x;
+        block-offset-y: SettingsView.block-offset-y;
+        left-inset: Layout.grid-left-inset;
+        top-inset: Layout.grid-top-inset;
+        column-gap: Layout.grid-column-gap;
+        row-gap: Layout.grid-row-gap;
+        selected-local: Shell.route-transitioning ? -1 : root.index;
+        section-focused: !Overlays.list-open;
+        focus-ready: true;
+        activate-pulse: SettingsView.activate-pulse;
+        release-pulse: SettingsView.release-pulse;
+        settling: Shell.active-screen != "settings";
+        card-radius: Layout.card-radius;
+        cell-hovered(i) => { SettingsInput.cell-hovered(i); }
+        cell-clicked(i) => { SettingsInput.cell-clicked(i); }
+    }
+
+    // The focused category is named under the grid, not inside the tile
+    // (SettingsScreen.qml's own ActiveLabel); the tiles carry art only.
+    if root.root-grid: ActiveLabel {
+        x: 0;
+        y: parent.height - (Sizing.tier-240 ? Sizing.help-bar-height : Sizing.pct-h(8)) - self.height;
+        width: parent.width;
+        height: Sizing.tier-240 ? Sizing.hub-active-label-height : Sizing.pct-h(7);
+        text: (root.index >= 0 && root.index < SettingsView.cells.length)
+            ? SettingsLabels.label(SettingsView.cells[root.index].label-key)
+            : "";
+    }
+
+    // Page: rows in a card, with the hint band pinned to its bottom.
+    // The card carries its own margins rather than the browse profile's
+    // card values, which belong to whichever browse view was last shown.
+    property <length> card-x: Sizing.pct-w(3);
+    property <length> card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Sizing.pct-h(2);
+    property <length> card-w: self.width - 2 * self.card-x;
+    property <length> card-h: self.height - self.card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Sizing.pct-h(2) : Sizing.pct-h(8));
+    property <length> pad-x: Sizing.pct-w(2);
+    property <length> pad-y: Sizing.pct-h(2);
+    property <length> row-h: Sizing.pct-h(8);
+    property <length> action-band: Sizing.pct-h(3.2);
+    property <length> header-h: Sizing.pct-h(5);
+    property <length> hint-line: Math.ceil(Theme.ascent(Sizing.font-body) * 1.362 / 1px) * 1px;
+    property <length> hint-h: 2 * self.hint-line;
+    property <string> hint: root.index >= 0 && root.index < root.rows.length
+        ? SettingsLabels.description(root.rows[root.index].id) : "";
+
+    if !root.root-grid: Rectangle {
+        x: root.card-x;
+        y: root.card-y;
+        width: root.card-w;
+        height: root.card-h;
+        background: Theme.surface-card;
+        border-radius: Layout.card-radius;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.border-mid;
+        clip: true;
+
+        // Rows stack from the top inside a clipped viewport; a busy
+        // action row is taller, so Rust stacks the offsets and scrolls
+        // the band to keep the focused row on screen.
+        rows-band := Rectangle {
+            x: root.pad-x;
+            y: root.pad-y;
+            width: root.card-w - 2 * root.pad-x;
+            height: root.rows-height;
+            clip: true;
+
+        for row[i] in root.rows: Rectangle {
+            x: 0;
+            y: row.y-offset - root.scroll;
+            width: parent.width;
+            height: row.height;
+
+            if row.kind == "header": Text {
+                x: 0;
+                y: parent.height - self.height - Sizing.pct-h(0.6);
+                text: SettingsLabels.label(row.id);
+                color: Theme.text-variant;
+                font-size: Sizing.font-caption;
+                font-weight: 600;
+            }
+
+            if row.kind == "field": SettingsRowView {
+                width: 100%;
+                height: 100%;
+                entry: row;
+                focused: i == root.index && !Shell.route-transitioning;
+                activate-pulse: SettingsView.activate-pulse;
+                settling: Shell.active-screen != "settings";
+            }
+
+            TouchArea {
+                enabled: row.kind == "field" && row.enabled;
+                mouse-cursor: pointer;
+                changed has-hover => {
+                    if (self.has-hover) { SettingsInput.row-hovered(i); }
+                }
+                clicked => { SettingsInput.row-clicked(i); }
+            }
+        }
+        }
+
+        // Hint band: the focused row's own description, two lines.
+        Rectangle {
+            x: rows-band.x;
+            y: parent.height - root.pad-y - root.hint-h - Sizing.pct-h(0.5);
+            width: rows-band.width;
+            height: Sizing.card-border-width;
+            background: Theme.border-mid;
+        }
+        Text {
+            x: rows-band.x;
+            y: parent.height - root.pad-y - root.hint-h;
+            width: rows-band.width;
+            height: root.hint-h;
+            vertical-alignment: top;
+            wrap: word-wrap;
+            overflow: elide;
+            text: root.hint;
+            color: Theme.text-label;
+            font-size: Sizing.font-body;
+        }
+    }
+}
+
+
+// Hub screen (HubScreen.qml): one paged grid of square tiles between the
+// header and the help bar, the focused entry's caption under it with the
+// page cue in the footer's right slot, and the in-screen empty or failed
+// cue. Rust owns the entries, the cursor and the geometry.
+component HubScreen inherits Rectangle {
+    background: transparent;
+    in property <bool> gated: false;
+    property <bool> error: HubView.hub-error != "";
+
+    grid := PagedGridView {
+        x: 0;
+        y: HubView.grid-y;
+        width: parent.width;
+        height: HubView.grid-height;
+        cells: HubView.cells;
+        columns: HubView.columns;
+        cell-width: HubView.cell-width;
+        cell-height: HubView.cell-height;
+        block-offset-x: HubView.block-offset-x;
+        block-offset-y: HubView.block-offset-y;
+        left-inset: Sizing.hub-grid-side-inset;
+        top-inset: Sizing.hub-grid-top-inset;
+        column-gap: Sizing.hub-grid-column-gap;
+        row-gap: Sizing.hub-grid-row-gap;
+        selected-local: HubView.selected-local;
+        focus-ready: HubView.focus-ready;
+        held-local: HubView.held-local;
+        activate-pulse: HubView.activate-pulse;
+        release-pulse: HubView.release-pulse;
+        settling: Shell.active-screen != "hub";
+        compact-padding: true;
+        card-radius: Sizing.radius-md;
+        skip-empty-cells: !HubView.move-armed;
+        // Hidden on a forward transition and while the load error shows,
+        // so the cue paints alone against the background.
+        visible: !Shell.transition-cue && !root.gated && !root.error;
+        caption-for(cell) => { return Labels.hub(cell.label-key, cell.name); }
+        cell-hovered(i) => { HubInput.cell-hovered(i); }
+        cell-clicked(i) => { HubInput.cell-clicked(i); }
+        cell-right-clicked(i) => { HubInput.cell-right-clicked(i); }
+        wheel(delta) => { HubInput.wheel(delta); }
+    }
+
+    // Footer row: the focused entry's name, with the page cue reserved in
+    // the right corner (the same inset paid on the left for symmetry).
+    label := ActiveLabel {
+        x: 0;
+        y: HubView.label-y;
+        width: parent.width;
+        height: HubView.label-height;
+        side-inset: indicator.width + Sizing.hub-grid-side-inset;
+        text: Labels.hub(HubView.label-key, HubView.label-name);
+        tags: Labels.hub-reason(HubView.label-reason);
+        visible: !Shell.transition-cue && !root.gated && HubView.label-visible;
+    }
+
+    indicator := PageIndicator {
+        x: parent.width - Sizing.hub-grid-side-inset - self.width;
+        y: label.y + Math.round((label.height - self.height) / 2px) * 1px;
+        current-page: HubView.page;
+        total-pages: HubView.total-pages;
+        has-pages-above: HubView.has-pages-above;
+        has-pages-below: HubView.has-pages-below;
+        visible: label.visible;
+        page-requested(delta) => { HubInput.page-requested(delta); }
+    }
+
+    // Indexing starts on its own, so a first run's empty Hub names the
+    // operation instead of reading as a failure report.
+    StateCue {
+        x: 0;
+        y: HubView.grid-y;
+        width: parent.width;
+        height: HubView.grid-height;
+        state: root.error ? "error" : ((HubView.loaded && HubView.catalog-empty) ? "empty" : "");
+        empty-text: HubView.indexing ? @tr("Updating the media database") : @tr("No games found yet");
+        empty-detail: HubView.indexing
+            ? @tr("Your games appear here as Core finds them.")
+            : @tr("Update media database in Settings > Library.");
+    }
+}
+
+// Systems screen (SystemsScreen.qml): the three-slot top strip, the
+// paged grid of logo tiles between it and the footer caption, and the
+// state cue. Rust projects the rows and owns the cursor; the swoop
+// strip slides one page period when a page turns.
+component SystemsScreen inherits Rectangle {
+    background: transparent;
+    in property <bool> gated: false;
+    property <bool> list-layout: Shell.systems-list-layout;
+    property <bool> tate-list: self.list-layout && Shell.orientation != "horizontal";
+    property <string> state: SystemsView.error != "" ? "error"
+        : (SystemsView.loading ? "loading" : (SystemsView.count == 0 ? "empty" : ""));
+    property <bool> gate-hide: Shell.transition-cue || root.gated || SystemsView.loading || cue.loading-visible || SystemsView.error != "";
+    property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
+    property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
+    property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
+    property <bool> favorites: SystemsView.mode == "favorite-systems";
+    property <string> title: root.favorites
+        ? @tr("Favorites")
+        : Labels.hub("category:" + SystemsView.category, SystemsView.category);
+    property <string> count-text: SystemsView.count <= 0 ? ""
+        : (Sizing.tier-240
+            ? Labels.count(SystemsView.count)
+            : (root.favorites
+                ? Labels.favorite-systems(SystemsView.count)
+                : @tr("{} systems", Labels.count(SystemsView.count))));
+
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        width: parent.width;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: root.title;
+        current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
+        total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
+        total-text: !root.list-layout && root.show-grid-page-cue ? root.count-text : "";
+        show-page-counter: root.list-layout || root.show-grid-page-cue;
+        page-indicator-mode: root.show-top-page-cue;
+        item-position-mode: root.list-layout;
+        current-item: SystemsView.current-index;
+        total-items: SystemsView.count;
+        page-indicator-chevron-size: Layout.grid-page-chevron-size;
+        has-pages-above: root.list-layout ? SystemsView.has-items-above : SystemsView.has-pages-above;
+        has-pages-below: root.list-layout ? SystemsView.has-items-below : SystemsView.has-pages-below;
+        visible: !root.gate-hide && Layout.top-strip-visible;
+        page-requested(delta) => { SystemsInput.page-requested(delta); }
+    }
+
+    // Page-swoop viewport: the current and the incoming page in one
+    // clipped strip that translates by a page period.
+    property <length> period: SystemsView.grid-height;
+    if !root.list-layout: Rectangle {
+        x: 0;
+        y: SystemsView.grid-y;
+        width: parent.width;
+        height: SystemsView.grid-height;
+        clip: true;
+        visible: !root.gate-hide;
+
+        Rectangle {
+            x: 0;
+            y: -SystemsView.page-slide * root.period;
+            width: parent.width;
+            height: parent.height;
+            animate y { duration: SystemsView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
+
+            PagedGridView {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                cells: SystemsView.cells;
+                columns: SystemsView.columns;
+                cell-width: SystemsView.cell-width;
+                cell-height: SystemsView.cell-height;
+                block-offset-x: SystemsView.block-offset-x;
+                block-offset-y: SystemsView.block-offset-y;
+                left-inset: Layout.grid-left-inset;
+                top-inset: Layout.grid-top-inset;
+                column-gap: Layout.grid-column-gap;
+                row-gap: Layout.grid-row-gap;
+                selected-local: SystemsView.cached-transition || Shell.route-transitioning ? -1 : SystemsView.selected-local;
+                section-focused: !Overlays.context-open;
+                focus-ready: SystemsView.focus-ready;
+                activate-pulse: SystemsView.activate-pulse;
+                release-pulse: SystemsView.release-pulse;
+                settling: Shell.active-screen != SystemsView.mode;
+                card-radius: Layout.card-radius;
+                caption-for(cell) => { return cell.name; }
+                cell-hovered(i) => { SystemsInput.cell-hovered(i); }
+                cell-clicked(i) => { SystemsInput.cell-clicked(i); }
+                cell-right-clicked(i) => { SystemsInput.cell-right-clicked(i); }
+                wheel(delta) => { SystemsInput.wheel(delta); }
+            }
+            PagedGridView {
+                x: 0;
+                y: SystemsView.slide-dir * root.period;
+                width: parent.width;
+                height: parent.height;
+                cells: SystemsView.next-cells;
+                columns: SystemsView.columns;
+                cell-width: SystemsView.cell-width;
+                cell-height: SystemsView.cell-height;
+                block-offset-x: SystemsView.block-offset-x;
+                block-offset-y: SystemsView.block-offset-y;
+                left-inset: Layout.grid-left-inset;
+                top-inset: Layout.grid-top-inset;
+                column-gap: Layout.grid-column-gap;
+                row-gap: Layout.grid-row-gap;
+                selected-local: -1;
+                focus-ready: false;
+                card-radius: Layout.card-radius;
+                caption-for(cell) => { return cell.name; }
+            }
+        }
+    }
+
+    // Detailed list: BrowseListDetailView over the systems list profile.
+    property <length> list-card-x: Layout.card-side-margin;
+    property <length> list-card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Layout.card-top-margin;
+    property <length> list-card-w: self.width - 2 * self.list-card-x;
+    property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
+
+    if root.list-layout && !root.gate-hide: BrowseListDetailView {
+        x: root.list-card-x;
+        y: root.list-card-y;
+        width: root.list-card-w;
+        height: root.list-card-h;
+        rows: SystemsView.list-rows;
+        selected: SystemsView.list-sel;
+        focus-ready: SystemsView.focus-ready;
+        activate-pulse: SystemsView.activate-pulse;
+        release-pulse: SystemsView.release-pulse;
+        settling: Shell.active-screen != SystemsView.mode;
+        row-height: SystemsView.list-row-height;
+        detail-title: SystemsView.detail-title;
+        show-title: true;
+        cover: SystemsView.detail-cover;
+        has-cover: SystemsView.detail-has-cover;
+        wordmark: SystemsView.detail-wordmark;
+        placeholder-key: "icons/Console";
+        detail-rows: SystemsView.detail-rows;
+        row-hovered(i) => { SystemsInput.cell-hovered(i); }
+        row-clicked(i) => { SystemsInput.cell-clicked(i); }
+        row-right-clicked(i) => { SystemsInput.cell-right-clicked(i); }
+        wheel(delta) => { SystemsInput.wheel(delta); }
+    }
+
+    // Footer: the focused system's name, with the count and page cue
+    // in the corners only where the profile keeps them there (CRT).
+    property <length> label-y: root.height - (Sizing.tier-240 ? Sizing.help-bar-height : Layout.active-label-bottom-margin) - Layout.active-label-height;
+    property <length> footer-left-inset: Math.ceil(footer-count-measure.preferred-width / 1px) * 1px + Layout.bottom-status-left-margin;
+    property <length> footer-right-inset: footer-indicator.width + Layout.bottom-status-right-margin;
+
+    footer-count-measure := Text {
+        visible: false;
+        text: root.count-text;
+        font-size: Sizing.font-section;
+    }
+
+    if !root.list-layout: ActiveLabel {
+        x: 0;
+        y: root.label-y;
+        width: parent.width;
+        height: Layout.active-label-height;
+        side-inset: root.page-cue-in-footer ? Math.max(root.footer-left-inset, root.footer-right-inset) : Sizing.pct-w(3);
+        text: SystemsView.label-name;
+        tags: root.favorites
+            ? (SystemsView.label-count >= 0 ? Labels.favorites(SystemsView.label-count) : "")
+            : (SystemsView.label-hidden ? @tr("Hidden") : "");
+        visible: !root.gate-hide;
+    }
+
+    if !root.list-layout && root.page-cue-in-footer && root.count-text != "": Text {
+        x: Layout.bottom-status-left-margin;
+        y: root.label-y + Math.round((Layout.active-label-height - self.height) / 2px) * 1px;
+        width: root.footer-left-inset - Layout.bottom-status-left-margin;
+        height: Sizing.font-section;
+        vertical-alignment: center;
+        overflow: elide;
+        text: root.count-text;
+        color: Theme.text-primary;
+        font-size: Sizing.font-section;
+        visible: !root.gate-hide;
+    }
+
+    footer-indicator := PageIndicator {
+        x: parent.width - Layout.bottom-status-right-margin - self.width;
+        y: root.label-y + Math.round((Layout.active-label-height - self.height) / 2px) * 1px;
+        chevron-size: Layout.grid-page-chevron-size;
+        current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
+        total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
+        item-position-mode: root.list-layout;
+        current-item: SystemsView.current-index;
+        total-items: SystemsView.count;
+        has-pages-above: root.list-layout ? SystemsView.has-items-above : SystemsView.has-pages-above;
+        has-pages-below: root.list-layout ? SystemsView.has-items-below : SystemsView.has-pages-below;
+        visible: !root.gate-hide && root.page-cue-in-footer;
+        page-requested(delta) => { SystemsInput.page-requested(delta); }
+    }
+
+    cue := StateCue {
+        x: 0;
+        y: root.list-layout ? root.list-card-y : SystemsView.grid-y;
+        width: parent.width;
+        height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : SystemsView.grid-height;
+        cue-center-y: root.height / 2 - self.y;
+        state: root.state;
+        empty-text: root.favorites ? @tr("No favorites yet") : @tr("No systems in this category");
+        loading-text: root.favorites ? @tr("Loading favorite systems…") : @tr("Loading systems…");
+    }
+}
+
+// Centered list-picker modal, ported from ListPickerModal.qml's
+// shape: title over a focused row list. Carries the West-button
+// "View" menu (page/list-scoped operations - Go to..., and later
+// sort/filter/layout) and any future picker use.
+component ListPickerModal inherits Rectangle {
+    in property <string> title;
+    in property <[MenuEntry]> entries;
+    in property <int> current-index;
+    // Set while picking a settings value; see Overlays.list-setting-id.
+    in property <string> setting-id;
+
+    background: Theme.scrim;
+
+    property <length> row-h: Sizing.pct-h(6);
+    property <length> row-sp: Sizing.pct-h(1);
+    property <length> stride: root.row-h + root.row-sp;
+    property <length> title-h: Sizing.pct-h(8);
+    property <length> arrow: Sizing.pct-h(3);
+    // A long option list (languages, color schemes) scrolls rather than
+    // growing the panel past the screen; PickerList.qml's own cap.
+    property <length> max-viewport: Sizing.pct-h(60);
+    property <int> visible-rows: Math.max(1, Math.min(root.entries.length,
+        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
+    property <bool> scrollable: root.entries.length > root.visible-rows;
+    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
+    property <length> viewport-h: root.visible-rows * root.row-h
+        + Math.max(0, root.visible-rows - 1) * root.row-sp;
+    // Preserve the viewport until focus crosses an edge (Qt PickerList).
+    property <int> top: 0;
+    function reveal-current() {
+        root.top = Math.max(0, Math.min(Math.max(0, root.entries.length - root.visible-rows),
+            Math.min(root.current-index, Math.max(root.top, root.current-index - root.visible-rows + 1))));
+    }
+    changed current-index => { root.reveal-current(); }
+    changed visible-rows => { root.reveal-current(); }
+    changed entries => { root.top = 0; root.reveal-current(); }
+    init => { root.reveal-current(); }
+    pure function entry-label(entry: MenuEntry) -> string {
+        return root.setting-id != "" ? SettingsLabels.picker-value(root.setting-id, entry.id)
+            : (entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label);
+    }
+    property <bool> swatches: root.setting-id == "colorScheme";
+    property <length> swatch-size: Sizing.pct-h(2.4);
+    property <length> swatch-gap: Sizing.pct-w(0.6);
+    property <length> swatch-band: root.swatches ? 3 * root.swatch-size + 2 * root.swatch-gap + Sizing.pct-w(2) : 0px;
+    property <length> pad-x: Sizing.pct-w(4);
+    measure := VerticalLayout {
+        visible: false;
+        for entry in root.entries: Text {
+            text: root.entry-label(entry);
+            font-size: Sizing.font-body;
+            font-weight: 500;
+        }
+    }
+    property <length> desired-w: Math.max(measure.preferred-width + root.swatch-band
+        + 2 * Sizing.pct-w(2) + Sizing.stroke(2), title.preferred-width)
+        + 2 * root.pad-x + Math.round(Sizing.font-body * 1.5 / 1px) * 1px;
+    property <length> panel-w: Math.min(Sizing.pct-w(92), Math.max(Sizing.pct-w(30), Math.ceil(root.desired-w / 1px) * 1px));
+    property <length> panel-h: root.title-h + root.viewport-h + 2 * root.arrow-band + Sizing.pct-h(4);
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: Theme.bg-panel;
+        border-radius: Sizing.radius-md;
+        border-width: Sizing.stroke(0.3);
+        border-color: Theme.border-mid;
+        clip: true;
+
+        title := Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+            overflow: elide;
+            text: root.setting-id != "" ? SettingsLabels.label(root.setting-id) : root.title;
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(4);
+            font-weight: 500;
+        }
+
+        if root.top > 0: Image {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.title-h;
+            width: root.arrow;
+            height: root.arrow;
+            source: GlyphSource.glyph("icons/ScrollUp", root.arrow, Theme.text-label);
+        }
+
+        Rectangle {
+            x: root.pad-x;
+            y: root.title-h + root.arrow-band;
+            width: parent.width - 2 * root.pad-x;
+            height: root.viewport-h;
+            clip: true;
+
+            for entry[i] in root.entries: Rectangle {
+                x: 0;
+                y: (i - root.top) * root.stride;
+                width: parent.width;
+                height: root.row-h;
+                bar := SelectionBar {
+                    width: 100%;
+                    height: 100%;
+                    active: i == root.current-index;
+                    press-held: PressFeedback.active("list", i);
+                }
+                Text {
+                    x: root.swatches ? Sizing.pct-w(2) : Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: Math.round((parent.height - self.height) / 2px) * 1px;
+                    width: Math.min(self.preferred-width, Math.max(0px, parent.width - 2 * Sizing.pct-w(2) - root.swatch-band));
+                    overflow: elide;
+                    text: Overlays.launcher-saving-visible && i == root.current-index ? @tr("Saving…") : root.entry-label(entry);
+                    color: bar.active ? bar.content-color : Theme.text-primary;
+                    font-size: Sizing.font-body;
+                    font-weight: bar.content-weight;
+                }
+                if root.swatches: Rectangle {
+                    x: parent.width - Sizing.pct-w(2) - self.width;
+                    y: Math.round((parent.height - self.height) / 2px) * 1px;
+                    width: 3 * root.swatch-size + 2 * root.swatch-gap;
+                    height: root.swatch-size;
+                    for n in 3: Rectangle {
+                        x: n * (root.swatch-size + root.swatch-gap);
+                        width: root.swatch-size;
+                        height: root.swatch-size;
+                        background: Theme.preview-color(entry.id, n);
+                        border-width: Sizing.stroke(1);
+                        border-color: bar.active ? bar.content-color : Theme.text-label;
+                    }
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice("list", i, false); } }
+                    clicked => { Overlays.pointer-choice("list", i, true); }
+                }
+            }
+        }
+
+        if root.top + root.visible-rows < root.entries.length: Image {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.height - Sizing.pct-h(4) - root.arrow;
+            width: root.arrow;
+            height: root.arrow;
+            source: GlyphSource.glyph("icons/ScrollDown", root.arrow, Theme.text-label);
+        }
+    }
+}
+
+// Jump-to-letter grid picker, ported from LetterJumpModal.qml: the
+// buckets come from `media.browse.index` (only non-empty sections in
+// sort order), each cell shows the bucket label with its item count.
+// Pure presentation - the router owns navigation and the cursor seek.
+component LetterJumpModal inherits Rectangle {
+    in property <[LetterBucket]> buckets;
+    in property <int> current-index;
+    in property <bool> loading;
+    in property <int> columns: 9;
+
+    background: Theme.scrim;
+
+    property <length> gap: Sizing.pct-w(1);
+    property <length> panel-w: Sizing.pct-w(78);
+    property <length> content-w: root.panel-w - 2 * Sizing.pct-w(4);
+    property <int> rows: Math.max(1, Math.ceil(root.buckets.length / Math.max(1, root.columns)));
+    property <length> cell: Math.round(Math.max(Sizing.pct-w(7), Math.min(Sizing.pct-w(13),
+        Math.min((root.content-w - (root.columns - 1) * root.gap) / Math.max(1, root.columns),
+            (Sizing.pct-h(52) - (root.rows - 1) * root.gap) / root.rows))) / 1px) * 1px;
+    property <length> title-h: Sizing.pct-h(8);
+    property <length> grid-h: root.rows * root.cell + (root.rows - 1) * root.gap;
+    property <length> grid-w: root.columns * root.cell + (root.columns - 1) * root.gap;
+    property <length> panel-h: root.title-h + root.grid-h + Sizing.pct-h(6);
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: Theme.bg-panel;
+        border-radius: Sizing.radius-md;
+        border-width: Sizing.stroke(0.3);
+        border-color: Theme.border-mid;
+
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            text: @tr("Go to…");
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(4);
+            font-weight: 500;
+        }
+
+        if root.buckets.length == 0: Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.title-h + Math.round((root.grid-h - self.height) / 2px) * 1px;
+            text: root.loading ? @tr("Loading…") : @tr("No sections");
+            color: Theme.text-label;
+            font-size: Sizing.font-body;
+        }
+
+        Rectangle {
+            x: Math.round((parent.width - root.grid-w) / 2px) * 1px;
+            y: root.title-h;
+            width: root.grid-w;
+            height: root.grid-h;
+
+            for bucket[i] in root.buckets: cell := PressableSurface {
+                x: Math.mod(i, root.columns) * (root.cell + root.gap);
+                y: Math.floor(i / root.columns) * (root.cell + root.gap);
+                width: root.cell;
+                height: root.cell;
+                focused: i == root.current-index;
+                pressed: PressFeedback.active("letter", i);
+
+                Text {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: Math.round((cell.face-height * 0.52 - self.height) / 2px) * 1px;
+                    text: bucket.label;
+                    color: cell.focused ? Theme.text-primary : Theme.text-label;
+                    font-size: Sizing.font-size(3.4);
+                    font-weight: 500;
+                }
+                Text {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: cell.face-height - self.height - Sizing.pct-h(0.8);
+                    text: bucket.count;
+                    color: Theme.text-label;
+                    font-size: Sizing.font-size(2.2);
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice("letter", i, false); } }
+                    clicked => { Overlays.pointer-choice("letter", i, true); }
+                }
+            }
+        }
+    }
+}
+
+// Qt transient: a tap prompt and focused Cancel surface. Failures
+// replace this modal with the router's Retry alert.
+component CardWriteModal inherits Rectangle {
+
+    background: Theme.scrim;
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: Math.round(Math.min(Math.min(parent.width * 0.92, Sizing.pct-h(90)), Math.max(Sizing.pct-w(30), title.preferred-width + 2 * Sizing.pct-w(4))) / 1px) * 1px;
+        height: Math.ceil(title.preferred-height / 1px) * 1px + Sizing.pct-h(19);
+        background: Theme.bg-panel;
+        border-radius: Sizing.radius-md;
+
+        title := Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Sizing.pct-h(4);
+            width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width - 2 * Sizing.pct-w(4));
+            wrap: word-wrap;
+            text: @tr("Hold a writable token near the reader");
+            color: Theme.text-primary;
+            font-size: Sizing.font-title;
+        }
+        cancel-button := PressableSurface {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.height - Sizing.pct-h(11);
+            width: Math.min(Sizing.pct-w(28), parent.width - 2 * Sizing.pct-w(4));
+            height: Sizing.pct-h(7);
+            focused: true;
+            pressed: PressFeedback.active("card-write", 0);
+            Text {
+                x: Math.round((parent.width - self.width) / 2px) * 1px;
+                y: Math.round((cancel-button.face-height - self.height) / 2px) * 1px;
+                text: @tr("Cancel");
+                color: Theme.text-primary;
+                font-size: Sizing.font-body;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Overlays.pointer-choice("card-write", 0, true); }
+            }
+        }
+    }
+}
+
+// Qt's QR shell: translated purpose and instructions above an integer
+// module matrix, with a readable documentation URL for composite video.
+component QrCodeModal inherits Rectangle {
+    in property <image> qr;
+    in property <int> modules;
+
+    background: Theme.scrim;
+
+    property <length> max-px: Math.min(Sizing.pct-w(36), Sizing.pct-h(48));
+    property <length> module-px: root.modules > 0
+        ? Math.max(1, Math.floor(root.max-px / root.modules / 1px)) * 1px
+        : 1px;
+    property <length> qr-px: root.module-px * root.modules;
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: Math.round(Math.min(parent.width * 0.92, Sizing.pct-h(105)) / 1px) * 1px;
+        height: Math.ceil(content.preferred-height / 1px) * 1px + 2 * Sizing.pct-h(4);
+        background: Theme.bg-panel;
+        border-radius: Sizing.radius-md;
+
+        content := VerticalLayout {
+            x: Sizing.pct-w(4);
+            y: Sizing.pct-h(4);
+            width: parent.width - 2 * self.x;
+            height: self.preferred-height;
+            spacing: Sizing.pct-h(2);
+            Rectangle {
+                height: Math.ceil(title.preferred-height / 1px) * 1px;
+                title := Text {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: 0px;
+                    width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
+                    text: Overlays.qr-documentation ? @tr("Documentation") : @tr("Write with App");
+                    color: Theme.text-primary;
+                    font-size: Sizing.font-title;
+                    overflow: elide;
+                }
+            }
+            Rectangle {
+                height: Math.ceil(instructions.preferred-height / 1px) * 1px;
+                instructions := Text {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: 0px;
+                    width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
+                    text: Overlays.qr-documentation
+                        ? @tr("Scan this code to open the Zaparoo Frontend guide on your phone.")
+                        : @tr("Scan this code with the Zaparoo App to write this game to a Zaparoo token.");
+                    color: Theme.text-primary;
+                    font-size: Sizing.font-caption;
+                    wrap: word-wrap;
+                }
+            }
+            Rectangle {
+                height: root.qr-px;
+                Image {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: 0px;
+                    width: root.qr-px;
+                    height: root.qr-px;
+                    source: root.qr;
+                    image-rendering: pixelated;
+                }
+            }
+            if Overlays.qr-documentation: Rectangle {
+                height: Math.ceil(url.preferred-height / 1px) * 1px;
+                url := Text {
+                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    y: 0px;
+                    width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
+                    text: "zaparoo.org/docs/frontend";
+                    color: Theme.text-label;
+                    font-size: Sizing.font-small;
+                    wrap: char-wrap;
+                }
+            }
+        }
+    }
+}
+
+// Decision dialog (Modal.qml port): rounded panel over the scrim
+// with title, wrapped body, an optional status line, and a centered
+// row of raised commitment buttons. Purely presentational - the router owns
+// which buttons exist and what they mean.
+component DialogModal inherits Rectangle {
+    background: Theme.scrim;
+
+    // Modal.qml's own panel rule: as wide as the copy needs, capped at
+    // 92% of the screen and at a height-derived maximum, so a long body
+    // does not stack up into extra lines on a 240p screen.
+    property <length> pad-x: Sizing.pct-w(4);
+    title-measure := Text {
+        visible: false;
+        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
+        font-size: Sizing.font-size(3.2);
+        font-weight: 600;
+    }
+    body-measure := Text {
+        visible: false;
+        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-detail, Overlays.dialog-arg);
+        font-size: Sizing.font-size(2.4);
+    }
+    line-measure := Text {
+        visible: false;
+        text: "abcdefghijklmnopqrstuvwxyz";
+        font-size: Sizing.font-size(2.4);
+    }
+    button-measure := HorizontalLayout {
+        visible: false;
+        spacing: root.btn-gap;
+        for label in Overlays.dialog-buttons: Rectangle {
+            width: caption.preferred-width + Sizing.pct-w(8);
+            caption := Text { text: DialogLabels.button(label); font-size: Sizing.font-body; }
+        }
+    }
+    property <length> desired-w: Math.max(title-measure.preferred-width,
+        Math.max(Math.min(body-measure.preferred-width, line-measure.preferred-width * 45 / 26),
+            button-measure.preferred-width)) + 2 * root.pad-x;
+    // CommercialNoticeModal uses a wider shell for its long legal copy.
+    property <length> panel-w: Math.ceil((Overlays.dialog-kind == "notice"
+        ? Math.min(root.width * 0.78, Sizing.pct-h(110))
+        : Math.min(Math.min(root.width * 0.92, Sizing.pct-h(90)),
+            Math.max(Sizing.pct-w(30), root.desired-w))) / 1px) * 1px;
+    property <length> pad: Sizing.pct-h(3);
+    property <length> btn-h: Sizing.pct-h(7);
+    property <length> btn-gap: Sizing.pct-w(2);
+    property <length> body-h: body-t.preferred-height;
+    property <length> status-h: Overlays.dialog-status != "" ? Sizing.font-size(2.4) + Sizing.pct-h(1) : 0px;
+    property <length> panel-h: self.pad + Sizing.font-size(3.2) + Sizing.pct-h(2)
+        + self.body-h + Sizing.pct-h(2) + self.status-h + self.btn-h + self.pad;
+
+    Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: Theme.bg-panel;
+        border-radius: Sizing.radius-md;
+        border-width: Sizing.stroke(0.3);
+        border-color: Theme.border-mid;
+
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.pad;
+            max-width: parent.width - 2 * root.pad-x;
+            overflow: elide;
+            text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(3.2);
+            font-weight: 600;
+        }
+
+        body-t := Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.pad + Sizing.font-size(3.2) + Sizing.pct-h(2);
+            width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, parent.width - 2 * root.pad-x);
+            wrap: word-wrap;
+            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-detail, Overlays.dialog-arg);
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(2.4);
+            horizontal-alignment: left;
+        }
+
+        if Overlays.dialog-status != "": Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: root.pad + Sizing.font-size(3.2) + Sizing.pct-h(2) + root.body-h + Sizing.pct-h(2);
+            max-width: parent.width - 2 * root.pad;
+            overflow: elide;
+            text: DialogLabels.status(Overlays.dialog-status, Overlays.dialog-status-step,
+                Overlays.dialog-status-total, Overlays.dialog-status-name);
+            color: Theme.text-variant;
+            font-size: Sizing.font-size(2.4);
+        }
+
+        // Same raised surfaces and safe-area width cap as Modal.qml.
+        property <length> btn-w: Math.min(Sizing.pct-w(28), Math.floor((root.panel-w - 2 * root.pad-x
+            - Math.max(0, Overlays.dialog-buttons.length - 1) * root.btn-gap)
+            / Math.max(1, Overlays.dialog-buttons.length) / 1px) * 1px);
+        for label[i] in Overlays.dialog-buttons: button := PressableSurface {
+            x: Math.round((parent.width
+                - (Overlays.dialog-buttons.length * parent.btn-w
+                    + (Overlays.dialog-buttons.length - 1) * root.btn-gap))
+                / 2px) * 1px
+                + i * (parent.btn-w + root.btn-gap);
+            y: root.panel-h - root.pad - root.btn-h;
+            width: parent.btn-w;
+            height: root.btn-h;
+            focused: i == Overlays.dialog-focus;
+            pressed: PressFeedback.active("dialog", i);
+
+            Text {
+                x: Math.round((parent.width - self.width) / 2px) * 1px;
+                y: Math.round((button.face-height - self.height) / 2px) * 1px;
+                max-width: parent.width - Sizing.pct-w(1);
+                overflow: elide;
+                text: DialogLabels.button(label);
+                color: button.focused ? Theme.text-primary : Theme.text-label;
+                font-size: Sizing.font-body;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Overlays.pointer-choice("dialog", i, true); }
+            }
+        }
+    }
+}
+
+// Screen-burn protection (ScreensaverOverlay.qml): solid-black
+// backstop - the only background that gives OLED pixels-off rest and
+// CRT phosphor a true break - with one copy of the logo starting at
+// the header position, holding 1 s, then drifting DVD-style at 45°
+// at one screen-width per 10 s. Per step only the logo's own box
+// repaints, so the software renderer's cost stays tiny. Mounted
+// fresh on every arm, so init state is always clean.
+component ScreensaverOverlay inherits Rectangle {
+    background: black;
+
+    property <length> lh: Sizing.header-height;
+    property <length> lw: Math.round(root.lh / 1px * Brand.aspect) * 1px;
+    // Always the on-dark variant: the backstop is solid black whatever
+    // the preset.
+    property <image> logo: Brand.saver-logo(root.lw);
+
+    // Float pixel positions; the Image rounds on paint. Start mirrors
+    // the header logo so activation reads as the logo walking off.
+    property <float> lx: Sizing.header-side-margin / 1px;
+    property <float> ly: Sizing.header-top-margin / 1px;
+    property <float> dxs: 1;
+    property <float> dys: 1;
+    property <bool> bouncing: false;
+
+    // 1 s hold at the header position before the walk starts.
+    Timer {
+        interval: 1s;
+        running: !root.bouncing;
+        triggered() => {
+            root.bouncing = true;
+        }
+    }
+
+    // Drift ticks. 16 ms steps at one screen-width per 10 s keeps the
+    // classic slow DVD-player feel at every resolution.
+    Timer {
+        interval: 16ms;
+        running: root.bouncing;
+        triggered() => {
+            root.step();
+        }
+    }
+
+    function step() {
+        root.lx += root.dxs * (root.width / 1px) * 0.0016;
+        root.ly += root.dys * (root.width / 1px) * 0.0016;
+        if (root.lx <= 0) {
+            root.lx = 0;
+            root.dxs = 1;
+        }
+        if (root.lx >= (root.width - root.lw) / 1px) {
+            root.lx = (root.width - root.lw) / 1px;
+            root.dxs = -1;
+        }
+        if (root.ly <= 0) {
+            root.ly = 0;
+            root.dys = 1;
+        }
+        if (root.ly >= (root.height - root.lh) / 1px) {
+            root.ly = (root.height - root.lh) / 1px;
+            root.dys = -1;
+        }
+    }
+
+    Image {
+        x: Math.round(root.lx) * 1px;
+        y: Math.round(root.ly) * 1px;
+        width: root.lw;
+        height: root.lh;
+        source: root.logo;
+        image-fit: contain;
+    }
+}
+
+// Item-scoped context menu, ported from ContextMenu.qml: the panel
+// positions itself beside the anchored tile (right, then left, then
+// below/above) and clamps to the window; the scrim is four bands
+// drawn AROUND the anchor so the tile the menu is about stays bright
+// while the rest of the screen dims. Static scrim, one repaint on
+// open - no animation over the grid.
+component ContextMenu inherits Rectangle {
+    in property <[MenuEntry]> entries;
+    in property <int> current-index;
+    in property <length> anchor-x;
+    in property <length> anchor-y;
+    in property <length> anchor-w;
+    in property <length> anchor-h;
+
+    // ContextMenu.qml's own tokens.
+    property <length> margin: Sizing.pct-h(2);
+    property <length> gap: Sizing.pct-w(1.2);
+    property <length> row-h: Sizing.pct-h(6);
+    property <length> row-sp: Sizing.pct-h(1);
+    property <length> pad-x: Sizing.pct-w(2);
+    property <length> side-margin: Sizing.pct-w(1);
+    property <length> v-pad: Sizing.pct-h(1.5);
+    property <length> panel-radius: Sizing.radius-md;
+    property <length> min-panel-w: Sizing.pct-w(12);
+    // A vertical layout's preferred width is the widest child's, which
+    // is the measurement the panel sizes around; measured at the
+    // selected row's weight so a row cannot outgrow the panel when it
+    // gains focus.
+    measure := VerticalLayout {
+        visible: false;
+        for entry in root.entries: Text {
+            text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
+            font-size: Sizing.font-caption;
+            font-weight: 500;
+        }
+    }
+    property <length> desired-panel-w: measure.preferred-width + 2 * root.pad-x
+        + 2 * root.side-margin + 2 * Sizing.stroke(2);
+    property <length> panel-w: Math.min(Math.max(root.min-panel-w, root.desired-panel-w),
+        Math.max(0px, root.width - 2 * root.margin));
+    property <length> content-h: root.entries.length * root.row-h
+        + Math.max(0, root.entries.length - 1) * root.row-sp + 2 * root.v-pad;
+    property <length> usable-bottom: Math.max(root.margin,
+        root.height - Sizing.help-bar-clearance - root.margin);
+    property <length> panel-h: Math.min(root.content-h,
+        Math.max(0px, root.usable-bottom - root.margin));
+    property <length> viewport-h: Math.max(0px, root.panel-h - 2 * root.v-pad);
+    // Keep the focused row in view when the entries outrun the room the
+    // anchor leaves (the discovery list can be long).
+    property <length> row-bottom: (root.current-index + 1) * root.row-h
+        + root.current-index * root.row-sp;
+    property <length> scroll: Math.max(0px, Math.min(root.row-bottom - root.viewport-h,
+        root.content-h - 2 * root.v-pad - root.viewport-h));
+
+    property <bool> fits-right: root.anchor-x + root.anchor-w + root.gap + root.panel-w <= root.width - root.margin;
+    property <bool> fits-left: root.anchor-x - root.gap - root.panel-w >= root.margin;
+    property <bool> beside: root.fits-right || root.fits-left;
+    property <bool> fits-below: root.anchor-y + root.anchor-h + root.gap + root.panel-h <= root.usable-bottom;
+    property <length> panel-x: Math.round(Math.min(Math.max(root.beside
+        ? (root.fits-right ? root.anchor-x + root.anchor-w + root.gap : root.anchor-x - root.gap - root.panel-w)
+        : root.anchor-x + (root.anchor-w - root.panel-w) / 2, root.margin), root.width - root.margin - root.panel-w) / 1px) * 1px;
+    property <length> raw-y: root.beside
+        ? root.anchor-y + (root.anchor-h - root.panel-h) / 2
+        : (root.fits-below ? root.anchor-y + root.anchor-h + root.gap : root.anchor-y - root.gap - root.panel-h);
+    property <length> panel-y: Math.round(Math.min(Math.max(root.raw-y, root.margin), root.usable-bottom - root.panel-h) / 1px) * 1px;
+
+    // Four bands around the anchor: the tile the menu is about stays
+    // bright while the rest of the screen dims.
+    Rectangle { x: 0; y: 0; width: parent.width; height: root.anchor-y; background: Theme.scrim; }
+    Rectangle { x: 0; y: root.anchor-y + root.anchor-h; width: parent.width; height: Math.max(0px, parent.height - root.anchor-y - root.anchor-h); background: Theme.scrim; }
+    Rectangle { x: 0; y: root.anchor-y; width: root.anchor-x; height: root.anchor-h; background: Theme.scrim; }
+    Rectangle { x: root.anchor-x + root.anchor-w; y: root.anchor-y; width: Math.max(0px, parent.width - root.anchor-x - root.anchor-w); height: root.anchor-h; background: Theme.scrim; }
+
+    Rectangle {
+        x: root.panel-x;
+        y: root.panel-y;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: Theme.bg-panel;
+        border-radius: root.panel-radius;
+        clip: true;
+
+        for entry[i] in root.entries: Rectangle {
+            x: root.side-margin;
+            y: root.v-pad + i * (root.row-h + root.row-sp) - root.scroll;
+            width: parent.width - 2 * root.side-margin;
+            height: root.row-h;
+
+            bar := SelectionBar {
+                width: 100%;
+                height: 100%;
+                active: i == root.current-index;
+                press-held: PressFeedback.active("context", i);
+                radius: Sizing.radius-sm;
+            }
+
+            // Centered on its own measured width rather than stretched
+            // and aligned, so the glyph run lands on whole pixels.
+            Text {
+                x: Math.round((parent.width - Math.min(self.preferred-width, parent.width - 2 * root.pad-x)) / 2px) * 1px;
+                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+                overflow: elide;
+                text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
+                color: bar.active ? bar.content-color : Theme.text-primary;
+                font-size: Sizing.font-caption;
+                font-weight: bar.content-weight;
+            }
+
+            TouchArea {
+                mouse-cursor: pointer;
+                changed has-hover => {
+                    if (self.has-hover) { ContextInput.row-hovered(i); }
+                }
+                clicked => { ContextInput.row-clicked(i); }
+            }
+        }
+    }
+}
+
+// Games, Favorites and Recently played: MediaListScreen.qml's shell over
+// the shared paged grid. GamesScreen.qml's folder rules, paging and
+// persistence live in src/games.rs; this paints the page Rust pushes
+// into GamesView. The detailed list keeps the prototype rows until the
+// MediaList row lands.
+component GamesScreen inherits Rectangle {
+    background: transparent;
+    in property <bool> gated: false;
+    property <bool> list-layout: Shell.browse-list-layout;
+    property <bool> tate-list: self.list-layout && Shell.orientation != "horizontal";
+    property <bool> is-games: GamesView.mode == "games";
+    property <string> title: GamesView.mode == "favorites" ? @tr("Favorites")
+        : (GamesView.mode == "recents" ? @tr("Recently played") : GamesView.title);
+    property <string> state: GamesView.error != "" ? "error"
+        : (GamesView.loading ? "loading" : (GamesView.count == 0 ? "empty" : ""));
+    property <bool> gate-hide: Shell.transition-cue || root.gated || GamesView.loading || cue.loading-visible || GamesView.error != "";
+    property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
+    property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
+    property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
+    // Core's file total as "{} games" (Games only; the flat lists carry
+    // no known total). The 240p footer keeps the bare number.
+    property <string> count-text: !root.is-games || GamesView.total-files <= 0 ? ""
+        : (Sizing.tier-240 ? Labels.count(GamesView.total-files) : @tr("{} games", Labels.count(GamesView.total-files)));
+    // The detailed list swaps its position cue for this while a
+    // background fetch fills rows the user scrolled past.
+    property <string> right-text: root.list-layout && GamesView.loading-more && GamesView.count > 0 ? @tr("Loading more…") : "";
+
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        width: parent.width;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: root.title;
+        current-page: root.list-layout ? GamesView.list-page : GamesView.page;
+        total-pages: root.list-layout ? GamesView.list-total-pages : GamesView.total-pages;
+        page-total-known: GamesView.total-known;
+        total-text: root.show-grid-page-cue ? root.count-text : "";
+        right-text-override: root.right-text;
+        show-page-counter: root.list-layout || root.show-grid-page-cue;
+        page-indicator-mode: root.show-top-page-cue && root.right-text == "";
+        item-position-mode: root.list-layout;
+        current-item: GamesView.current-index;
+        total-items: GamesView.total-items;
+        page-indicator-chevron-size: Layout.grid-page-chevron-size;
+        has-pages-above: root.list-layout ? GamesView.has-items-above : GamesView.has-pages-above;
+        has-pages-below: root.list-layout ? GamesView.has-items-below : GamesView.has-pages-below;
+        visible: !root.gate-hide && Layout.top-strip-visible;
+        page-requested(delta) => { GamesInput.page-requested(delta); }
+    }
+
+    // Page-swoop viewport: the current and the incoming page in one
+    // clipped strip that translates by a page period.
+    property <length> period: GamesView.grid-height;
+    if !root.list-layout: Rectangle {
+        x: 0;
+        y: GamesView.grid-y;
+        width: parent.width;
+        height: GamesView.grid-height;
+        clip: true;
+        visible: !root.gate-hide;
+
+        Rectangle {
+            x: GamesView.folder-slide ? -GamesView.page-slide * parent.width : 0px;
+            y: GamesView.folder-slide ? 0px : -GamesView.page-slide * root.period;
+            animate x { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
+            width: parent.width;
+            height: parent.height;
+            animate y { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
+
+            PagedGridView {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                cells: GamesView.cells;
+                columns: GamesView.columns;
+                cell-width: GamesView.cell-width;
+                cell-height: GamesView.cell-height;
+                block-offset-x: GamesView.block-offset-x;
+                block-offset-y: GamesView.block-offset-y;
+                left-inset: Layout.grid-left-inset;
+                top-inset: Layout.grid-top-inset;
+                column-gap: Layout.grid-column-gap;
+                row-gap: Layout.grid-row-gap;
+                selected-local: GamesView.cached-transition || Shell.route-transitioning ? -1 : GamesView.selected-local;
+                section-focused: !Overlays.context-open;
+                focus-ready: GamesView.focus-ready;
+                activate-pulse: GamesView.activate-pulse;
+                release-pulse: GamesView.release-pulse;
+                settling: Shell.active-screen != GamesView.mode;
+                show-caption: true;
+                card-radius: Layout.card-radius;
+                caption-for(cell) => { return cell.name; }
+                cell-hovered(i) => { GamesInput.cell-hovered(i); }
+                cell-clicked(i) => { GamesInput.cell-clicked(i); }
+                cell-right-clicked(i) => { GamesInput.cell-right-clicked(i); }
+                wheel(delta) => { GamesInput.wheel(delta); }
+            }
+            PagedGridView {
+                x: GamesView.folder-slide ? GamesView.slide-dir * parent.width : 0px;
+                y: GamesView.folder-slide ? 0px : GamesView.slide-dir * root.period;
+                width: parent.width;
+                height: parent.height;
+                cells: GamesView.next-cells;
+                columns: GamesView.columns;
+                cell-width: GamesView.cell-width;
+                cell-height: GamesView.cell-height;
+                block-offset-x: GamesView.block-offset-x;
+                block-offset-y: GamesView.block-offset-y;
+                left-inset: Layout.grid-left-inset;
+                top-inset: Layout.grid-top-inset;
+                column-gap: Layout.grid-column-gap;
+                row-gap: Layout.grid-row-gap;
+                selected-local: -1;
+                focus-ready: false;
+                show-caption: true;
+                card-radius: Layout.card-radius;
+                caption-for(cell) => { return cell.name; }
+            }
+        }
+    }
+
+    // Detailed list: BrowseListDetailView over the games list profile.
+    property <length> list-card-x: Layout.card-side-margin;
+    property <length> list-card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Layout.card-top-margin;
+    property <length> list-card-w: self.width - 2 * self.list-card-x;
+    property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
+
+    if root.list-layout && !root.gate-hide: BrowseListDetailView {
+        x: root.list-card-x;
+        y: root.list-card-y;
+        width: root.list-card-w;
+        height: root.list-card-h;
+        rows: GamesView.list-rows;
+        selected: GamesView.list-sel;
+        focus-ready: GamesView.focus-ready;
+        activate-pulse: GamesView.activate-pulse;
+        release-pulse: GamesView.release-pulse;
+        settling: Shell.active-screen != GamesView.mode;
+        row-height: GamesView.list-row-height;
+        detail-title: GamesView.detail-title;
+        show-title: false;
+        cover: GamesView.detail-cover;
+        has-cover: GamesView.detail-has-cover;
+        cover-absent: GamesView.detail-cover-absent;
+        wordmark: false;
+        detail-rows: GamesView.detail-rows;
+        detail-loading: GamesView.detail-loading;
+        suppressed: GamesView.rapid-active;
+        loading-text: root.is-games ? @tr("Loading game…") : @tr("Loading…");
+        row-hovered(i) => { GamesInput.cell-hovered(i); }
+        row-clicked(i) => { GamesInput.cell-clicked(i); }
+        row-right-clicked(i) => { GamesInput.cell-right-clicked(i); }
+        wheel(delta) => { GamesInput.wheel(delta); }
+    }
+
+    // Footer: the focused row's name with the dim suffix, the count and
+    // the page cue in the corners only where the profile keeps them
+    // there (CRT). A page fetch the user is waiting on replaces the name.
+    property <length> label-y: GamesView.label-y;
+    property <length> footer-left-inset: Math.ceil(footer-count-measure.preferred-width / 1px) * 1px + Layout.bottom-status-left-margin;
+    property <length> footer-right-inset: footer-indicator.width + Layout.bottom-status-right-margin;
+
+    footer-count-measure := Text {
+        visible: false;
+        text: root.count-text;
+        font-size: Sizing.font-section;
+    }
+
+    if !root.list-layout && !GamesView.page-loading: ActiveLabel {
+        x: 0;
+        y: root.label-y;
+        width: parent.width;
+        height: GamesView.label-height;
+        side-inset: root.page-cue-in-footer ? Math.max(root.footer-left-inset, root.footer-right-inset) : Sizing.pct-w(3);
+        text: GamesView.label-name;
+        tags: GamesView.label-tags;
+        visible: !root.gate-hide;
+    }
+
+    if !root.gate-hide && GamesView.page-loading: Rectangle {
+        property <length> glyph: Sizing.font-size(3);
+        x: 0;
+        y: root.label-y;
+        width: parent.width;
+        height: GamesView.label-height;
+        HorizontalLayout {
+            x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
+            y: Math.round((parent.height - parent.glyph) / 2px) * 1px;
+            height: parent.glyph;
+            spacing: Sizing.pct-w(0.6);
+            Image {
+                width: parent.height;
+                height: parent.height;
+                source: GlyphSource.glyph("icons/Loading", self.height, Theme.text-primary);
+            }
+            Text {
+                vertical-alignment: center;
+                text: @tr("Loading…");
+                color: Theme.text-primary;
+                font-size: Sizing.font-size(3);
+            }
+        }
+    }
+
+    if !root.list-layout && root.page-cue-in-footer && root.count-text != "": Text {
+        x: Layout.bottom-status-left-margin;
+        y: root.label-y + Math.round((GamesView.label-height - self.height) / 2px) * 1px;
+        width: root.footer-left-inset - Layout.bottom-status-left-margin;
+        height: Sizing.font-section;
+        vertical-alignment: center;
+        overflow: elide;
+        text: root.count-text;
+        color: Theme.text-primary;
+        font-size: Sizing.font-section;
+        visible: !root.gate-hide;
+    }
+
+    footer-indicator := PageIndicator {
+        x: parent.width - Layout.bottom-status-right-margin - self.width;
+        y: root.label-y + Math.round((GamesView.label-height - self.height) / 2px) * 1px;
+        chevron-size: Layout.grid-page-chevron-size;
+        current-page: root.list-layout ? GamesView.list-page : GamesView.page;
+        total-pages: root.list-layout ? GamesView.list-total-pages : GamesView.total-pages;
+        item-position-mode: root.list-layout;
+        current-item: GamesView.current-index;
+        total-items: GamesView.total-items;
+        page-total-known: GamesView.total-known;
+        has-pages-above: root.list-layout ? GamesView.has-items-above : GamesView.has-pages-above;
+        has-pages-below: root.list-layout ? GamesView.has-items-below : GamesView.has-pages-below;
+        visible: !root.gate-hide && root.page-cue-in-footer;
+        page-requested(delta) => { GamesInput.page-requested(delta); }
+    }
+
+    // RapidScrollIndicator.qml: the landing row's first letter on an
+    // 18%h card over the grid only during qualified held navigation.
+    if !root.gate-hide && !root.list-layout && GamesView.rapid-active && GamesView.rapid-letter != "" && GamesView.count > 0: Rectangle {
+        property <length> s: Sizing.pct-h(18);
+        x: Math.round((parent.width - self.s) / 2px) * 1px;
+        y: GamesView.grid-y + Math.round((GamesView.grid-height - self.s) / 2px) * 1px;
+        width: self.s;
+        height: self.s;
+        background: Theme.surface-card;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.border-mid;
+        border-radius: Sizing.radius-sm;
+
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            text: GamesView.rapid-letter;
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(10);
+        }
+    }
+
+    cue := StateCue {
+        x: 0;
+        y: root.list-layout ? root.list-card-y : GamesView.grid-y;
+        width: parent.width;
+        height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : GamesView.grid-height;
+        cue-center-y: root.height / 2 - self.y;
+        state: GamesView.folder-slide ? "" : root.state;
+        empty-text: GamesView.mode == "favorites" ? @tr("No favorites yet")
+            : (GamesView.mode == "recents" ? @tr("Nothing played yet") : @tr("No games in this system"));
+        loading-text: GamesView.mode == "favorites" ? @tr("Loading favorites…")
+            : (GamesView.mode == "recents" ? @tr("Loading recently played…") : @tr("Loading games…"));
+        error-detail: GamesView.error;
+    }
+}
+
+// Full-framebuffer 240p-test-suite style calibration pattern. Mounted
+// by App outside the rotated/safe-area scene so every guide maps to a
+// physical scanout pixel. Rust owns input and live DDR offset updates.
+component CrtCalibrationPattern inherits Rectangle {
+    background: #000000;
+    property <length> stroke: Sizing.stroke(1);
+    property <length> action-x: Math.round(self.width * 0.05 / 1px) * 1px;
+    property <length> action-y: Math.round(self.height * 0.05 / 1px) * 1px;
+    property <length> title-x: Math.round(self.width * 0.10 / 1px) * 1px;
+    property <length> title-y: Math.round(self.height * 0.10 / 1px) * 1px;
+
+    for col in 17: Rectangle {
+        x: Math.min(parent.width - root.stroke,
+            Math.round(col * (parent.width - root.stroke) / 16px) * 1px);
+        y: 0;
+        width: root.stroke;
+        height: parent.height;
+        background: Theme.text-label;
+    }
+    for row in 13: Rectangle {
+        x: 0;
+        y: Math.min(parent.height - root.stroke,
+            Math.round(row * (parent.height - root.stroke) / 12px) * 1px);
+        width: parent.width;
+        height: root.stroke;
+        background: Theme.text-label;
+    }
+
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+        border-width: root.stroke;
+        border-color: Theme.text-primary;
+    }
+    Rectangle {
+        x: root.action-x;
+        y: root.action-y;
+        width: parent.width - 2 * root.action-x;
+        height: parent.height - 2 * root.action-y;
+        background: transparent;
+        border-width: root.stroke;
+        border-color: Theme.accent;
+    }
+    Rectangle {
+        x: root.title-x;
+        y: root.title-y;
+        width: parent.width - 2 * root.title-x;
+        height: parent.height - 2 * root.title-y;
+        background: transparent;
+        border-width: root.stroke;
+        border-color: Theme.text-primary;
+    }
+
+    plate := Rectangle {
+        property <length> pad-x: Sizing.pct-w(2);
+        property <length> pad-y: Sizing.pct-h(2);
+        width: Math.max(Sizing.pct-w(42), readout.preferred-width + 2 * self.pad-x);
+        height: Sizing.font-size(3.2) + 2 * Sizing.font-size(2.4)
+            + 2 * Sizing.pct-h(1) + 2 * self.pad-y;
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        background: #000000;
+        border-width: root.stroke;
+        border-color: Theme.text-primary;
+
+        readout := Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.pad-y;
+            text: "H \{Overlays.crt-h-offset}   V \{Overlays.crt-v-offset}";
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(3.2);
+            font-weight: 600;
+        }
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.pad-y + Sizing.font-size(3.2) + Sizing.pct-h(1);
+            text: @tr("Arrows adjust position");
+            color: Theme.text-label;
+            font-size: Sizing.font-size(2.4);
+        }
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: parent.pad-y + Sizing.font-size(3.2) + Sizing.font-size(2.4)
+                + 2 * Sizing.pct-h(1);
+            text: @tr("Accept or Back saves");
+            color: Theme.text-label;
+            font-size: Sizing.font-size(2.4);
+        }
+    }
+}
+
+component RouteScreen inherits Rectangle {
+    in property <string> screen-token;
+    in property <bool> outgoing: false;
+    // Hold this screen's content hidden even though the global cue is
+    // down: set on the outgoing half of a route slide.
+    in property <bool> gated: false;
+
+    if root.screen-token == "hub" && !Shell.boot-curtain: HubScreen {
+        width: 100%;
+        height: 100%;
+        gated: root.gated;
+    }
+
+    if root.screen-token == "systems" || root.screen-token == "favorite-systems": SystemsScreen {
+        width: 100%;
+        height: 100%;
+        gated: root.gated;
+    }
+
+    if root.screen-token == "settings": SettingsScreen {
+        width: 100%;
+        height: 100%;
+        outgoing: root.outgoing;
+    }
+
+    if root.screen-token == "about": AboutScreen {
+        width: 100%;
+        height: 100%;
+    }
+
+    if root.screen-token == "games" || root.screen-token == "favorites"
+        || root.screen-token == "recents": GamesScreen {
+        width: 100%;
+        height: 100%;
+        gated: root.gated;
+    }
+}
+
+export component App inherits Window {
+    callback game-info-scroll(string);
+    game-info-scroll(action) => { info-modal.scroll(action); }
+    title: "Zaparoo Frontend (Slint demo)";
+    background: Theme.bg-deep;
+    default-font-family: Theme.font-ui;
+    preferred-width: 1280px;
+    preferred-height: 720px;
+
+    // Native CRT keeps all interaction inside the central 90% action-
+    // safe area while App's own background remains full bleed.
+    property <length> crt-inset-w: Theme.crt
+        ? 2 * Math.round(self.width * 0.05 / 1px) * 1px : 0px;
+    property <length> crt-inset-h: Theme.crt
+        ? 2 * Math.round(self.height * 0.05 / 1px) * 1px : 0px;
+    property <length> scene-width: Math.max(1px, self.width - self.crt-inset-w);
+    property <length> scene-height: Math.max(1px, self.height - self.crt-inset-h);
+
+    pure function browse-header-title() -> string {
+        if (!Layout.title-in-header) { return ""; }
+        if (Shell.active-screen == "settings") { return SettingsLabels.page-title(SettingsView.page); }
+        if (Shell.active-screen == "systems") { return Labels.hub("category:" + SystemsView.category, SystemsView.category); }
+        if (Shell.active-screen == "favorite-systems") { return @tr("Favorites"); }
+        if (Shell.active-screen == "games") { return GamesView.title; }
+        if (Shell.active-screen == "favorites") { return @tr("Favorites"); }
+        if (Shell.active-screen == "recents") { return @tr("Recently played"); }
+        return "";
+    }
+
+    pure function has-modal() -> bool {
+        return LogUploadView.open || SetupModalView.open || GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
+            || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
+            || Overlays.context-open;
+    }
+
+    // Router state, owned by Rust.
+    // Media-database build progress (indexing/optimizing); wins the
+    // header's status slot over transient status text while active,
+    // mirroring the CoreStatusPill's mutually-exclusive surface.
+
+    // Help-bar vocabulary, the MainLayout.qml `helpEntries` table over
+    // the state the globals carry. Modal rows win outright; per-screen
+    // rows vary with the data state. Button names are semantic tokens
+    // (ButtonA = confirm, ButtonB = cancel, ButtonX = options,
+    // ButtonY = view) resolved by the Buttons global. D-pad is always
+    // "Move"; A is "Open" for drill-downs and launches; B is "Back" on
+    // every screen with one to go back to; L/R shoulder glyphs join the
+    // Move cue only when there is a second page to jump to. The source
+    // row stays put during a forward transition: the input gate
+    // swallows presses, but a bar that empties reads as dismantling.
+    pure function move-cue(pages: int) -> HelpEntry {
+        return { buttons: pages > 1 ? ["ButtonL", "ButtonR", "Dpad"] : ["Dpad"], label: @tr("Move") };
+    }
+    pure function focused-settings-control() -> string {
+        return SettingsView.index >= 0 && SettingsView.index < SettingsView.rows.length
+            ? SettingsView.rows[SettingsView.index].control : "";
+    }
+    pure function help-entries() -> [HelpEntry] {
+        if (Shell.boot-curtain) {
+            return [];
+        }
+        // The uploader: nothing to confirm while it runs.
+        if (LogUploadView.open) {
+            if (LogUploadView.phase == "uploading") {
+                return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            return [
+                { buttons: ["ButtonA"], label: LogUploadView.phase == "failed" ? @tr("Retry") : @tr("Done") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        // The setup panel: its confirm cue names what the focused row
+        // does, and Back steps out of a picker page before the panel.
+        if (SetupModalView.open) {
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: SettingsLabels.setup-action(
+                    SetupModalView.picker-page
+                        ? "select"
+                        : (SetupModalView.index >= 0 && SetupModalView.index < SetupModalView.rows.length
+                            ? (SetupModalView.rows[SetupModalView.index].control == "action"
+                                ? "start"
+                                : (SetupModalView.rows[SetupModalView.index].control == "toggle" ? "toggle" : "change"))
+                            : "change")) },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Overlays.dialog-open) {
+            if (Overlays.dialog-buttons.length > 1) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Move") },
+                    { buttons: ["ButtonA"], label: @tr("Select") },
+                    { buttons: ["ButtonB"], label: @tr("Cancel") },
+                ];
+            }
+            return [
+                { buttons: ["ButtonA"], label: Overlays.dialog-buttons.length > 0
+                    ? DialogLabels.button(Overlays.dialog-buttons[0])
+                    : @tr("OK") },
+            ];
+        }
+        if (Overlays.context-open) {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: @tr("Select") },
+                { buttons: ["ButtonB", "ButtonX"], label: @tr("Close") },
+            ];
+        }
+        if (Overlays.card-write-open) {
+            return [{ buttons: ["ButtonB"], label: @tr("Cancel") }];
+        }
+        if (Overlays.qr-open) {
+            return [{ buttons: ["ButtonB"], label: @tr("Close") }];
+        }
+        if (GameInfoView.modal-open) {
+            if (info-modal.scrollable && GameInfoView.image-count > 1) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Scroll") },
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            if (GameInfoView.image-count > 1) {
+                return [
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            if (info-modal.scrollable) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Scroll") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            return [{ buttons: ["ButtonB"], label: @tr("Close") }];
+        }
+        if (Overlays.list-open || Overlays.letter-open) {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: @tr("Select") },
+                { buttons: ["ButtonB"], label: @tr("Cancel") },
+            ];
+        }
+        if (Overlays.crt-calibration-open) {
+            return [
+                { buttons: ["Dpad"], label: @tr("Adjust") },
+                { buttons: ["ButtonA"], label: @tr("Save") },
+            ];
+        }
+        if (Shell.active-screen == "hub") {
+            // Mid-reorder: the d-pad repositions the held tile, Accept
+            // places it, Cancel reverts; nothing else is live.
+            if (HubView.move-armed) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Reposition") },
+                    { buttons: ["ButtonA"], label: @tr("Place") },
+                    { buttons: ["ButtonB"], label: @tr("Cancel") },
+                ];
+            }
+            if (HubView.options-available) {
+                return [
+                    self.move-cue(HubView.total-pages),
+                    { buttons: ["ButtonA"], label: HubView.hub-error != "" && HubView.focused-is-category ? @tr("Retry") : @tr("Open") },
+                    { buttons: ["ButtonX"], label: @tr("Options") },
+                    { buttons: ["ButtonY"], label: @tr("View") },
+                ];
+            }
+            return [
+                self.move-cue(HubView.total-pages),
+                { buttons: ["ButtonA"], label: HubView.hub-error != "" && HubView.focused-is-category ? @tr("Retry") : @tr("Open") },
+                { buttons: ["ButtonY"], label: @tr("View") },
+            ];
+        }
+        if (Shell.active-screen == "systems" || Shell.active-screen == "favorite-systems") {
+            if (Shell.transitioning) {
+                return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            // The favorites list adds the View menu, which carries the
+            // grouping switch.
+            if (Shell.active-screen == "favorite-systems") {
+                return [
+                    self.move-cue(SystemsView.total-pages),
+                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonX"], label: @tr("Options") },
+                    { buttons: ["ButtonY"], label: @tr("View") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                self.move-cue(SystemsView.total-pages),
+                { buttons: ["ButtonA"], label: @tr("Open") },
+                { buttons: ["ButtonX"], label: @tr("Options") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Shell.active-screen == "settings") {
+            if (SettingsView.page == "") {
+                if (SettingsView.rows.length > 1) {
+                    return [
+                        { buttons: ["Dpad"], label: @tr("Move") },
+                        { buttons: ["ButtonA"], label: @tr("Open") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
+                return [
+                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (self.focused-settings-control() == "toggle") {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Change") },
+                    { buttons: ["ButtonA"], label: @tr("Toggle") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (self.focused-settings-control() == "action") {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["ButtonA"], label: SettingsLabels.action(SettingsView.rows[SettingsView.index].value) },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                { buttons: ["DpadLeft", "DpadRight"], label: @tr("Change") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Shell.active-screen == "about") {
+            if (AboutView.maximum-scroll-milli <= 0) { return [{ buttons: ["ButtonB"], label: @tr("Back") }]; }
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        // Games, Favorites and Recents share the games-style rows.
+        if (Shell.transitioning) {
+            return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+        }
+        if (GamesView.error != "") {
+            return [
+                { buttons: ["ButtonA"], label: @tr("Retry") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (GamesView.count == 0 && !GamesView.loading) {
+            if (Shell.active-screen == "recents") {
+                return [
+                    { buttons: ["ButtonA"], label: @tr("Retry") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                { buttons: ["ButtonA"], label: @tr("Retry") },
+                { buttons: ["ButtonY"], label: @tr("View") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Shell.active-screen == "recents") {
+            return [
+                self.move-cue(GamesView.total-pages),
+                { buttons: ["ButtonA"], label: @tr("Open") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        return [
+            self.move-cue(GamesView.total-pages),
+            { buttons: ["ButtonA"], label: @tr("Open") },
+            { buttons: ["ButtonX"], label: @tr("Options") },
+            { buttons: ["ButtonY"], label: @tr("View") },
+            { buttons: ["ButtonB"], label: @tr("Back") },
+        ];
+    }
+
+    // Hub state.
+
+    // Systems state.
+
+    // Settings state.
+
+    // About screen state.
+
+    // Header HUD status icon keys (ordered, visible only).
+
+    // Game-info modal state.
+
+    // Context-menu state (games-style rows).
+
+    // Card-writer modal state.
+
+    // List-picker modal state (the West "View" menu).
+
+    // Jump-to-letter picker state.
+
+    // Games state.
+
+    // Raw key press and release, forwarded to the Rust key path. The
+    // toolkit's own auto-repeat is dropped: it bursts unpredictably
+    // under load and is not tunable on the framebuffer build, so Rust
+    // drives its own cadence off the press/release pair.
+    callback key-pressed(string);
+    callback key-released(string);
+    // The window went away mid-hold (alt-tab, a compositor grab): the
+    // release will never arrive, so cancel the repeat rather than let
+    // it tick forever.
+    callback input-lost();
+    // Fired on resize so Rust can re-solve the grid shapes.
+    callback viewport-changed(length, length);
+
+    forward-focus: keys;
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (!event.repeat) {
+                root.key-pressed(event.text);
+            }
+            accept
+        }
+        key-released(event) => {
+            root.key-released(event.text);
+            accept
+        }
+        focus-lost(reason) => {
+            root.input-lost();
+        }
+    }
+
+    // Keep Sizing in logical scene space. In tate mode that space is
+    // B x A even though the physical framebuffer remains A x B.
+    changed scene-width => {
+        Sizing.screen-width = self.scene-width;
+        root.viewport-changed(self.scene-width, self.scene-height);
+    }
+    changed scene-height => {
+        Sizing.screen-height = self.scene-height;
+        root.viewport-changed(self.scene-width, self.scene-height);
+    }
+
+    // Extend modal dimming into the CRT overscan bands. The regular
+    // scrim lives inside `scene`; this sibling only paints behind it.
+    if Theme.crt && root.has-modal(): Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.scrim;
+    }
+
+    scene := Rectangle {
+        x: Math.round((root.width - self.width) / 2px) * 1px;
+        y: Math.round((root.height - self.height) / 2px) * 1px;
+        width: root.scene-width;
+        height: root.scene-height;
+    // Cached HDMI exposes only the committed destination to Slint; the
+    // presenter moves RGB565 endpoints. Native backends render the same
+    // hierarchy as a clipped two-screen strip, preserving CRT animation.
+    //
+    // The strip is mounted for the whole run, never behind an `if`, and
+    // that is load-bearing: `animate x` only animates a *change*, and a
+    // strip created after `route-page-slide` had already moved would
+    // evaluate `x` straight to its end value and cut. Mounted, `x` is
+    // always a settled 0, so a route change that starts in the same
+    // event-loop turn it was requested still slides. Slot 0 holds the
+    // screen currently on view; the incoming one waits one screen-width
+    // away on the side we are travelling toward, and only exists while
+    // a native (non-cached) route change is running.
+    stage := Rectangle {
+        width: 100%;
+        height: 100%;
+        // A square clip is a scissor rect, not a render target, so this
+        // costs nothing when nothing is sliding.
+        clip: true;
+
+        property <bool> sliding: Shell.route-transitioning && !Shell.route-cached-transition;
+
+        strip := Rectangle {
+            x: -Shell.route-page-slide * parent.width;
+            width: parent.width;
+            height: parent.height;
+            animate x {
+                duration: Shell.route-slide-anim && !Shell.reduce-motion && Motion.enabled ? 170ms : 0ms;
+                easing: ease-in-out;
+            }
+
+            RouteScreen {
+                x: 0;
+                width: parent.width;
+                height: parent.height;
+                screen-token: stage.sliding ? Shell.route-from-screen : Shell.active-screen;
+                outgoing: stage.sliding;
+                // The screen we are leaving keeps whatever the user was
+                // actually looking at. Without this a slow fill hides
+                // the source rows behind the cue, then pops them back
+                // for the length of the slide - the blink.
+                gated: stage.sliding && Shell.route-from-gated;
+            }
+
+            if stage.sliding: RouteScreen {
+                x: Shell.route-slide-dir * parent.width;
+                width: parent.width;
+                height: parent.height;
+                screen-token: Shell.route-to-screen;
+            }
+        }
+    }
+
+    // Cold-launch curtain (BootOverlay port): the window background
+    // paints through - no new fill - and a single centered cue tracks
+    // the connection state ("Connecting… / Reconnecting… / Loading
+    // library…" plus the escalated unreachable message from Rust).
+    if Shell.boot-curtain: Rectangle {
+        width: 100%;
+        height: 100%;
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            max-width: parent.width - 2 * Sizing.pct-w(10);
+            overflow: elide;
+            text: Shell.boot-text;
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(3.2);
+        }
+    }
+
+    // Global loading cue: transparent Item plus one Text, no painted
+    // background, exactly like the QML overlay contract. It rides the
+    // delayed flag, so a fill that answers inside the grace window
+    // never flashes it.
+    if Shell.transition-cue: Rectangle {
+        width: 100%;
+        height: 100%;
+        Text {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            text: Labels.loading(Shell.transition-target);
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(3.2);
+        }
+    }
+
+    header := HeaderBar {
+        x: 0;
+        y: Sizing.header-top-margin;
+        width: parent.width;
+        clock-text: Shell.clock-text;
+        clock-sample: Shell.clock-sample;
+        status-keys: Shell.status-keys;
+        status-icons-enabled: Shell.status-icons-enabled;
+        has-battery: Shell.has-battery;
+        battery-percent: Shell.battery-percent;
+        browse-title: root.browse-header-title();
+        app-text: Labels.status(Shell.status-text);
+    }
+
+    // Modal scrims swallow pointer events rather than forwarding them to
+    // the screen underneath. Modal controls paint after this blocker.
+    if root.has-modal(): TouchArea {
+        width: 100%; height: 100%;
+        scroll-event(event) => { return accept; }
+    }
+
+    // Game-info modal, mounted above the screens like the Qt modal
+    // stack. Static scrim (instant dim): at native 1080p a fading
+    // full-screen translucent surface costs ~100ms frames - the Qt
+    // rulebook's ban earns its place back at this resolution. The
+    // one-frame repaint on open is fine.
+    info-modal := GameInfoModal {
+        width: 100%;
+        height: 100%;
+    }
+
+    if Overlays.card-write-open: CardWriteModal {
+        width: 100%;
+        height: 100%;
+    }
+
+    if Overlays.qr-open: QrCodeModal {
+        width: 100%;
+        height: 100%;
+        qr: Overlays.qr-image;
+        modules: Overlays.qr-modules;
+    }
+
+    if LogUploadView.open: LogUploadModal {
+        width: 100%;
+        height: 100%;
+        phase: LogUploadView.phase;
+        button-pressed: PressFeedback.active("log", 0);
+        url: LogUploadView.url;
+        qr: LogUploadView.qr;
+        qr-modules: LogUploadView.qr-modules;
+        confirmed => { LogUploadInput.confirmed(); }
+    }
+
+    if SetupModalView.open: SetupModal {
+        width: 100%;
+        height: 100%;
+        kind: SetupModalView.kind;
+        picker-page: SetupModalView.picker-page;
+        picker-title: SetupModalView.picker-title;
+        rows: SetupModalView.rows;
+        index: SetupModalView.index;
+        picker-rows: SetupModalView.picker-rows;
+        picker-sel: SetupModalView.picker-sel;
+        has-above: SetupModalView.has-above;
+        has-below: SetupModalView.has-below;
+        activate-pulse: SetupModalView.activate-pulse;
+        row-hovered(i) => { SetupInput.row-hovered(i); }
+        row-clicked(i) => { SetupInput.row-clicked(i); }
+        picker-hovered(i) => { SetupInput.picker-hovered(i); }
+        picker-clicked(i) => { SetupInput.picker-clicked(i); }
+    }
+
+    if Overlays.context-open: ContextMenu {
+        width: 100%;
+        height: 100%;
+        entries: Overlays.context-entries;
+        current-index: Overlays.context-index;
+        anchor-x: Overlays.context-anchor-x;
+        anchor-y: Overlays.context-anchor-y;
+        anchor-w: Overlays.context-anchor-w;
+        anchor-h: Overlays.context-anchor-h;
+    }
+
+    if Overlays.list-open: ListPickerModal {
+        width: 100%;
+        height: 100%;
+        title: Labels.menu(Overlays.list-title, "");
+        setting-id: Overlays.list-setting-id;
+        entries: Overlays.list-entries;
+        current-index: Overlays.list-index;
+    }
+
+    if Overlays.letter-open: LetterJumpModal {
+        width: 100%;
+        height: 100%;
+        buckets: Overlays.letter-buckets;
+        current-index: Overlays.letter-index;
+        loading: Overlays.letter-loading;
+        columns: Overlays.letter-columns;
+    }
+
+
+    // Alerts own input above every other modal, matching the router.
+    if Overlays.dialog-open: TouchArea {
+        width: 100%; height: 100%;
+        scroll-event(event) => { return accept; }
+    }
+    if Overlays.dialog-open: DialogModal { width: 100%; height: 100%; }
+
+    HelpBar {
+        x: 0;
+        y: parent.height - self.height;
+        width: parent.width;
+        entries: root.help-entries();
+        // Bleed past the CRT safe-area inset so the fill reaches the
+        // framebuffer edge and the keyline lands on the safe-area line.
+        bleed: Math.max(root.crt-inset-w, root.crt-inset-h) / 2;
+    }
+
+    // Topmost within the logical scene: burn protection covers header,
+    // screens, and regular modals, and rotates with the display.
+    if Shell.saver-armed: ScreensaverOverlay {
+        width: 100%;
+        height: 100%;
+    }
+    }
+
+    // Pointer input is disabled globally, including modal controls, while
+    // the setting is off or a screen transition owns input.
+    if !Shell.mouse-enabled || Shell.saver-armed
+        || ((Shell.boot-curtain || Shell.transitioning || Shell.route-transitioning) && !root.has-modal()): TouchArea {
+        width: 100%; height: 100%;
+        clicked => { Overlays.pointer-choice("wake", 0, true); }
+        scroll-event(event) => { return accept; }
+    }
+
+    // Calibration deliberately bypasses scene rotation and the CRT safe
+    // inset: its edge frame must identify true framebuffer pixels.
+    if Theme.crt && Overlays.crt-calibration-open: CrtCalibrationPattern {
+        width: 100%;
+        height: 100%;
+    }
+}

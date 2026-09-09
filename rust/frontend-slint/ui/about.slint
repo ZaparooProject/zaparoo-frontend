@@ -1,0 +1,129 @@
+import { Theme, Sizing } from "theme.slint";
+import { Brand, GlyphSource, TopStatusStrip } from "chrome.slint";
+
+export global AboutView {
+    in-out property <string> version;
+    in-out property <string> commit;
+    in-out property <string> channel;
+    in-out property <string> build-date;
+    // Thousandths of scroll range: both heads can reach the same content
+    // endpoint even when their fonts and wrapping produce different heights.
+    in-out property <int> scroll-milli: 0;
+    in-out property <int> maximum-scroll-milli: 0;
+    callback scroll-requested(int);
+    public function move(delta: int) {
+        AboutView.scroll-requested(Math.max(0, Math.min(1000,
+            Math.min(1000, AboutView.scroll-milli)
+                + Math.round(delta * 1000 / Math.max(1, AboutView.maximum-scroll-milli)))));
+    }
+}
+
+component CenteredLine inherits Rectangle {
+    in property <string> text;
+    in property <length> font-size: Sizing.font-body;
+    in property <color> ink: Theme.text-primary;
+    height: Math.ceil(label.preferred-height / 1px) * 1px;
+    label := Text {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: 0px;
+        width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
+        text: root.text;
+        font-size: root.font-size;
+        color: root.ink;
+        wrap: word-wrap;
+    }
+}
+
+export component AboutScreen inherits Rectangle {
+    property <length> maximum-scroll: Math.max(0px, content.preferred-height - viewport.height);
+    property <length> scroll-y: Math.round(Math.min(root.maximum-scroll,
+        AboutView.scroll-milli * root.maximum-scroll / 1000) / 1px) * 1px;
+    changed maximum-scroll => {
+        AboutView.maximum-scroll-milli = Math.ceil(root.maximum-scroll / Math.max(1px, Sizing.screen-height) * 1000);
+    }
+    TopStatusStrip {
+        y: Sizing.header-bottom + Sizing.pct-h(1);
+        width: parent.width;
+        height: Sizing.pct-h(7);
+        title: @tr("About / License");
+        show-page-counter: false;
+    }
+    card := Rectangle {
+        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        y: Sizing.header-bottom + Sizing.pct-h(10);
+        width: Math.min(parent.width - Sizing.pct-w(10), Sizing.pct-w(50));
+        height: Math.max(0px, parent.height - Sizing.header-bottom - Sizing.pct-h(18));
+        background: Theme.bg-panel;
+        border-radius: Sizing.radius-md;
+        border-width: Sizing.stroke(1);
+        border-color: Theme.border-mid;
+        viewport := Rectangle {
+            x: Sizing.pct-w(3);
+            y: Sizing.pct-h(4);
+            width: parent.width - 2 * self.x;
+            height: Math.max(0px, parent.height - 2 * self.y);
+            clip: true;
+            content := VerticalLayout {
+                y: -root.scroll-y;
+                width: parent.width;
+                height: self.preferred-height;
+                spacing: Sizing.pct-h(2);
+                Rectangle {
+                    height: Math.round(Math.min(parent.width, Sizing.pct-h(35)) * 135 / 600 / 1px) * 1px;
+                    Image {
+                        x: Math.round((parent.width - self.width) / 2px) * 1px;
+                        y: 0px;
+                        width: Math.min(parent.width, Sizing.pct-h(35));
+                        height: parent.height;
+                        source: Brand.logo(Theme.light-surface, self.width);
+                        image-fit: contain;
+                    }
+                }
+                CenteredLine { text: @tr("Zaparoo Frontend"); font-size: Sizing.font-title; }
+                CenteredLine { text: @tr("Version {} · {} · {}", AboutView.version, AboutView.commit, AboutView.channel); font-size: Sizing.font-caption; ink: Theme.text-label; }
+                CenteredLine { text: @tr("Built {}", AboutView.build-date); font-size: Sizing.font-small; ink: Theme.text-label; }
+                CenteredLine { text: @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."); }
+                CenteredLine { text: @tr("Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."); }
+                CenteredLine { text: @tr("Commercial licensing: legal@zaparoo.com"); }
+                CenteredLine { text: @tr("Project: https://zaparoo.org"); }
+                CenteredLine { text: @tr("Created by"); font-size: Sizing.font-caption; ink: Theme.text-label; }
+                VerticalLayout {
+                    spacing: 0px;
+                    for name in ["Andrea Bogazzi", "BossRighteous", "Carlos R.", "devilschile2", "Giancarlo Erra", "José Manuel Barroso Galindo", "Peter Brittain", "Tim Wilsie", "Wilfried Jeanniard", "Wizzo"]: CenteredLine { text: name; }
+                }
+                CenteredLine { text: @tr("Translations"); font-size: Sizing.font-caption; ink: Theme.text-label; }
+                CenteredLine { text: @tr("Italiano - Andrea Bogazzi\nEspañol - Carlos R.\nEuskara - devilschile2\nFrançais - Wilfried"); }
+                CenteredLine { text: @tr("Full license text in COPYING."); font-size: Sizing.font-caption; ink: Theme.text-label; }
+            }
+            TouchArea {
+                property <length> drag-y;
+                property <int> drag-scroll;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                        self.drag-y = self.mouse-y;
+                        self.drag-scroll = AboutView.scroll-milli;
+                    }
+                }
+                changed mouse-y => {
+                    if (self.pressed) {
+                        AboutView.scroll-requested(Math.max(0, Math.min(1000, self.drag-scroll
+                            - Math.round((self.mouse-y - self.drag-y) / Math.max(1px, root.maximum-scroll) * 1000))));
+                    }
+                }
+                scroll-event(event) => {
+                    AboutView.move(Math.round(-event.delta-y / Math.max(1px, Sizing.screen-height) * 1000));
+                    return accept;
+                }
+            }
+        }
+        for below in [false, true]: Image {
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: below ? parent.height - Sizing.pct-h(3.5) : Sizing.pct-h(0.5);
+            width: Sizing.pct-h(3);
+            height: self.width;
+            visible: root.maximum-scroll > 0px;
+            source: GlyphSource.glyph(below ? "icons/ScrollDown" : "icons/ScrollUp", self.width,
+                (below ? root.scroll-y < root.maximum-scroll : root.scroll-y > 0px) ? Theme.text-primary : Theme.text-label);
+        }
+    }
+}

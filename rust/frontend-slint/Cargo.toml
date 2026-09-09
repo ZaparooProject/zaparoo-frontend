@@ -1,0 +1,94 @@
+# Zaparoo Frontend
+# Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+#
+# Slint migration experiment. Desktop builds use the default winit
+# backend; the MiSTer build (Phase 2) switches to a custom
+# `slint::platform` with the software renderer and no backend features.
+
+[package]
+name         = "frontend-slint"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish      = false
+# Two binaries live here (the app and the offline snapshot tool); the one
+# cargo starts by default is the app.
+default-run  = "frontend-slint"
+
+[[bin]]
+name = "frontend-slint"
+path = "src/main.rs"
+
+# Offline layout checker: renders the App through the same software
+# renderer the MiSTer build uses and writes a PNG. Debug/parity tool;
+# never shipped.
+[[bin]]
+name = "snapshot"
+path = "src/bin/snapshot.rs"
+required-features = ["snapshot"]
+
+[features]
+# Desktop dev build: winit backend, windowed. MiSTer build: custom
+# slint::platform with the software renderer and the fb0 presenter.
+# Exactly one of the two must be enabled.
+default = ["desktop"]
+desktop = [
+    "slint/std",
+    "slint/backend-winit",
+    "slint/renderer-femtovg",
+    "slint/accessibility",
+]
+# The MiSTer build uses Slint's `std` software renderer so text goes
+# through the runtime font stack (fontique + swash + parley): that is
+# the path with OpenType shaping and bidi, which the Arabic, Hebrew,
+# Devanagari and CJK catalogs need. The pre-rendered `no_std` glyph path
+# maps one character to one glyph and cannot shape them. fontique's
+# Linux backend wants libfontconfig; `fontconfig-dlopen` makes that a
+# runtime dlopen that simply fails on the static musl binary, leaving
+# system fonts empty, which is fine because `src/fonts.rs` registers
+# the faces we ship.
+mister = [
+    "slint/std",
+    "slint/renderer-software",
+    "dep:libc",
+    "dep:fontique",
+]
+# Desktop build plus the software renderer, for the snapshot bin.
+snapshot = ["desktop", "slint/renderer-software"]
+
+[dependencies]
+zaparoo-core = { path = "../zaparoo-core" }
+zaparoo-app = { path = "../zaparoo-app" }
+zaparoo-build-info = { path = "../build-info" }
+# `unstable-fontique-010` exposes the shared font collection so the embedded
+# script faces can be registered for fallback (src/fonts.rs).
+slint = { version = "=1.17.1", default-features = false, features = ["compat-1-2", "unstable-fontique-010"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+base64.workspace = true
+qrcode = { workspace = true }
+semver = { workspace = true }
+# `bmp` is here for the user's own override artwork; the bundled art is
+# all PNG. See docs/customization.md for the accepted types.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
+resvg = { version = "0.47", default-features = false }
+libc = { version = "0.2", optional = true }
+# Same version Slint 1.17 resolves; only here to turn on `fontconfig-dlopen`
+# (Cargo unifies the feature onto Slint's own fontique dependency).
+fontique = { version = "0.10", optional = true, default-features = false, features = ["fontconfig-dlopen"] }
+time.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# The Hub cold-boot cover manifest is the one sanctioned disk cache; it
+# is a small TOML path list (see src/hub_covers.rs).
+toml.workspace = true
+
+[build-dependencies]
+slint-build = "=1.17.1"
+
+[lints]
+workspace = true

@@ -1,0 +1,543 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The detailed list layout shared by Games, Favorites, Recents and
+// Systems: BrowseListDetailView.qml's card split into BrowseList.qml's
+// rows and BrowseDetailPane.qml's cover, title and metadata table. Rust
+// windows the rows and pushes the row metrics; every other length comes
+// from the browse layout profile in `Layout`.
+
+import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { GlyphSource, SelectionBar } from "chrome.slint";
+import { GridCell, MarqueeCaption } from "tiles.slint";
+
+// One metadata table row: a canonical key the vocabulary translates,
+// plus Core's value.
+export struct DetailRow {
+    key: string,
+    value: string,
+}
+
+// Format.qml's metadata label vocabulary: one set of strings for the
+// detail pane and the details modal. Unknown keys read as themselves.
+export global MetaLabels {
+    public pure function label(key: string) -> string {
+        if (key == "system") { return @tr("System"); }
+        if (key == "platform") { return @tr("Platform"); }
+        if (key == "category") { return @tr("Category"); }
+        if (key == "year") { return @tr("Year"); }
+        if (key == "release_date") { return @tr("Release date"); }
+        if (key == "genre") { return @tr("Genre"); }
+        if (key == "players") { return @tr("Players"); }
+        if (key == "play_mode") { return @tr("Play mode"); }
+        if (key == "cooperative") { return @tr("Cooperative"); }
+        if (key == "developer") { return @tr("Developer"); }
+        if (key == "publisher") { return @tr("Publisher"); }
+        if (key == "manufacturer") { return @tr("Manufacturer"); }
+        if (key == "rating") { return @tr("Rating"); }
+        if (key == "filename") { return @tr("Filename"); }
+        return key;
+    }
+    // The packed form a narrow label column falls back to; empty when
+    // a key has none.
+    public pure function short(key: string) -> string {
+        if (key == "system") { return @tr("Sys"); }
+        if (key == "platform") { return @tr("Plat"); }
+        if (key == "category") { return @tr("Cat"); }
+        if (key == "year") { return @tr("Yr"); }
+        if (key == "release_date") { return @tr("Date"); }
+        if (key == "genre") { return @tr("Gen"); }
+        if (key == "players") { return @tr("Plyr"); }
+        if (key == "play_mode") { return @tr("Mode"); }
+        if (key == "cooperative") { return @tr("Co-op"); }
+        if (key == "developer") { return @tr("Dev"); }
+        if (key == "publisher") { return @tr("Pub"); }
+        if (key == "manufacturer") { return @tr("Mfr"); }
+        if (key == "rating") { return @tr("Rtg"); }
+        if (key == "filename") { return @tr("File"); }
+        return "";
+    }
+}
+
+// BrowseList.qml: the windowed rows with the inverse-video selection
+// bar, the scrolling caption and the favorite heart. Rows are the
+// slice Rust centered on the selection; `selected` is local to it.
+export component BrowseList inherits Rectangle {
+    in property <[GridCell]> rows: [];
+    in property <int> selected: -1;
+    in property <bool> focus-ready: true;
+    in property <int> activate-pulse: 0;
+    in property <int> release-pulse: 0;
+    in property <bool> settling: false;
+    in property <length> row-height: Sizing.pct-h(6);
+    in property <bool> show-chrome: true;
+    callback row-hovered(int);
+    callback row-clicked(int);
+    callback row-right-clicked(int);
+    callback empty-right-clicked();
+    callback wheel(int);
+
+    background: root.show-chrome ? Theme.surface-card : transparent;
+    border-radius: root.show-chrome ? Layout.card-radius : 0px;
+    border-width: root.show-chrome ? Sizing.card-border-width : 0px;
+    border-color: Theme.border-mid;
+    clip: true;
+
+    property <length> stride: root.row-height + Layout.row-spacing;
+    property <length> heart-size: Sizing.pct-h(3.2);
+
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.up && event.button == PointerEventButton.right) {
+                root.empty-right-clicked();
+            }
+        }
+        scroll-event(event) => {
+            if (event.delta-y != 0) {
+                root.wheel(event.delta-y < 0 ? 1 : -1);
+                return accept;
+            }
+            reject
+        }
+    }
+
+    for row[i] in root.rows: Rectangle {
+        x: Layout.card-padding-left;
+        y: Layout.card-padding-top + i * root.stride;
+        width: parent.width - Layout.card-padding-left - Layout.card-padding-right;
+        height: root.row-height;
+        // The highlight waits for the host to finalize the selection, so
+        // row 0 never lights up before a restore lands.
+        property <bool> highlighted: i == root.selected && root.focus-ready;
+        property <length> favorite-slot: row.favorite ? Layout.favorite-right-padding + root.heart-size : 0px;
+
+        bar := SelectionBar {
+            width: 100%;
+            height: 100%;
+            active: highlighted;
+            activate-pulse: root.activate-pulse;
+            release-pulse: root.release-pulse;
+            screen-settling: root.settling;
+            radius: Layout.row-radius;
+        }
+
+        MarqueeCaption {
+            x: Layout.row-text-left-padding;
+            y: 0;
+            width: Math.max(0px, parent.width - Layout.row-text-left-padding - Layout.row-text-right-padding - favorite-slot);
+            height: parent.height;
+            content: row.name;
+            tags: row.tags;
+            focused: highlighted;
+            center-content: false;
+            caption-font-size: Sizing.font-section;
+            caption-weight: bar.content-weight;
+            caption-color: highlighted ? bar.content-color : Theme.text-label;
+            tags-color: highlighted ? Theme.on-accent-muted : Theme.text-variant;
+        }
+
+        if row.favorite: Image {
+            x: parent.width - Layout.favorite-right-padding - root.heart-size;
+            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            width: root.heart-size;
+            height: root.heart-size;
+            source: GlyphSource.glyph("icons/Heart", root.heart-size, Colors.transparent);
+        }
+
+        TouchArea {
+            mouse-cursor: pointer;
+            changed has-hover => {
+                if (self.has-hover) { root.row-hovered(i); }
+            }
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.up) {
+                    if (event.button == PointerEventButton.right) {
+                        root.row-right-clicked(i);
+                    } else if (event.button == PointerEventButton.left) {
+                        root.row-clicked(i);
+                    }
+                }
+            }
+            scroll-event(event) => {
+                if (event.delta-y != 0) {
+                    root.wheel(event.delta-y < 0 ? 1 : -1);
+                    return accept;
+                }
+                reject
+            }
+        }
+    }
+}
+
+// BrowseDetailPane.qml: the focused row's cover (or the file chip once
+// Core confirmed there is none, or the wordmark for a system without
+// logo art), the title, and the label/value metadata table. Sections
+// stack per the detail profile: cover above metadata, or side by side.
+export component BrowseDetailPane inherits Rectangle {
+    in property <string> title: "";
+    in property <bool> show-title: true;
+    in property <image> cover;
+    in property <bool> has-cover: false;
+    // Core confirmed no art exists: show the chip. Pending fetches stay
+    // blank, like the grid tiles.
+    in property <bool> cover-absent: false;
+    // A system row with no bundled logo: the fitted name stands in.
+    in property <bool> wordmark: false;
+    in property <string> placeholder-key: "icons/File";
+    in property <[DetailRow]> rows: [];
+    in property <bool> loading: false;
+    // Held rapid navigation hides the pane's content entirely.
+    in property <bool> suppressed: false;
+    in property <string> loading-text: @tr("Loading…");
+    in property <bool> show-chrome: true;
+
+    background: root.show-chrome ? Theme.surface-card : transparent;
+    border-radius: root.show-chrome ? Layout.card-radius : 0px;
+    border-width: root.show-chrome ? Sizing.card-border-width : 0px;
+    border-color: Theme.border-mid;
+    clip: true;
+
+    // Content box inside the pane padding.
+    property <length> content-x: Layout.pane-padding-left;
+    property <length> content-y: Layout.pane-padding-top;
+    property <length> content-w: Math.max(0px, root.width - Layout.pane-padding-left - Layout.pane-padding-right);
+    property <length> content-h: Math.max(0px, root.height - Layout.pane-padding-top - Layout.pane-padding-bottom);
+    property <bool> horizontal: !Layout.detail-vertical;
+    property <int> share-total: Math.max(1, Layout.image-share + Layout.metadata-share);
+    property <length> primary-span: root.horizontal
+        ? Math.floor((root.content-w - Layout.section-gap) * Layout.image-share / root.share-total / 1px) * 1px
+        : Math.floor((root.content-h - Layout.section-gap) * Layout.image-share / root.share-total / 1px) * 1px;
+    property <bool> visible-content: !root.suppressed;
+    property <bool> title-visible: root.visible-content && root.show-title && root.title != "";
+    // Image slot: the share-based span keeps the cover footprint stable
+    // from the first frame; with a title the profile's ratio applies.
+    property <length> image-avail-w: Math.max(0px, root.content-w - Layout.image-padding-left - Layout.image-padding-right);
+    property <length> image-limit: root.title-visible
+        ? Math.floor(root.content-h * Layout.image-height-ratio-with-title / 100 / 1px) * 1px
+        : Math.max(0px, root.primary-span - Layout.image-bottom-margin);
+    property <length> image-slot-x: root.horizontal ? 0px : Layout.image-padding-left;
+    property <length> image-slot-w: root.horizontal
+        ? Math.max(0px, root.primary-span)
+        : Math.max(0px, Math.min(root.image-avail-w, root.image-avail-w + Layout.image-reserved-width));
+    property <length> image-slot-h: root.horizontal
+        ? root.content-h
+        : Math.max(0px, Math.min(root.content-h, Math.min(root.image-avail-w, root.image-limit) + Layout.image-reserved-height));
+    property <length> secondary-span: root.horizontal
+        ? Math.max(0px, root.content-w - root.primary-span - Layout.section-gap)
+        : Math.max(0px, root.content-h - root.image-slot-h - Layout.section-gap);
+    property <length> metadata-x: root.horizontal ? root.primary-span + Layout.section-gap : 0px;
+    property <length> metadata-y: root.horizontal ? 0px : root.image-slot-h + Layout.section-gap;
+    property <length> metadata-w: root.horizontal ? root.secondary-span : root.content-w;
+    property <length> metadata-h: root.horizontal ? root.content-h : root.secondary-span;
+    property <length> inner-x: root.metadata-x + (root.horizontal ? Layout.metadata-padding-left : Layout.metadata-left-margin);
+    property <length> inner-y: root.metadata-y + (root.horizontal ? Layout.metadata-padding-top : 0px);
+    property <length> inner-w: Math.max(0px, root.metadata-w
+        - (root.horizontal ? Layout.metadata-padding-left + Layout.metadata-padding-right : Layout.metadata-left-margin + Layout.metadata-right-margin));
+    property <length> inner-h: Math.max(0px, root.metadata-h - (root.horizontal ? Layout.metadata-padding-top + Layout.metadata-padding-bottom : 0px));
+
+    // Title: up to three wrapped lines, elided.
+    property <length> title-line: Math.ceil(Theme.ascent(Sizing.font-title) * 1.362 / 1px) * 1px;
+    property <length> title-h: root.title-visible ? Math.min(3 * root.title-line, title-measure.preferred-height) : 0px;
+    property <length> body-top: root.title-visible ? root.title-h + Layout.title-bottom-margin : 0px;
+    property <bool> bottom-aligned-compact: !root.title-visible && !root.horizontal && Layout.metadata-bottom-aligned;
+    property <length> body-y: root.body-top + (root.bottom-aligned-compact ? 0px : Layout.metadata-top-margin);
+
+    // Tag rows never sit shorter than the font's real line box.
+    property <length> tag-row-h: Math.max(Layout.tag-row-height, row-measure.preferred-height);
+    property <int> row-count: root.rows.length;
+    property <length> natural-h: root.row-count <= 0 ? 0px
+        : root.row-count * root.tag-row-h + (root.row-count - 1) * Layout.tag-row-spacing;
+    property <length> compact-h: Math.min(root.metadata-h, root.natural-h);
+    property <length> body-h: root.horizontal
+        ? Math.max(0px, root.inner-h - root.body-y)
+        : (root.title-visible
+            ? Math.max(0px, root.inner-h - root.body-y + Layout.metadata-height-adjustment)
+            : (root.bottom-aligned-compact
+                ? Math.max(0px, Math.min(root.compact-h + Layout.metadata-top-margin, root.inner-h))
+                : Math.max(0px, Math.min(root.compact-h, root.inner-h - root.body-y))));
+    property <length> table-y: root.bottom-aligned-compact ? Math.max(0px, root.body-h - root.natural-h) : 0px;
+
+    // Label column: the widest full label on screen plus the hinting
+    // slack; when a profile caps the column and the full labels exceed
+    // it, every row packs to its short form instead of truncating.
+    property <length> slack: Theme.crt ? 0px : 2px;
+    property <length> natural-label-w: Math.max(m0.preferred-width, Math.max(m1.preferred-width, Math.max(m2.preferred-width,
+        Math.max(m3.preferred-width, Math.max(m4.preferred-width, Math.max(m5.preferred-width, Math.max(m6.preferred-width, m7.preferred-width)))))))
+        + (root.row-count > 0 ? root.slack : 0px);
+    property <length> short-label-w: Math.max(s0.preferred-width, Math.max(s1.preferred-width, Math.max(s2.preferred-width,
+        Math.max(s3.preferred-width, Math.max(s4.preferred-width, Math.max(s5.preferred-width, Math.max(s6.preferred-width, s7.preferred-width)))))))
+        + (root.row-count > 0 ? root.slack : 0px);
+    property <bool> use-short: Layout.metadata-label-max-width > 0px && root.natural-label-w > Layout.metadata-label-max-width;
+    property <length> label-w: root.use-short
+        ? Math.min(root.short-label-w, Layout.metadata-label-max-width)
+        : root.natural-label-w;
+    property <length> label-gap: Sizing.pct-w(1.4);
+    pure function row-label(key: string) -> string {
+        if (root.use-short && MetaLabels.short(key) != "") { return MetaLabels.short(key); }
+        return MetaLabels.label(key);
+    }
+    pure function key-at(i: int) -> string {
+        return i < root.rows.length ? root.rows[i].key : "";
+    }
+
+    // Measurement texts (never painted).
+    title-measure := Text {
+        visible: false;
+        width: root.inner-w;
+        wrap: word-wrap;
+        text: root.title;
+        font-size: Sizing.font-title;
+    }
+    row-measure := Text { visible: false; text: "Ag"; font-size: Sizing.font-small; }
+    m0 := Text { visible: false; text: MetaLabels.label(root.key-at(0)); font-size: Sizing.font-small; }
+    m1 := Text { visible: false; text: MetaLabels.label(root.key-at(1)); font-size: Sizing.font-small; }
+    m2 := Text { visible: false; text: MetaLabels.label(root.key-at(2)); font-size: Sizing.font-small; }
+    m3 := Text { visible: false; text: MetaLabels.label(root.key-at(3)); font-size: Sizing.font-small; }
+    m4 := Text { visible: false; text: MetaLabels.label(root.key-at(4)); font-size: Sizing.font-small; }
+    m5 := Text { visible: false; text: MetaLabels.label(root.key-at(5)); font-size: Sizing.font-small; }
+    m6 := Text { visible: false; text: MetaLabels.label(root.key-at(6)); font-size: Sizing.font-small; }
+    m7 := Text { visible: false; text: MetaLabels.label(root.key-at(7)); font-size: Sizing.font-small; }
+    s0 := Text { visible: false; text: root.row-label(root.key-at(0)); font-size: Sizing.font-small; }
+    s1 := Text { visible: false; text: root.row-label(root.key-at(1)); font-size: Sizing.font-small; }
+    s2 := Text { visible: false; text: root.row-label(root.key-at(2)); font-size: Sizing.font-small; }
+    s3 := Text { visible: false; text: root.row-label(root.key-at(3)); font-size: Sizing.font-small; }
+    s4 := Text { visible: false; text: root.row-label(root.key-at(4)); font-size: Sizing.font-small; }
+    s5 := Text { visible: false; text: root.row-label(root.key-at(5)); font-size: Sizing.font-small; }
+    s6 := Text { visible: false; text: root.row-label(root.key-at(6)); font-size: Sizing.font-small; }
+    s7 := Text { visible: false; text: root.row-label(root.key-at(7)); font-size: Sizing.font-small; }
+
+    content := Rectangle {
+        x: root.content-x;
+        y: root.content-y;
+        width: root.content-w;
+        height: root.content-h;
+        clip: true;
+
+        image-slot := Rectangle {
+            x: root.image-slot-x;
+            y: 0;
+            width: root.image-slot-w;
+            height: root.image-slot-h;
+            clip: true;
+            property <length> art-x: root.horizontal ? Layout.image-padding-left : 0px;
+            property <length> art-y: Layout.image-padding-top;
+            property <length> art-w: Math.max(0px, self.width - (root.horizontal ? Layout.image-padding-left + Layout.image-padding-right : 0px));
+            property <length> art-h: Math.max(0px, self.height - Layout.image-padding-top - Layout.image-padding-bottom);
+
+            if root.visible-content && root.has-cover: Image {
+                x: parent.art-x;
+                y: parent.art-y;
+                width: parent.art-w;
+                height: parent.art-h;
+                source: root.cover;
+                image-fit: contain;
+            }
+            // Only a confirmed no-cover state shows the chip; the pane
+            // never shows an hourglass.
+            if root.visible-content && !root.has-cover && !root.wordmark && root.cover-absent: Image {
+                property <length> s: Math.round(parent.art-w * 0.5 / 1px) * 1px;
+                x: parent.art-x + Math.round((parent.art-w - self.s) / 2px) * 1px;
+                y: parent.art-y + Math.round((parent.art-h - self.s) / 2px) * 1px;
+                width: self.s;
+                height: self.s;
+                source: GlyphSource.glyph(root.placeholder-key, self.s, Theme.text-label);
+            }
+            // Wordmark fallback for a system without curated logo art
+            // (the grid tile's fitted-text treatment).
+            if root.visible-content && !root.has-cover && root.wordmark && root.title != "": Text {
+                property <length> box-h: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
+                x: parent.art-x + Sizing.pct-h(1);
+                y: parent.art-y + Sizing.pct-h(1);
+                width: Math.max(0px, parent.art-w - 2 * Sizing.pct-h(1));
+                height: self.box-h;
+                text: root.title;
+                color: Theme.logo-focus-primary;
+                font-size: Math.max(Sizing.font-size(2.8), Math.min(Sizing.font-size(5.8), Math.floor(self.box-h / 2 / 1.362 / 1px) * 1px));
+                font-weight: 600;
+                wrap: word-wrap;
+                overflow: elide;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        metadata := Rectangle {
+            x: root.inner-x;
+            y: root.inner-y;
+            width: root.inner-w;
+            height: root.inner-h;
+            clip: true;
+
+            if root.title-visible: Text {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: root.title-h;
+                wrap: word-wrap;
+                overflow: elide;
+                text: root.title;
+                color: Theme.text-primary;
+                font-size: Sizing.font-title;
+            }
+
+            body := Rectangle {
+                x: 0;
+                y: root.body-y;
+                width: parent.width;
+                height: root.body-h;
+                clip: true;
+
+                for meta[j] in root.rows: Rectangle {
+                    x: 0;
+                    y: root.table-y + j * (root.tag-row-h + Layout.tag-row-spacing);
+                    width: parent.width;
+                    height: root.tag-row-h;
+                    visible: root.visible-content;
+                    Text {
+                        x: 0;
+                        y: Math.round((parent.height - self.height) / 2px) * 1px;
+                        width: Math.min(root.label-w, parent.width);
+                        horizontal-alignment: right;
+                        overflow: elide;
+                        text: root.row-label(meta.key);
+                        color: Theme.text-label;
+                        font-size: Sizing.font-small;
+                    }
+                    Text {
+                        x: root.label-w + root.label-gap;
+                        y: Math.round((parent.height - self.height) / 2px) * 1px;
+                        width: Math.max(0px, parent.width - root.label-w - root.label-gap);
+                        overflow: elide;
+                        text: meta.value;
+                        color: Theme.text-primary;
+                        font-size: Sizing.font-small;
+                    }
+                }
+            }
+        }
+
+        // The loading cue paints only when the pane has nothing else to
+        // show, after a short delay so quick loads never flash it.
+        property <bool> empty-loading: root.loading && root.visible-content && !root.has-cover && root.row-count == 0 && root.title == "";
+        property <bool> loading-shown: false;
+        changed empty-loading => {
+            if (!self.empty-loading) { self.loading-shown = false; }
+        }
+        Timer {
+            interval: 150ms;
+            running: content.empty-loading && !content.loading-shown;
+            triggered => { content.loading-shown = content.empty-loading; }
+        }
+        if content.loading-shown: HorizontalLayout {
+            property <length> glyph: Sizing.font-size(3);
+            x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
+            y: Math.round((parent.height - self.glyph) / 2px) * 1px;
+            height: self.glyph;
+            spacing: Sizing.pct-w(0.6);
+            Image {
+                width: parent.height;
+                height: parent.height;
+                source: GlyphSource.glyph("icons/Loading", self.height, Theme.text-primary);
+            }
+            Text {
+                vertical-alignment: center;
+                text: root.loading-text;
+                color: Theme.text-primary;
+                font-size: Sizing.font-size(3);
+            }
+        }
+    }
+}
+
+// BrowseListDetailView.qml: the card, split by the list profile's shares
+// (rows left and detail right, or rows above detail in TATE).
+export component BrowseListDetailView inherits Rectangle {
+    in property <[GridCell]> rows: [];
+    in property <int> selected: -1;
+    in property <bool> focus-ready: true;
+    in property <int> activate-pulse: 0;
+    in property <int> release-pulse: 0;
+    in property <bool> settling: false;
+    in property <length> row-height: Sizing.pct-h(6);
+    in property <string> detail-title: "";
+    in property <bool> show-title: true;
+    in property <image> cover;
+    in property <bool> has-cover: false;
+    in property <bool> cover-absent: false;
+    in property <bool> wordmark: false;
+    in property <string> placeholder-key: "icons/File";
+    in property <[DetailRow]> detail-rows: [];
+    in property <bool> detail-loading: false;
+    in property <bool> suppressed: false;
+    in property <string> loading-text: @tr("Loading…");
+    callback row-hovered(int);
+    callback row-clicked(int);
+    callback row-right-clicked(int);
+    callback empty-right-clicked();
+    callback wheel(int);
+
+    background: Theme.surface-card;
+    border-radius: Layout.card-radius;
+    border-width: Sizing.card-border-width;
+    border-color: Theme.border-mid;
+    clip: true;
+
+    property <bool> vertical: Layout.list-vertical;
+    property <int> share-total: Math.max(1, Layout.list-share + Layout.detail-share);
+    property <length> list-span: root.vertical
+        ? Math.max(0px, Math.floor((root.height - Layout.divider-width) * Layout.list-share / root.share-total / 1px) * 1px + Layout.divider-margin)
+        : Math.max(0px, Math.floor((root.width - Layout.divider-width) * Layout.list-share / root.share-total / 1px) * 1px + Layout.divider-margin);
+    property <length> detail-span: root.vertical
+        ? Math.max(0px, root.height - root.list-span - Layout.divider-width)
+        : Math.max(0px, root.width - root.list-span - Layout.divider-width);
+
+    BrowseList {
+        x: 0;
+        y: 0;
+        width: root.vertical ? root.width : root.list-span;
+        height: root.vertical ? root.list-span : root.height;
+        show-chrome: false;
+        rows: root.rows;
+        selected: root.selected;
+        focus-ready: root.focus-ready;
+        activate-pulse: root.activate-pulse;
+        release-pulse: root.release-pulse;
+        settling: root.settling;
+        row-height: root.row-height;
+        row-hovered(i) => { root.row-hovered(i); }
+        row-clicked(i) => { root.row-clicked(i); }
+        row-right-clicked(i) => { root.row-right-clicked(i); }
+        empty-right-clicked => { root.empty-right-clicked(); }
+        wheel(delta) => { root.wheel(delta); }
+    }
+
+    Rectangle {
+        x: root.vertical ? 0px : root.list-span;
+        y: root.vertical ? root.list-span : 0px;
+        width: root.vertical ? root.width : Layout.divider-width;
+        height: root.vertical ? Layout.divider-width : root.height;
+        background: Theme.border-mid;
+    }
+
+    BrowseDetailPane {
+        x: root.vertical ? 0px : root.list-span + Layout.divider-width;
+        y: root.vertical ? root.list-span + Layout.divider-width : 0px;
+        width: root.vertical ? root.width : root.detail-span;
+        height: root.vertical ? root.detail-span : root.height;
+        show-chrome: false;
+        title: root.detail-title;
+        show-title: root.show-title;
+        cover: root.cover;
+        has-cover: root.has-cover;
+        cover-absent: root.cover-absent;
+        wordmark: root.wordmark;
+        placeholder-key: root.placeholder-key;
+        rows: root.detail-rows;
+        loading: root.detail-loading;
+        suppressed: root.suppressed;
+        loading-text: root.loading-text;
+    }
+}

@@ -1,0 +1,26 @@
+# Zaparoo Frontend
+# Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+#
+# `cross` container customization for the Slint demo's ARM32 build.
+# libfontconfig1-dev is needed by the HOST-side slint compiler
+# (build dependency) to pre-render glyphs; the target binary itself
+# has no fontconfig dependency.
+
+[target.armv7-unknown-linux-gnueabihf]
+pre-build = ["apt-get update && apt-get install --assume-yes libfontconfig1-dev"]
+
+# MiSTer deploy target: fully static musl build. The MiSTer image ships
+# glibc 2.31 while cross's gnueabihf image links against a newer glibc,
+# so the dynamic build cannot run there; static musl sidesteps glibc
+# symbol versioning entirely (same philosophy as the static Qt build).
+[target.armv7-unknown-linux-musleabihf]
+pre-build = ["apt-get update && apt-get install --assume-yes libfontconfig1-dev"]
+
+# `cross` mounts only the cargo workspace (`rust/`) into the build container,
+# but `ui/app.slint` imports its fonts from the repo's shared
+# `resources/fonts/`. Every `cross` invocation exports this variable (see the
+# `slint-arm32` recipe, `scripts/deploy-mister-slint.sh`, and CI) so the
+# directory is mounted at the same absolute path inside the container.
+[build.env]
+volumes = ["ZAPAROO_RESOURCES_DIR"]

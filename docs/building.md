@@ -347,8 +347,15 @@ After changing a preset, run `cmake --preset <name>` once by hand, or
 
 The `_lint` recipe bind-mounts three host dirs into the otherwise
 ephemeral container: the cargo registry (index + crate sources),
-cargo-deny's advisory DB, and ccache's object dir. Delete
-`.docker-cache/` to reset them; it is gitignored. Do **not** add a
+cargo-deny's advisory DB, and ccache's object dir. Direct Rust lint also
+stores Cargo artifacts in `.docker-cache/rust-target`, available through
+the repository bind mount. It must not share the host's `rust/target`:
+container source and registry paths differ, invalidating Cargo fingerprints
+when switching between Docker lint and host builds. This target-directory
+setting applies only to the Rust lint command; CMake/Corrosion keeps its
+existing separate build directories.
+
+Delete `.docker-cache/` to reset these caches; it is gitignored. Do **not** add a
 mount over `/usr/local/rustup` — it would shadow the toolchains baked
 into the lint image and break the cmake-driven lint path, which needs
 a resolvable toolchain before `/workdir` is even consulted.
@@ -442,6 +449,56 @@ Use this to reproduce the MiSTer rendering path on a desktop:
 ```bash
 QT_QPA_PLATFORM=linuxfb QT_QUICK_BACKEND=software ./build/bin/frontend
 ```
+
+### Slint on newer MiSTer kernels
+
+The Slint `/dev/fb0` presenter first tries ordinary framebuffer mmap. If it
+fails with `ENODEV` on a framebuffer character device, it maps the physical
+range reported by `FBIOGET_FSCREENINFO` through `/dev/mem`. This ports the
+compatibility fix from `ad13282` for kernels whose `MiSTer_fb` driver lacks
+`fb_mmap`; working drivers keep the native path. No physical address is
+hardcoded, and other mmap errors do not trigger the fallback.
+
+The fallback requires existing permission to open `/dev/mem`; it does not
+change permissions. Startup logs report activation or the underlying error.
+Set `ZAPAROO_FB_FALLBACK=off` to disable it for diagnosis. Slint retains its
+cached render buffer and dirty-row copies in either case, so Qt's optional
+full-surface `staged` copy mode is not needed. Framebuffer clears and pixel
+stores use aligned volatile writes: ARM Device-memory mappings can fault on
+unaligned accesses emitted by libc `memset` or `memcpy`. DDR and latch presenters are
+unchanged because they do not mmap the fbdev surface.
+
+Build with `just slint-arm32`. Host tests cover fallback selection and mapping
+bounds without opening either hardware device; a device boot is still needed
+to verify the affected kernel.
+
+### Optional MiSTer HDMI scanout (local testing)
+
+A coordinated Main/Menu/module integration can replace fb0 copies with
+write-combined RGB565 slots and vblank-latched flips. It is not enabled by
+`--latch` alone: Main must offer and acknowledge a private inherited bus lease
+**after** frontend video probing. Missing components fall back to ordinary fb0;
+`--no-latch` opts out. Managed display restarts go through Main for a fresh lease.
+
+Initial eligibility is HDMI on the qualified `6.18.38-MiSTer` stack, with
+`/dev/zaparoo-scanout` ABI v1. Main optionally loads
+`/media/fat/zaparoo/modules/6.18.38-MiSTer/zaparoo_scanout.ko`. Older/unknown
+kernels, native CRT and Direct Video retain existing paths. Never force-load the demo's
+5.15 module, replace `mem_wc`/MagiK modules, or claim independent renderers can
+safely run concurrently.
+
+Automatic keeps **960x540 rendering into 1920x1080 HDMI**. Physical output timing
+and source geometry remain separate. Default rendering is fixed at the resolved
+Automatic/explicit size; `--adaptive-render` is experimental and opt-in.
+Desktop remains FemtoVG. GPL module/RTL implementation lives only in the Menu
+fork; frontend uses the public protocol and namespaced UAPI.
+
+Build frontend with `just slint-arm32`; run `just lint-slint`, `just test-slint`,
+`just lint` and `just test`. Main requires its ARM cross-build. Menu's
+`README.md` and `kernel/scanout-slots/README.md` cover RTL tests, module
+provenance and exact kernel qualification. Local gates do
+not establish hardware smoothness or lifecycle acceptance. No release/CI
+plumbing or device deployment is implied by these builds.
 
 ## Underlying mechanics
 

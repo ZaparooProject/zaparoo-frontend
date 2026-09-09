@@ -6,12 +6,22 @@
 targets = [
     { triple = "x86_64-unknown-linux-gnu" },
     { triple = "armv7-unknown-linux-gnueabihf" },
+    # Slint frontend: static musl build for MiSTer (see rust/Cross.toml).
+    { triple = "armv7-unknown-linux-musleabihf" },
 ]
 
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked  = "deny"
-ignore  = []
+# Unmaintained-crate notices (not vulnerabilities) carried by the Slint
+# dependency tree: `paste` through Slint's macros, `rustybuzz` and
+# `ttf-parser` through usvg and Slint's text stack. Nothing in this
+# repository can replace them; re-check the list on every Slint bump.
+ignore  = [
+    "RUSTSEC-2024-0436", # paste
+    "RUSTSEC-2026-0206", # rustybuzz
+    "RUSTSEC-2026-0192", # ttf-parser
+]
 
 [licenses]
 allow = [
@@ -21,10 +31,33 @@ allow = [
     "BSD-3-Clause",
     "Zlib",
     "Unicode-3.0",
+    # libloading (pulled in by Slint's winit/GL stack).
+    "ISC",
     "PolyForm-Noncommercial-1.0.0",
     "LicenseRef-PolyForm-Noncommercial-1.0.0",
 ]
 confidence-threshold = 0.93
+
+# Slint is triple-licensed (GPL-3.0-only OR Royalty-free OR Slint Software
+# License). The project uses the paid Slint Software License, which covers
+# embedded distribution; neither open-source option fits PolyForm NC. One
+# exception per crate keeps the allow list honest for everything else. The
+# list covers the crates in the desktop and `mister` feature graphs; the
+# software renderer only appears under `mister`, so cargo-deny reports its
+# exception as unused on a default-features run.
+exceptions = [
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "slint" },
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "slint-build" },
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "slint-macros" },
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "i-slint-backend-selector" },
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "i-slint-backend-winit" },
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "i-slint-common" },
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "i-slint-compiler" },
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "i-slint-core" },
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "i-slint-core-macros" },
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "i-slint-renderer-femtovg" },
+    { allow = ["LicenseRef-Slint-Software-3.0"], crate = "i-slint-renderer-software" },
+]
 
 [bans]
 multiple-versions    = "deny"
@@ -54,6 +87,16 @@ skip = [
     { crate = "thiserror@2.0.18" },
     { crate = "thiserror-impl@1.0.69" },
     { crate = "thiserror-impl@2.0.18" },
+]
+
+# The Slint dependency tree carries its own duplicate versions (bitflags,
+# hashbrown, rustix, skrifa/read-fonts, tiny-skia, ...). They are internal to
+# that tree and churn on every Slint bump, so they are skipped wholesale while
+# the Qt and Slint frontends coexist. Re-audit with a pinned `skip` list once
+# the Qt crate is deleted at the flip (docs/plans/slint-migration.md).
+skip-tree = [
+    { crate = "slint" },
+    { crate = "slint-build" },
 ]
 
 [sources]

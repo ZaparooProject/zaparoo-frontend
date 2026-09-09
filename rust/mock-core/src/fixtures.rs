@@ -20,14 +20,14 @@ static SYSTEM_DEFAULTS: OnceLock<Mutex<Vec<SystemDefaultFixture>>> = OnceLock::n
 static LAUNCHER_OVERRIDES: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
 
 pub(crate) const MOCK_SYSTEMS: &[(&str, &str, &str)] = &[
-    ("NES", "Nintendo Entertainment System", "Consoles"),
-    ("SNES", "Super Nintendo", "Consoles"),
-    ("Genesis", "Sega Genesis", "Consoles"),
-    ("Nintendo64", "Nintendo 64", "Consoles"),
-    ("Gameboy", "Game Boy", "Handhelds"),
-    ("GameboyColor", "Game Boy Color", "Handhelds"),
-    ("GBA", "Game Boy Advance", "Handhelds"),
-    ("NDS", "Nintendo DS", "Handhelds"),
+    ("NES", "Nintendo Entertainment System", "Console"),
+    ("SNES", "Super Nintendo", "Console"),
+    ("Genesis", "Sega Genesis", "Console"),
+    ("Nintendo64", "Nintendo 64", "Console"),
+    ("Gameboy", "Game Boy", "Handheld"),
+    ("GameboyColor", "Game Boy Color", "Handheld"),
+    ("GBA", "Game Boy Advance", "Handheld"),
+    ("NDS", "Nintendo DS", "Handheld"),
     ("MAME", "MAME", "Arcade"),
     ("NeoGeo", "Neo Geo", "Arcade"),
 ];
@@ -906,3 +906,81 @@ const ALL_GAMES: &[(&str, &str, &str)] = &[
     ("Fatal Fury", "fatfury.neo", "NeoGeo"),
     ("Garou: Mark of the Wolves", "garou.neo", "NeoGeo"),
 ];
+
+/// `media.image` fixture: a deterministic placeholder cover so the frontend
+/// cover pipeline can be exercised without a real Core. The color derives
+/// from the media ref, the size honors `maxSize`, and a border frame plus
+/// diagonal banding make scaling artifacts visible at a glance. Validates
+/// the media ref the way Core does: `mediaId` or a `(system, path)` pair,
+/// never both, never a bare path.
+pub fn media_image_response(params: &Value) -> Result<Value, String> {
+    use base64::Engine as _;
+    let media_id = params.get("mediaId").and_then(Value::as_i64);
+    let system = params.get("system").and_then(Value::as_str).unwrap_or("");
+    let path = params.get("path").and_then(Value::as_str).unwrap_or("");
+    if media_id.is_none() && (system.is_empty() || path.is_empty()) {
+        return Err("invalid params: mediaId or system/path is required".into());
+    }
+    if media_id.is_some() && (!system.is_empty() || !path.is_empty()) {
+        return Err("invalid params: mediaId cannot be mixed with system/path".into());
+    }
+    let max_size = params
+        .get("maxSize")
+        .and_then(Value::as_u64)
+        .unwrap_or(256)
+        .clamp(32, 768) as u32;
+    let height = max_size;
+    let width = (max_size * 3 / 4).max(1);
+
+    // FNV-1a over the media ref for a stable per-game color.
+    let seed = if path.is_empty() {
+        media_id.unwrap_or_default().to_string()
+    } else {
+        path.to_string()
+    };
+    let mut h: u32 = 2_166_136_261;
+    for b in seed.bytes() {
+        h = (h ^ u32::from(b)).wrapping_mul(16_777_619);
+    }
+    let base = [
+        (h >> 16) as u8 | 0x40,
+        (h >> 8) as u8 | 0x40,
+        h as u8 | 0x40,
+    ];
+
+    let mut rgb = Vec::with_capacity((width * height * 3) as usize);
+    for y in 0..height {
+        for x in 0..width {
+            let edge = x < 4 || y < 4 || x >= width - 4 || y >= height - 4;
+            let band = ((x + y) / 24) % 2 == 0;
+            let px = if edge {
+                [16, 20, 24]
+            } else if band {
+                base
+            } else {
+                [base[0] / 2, base[1] / 2, base[2] / 2]
+            };
+            rgb.extend_from_slice(&px);
+        }
+    }
+
+    let mut png_bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png_bytes, width, height);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        let encoded = encoder
+            .write_header()
+            .and_then(|mut writer| writer.write_image_data(&rgb));
+        if let Err(e) = encoded {
+            tracing::warn!("media.image fixture encode failed: {e}");
+            png_bytes.clear();
+        }
+    }
+
+    Ok(json!({
+        "contentType": "image/png",
+        "extension": "png",
+        "data": base64::engine::general_purpose::STANDARD.encode(&png_bytes),
+    }))
+}

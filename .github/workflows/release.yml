@@ -23,6 +23,11 @@ on:
         required: false
         type: boolean
         default: false
+      slint_beta:
+        description: 'Also build the Slint frontend beta ZIP (docs/plans/slint-migration.md)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -219,6 +224,90 @@ jobs:
         run: |
           gh release upload "$BUILD_TAG" \
             "output/release/${{ steps.archive.outputs.name }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+  build-slint-beta-zip:
+    # Beta channel for the Slint frontend while the Qt build is still the
+    # release: manual dispatch only, and only attached to the release when
+    # `upload` is set. Needs no Qt toolchain image; the static musl binary
+    # comes from `cross` (docs/plans/slint-migration.md, step 3).
+    name: Build Slint beta ZIP
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.slint_beta }}
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ format('refs/tags/{0}', inputs.tag) }}
+
+      - name: Resolve Main_MiSTer release tag
+        id: main-mister
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag=$(gh api repos/ZaparooProject/Main_MiSTer/releases/latest --jq '.tag_name')
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "Could not resolve latest Main_MiSTer release" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Menu_MiSTer release tag
+        id: menu-mister
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MENU_TAG_INPUT: ${{ inputs.menu_tag }}
+        run: |
+          tag="$MENU_TAG_INPUT"
+          if [ -z "$tag" ]; then
+            tag=$(gh api repos/ZaparooProject/Menu_MiSTer/releases/latest --jq '.tag_name')
+          fi
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "Could not resolve Menu_MiSTer release" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust and just
+        run: |
+          rustup toolchain install 1.97.0 \
+            --profile minimal \
+            --target armv7-unknown-linux-musleabihf
+          cargo install --locked --version 1.50.0 just
+
+      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+        with:
+          tool: cross
+
+      - name: Build Slint beta ZIP
+        run: ./scripts/package-mister-release.sh --slint "$BUILD_TAG"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAIN_MISTER_TAG: ${{ steps.main-mister.outputs.tag }}
+          MENU_MISTER_TAG: ${{ steps.menu-mister.outputs.tag }}
+          # Mounted into the cross container; see rust/Cross.toml.
+          ZAPAROO_RESOURCES_DIR: ${{ github.workspace }}/resources
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zaparoo-frontend-${{ env.BUILD_TAG }}-slint.zip
+          path: output/release/zaparoo-frontend-${{ env.BUILD_TAG }}-slint.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload to release
+        if: ${{ inputs.upload }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$BUILD_TAG" \
+            "output/release/zaparoo-frontend-${BUILD_TAG}-slint.zip" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
 

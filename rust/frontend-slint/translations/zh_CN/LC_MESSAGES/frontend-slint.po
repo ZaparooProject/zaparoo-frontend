@@ -1,0 +1,1568 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-09-08 04:31+0000\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: scripts/convert-ts-catalogs.py\n"
+
+#: rust/frontend-slint/ui/about.slint:48
+msgid "About / License"
+msgstr "关于 / 许可"
+
+#: rust/frontend-slint/ui/about.slint:82
+msgid "Zaparoo Frontend"
+msgstr ""
+
+#: rust/frontend-slint/ui/about.slint:83
+msgid "Version {} · {} · {}"
+msgstr "版本 {0} · {1} · {2}"
+
+#: rust/frontend-slint/ui/about.slint:84
+msgid "Built {}"
+msgstr "构建于 {0}"
+
+#: rust/frontend-slint/ui/about.slint:85
+msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
+msgstr "版权所有 2026 Wizzo Pty Ltd 及 Zaparoo Project 贡献者。"
+
+#: rust/frontend-slint/ui/about.slint:86
+msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
+msgstr "源码依据 PolyForm Noncommercial License 1.0.0 提供。可免费用于个人和非商业用途。商业使用或重新分发需要单独许可。"
+
+#: rust/frontend-slint/ui/about.slint:87
+msgid "Commercial licensing: legal@zaparoo.com"
+msgstr "商业许可：legal@zaparoo.com"
+
+#: rust/frontend-slint/ui/about.slint:88
+msgid "Project: https://zaparoo.org"
+msgstr "项目：https://zaparoo.org"
+
+#: rust/frontend-slint/ui/about.slint:89
+msgid "Created by"
+msgstr "创作者"
+
+#: rust/frontend-slint/ui/about.slint:94
+msgid "Translations"
+msgstr "翻译"
+
+#: rust/frontend-slint/ui/about.slint:95
+msgid ""
+"Italiano - Andrea Bogazzi\n"
+"Español - Carlos R.\n"
+"Euskara - devilschile2\n"
+"Français - Wilfried"
+msgstr ""
+
+#: rust/frontend-slint/ui/about.slint:96
+msgid "Full license text in COPYING."
+msgstr "完整许可文本见 COPYING。"
+
+#: rust/frontend-slint/ui/app.slint:731
+msgid "Updating the media database"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:731
+msgid "No games found yet"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:733
+msgid "Your games appear here as Core finds them."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:734
+msgid "Update media database in Settings > Library."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:755 rust/frontend-slint/ui/app.slint:1649
+#: rust/frontend-slint/ui/app.slint:2066
+msgid "Favorites"
+msgstr "收藏"
+
+#: rust/frontend-slint/ui/app.slint:762
+msgid "{} systems"
+msgstr "{0} 个系统"
+
+#: rust/frontend-slint/ui/app.slint:907
+msgid "Hidden"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:946 rust/frontend-slint/ui/app.slint:1902
+msgid "No favorites yet"
+msgstr "还没有收藏"
+
+#: rust/frontend-slint/ui/app.slint:946
+msgid "No systems in this category"
+msgstr "此类别中没有系统"
+
+#: rust/frontend-slint/ui/app.slint:947
+msgid "Loading favorite systems…"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:947 rust/frontend-slint/ui/labels.slint:12
+msgid "Loading systems…"
+msgstr "正在加载系统…"
+
+#: rust/frontend-slint/ui/app.slint:1064
+msgid "Saving…"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1138
+msgid "Go to…"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1147 rust/frontend-slint/ui/app.slint:1788
+msgid "Loading…"
+msgstr "正在加载…"
+
+#: rust/frontend-slint/ui/app.slint:1147
+msgid "No sections"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1210
+msgid "Hold a writable token near the reader"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1224 rust/frontend-slint/ui/app.slint:2134
+#: rust/frontend-slint/ui/app.slint:2182
+msgid "Cancel"
+msgstr "取消"
+
+#: rust/frontend-slint/ui/app.slint:1270
+msgid "Documentation"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1270
+msgid "Write with App"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1283
+msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1284
+msgid "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1650 rust/frontend-slint/ui/app.slint:2067
+msgid "Recently played"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1660
+msgid "{} games"
+msgstr ""
+
+#. background fetch fills rows the user scrolled past.
+#: rust/frontend-slint/ui/app.slint:1663
+msgid "Loading more…"
+msgstr "正在加载更多…"
+
+#: rust/frontend-slint/ui/app.slint:1788
+msgid "Loading game…"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1903
+msgid "Nothing played yet"
+msgstr "还没有游玩记录"
+
+#: rust/frontend-slint/ui/app.slint:1903
+msgid "No games in this system"
+msgstr "此系统中没有游戏"
+
+#: rust/frontend-slint/ui/app.slint:1904
+msgid "Loading favorites…"
+msgstr "正在加载收藏…"
+
+#: rust/frontend-slint/ui/app.slint:1905
+msgid "Loading recently played…"
+msgstr "正在加载最近游玩…"
+
+#: rust/frontend-slint/ui/app.slint:1905
+msgid "Loading games…"
+msgstr "正在加载游戏…"
+
+#: rust/frontend-slint/ui/app.slint:1989
+msgid "Arrows adjust position"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:1997
+msgid "Accept or Back saves"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2093 rust/frontend-slint/ui/app.slint:2117
+#: rust/frontend-slint/ui/app.slint:2145 rust/frontend-slint/ui/app.slint:2241
+#: rust/frontend-slint/ui/app.slint:2261 rust/frontend-slint/ui/labels.slint:84
+msgid "Move"
+msgstr "移动"
+
+#: rust/frontend-slint/ui/app.slint:2106 rust/frontend-slint/ui/app.slint:2110
+#: rust/frontend-slint/ui/app.slint:2217 rust/frontend-slint/ui/app.slint:2234
+#: rust/frontend-slint/ui/app.slint:2248 rust/frontend-slint/ui/app.slint:2263
+#: rust/frontend-slint/ui/app.slint:2273 rust/frontend-slint/ui/app.slint:2281
+#: rust/frontend-slint/ui/app.slint:2293 rust/frontend-slint/ui/app.slint:2306
+msgid "Back"
+msgstr "返回"
+
+#: rust/frontend-slint/ui/app.slint:2109 rust/frontend-slint/ui/app.slint:2204
+#: rust/frontend-slint/ui/app.slint:2285 rust/frontend-slint/ui/app.slint:2297
+msgid "Retry"
+msgstr "重试"
+
+#: rust/frontend-slint/ui/app.slint:2109
+msgid "Done"
+msgstr "完成"
+
+#: rust/frontend-slint/ui/app.slint:2133 rust/frontend-slint/ui/app.slint:2146
+msgid "Select"
+msgstr "选择"
+
+#: rust/frontend-slint/ui/app.slint:2140
+msgid "OK"
+msgstr "确定"
+
+#: rust/frontend-slint/ui/app.slint:2147 rust/frontend-slint/ui/app.slint:2154
+#: rust/frontend-slint/ui/app.slint:2167 rust/frontend-slint/ui/app.slint:2176
+msgid "Close"
+msgstr "关闭"
+
+#: rust/frontend-slint/ui/app.slint:2159 rust/frontend-slint/ui/app.slint:2172
+msgid "Scroll"
+msgstr "滚动"
+
+#: rust/frontend-slint/ui/app.slint:2160 rust/frontend-slint/ui/app.slint:2166
+msgid "Image"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2187
+msgid "Adjust"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2188
+msgid "Save"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2196
+msgid "Reposition"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2197
+msgid "Place"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2204 rust/frontend-slint/ui/app.slint:2211
+#: rust/frontend-slint/ui/app.slint:2232 rust/frontend-slint/ui/app.slint:2247
+#: rust/frontend-slint/ui/app.slint:2311
+msgid "Open"
+msgstr "打开"
+
+#: rust/frontend-slint/ui/app.slint:2205 rust/frontend-slint/ui/app.slint:2225
+#: rust/frontend-slint/ui/app.slint:2312
+msgid "Options"
+msgstr "选项"
+
+#: rust/frontend-slint/ui/app.slint:2206 rust/frontend-slint/ui/app.slint:2212
+#: rust/frontend-slint/ui/app.slint:2298
+msgid "View"
+msgstr ""
+
+#: rust/frontend-slint/ui/app.slint:2254 rust/frontend-slint/ui/app.slint:2268
+msgid "Change"
+msgstr "更改"
+
+#: rust/frontend-slint/ui/app.slint:2255
+msgid "Toggle"
+msgstr "切换"
+
+#: rust/frontend-slint/ui/browse_list.slint:26
+msgid "System"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:27
+msgid "Platform"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:28
+msgid "Category"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:29
+msgid "Year"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:30
+msgid "Release date"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:31
+msgid "Genre"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:32
+msgid "Players"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:33
+msgid "Play mode"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:34
+msgid "Cooperative"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:35
+msgid "Developer"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:36
+msgid "Publisher"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:37
+msgid "Manufacturer"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:38
+msgid "Rating"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:39
+msgid "Filename"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:45
+msgid "Sys"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:46
+msgid "Plat"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:47
+msgid "Cat"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:48
+msgid "Yr"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:49
+msgid "Date"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:50
+msgid "Gen"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:51
+msgid "Plyr"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:52
+msgid "Mode"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:53
+msgid "Co-op"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:54
+msgid "Dev"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:55
+msgid "Pub"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:56
+msgid "Mfr"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:57
+msgid "Rtg"
+msgstr ""
+
+#: rust/frontend-slint/ui/browse_list.slint:58
+msgid "File"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:115
+msgid "Disconnected"
+msgstr "已断开"
+
+#: rust/frontend-slint/ui/chrome.slint:116
+msgid "Reconnecting…"
+msgstr "正在重新连接…"
+
+#: rust/frontend-slint/ui/chrome.slint:117
+msgid "Connecting…"
+msgstr "正在连接…"
+
+#: rust/frontend-slint/ui/chrome.slint:119
+msgid "Core error"
+msgstr "Core 错误"
+
+#: rust/frontend-slint/ui/chrome.slint:119
+msgid "Core error: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:121
+msgid "Indexing paused: game running"
+msgstr ""
+
+#. run; a bare "Indexing: " reads as broken.
+#: rust/frontend-slint/ui/chrome.slint:125
+msgid "Indexing…"
+msgstr "正在索引…"
+
+#. run; a bare "Indexing: " reads as broken.
+#: rust/frontend-slint/ui/chrome.slint:125
+msgid "Indexing: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:128
+msgid "Optimizing database…"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:128
+msgid "Optimizing database: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:130
+msgid "Importing paused: game running"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:132
+msgid "Importing…"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:132
+msgid "Importing: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:134
+msgid "Indexed {} files"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:135
+msgid "Indexing complete"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:136
+msgid "Import failed: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:137
+msgid "Imported {} of {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:138
+msgid "Playtime limit in {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:143
+msgid "{}%"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:453
+msgid "{}/{}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:456
+msgid "{}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:536
+msgid "Page {} / {}"
+msgstr "第 {0} / {1} 页"
+
+#: rust/frontend-slint/ui/chrome.slint:537
+msgid "Page {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:861
+msgid "Nothing here"
+msgstr "这里什么都没有"
+
+#: rust/frontend-slint/ui/chrome.slint:863
+msgid "Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/chrome.slint:899
+msgid "Failed to load"
+msgstr "加载失败"
+
+#: rust/frontend-slint/ui/game_info.slint:80
+msgid "Loading details…"
+msgstr ""
+
+#: rust/frontend-slint/ui/game_info.slint:89
+msgid "Could not load details. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/game_info.slint:124
+msgid "Loading image…"
+msgstr ""
+
+#: rust/frontend-slint/ui/game_info.slint:140
+msgid "This game's file is missing."
+msgstr ""
+
+#: rust/frontend-slint/ui/game_info.slint:175
+msgid "Description"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:19
+msgid "Arcade"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:23
+msgid "Computers"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:24
+msgid "Consoles"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:25
+msgid "Handhelds"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:26
+msgid "Other"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:27
+msgid "Resume"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:27
+msgid "Resume: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:30
+msgid "Update"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:31
+msgid "Settings"
+msgstr "设置"
+
+#: rust/frontend-slint/ui/labels.slint:41
+msgid "{n} system with favorites"
+msgid_plural "{n} systems with favorites"
+msgstr[0] ""
+
+#: rust/frontend-slint/ui/labels.slint:44
+msgid "{n} favorite"
+msgid_plural "{n} favorites"
+msgstr[0] ""
+
+#: rust/frontend-slint/ui/labels.slint:50
+msgid "A-Z"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:51
+msgid "Default"
+msgstr "默认"
+
+#: rust/frontend-slint/ui/labels.slint:52
+msgid "None"
+msgstr ""
+
+#. Games, favorites and recents rows.
+#: rust/frontend-slint/ui/labels.slint:63
+msgid "Details"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:64
+msgid "Add to favorites"
+msgstr "添加到收藏"
+
+#: rust/frontend-slint/ui/labels.slint:65
+msgid "Remove from favorites"
+msgstr "从收藏中移除"
+
+#: rust/frontend-slint/ui/labels.slint:66
+msgid "Change launcher"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:67
+msgid "Write to NFC token"
+msgstr "写入 NFC 令牌"
+
+#: rust/frontend-slint/ui/labels.slint:69
+msgid "Discover alt. versions"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:70
+msgid "Searching…"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:71
+msgid "No alternates found"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:72
+msgid "Add to Hub"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:73
+msgid "Update metadata"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:75
+msgid "Launch system"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:76
+msgid "Random game"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:77
+msgid "Hide"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:78
+msgid "Unhide"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:79
+msgid "Update media database"
+msgstr "更新媒体数据库"
+
+#: rust/frontend-slint/ui/labels.slint:83
+msgid "Add item…"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:86
+msgid "Remove"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:87
+msgid "Reset layout"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:89
+msgid "Quit"
+msgstr "退出"
+
+#: rust/frontend-slint/ui/labels.slint:90
+msgid "Back to Hub"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:94
+msgid "Sort: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:95
+msgid "Group by: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:102
+msgid "Current: {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:105
+msgid "Add item"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:106
+msgid "Sort"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:107
+msgid "Group by"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:109
+msgid "Alternate versions"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:116
+msgid "Launching…"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:121
+msgid "No recent games"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:122
+msgid "No internet connection"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:123
+msgid "Not available"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:136
+msgid "Quit Zaparoo Frontend?"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:137
+msgid "Quit and restart Zaparoo Frontend?"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:138
+msgid "Welcome to Zaparoo Frontend"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:139
+msgid "Update Zaparoo Core"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:140
+msgid "First-time setup"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:141
+msgid "Nothing left to add"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:147
+msgid "Are you sure you want to exit?"
+msgstr "确定要退出吗？"
+
+#: rust/frontend-slint/ui/labels.slint:148
+msgid "This setting needs a frontend restart to take effect."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:150
+msgid ""
+"Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n"
+"\n"
+"This free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n"
+"\n"
+"Contact: legal@zaparoo.com\n"
+"\n"
+"Full details available any time under Settings > About / License.\n"
+"\n"
+"Created by\n"
+"Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:153
+msgid "This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:156
+msgid "Done. {} files indexed."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:157
+msgid "Zaparoo needs to scan your games before you can use the frontend. This usually takes a few minutes."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:160
+msgid "All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\"."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:168
+msgid "Preparing…"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:169
+msgid "Optimizing database - almost done"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:170
+msgid "Indexing paused"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:172
+msgid "Step {} of {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:173
+msgid "Step {} of {} - {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:179
+msgid "Yes"
+msgstr "是"
+
+#: rust/frontend-slint/ui/labels.slint:180
+msgid "No"
+msgstr "否"
+
+#: rust/frontend-slint/ui/labels.slint:184
+msgid "I understand"
+msgstr "我明白了"
+
+#: rust/frontend-slint/ui/labels.slint:185
+msgid "Start scan"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:192
+msgid "Launch failed"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:193
+msgid "Favorite update failed"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:194
+msgid "Add to Hub failed"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:195
+msgid "Media update failed"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:196
+msgid "Update metadata failed"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:197
+msgid "Source list unavailable"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:198
+msgid "Cancel failed"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:199
+msgid "Launcher update failed"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:200
+msgid "Alternate versions unavailable"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:201
+msgid "QR code failed"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:202
+msgid "Token write failed"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:203
+msgid "Setting not saved"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:204
+msgid "Action failed"
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:209
+msgid "Could not start this item. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:210
+msgid "Could not start {}. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:212
+msgid "Could not update this favorite. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:214
+msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:215
+msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:217
+msgid "Could not start the media database update. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:218
+msgid "Could not start updating metadata. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:219
+msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:220
+msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:221
+msgid "Could not change the launcher. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:222
+msgid "Could not find alternate versions. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:223
+msgid "Could not create the QR code for this item."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:224
+msgid "Could not write to this token. Check that it is writable and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:225
+msgid "Could not save this setting. Try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/labels.slint:226
+msgid "The action could not be completed. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:48
+msgid "Automatic (Recommended)"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:50
+msgid "{} (Animations off)"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:56
+msgid "Optimizing"
+msgstr "正在优化"
+
+#: rust/frontend-slint/ui/settings.slint:57
+msgid "Paused"
+msgstr "已暂停"
+
+#: rust/frontend-slint/ui/settings.slint:58
+msgid "In progress"
+msgstr "进行中"
+
+#: rust/frontend-slint/ui/settings.slint:59
+msgid "{} indexed"
+msgstr "已索引 {0} 个"
+
+#: rust/frontend-slint/ui/settings.slint:60
+msgid "{} imported"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:75
+msgid "All systems"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:76
+msgid "All {} systems"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:81
+msgid "Start"
+msgstr "开始"
+
+#. Setup forms.
+#: rust/frontend-slint/ui/settings.slint:88
+msgid "Source"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:89
+msgid "Systems"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:90
+msgid "Replace existing"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:91
+msgid "Start update"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:92
+msgid "Start import"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:94
+msgid "Appearance"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:95
+msgid "Library"
+msgstr "资料库"
+
+#: rust/frontend-slint/ui/settings.slint:96
+msgid "Display"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:97
+msgid "Controls"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:98
+msgid "Language"
+msgstr "语言"
+
+#: rust/frontend-slint/ui/settings.slint:99
+msgid "About"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:101
+msgid "Analog video"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:102
+msgid "Maintenance"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:103
+msgid "Browsing"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:105
+msgid "Color scheme"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:106
+msgid "Color intensity"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:107
+msgid "System logos"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:108
+msgid "Reduce motion"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:109
+msgid "Screensaver"
+msgstr "屏幕保护程序"
+
+#: rust/frontend-slint/ui/settings.slint:111
+msgid "Interface resolution"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:112
+msgid "Interface layout"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:113
+msgid "Orientation"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:114
+msgid "CRT mode"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:115
+msgid "Video standard"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:116
+msgid "Screen position"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:119
+msgid "Region"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:120
+msgid "Clock format"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:122
+msgid "Button style"
+msgstr "按钮样式"
+
+#: rust/frontend-slint/ui/settings.slint:123
+msgid "Swap controller confirm/cancel"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:124
+msgid "Swap controller options/view"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:125
+msgid "Mouse support"
+msgstr "鼠标支持"
+
+#: rust/frontend-slint/ui/settings.slint:129
+msgid "Systems layout"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:130
+msgid "Games layout"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:131
+msgid "Preferred artwork"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:132
+msgid "Show hidden items"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:133
+msgid "Show original filenames"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:137
+msgid "Debug logging"
+msgstr "调试日志"
+
+#: rust/frontend-slint/ui/settings.slint:138
+msgid "Upload log file"
+msgstr "上传日志文件"
+
+#: rust/frontend-slint/ui/settings.slint:143
+msgid "Changes colors across screens, including text and highlights."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:144
+msgid "Controls how strongly accent colors tint tiles and backgrounds."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:145
+msgid "Shows system logos in original colors or tinted to match colors."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:146
+msgid "Turns off animation throughout the interface."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:147
+msgid "Sets idle time before the screensaver starts. Off disables it."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:148
+msgid "The resolution the interface renders at. Restarts the frontend."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:149
+msgid "Adjusts layout density for standard and handheld screens."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:150
+msgid "Rotates the interface for a sideways screen or tate cabinet."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:151
+msgid "Outputs 15 kHz analog video through MiSTer. Restarts frontend."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:152
+msgid "Matches analog output to NTSC or PAL. Restarts the frontend."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:153
+msgid "Opens a test pattern to position the analog picture with arrows."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:154
+msgid "The language used for interface text. Restarts the frontend."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:155
+msgid "Selects regional system and game names, such as Mega Drive."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:156
+msgid "12-hour or 24-hour time in the top bar."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:157
+msgid "Matches on-screen prompt icons to your controller."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:158
+msgid "Flips which controller button accepts and which cancels."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:159
+msgid "Swaps which controller button opens Options and View."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:160
+msgid "Lets a mouse click tiles and menu rows."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:161
+msgid "Rescans game folders for added or removed files. Choose systems."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:162
+msgid "Imports artwork and details from your files. Downloads nothing."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:163
+msgid "Shows systems as a cover grid or a list with details."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:164
+msgid "Sets grid or list layout for Games, Favorites, and Recents."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:165
+msgid "Prefers an artwork type when games have multiple images."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:166
+msgid "Shows hidden systems and categories so you can unhide them."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:167
+msgid "Shows real filenames instead of cleaned-up display titles."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:168
+msgid "Version, build date, license terms, and contributors."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:169
+msgid "Shows a code for opening the Frontend guide on your phone."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:170
+msgid "Adds troubleshooting detail to logs. Restarts the frontend."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:171
+msgid "Uploads the log and provides a link for problem reports."
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:178
+msgid "Configure"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:179
+msgid "Upload"
+msgstr "上传"
+
+#: rust/frontend-slint/ui/settings.slint:185
+msgid "Automatic"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:186
+msgid "{} × {}"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:193
+msgid "Style A"
+msgstr "样式 A"
+
+#: rust/frontend-slint/ui/settings.slint:194
+msgid "Style B"
+msgstr "样式 B"
+
+#: rust/frontend-slint/ui/settings.slint:195
+msgid "Style C"
+msgstr "样式 C"
+
+#: rust/frontend-slint/ui/settings.slint:196
+msgid "Style D"
+msgstr "样式 D"
+
+#: rust/frontend-slint/ui/settings.slint:197
+msgid "Style E"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:201
+msgid "12-hour"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:202
+msgid "24-hour"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:206
+msgid "Americas"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:207
+msgid "Europe"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:208
+msgid "Japan"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:212
+msgid "Standard"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:213
+msgid "Handheld"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:214
+msgid "Device default"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:217
+msgid "Rotated CW"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:218
+msgid "Rotated CCW"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:219
+msgid "Horizontal"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:222
+msgid "Detailed list view"
+msgstr "详细列表视图"
+
+#: rust/frontend-slint/ui/settings.slint:223
+msgid "Grid view"
+msgstr "网格视图"
+
+#: rust/frontend-slint/ui/settings.slint:226
+msgid "Full color"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:227
+msgid "Tinted"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:230
+msgid "Vivid"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:231
+msgid "Subtle"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:234
+msgid "PAL (50 Hz)"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:235
+msgid "480i (60 Hz)"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:236
+msgid "NTSC (60 Hz)"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:246
+msgid "English"
+msgstr "英语"
+
+#: rust/frontend-slint/ui/settings.slint:247
+msgid "Italian"
+msgstr "意大利语"
+
+#: rust/frontend-slint/ui/settings.slint:248
+msgid "Spanish"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:249
+msgid "Basque"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:250
+msgid "German"
+msgstr "德语"
+
+#: rust/frontend-slint/ui/settings.slint:251
+msgid "Greek"
+msgstr "希腊语"
+
+#: rust/frontend-slint/ui/settings.slint:252
+msgid "Japanese"
+msgstr "日语"
+
+#: rust/frontend-slint/ui/settings.slint:253
+msgid "Korean"
+msgstr "韩语"
+
+#: rust/frontend-slint/ui/settings.slint:254
+msgid "Dutch"
+msgstr "荷兰语"
+
+#: rust/frontend-slint/ui/settings.slint:255
+msgid "Romanian"
+msgstr "罗马尼亚语"
+
+#: rust/frontend-slint/ui/settings.slint:256
+msgid "Slovak"
+msgstr "斯洛伐克语"
+
+#: rust/frontend-slint/ui/settings.slint:257
+msgid "Ukrainian"
+msgstr "乌克兰语"
+
+#: rust/frontend-slint/ui/settings.slint:258
+msgid "Chinese (Simplified)"
+msgstr "简体中文"
+
+#: rust/frontend-slint/ui/settings.slint:259
+msgid "Chinese (Traditional)"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:260
+msgid "Hebrew"
+msgstr "希伯来语"
+
+#: rust/frontend-slint/ui/settings.slint:261
+msgid "Arabic"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:262
+msgid "Hindi"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:263
+msgid "French"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:268
+msgid "Zaparoo Light"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:269
+msgid "Classic Purple"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:270
+msgid "Amber Phosphor"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:271
+msgid "Game Boy"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:272
+msgid "Green Phosphor"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:273
+msgid "Neo Geo"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:274
+msgid "NES"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:275
+msgid "Virtual Boy"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:276
+msgid "Dracula"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:277
+msgid "Everforest"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:278
+msgid "Gruvbox"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:279
+msgid "Nord"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:280
+msgid "Oxocarbon"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:281
+msgid "Rosé Pine"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:282
+msgid "Solarized Dark"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:283
+msgid "Synthwave '84"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:284
+msgid "Flexoki Paper"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:285
+msgid "Solarized Light"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:286
+msgid "Zaparoo Dark"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:290
+msgid "Off"
+msgstr "关闭"
+
+#: rust/frontend-slint/ui/settings.slint:291
+msgid "1 second (testing)"
+msgstr "1 秒（测试）"
+
+#: rust/frontend-slint/ui/settings.slint:292
+msgid "1 minute"
+msgstr "1 分钟"
+
+#: rust/frontend-slint/ui/settings.slint:293
+msgid "2 minutes"
+msgstr "2 分钟"
+
+#: rust/frontend-slint/ui/settings.slint:294
+msgid "5 minutes"
+msgstr "5 分钟"
+
+#: rust/frontend-slint/ui/settings.slint:295
+msgid "10 minutes"
+msgstr "10 分钟"
+
+#: rust/frontend-slint/ui/settings.slint:296
+msgid "15 minutes"
+msgstr "15 分钟"
+
+#: rust/frontend-slint/ui/settings.slint:297
+msgid "30 minutes"
+msgstr "30 分钟"
+
+#: rust/frontend-slint/ui/settings.slint:298
+msgid "{} seconds"
+msgstr "{0} 秒"
+
+#: rust/frontend-slint/ui/settings.slint:303
+msgid "Thumbnail"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:304
+msgid "Box art"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:305
+msgid "3D box art"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:306
+msgid "Screenshot"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:307
+msgid "Wheel"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:308
+msgid "Title screen"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:309
+msgid "Map"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:310
+msgid "Marquee"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:311
+msgid "Fan art"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:312
+msgid "Box side"
+msgstr ""
+
+#: rust/frontend-slint/ui/settings.slint:313
+msgid "Box back"
+msgstr ""
+
+#: rust/frontend-slint/ui/setup.slint:245
+msgid "Upload failed. Check the network connection and try again."
+msgstr ""
+
+#: rust/frontend-slint/ui/setup.slint:246
+msgid "Uploading log file. This may take a moment."
+msgstr ""

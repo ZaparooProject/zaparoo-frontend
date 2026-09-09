@@ -72,6 +72,11 @@ frontend still defaults to `7497` in production. `just run-dev` points it at
 the mock through `ZAPAROO_CORE_ENDPOINT`; `just run` reads
 `~/.config/zaparoo/frontend.toml` as usual.
 
+The Slint frontend's `just slint-run-dev` needs no second terminal: it starts
+the mock itself when nothing is serving `27497` and stops it again when the
+frontend exits, logging to `output/mock-core-dev.log`. A mock (or a real Core)
+already on the port is used as-is and left running.
+
 ### Pick a different port
 
 If something already uses `27497`, override it at startup:
