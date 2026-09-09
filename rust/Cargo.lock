@@ -1773,7 +1773,7 @@ dependencies = [
 
 [[package]]
 name = "frontend-slint"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "base64 0.23.1",
  "fontique",
@@ -3212,7 +3212,7 @@ dependencies = [
 
 [[package]]
 name = "mock-core"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -6705,15 +6705,15 @@ dependencies = [
 
 [[package]]
 name = "zaparoo-app"
-version = "1.3.0"
+version = "1.3.1"
 
 [[package]]
 name = "zaparoo-build-info"
-version = "1.3.0"
+version = "1.3.1"
 
 [[package]]
 name = "zaparoo-core"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "dirs-next",
  "futures-util",
@@ -6734,7 +6734,7 @@ dependencies = [
 
 [[package]]
 name = "zaparoo-frontend-rs"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "base64 0.23.1",
  "cxx",
