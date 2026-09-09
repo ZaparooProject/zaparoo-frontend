@@ -220,8 +220,8 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: System libraries for the desktop backend
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1-dev libwayland-dev libxkbcommon-dev
+      - name: Desktop libraries and host linker
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1-dev libwayland-dev libxkbcommon-dev mold
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
         with:
           workspaces: rust
