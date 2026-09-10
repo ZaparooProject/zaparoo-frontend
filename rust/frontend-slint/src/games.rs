@@ -325,9 +325,24 @@ impl GamesModel {
         self.next_cursor.is_some()
     }
 
+    /// Rows Core places before media offsets. `totalDirs` excludes virtual
+    /// roots, so the loaded prefix is authoritative when it is larger.
+    fn leading_non_media_count(&self) -> usize {
+        self.rows
+            .iter()
+            .take_while(|row| row.entry_type != EntryType::Media)
+            .count()
+    }
+
     fn known_total(&self) -> Option<usize> {
-        self.total_known
-            .then(|| (self.total_files + self.total_dirs) as usize)
+        self.total_known.then(|| {
+            self.total_files as usize
+                + (self.total_dirs as usize).max(self.leading_non_media_count())
+        })
+    }
+
+    fn jump_target(&self, item_offset: usize) -> usize {
+        rules::jump_target(self.leading_non_media_count(), item_offset)
     }
 
     fn state(&self) -> State {
@@ -605,6 +620,18 @@ pub fn refresh_favorites(ctx: &Ctx, app: &App) {
 /// Recently played (Hub action): Core's play history.
 pub fn enter_recents(ctx: &Ctx, app: &App) {
     enter_flat(ctx, app, GamesMode::Recents, true);
+}
+
+/// Refill an already-visible Recently Played screen after Core records
+/// a completed launch. Other game-style screens keep their current data.
+pub fn refresh_recents(ctx: &Ctx, app: &App) {
+    let visible = {
+        let shared = lock(&ctx.shared);
+        shared.games.mode == GamesMode::Recents
+    };
+    if visible {
+        enter_flat(ctx, app, GamesMode::Recents, false);
+    }
 }
 
 fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
@@ -2405,7 +2432,7 @@ pub fn jump_to_item(ctx: &Ctx, app: &App, item_offset: u32) {
     let landed = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
-        let target = rules::jump_target(model.total_dirs as usize, item_offset as usize);
+        let target = model.jump_target(item_offset as usize);
         model.focus_armed = true;
         let landed = model.grid.jump_to_index(target);
         model.jump_loading = !landed;
@@ -2776,6 +2803,27 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].root_distinguisher, "fat");
         assert_eq!(rows[1].root_distinguisher, "usb0");
+    }
+
+    #[test]
+    fn virtual_roots_count_toward_totals_and_letter_jump_prefix() {
+        let mut model = GamesModel::new();
+        model.total_files = 2;
+        model.total_dirs = 2;
+        model.rows = [
+            entry("root", "Virtual", "mock://"),
+            entry("directory", "Favorites", "/g/Favorites"),
+            entry("directory", "Extras", "/g/Extras"),
+            entry("media", "Alpha", "/g/Alpha"),
+            entry("media", "Bravo", "/g/Bravo"),
+        ]
+        .iter()
+        .map(GameRow::from)
+        .collect();
+
+        assert_eq!(model.known_total(), Some(5));
+        assert_eq!(model.jump_target(1), 4);
+        assert_eq!(model.rows[model.jump_target(1)].name, "Bravo");
     }
 
     #[test]

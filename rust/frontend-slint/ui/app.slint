@@ -104,9 +104,9 @@ export global Shell {
     in-out property <bool> boot-curtain: false;
     in-out property <bool> boot-complete: false;
     in-out property <string> boot-text: "";
-    // Reduce motion setting: every screen animation collapses to an
-    // instant cut (swoops, focus-ring glides). Marquee scrolling is
-    // exempt - it is the only way long names become readable.
+    // Primary game active: gate input and recurring work behind emulator.
+    in-out property <bool> dormant: false;
+    // Reduce motion collapses animations; marquee remains readable.
     in-out property <bool> reduce-motion: false;
     in-out property <bool> mouse-enabled: false;
     // Screensaver armed (idle timeout elapsed); any input disarms via
@@ -1015,8 +1015,8 @@ component ListPickerModal inherits Rectangle {
         height: root.panel-h;
         background: Theme.bg-panel;
         border-radius: Sizing.radius-md;
-        border-width: Sizing.stroke(0.3);
-        border-color: Theme.border-mid;
+        // Flat modal chrome uses the scrim, not an outline, for separation.
+        // Keeping one surface treatment aligns pickers and dialogs.
         clip: true;
 
         title := Text {
@@ -1026,7 +1026,7 @@ component ListPickerModal inherits Rectangle {
             overflow: elide;
             text: root.setting-id != "" ? SettingsLabels.label(root.setting-id) : root.title;
             color: Theme.text-primary;
-            font-size: Sizing.font-size(4);
+            font-size: Sizing.font-title;
             font-weight: 500;
         }
 
@@ -1129,15 +1129,15 @@ component LetterJumpModal inherits Rectangle {
         height: root.panel-h;
         background: Theme.bg-panel;
         border-radius: Sizing.radius-md;
-        border-width: Sizing.stroke(0.3);
-        border-color: Theme.border-mid;
+        // Flat modal chrome uses the scrim, not an outline, for separation.
+        // Keeping one surface treatment aligns pickers and dialogs.
 
         Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((root.title-h - self.height) / 2px) * 1px;
             text: @tr("Go to…");
             color: Theme.text-primary;
-            font-size: Sizing.font-size(4);
+            font-size: Sizing.font-title;
             font-weight: 500;
         }
 
@@ -1328,7 +1328,7 @@ component DialogModal inherits Rectangle {
     title-measure := Text {
         visible: false;
         text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
-        font-size: Sizing.font-size(3.2);
+        font-size: Sizing.font-title;
         font-weight: 600;
     }
     body-measure := Text {
@@ -1362,7 +1362,7 @@ component DialogModal inherits Rectangle {
     property <length> btn-gap: Sizing.pct-w(2);
     property <length> body-h: body-t.preferred-height;
     property <length> status-h: Overlays.dialog-status != "" ? Sizing.font-size(2.4) + Sizing.pct-h(1) : 0px;
-    property <length> panel-h: self.pad + Sizing.font-size(3.2) + Sizing.pct-h(2)
+    property <length> panel-h: self.pad + Sizing.font-title + Sizing.pct-h(2)
         + self.body-h + Sizing.pct-h(2) + self.status-h + self.btn-h + self.pad;
 
     Rectangle {
@@ -1372,8 +1372,8 @@ component DialogModal inherits Rectangle {
         height: root.panel-h;
         background: Theme.bg-panel;
         border-radius: Sizing.radius-md;
-        border-width: Sizing.stroke(0.3);
-        border-color: Theme.border-mid;
+        // Flat modal chrome uses the scrim, not an outline, for separation.
+        // Keeping one surface treatment aligns pickers and dialogs.
 
         Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
@@ -1382,13 +1382,13 @@ component DialogModal inherits Rectangle {
             overflow: elide;
             text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
             color: Theme.text-primary;
-            font-size: Sizing.font-size(3.2);
+            font-size: Sizing.font-title;
             font-weight: 600;
         }
 
         body-t := Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: root.pad + Sizing.font-size(3.2) + Sizing.pct-h(2);
+            y: root.pad + Sizing.font-title + Sizing.pct-h(2);
             width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, parent.width - 2 * root.pad-x);
             wrap: word-wrap;
             text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-detail, Overlays.dialog-arg);
@@ -2263,9 +2263,16 @@ export component App inherits Window {
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
             }
+            if (self.focused-settings-control() == "picker") {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["ButtonA"], label: @tr("Change") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
             return [
                 { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
-                { buttons: ["DpadLeft", "DpadRight"], label: @tr("Change") },
+                { buttons: ["ButtonA"], label: @tr("Open") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
@@ -2354,13 +2361,15 @@ export component App inherits Window {
 
     keys := FocusScope {
         key-pressed(event) => {
-            if (!event.repeat) {
+            if (!Shell.dormant && !event.repeat) {
                 root.key-pressed(event.text);
             }
             accept
         }
         key-released(event) => {
-            root.key-released(event.text);
+            if (!Shell.dormant) {
+                root.key-released(event.text);
+            }
             accept
         }
         focus-lost(reason) => {
@@ -2607,12 +2616,34 @@ export component App inherits Window {
     }
     }
 
+    // Desktop remains mapped behind the launched game. If the compositor
+    // exposes it, cover every live pixel with a static, opaque dormant face:
+    // no alpha blend, animation, or full-screen repaint loop. MiSTer uses only
+    // the dark fill while its wrapper takes over; desktop adds the logo so the
+    // state looks intentional when raised.
+    if Shell.dormant: dormant-surface := Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #030405;
+
+        if !Shell.is-mister: Image {
+            width: Sizing.pct-w(24);
+            height: Math.round(self.width / Brand.aspect / 1px) * 1px;
+            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            source: Brand.logo(false, self.width);
+            image-fit: contain;
+        }
+    }
+
     // Pointer input is disabled globally, including modal controls, while
     // the setting is off or a screen transition owns input.
-    if !Shell.mouse-enabled || Shell.saver-armed
+    if Shell.dormant || !Shell.mouse-enabled || Shell.saver-armed
         || ((Shell.boot-curtain || Shell.transitioning || Shell.route-transitioning) && !root.has-modal()): TouchArea {
         width: 100%; height: 100%;
-        clicked => { Overlays.pointer-choice("wake", 0, true); }
+        clicked => {
+            if (!Shell.dormant) { Overlays.pointer-choice("wake", 0, true); }
+        }
         scroll-event(event) => { return accept; }
     }
 

@@ -430,10 +430,12 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         actions::UP => {
             let next = rules::seek_navigable(&rows, index, -1);
             view.set_index(i32::try_from(next).unwrap_or(0));
+            render(ctx, app);
         }
         actions::DOWN => {
             let next = rules::seek_navigable(&rows, index, 1);
             view.set_index(i32::try_from(next).unwrap_or(0));
+            render(ctx, app);
         }
         // Left and Right flip a toggle in place; pickers open their list
         // (the Qt screen's own rule, so a long option list never has to

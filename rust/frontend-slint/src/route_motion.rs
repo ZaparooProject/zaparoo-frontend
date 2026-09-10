@@ -285,6 +285,7 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
             std::path::PathBuf::new(),
         ))),
         clock_twelve_hour: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        dormant: tokio::sync::watch::channel(false).0,
         status: crate::status::new("en"),
         config_path: std::path::PathBuf::new(),
         crt_enabled: false,
@@ -292,6 +293,67 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
         framebuffer_size: (W, H),
     };
     (runtime, ctx)
+}
+
+#[test]
+fn launch_dormancy_is_local_only() {
+    assert!(crate::local_lifecycle_enabled(
+        "ws://127.0.0.1:7497/api/v0.1"
+    ));
+    assert!(crate::local_lifecycle_enabled(
+        "ws://localhost:7497/api/v0.1"
+    ));
+    assert!(!crate::local_lifecycle_enabled(
+        "ws://192.0.2.10:7497/api/v0.1"
+    ));
+}
+
+#[test]
+fn desktop_dormancy_stops_motion_and_screensaver_until_resume() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let mut dormant = ctx.dormant.subscribe();
+    app.global::<crate::Motion>().set_enabled(true);
+    app.global::<Shell>().set_saver_armed(true);
+
+    crate::set_dormant(&ctx, &app, true);
+    assert!(app.global::<Shell>().get_dormant());
+    assert!(!app.global::<Shell>().get_saver_armed());
+    assert!(!app.global::<crate::Motion>().get_enabled());
+    assert!(*dormant.borrow_and_update());
+
+    crate::set_dormant(&ctx, &app, false);
+    assert!(!app.global::<Shell>().get_dormant());
+    assert!(app.global::<crate::Motion>().get_enabled());
+    assert!(!*dormant.borrow_and_update());
+}
+
+#[test]
+fn dormant_surface_is_static_and_opaque_over_live_ui() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    settle(&window);
+    app.window().request_redraw();
+    let active = frame(&window);
+
+    app.global::<Shell>().set_dormant(true);
+    let dormant = frame(&window);
+    assert_ne!(active, dormant, "dormancy must replace the live screen");
+    assert_eq!(
+        distinct_frames(&window, 8),
+        0,
+        "the dormant face must not animate"
+    );
+
+    app.global::<Shell>()
+        .set_active_screen(SharedString::from("systems"));
+    app.window().request_redraw();
+    assert_eq!(
+        dormant,
+        frame(&window),
+        "live screen changes must not paint through the dormant face"
+    );
 }
 
 #[test]
@@ -497,6 +559,16 @@ fn every_screen_route_and_settings_category_slides_forward_and_back() {
             "Back restores the category tile"
         );
     }
+    crate::settings::open_page(&ctx, &app, "pageLibraryData");
+    assert!(settings.get_scroll().abs() < f32::EPSILON);
+    for _ in 0..6 {
+        crate::settings::handle_action(&ctx, &app, "down");
+    }
+    assert!(
+        settings.get_scroll() > 0.0,
+        "moving focus past the viewport must scroll the selected row into view"
+    );
+
     shell.set_reduce_motion(true);
     crate::settings::navigate_page(&ctx, &app, "pageSupportAbout");
     assert!(!shell.get_route_transitioning());

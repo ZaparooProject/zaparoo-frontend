@@ -69,13 +69,16 @@ impl Default for InputModel {
 }
 
 /// The keyboard is the live input source, so neither swap applies.
-/// Derived from the controller report, exactly as the help bar's own
-/// glyphs are.
+/// No controller report is the desktop-keyboard case; a report can
+/// explicitly identify either keyboard or controller input.
+fn keyboard_active_for_layout(layout: Option<&str>) -> bool {
+    layout.is_none_or(zaparoo_app::buttons::keyboard_active)
+}
+
 fn keyboard_active() -> bool {
-    zaparoo_core::controller_report::subscribe()
-        .borrow()
-        .as_ref()
-        .is_some_and(|report| zaparoo_app::buttons::keyboard_active(report.layout))
+    let report = zaparoo_core::controller_report::subscribe();
+    let report = report.borrow();
+    keyboard_active_for_layout(report.as_ref().map(|report| report.layout))
 }
 
 /// The Slint `has-modal()` set, plus the CRT calibration overlay that
@@ -99,6 +102,9 @@ fn modal_open(app: &App) -> bool {
 /// A real press: guard against a double delivery, map the key to an
 /// action, apply the swaps, route it, then arm the repeat.
 fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, String>, key: &str) {
+    if app.global::<crate::Shell>().get_dormant() {
+        return;
+    }
     let accepted = {
         let mut shared = lock(&ctx.shared);
         let now = shared.input.now_ms();
@@ -302,7 +308,16 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
 
 #[cfg(test)]
 mod tests {
-    use super::InputModel;
+    use super::{keyboard_active_for_layout, InputModel};
+
+    #[test]
+    fn missing_controller_report_means_keyboard_input() {
+        assert!(keyboard_active_for_layout(None));
+        assert!(keyboard_active_for_layout(Some(
+            zaparoo_app::buttons::KEYBOARD_STYLE
+        )));
+        assert!(!keyboard_active_for_layout(Some("style_b")));
+    }
 
     #[test]
     fn held_key_release_retires_timer_and_requests_exactly_one_flush() {

@@ -191,6 +191,10 @@ pub struct Ctx {
     /// Live 12-hour clock flag shared with the clock task; the
     /// Settings toggle flips it without a restart.
     pub clock_twelve_hour: Arc<std::sync::atomic::AtomicBool>,
+    /// Cooperative desktop suspension. Core lifecycle tracking keeps
+    /// this true while primary media runs; background tasks retain a
+    /// receiver and sleep instead of spending CPU behind the emulator.
+    pub dormant: tokio::sync::watch::Sender<bool>,
     /// Header status line ladder state.
     pub status: crate::status::Shared,
     /// `frontend.toml` location, for durable settings mirrors.
@@ -757,6 +761,7 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
         // The boot curtain and the transition "Loading…" cue are not
         // burn targets; skip and let the next input re-arm the clock.
         if !app.global::<crate::Shell>().get_boot_complete()
+            || app.global::<crate::Shell>().get_dormant()
             || app.global::<crate::Shell>().get_transitioning()
             || app.global::<crate::Shell>().get_route_transitioning()
         {
