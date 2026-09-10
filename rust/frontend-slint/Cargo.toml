@@ -79,7 +79,7 @@ resvg = { version = "0.47", default-features = false }
 libc = { version = "0.2", optional = true }
 # Same version Slint 1.17 resolves; only here to turn on `fontconfig-dlopen`
 # (Cargo unifies the feature onto Slint's own fontique dependency).
-fontique = { version = "0.10", optional = true, default-features = false, features = ["fontconfig-dlopen"] }
+fontique = { version = "0.11", optional = true, default-features = false, features = ["fontconfig-dlopen"] }
 time.workspace = true
 serde.workspace = true
 serde_json.workspace = true
