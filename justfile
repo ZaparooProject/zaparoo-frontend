@@ -286,10 +286,17 @@ test-slint:
     # dual head); they only build under that feature.
     cd rust && cargo nextest run -p frontend-slint --no-default-features --features mister
 
-# Static ARM32 musl MiSTer build via `cross` (Cortex-A9 tuning). Static musl
-# because the MiSTer rootfs glibc is older than cross's gnueabihf image.
+# Native macOS Slint release build. Uses the Rust version pinned by the repo.
+slint-macos:
+    ./scripts/build-slint-macos.sh
+
+# Static ARM32 musl MiSTer Docker build (Cortex-A9; avoids old MiSTer glibc).
+slint-mister:
+    ./scripts/build-slint-mister.sh
+
+# Compatibility alias for the original MiSTer Slint build command.
 slint-arm32:
-    cd rust && ZAPAROO_RESOURCES_DIR="$PWD/../resources" RUSTFLAGS="-C target-cpu=cortex-a9" cross build -p frontend-slint --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
+    just slint-mister
 
 # MiSTer release bundle for the Slint frontend (zaparoo-frontend-<tag>-slint.zip);
 # same wrapper and layout as `release-zip`, one static binary with everything embedded.

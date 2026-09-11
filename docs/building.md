@@ -161,6 +161,43 @@ file output/frontend
 # Should report: ELF 32-bit LSB executable, ARM, EABI5 ...
 ```
 
+## Slint builds (macOS and MiSTer)
+
+The experimental Slint frontend has two explicit build commands:
+
+```bash
+just slint-macos    # native macOS release binary
+just slint-mister   # static-musl ARM32 MiSTer binary, via Docker
+```
+
+The macOS command uses the Rust version in `rust-toolchain.toml` (`1.97.0`).
+Install Rustup once rather than relying on Homebrew's system Cargo:
+
+```bash
+brew install rustup
+```
+
+The build commands detect Homebrew's keg-only Rustup installation. On other
+platforms, install Rustup with the standard installer.
+
+The MiSTer command needs Docker Desktop with Buildx. First use creates the
+Dashboard image `zaparoo-slint-mister:local`; later code builds reuse it and
+only run Cargo in a temporary container. Its compiler and pinned Rust toolchain
+stay in Docker; no host Cross, Cargo target, or compiler is needed. Rebuild it
+only after a toolchain change:
+
+```bash
+SLINT_MISTER_REBUILD_TOOLCHAIN=1 just slint-mister
+```
+
+Outputs are `rust/target/release/frontend-slint` (macOS) and
+`rust/target/armv7-unknown-linux-musleabihf/release/frontend-slint` (MiSTer).
+`just slint-arm32` remains as an alias for `just slint-mister`.
+
+On Apple Silicon, the MiSTer command uses Docker's `linux/amd64` emulation.
+Override only for a compatible custom toolchain image, for example
+`DOCKER_PLATFORM=linux/amd64 just slint-mister`.
+
 ## ARM64 cross-build
 
 The ARM64 target mirrors the MiSTer Docker flow but uses a separate Qt +
