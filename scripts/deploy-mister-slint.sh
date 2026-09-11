@@ -40,12 +40,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ "${SKIP_BUILD}" -eq 0 ]; then
-    echo "=== Cross-building frontend-slint (${TARGET}, Cortex-A9) ==="
-    (cd "${PROJECT_ROOT}/rust" &&
-        ZAPAROO_RESOURCES_DIR="${PROJECT_ROOT}/resources" \
-        RUSTFLAGS="-C target-cpu=cortex-a9" \
-        cross build -p frontend-slint --release \
-            --no-default-features --features mister --target "${TARGET}")
+    "${SCRIPT_DIR}/build-slint-mister.sh"
 fi
 
 if [ ! -f "${BINARY}" ]; then
