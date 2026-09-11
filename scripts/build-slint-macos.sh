@@ -30,8 +30,7 @@ if ! command -v rustup > /dev/null 2>&1; then
 Error: Rustup is required for Slint builds.
 
 Install it with:
-  brew install rustup-init
-  rustup-init -y --default-toolchain 1.97.0 --profile minimal
+  brew install rustup
 EOF
     exit 1
 fi

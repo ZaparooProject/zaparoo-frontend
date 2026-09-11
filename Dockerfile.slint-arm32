@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1.6
+# Zaparoo Frontend
+# Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+#
+# Persistent ARM32 Slint toolchain for MiSTer. This image intentionally does
+# not copy application source: rebuild it only when this toolchain changes.
+
+ARG CROSS_IMAGE=ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:main
+FROM ${CROSS_IMAGE} AS toolchain
+
+WORKDIR /src
+
+# Slint's compiler needs fontconfig. Keep Rust independent from Cross's
+# rolling toolchain so this repo always builds with its pinned Rust version.
+RUN apt-get update && apt-get install --assume-yes --no-install-recommends \
+        ca-certificates \
+        curl \
+        libfontconfig1-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Keep the Rust version explicit: Cross's `main` image changes independently
+# from this repository, while the workspace is pinned to Rust 1.97.0.
+ENV CARGO_HOME=/opt/cargo
+ENV RUSTUP_HOME=/opt/rustup
+ENV PATH=/opt/cargo/bin:${PATH}
+
+RUN mkdir -p "$CARGO_HOME" "$RUSTUP_HOME" && \
+    chmod -R a+rwx "$CARGO_HOME" "$RUSTUP_HOME" && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+        sh -s -- -y --no-modify-path --profile minimal --default-toolchain 1.97.0 && \
+    rustup target add armv7-unknown-linux-musleabihf

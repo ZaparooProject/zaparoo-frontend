@@ -3,8 +3,8 @@
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
-# Slint frontend: cross-builds the ARM32 binary with `cross` and deploys
-# it to a MiSTer over SSH/SCP. It is one static file with every font and
+# Slint frontend: Docker-builds the ARM32 binary and deploys it to a MiSTer
+# over SSH/SCP. It is one static file with every font and
 # logo embedded, like the Qt binary; nothing else is copied. By default it
 # lands beside the Qt frontend as /media/fat/zaparoo/frontend-slint for
 # manual testing; --replace backs up the Qt frontend and installs the

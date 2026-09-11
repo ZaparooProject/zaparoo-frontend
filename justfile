@@ -290,8 +290,7 @@ test-slint:
 slint-macos:
     ./scripts/build-slint-macos.sh
 
-# Static ARM32 musl MiSTer build via `cross` (Cortex-A9 tuning). Static musl
-# because the MiSTer rootfs glibc is older than cross's gnueabihf image.
+# Static ARM32 musl MiSTer Docker build (Cortex-A9; avoids old MiSTer glibc).
 slint-mister:
     ./scripts/build-slint-mister.sh
 

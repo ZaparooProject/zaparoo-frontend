@@ -170,8 +170,8 @@ just slint-macos    # native macOS release binary
 just slint-mister   # static-musl ARM32 MiSTer binary, via Docker
 ```
 
-Both use the Rust version in `rust-toolchain.toml` (`1.97.0`). Install Rustup
-once rather than relying on Homebrew's system Cargo:
+The macOS command uses the Rust version in `rust-toolchain.toml` (`1.97.0`).
+Install Rustup once rather than relying on Homebrew's system Cargo:
 
 ```bash
 brew install rustup
@@ -180,22 +180,23 @@ brew install rustup
 The build commands detect Homebrew's keg-only Rustup installation. On other
 platforms, install Rustup with the standard installer.
 
-The MiSTer command also needs Docker Desktop and Cross. `cross` is a small
-host-side Docker launcher; the compiler and Rust dependencies run inside its
-container:
+The MiSTer command needs Docker Desktop with Buildx. First use creates the
+Dashboard image `zaparoo-slint-mister:local`; later code builds reuse it and
+only run Cargo in a temporary container. Its compiler and pinned Rust toolchain
+stay in Docker; no host Cross, Cargo target, or compiler is needed. Rebuild it
+only after a toolchain change:
 
 ```bash
-cargo install cross
+SLINT_MISTER_REBUILD_TOOLCHAIN=1 just slint-mister
 ```
 
 Outputs are `rust/target/release/frontend-slint` (macOS) and
 `rust/target/armv7-unknown-linux-musleabihf/release/frontend-slint` (MiSTer).
 `just slint-arm32` remains as an alias for `just slint-mister`.
 
-On Apple Silicon, the MiSTer command uses Docker's `linux/amd64` emulation:
-Cross's ARM32-musl build image is amd64-only. Override only when using a
-compatible custom image, for example
-`CROSS_DOCKER_PLATFORM=linux/amd64 just slint-mister`.
+On Apple Silicon, the MiSTer command uses Docker's `linux/amd64` emulation.
+Override only for a compatible custom toolchain image, for example
+`DOCKER_PLATFORM=linux/amd64 just slint-mister`.
 
 ## ARM64 cross-build
 
