@@ -25,7 +25,9 @@ mod fonts;
 mod frame_transition;
 mod game_info;
 mod game_info_data;
+mod gamepad;
 mod games;
+mod gamescope;
 mod glyphs;
 mod hub;
 mod hub_covers;
@@ -57,6 +59,7 @@ mod settings;
 mod sizing;
 mod state_types;
 mod status;
+mod steam;
 mod system_logos;
 mod system_status;
 mod systems;
@@ -105,6 +108,12 @@ use zaparoo_core::systems_catalog::CatalogData;
 /// the Qt `CategoriesModel`). User-hidden category preferences are not
 /// wired in the demo.
 const HIDDEN_CATEGORIES: &[&str] = &["Media"];
+
+/// Desktop window size when the config asks for none. `MiSTer` and the CRT
+/// canvas take their raster from the presenter, and a fullscreen window
+/// takes its size from the compositor, so this covers only the plain
+/// windowed case.
+const DESKTOP_WINDOW_SIZE: (u32, u32) = (1280, 720);
 
 /// Physical output raster when a `MiSTer` presenter owns the screen;
 /// None on desktop (window == output). Under dynamic resolution the
@@ -287,6 +296,34 @@ fn merge_config_settings(
     s.crt_v_offset = v;
 }
 
+/// Runtimes that present like a console rather than a desktop: held in
+/// the hand, owning the whole screen, driven by a pad. Both the
+/// fullscreen default and what the `device` interface profile resolves to
+/// follow from that one fact.
+pub(crate) fn handheld_runtime() -> bool {
+    zaparoo_core::runtime::current().is_steam_os()
+}
+
+/// Fullscreen is a desktop-only request. `MiSTer` owns the framebuffer
+/// outright and the CRT canvas is a fixed raster, so neither takes a window
+/// hint. `[video] fullscreen` and `--fullscreen` both ask for it;
+/// `--windowed` is the escape hatch for a config that leaves it on. An
+/// absent config key is not a `false`: `default_on` decides, so a handheld
+/// runtime comes up fullscreen without anyone writing a config file.
+fn fullscreen_requested(
+    config_fullscreen: Option<bool>,
+    default_on: bool,
+    crt: bool,
+    args: &[String],
+) -> bool {
+    if cfg!(feature = "mister") || crt {
+        return false;
+    }
+    let configured = config_fullscreen.unwrap_or(default_on);
+    (configured || args.iter().any(|a| a == "--fullscreen"))
+        && !args.iter().any(|a| a == "--windowed")
+}
+
 pub(crate) fn scene_size(
     width: f64,
     height: f64,
@@ -331,8 +368,12 @@ fn seed_display_globals(
         .set_browse_list_layout(persisted.settings.games_browse_layout == "list");
     app.global::<Shell>()
         .set_systems_list_layout(persisted.settings.systems_browse_layout == "list");
-    app.global::<Sizing>()
-        .set_handheld(persisted.settings.interface_profile == "handheld");
+    app.global::<Sizing>().set_handheld(
+        zaparoo_app::sizing::InterfaceProfile::resolve(
+            &persisted.settings.interface_profile,
+            handheld_runtime(),
+        ) == zaparoo_app::sizing::InterfaceProfile::Handheld,
+    );
     app.global::<Motion>().set_enabled(display::motion_enabled(
         persisted.settings.reduce_motion,
         cfg!(feature = "mister"),
@@ -350,8 +391,10 @@ fn seed_display_globals(
     let bitmap = display::bitmap_type(cfg!(feature = "mister"), visual_crt, framebuffer_size.1);
     app.global::<Sizing>().set_bitmap_fonts(bitmap);
     app.global::<Theme>().set_bitmap_fonts(bitmap);
+    // A fullscreen surface is the compositor's to size; asking for one
+    // here would fight it and land a wrong-sized first frame.
     #[cfg(not(feature = "mister"))]
-    {
+    if !app.window().is_fullscreen() {
         let (w, h) = if rotated {
             (framebuffer_size.1, framebuffer_size.0)
         } else {
@@ -442,6 +485,7 @@ fn main() -> Result<(), slint::PlatformError> {
     // direct_video, leaving fb0 available for an independent HDMI UI.
     let crt = args.iter().any(|a| a == "--crt");
     let dual_head = cfg!(feature = "mister") && crt && args.iter().any(|a| a == "--dual-head");
+    let fullscreen = fullscreen_requested(config.video_fullscreen, handheld_runtime(), crt, &args);
     // An inherited Main offer is not ownership: the presenter waits for an
     // acknowledged grant after mode setup. A manual --latch grants nothing.
     #[cfg(feature = "mister")]
@@ -501,12 +545,21 @@ fn main() -> Result<(), slint::PlatformError> {
     #[cfg(not(feature = "mister"))]
     let _ = (latch, dual_head, adaptive_render);
 
+    // Desktop seeds the first frame from whatever `[video]` asked for, or
+    // the default window when it asked for nothing. Under fullscreen this
+    // is only a guess: `viewport-changed` re-solves every screen against
+    // the surface the compositor actually hands over.
     let ui_framebuffer_size = if cfg!(feature = "mister") || crt {
         framebuffer_size
+    } else if config.video_explicit {
+        hdmi_framebuffer_size
     } else {
-        (1280, 720)
+        DESKTOP_WINDOW_SIZE
     };
     let app = App::new()?;
+    if fullscreen {
+        app.window().set_fullscreen(true);
+    }
     fonts::register_embedded_fonts();
     apply_language(&persisted.settings.language);
     let palette = theme::apply_palette(
@@ -666,6 +719,9 @@ fn main() -> Result<(), slint::PlatformError> {
         .map(|mirror| dual_head::Runtime::start(&app, mirror))
         .transpose()?;
 
+    // Nothing has focused us: Steam only does that for what it launched.
+    gamescope::claim_focus_when_mapped(&app);
+
     app.run()?;
 
     // Drain tokio with a deadline so worker threads exit while main is
@@ -760,7 +816,14 @@ fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpo
         let mut was_active = false;
         loop {
             let snapshot = media_rx.borrow_and_update().clone();
-            let active = snapshot.primary_active.is_some();
+            // Core's Steam watcher reports every externally started Steam
+            // game, and a frontend installed as a Steam shortcut is one of
+            // them. Going dormant for our own launch would hide the UI
+            // behind its own launch face.
+            let active = snapshot
+                .primary_active
+                .as_ref()
+                .is_some_and(|media| !steam::is_self_media(&media.media_path));
             let resumed = was_active && !active;
             was_active = active;
             let ctx_event = ctx_media.clone();
@@ -857,6 +920,10 @@ fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
             ctx.framebuffer_size.1,
         ));
         router::reset_idle(ctx, app);
+        // Steam puts its own shell back in front when a game exits, so
+        // the way back on screen is to claim the compositor again rather
+        // than to wait for someone to hand it over.
+        gamescope::claim_focus_settling(app);
         tracing::info!("primary media stopped; frontend resumed");
     }
 }
@@ -892,6 +959,17 @@ fn bind_status_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
 fn bind_controller_report(ctx: &Arc<Ctx>, app: &App) {
     let started = zaparoo_core::controller_report::spawn_watcher();
     tracing::debug!(started, "controller report watcher");
+    // One producer owns the report. Main's file wins where it exists;
+    // everywhere else the pad reader fills the same channel. Start it on
+    // its own line: a `tracing` macro does not evaluate its arguments
+    // when the level is disabled, so calling `spawn` inside one left the
+    // reader unstarted, and the frontend without a controller, on every
+    // run that did not have debug logging turned on.
+    #[cfg(feature = "desktop")]
+    {
+        let reader_started = gamepad::spawn(ctx, app, started);
+        tracing::debug!(started = reader_started, "desktop gamepad reader");
+    }
     let mut rx = zaparoo_core::controller_report::subscribe();
     let weak = app.as_weak();
     let ctx = ctx.clone();
@@ -1485,6 +1563,45 @@ mod tests {
             scene_size(720.0, 480.0, Orientation::Ccw, true),
             (432.0, 648.0)
         );
+    }
+
+    #[test]
+    #[cfg(not(feature = "mister"))]
+    fn fullscreen_requested_reads_config_then_flags() {
+        let none: Vec<String> = Vec::new();
+        let on = vec!["--fullscreen".to_string()];
+        let off = vec!["--windowed".to_string()];
+        let both = vec!["--fullscreen".to_string(), "--windowed".to_string()];
+
+        assert!(!fullscreen_requested(Some(false), false, false, &none));
+        assert!(fullscreen_requested(Some(true), false, false, &none));
+        assert!(fullscreen_requested(None, false, false, &on));
+        // --windowed is the escape hatch, so it wins over both.
+        assert!(!fullscreen_requested(Some(true), false, false, &off));
+        assert!(!fullscreen_requested(None, false, false, &both));
+        // The CRT canvas is a fixed raster, never a window hint.
+        assert!(!fullscreen_requested(Some(true), false, true, &on));
+    }
+
+    #[test]
+    #[cfg(not(feature = "mister"))]
+    fn a_handheld_runtime_is_fullscreen_until_the_config_says_otherwise() {
+        let none: Vec<String> = Vec::new();
+        let off = vec!["--windowed".to_string()];
+
+        // No config key at all: the runtime decides.
+        assert!(fullscreen_requested(None, true, false, &none));
+        assert!(!fullscreen_requested(None, false, false, &none));
+        // An explicit false is not an absent key, so it still wins.
+        assert!(!fullscreen_requested(Some(false), true, false, &none));
+        assert!(!fullscreen_requested(None, true, false, &off));
+    }
+
+    #[test]
+    #[cfg(feature = "mister")]
+    fn fullscreen_is_never_requested_on_mister() {
+        let on = vec!["--fullscreen".to_string()];
+        assert!(!fullscreen_requested(Some(true), true, false, &on));
     }
 
     #[test]

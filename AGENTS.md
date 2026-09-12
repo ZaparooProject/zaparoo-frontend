@@ -282,6 +282,17 @@ state to go stale because there is no cross-screen state.
 - MiSTer state/log: `/tmp/zaparoo/state.toml`, `/tmp/zaparoo/frontend.log`.
 - `ZAPAROO_CORE_ENDPOINT` overrides `[core] endpoint`; `ZAPAROO_STATE_FILE`
   redirects state for tests and ad-hoc runs.
+- `Runtime` has three values: `Mister`, `SteamOs`, `Desktop`. SteamOS is a
+  desktop-Linux runtime and answers `is_desktop()`, so `platform_paths.rs`
+  stays a two-way `is_mister()` split; the variant only changes defaults for
+  a device that presents like a console. It starts fullscreen and its
+  `device` interface profile resolves to `handheld`.
+  `ZAPAROO_RUNTIME_OVERRIDE=steamos|mister|desktop` forces detection for
+  off-device work. Do not confuse it with the build-time `ZAPAROO_RUNTIME`
+  that `cmake/ZaparooRust.cmake` sets to pick the `zaparoo_runtime` cfg.
+- `[video] fullscreen` is tri-state on purpose. An absent key lets the
+  runtime decide; only an explicit `false` puts a Deck back in a window.
+  `--fullscreen` and `--windowed` override it for one run.
 - Debug logging is enabled with `[logging] debug = true` or `ZAPAROO_DEBUG=1`.
 - `/tmp/zaparoo_launcher_input.json` is Main_MiSTer's alt-launcher input
   report (written on every button press; source is
@@ -289,7 +300,11 @@ state to go stale because there is no cross-screen state.
   `zaparoo_core::controller_report` polls it and feeds `Browse.ControllerReport`,
   which drives the help bar's icon style and accept/cancel positions.
   `ZAPAROO_INPUT_REPORT_FILE` redirects it and forces the watcher on
-  off-MiSTer, mirroring `ZAPAROO_STATE_FILE`. Button-style ids stay the
+  off-MiSTer, mirroring `ZAPAROO_STATE_FILE`. Off MiSTer the Slint
+  frontend's `gamepad` module (gilrs, `desktop` feature only) fills the same
+  `controller_report` channel from the connected pad, and publishes the
+  keyboard style again on the next real key press. One producer owns the
+  channel: the watcher wins where it runs. Button-style ids stay the
   existing neutral `style_a`/`style_b`/`style_c`/`style_d`/`style_e` letters
   — never a controller maker's name — even though the style is now
   auto-detected. A pre-autodetect install's bare `a`/`b`/`c`/`d` (or the

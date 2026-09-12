@@ -40,6 +40,11 @@ desktop = [
     "slint/backend-winit",
     "slint/renderer-femtovg",
     "slint/accessibility",
+    # The X11 window id, so the gamescope focus claim has something to
+    # set its properties on (src/gamescope.rs).
+    "slint/raw-window-handle-06",
+    "dep:gilrs",
+    "dep:raw-window-handle",
 ]
 # The MiSTer build uses Slint's `std` software renderer so text goes
 # through the runtime font stack (fontique + swash + parley): that is
@@ -77,6 +82,9 @@ semver = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
 resvg = { version = "0.47", default-features = false }
 libc = { version = "0.2", optional = true }
+gilrs = { version = "0.11", optional = true }
+# Same version Slint 1.17 and winit resolve; adds no crate to the lock.
+raw-window-handle = { version = "0.6", optional = true }
 # Same version Slint 1.17 resolves; only here to turn on `fontconfig-dlopen`
 # (Cargo unifies the feature onto Slint's own fontique dependency).
 fontique = { version = "0.10", optional = true, default-features = false, features = ["fontconfig-dlopen"] }

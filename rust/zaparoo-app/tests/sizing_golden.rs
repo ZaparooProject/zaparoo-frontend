@@ -60,8 +60,11 @@ fn inputs_of(row: &BTreeMap<&str, &str>) -> Inputs {
         crt_native_path: flag(row, "crt"),
         bitmap_type: flag(row, "bitmap"),
         swap_percentage_axes: flag(row, "swap"),
-        interface_profile: InterfaceProfile::from_name(
+        // The fixtures name the profile outright; no golden row stands in
+        // for a handheld device asking `device` what it is.
+        interface_profile: InterfaceProfile::resolve(
             row.get("profile").expect("missing profile"),
+            false,
         ),
     }
 }

@@ -116,6 +116,16 @@ runtime/platform bugs come back.
 can run on a desktop while talking to Core on a MiSTer on the network,
 or vice-versa.
 
+Runtime has three values: `Mister` (the `/media/fat` marker), `SteamOs`
+(`ID` or `ID_LIKE` in `/etc/os-release`), and `Desktop`. SteamOS is a
+desktop-Linux runtime and answers `is_desktop()`; it shares the XDG paths,
+the windowing system and the rendering backend, so `platform_paths.rs`
+stays a two-way `is_mister()` split. The variant exists only to change
+defaults for a device that presents like a console: it comes up fullscreen
+and the `device` interface profile resolves to `handheld`. Set
+`ZAPAROO_RUNTIME_OVERRIDE=steamos` to develop that behavior off a Deck.
+This is a different variable from the build-time `ZAPAROO_RUNTIME` below.
+
 ### When to use which
 
 - **Runtime gate** — use this when the frontend's host device changes the

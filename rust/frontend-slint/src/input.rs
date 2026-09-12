@@ -109,32 +109,31 @@ fn modal_open(app: &App) -> bool {
         || overlays.get_crt_calibration_open()
 }
 
-/// A real press: guard against a double delivery, map the key to an
-/// action, apply the swaps, route it, then arm the repeat.
-fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, String>, key: &str) {
+/// A real press: guard against a double delivery. Runs before the
+/// action lookup so an unbound key still consumes its slot, which is
+/// what stops native autorepeat on a key nothing is listening for.
+fn accept_press(ctx: &Ctx, app: &App, key: &str) -> bool {
     if app.global::<crate::Shell>().get_dormant() {
-        return;
+        return false;
     }
-    let accepted = {
-        let mut shared = lock(&ctx.shared);
-        if !shared.input.pressed_keys.insert(key.to_string()) {
-            return;
-        }
-        let now = shared.input.now_ms();
-        shared.input.guard.accept(key, now)
-    };
-    if !accepted {
-        return;
+    let mut shared = lock(&ctx.shared);
+    if !shared.input.pressed_keys.insert(key.to_string()) {
+        return false;
     }
-    let Some(action) = crate::actions::action_for_key_with(bindings, key) else {
-        return;
-    };
+    let now = shared.input.now_ms();
+    shared.input.guard.accept(key, now)
+}
+
+/// Apply the swaps to a resolved action, route it, then arm the repeat.
+/// `key` is the hold identity, which is a keyboard key for the keyboard
+/// and a pad-owned string for the gamepad.
+fn route_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
     let (swap_cc, swap_ov) = {
         let shared = lock(&ctx.shared);
         let s = &shared.persist.settings;
         (s.swap_confirm_cancel, s.swap_options_view)
     };
-    let action = rules::swap_actions(&action, swap_cc, swap_ov, keyboard_active()).to_string();
+    let action = rules::swap_actions(action, swap_cc, swap_ov, keyboard_active()).to_string();
     // The screensaver eats the waking press whole, repeat included: a
     // held direction that only woke the screen must not start walking
     // the list behind it.
@@ -143,6 +142,37 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
     if !waking {
         arm_repeat(ctx, app, &action, key);
     }
+}
+
+/// A keyboard press: guard it, map the key to an action, route it.
+fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, String>, key: &str) {
+    if !accept_press(ctx, app, key) {
+        return;
+    }
+    let Some(action) = crate::actions::action_for_key_with(bindings, key) else {
+        return;
+    };
+    route_press(ctx, app, &action, key);
+}
+
+/// A gamepad button already resolved to an action. It arrives here
+/// rather than as a synthetic key event so the live input source stays
+/// knowable: the help bar's glyphs and whether the swap settings apply
+/// both depend on which device is driving. `[input.keyboard]` does not
+/// enter into it -- that file remaps keyboard keys, not pad buttons.
+#[cfg(feature = "desktop")]
+pub fn gamepad_pressed(ctx: &Ctx, app: &App, action: &str, key: &str) {
+    if !accept_press(ctx, app, key) {
+        return;
+    }
+    route_press(ctx, app, action, key);
+}
+
+/// The pad button came up. Same retirement as a key release: only the
+/// hold that started the repeat cancels it.
+#[cfg(feature = "desktop")]
+pub fn gamepad_released(ctx: &Ctx, key: &str) {
+    key_released(ctx, key);
 }
 
 /// The key came up. Only the key that started the repeat cancels it; a
@@ -310,6 +340,9 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
     let pressed_ctx = ctx.clone();
     let weak = app.as_weak();
     app.on_key_pressed(move |text| {
+        // The only real-keyboard entry point in the process, so it is
+        // also where the help bar learns to go back to keycaps.
+        crate::gamepad::note_keyboard_input();
         if let Some(app) = weak.upgrade() {
             key_pressed(&pressed_ctx, &app, &bindings, &text);
         }

@@ -106,13 +106,16 @@ pub enum InterfaceProfile {
 }
 
 impl InterfaceProfile {
-    /// Mirrors the QML `interfaceProfile === "handheld"` test: anything that
-    /// is not exactly `handheld` is the standard profile.
-    pub fn from_name(name: &str) -> Self {
-        if name == "handheld" {
-            Self::Handheld
-        } else {
-            Self::Standard
+    /// Resolve the `interfaceProfile` setting. `handheld` pins the dense
+    /// profile and `standard` pins the roomy one; `device` defers to the
+    /// hardware, which is the only thing `device_is_handheld` answers.
+    /// Anything else is standard, matching the QML
+    /// `interfaceProfile === "handheld"` test it replaces.
+    pub fn resolve(name: &str, device_is_handheld: bool) -> Self {
+        match name {
+            "handheld" => Self::Handheld,
+            "device" if device_is_handheld => Self::Handheld,
+            _ => Self::Standard,
         }
     }
 
@@ -797,5 +800,39 @@ pub fn derive(inputs: &Inputs) -> Derived {
         header_side_margin,
         header_height,
         header_bottom,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::InterfaceProfile;
+
+    #[test]
+    fn device_profile_is_the_only_one_that_asks_the_hardware() {
+        // A pinned profile means the same thing everywhere.
+        for device_is_handheld in [false, true] {
+            assert_eq!(
+                InterfaceProfile::resolve("handheld", device_is_handheld),
+                InterfaceProfile::Handheld
+            );
+            assert_eq!(
+                InterfaceProfile::resolve("standard", device_is_handheld),
+                InterfaceProfile::Standard
+            );
+            // An unknown token stays standard rather than inheriting the
+            // device answer, so a stale setting cannot change density.
+            assert_eq!(
+                InterfaceProfile::resolve("future-profile", device_is_handheld),
+                InterfaceProfile::Standard
+            );
+        }
+        assert_eq!(
+            InterfaceProfile::resolve("device", true),
+            InterfaceProfile::Handheld
+        );
+        assert_eq!(
+            InterfaceProfile::resolve("device", false),
+            InterfaceProfile::Standard
+        );
     }
 }
