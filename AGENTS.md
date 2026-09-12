@@ -73,6 +73,11 @@ the lint image lacks Slint's desktop system libs; run `just lint-slint` and
   values. Keep intentional overrides and explicit application-state defaults
   (including enums). Do not assume `Text`, `Image`, custom components, or `x`/`y`
   share Rectangle sizing defaults.
+- Prefer Slint's built-in named constants and enums over equivalent magic
+  literals: write `font-weight: FontWeight.medium` instead of `500`, and use
+  named easing and property-enum values. Keep raw numbers for calculations and
+  exact design tokens such as palette colors; keep serialized/API tokens at
+  explicit boundaries.
 - Let Slint snap ordinary geometry, images, and text to physical pixels. Do not
   wrap visual `x`/`y`/`width`/`height` expressions in
   `Math.round(... / 1px) * 1px` merely for sharpness; this duplicates the

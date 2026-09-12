@@ -340,7 +340,7 @@ export component SettingsRowView inherits Rectangle {
         visible: false;
         text: SettingsLabels.label(root.entry.id);
         font-size: Sizing.font-body;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
     }
     label := Text {
         x: root.is-action ? (parent.width - self.width) / 2 : root.pad;

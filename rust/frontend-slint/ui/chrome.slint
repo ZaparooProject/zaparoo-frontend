@@ -384,13 +384,13 @@ export component HeaderBar inherits Rectangle {
         overflow: elide;
         text: root.browse-title;
         color: Theme.text-primary;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.header-row-height;
     }
     title-measure := Text {
         visible: false;
         text: root.browse-title;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.header-row-height;
     }
 
@@ -532,7 +532,7 @@ export component TopStatusStrip inherits Rectangle {
     title-measure := Text {
         visible: false;
         text: root.title;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
 
@@ -556,7 +556,7 @@ export component TopStatusStrip inherits Rectangle {
         overflow: elide;
         text: root.title;
         color: Theme.text-primary;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
 
@@ -614,13 +614,13 @@ export component ActiveLabel inherits Rectangle {
     name-measure := Text {
         visible: false;
         text: root.text;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
     tags-measure := Text {
         visible: false;
         text: root.tags;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
 
@@ -631,7 +631,7 @@ export component ActiveLabel inherits Rectangle {
         overflow: elide;
         text: root.text;
         color: Theme.text-primary;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
     if root.has-tags: Text {
@@ -641,7 +641,7 @@ export component ActiveLabel inherits Rectangle {
         overflow: elide;
         text: root.tags;
         color: Theme.text-variant;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
 }
@@ -770,7 +770,7 @@ export component SectionHeader inherits Rectangle {
         overflow: elide;
         text: root.label;
         color: Theme.text-label;
-        font-weight: 600;
+        font-weight: FontWeight.semi-bold;
         font-size: Sizing.font-body;
     }
     Rectangle {
@@ -800,7 +800,7 @@ export component SelectionBar inherits Rectangle {
     // Dark-on-light text reads thinner than light-on-dark at the same
     // weight, so a selected row steps up to Medium; a no-op on the
     // single-strike bitmap face.
-    out property <int> content-weight: root.active ? 500 : 400;
+    out property <int> content-weight: root.active ? FontWeight.medium : FontWeight.normal;
     property <bool> flash: false;
 
     changed active => {

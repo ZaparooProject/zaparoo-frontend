@@ -67,7 +67,7 @@ export component SetupModal inherits Rectangle {
         visible: false;
         text: SettingsLabels.label(StateTokens.picker(root.picker-title));
         font-size: Sizing.font-body;
-        font-weight: 600;
+        font-weight: FontWeight.semi-bold;
     }
 
     panel := Rectangle {
@@ -299,7 +299,7 @@ export component LogUploadModal inherits Rectangle {
                 text: root.failed ? @tr("Retry") : @tr("Done");
                 color: Theme.text-primary;
                 font-size: Sizing.font-body;
-                font-weight: 500;
+                font-weight: FontWeight.medium;
             }
 
             TouchArea {

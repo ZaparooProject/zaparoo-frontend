@@ -51,7 +51,7 @@ export component MarqueeCaption inherits Rectangle {
     in property <length> caption-font-size: Sizing.font-size(3.0);
     in property <color> caption-color: Theme.text-primary;
     in property <color> tags-color: Theme.text-variant;
-    in property <int> caption-weight: 400;
+    in property <int> caption-weight: FontWeight.normal;
     // Tile captions center a fitting name; list rows left-align
     // (ScrollingCaption's centerContent: false).
     in property <bool> center-content: true;
@@ -383,7 +383,7 @@ export component Tile inherits Rectangle {
             text: root.cell.name;
             color: root.art-tint;
             font-size: Math.max(Sizing.font-size(2.8), Math.min(Sizing.font-size(5.8), Math.floor(self.box-h / 2 / 1.362 / 1px) * 1px));
-            font-weight: 600;
+            font-weight: FontWeight.semi-bold;
             wrap: word-wrap;
             overflow: elide;
             horizontal-alignment: center;

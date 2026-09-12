@@ -598,7 +598,7 @@ component SettingsScreen inherits Rectangle {
                 text: SettingsLabels.label(row.id);
                 color: Theme.text-variant;
                 font-size: Sizing.font-caption;
-                font-weight: 600;
+                font-weight: FontWeight.semi-bold;
             }
 
             if row.kind == RowKind.field: SettingsRowView {
@@ -995,7 +995,7 @@ component ListPickerModal inherits Rectangle {
         for entry in root.entries: Text {
             text: root.entry-label(entry);
             font-size: Sizing.font-body;
-            font-weight: 500;
+            font-weight: FontWeight.medium;
         }
     }
     property <length> desired-w: Math.max(measure.preferred-width + root.swatch-band
@@ -1169,7 +1169,7 @@ component LetterJumpModal inherits Rectangle {
                     text: bucket.label;
                     color: cell.focused ? Theme.text-primary : Theme.text-label;
                     font-size: Sizing.font-size(3.4);
-                    font-weight: 500;
+                    font-weight: FontWeight.medium;
                 }
                 Text {
                     x: (parent.width - self.width) / 2;
@@ -1563,7 +1563,7 @@ component ContextMenu inherits Rectangle {
         for entry in root.entries: Text {
             text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
             font-size: Sizing.font-caption;
-            font-weight: 500;
+            font-weight: FontWeight.medium;
         }
     }
     property <length> desired-panel-w: measure.preferred-width + 2 * root.pad-x
@@ -1990,7 +1990,7 @@ component CrtCalibrationPattern inherits Rectangle {
             text: "H \{Overlays.crt-h-offset}   V \{Overlays.crt-v-offset}";
             color: Theme.text-primary;
             font-size: Sizing.font-size(3.2);
-            font-weight: 600;
+            font-weight: FontWeight.semi-bold;
         }
         Text {
             x: (parent.width - self.width) / 2;
