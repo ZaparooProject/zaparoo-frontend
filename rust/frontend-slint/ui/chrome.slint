@@ -146,9 +146,8 @@ export global Status {
 
 // Segmented block progress track (ProgressTrack.qml). Determinate: cells
 // up to the fill fraction paint accent, the rest border-subtle.
-// Indeterminate: one lit cell marches. Either way the leading cell
-// blinks between the two colors every Motion.pulse-ms as a hard cut,
-// never a fade; it stops under Reduce motion and while paused. Cell
+// Indeterminate: one lit cell marches, stopping under Reduce motion and
+// while paused. Determinate cells change only with actual progress. Cell
 // width and gap are whole pixels first so the track's total width is
 // always a whole-pixel sum.
 export component ProgressTrack inherits Rectangle {
@@ -168,9 +167,6 @@ export component ProgressTrack inherits Rectangle {
         ? 0
         : Math.min(root.cell-count, Math.round(Math.max(0, Math.min(1, root.current-step / root.total-steps)) * root.cell-count));
     property <int> march-index: 0;
-    property <int> pulse-cell-index: root.total-known ? Math.max(0, root.filled-cells - 1) : root.march-index;
-    property <bool> pulsing: root.active && !root.paused && Motion.enabled;
-    property <bool> blink-on: true;
 
     width: root.cell-count * root.cell-width + Math.max(0, root.cell-count - 1) * root.cell-gap;
     height: root.cell-height;
@@ -183,25 +179,14 @@ export component ProgressTrack inherits Rectangle {
         }
     }
 
-    Timer {
-        interval: Motion.dur(Motion.pulse-ms);
-        running: root.pulsing;
-        triggered => {
-            root.blink-on = !root.blink-on;
-        }
-    }
-
     for i in root.cell-count: Rectangle {
         property <bool> is-filled: root.active && (i < root.filled-cells || (!root.total-known && i == root.march-index));
-        property <bool> is-pulse-cell: root.pulsing && i == root.pulse-cell-index;
         x: i * (root.cell-width + root.cell-gap);
         y: 0;
         width: root.cell-width;
         height: root.cell-height;
         border-radius: Sizing.radius-sm;
-        background: self.is-pulse-cell
-            ? (root.blink-on ? Theme.accent : Theme.border-subtle)
-            : (self.is-filled ? Theme.accent : Theme.border-subtle);
+        background: self.is-filled ? Theme.accent : Theme.border-subtle;
     }
 }
 
@@ -800,8 +785,8 @@ export component SectionHeader inherits Rectangle {
 // Inverse-video row highlight (SelectionBar.qml), shared by lists and
 // the settings form. Paints nothing at rest; when active, a solid
 // selection-fill bar whose content color the host binds its text to.
-// `activate-pulse` fires a one-shot inverse blink for Motion.press-ms:
-// nothing moves, a text row is not a button.
+// Activation adds a local inset stroke, never a full-row inverse flash.
+// Selection and text contrast remain stable throughout the cue.
 export component SelectionBar inherits Rectangle {
     in property <bool> active: false;
     in property <int> activate-pulse: 0;
@@ -810,9 +795,9 @@ export component SelectionBar inherits Rectangle {
     in property <bool> press-held: false;
     in property <length> radius: Sizing.radius-sm;
 
-    out property <bool> flashing: root.flash || root.press-held;
-    out property <color> bar-color: root.flashing ? Theme.on-accent : Theme.selection-fill;
-    out property <color> content-color: root.flashing ? Theme.selection-fill : Theme.on-accent;
+    out property <bool> flashing: Motion.enabled && (root.flash || root.press-held);
+    out property <color> bar-color: Theme.selection-fill;
+    out property <color> content-color: Theme.on-accent;
     // Dark-on-light text reads thinner than light-on-dark at the same
     // weight, so a selected row steps up to Medium; a no-op on the
     // single-strike bitmap face.
@@ -846,6 +831,14 @@ export component SelectionBar inherits Rectangle {
         visible: root.active;
         background: root.bar-color;
         border-radius: root.radius;
+        if root.flashing: Rectangle {
+            x: Sizing.stroke(2); y: Sizing.stroke(2);
+            width: parent.width - 2 * self.x; height: parent.height - 2 * self.y;
+            background: transparent;
+            border-width: Sizing.stroke(1);
+            border-color: Theme.on-accent;
+            border-radius: Math.max(0px, root.radius - Sizing.stroke(2));
+        }
     }
 }
 

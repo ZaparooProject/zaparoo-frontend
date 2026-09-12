@@ -542,32 +542,10 @@ fn main() {
     };
     app.global::<Shell>().set_active_screen(base.into());
     if screen == "route-forward" {
-        let shell = app.global::<Shell>();
-        shell.set_route_slide_anim(false);
-        shell.set_route_from_screen("hub".into());
-        shell.set_route_to_screen("systems".into());
-        shell.set_route_slide_dir(1);
-        shell.set_route_transitioning(true);
-        shell.set_route_page_slide(0.5);
+        app.global::<Shell>().set_active_screen("systems".into());
     }
     if screen == "route-back" {
-        let shell = app.global::<Shell>();
-        shell.set_active_screen("systems".into());
-        shell.set_route_slide_anim(false);
-        shell.set_route_from_screen("systems".into());
-        shell.set_route_to_screen("hub".into());
-        shell.set_route_slide_dir(-1);
-        shell.set_route_transitioning(true);
-        shell.set_route_page_slide(-0.5);
-    }
-    if screen == "route-cached" {
-        let shell = app.global::<Shell>();
-        shell.set_active_screen("systems".into());
-        shell.set_route_from_screen("hub".into());
-        shell.set_route_to_screen("systems".into());
-        shell.set_route_slide_dir(1);
-        shell.set_route_transitioning(true);
-        shell.set_route_cached_transition(true);
+        app.global::<Shell>().set_active_screen("hub".into());
     }
     if screen.contains("cached") {
         app.global::<SystemsView>().set_cached_transition(true);
@@ -975,16 +953,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
         return;
     };
     // The rows viewport, as the driver computes it.
-    let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
     let card_y = derived.header_bottom
         + profile.status.top_margin
         + profile.status.strip_height
-        + inputs.pct_h(2.0);
-    let card_bottom = if t240 {
-        derived.help_bar_height + inputs.pct_h(2.0)
-    } else {
-        inputs.pct_h(8.0)
-    };
+        + inputs.pct_h(4.0);
+    let card_bottom = derived.help_bar_height + inputs.pct_h(4.0);
     let card_h = (inputs.screen_height as i32 - card_y - card_bottom).max(0);
     let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
     let viewport = (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0);

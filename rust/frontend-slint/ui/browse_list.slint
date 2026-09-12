@@ -11,6 +11,7 @@
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, SelectionBar } from "chrome.slint";
 import { GridCell, MarqueeCaption } from "tiles.slint";
+import { FocusCursor, ScrollOffset } from "focus.slint";
 
 // One metadata table row: a canonical key the vocabulary translates,
 // plus Core's value.
@@ -65,6 +66,9 @@ export global MetaLabels {
 // slice Rust centered on the selection; `selected` is local to it.
 export component BrowseList inherits Rectangle {
     in property <[GridCell]> rows: [];
+    in property <int> model-top: 0;
+    in property <int> scroll-top: 0;
+    in property <string> scope: "";
     in property <int> selected: -1;
     in property <bool> focus-ready: true;
     in property <int> activate-pulse: 0;
@@ -86,6 +90,14 @@ export component BrowseList inherits Rectangle {
 
     property <length> stride: root.row-height + Layout.row-spacing;
     property <length> heart-size: Sizing.pct-h(3.2);
+    scroll := ScrollOffset {
+        target: root.scroll-top * root.stride;
+        step: root.stride;
+        focus-start: (root.selected + root.model-top) * root.stride;
+        focus-size: root.row-height;
+        viewport: root.height - Layout.card-padding-top - Layout.card-padding-bottom;
+        scope: root.scope + ":" + Motion.epoch;
+    }
 
     TouchArea {
         width: 100%;
@@ -104,9 +116,14 @@ export component BrowseList inherits Rectangle {
         }
     }
 
+    Rectangle {
+    y: Layout.card-padding-top;
+    width: root.width;
+    height: Math.max(0px, root.height - Layout.card-padding-top - Layout.card-padding-bottom);
+    clip: true;
     for row[i] in root.rows: Rectangle {
         x: Layout.card-padding-left;
-        y: Layout.card-padding-top + i * root.stride;
+        y: (i + root.model-top) * root.stride - scroll.offset;
         width: parent.width - Layout.card-padding-left - Layout.card-padding-right;
         height: root.row-height;
         // The highlight waits for the host to finalize the selection, so
@@ -169,6 +186,17 @@ export component BrowseList inherits Rectangle {
                 reject
             }
         }
+    }
+    FocusCursor {
+        motion: Motion.enabled && !scroll.moving;
+        radius: Layout.row-radius;
+        target: { x: Layout.card-padding-left,
+            y: (root.selected + root.model-top) * root.stride - scroll.offset,
+            w: root.width - Layout.card-padding-left - Layout.card-padding-right, h: root.row-height,
+            column: 0, row: root.selected + root.model-top,
+            scope: root.scope + ":" + root.scroll-top,
+            valid: root.focus-ready && root.selected >= 0 && root.selected < root.rows.length };
+    }
     }
 }
 
@@ -456,6 +484,9 @@ export component BrowseDetailPane inherits Rectangle {
 // (rows left and detail right, or rows above detail in TATE).
 export component BrowseListDetailView inherits Rectangle {
     in property <[GridCell]> rows: [];
+    in property <int> model-top: 0;
+    in property <int> scroll-top: 0;
+    in property <string> scope: "";
     in property <int> selected: -1;
     in property <bool> focus-ready: true;
     in property <int> activate-pulse: 0;
@@ -501,6 +532,9 @@ export component BrowseListDetailView inherits Rectangle {
         height: root.vertical ? root.list-span : root.height;
         show-chrome: false;
         rows: root.rows;
+        model-top: root.model-top;
+        scroll-top: root.scroll-top;
+        scope: root.scope;
         selected: root.selected;
         focus-ready: root.focus-ready;
         activate-pulse: root.activate-pulse;

@@ -6,8 +6,8 @@
 // contract: screens (the .slint views) never route; every action lands
 // here, and this module decides what fills and what flips. The
 // games entry uses deferred "select -> loading -> next" routing:
-// source remains visible under the Loading cue until destination data
-// is Ready, then cached/native route motion commits the new screen.
+// source remains visible until destination data is ready, then the complete
+// route commits in one turn. Only local controls and spatial paging animate.
 
 use crate::games::GameRow;
 use crate::media_cache::MediaCache;
@@ -272,7 +272,8 @@ pub fn lock(shared: &Arc<Mutex<Shared>>) -> MutexGuard<'_, Shared> {
 }
 
 pub(crate) fn save_persist(shared: &Arc<Mutex<Shared>>) {
-    let snapshot = lock(shared).persist.clone();
+    let snapshot =
+        crate::navigation::source_persist().unwrap_or_else(|| lock(shared).persist.clone());
     persist::save(&snapshot);
 }
 
@@ -763,7 +764,6 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
         if !app.global::<crate::Shell>().get_boot_complete()
             || app.global::<crate::Shell>().get_dormant()
             || app.global::<crate::Shell>().get_transitioning()
-            || app.global::<crate::Shell>().get_route_transitioning()
         {
             return;
         }
@@ -771,33 +771,27 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
     });
 }
 
-const ROUTE_SETTLE_MS: u64 = 190;
-
-/// Grace window before the forward-transition cue paints, matching
-/// `MainLayout.loadingIndicatorDelayMs`. A fill that answers inside it
-/// never blanks the screen the user is still looking at.
+/// Slow work adds feedback without hiding the source or delaying a ready route.
 const LOADING_CUE_DELAY_MS: u64 = 300;
 
 thread_local! {
-    /// Grace-window ticket. Pending fills start and end on the Slint
-    /// event loop and nowhere else, so this never leaves the UI thread
-    /// and does not belong in the shared, lock-guarded state.
     static CUE_SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// A forward fill has started: gate input now, but leave the screen
-/// alone until the grace window is up. Qt's `pendingTransition` plus
-/// `DelayedLoadingIndicator`, in one call.
 pub(crate) fn begin_pending(app: &App, target: &str) {
+    begin_pending_with_direction(app, target, 1);
+}
+
+pub(crate) fn begin_pending_with_direction(app: &App, target: &str, _direction: i32) {
     let shell = app.global::<crate::Shell>();
     if shell.get_transitioning() {
         return;
     }
     shell.set_transition_target(SharedString::from(target));
     shell.set_transitioning(true);
-    let ticket = CUE_SEQ.with(|c| {
-        c.set(c.get() + 1);
-        c.get()
+    let ticket = CUE_SEQ.with(|sequence| {
+        sequence.set(sequence.get().wrapping_add(1));
+        sequence.get()
     });
     let weak = app.as_weak();
     slint::Timer::single_shot(
@@ -817,160 +811,103 @@ pub(crate) fn begin_pending(app: &App, target: &str) {
     );
 }
 
-/// The fill answered (or was abandoned): drop the gate and the cue, and
-/// retire a grace window still counting down.
-fn clear_pending(app: &App) {
-    CUE_SEQ.with(|c| c.set(c.get() + 1));
+pub(crate) fn clear_pending(app: &App) {
+    CUE_SEQ.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
     let shell = app.global::<crate::Shell>();
     shell.set_transitioning(false);
     shell.set_transition_cue(false);
 }
 
-#[cfg(feature = "mister")]
-fn request_cached_route_transition(app: &App, direction: i32) -> bool {
-    let shell = app.global::<crate::Shell>();
-    if shell.get_orientation().as_str() != "horizontal" {
-        return false;
-    }
-    let sizing = app.global::<Sizing>();
-    let width = sizing.get_screen_width().round().max(0.0) as u32;
-    let height = sizing.get_screen_height().round().max(0.0) as u32;
-    let Some(geometry) = sizing::mister_route_transition_geometry(
-        width,
-        height,
-        sizing.get_header_bottom().round().max(0.0) as u32,
-        sizing.get_help_bar_height().round().max(0.0) as u32,
-    ) else {
-        return false;
-    };
-    crate::mister::request_route_transition(geometry, direction)
-}
-
-#[cfg(not(feature = "mister"))]
-fn request_cached_route_transition(_app: &App, _direction: i32) -> bool {
-    false
-}
-
-fn finish_route_transition(app: &App) {
-    let shell = app.global::<crate::Shell>();
-    let target = shell.get_route_to_screen();
-    shell.set_route_slide_anim(false);
-    shell.set_active_screen(target);
-    refresh_layout(app);
-    shell.set_route_cached_transition(false);
-    shell.set_route_from_gated(false);
-    shell.set_route_page_slide(0.0);
-    shell.set_route_from_screen(SharedString::default());
-    shell.set_route_to_screen(SharedString::default());
-    shell.set_route_transitioning(false);
-
-    let weak = app.as_weak();
-    slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
-        if let Some(app) = weak.upgrade() {
-            app.global::<crate::Shell>().set_route_slide_anim(true);
-        }
-    });
-}
-
-fn begin_route_transition(app: &App) {
-    let shell = app.global::<crate::Shell>();
-    if !shell.get_route_transitioning() {
-        return;
-    }
-    let direction = shell.get_route_slide_dir();
-    if request_cached_route_transition(app, direction) {
-        shell.set_route_cached_transition(true);
-        shell.set_active_screen(shell.get_route_to_screen());
-        refresh_layout(app);
-    } else {
-        shell.set_route_slide_anim(true);
-        shell.set_route_page_slide(direction as f32);
-    }
-
-    let expected_target = shell.get_route_to_screen();
-    let weak = app.as_weak();
-    slint::Timer::single_shot(
-        std::time::Duration::from_millis(ROUTE_SETTLE_MS),
-        move || {
-            let Some(app) = weak.upgrade() else {
-                return;
-            };
-            let shell = app.global::<crate::Shell>();
-            if shell.get_route_transitioning() && shell.get_route_to_screen() == expected_target {
-                finish_route_transition(&app);
-            }
-        },
-    );
-}
-
-/// Navigate one level through the screen hierarchy: the destination is
-/// staged one screen-width away on the side we are travelling toward and
-/// the strip slides onto it. `direction` is +1 going down into the
-/// hub-and-spoke and -1 coming back up, so a level always enters from
-/// the same side it will later leave by.
-pub(crate) fn transition_to_screen(app: &App, target: &str, direction: i32) {
-    transition_route(app, target, direction, false);
-}
-
-pub(crate) fn transition_settings_page(app: &App, direction: i32) {
-    transition_route(app, "settings", direction, true);
-}
-
-fn transition_route(app: &App, target: &str, direction: i32, settings_page: bool) {
-    let shell = app.global::<crate::Shell>();
-    let current = shell.get_active_screen();
-    if current.as_str() == target && !settings_page {
-        clear_pending(app);
-        return;
-    }
-    if shell.get_reduce_motion() || !app.global::<crate::Motion>().get_enabled() {
-        clear_pending(app);
-        shell.set_active_screen(SharedString::from(target));
-        refresh_layout(app);
-        return;
-    }
-    if shell.get_route_transitioning() {
-        return;
-    }
-
-    if current.as_str() == "settings" && !settings_page {
-        crate::settings::capture_outgoing(app);
-    }
-
-    // Whatever the user is looking at right now is what slides out, cue
-    // and all. Read the gate before clearing it.
-    shell.set_route_from_gated(shell.get_transition_cue());
+/// Publish a ready destination in this turn, never after a decorative timer.
+pub(crate) fn transition_to_screen(app: &App, target: &str, _direction: i32) {
     clear_pending(app);
+    let motion = app.global::<crate::Motion>();
+    motion.set_epoch(motion.get_epoch().wrapping_add(1));
+    app.global::<crate::Shell>()
+        .set_active_screen(SharedString::from(target));
+    refresh_layout(app);
+}
 
-    shell.set_route_transitioning(true);
-    shell.set_route_from_screen(current);
-    shell.set_route_to_screen(SharedString::from(target));
-    shell.set_route_slide_dir(if direction > 0 { 1 } else { -1 });
-    // The strip is already mounted and settled at 0, so moving the
-    // offset now is a change `animate x` can act on, whether we got
-    // here straight off a keypress or out of a completed fetch.
-    begin_route_transition(app);
+pub(crate) fn transition_settings_page(
+    app: &App,
+    _direction: i32,
+    update: impl FnOnce(&App) + 'static,
+) {
+    update(app);
+    let motion = app.global::<crate::Motion>();
+    motion.set_epoch(motion.get_epoch().wrapping_add(1));
+    refresh_layout(app);
 }
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     if crate::press_feedback::pending(app) {
-        if action == actions::CANCEL || app.global::<crate::Shell>().get_saver_armed() {
-            crate::press_feedback::cancel(app);
-        } else {
+        if action == actions::ACCEPT {
+            return;
+        }
+        crate::press_feedback::cancel(app);
+        if action == actions::CANCEL {
             return;
         }
     }
     if action == actions::ACCEPT {
-        if let Some(target) = crate::press_feedback::current(app) {
+        if let Some(target) = crate::press_feedback::prepare(ctx, app) {
             reset_idle(ctx, app);
             let ctx = ctx.clone();
-            crate::press_feedback::defer(app, target, move |app| {
-                dispatch_action(&ctx, app, actions::ACCEPT);
+            crate::press_feedback::dispatch(app, &target, move |app| {
+                dispatch_with_focus(&ctx, app, actions::ACCEPT);
             });
             return;
         }
     }
+    dispatch_with_focus(ctx, app, action);
+}
+
+fn focus_index(app: &App) -> i32 {
+    let overlays = app.global::<crate::Overlays>();
+    if overlays.get_list_open() {
+        return overlays.get_list_index();
+    }
+    if overlays.get_context_open() {
+        return overlays.get_context_index();
+    }
+    if overlays.get_letter_open() {
+        return overlays.get_letter_index();
+    }
+    if overlays.get_dialog_open() {
+        return overlays.get_dialog_focus();
+    }
+    let setup = app.global::<crate::SetupModalView>();
+    if setup.get_open() {
+        return if setup.get_picker_page() {
+            setup.get_picker_sel()
+        } else {
+            setup.get_index()
+        };
+    }
+    match app.global::<crate::Shell>().get_active_screen().as_str() {
+        "hub" => app.global::<crate::HubView>().get_selected_local(),
+        "settings" => app.global::<crate::SettingsView>().get_index(),
+        "systems" | "favorite-systems" => app.global::<crate::SystemsView>().get_current_index(),
+        _ => app.global::<crate::GamesView>().get_current_index(),
+    }
+}
+
+fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
+    let before = focus_index(app);
     dispatch_action(ctx, app, action);
+    let after = focus_index(app);
+    // A wrap can look geometrically adjacent on a two-row/two-column grid.
+    // Input direction disambiguates it; never glide backward across that wrap.
+    let wrapped = match action {
+        actions::UP | actions::LEFT => after > before,
+        actions::DOWN | actions::RIGHT => after < before,
+        actions::PAGE_PREV | actions::PAGE_NEXT => true,
+        _ => false,
+    };
+    if wrapped {
+        let motion = app.global::<crate::Motion>();
+        motion.set_epoch(motion.get_epoch().wrapping_add(1));
+    }
 }
 
 fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
@@ -1045,9 +982,10 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         crate::game_info::handle_action(ctx, app, action);
         return;
     }
-    if app.global::<crate::Shell>().get_transitioning()
-        || app.global::<crate::Shell>().get_route_transitioning()
-    {
+    if app.global::<crate::Shell>().get_transitioning() {
+        if action == actions::CANCEL {
+            crate::navigation::cancel(ctx, app);
+        }
         return;
     }
     // A fresh press always keeps (or restores) the live grid; only the
@@ -1925,8 +1863,8 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
             .on_pointer_choice(move |kind, index, accept| {
                 let Some(app) = weak.upgrade() else { return };
                 if index < 0
-                    || !lock(&ctx.shared).persist.settings.mouse_enabled
                     || crate::press_feedback::pending(&app)
+                    || !lock(&ctx.shared).persist.settings.mouse_enabled
                 {
                     return;
                 }
@@ -1978,8 +1916,8 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
             let Some(app) = weak.upgrade() else {
                 return;
             };
-            if !lock(&ctx.shared).persist.settings.mouse_enabled
-                || crate::press_feedback::pending(&app)
+            if crate::press_feedback::pending(&app)
+                || !lock(&ctx.shared).persist.settings.mouse_enabled
             {
                 return;
             }
@@ -1992,7 +1930,7 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
         let Some(app) = weak.upgrade() else {
             return;
         };
-        if !lock(&ctx.shared).persist.settings.mouse_enabled || crate::press_feedback::pending(&app)
+        if crate::press_feedback::pending(&app) || !lock(&ctx.shared).persist.settings.mouse_enabled
         {
             return;
         }

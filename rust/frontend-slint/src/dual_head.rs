@@ -87,7 +87,6 @@ enum TransitionPhase {
 
 #[derive(Default)]
 struct SyncState {
-    route: TransitionPhase,
     systems: TransitionPhase,
     games: TransitionPhase,
     /// Screen the CRT head last resolved its layout profile for.
@@ -107,61 +106,7 @@ struct SyncState {
 fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     let source = primary.global::<Shell>();
     let target = crt.global::<Shell>();
-    let route_in_progress = source.get_route_transitioning();
-    let route_motion =
-        source.get_route_cached_transition() || source.get_route_page_slide().abs() > f32::EPSILON;
-    if route_in_progress {
-        set_if_changed!(target, get_route_transitioning => set_route_transitioning, true);
-        set_if_changed!(
-            target,
-            get_route_from_screen => set_route_from_screen,
-            source.get_route_from_screen()
-        );
-        set_if_changed!(
-            target,
-            get_route_to_screen => set_route_to_screen,
-            source.get_route_to_screen()
-        );
-        set_if_changed!(
-            target,
-            get_route_slide_dir => set_route_slide_dir,
-            source.get_route_slide_dir()
-        );
-        set_if_changed!(
-            target,
-            get_route_cached_transition => set_route_cached_transition,
-            false
-        );
-        set_if_changed!(
-            target,
-            get_route_from_gated => set_route_from_gated,
-            source.get_route_from_gated()
-        );
-        if route_motion && state.route != TransitionPhase::Active {
-            target.set_active_screen(source.get_route_from_screen());
-            target.set_route_slide_anim(true);
-            target.set_route_page_slide(source.get_route_slide_dir() as f32);
-            state.route = TransitionPhase::Active;
-        }
-    } else if state.route == TransitionPhase::Active || target.get_route_transitioning() {
-        target.set_route_slide_anim(false);
-        target.set_active_screen(source.get_active_screen());
-        target.set_route_from_gated(false);
-        target.set_route_page_slide(0.0);
-        target.set_route_from_screen(slint::SharedString::default());
-        target.set_route_to_screen(slint::SharedString::default());
-        target.set_route_transitioning(false);
-        state.route = TransitionPhase::Rearm;
-    } else if state.route == TransitionPhase::Rearm {
-        target.set_route_slide_anim(true);
-        state.route = TransitionPhase::Idle;
-    } else {
-        set_if_changed!(
-            target,
-            get_active_screen => set_active_screen,
-            source.get_active_screen()
-        );
-    }
+    set_if_changed!(target, get_active_screen => set_active_screen, source.get_active_screen());
     copy_properties!(source, target;
         get_transitioning => set_transitioning,
         get_transition_cue => set_transition_cue,
@@ -230,6 +175,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     let target = crt.global::<Motion>();
     copy_properties!(source, target;
         get_enabled => set_enabled,
+        get_epoch => set_epoch,
     );
 
     // The CRT head shows the HDMI head's page at its own geometry: the
@@ -258,6 +204,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_focus_ready => set_focus_ready,
         get_move_armed => set_move_armed,
         get_held_local => set_held_local,
+        get_move_origins => set_move_origins,
+        get_move_pulse => set_move_pulse,
         get_options_available => set_options_available,
         get_activate_pulse => set_activate_pulse,
         get_release_pulse => set_release_pulse,
@@ -295,6 +243,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
 
     let source = primary.global::<SystemsView>();
     let target = crt.global::<SystemsView>();
+    target.set_list_scroll_top(source.get_list_scroll_top());
     copy_properties!(source, target;
         get_mode => set_mode,
         get_category => set_category,
@@ -481,6 +430,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
 
     let source = primary.global::<GamesView>();
     let target = crt.global::<GamesView>();
+    target.set_list_scroll_top(source.get_list_scroll_top());
     copy_properties!(source, target;
         get_mode => set_mode,
         get_folder_slide => set_folder_slide,
@@ -641,10 +591,14 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
 
     let source = primary.global::<crate::PressFeedback>();
     let target = crt.global::<crate::PressFeedback>();
-    copy_properties!(source, target;
-        get_index => set_index,
-        get_owner => set_owner,
-    );
+    let index = match source.get_owner().as_str() {
+        "hub" => crt.global::<HubView>().get_selected_local(),
+        "systems" => crt.global::<SystemsView>().get_selected_local(),
+        "games" => crt.global::<GamesView>().get_selected_local(),
+        _ => source.get_index(),
+    };
+    set_if_changed!(target, get_index => set_index, index);
+    copy_properties!(source, target; get_owner => set_owner);
 
     let source = primary.global::<crate::AboutView>();
     let target = crt.global::<crate::AboutView>();
@@ -802,7 +756,7 @@ mod tests {
         primary
             .global::<Shell>()
             .set_active_screen("settings".into());
-        crate::router::transition_settings_page(&primary, -1);
+        crate::router::transition_settings_page(&primary, -1, |_| {});
         let mut state = SyncState::default();
         sync_with_state(&primary, &crt, &mut state);
         let target = crt.global::<SettingsView>();
@@ -815,8 +769,8 @@ mod tests {
                 && row.height < 100.0));
         assert!(target.get_rows_height() > 0.0 && target.get_rows_height() < 240.0);
         assert!(target.get_cell_width() > 0.0 && target.get_cell_width() < 352.0);
-        assert!(crt.global::<Shell>().get_route_transitioning());
-        assert_eq!(crt.global::<Shell>().get_route_slide_dir(), -1);
+        assert!(!crt.global::<Shell>().get_transitioning());
+        assert_eq!(crt.global::<Shell>().get_active_screen(), "settings");
         let rows = target.get_rows();
         sync_with_state(&primary, &crt, &mut state);
         assert_eq!(target.get_rows(), rows);
@@ -876,39 +830,19 @@ mod tests {
 
         let mut state = SyncState::default();
 
-        // Cached HDMI route motion becomes native Slint motion on CRT.
-        // Source screen stays mounted until primary transition completion.
+        // Both heads preserve source during pending work and commit the ready
+        // route on the next synchronization, without a second animation gate.
         let shell = primary.global::<Shell>();
-        shell.set_route_from_screen(SharedString::from("games"));
-        shell.set_route_to_screen(SharedString::from("systems"));
-        shell.set_route_slide_dir(1);
-        shell.set_route_cached_transition(true);
-        shell.set_route_transitioning(true);
+        shell.set_transitioning(true);
+        shell.set_active_screen(SharedString::from("games"));
+        sync_with_state(&primary, &crt, &mut state);
+        assert_eq!(crt.global::<Shell>().get_active_screen(), "games");
+        assert!(crt.global::<Shell>().get_transitioning());
         shell.set_active_screen(SharedString::from("systems"));
+        shell.set_transitioning(false);
         sync_with_state(&primary, &crt, &mut state);
-        assert_eq!(crt.global::<Shell>().get_active_screen().as_str(), "games");
-        assert!(crt.global::<Shell>().get_route_transitioning());
-        assert_eq!(
-            crt.global::<Shell>().get_route_from_screen().as_str(),
-            "games"
-        );
-        assert_eq!(
-            crt.global::<Shell>().get_route_to_screen().as_str(),
-            "systems"
-        );
-        assert!((crt.global::<Shell>().get_route_page_slide() - 1.0).abs() < f32::EPSILON);
-
-        shell.set_route_cached_transition(false);
-        shell.set_route_transitioning(false);
-        sync_with_state(&primary, &crt, &mut state);
-        assert_eq!(
-            crt.global::<Shell>().get_active_screen().as_str(),
-            "systems"
-        );
-        assert!(!crt.global::<Shell>().get_route_transitioning());
-        assert!(!crt.global::<Shell>().get_route_slide_anim());
-        sync_with_state(&primary, &crt, &mut state);
-        assert!(crt.global::<Shell>().get_route_slide_anim());
+        assert_eq!(crt.global::<Shell>().get_active_screen(), "systems");
+        assert!(!crt.global::<Shell>().get_transitioning());
 
         // Cached HDMI grid motion must not force a CRT cut. The CRT keeps
         // its current page, stages the destination at its own four-item

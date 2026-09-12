@@ -253,7 +253,8 @@ deploy-mister *args:
 slint-run-dev *args:
     ./scripts/run-slint-dev.sh {{args}}
 
-# Start/control an isolated live Slint dev window via its embedded MCP server.
+# Start/control isolated Slint UI via embedded MCP. `run` defaults to a headless
+# software canvas; pass `run --visible` only when desktop-window behavior matters.
 # `just slint-ui --help` lists screenshot, key, click, tree, and lifecycle commands.
 [positional-arguments]
 slint-ui *args:

@@ -8,6 +8,7 @@
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, SectionHeader, SelectionBar } from "chrome.slint";
+import { FocusCursor } from "focus.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { PressableSurface } from "tiles.slint";
 
@@ -38,8 +39,8 @@ export component SetupModal inherits Rectangle {
     background: Theme.scrim;
 
     property <length> pad-x: Sizing.pct-w(4);
-    property <length> pad-y: Sizing.pct-h(3);
-    property <length> title-h: Sizing.pct-h(9);
+    property <length> pad-y: Sizing.pct-h(4);
+    property <length> title-gap: Sizing.pct-h(3);
     property <length> row-gap: Sizing.pct-h(1.5);
     property <length> picker-row-h: Sizing.pct-h(7);
     property <length> picker-gap: Sizing.pct-h(1);
@@ -58,8 +59,9 @@ export component SetupModal inherits Rectangle {
         + root.picker-rows.length * root.picker-row-h
         + Math.max(0, root.picker-rows.length - 1) * root.picker-gap;
     property <length> body-h: root.picker-page ? root.picker-h : root.form-h;
+    property <length> content-y: root.pad-y + title.preferred-height + root.title-gap;
     property <length> panel-w: Math.min(Sizing.pct-h(110), root.width - 2 * Sizing.pct-w(6));
-    property <length> panel-h: root.title-h + root.body-h + 2 * root.pad-y;
+    property <length> panel-h: root.content-y + root.body-h + root.pad-y;
 
     header-measure := Text {
         visible: false;
@@ -77,22 +79,29 @@ export component SetupModal inherits Rectangle {
         border-radius: Sizing.radius-md;
         clip: true;
 
-        Text {
+        title := Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            y: root.pad-y;
             text: SettingsLabels.setup-title(root.kind);
             color: Theme.text-primary;
             font-size: Sizing.font-title;
-            font-weight: 500;
         }
 
         // The form.
         if !root.picker-page: Rectangle {
             x: root.pad-x;
-            y: root.title-h;
+            y: root.content-y;
             width: parent.width - 2 * root.pad-x;
             height: root.form-h;
 
+            FocusCursor {
+                target: { x: 0px,
+                    y: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].y-offset + root.index * root.row-gap : 0px,
+                    w: parent.width,
+                    h: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].height : 0px,
+                    column: 0, row: root.index, scope: root.kind,
+                    valid: root.index >= 0 && root.index < root.rows.length };
+            }
             for row[i] in root.rows: SettingsRowView {
                 x: 0;
                 y: row.y-offset + i * root.row-gap;
@@ -116,7 +125,7 @@ export component SetupModal inherits Rectangle {
         // the scroll cues for what sits outside the window.
         if root.picker-page: Rectangle {
             x: root.pad-x;
-            y: root.title-h;
+            y: root.content-y;
             width: parent.width - 2 * root.pad-x;
             height: root.picker-h;
 
@@ -136,6 +145,12 @@ export component SetupModal inherits Rectangle {
                 source: GlyphSource.glyph("icons/ScrollUp", root.arrow, Theme.text-label);
             }
 
+            FocusCursor {
+                target: { x: 0px, y: root.header-h + root.arrow-band + root.picker-sel * (root.picker-row-h + root.picker-gap),
+                    w: parent.width, h: root.picker-row-h, column: 0, row: root.picker-sel,
+                    scope: root.picker-title,
+                    valid: root.picker-sel >= 0 && root.picker-sel < root.picker-rows.length };
+            }
             for entry[i] in root.picker-rows: Rectangle {
                 x: 0;
                 y: root.header-h + root.arrow-band + i * (root.picker-row-h + root.picker-gap);
@@ -194,8 +209,8 @@ export component LogUploadModal inherits Rectangle {
     background: Theme.scrim;
 
     property <length> pad-x: Sizing.pct-w(4);
-    property <length> pad-y: Sizing.pct-h(3);
-    property <length> title-h: Sizing.pct-h(9);
+    property <length> pad-y: Sizing.pct-h(4);
+    property <length> title-gap: Sizing.pct-h(3);
     property <length> button-h: Sizing.pct-h(7);
     property <bool> done: root.phase == "done";
     property <bool> failed: root.phase == "failed";
@@ -208,9 +223,10 @@ export component LogUploadModal inherits Rectangle {
     property <length> body-h: root.done
         ? root.qr-px + Sizing.pct-h(2) + url-text.preferred-height
         : message.preferred-height;
+    property <length> content-y: root.pad-y + title.preferred-height + root.title-gap;
     property <length> panel-w: Math.min(Sizing.pct-h(110), root.width - 2 * Sizing.pct-w(6));
-    property <length> panel-h: root.title-h + root.body-h + Sizing.pct-h(3)
-        + (root.phase == "uploading" ? 0px : root.button-h) + 2 * root.pad-y;
+    property <length> panel-h: root.content-y + root.body-h
+        + (root.phase == "uploading" ? 0px : root.title-gap + root.button-h) + root.pad-y;
 
     Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
@@ -221,18 +237,17 @@ export component LogUploadModal inherits Rectangle {
         border-radius: Sizing.radius-md;
         clip: true;
 
-        Text {
+        title := Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            y: root.pad-y;
             text: @tr("Upload log file");
             color: Theme.text-primary;
             font-size: Sizing.font-title;
-            font-weight: 500;
         }
 
         message := Text {
             x: root.pad-x;
-            y: root.title-h;
+            y: root.content-y;
             width: parent.width - 2 * root.pad-x;
             visible: !root.done;
             wrap: word-wrap;
@@ -246,7 +261,7 @@ export component LogUploadModal inherits Rectangle {
 
         if root.done: Rectangle {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: root.title-h;
+            y: root.content-y;
             width: root.qr-px;
             height: root.qr-px;
             background: white;
@@ -265,7 +280,7 @@ export component LogUploadModal inherits Rectangle {
 
         url-text := Text {
             x: root.pad-x;
-            y: root.title-h + root.qr-px + Sizing.pct-h(2);
+            y: root.content-y + root.qr-px + Sizing.pct-h(2);
             width: parent.width - 2 * root.pad-x;
             visible: root.done;
             wrap: char-wrap;

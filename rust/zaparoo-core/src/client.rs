@@ -1071,6 +1071,23 @@ mod tests {
         log
     }
 
+    #[tokio::test]
+    async fn offline_test_endpoint_is_rejected_before_transport() {
+        // The UI harness relies on a scheme with no transport/default port.
+        // Keep this rejection locked when upgrading the WebSocket dependency.
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            tokio_tungstenite::connect_async("zaparoo-offline://localhost"),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Ok(Err(tokio_tungstenite::tungstenite::Error::Url(
+                tokio_tungstenite::tungstenite::error::UrlError::UnsupportedUrlScheme
+            )))
+        ));
+    }
+
     #[test]
     fn first_ever_attempt_publishes_connecting_then_connected() {
         assert_eq!(

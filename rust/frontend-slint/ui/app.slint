@@ -11,6 +11,7 @@
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, SelectionBar, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
+import { FocusCursor, ScrollOffset } from "focus.slint";
 import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
@@ -56,28 +57,13 @@ export struct LetterBucket {
 
 export global Shell {
     in-out property <string> active-screen: "hub";
-    // A forward fill is pending (Main.qml's `pendingTransition`): gates
-    // input and the screensaver, but paints nothing on its own.
+    // A Core-backed destination is pending. Preserve source, gate duplicate
+    // accepts/pointer changes, and allow Back to cancel.
     in-out property <bool> transitioning: false;
-    // The "Loading…" cue is actually on screen. Qt only raises this
-    // after `loadingIndicatorDelayMs`, and only this hides the source
-    // screen's content - a fill that answers inside the grace window
-    // never blanks anything. See DelayedLoadingIndicator.qml.
+    // Delayed header feedback shown only when a wait outlasts its grace
+    // window. Fast routes complete without flashing loading text.
     in-out property <bool> transition-cue: false;
     in-out property <string> transition-target;
-    // The screen sliding out was already gated when the route change
-    // began, so it must not un-gate for the length of the slide.
-    in-out property <bool> route-from-gated: false;
-    // Screen-route motion is separate from asynchronous Loading state.
-    // Cached HDMI renders only the destination endpoint; native backends
-    // use the same state to push two screen layers at their own geometry.
-    in-out property <bool> route-transitioning: false;
-    in-out property <bool> route-cached-transition: false;
-    in-out property <string> route-from-screen: "";
-    in-out property <string> route-to-screen: "";
-    in-out property <int> route-slide-dir: 1;
-    in-out property <float> route-page-slide: 0;
-    in-out property <bool> route-slide-anim: true;
     // Transient light cue / error line (the CoreStatusPill slot).
     // The header's transient app line, as a `Labels.status` key.
     in-out property <string> status-text: "";
@@ -106,7 +92,7 @@ export global Shell {
     in-out property <string> boot-text: "";
     // Primary game active: gate input and recurring work behind emulator.
     in-out property <bool> dormant: false;
-    // Reduce motion collapses animations; marquee remains readable.
+    // Reduce motion collapses decorative animation and caption movement.
     in-out property <bool> reduce-motion: false;
     in-out property <bool> mouse-enabled: false;
     // Screensaver armed (idle timeout elapsed); any input disarms via
@@ -162,6 +148,8 @@ export global HubView {
     in-out property <bool> focus-ready: false;
     in-out property <bool> move-armed: false;
     in-out property <int> held-local: -1;
+    in-out property <[int]> move-origins: [];
+    in-out property <int> move-pulse: 0;
     in-out property <bool> options-available: false;
     in-out property <int> activate-pulse: 0;
     in-out property <int> release-pulse: 0;
@@ -234,6 +222,7 @@ export global SystemsView {
     // Detailed list: the window Rust centers on the selection, its row
     // metrics and cues, and the detail pane (logo, name, metadata).
     in-out property <int> current-index: 0;
+    in-out property <int> list-scroll-top: 0;
     in-out property <[GridCell]> list-rows: [];
     in-out property <int> list-sel: 0;
     in-out property <int> list-view-top: 0;
@@ -390,8 +379,8 @@ export global GamesView {
     // RapidScrollIndicator: the landing row's first letter while page
     // flips chain quickly.
     in-out property <string> rapid-letter: "";
-    // Detailed list: the window Rust centers on the selection, its row
-    // metrics and cues, and the detail pane.
+    // Detailed list: one overscan row on either side of the minimal viewport.
+    in-out property <int> list-scroll-top: 0;
     in-out property <[GridCell]> list-rows: [];
     in-out property <int> list-sel: 0;
     in-out property <int> list-view-top: 0;
@@ -524,6 +513,8 @@ component SettingsScreen inherits Rectangle {
         width: parent.width;
         height: SettingsView.grid-height;
         cells: SettingsView.cells;
+        press-held: PressFeedback.active("settings", root.index);
+        focus-scope: "settings";
         columns: SettingsView.columns;
         cell-width: SettingsView.cell-width;
         cell-height: SettingsView.cell-height;
@@ -533,7 +524,7 @@ component SettingsScreen inherits Rectangle {
         top-inset: Layout.grid-top-inset;
         column-gap: Layout.grid-column-gap;
         row-gap: Layout.grid-row-gap;
-        selected-local: Shell.route-transitioning ? -1 : root.index;
+        selected-local: root.index;
         section-focused: !Overlays.list-open;
         focus-ready: true;
         activate-pulse: SettingsView.activate-pulse;
@@ -559,10 +550,10 @@ component SettingsScreen inherits Rectangle {
     // Page: rows in a card, with the hint band pinned to its bottom.
     // The card carries its own margins rather than the browse profile's
     // card values, which belong to whichever browse view was last shown.
-    property <length> card-x: Sizing.pct-w(3);
-    property <length> card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Sizing.pct-h(2);
-    property <length> card-w: self.width - 2 * self.card-x;
-    property <length> card-h: self.height - self.card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Sizing.pct-h(2) : Sizing.pct-h(8));
+    property <length> card-x: Math.round((self.width - self.card-w) / 2px) * 1px;
+    property <length> card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Sizing.pct-h(4);
+    property <length> card-w: Math.min(self.width - 2 * Sizing.pct-w(3), Sizing.pct-w(70));
+    property <length> card-h: self.height - self.card-y - Sizing.help-bar-height - Sizing.pct-h(4);
     property <length> pad-x: Sizing.pct-w(2);
     property <length> pad-y: Sizing.pct-h(2);
     property <length> row-h: Sizing.pct-h(8);
@@ -587,6 +578,14 @@ component SettingsScreen inherits Rectangle {
         // Rows stack from the top inside a clipped viewport; a busy
         // action row is taller, so Rust stacks the offsets and scrolls
         // the band to keep the focused row on screen.
+        row-scroll := ScrollOffset {
+            target: root.scroll;
+            step: 2 * root.row-h;
+            focus-start: root.rows[root.index].y-offset;
+            focus-size: root.rows[root.index].height;
+            viewport: root.rows-height;
+            scope: root.page + ":" + Motion.epoch;
+        }
         rows-band := Rectangle {
             x: root.pad-x;
             y: root.pad-y;
@@ -596,7 +595,7 @@ component SettingsScreen inherits Rectangle {
 
         for row[i] in root.rows: Rectangle {
             x: 0;
-            y: row.y-offset - root.scroll;
+            y: row.y-offset - row-scroll.offset;
             width: parent.width;
             height: row.height;
 
@@ -613,7 +612,7 @@ component SettingsScreen inherits Rectangle {
                 width: 100%;
                 height: 100%;
                 entry: row;
-                focused: i == root.index && !Shell.route-transitioning;
+                focused: i == root.index;
                 activate-pulse: SettingsView.activate-pulse;
                 settling: Shell.active-screen != "settings";
             }
@@ -626,6 +625,16 @@ component SettingsScreen inherits Rectangle {
                 }
                 clicked => { SettingsInput.row-clicked(i); }
             }
+        }
+        FocusCursor {
+            motion: Motion.enabled && !row-scroll.moving;
+            target: { x: 0px,
+                y: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].y-offset - row-scroll.offset : 0px,
+                w: parent.width,
+                h: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].height : 0px,
+                column: 0, row: root.index, scope: root.page,
+                valid: root.index >= 0 && root.index < root.rows.length };
+            radius: Layout.row-radius;
         }
         }
 
@@ -668,6 +677,8 @@ component HubScreen inherits Rectangle {
         width: parent.width;
         height: HubView.grid-height;
         cells: HubView.cells;
+        press-held: PressFeedback.active("hub", HubView.selected-local);
+        focus-scope: "hub:" + HubView.page;
         columns: HubView.columns;
         cell-width: HubView.cell-width;
         cell-height: HubView.cell-height;
@@ -680,6 +691,8 @@ component HubScreen inherits Rectangle {
         selected-local: HubView.selected-local;
         focus-ready: HubView.focus-ready;
         held-local: HubView.held-local;
+        move-origins: HubView.move-origins;
+        move-pulse: HubView.move-pulse;
         activate-pulse: HubView.activate-pulse;
         release-pulse: HubView.release-pulse;
         settling: Shell.active-screen != "hub";
@@ -688,7 +701,7 @@ component HubScreen inherits Rectangle {
         skip-empty-cells: !HubView.move-armed;
         // Hidden on a forward transition and while the load error shows,
         // so the cue paints alone against the background.
-        visible: !Shell.transition-cue && !root.gated && !root.error;
+        visible: !root.gated && !root.error;
         caption-for(cell) => { return Labels.hub(cell.label-key, cell.name); }
         cell-hovered(i) => { HubInput.cell-hovered(i); }
         cell-clicked(i) => { HubInput.cell-clicked(i); }
@@ -706,7 +719,7 @@ component HubScreen inherits Rectangle {
         side-inset: indicator.width + Sizing.hub-grid-side-inset;
         text: Labels.hub(HubView.label-key, HubView.label-name);
         tags: Labels.hub-reason(HubView.label-reason);
-        visible: !Shell.transition-cue && !root.gated && HubView.label-visible;
+        visible: !root.gated && HubView.label-visible;
     }
 
     indicator := PageIndicator {
@@ -746,7 +759,7 @@ component SystemsScreen inherits Rectangle {
     property <bool> tate-list: self.list-layout && Shell.orientation != "horizontal";
     property <string> state: SystemsView.error != "" ? "error"
         : (SystemsView.loading ? "loading" : (SystemsView.count == 0 ? "empty" : ""));
-    property <bool> gate-hide: Shell.transition-cue || root.gated || SystemsView.loading || cue.loading-visible || SystemsView.error != "";
+    property <bool> gate-hide: root.gated || SystemsView.loading || cue.loading-visible || SystemsView.error != "";
     property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
     property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
     property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
@@ -796,10 +809,11 @@ component SystemsScreen inherits Rectangle {
 
         Rectangle {
             x: 0;
-            y: -SystemsView.page-slide * root.period;
+            property <float> page-progress: SystemsView.page-slide;
+            y: Math.round(-self.page-progress * root.period / 1px) * 1px;
             width: parent.width;
             height: parent.height;
-            animate y { duration: SystemsView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
+            animate page-progress { duration: SystemsView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
 
             PagedGridView {
                 x: 0;
@@ -807,6 +821,8 @@ component SystemsScreen inherits Rectangle {
                 width: parent.width;
                 height: parent.height;
                 cells: SystemsView.cells;
+                focus-scope: SystemsView.mode + ":" + SystemsView.page;
+                focus-motion: SystemsView.page-slide == 0 && !SystemsView.cached-transition;
                 columns: SystemsView.columns;
                 cell-width: SystemsView.cell-width;
                 cell-height: SystemsView.cell-height;
@@ -816,9 +832,10 @@ component SystemsScreen inherits Rectangle {
                 top-inset: Layout.grid-top-inset;
                 column-gap: Layout.grid-column-gap;
                 row-gap: Layout.grid-row-gap;
-                selected-local: SystemsView.cached-transition || Shell.route-transitioning ? -1 : SystemsView.selected-local;
+                selected-local: SystemsView.cached-transition ? -1 : SystemsView.selected-local;
                 section-focused: !Overlays.context-open;
                 focus-ready: SystemsView.focus-ready;
+                press-held: PressFeedback.active("systems", SystemsView.selected-local);
                 activate-pulse: SystemsView.activate-pulse;
                 release-pulse: SystemsView.release-pulse;
                 settling: Shell.active-screen != SystemsView.mode;
@@ -864,6 +881,9 @@ component SystemsScreen inherits Rectangle {
         width: root.list-card-w;
         height: root.list-card-h;
         rows: SystemsView.list-rows;
+        model-top: SystemsView.list-view-top;
+        scroll-top: SystemsView.list-scroll-top;
+        scope: SystemsView.mode + ":" + SystemsView.category;
         selected: SystemsView.list-sel;
         focus-ready: SystemsView.focus-ready;
         activate-pulse: SystemsView.activate-pulse;
@@ -961,10 +981,11 @@ component ListPickerModal inherits Rectangle {
 
     background: Theme.scrim;
 
-    property <length> row-h: Sizing.pct-h(6);
+    property <length> row-h: Sizing.pct-h(7);
     property <length> row-sp: Sizing.pct-h(1);
     property <length> stride: root.row-h + root.row-sp;
-    property <length> title-h: Sizing.pct-h(8);
+    property <length> pad-y: Sizing.pct-h(4);
+    property <length> title-gap: Sizing.pct-h(3);
     property <length> arrow: Sizing.pct-h(3);
     // A long option list (languages, color schemes) scrolls rather than
     // growing the panel past the screen; PickerList.qml's own cap.
@@ -1006,7 +1027,8 @@ component ListPickerModal inherits Rectangle {
         + 2 * Sizing.pct-w(2) + Sizing.stroke(2), title.preferred-width)
         + 2 * root.pad-x + Math.round(Sizing.font-body * 1.5 / 1px) * 1px;
     property <length> panel-w: Math.min(Sizing.pct-w(92), Math.max(Sizing.pct-w(30), Math.ceil(root.desired-w / 1px) * 1px));
-    property <length> panel-h: root.title-h + root.viewport-h + 2 * root.arrow-band + Sizing.pct-h(4);
+    property <length> content-y: root.pad-y + title.preferred-height + root.title-gap;
+    property <length> panel-h: root.content-y + root.viewport-h + 2 * root.arrow-band + root.pad-y;
 
     Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
@@ -1021,18 +1043,17 @@ component ListPickerModal inherits Rectangle {
 
         title := Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            y: root.pad-y;
             width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
             overflow: elide;
             text: root.setting-id != "" ? SettingsLabels.label(root.setting-id) : root.title;
             color: Theme.text-primary;
             font-size: Sizing.font-title;
-            font-weight: 500;
         }
 
         if root.top > 0: Image {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: root.title-h;
+            y: root.content-y;
             width: root.arrow;
             height: root.arrow;
             source: GlyphSource.glyph("icons/ScrollUp", root.arrow, Theme.text-label);
@@ -1040,11 +1061,17 @@ component ListPickerModal inherits Rectangle {
 
         Rectangle {
             x: root.pad-x;
-            y: root.title-h + root.arrow-band;
+            y: root.content-y + root.arrow-band;
             width: parent.width - 2 * root.pad-x;
             height: root.viewport-h;
             clip: true;
 
+            FocusCursor {
+                target: { x: 0px, y: (root.current-index - root.top) * root.stride,
+                    w: parent.width, h: root.row-h, column: 0, row: root.current-index,
+                    scope: root.title + ":" + root.setting-id + ":" + root.top,
+                    valid: root.current-index >= 0 && root.current-index < root.entries.length };
+            }
             for entry[i] in root.entries: Rectangle {
                 x: 0;
                 y: (i - root.top) * root.stride;
@@ -1090,7 +1117,7 @@ component ListPickerModal inherits Rectangle {
 
         if root.top + root.visible-rows < root.entries.length: Image {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: parent.height - Sizing.pct-h(4) - root.arrow;
+            y: parent.height - root.pad-y - root.arrow;
             width: root.arrow;
             height: root.arrow;
             source: GlyphSource.glyph("icons/ScrollDown", root.arrow, Theme.text-label);
@@ -1111,16 +1138,18 @@ component LetterJumpModal inherits Rectangle {
     background: Theme.scrim;
 
     property <length> gap: Sizing.pct-w(1);
+    property <length> pad-y: Sizing.pct-h(4);
+    property <length> title-gap: Sizing.pct-h(3);
     property <length> panel-w: Sizing.pct-w(78);
     property <length> content-w: root.panel-w - 2 * Sizing.pct-w(4);
     property <int> rows: Math.max(1, Math.ceil(root.buckets.length / Math.max(1, root.columns)));
     property <length> cell: Math.round(Math.max(Sizing.pct-w(7), Math.min(Sizing.pct-w(13),
         Math.min((root.content-w - (root.columns - 1) * root.gap) / Math.max(1, root.columns),
             (Sizing.pct-h(52) - (root.rows - 1) * root.gap) / root.rows))) / 1px) * 1px;
-    property <length> title-h: Sizing.pct-h(8);
     property <length> grid-h: root.rows * root.cell + (root.rows - 1) * root.gap;
     property <length> grid-w: root.columns * root.cell + (root.columns - 1) * root.gap;
-    property <length> panel-h: root.title-h + root.grid-h + Sizing.pct-h(6);
+    property <length> content-y: root.pad-y + title.preferred-height + root.title-gap;
+    property <length> panel-h: root.content-y + root.grid-h + root.pad-y;
 
     Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
@@ -1132,18 +1161,17 @@ component LetterJumpModal inherits Rectangle {
         // Flat modal chrome uses the scrim, not an outline, for separation.
         // Keeping one surface treatment aligns pickers and dialogs.
 
-        Text {
+        title := Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((root.title-h - self.height) / 2px) * 1px;
+            y: root.pad-y;
             text: @tr("Go to…");
             color: Theme.text-primary;
             font-size: Sizing.font-title;
-            font-weight: 500;
         }
 
         if root.buckets.length == 0: Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: root.title-h + Math.round((root.grid-h - self.height) / 2px) * 1px;
+            y: root.content-y + Math.round((root.grid-h - self.height) / 2px) * 1px;
             text: root.loading ? @tr("Loading…") : @tr("No sections");
             color: Theme.text-label;
             font-size: Sizing.font-body;
@@ -1151,7 +1179,7 @@ component LetterJumpModal inherits Rectangle {
 
         Rectangle {
             x: Math.round((parent.width - root.grid-w) / 2px) * 1px;
-            y: root.title-h;
+            y: root.content-y;
             width: root.grid-w;
             height: root.grid-h;
 
@@ -1198,7 +1226,7 @@ component CardWriteModal inherits Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         width: Math.round(Math.min(Math.min(parent.width * 0.92, Sizing.pct-h(90)), Math.max(Sizing.pct-w(30), title.preferred-width + 2 * Sizing.pct-w(4))) / 1px) * 1px;
-        height: Math.ceil(title.preferred-height / 1px) * 1px + Sizing.pct-h(19);
+        height: Math.ceil(title.preferred-height / 1px) * 1px + Sizing.pct-h(18);
         background: Theme.bg-panel;
         border-radius: Sizing.radius-md;
 
@@ -1329,17 +1357,22 @@ component DialogModal inherits Rectangle {
         visible: false;
         text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
         font-size: Sizing.font-title;
-        font-weight: 600;
     }
     body-measure := Text {
         visible: false;
         text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-detail, Overlays.dialog-arg);
-        font-size: Sizing.font-size(2.4);
+        font-size: Sizing.font-body;
     }
     line-measure := Text {
         visible: false;
         text: "abcdefghijklmnopqrstuvwxyz";
-        font-size: Sizing.font-size(2.4);
+        font-size: Sizing.font-body;
+    }
+    status-measure := Text {
+        visible: false;
+        text: DialogLabels.status(Overlays.dialog-status, Overlays.dialog-status-step,
+            Overlays.dialog-status-total, Overlays.dialog-status-name);
+        font-size: Sizing.font-body;
     }
     button-measure := HorizontalLayout {
         visible: false;
@@ -1357,13 +1390,18 @@ component DialogModal inherits Rectangle {
         ? Math.min(root.width * 0.78, Sizing.pct-h(110))
         : Math.min(Math.min(root.width * 0.92, Sizing.pct-h(90)),
             Math.max(Sizing.pct-w(30), root.desired-w))) / 1px) * 1px;
-    property <length> pad: Sizing.pct-h(3);
+    property <length> pad-y: Sizing.pct-h(4);
+    property <length> content-gap: Sizing.pct-h(3);
     property <length> btn-h: Sizing.pct-h(7);
     property <length> btn-gap: Sizing.pct-w(2);
+    property <length> title-h: title-measure.preferred-height;
     property <length> body-h: body-t.preferred-height;
-    property <length> status-h: Overlays.dialog-status != "" ? Sizing.font-size(2.4) + Sizing.pct-h(1) : 0px;
-    property <length> panel-h: self.pad + Sizing.font-title + Sizing.pct-h(2)
-        + self.body-h + Sizing.pct-h(2) + self.status-h + self.btn-h + self.pad;
+    property <length> status-h: Overlays.dialog-status != "" ? status-measure.preferred-height : 0px;
+    property <length> body-y: root.pad-y + root.title-h + root.content-gap;
+    property <length> status-y: root.body-y + root.body-h + root.content-gap;
+    property <length> button-y: root.status-y
+        + (Overlays.dialog-status != "" ? root.status-h + root.content-gap : 0px);
+    property <length> panel-h: root.button-y + root.btn-h + root.pad-y;
 
     Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
@@ -1377,48 +1415,53 @@ component DialogModal inherits Rectangle {
 
         Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: root.pad;
+            y: root.pad-y;
             max-width: parent.width - 2 * root.pad-x;
             overflow: elide;
             text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
             color: Theme.text-primary;
             font-size: Sizing.font-title;
-            font-weight: 600;
         }
 
         body-t := Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: root.pad + Sizing.font-title + Sizing.pct-h(2);
+            y: root.body-y;
             width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, parent.width - 2 * root.pad-x);
             wrap: word-wrap;
             text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-detail, Overlays.dialog-arg);
             color: Theme.text-primary;
-            font-size: Sizing.font-size(2.4);
-            horizontal-alignment: left;
+            font-size: Sizing.font-body;
+            horizontal-alignment: center;
         }
 
         if Overlays.dialog-status != "": Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: root.pad + Sizing.font-size(3.2) + Sizing.pct-h(2) + root.body-h + Sizing.pct-h(2);
-            max-width: parent.width - 2 * root.pad;
+            y: root.status-y;
+            max-width: parent.width - 2 * root.pad-x;
             overflow: elide;
             text: DialogLabels.status(Overlays.dialog-status, Overlays.dialog-status-step,
                 Overlays.dialog-status-total, Overlays.dialog-status-name);
             color: Theme.text-variant;
-            font-size: Sizing.font-size(2.4);
+            font-size: Sizing.font-body;
         }
 
         // Same raised surfaces and safe-area width cap as Modal.qml.
-        property <length> btn-w: Math.min(Sizing.pct-w(28), Math.floor((root.panel-w - 2 * root.pad-x
+        property <length> available-btn-w: Math.floor((root.panel-w - 2 * root.pad-x
             - Math.max(0, Overlays.dialog-buttons.length - 1) * root.btn-gap)
-            / Math.max(1, Overlays.dialog-buttons.length) / 1px) * 1px);
+            / Math.max(1, Overlays.dialog-buttons.length) / 1px) * 1px;
+        // A one-word alert action sizes around its label like the panel does;
+        // it must not inflate to nearly the full width of the panel.
+        property <length> btn-w: Math.min(Sizing.pct-w(28),
+            Overlays.dialog-kind == "action_error" && Overlays.dialog-buttons.length == 1
+                ? Math.min(self.available-btn-w, button-measure.preferred-width)
+                : self.available-btn-w);
         for label[i] in Overlays.dialog-buttons: button := PressableSurface {
             x: Math.round((parent.width
                 - (Overlays.dialog-buttons.length * parent.btn-w
                     + (Overlays.dialog-buttons.length - 1) * root.btn-gap))
                 / 2px) * 1px
                 + i * (parent.btn-w + root.btn-gap);
-            y: root.panel-h - root.pad - root.btn-h;
+            y: root.button-y;
             width: parent.btn-w;
             height: root.btn-h;
             focused: i == Overlays.dialog-focus;
@@ -1597,6 +1640,12 @@ component ContextMenu inherits Rectangle {
         border-radius: root.panel-radius;
         clip: true;
 
+        FocusCursor {
+            target: { x: root.side-margin, y: root.v-pad + root.current-index * (root.row-h + root.row-sp) - root.scroll,
+                w: parent.width - 2 * root.side-margin, h: root.row-h, column: 0, row: root.current-index,
+                scope: "context:" + root.scroll / 1px,
+                valid: root.current-index >= 0 && root.current-index < root.entries.length };
+        }
         for entry[i] in root.entries: Rectangle {
             x: root.side-margin;
             y: root.v-pad + i * (root.row-h + root.row-sp) - root.scroll;
@@ -1650,7 +1699,7 @@ component GamesScreen inherits Rectangle {
         : (GamesView.mode == "recents" ? @tr("Recently played") : GamesView.title);
     property <string> state: GamesView.error != "" ? "error"
         : (GamesView.loading ? "loading" : (GamesView.count == 0 ? "empty" : ""));
-    property <bool> gate-hide: Shell.transition-cue || root.gated || GamesView.loading || cue.loading-visible || GamesView.error != "";
+    property <bool> gate-hide: root.gated || GamesView.loading || cue.loading-visible || GamesView.error != "";
     property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
     property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
     property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
@@ -1699,11 +1748,12 @@ component GamesScreen inherits Rectangle {
 
         Rectangle {
             x: GamesView.folder-slide ? -GamesView.page-slide * parent.width : 0px;
-            y: GamesView.folder-slide ? 0px : -GamesView.page-slide * root.period;
+            property <float> page-progress: GamesView.page-slide;
+            y: GamesView.folder-slide ? 0px : Math.round(-self.page-progress * root.period / 1px) * 1px;
             animate x { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
             width: parent.width;
             height: parent.height;
-            animate y { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
+            animate page-progress { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
 
             PagedGridView {
                 x: 0;
@@ -1711,6 +1761,8 @@ component GamesScreen inherits Rectangle {
                 width: parent.width;
                 height: parent.height;
                 cells: GamesView.cells;
+                focus-scope: GamesView.mode + ":" + GamesView.title + ":" + GamesView.page;
+                focus-motion: GamesView.page-slide == 0 && !GamesView.cached-transition;
                 columns: GamesView.columns;
                 cell-width: GamesView.cell-width;
                 cell-height: GamesView.cell-height;
@@ -1720,9 +1772,10 @@ component GamesScreen inherits Rectangle {
                 top-inset: Layout.grid-top-inset;
                 column-gap: Layout.grid-column-gap;
                 row-gap: Layout.grid-row-gap;
-                selected-local: GamesView.cached-transition || Shell.route-transitioning ? -1 : GamesView.selected-local;
+                selected-local: GamesView.cached-transition ? -1 : GamesView.selected-local;
                 section-focused: !Overlays.context-open;
                 focus-ready: GamesView.focus-ready;
+                press-held: PressFeedback.active("games", GamesView.selected-local);
                 activate-pulse: GamesView.activate-pulse;
                 release-pulse: GamesView.release-pulse;
                 settling: Shell.active-screen != GamesView.mode;
@@ -1770,6 +1823,9 @@ component GamesScreen inherits Rectangle {
         width: root.list-card-w;
         height: root.list-card-h;
         rows: GamesView.list-rows;
+        model-top: GamesView.list-view-top;
+        scroll-top: GamesView.list-scroll-top;
+        scope: GamesView.mode + ":" + GamesView.title;
         selected: GamesView.list-sel;
         focus-ready: GamesView.focus-ready;
         activate-pulse: GamesView.activate-pulse;
@@ -2401,56 +2457,21 @@ export component App inherits Window {
         y: Math.round((root.height - self.height) / 2px) * 1px;
         width: root.scene-width;
         height: root.scene-height;
-    // Cached HDMI exposes only the committed destination to Slint; the
-    // presenter moves RGB565 endpoints. Native backends render the same
-    // hierarchy as a clipped two-screen strip, preserving CRT animation.
-    //
-    // The strip is mounted for the whole run, never behind an `if`, and
-    // that is load-bearing: `animate x` only animates a *change*, and a
-    // strip created after `route-page-slide` had already moved would
-    // evaluate `x` straight to its end value and cut. Mounted, `x` is
-    // always a settled 0, so a route change that starts in the same
-    // event-loop turn it was requested still slides. Slot 0 holds the
-    // screen currently on view; the incoming one waits one screen-width
-    // away on the side we are travelling toward, and only exists while
-    // a native (non-cached) route change is running.
+    // Only one live screen. Async navigation retains this coherent source;
+    // readiness replaces it atomically without an entrance effect.
     stage := Rectangle {
         width: 100%;
         height: 100%;
-        // A square clip is a scissor rect, not a render target, so this
-        // costs nothing when nothing is sliding.
         clip: true;
 
-        property <bool> sliding: Shell.route-transitioning && !Shell.route-cached-transition;
-
-        strip := Rectangle {
-            x: -Shell.route-page-slide * parent.width;
+        RouteScreen {
             width: parent.width;
             height: parent.height;
-            animate x {
-                duration: Shell.route-slide-anim && !Shell.reduce-motion && Motion.enabled ? 170ms : 0ms;
-                easing: ease-in-out;
-            }
-
-            RouteScreen {
-                x: 0;
-                width: parent.width;
-                height: parent.height;
-                screen-token: stage.sliding ? Shell.route-from-screen : Shell.active-screen;
-                outgoing: stage.sliding;
-                // The screen we are leaving keeps whatever the user was
-                // actually looking at. Without this a slow fill hides
-                // the source rows behind the cue, then pops them back
-                // for the length of the slide - the blink.
-                gated: stage.sliding && Shell.route-from-gated;
-            }
-
-            if stage.sliding: RouteScreen {
-                x: Shell.route-slide-dir * parent.width;
-                width: parent.width;
-                height: parent.height;
-                screen-token: Shell.route-to-screen;
-            }
+            screen-token: Shell.active-screen;
+        }
+        if Shell.transitioning: TouchArea {
+            width: 100%; height: 100%;
+            scroll-event(event) => { return accept; }
         }
     }
 
@@ -2472,22 +2493,6 @@ export component App inherits Window {
         }
     }
 
-    // Global loading cue: transparent Item plus one Text, no painted
-    // background, exactly like the QML overlay contract. It rides the
-    // delayed flag, so a fill that answers inside the grace window
-    // never flashes it.
-    if Shell.transition-cue: Rectangle {
-        width: 100%;
-        height: 100%;
-        Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
-            text: Labels.loading(Shell.transition-target);
-            color: Theme.text-primary;
-            font-size: Sizing.font-size(3.2);
-        }
-    }
-
     header := HeaderBar {
         x: 0;
         y: Sizing.header-top-margin;
@@ -2499,7 +2504,7 @@ export component App inherits Window {
         has-battery: Shell.has-battery;
         battery-percent: Shell.battery-percent;
         browse-title: root.browse-header-title();
-        app-text: Labels.status(Shell.status-text);
+        app-text: Shell.transition-cue ? Labels.loading(Shell.transition-target) : Labels.status(Shell.status-text);
     }
 
     // Modal scrims swallow pointer events rather than forwarding them to
@@ -2639,7 +2644,7 @@ export component App inherits Window {
     // Pointer input is disabled globally, including modal controls, while
     // the setting is off or a screen transition owns input.
     if Shell.dormant || !Shell.mouse-enabled || Shell.saver-armed
-        || ((Shell.boot-curtain || Shell.transitioning || Shell.route-transitioning) && !root.has-modal()): TouchArea {
+        || ((Shell.boot-curtain || Shell.transitioning) && !root.has-modal()): TouchArea {
         width: 100%; height: 100%;
         clicked => {
             if (!Shell.dormant) { Overlays.pointer-choice("wake", 0, true); }

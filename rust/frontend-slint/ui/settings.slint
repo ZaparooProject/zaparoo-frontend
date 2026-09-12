@@ -400,7 +400,8 @@ export component SettingsRowView inherits Rectangle {
             : (root.entry.checked ? Theme.accent : Theme.border-mid);
 
         Rectangle {
-            x: root.entry.checked ? parent.width - self.width - parent.inset : parent.inset;
+            property <length> knob-x: root.entry.checked ? parent.width - self.width - parent.inset : parent.inset;
+            x: Math.round(self.knob-x / 1px) * 1px;
             y: parent.inset;
             width: parent.height - 2 * parent.inset;
             height: self.width;
@@ -408,7 +409,7 @@ export component SettingsRowView inherits Rectangle {
             background: bar.active ? Theme.selection-fill : Theme.surface-card;
             border-width: Sizing.card-border-width;
             border-color: bar.active ? Theme.on-accent : Theme.accent;
-            animate x { duration: Motion.dur(Motion.settle-ms); easing: ease-out; }
+            animate knob-x { duration: Motion.dur(Motion.settle-ms); easing: ease-out; }
         }
     }
 

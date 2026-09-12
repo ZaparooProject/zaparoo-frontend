@@ -4,12 +4,10 @@
 //
 // Custom `slint::platform::Platform` for the MiSTer target.
 //
-// Frame loop shape (per frame): drain queued event-loop callbacks,
-// poll evdev input, advance timers/animations, render if dirty, then
-// present. The presenter's vsync wait is the pacing boundary, and the
-// animation clock advances a fixed 16.667 ms per presented frame
-// rather than sampling the wall clock, so a late frame shifts the
-// whole animation timeline instead of visibly jumping.
+// Frame loop shape: dispatch a bounded batch of callbacks, poll input,
+// advance timers/animations, render if dirty, then present. Vsync paces
+// presentation; monotonic elapsed time drives deadlines so contention
+// skips obsolete animation frames rather than extending every wait.
 
 pub use super::latch::ResolutionPolicy;
 use super::{
@@ -22,13 +20,14 @@ use slint::platform::{Platform, WindowAdapter};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// Nominal frame period of the fixed-60 animation clock, in
-/// microseconds (16.667 ms).
+/// Nominal presentation budget, independent of the animation clock.
 const FRAME_PERIOD_US: u64 = 16_667;
+const CALLBACK_BUDGET: Duration = Duration::from_millis(2);
+const CALLBACK_LIMIT: usize = 32;
 
 /// DRS policy, heavy-phase scoped: motion res only while the router
 /// declares a phase that repaints the whole viewport for a sustained
@@ -123,12 +122,26 @@ impl EventQueue {
         self.wake.notify_one();
     }
 
-    fn drain(&self) -> Vec<QueuedEvent> {
-        self.queue
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .drain(..)
-            .collect()
+    fn dispatch(&self) {
+        let started = Instant::now();
+        self.dispatch_while(|| started.elapsed() < CALLBACK_BUDGET);
+    }
+
+    // Never hold the queue lock while invoking user code. New callbacks
+    // stay behind existing work; a busy producer cannot starve rendering.
+    fn dispatch_while(&self, mut within_budget: impl FnMut() -> bool) {
+        for index in 0..CALLBACK_LIMIT {
+            if self.quit.load(Ordering::SeqCst) || (index > 0 && !within_budget()) {
+                break;
+            }
+            let event = self
+                .queue
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .pop_front();
+            let Some(event) = event else { break };
+            event();
+        }
     }
 }
 
@@ -253,8 +266,8 @@ impl DynamicResolution {
 pub struct MisterPlatform {
     windows: RefCell<Vec<Rc<MinimalSoftwareWindow>>>,
     queue: Arc<EventQueue>,
-    /// Presented-frame counter driving the fixed-60 clock.
-    frames: AtomicU64,
+    /// Real elapsed time drives both timers and interpolated motion.
+    started: Instant,
     /// CRT native path: present through the DDR contract instead of fb0.
     crt: bool,
     crt_size: (u32, u32),
@@ -281,7 +294,7 @@ impl MisterPlatform {
         Self {
             windows: RefCell::new(Vec::new()),
             queue: Arc::new(EventQueue::default()),
-            frames: AtomicU64::new(0),
+            started: Instant::now(),
             crt,
             crt_size,
             crt_offsets,
@@ -365,9 +378,8 @@ impl MisterPlatform {
             if self.queue.quit.load(Ordering::SeqCst) {
                 return Ok(());
             }
-            for event in self.queue.drain() {
-                event();
-            }
+            let turn_started = Instant::now();
+            self.queue.dispatch();
             let _ = input.poll(hdmi_window.window());
 
             let requested = requested_rotation();
@@ -382,6 +394,7 @@ impl MisterPlatform {
             slint::platform::update_timers_and_animations();
             drs.before_render(hdmi.as_mut(), hdmi_window, rotation);
 
+            let preparation = turn_started.elapsed();
             let force_full_redraw = drs.needs_full_redraw();
             let mut hdmi_busy = hdmi.present_cached_transition();
             let hdmi_cached = hdmi_busy.is_some();
@@ -416,7 +429,7 @@ impl MisterPlatform {
             if hdmi_busy.is_some() || crt_busy.is_some() {
                 profile.record(total_busy);
             }
-            self.frames.fetch_add(1, Ordering::Relaxed);
+            profile.record_turn(preparation, turn_started.elapsed());
         }
     }
 }
@@ -429,7 +442,7 @@ impl Platform for MisterPlatform {
     }
 
     fn duration_since_start(&self) -> Duration {
-        Duration::from_micros(self.frames.load(Ordering::Relaxed) * FRAME_PERIOD_US)
+        self.started.elapsed()
     }
 
     fn new_event_loop_proxy(&self) -> Option<Box<dyn slint::platform::EventLoopProxy>> {
@@ -480,9 +493,8 @@ impl Platform for MisterPlatform {
             if self.queue.quit.load(Ordering::SeqCst) {
                 return Ok(());
             }
-            for event in self.queue.drain() {
-                event();
-            }
+            let turn_started = Instant::now();
+            self.queue.dispatch();
             // Input dispatches only - it no longer drives DRS.
             let _ = input.poll(window.window());
             let requested = requested_rotation();
@@ -503,9 +515,10 @@ impl Platform for MisterPlatform {
             // canonical destination buffer stays untouched between endpoint
             // renders, and pending timer dirt remains queued for the first
             // normal frame after the transition.
+            let preparation = turn_started.elapsed();
             if let Some(busy) = presenter.present_cached_transition() {
                 profile.record(busy);
-                self.frames.fetch_add(1, Ordering::Relaxed);
+                profile.record_turn(preparation, turn_started.elapsed());
                 continue;
             }
 
@@ -530,16 +543,15 @@ impl Platform for MisterPlatform {
                 // retreat to motion resolution until a quiet stretch.
                 drs.rendered(busy, presenter.as_mut(), window.as_ref(), rotation);
             }
-            // The vsync wait is the pacing boundary whether or not the
-            // scene was dirty; the fixed-60 clock ticks once per
-            // period so timers keep advancing on idle frames.
+            // Idle turns still wait for vsync; timer deadlines use real
+            // elapsed time regardless of whether this turn painted.
             if !rendered {
                 presenter.wait_vsync();
                 // Phase over and settled: pop to native. The resize
                 // dirties one final sharp frame while nothing moves.
                 drs.idle(presenter.as_mut(), window.as_ref(), rotation);
             }
-            self.frames.fetch_add(1, Ordering::Relaxed);
+            profile.record_turn(preparation, turn_started.elapsed());
         }
     }
 }
@@ -554,12 +566,40 @@ struct FrameProfile {
     samples: Vec<Duration>,
     total_rendered: u64,
     overruns: u64,
+    turns: usize,
+    preparation_max: Duration,
+    turn_max: Duration,
 }
 
 const FRAME_BUDGET: Duration = Duration::from_micros(FRAME_PERIOD_US);
 const PROFILE_WINDOW: usize = 600;
 
 impl FrameProfile {
+    /// Include callback, input, timer, and layout work, even on turns
+    /// that never render. Total turn time also includes vsync waits.
+    fn record_turn(&mut self, preparation: Duration, total: Duration) {
+        self.turns += 1;
+        self.preparation_max = self.preparation_max.max(preparation);
+        self.turn_max = self.turn_max.max(total);
+        if preparation > FRAME_BUDGET {
+            tracing::debug!(
+                preparation_us = preparation.as_micros() as u64,
+                turn_us = total.as_micros() as u64,
+                "UI preparation exceeded frame budget"
+            );
+        }
+        if self.turns >= PROFILE_WINDOW {
+            tracing::info!(
+                preparation_max_us = self.preparation_max.as_micros() as u64,
+                turn_max_us = self.turn_max.as_micros() as u64,
+                "event loop profile (turn includes vsync)"
+            );
+            self.turns = 0;
+            self.preparation_max = Duration::ZERO;
+            self.turn_max = Duration::ZERO;
+        }
+    }
+
     fn record(&mut self, busy: Duration) {
         self.total_rendered += 1;
         if busy > FRAME_BUDGET {
@@ -614,6 +654,94 @@ pub fn install_platform(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clock_advances_without_presented_frames() {
+        let mut platform = MisterPlatform::new(
+            false,
+            (352, 240),
+            (0, 0),
+            false,
+            false,
+            ResolutionPolicy::Adaptive,
+        );
+        let started = Instant::now().checked_sub(Duration::from_secs(2));
+        assert!(started.is_some(), "clock supports fixture offset");
+        let Some(started) = started else { return };
+        platform.started = started;
+        assert!(platform.duration_since_start() >= Duration::from_secs(2));
+    }
+
+    #[test]
+    fn callback_batches_preserve_fifo_and_yield_at_count_limit() {
+        let queue = EventQueue::default();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        for value in 0..=CALLBACK_LIMIT {
+            let seen = seen.clone();
+            queue.push(Box::new(move || {
+                seen.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(value);
+            }));
+        }
+        queue.dispatch_while(|| true);
+        assert_eq!(
+            *seen.lock().unwrap_or_else(PoisonError::into_inner),
+            (0..CALLBACK_LIMIT).collect::<Vec<_>>()
+        );
+        queue.dispatch_while(|| true);
+        assert_eq!(
+            *seen.lock().unwrap_or_else(PoisonError::into_inner),
+            (0..=CALLBACK_LIMIT).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn callback_time_budget_yields_after_one_slow_callback() {
+        let queue = Arc::new(EventQueue::default());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let nested_queue = queue.clone();
+        let nested_seen = seen.clone();
+        queue.push(Box::new(move || {
+            nested_seen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(1);
+            nested_queue.push(Box::new(move || {
+                nested_seen
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(3);
+            }));
+        }));
+        let second_seen = seen.clone();
+        queue.push(Box::new(move || {
+            second_seen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(2);
+        }));
+        // Inject an exhausted budget instead of relying on scheduler sleeps.
+        queue.dispatch_while(|| false);
+        assert_eq!(
+            *seen.lock().unwrap_or_else(PoisonError::into_inner),
+            vec![1]
+        );
+        queue.dispatch_while(|| true);
+        assert_eq!(
+            *seen.lock().unwrap_or_else(PoisonError::into_inner),
+            vec![1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn preparation_profile_includes_turns_without_rendering() {
+        let mut profile = FrameProfile::default();
+        profile.record_turn(Duration::from_millis(80), Duration::from_millis(100));
+        assert_eq!(profile.total_rendered, 0);
+        assert_eq!(profile.preparation_max, Duration::from_millis(80));
+        assert_eq!(profile.turn_max, Duration::from_millis(100));
+    }
 
     #[test]
     fn logical_window_transposes_for_quarter_turns() {

@@ -261,12 +261,8 @@ fn rows_viewport_for(inputs: &zaparoo_app::sizing::Inputs) -> i32 {
     let card_y = derived.header_bottom
         + profile.status.top_margin
         + profile.status.strip_height
-        + inputs.pct_h(2.0);
-    let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
-        derived.help_bar_height + inputs.pct_h(2.0)
-    } else {
-        inputs.pct_h(8.0)
-    };
+        + inputs.pct_h(4.0);
+    let bottom = derived.help_bar_height + inputs.pct_h(4.0);
     let card_h = (inputs.screen_height as i32 - card_y - bottom).max(0);
     let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
     // Card padding above, then the hint band and its divider below.
@@ -347,17 +343,22 @@ pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: &str) {
     if view.get_page().as_str() == page {
         return;
     }
-    let from = view.get_page();
+    let from = view.get_page().to_string();
+    let direction = if page.is_empty() { -1 } else { 1 };
     capture_outgoing(app);
-    open_page(ctx, app, page);
-    if page.is_empty() {
-        let index = rules::PAGES
-            .iter()
-            .position(|page| page.id == from.as_str())
-            .unwrap_or(0);
-        view.set_index(i32::try_from(index).unwrap_or(0));
-    }
-    crate::router::transition_settings_page(app, if page.is_empty() { -1 } else { 1 });
+    let ctx = ctx.clone();
+    let page = page.to_string();
+    crate::router::transition_settings_page(app, direction, move |app| {
+        open_page(&ctx, app, &page);
+        if page.is_empty() {
+            let index = rules::PAGES
+                .iter()
+                .position(|page| page.id == from)
+                .unwrap_or(0);
+            app.global::<SettingsView>()
+                .set_index(i32::try_from(index).unwrap_or(0));
+        }
+    });
 }
 
 pub fn enter(ctx: &Ctx, app: &App) {
@@ -833,10 +834,7 @@ fn mirrored_rows(
 
 fn focus(ctx: &Ctx, app: &App, index: usize) -> bool {
     let shell = app.global::<crate::Shell>();
-    if shell.get_route_transitioning()
-        || shell.get_transitioning()
-        || crate::press_feedback::pending(app)
-    {
+    if shell.get_transitioning() || crate::press_feedback::pending(app) {
         return false;
     }
     let (_, rows, _) = page_rows_now(ctx, app);

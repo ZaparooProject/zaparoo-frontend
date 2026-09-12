@@ -70,6 +70,9 @@ export global Theme {
 // motion (Rust pushes `enabled` from the persisted setting).
 export global Motion {
     in-out property <bool> enabled: true;
+    // Transient route/model generation, never persisted.
+    in-out property <int> epoch: 0;
+    out property <duration> focus-ms: 80ms;
     out property <duration> press-ms: 34ms;
     out property <duration> settle-ms: 110ms;
     out property <duration> pulse-ms: 250ms;

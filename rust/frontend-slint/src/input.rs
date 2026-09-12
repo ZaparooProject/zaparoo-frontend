@@ -23,6 +23,9 @@ use crate::App;
 pub struct InputModel {
     hold: rules::Hold,
     guard: rules::DuplicateGuard,
+    // Some desktop backends omit the repeat flag. Physical release, not a
+    // timestamp window, distinguishes a new press from native autorepeat.
+    pressed_keys: std::collections::HashSet<String>,
     rapid: rules::RapidNav,
     /// Origin for the monotonic millisecond clock the rules take.
     epoch: Instant,
@@ -40,6 +43,7 @@ impl InputModel {
         Self {
             hold: rules::Hold::new(),
             guard: rules::DuplicateGuard::new(),
+            pressed_keys: std::collections::HashSet::new(),
             rapid: rules::RapidNav::new(),
             epoch: Instant::now(),
             repeat_seq: 0,
@@ -50,11 +54,17 @@ impl InputModel {
 
     /// Retire the repeat ticket and report whether release needs a persist flush.
     fn release(&mut self, key: &str) -> bool {
+        self.pressed_keys.remove(key);
         if !self.hold.release(key) {
             return false;
         }
         self.repeat_seq += 1;
         true
+    }
+
+    #[cfg(all(test, feature = "mister"))]
+    pub(crate) fn advance_test_clock(&mut self, milliseconds: u64) {
+        self.epoch -= Duration::from_millis(milliseconds);
     }
 
     fn now_ms(&self) -> u64 {
@@ -107,6 +117,9 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
     }
     let accepted = {
         let mut shared = lock(&ctx.shared);
+        if !shared.input.pressed_keys.insert(key.to_string()) {
+            return;
+        }
         let now = shared.input.now_ms();
         shared.input.guard.accept(key, now)
     };
@@ -167,6 +180,7 @@ pub fn stop_repeat(ctx: &Ctx) {
     let held = {
         let mut shared = lock(&ctx.shared);
         shared.input.repeat_seq += 1;
+        shared.input.pressed_keys.clear();
         shared.input.hold.stop()
     };
     if held {
@@ -303,7 +317,13 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
     let released_ctx = ctx.clone();
     app.on_key_released(move |text| key_released(&released_ctx, &text));
     let lost_ctx = ctx.clone();
-    app.on_input_lost(move || stop_repeat(&lost_ctx));
+    let weak = app.as_weak();
+    app.on_input_lost(move || {
+        stop_repeat(&lost_ctx);
+        if let Some(app) = weak.upgrade() {
+            crate::press_feedback::cancel(&app);
+        }
+    });
 }
 
 #[cfg(test)]

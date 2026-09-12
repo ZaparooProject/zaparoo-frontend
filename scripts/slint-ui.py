@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Control a live Slint dev window through its loopback-only MCP server."""
+"""Control an isolated Slint dev UI through its loopback-only MCP server."""
 
 import argparse
 import base64
@@ -59,7 +59,7 @@ class Client:
         return windows[0]
 
 
-def run(port, headless, mock):
+def run(port, visible, mock):
     with socket.socket() as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind(("127.0.0.1", port))
@@ -79,11 +79,13 @@ def run(port, headless, mock):
         env["ZAPAROO_CORE_ENDPOINT"] = "ws://127.0.0.1:7497/api/v0.1"
         core = "local Core on ws://127.0.0.1:7497/api/v0.1"
     env["SLINT_MCP_PORT"] = str(port)
-    if headless:
-        env["SLINT_BACKEND"] = "headless"
-    else:
+    if visible:
         env.setdefault("SLINT_BACKEND", "winit-software")
-    print(f"MCP: http://127.0.0.1:{port}/mcp; {core}; state: {root}", flush=True)
+        mode = f"visible ({env['SLINT_BACKEND']})"
+    else:
+        env["SLINT_BACKEND"] = "headless"
+        mode = "headless software canvas"
+    print(f"MCP: http://127.0.0.1:{port}/mcp; {mode}; {core}; state: {root}", flush=True)
     # Stay in the foreground: Ctrl+C reaches the existing dev script and
     # its mock cleanup. No PID files or orphaned background supervisors.
     return subprocess.call(["just", "slint-run-dev"], cwd=ROOT, env=env)
@@ -93,9 +95,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=38080)
     sub = parser.add_subparsers(dest="command", required=True)
-    launch = sub.add_parser("run", help="Run isolated dev app; Ctrl+C stops it")
-    launch.add_argument("--headless", action="store_true")
-    launch.add_argument("--mock", action="store_true", help="Use managed mock Core instead of local Core")
+    launch = sub.add_parser(
+        "run", help="Run isolated dev app headlessly; Ctrl+C stops it"
+    )
+    mode = launch.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--visible", action="store_true", help="Open a desktop window instead"
+    )
+    mode.add_argument(
+        "--headless", action="store_true",
+        help="Use the default off-screen software canvas (compatibility flag)",
+    )
+    launch.add_argument(
+        "--mock", action="store_true", help="Use managed mock Core instead of local Core"
+    )
     sub.add_parser("windows", help="List window handles")
     sub.add_parser("tools", help="List full MCP tool schemas")
     tree = sub.add_parser("tree", help="Inspect live UI element tree")
@@ -113,7 +126,7 @@ def main():
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
     if args.command == "run":
-        return run(args.port, args.headless, args.mock)
+        return run(args.port, args.visible, args.mock)
     client = Client(args.port)
     if args.command == "tools":
         result = client.request("tools/list", {})

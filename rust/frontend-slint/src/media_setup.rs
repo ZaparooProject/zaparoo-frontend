@@ -519,10 +519,10 @@ pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
             let Some(app) = weak.upgrade() else {
                 return;
             };
+            if crate::press_feedback::pending(&app) {
+                return;
+            }
             if let Ok(index) = usize::try_from(i) {
-                if crate::press_feedback::pending(&app) {
-                    return;
-                }
                 lock(&ctx.shared).setup.index = index;
                 render(&ctx, &app);
                 crate::router::handle_action(&ctx, &app, actions::ACCEPT);

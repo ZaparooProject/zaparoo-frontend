@@ -12,6 +12,7 @@
 mod about;
 mod actions;
 mod alternates;
+mod browse_motion;
 mod card_write;
 mod customization;
 mod display;
@@ -44,6 +45,7 @@ mod mister;
     )
 )]
 mod mister_battery;
+mod navigation;
 mod qr;
 // Route motion has to be checked by rendering, and that needs the
 // software renderer, which only the MiSTer feature set links.
