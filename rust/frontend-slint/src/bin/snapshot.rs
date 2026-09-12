@@ -14,6 +14,10 @@
     clippy::expect_used,
     reason = "offline dev tool; fail-fast is the right behavior"
 )]
+#![allow(
+    clippy::print_stdout,
+    reason = "snapshot CLI reports rendered files and probe results"
+)]
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -40,12 +44,23 @@ use slint::ComponentHandle;
 mod generated {
     slint::include_modules!();
 }
+use generated::{
+    ActionStatus, AppCue, ControlKind, DialogButton, DialogKind, DisabledReason, ErrorKind,
+    GamesMode, LogPhase, Orientation, RowKind, ScopeKind, Screen, SettingsPage, SetupKind,
+    SetupPicker, StatusKind, SystemsMode, VideoStandard,
+};
 use generated::{App, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
 #[allow(
     unused_imports,
     reason = "reached through crate:: paths from the shared sizing adapter"
 )]
 use generated::{GamesView, Layout, Shell, SystemsView};
+#[path = "../state_types.rs"]
+#[allow(
+    dead_code,
+    reason = "shared enum boundary adapters; snapshots use only fixture state"
+)]
+mod state_types;
 
 #[path = "../fonts.rs"]
 mod fonts;
@@ -81,6 +96,10 @@ impl Platform for SnapshotPlatform {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "offline fixture dispatcher keeps scenario setup and capture in one place"
+)]
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let width: u32 = args.get(1).map_or(1920, |a| a.parse().unwrap());
@@ -120,11 +139,11 @@ fn main() {
     app.global::<Sizing>().set_swap_axes(tate);
     let shell = app.global::<Shell>();
     shell.set_orientation(if ccw {
-        "ccw".into()
+        Orientation::Ccw
     } else if tate {
-        "cw".into()
+        Orientation::Cw
     } else {
-        "horizontal".into()
+        Orientation::Horizontal
     });
     shell.set_browse_list_layout(list);
     shell.set_systems_list_layout(list);
@@ -162,7 +181,7 @@ fn main() {
     shell.set_battery_percent(62);
     shell.set_clock_text("10:32".into());
     let status = app.global::<generated::Status>();
-    status.set_kind("indexing".into());
+    status.set_kind(StatusKind::Indexing);
     status.set_arg("Super Nintendo".into());
     status.set_show_track(true);
     status.set_current_step(5);
@@ -193,11 +212,11 @@ fn main() {
         "Example Game Title 12",
     ];
     let games_mode = if screen.contains("favorites") {
-        "favorites"
+        GamesMode::Favorites
     } else if screen.contains("recents") {
-        "recents"
+        GamesMode::Recents
     } else {
-        "games"
+        GamesMode::Browse
     };
     fixture_games(
         &app,
@@ -329,18 +348,28 @@ fn main() {
         let row_h = inputs.pct_h(8.0);
         let sv = app.global::<generated::SetupModalView>();
         let rows: Vec<generated::SettingsRow> = [
-            ("source", "picker", "source", "Screenscraper"),
-            ("systems", "picker", "category", "Console"),
-            ("rescrape", "toggle", "", ""),
-            ("startImport", "action", "", ""),
+            (
+                "source",
+                ControlKind::Picker,
+                ScopeKind::Source,
+                "Screenscraper",
+            ),
+            (
+                "systems",
+                ControlKind::Picker,
+                ScopeKind::Category,
+                "Console",
+            ),
+            ("rescrape", ControlKind::Toggle, ScopeKind::All, ""),
+            ("startImport", ControlKind::Action, ScopeKind::All, ""),
         ]
         .iter()
         .enumerate()
         .map(|(i, (id, control, value, name))| generated::SettingsRow {
-            kind: "field".into(),
+            kind: RowKind::Field,
             id: (*id).into(),
-            control: (*control).into(),
-            value: (*value).into(),
+            control: *control,
+            scope_kind: *value,
             value_name: (*name).into(),
             checked: *id == "rescrape",
             enabled: true,
@@ -349,28 +378,28 @@ fn main() {
             ..Default::default()
         })
         .collect();
-        sv.set_kind("scrape".into());
+        sv.set_kind(SetupKind::Scrape);
         sv.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
         sv.set_index(1);
         if screen.contains("picker") {
             let entries = [
-                ("all", ""),
-                ("category", "Console"),
-                ("category", "Handheld"),
-                ("system", "Nintendo Entertainment System"),
-                ("system", "Super Nintendo"),
-                ("system", "Mega Drive"),
-                ("system", "Neo Geo"),
+                (ScopeKind::All, ""),
+                (ScopeKind::Category, "Console"),
+                (ScopeKind::Category, "Handheld"),
+                (ScopeKind::System, "Nintendo Entertainment System"),
+                (ScopeKind::System, "Super Nintendo"),
+                (ScopeKind::System, "Mega Drive"),
+                (ScopeKind::System, "Neo Geo"),
             ];
             let picker: Vec<generated::SetupPickerRow> = entries
                 .iter()
                 .map(|(kind, name)| generated::SetupPickerRow {
-                    kind: (*kind).into(),
+                    kind: *kind,
                     name: (*name).into(),
                 })
                 .collect();
             sv.set_picker_page(true);
-            sv.set_picker_title("systems".into());
+            sv.set_picker_title(SetupPicker::Systems);
             sv.set_picker_rows(slint::ModelRc::new(slint::VecModel::from(picker)));
             sv.set_picker_sel(1);
             sv.set_has_below(true);
@@ -426,10 +455,10 @@ fn main() {
     }
     if screen.ends_with("token-error") {
         let ov = app.global::<generated::Overlays>();
-        ov.set_dialog_kind("action_error".into());
-        ov.set_dialog_detail("card_write".into());
+        ov.set_dialog_kind(DialogKind::ActionError);
+        ov.set_dialog_error(ErrorKind::CardWrite);
         ov.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
-            "retry".into()
+            DialogButton::Retry,
         ])));
         ov.set_dialog_open(true);
     }
@@ -453,14 +482,11 @@ fn main() {
     // "log-upload" renders the uploader's finished state with its link.
     if screen.contains("log-upload") {
         let lv = app.global::<generated::LogUploadView>();
-        lv.set_phase(
-            if screen.contains("failed") {
-                "failed"
-            } else {
-                "done"
-            }
-            .into(),
-        );
+        lv.set_phase(if screen.contains("failed") {
+            LogPhase::Failed
+        } else {
+            LogPhase::Done
+        });
         lv.set_url("https://logs.zaparoo.org/a1b2c3d4".into());
         if let Some((image, modules)) = qr::qr_image("https://logs.zaparoo.org/a1b2c3d4") {
             lv.set_qr(image);
@@ -474,24 +500,24 @@ fn main() {
     if screen.ends_with("dialog") || screen.ends_with("alert") || screen.ends_with("notice") {
         let overlays = app.global::<generated::Overlays>();
         if screen.ends_with("notice") {
-            overlays.set_dialog_kind("notice".into());
+            overlays.set_dialog_kind(DialogKind::Notice);
             overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
-                slint::SharedString::from("i_understand"),
+                DialogButton::IUnderstand,
             ])));
             overlays.set_dialog_focus(0);
         } else if screen.ends_with("alert") {
-            overlays.set_dialog_kind("action_error".into());
-            overlays.set_dialog_detail("launch".into());
+            overlays.set_dialog_kind(DialogKind::ActionError);
+            overlays.set_dialog_error(ErrorKind::Launch);
             overlays.set_dialog_arg("Sonic the Hedgehog".into());
             overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
-                slint::SharedString::from("ok"),
+                DialogButton::Ok,
             ])));
             overlays.set_dialog_focus(0);
         } else {
-            overlays.set_dialog_kind("quit_confirm".into());
+            overlays.set_dialog_kind(DialogKind::QuitConfirm);
             overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
-                slint::SharedString::from("no"),
-                slint::SharedString::from("yes"),
+                DialogButton::No,
+                DialogButton::Yes,
             ])));
             overlays.set_dialog_focus(0);
         }
@@ -503,71 +529,13 @@ fn main() {
         overlays.set_crt_v_offset(-2);
         overlays.set_crt_calibration_open(true);
     }
-    let base = if screen.starts_with("route-") {
-        "hub"
-    } else if screen == "context"
-        || screen == "context-alt"
-        || screen == "letters"
-        || (list && !screen.contains("systems"))
-        || screen.contains("games")
-        || screen.contains("game-info")
-    {
-        "games"
-    } else if screen.contains("favorite-systems") {
-        "favorite-systems"
-    } else if screen.contains("favorites") {
-        "favorites"
-    } else if screen.contains("recents") {
-        "recents"
-    } else if screen.contains("settings")
-        || screen.contains("setup")
-        || screen.contains("log-upload")
-    {
-        "settings"
-    } else if screen == "saver"
-        || screen == "dialog"
-        || screen == "alert"
-        || screen == "notice"
-        || screen == "calibration"
-    {
-        "hub"
-    } else if screen.contains("about") {
-        "about"
-    } else if screen.contains("systems") {
-        "systems"
-    } else if screen.contains("hub") {
-        "hub"
-    } else {
-        screen.as_str()
-    };
-    app.global::<Shell>().set_active_screen(base.into());
+    app.global::<Shell>()
+        .set_active_screen(fixture_screen(&screen));
     if screen == "route-forward" {
-        let shell = app.global::<Shell>();
-        shell.set_route_slide_anim(false);
-        shell.set_route_from_screen("hub".into());
-        shell.set_route_to_screen("systems".into());
-        shell.set_route_slide_dir(1);
-        shell.set_route_transitioning(true);
-        shell.set_route_page_slide(0.5);
+        app.global::<Shell>().set_active_screen(Screen::Systems);
     }
     if screen == "route-back" {
-        let shell = app.global::<Shell>();
-        shell.set_active_screen("systems".into());
-        shell.set_route_slide_anim(false);
-        shell.set_route_from_screen("systems".into());
-        shell.set_route_to_screen("hub".into());
-        shell.set_route_slide_dir(-1);
-        shell.set_route_transitioning(true);
-        shell.set_route_page_slide(-0.5);
-    }
-    if screen == "route-cached" {
-        let shell = app.global::<Shell>();
-        shell.set_active_screen("systems".into());
-        shell.set_route_from_screen("hub".into());
-        shell.set_route_to_screen("systems".into());
-        shell.set_route_slide_dir(1);
-        shell.set_route_transitioning(true);
-        shell.set_route_cached_transition(true);
+        app.global::<Shell>().set_active_screen(Screen::Hub);
     }
     if screen.contains("cached") {
         app.global::<SystemsView>().set_cached_transition(true);
@@ -595,7 +563,7 @@ fn main() {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after HubView.cells set: {dirty_model}");
-        app.global::<Shell>().set_status_text("probe status".into());
+        app.global::<Shell>().set_status_text(AppCue::Launching);
         let dirty_text = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
@@ -606,7 +574,7 @@ fn main() {
         });
         println!("dirty after HubView.selected-local set: {dirty_idx}");
         // Games screen (alias-block pattern): does a late set reach it?
-        app.global::<Shell>().set_active_screen("games".into());
+        app.global::<Shell>().set_active_screen(Screen::Games);
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
@@ -622,7 +590,7 @@ fn main() {
         println!("dirty after GamesView.games-system set (alias pattern): {dirty_games_sys}");
         // Systems / Settings / About: every screen must react to a
         // late global write (the partially-applied-refactor class).
-        app.global::<Shell>().set_active_screen("systems".into());
+        app.global::<Shell>().set_active_screen(Screen::Systems);
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
@@ -632,16 +600,16 @@ fn main() {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after SystemsView.category set: {dirty_sys}");
-        app.global::<Shell>().set_active_screen("settings".into());
+        app.global::<Shell>().set_active_screen(Screen::Settings);
         app.global::<generated::SettingsView>()
-            .set_page("pageLanguage".into());
+            .set_page(SettingsPage::Language);
         let srows: Vec<generated::SettingsRow> = ["language", "region"]
             .iter()
             .enumerate()
             .map(|(i, id)| generated::SettingsRow {
-                kind: "field".into(),
+                kind: RowKind::Field,
                 id: (*id).into(),
-                control: "picker".into(),
+                control: ControlKind::Picker,
                 value: "auto".into(),
                 enabled: true,
                 y_offset: (i as f32) * 40.0,
@@ -661,7 +629,7 @@ fn main() {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after SettingsView.index set: {dirty_set}");
-        app.global::<Shell>().set_active_screen("about".into());
+        app.global::<Shell>().set_active_screen(Screen::About);
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
@@ -671,7 +639,7 @@ fn main() {
             r.render(probe.as_mut_slice(), width as usize);
         });
         println!("dirty after Shell.about-version-line set: {dirty_about}");
-        app.global::<Shell>().set_active_screen("hub".into());
+        app.global::<Shell>().set_active_screen(Screen::Hub);
         let _ = window.draw_if_needed(|r| {
             r.render(probe.as_mut_slice(), width as usize);
         });
@@ -713,6 +681,73 @@ fn main() {
 
 /// Push a Hub page built from a representative layout through the same
 /// rules the app uses (`zaparoo_app::hub`), at the scene's geometry.
+fn fixture_screen(screen: &str) -> Screen {
+    if screen.starts_with("route-") {
+        Screen::Hub
+    } else if matches!(screen, "context" | "context-alt" | "letters")
+        || (screen.contains("list") && !screen.contains("systems"))
+        || screen.contains("games")
+        || screen.contains("game-info")
+    {
+        Screen::Games
+    } else if screen.contains("favorite-systems") {
+        Screen::FavoriteSystems
+    } else if screen.contains("favorites") {
+        Screen::Favorites
+    } else if screen.contains("recents") {
+        Screen::Recents
+    } else if screen.contains("settings")
+        || screen.contains("setup")
+        || screen.contains("log-upload")
+    {
+        Screen::Settings
+    } else if matches!(
+        screen,
+        "saver" | "dialog" | "alert" | "notice" | "calibration"
+    ) {
+        Screen::Hub
+    } else if screen.contains("about") {
+        Screen::About
+    } else if screen.contains("systems") {
+        Screen::Systems
+    } else if screen.contains("hub") {
+        Screen::Hub
+    } else {
+        // Standalone overlay fixtures intentionally mount no root screen.
+        Screen::None
+    }
+}
+
+#[cfg(test)]
+mod fixture_tests {
+    use super::{fixture_screen, Screen};
+
+    #[test]
+    fn standalone_overlays_do_not_invent_screen_tokens() {
+        for name in [
+            "picker",
+            "palette-picker",
+            "crt-dialog",
+            "token-error",
+            "qr-docs",
+        ] {
+            assert_eq!(fixture_screen(name), Screen::None, "{name}");
+        }
+        for (name, screen) in [
+            ("hub", Screen::Hub),
+            ("crt-systems", Screen::Systems),
+            ("favorite-systems", Screen::FavoriteSystems),
+            ("favorites", Screen::Favorites),
+            ("recents", Screen::Recents),
+            ("game-info", Screen::Games),
+            ("settings-page", Screen::Settings),
+            ("about", Screen::About),
+        ] {
+            assert_eq!(fixture_screen(name), screen, "{name}");
+        }
+    }
+}
+
 fn fixture_game_info(app: &App, screen: &str) {
     let view = app.global::<generated::GameInfoView>();
     view.set_modal_open(true);
@@ -853,9 +888,9 @@ fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize
     view.set_label_key(focused.label_key.as_str().into());
     view.set_label_name(focused.name.as_str().into());
     view.set_label_reason(if focused.disabled {
-        focused.reason.as_str().into()
+        focused.reason.into()
     } else {
-        "".into()
+        DisabledReason::None
     });
 }
 
@@ -904,13 +939,21 @@ fn list_metrics(
 
 /// The settings screen at its own geometry: the root tiles, or one page
 /// of rows straight from the registry.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture keeps settings rows and their geometry together"
+)]
 fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool) {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     use zaparoo_app::settings::{self as rules, Control, Row};
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let view = app.global::<generated::SettingsView>();
-    let page_id = if page { "pageLibraryData" } else { "" };
+    let page_id = if page {
+        SettingsPage::Library
+    } else {
+        SettingsPage::Root
+    };
     let registry = rules::Inputs {
         is_mister: crt,
         crt_enabled: crt,
@@ -920,12 +963,16 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
     let header_h = inputs.pct_h(5.0);
     let band = inputs.pct_h(3.2);
     let mut offset = 0;
-    let rows: Vec<generated::SettingsRow> = rules::page_rows(page_id, &registry)
+    let rows: Vec<generated::SettingsRow> = rules::page_rows(page_id.token(), &registry)
         .into_iter()
         .filter(|row| row.id() != "uploadLog")
         .map(|row| {
             let mut out = generated::SettingsRow {
-                kind: if row.is_field() { "field" } else { "header" }.into(),
+                kind: if row.is_field() {
+                    RowKind::Field
+                } else {
+                    RowKind::Header
+                },
                 id: row.id().into(),
                 enabled: true,
                 y_offset: offset as f32,
@@ -934,13 +981,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
             let height = match row {
                 Row::Header(_) => header_h,
                 Row::Field { id, control } => {
-                    out.control = match control {
-                        Control::Toggle => "toggle",
-                        Control::Picker => "picker",
-                        Control::Action => "action",
-                        Control::Navigate => "navigate",
-                    }
-                    .into();
+                    out.control = control.into();
                     match control {
                         Control::Toggle => out.checked = id == "showHidden",
                         Control::Picker => {
@@ -953,7 +994,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
                         }
                         Control::Action => {
                             out.busy = id == "runScraper";
-                            out.status_key = if out.busy { "running" } else { "" }.into();
+                            out.status_key = if out.busy {
+                                ActionStatus::Running
+                            } else {
+                                ActionStatus::None
+                            };
                             out.value = rules::action_label_key(id, out.busy).into();
                         }
                         Control::Navigate => {}
@@ -975,20 +1020,15 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
         return;
     };
     // The rows viewport, as the driver computes it.
-    let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
     let card_y = derived.header_bottom
         + profile.status.top_margin
         + profile.status.strip_height
-        + inputs.pct_h(2.0);
-    let card_bottom = if t240 {
-        derived.help_bar_height + inputs.pct_h(2.0)
-    } else {
-        inputs.pct_h(8.0)
-    };
+        + inputs.pct_h(4.0);
+    let card_bottom = derived.help_bar_height + inputs.pct_h(4.0);
     let card_h = (inputs.screen_height as i32 - card_y - card_bottom).max(0);
     let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
     let viewport = (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0);
-    view.set_page(page_id.into());
+    view.set_page(page_id);
     view.set_index(if page { 2 } else { 1 });
     view.set_rows_height(viewport as f32);
     view.set_scroll(0.0);
@@ -1051,6 +1091,10 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
     clippy::too_many_arguments,
     reason = "one knob per fixture facet the screen names select"
 )]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture projects the same game rows into grid and list layouts"
+)]
 fn fixture_games(
     app: &App,
     scene_w: f64,
@@ -1058,7 +1102,7 @@ fn fixture_games(
     crt: bool,
     i18n_titles: &[&str],
     i18n: bool,
-    mode: &str,
+    mode: GamesMode,
     anchor_index: Option<usize>,
 ) {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
@@ -1069,7 +1113,7 @@ fn fixture_games(
         return;
     };
     let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
-    let flat = mode != "games";
+    let flat = mode != GamesMode::Browse;
     let screen_h = inputs.screen_height as i32;
     let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
     let label_height = if flat {
@@ -1208,7 +1252,7 @@ fn fixture_games(
             value: "2".into(),
         },
     ])));
-    view.set_mode(mode.into());
+    view.set_mode(mode);
     view.set_title("Atari Lynx".into());
     view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
     view.set_count(48);
@@ -1235,6 +1279,10 @@ fn fixture_games(
     view.set_label_height(label_height as f32);
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture projects the same systems into grid and list layouts"
+)]
 fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: bool) {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
@@ -1288,9 +1336,9 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
         .collect();
     let view = app.global::<SystemsView>();
     view.set_mode(if favorites {
-        "favorite-systems".into()
+        SystemsMode::Favorites
     } else {
-        "systems".into()
+        SystemsMode::Category
     });
     view.set_favorites_total(if favorites { 87 } else { -1 });
     view.set_label_count(if favorites { 12 } else { -1 });

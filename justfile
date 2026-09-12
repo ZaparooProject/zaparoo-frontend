@@ -253,6 +253,13 @@ deploy-mister *args:
 slint-run-dev *args:
     ./scripts/run-slint-dev.sh {{args}}
 
+# Start/control isolated Slint UI via embedded MCP. `run` defaults to a headless
+# software canvas; pass `run --visible` only when desktop-window behavior matters.
+# `just slint-ui --help` lists screenshot, key, click, tree, and lifecycle commands.
+[positional-arguments]
+slint-ui *args:
+    python3 scripts/slint-ui.py "$@"
+
 # Host-side lint for the Slint crates: fmt, clippy, and the toolkit-free guard.
 # Runs on the host because the lint image lacks Slint's desktop system libs.
 lint-slint:

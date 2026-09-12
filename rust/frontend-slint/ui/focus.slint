@@ -1,0 +1,131 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+
+import { Theme, Sizing, Motion } from "theme.slint";
+
+// One atomic target avoids animating intermediate x/y setters. Scope changes
+// (page, route, windowed list) and geometry changes always snap.
+export struct FocusTarget {
+    x: length, y: length, w: length, h: length,
+    column: int, row: int, scope: string, valid: bool,
+}
+
+// Only nearby viewport changes interpolate; restoration and page jumps snap.
+export component ScrollOffset inherits Rectangle {
+    in property <length> target;
+    in property <length> step;
+    in property <length> focus-start;
+    in property <length> focus-size;
+    in property <length> viewport;
+    in property <string> scope;
+    property <length> previous;
+    property <length> position;
+    property <bool> glide: false;
+    property <bool> motion: Motion.enabled;
+    out property <length> offset: root.position;
+    out property <bool> moving: root.offset != root.target;
+    changed target => {
+        // Never leave the newly selected control outside the clip while the
+        // viewport catches up. Offscreen focus is revealed immediately.
+        root.glide = root.motion && Math.abs(root.target - root.previous) <= root.step
+            && root.focus-start >= root.position
+            && root.focus-start + root.focus-size <= root.position + root.viewport;
+        root.position = root.target;
+        root.previous = root.target;
+    }
+    changed scope => { root.snap(); }
+    changed motion => { if (!root.motion) { root.snap(); } }
+    function snap() {
+        root.glide = false;
+        root.position = root.target;
+        root.previous = root.target;
+    }
+    init => { root.snap(); }
+    animate position { duration: root.glide && root.motion ? Motion.focus-ms : 0ms; easing: ease-out-quad; }
+}
+
+// Local neighbor displacement during a Hub move. Overlapping requests snap
+// rather than queue or replay an obsolete swap; the held tile uses FocusCursor.
+export component TileDisplacement inherits Rectangle {
+    in property <int> pulse;
+    in property <length> from-x;
+    in property <length> from-y;
+    in property <bool> allowed: false;
+    property <float> progress: 1;
+    property <bool> start-pending: false;
+    property <bool> glide: false;
+    out property <length> offset-x: root.from-x * (1 - root.progress);
+    out property <length> offset-y: root.from-y * (1 - root.progress);
+    changed pulse => {
+        if (root.allowed && Motion.enabled && !root.start-pending && root.progress == 1) {
+            root.glide = true;
+            root.start-pending = true;
+            root.progress = 0;
+        } else {
+            root.glide = false;
+            root.start-pending = false;
+            root.progress = 1;
+        }
+    }
+    property <bool> motion: Motion.enabled && root.allowed;
+    changed motion => {
+        if (!root.motion) { root.start-pending = false; root.progress = 1; }
+    }
+    animate progress {
+        duration: root.start-pending || !root.motion || !root.glide ? 0ms : Motion.focus-ms;
+        easing: ease-out-quad;
+    }
+    Timer {
+        interval: 1ms;
+        running: root.start-pending;
+        triggered => { root.start-pending = false; root.progress = 1; }
+    }
+}
+
+export component FocusCursor inherits Rectangle {
+    in property <FocusTarget> target;
+    in property <length> radius: Sizing.radius-sm;
+    in property <length> stroke: Sizing.focus-ring-width;
+    in property <bool> motion: Motion.enabled;
+    property <FocusTarget> previous;
+    property <bool> glide: false;
+    property <length> position-x: 0px;
+    property <length> position-y: 0px;
+    property <int> epoch: Motion.epoch;
+
+    changed target => {
+        root.glide = root.motion && root.previous.valid && root.target.valid
+            && root.previous.scope == root.target.scope
+            && root.previous.w == root.target.w && root.previous.h == root.target.h
+            && Math.abs(root.target.x - root.position-x) + Math.abs(root.target.y - root.position-y)
+                <= 1.5 * (Math.abs(root.target.x - root.previous.x) + Math.abs(root.target.y - root.previous.y))
+            && Math.abs(root.target.column - root.previous.column)
+                + Math.abs(root.target.row - root.previous.row) == 1;
+        root.position-x = root.target.x;
+        root.position-y = root.target.y;
+        root.previous = root.target;
+    }
+    changed epoch => { root.snap(); }
+    changed motion => { if (!root.motion) { root.snap(); } }
+    function snap() {
+        root.glide = false;
+        root.position-x = root.target.x;
+        root.position-y = root.target.y;
+        root.previous = root.target;
+    }
+    init => { root.snap(); }
+    animate position-x, position-y {
+        duration: root.glide && root.motion ? Motion.focus-ms : 0ms;
+        easing: ease-out-quad;
+    }
+    x: root.position-x;
+    y: root.position-y;
+    width: root.target.w;
+    height: root.target.h;
+    visible: root.target.valid;
+    border-width: root.stroke;
+    border-color: Theme.accent;
+    border-radius: root.radius;
+    @children
+}

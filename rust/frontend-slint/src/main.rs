@@ -12,6 +12,7 @@
 mod about;
 mod actions;
 mod alternates;
+mod browse_motion;
 mod card_write;
 mod customization;
 mod display;
@@ -44,6 +45,7 @@ mod mister;
     )
 )]
 mod mister_battery;
+mod navigation;
 mod qr;
 // Route motion has to be checked by rendering, and that needs the
 // software renderer, which only the MiSTer feature set links.
@@ -53,6 +55,7 @@ mod route_motion;
 mod router;
 mod settings;
 mod sizing;
+mod state_types;
 mod status;
 mod system_logos;
 mod system_status;
@@ -87,7 +90,7 @@ pub use generated::*;
 
 use router::{lock, Ctx, Shared};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zaparoo_core::client::{Client, ConnectionState};
@@ -199,7 +202,7 @@ pub(crate) fn set_live_crt_offsets(h_offset: i32, v_offset: i32) {
     let _ = (h_offset, v_offset);
 }
 
-pub(crate) fn set_live_orientation(app: &App, value: &str, framebuffer_size: (u32, u32)) {
+pub(crate) fn set_live_orientation(app: &App, value: Orientation, framebuffer_size: (u32, u32)) {
     #[cfg(feature = "mister")]
     {
         let _ = (app, framebuffer_size);
@@ -207,7 +210,7 @@ pub(crate) fn set_live_orientation(app: &App, value: &str, framebuffer_size: (u3
     }
     #[cfg(not(feature = "mister"))]
     {
-        let (w, h) = if matches!(value, "cw" | "ccw") {
+        let (w, h) = if matches!(value, Orientation::Cw | Orientation::Ccw) {
             (framebuffer_size.1, framebuffer_size.0)
         } else {
             framebuffer_size
@@ -284,7 +287,12 @@ fn merge_config_settings(
     s.crt_v_offset = v;
 }
 
-pub(crate) fn scene_size(width: f64, height: f64, orientation: &str, crt: bool) -> (f64, f64) {
+pub(crate) fn scene_size(
+    width: f64,
+    height: f64,
+    orientation: Orientation,
+    crt: bool,
+) -> (f64, f64) {
     let inset_w = if crt {
         2.0 * (width * 0.05).round()
     } else {
@@ -297,7 +305,7 @@ pub(crate) fn scene_size(width: f64, height: f64, orientation: &str, crt: bool) 
     };
     let safe_w = (width - inset_w).max(1.0);
     let safe_h = (height - inset_h).max(1.0);
-    if matches!(orientation, "cw" | "ccw") {
+    if matches!(orientation, Orientation::Cw | Orientation::Ccw) {
         (safe_h, safe_w)
     } else {
         (safe_w, safe_h)
@@ -314,10 +322,11 @@ fn seed_display_globals(
 ) {
     app.global::<Theme>().set_crt(visual_crt);
     app.global::<Sizing>().set_crt(visual_crt);
-    let rotated = matches!(persisted.settings.orientation.as_str(), "cw" | "ccw");
+    let orientation = Orientation::try_from(persisted.settings.orientation.as_str())
+        .unwrap_or(Orientation::Horizontal);
+    let rotated = orientation != Orientation::Horizontal;
     app.global::<Sizing>().set_swap_axes(rotated);
-    app.global::<Shell>()
-        .set_orientation(SharedString::from(persisted.settings.orientation.as_str()));
+    app.global::<Shell>().set_orientation(orientation);
     app.global::<Shell>()
         .set_browse_list_layout(persisted.settings.games_browse_layout == "list");
     app.global::<Shell>()
@@ -334,9 +343,10 @@ fn seed_display_globals(
     app.global::<Shell>()
         .set_is_mister(cfg!(feature = "mister"));
     app.global::<Shell>().set_crt_enabled(crt_enabled);
-    app.global::<Shell>().set_crt_standard(SharedString::from(
-        persisted.settings.crt_video_standard.as_str(),
-    ));
+    app.global::<Shell>().set_crt_standard(
+        VideoStandard::try_from(persisted.settings.crt_video_standard.as_str())
+            .unwrap_or(VideoStandard::Ntsc),
+    );
     let bitmap = display::bitmap_type(cfg!(feature = "mister"), visual_crt, framebuffer_size.1);
     app.global::<Sizing>().set_bitmap_fonts(bitmap);
     app.global::<Theme>().set_bitmap_fonts(bitmap);
@@ -353,7 +363,7 @@ fn seed_display_globals(
     let (scene_w, scene_h) = scene_size(
         f64::from(framebuffer_size.0),
         f64::from(framebuffer_size.1),
-        &persisted.settings.orientation,
+        orientation,
         visual_crt,
     );
     app.global::<Sizing>().set_screen_width(scene_w as f32);
@@ -544,11 +554,13 @@ fn main() -> Result<(), slint::PlatformError> {
         &persisted.settings,
     )));
     let status_language = effective_language(&persisted.settings.language);
+    let (dormant, _) = tokio::sync::watch::channel(false);
     let ctx = Arc::new(Ctx {
         store: store.clone(),
         handle: handle.clone(),
         media,
         clock_twelve_hour: clock_twelve_hour.clone(),
+        dormant,
         status: status::new(&status_language),
         config_path: platform_paths::config_file_path(),
         crt_enabled: crt,
@@ -568,11 +580,11 @@ fn main() -> Result<(), slint::PlatformError> {
     // Solve the initial grid shapes in logical scene space and re-solve
     // on resize/orientation changes. DRS still keys from the physical
     // output raster so its fidelity switch never changes page shape.
-    let initial_orientation = app.global::<Shell>().get_orientation().to_string();
+    let initial_orientation = app.global::<Shell>().get_orientation();
     let (initial_w, initial_h) = scene_size(
         f64::from(ui_framebuffer_size.0),
         f64::from(ui_framebuffer_size.1),
-        &initial_orientation,
+        initial_orientation,
         visual_crt,
     );
     apply_grid_shapes(&app, initial_w, initial_h, visual_crt);
@@ -581,9 +593,9 @@ fn main() -> Result<(), slint::PlatformError> {
         let ctx = ctx.clone();
         app.on_viewport_changed(move |w, h| {
             if let Some(app) = weak.upgrade() {
-                let orientation = app.global::<Shell>().get_orientation().to_string();
+                let orientation = app.global::<Shell>().get_orientation();
                 let (w, h) = output_size().map_or((f64::from(w), f64::from(h)), |(ow, oh)| {
-                    scene_size(f64::from(ow), f64::from(oh), &orientation, visual_crt)
+                    scene_size(f64::from(ow), f64::from(oh), orientation, visual_crt)
                 });
                 apply_grid_shapes(&app, w, h, visual_crt);
                 // The window is rarely the size the config asked for
@@ -596,11 +608,11 @@ fn main() -> Result<(), slint::PlatformError> {
 
     #[cfg(feature = "mister")]
     if let Some(mirror) = crt_mirror.as_ref() {
-        let orientation = mirror.global::<Shell>().get_orientation().to_string();
+        let orientation = mirror.global::<Shell>().get_orientation();
         let (w, h) = scene_size(
             f64::from(crt_framebuffer_size.0),
             f64::from(crt_framebuffer_size.1),
-            &orientation,
+            orientation,
             true,
         );
         apply_grid_shapes(mirror, w, h, true);
@@ -641,11 +653,12 @@ fn main() -> Result<(), slint::PlatformError> {
     bind_catalog(&ctx, &app, &store);
     bind_connection_status(&ctx, &app, &client, &config.core_endpoint);
     bind_media_status(&ctx, &app, &store);
+    bind_desktop_lifecycle(&ctx, &app, &client, &config.core_endpoint);
     bind_status_events(&ctx, &app, &client);
     bind_launchers(&ctx, &store);
     apply_buttons(&ctx, &app);
     bind_controller_report(&ctx, &app);
-    start_clock(&app, &handle, clock_twelve_hour);
+    start_clock(&app, &handle, clock_twelve_hour, ctx.dormant.subscribe());
     start_status(&app, &ctx);
 
     #[cfg(feature = "mister")]
@@ -728,6 +741,124 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
             });
         }
     });
+}
+
+/// Local launch lifecycle. Core remains the process supervisor; every
+/// frontend goes cooperatively idle for primary media. Desktop stays mapped
+/// behind the game so Wayland can reveal it without an unsupported unminimize;
+/// `MiSTer` waits quietly for its wrapper to kill the process.
+fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpoint: &str) {
+    if !local_lifecycle_enabled(endpoint) {
+        return;
+    }
+
+    let resource = ctx.store.media_status();
+    let mut media_rx = resource.subscribe();
+    let weak = app.as_weak();
+    let ctx_media = ctx.clone();
+    ctx.handle.clone().spawn(async move {
+        let mut was_active = false;
+        loop {
+            let snapshot = media_rx.borrow_and_update().clone();
+            let active = snapshot.primary_active.is_some();
+            let resumed = was_active && !active;
+            was_active = active;
+            let ctx_event = ctx_media.clone();
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                set_dormant(&ctx_event, &app, active);
+            });
+            if resumed {
+                // Core's history tracker consumes the same stop event.
+                // Give its durable row a beat to close before refetching,
+                // without blocking a rapid next start notification.
+                let ctx_refresh = ctx_media.clone();
+                let weak_refresh = weak.clone();
+                ctx_media.handle.spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    if *ctx_refresh.dormant.borrow() {
+                        return;
+                    }
+                    ctx_refresh
+                        .store
+                        .invalidate(&zaparoo_core::store::Tag::any("MediaHistory"));
+                    let ctx_event = ctx_refresh.clone();
+                    let _ = weak_refresh.upgrade_in_event_loop(move |app| {
+                        refresh_resume(&ctx_event, &app);
+                        games::refresh_recents(&ctx_event, &app);
+                    });
+                });
+            }
+            if media_rx.changed().await.is_err() {
+                return;
+            }
+        }
+    });
+
+    // Never leave input and background work suspended indefinitely when
+    // local Core disappears. A short grace avoids flashing awake during
+    // an ordinary reconnect; a later successful seed can suspend again.
+    let mut connection_rx = client.connection.subscribe();
+    let generation = Arc::new(AtomicU64::new(0));
+    let weak = app.as_weak();
+    let handle = ctx.handle.clone();
+    let ctx_connection = ctx.clone();
+    handle.clone().spawn(async move {
+        while connection_rx.changed().await.is_ok() {
+            let state = connection_rx.borrow_and_update().clone();
+            let current_generation = generation.fetch_add(1, Ordering::SeqCst) + 1;
+            if matches!(state, ConnectionState::Connected) {
+                continue;
+            }
+            let generation = generation.clone();
+            let weak = weak.clone();
+            let ctx_event = ctx_connection.clone();
+            handle.spawn(async move {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                if generation.load(Ordering::SeqCst) != current_generation {
+                    return;
+                }
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    set_dormant(&ctx_event, &app, false);
+                });
+            });
+        }
+    });
+}
+
+fn local_lifecycle_enabled(endpoint: &str) -> bool {
+    zaparoo_app::covers::endpoint_is_loopback(endpoint)
+}
+
+fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
+    let shell = app.global::<Shell>();
+    if shell.get_dormant() == dormant {
+        return;
+    }
+    shell.set_dormant(dormant);
+    ctx.dormant.send_replace(dormant);
+    if dormant {
+        input::stop_repeat(ctx);
+        {
+            let mut shared = lock(&ctx.shared);
+            shared.saver_seq += 1;
+        }
+        shell.set_saver_armed(false);
+        app.global::<Motion>().set_enabled(false);
+        if ctx.is_mister {
+            ctx.media.clear_decoded();
+        }
+        tracing::info!("primary media active; frontend dormant");
+    } else {
+        let reduce_motion = lock(&ctx.shared).persist.settings.reduce_motion;
+        app.global::<Motion>().set_enabled(display::motion_enabled(
+            reduce_motion,
+            ctx.is_mister,
+            app.global::<Theme>().get_crt(),
+            ctx.framebuffer_size.1,
+        ));
+        router::reset_idle(ctx, app);
+        tracing::info!("primary media stopped; frontend resumed");
+    }
 }
 
 /// Core notifications the status line surfaces as transient events
@@ -820,25 +951,43 @@ fn bind_resume(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                 return;
             }
         }
-        {
-            let ctx = ctx.clone();
-            let _ = weak.upgrade_in_event_loop(move |app| {
-                hub::set_resume(
-                    &ctx,
-                    &app,
-                    hub::Resume {
-                        requested: true,
-                        loading: true,
-                        entry: None,
-                    },
-                );
-            });
-        }
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            request_resume(&ctx, &app, true);
+        });
+    });
+}
+
+/// Refresh the Resume tile after a game exits without blanking its old
+/// value while Core writes the new history row.
+fn refresh_resume(ctx: &Arc<Ctx>, app: &App) {
+    request_resume(ctx, app, false);
+}
+
+fn request_resume(ctx: &Arc<Ctx>, app: &App, show_loading: bool) {
+    if show_loading {
+        hub::set_resume(
+            ctx,
+            app,
+            hub::Resume {
+                requested: true,
+                loading: true,
+                entry: None,
+            },
+        );
+    }
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    let client = ctx.store.client();
+    ctx.handle.clone().spawn(async move {
         let entry = match client.media_history_latest().await {
             Ok(result) => result.entry,
             Err(e) => {
                 tracing::debug!("media.history.latest failed: {}", e.message);
-                None
+                if show_loading {
+                    None
+                } else {
+                    return;
+                }
             }
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
@@ -874,19 +1023,30 @@ fn start_clock(
     app: &App,
     handle: &tokio::runtime::Handle,
     twelve_hour: Arc<std::sync::atomic::AtomicBool>,
+    mut dormant: tokio::sync::watch::Receiver<bool>,
 ) {
     push_clock(app, twelve_hour.load(Ordering::Relaxed));
     let weak = app.as_weak();
     handle.spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_secs(30));
-        tick.tick().await;
         loop {
-            tick.tick().await;
+            while *dormant.borrow_and_update() {
+                if dormant.changed().await.is_err() {
+                    return;
+                }
+            }
             let text = clock_string(twelve_hour.load(Ordering::Relaxed));
             let _ = weak.upgrade_in_event_loop(move |app| {
                 app.global::<Shell>()
                     .set_clock_text(SharedString::from(text.as_str()));
             });
+            tokio::select! {
+                () = tokio::time::sleep(Duration::from_secs(30)) => {}
+                changed = dormant.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+            }
         }
     });
 }
@@ -897,11 +1057,15 @@ fn start_clock(
 /// Core's `readers` (Core owns the reader). Keys are in display order.
 fn start_status(app: &App, ctx: &Arc<Ctx>) {
     let weak = app.as_weak();
+    let mut dormant = ctx.dormant.subscribe();
     let ctx = ctx.clone();
     ctx.handle.clone().spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_secs(30));
         loop {
-            tick.tick().await;
+            while *dormant.borrow_and_update() {
+                if dormant.changed().await.is_err() {
+                    return;
+                }
+            }
             let local = tokio::task::spawn_blocking(system_status::probe)
                 .await
                 .unwrap_or_default();
@@ -947,6 +1111,14 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
                     local.has_wifi_internet || local.has_lan_internet,
                 );
             });
+            tokio::select! {
+                () = tokio::time::sleep(Duration::from_secs(30)) => {}
+                changed = dormant.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+            }
         }
     });
 }
@@ -1005,6 +1177,7 @@ fn start_media_cache(
         client.clone(),
         &handle,
         media_rx,
+        ctx.dormant.subscribe(),
         move |key, image| {
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
@@ -1052,7 +1225,7 @@ fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpo
         .set_boot_text(SharedString::from(boot_text(&seed, false).as_str()));
 
     let mut rx = client.connection.subscribe();
-    let generation = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let generation = Arc::new(AtomicU64::new(0));
     let weak = app.as_weak();
     let handle = ctx.handle.clone();
     let escalate_handle = handle.clone();
@@ -1297,12 +1470,21 @@ mod tests {
     #[test]
     fn scene_size_insets_then_rotates_crt_canvas() {
         assert_eq!(
-            scene_size(1280.0, 720.0, "horizontal", false),
+            scene_size(1280.0, 720.0, Orientation::Horizontal, false),
             (1280.0, 720.0)
         );
-        assert_eq!(scene_size(720.0, 480.0, "horizontal", true), (648.0, 432.0));
-        assert_eq!(scene_size(720.0, 480.0, "cw", true), (432.0, 648.0));
-        assert_eq!(scene_size(720.0, 480.0, "ccw", true), (432.0, 648.0));
+        assert_eq!(
+            scene_size(720.0, 480.0, Orientation::Horizontal, true),
+            (648.0, 432.0)
+        );
+        assert_eq!(
+            scene_size(720.0, 480.0, Orientation::Cw, true),
+            (432.0, 648.0)
+        );
+        assert_eq!(
+            scene_size(720.0, 480.0, Orientation::Ccw, true),
+            (432.0, 648.0)
+        );
     }
 
     #[test]

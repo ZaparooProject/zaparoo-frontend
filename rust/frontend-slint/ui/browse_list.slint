@@ -11,6 +11,7 @@
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, SelectionBar } from "chrome.slint";
 import { GridCell, MarqueeCaption } from "tiles.slint";
+import { FocusCursor, ScrollOffset } from "focus.slint";
 
 // One metadata table row: a canonical key the vocabulary translates,
 // plus Core's value.
@@ -65,6 +66,9 @@ export global MetaLabels {
 // slice Rust centered on the selection; `selected` is local to it.
 export component BrowseList inherits Rectangle {
     in property <[GridCell]> rows: [];
+    in property <int> model-top: 0;
+    in property <int> scroll-top: 0;
+    in property <string> scope: "";
     in property <int> selected: -1;
     in property <bool> focus-ready: true;
     in property <int> activate-pulse: 0;
@@ -86,10 +90,16 @@ export component BrowseList inherits Rectangle {
 
     property <length> stride: root.row-height + Layout.row-spacing;
     property <length> heart-size: Sizing.pct-h(3.2);
+    scroll := ScrollOffset {
+        target: root.scroll-top * root.stride;
+        step: root.stride;
+        focus-start: (root.selected + root.model-top) * root.stride;
+        focus-size: root.row-height;
+        viewport: root.height - Layout.card-padding-top - Layout.card-padding-bottom;
+        scope: root.scope + ":" + Motion.epoch;
+    }
 
     TouchArea {
-        width: 100%;
-        height: 100%;
         pointer-event(event) => {
             if (event.kind == PointerEventKind.up && event.button == PointerEventButton.right) {
                 root.empty-right-clicked();
@@ -104,9 +114,13 @@ export component BrowseList inherits Rectangle {
         }
     }
 
+    Rectangle {
+    y: Layout.card-padding-top;
+    height: Math.max(0px, root.height - Layout.card-padding-top - Layout.card-padding-bottom);
+    clip: true;
     for row[i] in root.rows: Rectangle {
         x: Layout.card-padding-left;
-        y: Layout.card-padding-top + i * root.stride;
+        y: (i + root.model-top) * root.stride - scroll.offset;
         width: parent.width - Layout.card-padding-left - Layout.card-padding-right;
         height: root.row-height;
         // The highlight waits for the host to finalize the selection, so
@@ -115,8 +129,6 @@ export component BrowseList inherits Rectangle {
         property <length> favorite-slot: row.favorite ? Layout.favorite-right-padding + root.heart-size : 0px;
 
         bar := SelectionBar {
-            width: 100%;
-            height: 100%;
             active: highlighted;
             activate-pulse: root.activate-pulse;
             release-pulse: root.release-pulse;
@@ -128,7 +140,6 @@ export component BrowseList inherits Rectangle {
             x: Layout.row-text-left-padding;
             y: 0;
             width: Math.max(0px, parent.width - Layout.row-text-left-padding - Layout.row-text-right-padding - favorite-slot);
-            height: parent.height;
             content: row.name;
             tags: row.tags;
             focused: highlighted;
@@ -141,7 +152,7 @@ export component BrowseList inherits Rectangle {
 
         if row.favorite: Image {
             x: parent.width - Layout.favorite-right-padding - root.heart-size;
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            y: (parent.height - self.height) / 2;
             width: root.heart-size;
             height: root.heart-size;
             source: GlyphSource.glyph("icons/Heart", root.heart-size, Colors.transparent);
@@ -169,6 +180,17 @@ export component BrowseList inherits Rectangle {
                 reject
             }
         }
+    }
+    FocusCursor {
+        motion: Motion.enabled && !scroll.moving;
+        radius: Layout.row-radius;
+        target: { x: Layout.card-padding-left,
+            y: (root.selected + root.model-top) * root.stride - scroll.offset,
+            w: root.width - Layout.card-padding-left - Layout.card-padding-right, h: root.row-height,
+            column: 0, row: root.selected + root.model-top,
+            scope: root.scope + ":" + root.scroll-top,
+            valid: root.focus-ready && root.selected >= 0 && root.selected < root.rows.length };
+    }
     }
 }
 
@@ -338,9 +360,9 @@ export component BrowseDetailPane inherits Rectangle {
             // Only a confirmed no-cover state shows the chip; the pane
             // never shows an hourglass.
             if root.visible-content && !root.has-cover && !root.wordmark && root.cover-absent: Image {
-                property <length> s: Math.round(parent.art-w * 0.5 / 1px) * 1px;
-                x: parent.art-x + Math.round((parent.art-w - self.s) / 2px) * 1px;
-                y: parent.art-y + Math.round((parent.art-h - self.s) / 2px) * 1px;
+                property <length> s: parent.art-w * 0.5;
+                x: parent.art-x + (parent.art-w - self.s) / 2;
+                y: parent.art-y + (parent.art-h - self.s) / 2;
                 width: self.s;
                 height: self.s;
                 source: GlyphSource.glyph(root.placeholder-key, self.s, Theme.text-label);
@@ -356,7 +378,7 @@ export component BrowseDetailPane inherits Rectangle {
                 text: root.title;
                 color: Theme.logo-focus-primary;
                 font-size: Math.max(Sizing.font-size(2.8), Math.min(Sizing.font-size(5.8), Math.floor(self.box-h / 2 / 1.362 / 1px) * 1px));
-                font-weight: 600;
+                font-weight: FontWeight.semi-bold;
                 wrap: word-wrap;
                 overflow: elide;
                 horizontal-alignment: center;
@@ -386,19 +408,17 @@ export component BrowseDetailPane inherits Rectangle {
             body := Rectangle {
                 x: 0;
                 y: root.body-y;
-                width: parent.width;
                 height: root.body-h;
                 clip: true;
 
                 for meta[j] in root.rows: Rectangle {
                     x: 0;
                     y: root.table-y + j * (root.tag-row-h + Layout.tag-row-spacing);
-                    width: parent.width;
                     height: root.tag-row-h;
                     visible: root.visible-content;
                     Text {
                         x: 0;
-                        y: Math.round((parent.height - self.height) / 2px) * 1px;
+                        y: (parent.height - self.height) / 2;
                         width: Math.min(root.label-w, parent.width);
                         horizontal-alignment: right;
                         overflow: elide;
@@ -408,7 +428,7 @@ export component BrowseDetailPane inherits Rectangle {
                     }
                     Text {
                         x: root.label-w + root.label-gap;
-                        y: Math.round((parent.height - self.height) / 2px) * 1px;
+                        y: (parent.height - self.height) / 2;
                         width: Math.max(0px, parent.width - root.label-w - root.label-gap);
                         overflow: elide;
                         text: meta.value;
@@ -433,8 +453,8 @@ export component BrowseDetailPane inherits Rectangle {
         }
         if content.loading-shown: HorizontalLayout {
             property <length> glyph: Sizing.font-size(3);
-            x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
-            y: Math.round((parent.height - self.glyph) / 2px) * 1px;
+            x: (parent.width - self.preferred-width) / 2;
+            y: (parent.height - self.glyph) / 2;
             height: self.glyph;
             spacing: Sizing.pct-w(0.6);
             Image {
@@ -456,6 +476,9 @@ export component BrowseDetailPane inherits Rectangle {
 // (rows left and detail right, or rows above detail in TATE).
 export component BrowseListDetailView inherits Rectangle {
     in property <[GridCell]> rows: [];
+    in property <int> model-top: 0;
+    in property <int> scroll-top: 0;
+    in property <string> scope: "";
     in property <int> selected: -1;
     in property <bool> focus-ready: true;
     in property <int> activate-pulse: 0;
@@ -501,6 +524,9 @@ export component BrowseListDetailView inherits Rectangle {
         height: root.vertical ? root.list-span : root.height;
         show-chrome: false;
         rows: root.rows;
+        model-top: root.model-top;
+        scroll-top: root.scroll-top;
+        scope: root.scope;
         selected: root.selected;
         focus-ready: root.focus-ready;
         activate-pulse: root.activate-pulse;

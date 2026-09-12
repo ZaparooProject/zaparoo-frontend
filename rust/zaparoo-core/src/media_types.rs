@@ -1111,12 +1111,10 @@ pub struct ScrapingStatusResponse {
     pub paused: bool,
 }
 
-/// Currently-active media as reported by `media`. The frontend does not
-/// surface this surface yet, but the field is part of the documented
-/// `media` envelope so we deserialise it for forward-compatibility —
-/// trimming it would mean the next consumer has to re-extend the wire
-/// type before they can use it.
-#[derive(Debug, Clone, Default, Deserialize)]
+/// Currently-active media as reported by `media`. Also accepts the
+/// smaller `media.started` notification payload: absent query-only
+/// fields use their defaults so one wire type can drive both paths.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveMediaInfo {
     #[serde(default)]
@@ -1131,6 +1129,11 @@ pub struct ActiveMediaInfo {
     pub media_path: String,
     #[serde(default)]
     pub media_name: String,
+    /// Empty is Core's compatibility spelling for the primary slot.
+    #[serde(default)]
+    pub slot: String,
+    #[serde(default)]
+    pub playback_state: String,
     #[serde(default)]
     pub launcher_controls: Vec<String>,
     #[serde(default)]
@@ -1142,9 +1145,8 @@ pub struct ActiveMediaInfo {
 }
 
 /// Response envelope for the `media` query. Carries both the database
-/// build state (used for the first-run gate / status pill) and the
-/// active-media list (carried for completeness — see
-/// `ActiveMediaInfo`).
+/// build state (used for the first-run gate / status pill) and active
+/// media (used for desktop launch lifecycle suspension).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaResult {

@@ -23,12 +23,11 @@ Q_IMPORT_QML_PLUGIN(Zaparoo_UpdatePlugin)
 Q_IMPORT_QML_PLUGIN(Zaparoo_Update_Native_plugin)
 #endif
 
-extern "C" int zaparoo_rust_init();
+extern "C" int zaparoo_rust_init(bool crtNativePathForced);
 
-// Initializes the Rust model globals (tokio runtime, client, catalog channel)
-// before the QML engine is created. The WebSocket client will fail to connect
-// (no server running) and models will be empty — fine for behavioural UI tests
-// that don't depend on live catalog data.
+// Initializes the real Rust models but never connects them to Core. Navigation
+// tests exercise launch/write paths too; an empty catalog must not depend on
+// whether a developer happens to have Core running.
 class UiSetup : public QObject
 {
     Q_OBJECT
@@ -58,13 +57,24 @@ class UiSetup : public QObject
         qputenv("XDG_CONFIG_HOME", tmpConfigHome.toUtf8());
         qputenv("XDG_DATA_HOME", tmpDataHome.toUtf8());
 
+        // Override inherited endpoints as well as the production default.
+        // An unsupported scheme WITHOUT a port fails before DNS/TCP in the
+        // WebSocket transport. A supposedly unused localhost port is unsafe.
+        if (!qputenv("ZAPAROO_CORE_ENDPOINT", "zaparoo-offline://localhost"))
+        {
+            qFatal("Failed to disable Core connections for UI tests");
+        }
+
         // Match the real frontend's style selection. Also forces the test
         // binary to reference QQuickStyle, which keeps libQt6QuickControls2
         // on the link line under GNU ld --as-needed (cxx-qt-lib's
         // quickcontrols feature inside zaparoo_frontend_rs is the sole
         // other consumer and appears later on the command line).
         QQuickStyle::setStyle("Basic");
-        zaparoo_rust_init();
+        if (zaparoo_rust_init(false) != 0)
+        {
+            qFatal("Failed to initialize the isolated UI test runtime");
+        }
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static) — Qt slot, must be a member

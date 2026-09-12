@@ -28,22 +28,9 @@ const REARM_MS: u64 = 50;
 /// Which list the screen shows: one category's systems, or the systems
 /// that hold favorites (`FavoriteSystemsScreen.qml`, structurally a
 /// Systems screen and grouped with it by the layout profile).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SystemsMode {
-    Category,
-    Favorites,
-}
+pub use crate::SystemsMode;
 
-impl SystemsMode {
-    pub fn token(self) -> &'static str {
-        match self {
-            Self::Category => "systems",
-            Self::Favorites => "favorite-systems",
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(
     clippy::struct_excessive_bools,
     reason = "one flag per SystemsScreen property the shell binds"
@@ -64,6 +51,8 @@ pub struct SystemsModel {
     /// A page swoop is in flight; input waits for the commit.
     pub sliding: bool,
     pub transition_seq: u64,
+    pub page_seq: u64,
+    pub cut_next_page: bool,
 }
 
 impl SystemsModel {
@@ -81,6 +70,8 @@ impl SystemsModel {
             release_pulse: 0,
             sliding: false,
             transition_seq: 0,
+            page_seq: 0,
+            cut_next_page: false,
         }
     }
 
@@ -189,10 +180,10 @@ pub fn enter(ctx: &Ctx, app: &App, category: &str, animate: bool) {
     view.set_loading(false);
     render(ctx, app);
     if animate {
-        crate::router::transition_to_screen(app, "systems", 1);
+        crate::router::transition_to_screen(app, crate::Screen::Systems, 1);
     } else {
         app.global::<crate::Shell>()
-            .set_active_screen(SharedString::from("systems"));
+            .set_active_screen(crate::Screen::Systems);
         crate::router::refresh_layout(app);
     }
 }
@@ -209,6 +200,7 @@ pub fn return_to_favorites(ctx: &Ctx, app: &App) {
 }
 
 fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
+    crate::navigation::stage(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
         shared.persist.active_screen = "favorite-systems".to_string();
@@ -224,11 +216,19 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
         seat_favorites(&mut shared, rows);
     }
     crate::router::save_persist(&ctx.shared);
-    let view = app.global::<SystemsView>();
-    view.set_error(SharedString::default());
-    view.set_loading(lock(&ctx.shared).systems_model.loading);
-    render(ctx, app);
-    crate::router::transition_to_screen(app, "favorite-systems", direction);
+    let waiting_for_data = lock(&ctx.shared).systems_model.loading;
+    let ticket = lock(&ctx.shared).systems_model.transition_seq;
+    if waiting_for_data {
+        crate::router::begin_pending_with_direction(app, crate::Screen::FavoriteSystems, direction);
+    } else {
+        crate::navigation::finish(app);
+        let view = app.global::<SystemsView>();
+        view.set_error(SharedString::default());
+        view.set_loading(false);
+        render(ctx, app);
+        crate::router::save_persist(&ctx.shared);
+        crate::router::transition_to_screen(app, crate::Screen::FavoriteSystems, direction);
+    }
 
     let resource = ctx.store.subscribe::<SystemsFavoritesEndpoint>(());
     let mut rx = resource.subscribe();
@@ -240,12 +240,21 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
             match snapshot {
                 ResourceStatus::Ready(result) => {
                     let _ = weak.upgrade_in_event_loop(move |app| {
-                        apply_favorites(&ctx2, &app, &result);
+                        if lock(&ctx2.shared).systems_model.transition_seq != ticket {
+                            return;
+                        }
+                        apply_favorites(&ctx2, &app, &result, direction, waiting_for_data);
                     });
                     return;
                 }
                 ResourceStatus::Errored { message, .. } => {
                     let _ = weak.upgrade_in_event_loop(move |app| {
+                        if lock(&ctx2.shared).systems_model.transition_seq != ticket {
+                            return;
+                        }
+                        if waiting_for_data && crate::navigation::fail(&ctx2, &app, &message) {
+                            return;
+                        }
                         {
                             let mut shared = lock(&ctx2.shared);
                             shared.systems_model.loading = false;
@@ -254,6 +263,13 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
                         view.set_loading(false);
                         view.set_error(SharedString::from(message.as_str()));
                         render(&ctx2, &app);
+                        if waiting_for_data {
+                            crate::router::transition_to_screen(
+                                &app,
+                                crate::Screen::FavoriteSystems,
+                                direction,
+                            );
+                        }
                     });
                     return;
                 }
@@ -268,7 +284,13 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
 
 /// Core answered the favorites catalog: store it, re-project and seat the
 /// persisted system.
-fn apply_favorites(ctx: &Ctx, app: &App, result: &SystemsResult) {
+pub(crate) fn apply_favorites(
+    ctx: &Ctx,
+    app: &App,
+    result: &SystemsResult,
+    direction: i32,
+    route_when_ready: bool,
+) {
     {
         let mut shared = lock(&ctx.shared);
         shared.systems_model.favorites = catalog_systems(&result.systems);
@@ -276,10 +298,17 @@ fn apply_favorites(ctx: &Ctx, app: &App, result: &SystemsResult) {
         let rows = project_favorites(&shared);
         seat_favorites(&mut shared, rows);
     }
+    if route_when_ready {
+        crate::navigation::finish(app);
+    }
     let view = app.global::<SystemsView>();
     view.set_loading(false);
     view.set_error(SharedString::default());
     render(ctx, app);
+    if route_when_ready {
+        crate::router::save_persist(&ctx.shared);
+        crate::router::transition_to_screen(app, crate::Screen::FavoriteSystems, direction);
+    }
 }
 
 /// Seat the persisted favorite system on the rows (the restore path and
@@ -481,6 +510,9 @@ fn page_cells(shared: &Shared, page: usize) -> Vec<GridCell> {
 
 /// Paint the current page, the cursor, the caption and the geometry.
 pub fn render(ctx: &Ctx, app: &App) {
+    if crate::navigation::active() {
+        return;
+    }
     let geometry = geometry(app);
     let view = app.global::<SystemsView>();
     let mut shared = lock(&ctx.shared);
@@ -527,7 +559,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     } else {
         i32::try_from(model.grid.current_index().saturating_sub(start)).unwrap_or(0)
     });
-    view.set_mode(SharedString::from(model.mode.token()));
+    view.set_mode(model.mode);
     view.set_count(i32::try_from(model.rows.len()).unwrap_or(0));
     view.set_favorites_total(
         rules::favorites_total(&model.rows).map_or(-1, |total| i32::try_from(total).unwrap_or(0)),
@@ -559,10 +591,37 @@ pub fn render(ctx: &Ctx, app: &App) {
         view.set_label_count(-1);
     }
     render_list(app, &shared);
+    drop(shared);
+    remember_list_top(&mut lock(&ctx.shared), app);
 }
 
-/// Detailed list: the window around the centered slot, its cues and the
-/// detail pane (logo, name, category, release date, manufacturer).
+fn saved_list_top(shared: &Shared) -> Option<usize> {
+    match shared.systems_model.mode {
+        SystemsMode::Category => shared.persist.systems.list_top,
+        SystemsMode::Favorites => shared.persist.favorite_systems.list_top,
+    }
+}
+
+fn remember_list_top(shared: &mut Shared, app: &App) {
+    if !list_layout(shared) {
+        return;
+    }
+    let visible = list_visible_rows(app, shared).max(1);
+    let model = &shared.systems_model;
+    let current = model.grid.current_index();
+    let count = model.rows.len();
+    let previous = saved_list_top(shared)
+        .unwrap_or_else(|| list_rules::list_view_top(current, count, visible, None));
+    let top = Some(crate::browse_motion::window_top(
+        current, count, visible, previous,
+    ));
+    match model.mode {
+        SystemsMode::Category => shared.persist.systems.list_top = top,
+        SystemsMode::Favorites => shared.persist.favorite_systems.list_top = top,
+    }
+}
+
+/// Bounded row window with overscan for minimal focus-following scroll.
 fn render_list(app: &App, shared: &Shared) {
     let view = app.global::<SystemsView>();
     let model = &shared.systems_model;
@@ -579,12 +638,15 @@ fn render_list(app: &App, shared: &Shared) {
     view.set_has_items_above(paging.has_items_above);
     view.set_has_items_below(paging.has_items_below);
     if list_layout(shared) {
-        let top = list_rules::list_view_top(current, count, visible, None);
+        let previous = saved_list_top(shared)
+            .unwrap_or_else(|| list_rules::list_view_top(current, count, visible, None));
+        let scroll_top = crate::browse_motion::window_top(current, count, visible, previous);
+        let top = scroll_top.saturating_sub(1);
         let rows: Vec<GridCell> = model
             .rows
             .iter()
             .skip(top)
-            .take(visible)
+            .take(visible + 2)
             .map(|row| cell_for(row, &shared.persist.settings.system_logo_style))
             .collect();
         crate::view_model::publish_cells(&view.get_list_rows(), rows, |rows| {
@@ -592,6 +654,7 @@ fn render_list(app: &App, shared: &Shared) {
         });
         view.set_list_sel(i32::try_from(current.saturating_sub(top)).unwrap_or(0));
         view.set_list_view_top(i32::try_from(top).unwrap_or(0));
+        view.set_list_scroll_top(i32::try_from(scroll_top).unwrap_or(0));
         if let Some(row) = model.current() {
             let cell = cell_for(row, &shared.persist.settings.system_logo_style);
             view.set_detail_title(SharedString::from(row.name.as_str()));
@@ -653,7 +716,8 @@ fn persist_selection(ctx: &Ctx) {
 #[cfg(feature = "mister")]
 fn request_cached_page_transition(app: &App, direction: i32, _columns: i32, _rows: i32) -> bool {
     let shell = app.global::<crate::Shell>();
-    if shell.get_orientation().as_str() != "horizontal" || shell.get_systems_list_layout() {
+    if shell.get_orientation() != crate::Orientation::Horizontal || shell.get_systems_list_layout()
+    {
         return false;
     }
     let sizing = app.global::<crate::Sizing>();
@@ -688,6 +752,8 @@ pub(crate) fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
             shared.persist.settings.reduce_motion || !app.global::<crate::Motion>().get_enabled();
         let model = &mut shared.systems_model;
         model.sliding = true;
+        model.page_seq = model.page_seq.wrapping_add(1);
+        let reduce_motion = reduce_motion || std::mem::take(&mut model.cut_next_page);
         (
             model.grid.current_page(),
             model.grid.columns() as i32,
@@ -709,7 +775,7 @@ pub(crate) fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         render(ctx, app);
         return;
     }
-    let seq = lock(&ctx.shared).systems_model.transition_seq;
+    let seq = lock(&ctx.shared).systems_model.page_seq;
     if request_cached_page_transition(app, dir, columns, rows) {
         view.set_slide_anim(false);
         view.set_cached_transition(true);
@@ -718,7 +784,7 @@ pub(crate) fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         let ctx = ctx.clone();
         slint::Timer::single_shot(std::time::Duration::from_millis(SWOOP_MS), move || {
             if let Some(app) = weak.upgrade() {
-                if lock(&ctx.shared).systems_model.transition_seq != seq {
+                if lock(&ctx.shared).systems_model.page_seq != seq {
                     return;
                 }
                 lock(&ctx.shared).systems_model.sliding = false;
@@ -745,7 +811,7 @@ pub(crate) fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         let Some(app) = weak.upgrade() else {
             return;
         };
-        if lock(&ctx.shared).systems_model.transition_seq != seq {
+        if lock(&ctx.shared).systems_model.page_seq != seq {
             return;
         }
         lock(&ctx.shared).systems_model.sliding = false;
@@ -755,7 +821,7 @@ pub(crate) fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         view.set_page_slide(0.0);
         let weak = app.as_weak();
         slint::Timer::single_shot(std::time::Duration::from_millis(REARM_MS), move || {
-            if lock(&ctx.shared).systems_model.transition_seq != seq {
+            if lock(&ctx.shared).systems_model.page_seq != seq {
                 return;
             }
             if let Some(app) = weak.upgrade() {
@@ -818,14 +884,42 @@ fn move_cursor(ctx: &Ctx, app: &App, action: &str) -> Option<(bool, usize)> {
             _ => return Some((false, from_page)),
         }
     };
+    if moved {
+        remember_list_top(&mut shared, app);
+    }
     Some((moved, from_page))
+}
+
+pub(crate) fn interrupt_page(ctx: &Ctx, app: &App) {
+    let interrupted = {
+        let mut shared = lock(&ctx.shared);
+        let model = &mut shared.systems_model;
+        let interrupted = model.sliding;
+        model.cut_next_page = interrupted;
+        if interrupted {
+            model.page_seq = model.page_seq.wrapping_add(1);
+            model.sliding = false;
+        }
+        interrupted
+    };
+    if !interrupted {
+        return;
+    }
+    let view = app.global::<SystemsView>();
+    #[cfg(feature = "mister")]
+    if view.get_cached_transition() {
+        crate::mister::cancel_page_transition();
+    }
+    view.set_cached_transition(false);
+    view.set_slide_anim(false);
+    view.set_page_slide(0.0);
+    render(ctx, app);
+    app.window().request_redraw();
 }
 
 /// SystemsScreen.qml's `handleAction`.
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
-    if lock(&ctx.shared).systems_model.sliding {
-        return;
-    }
+    interrupt_page(ctx, app);
     let loading_cue = app.global::<SystemsView>().get_loading();
     let is_move = matches!(
         action,
@@ -883,7 +977,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         actions::CANCEL => {
             lock(&ctx.shared).persist.active_screen = "hub".to_string();
             crate::router::save_persist(&ctx.shared);
-            crate::router::transition_to_screen(app, "hub", -1);
+            crate::router::transition_to_screen(app, crate::Screen::Hub, -1);
         }
         _ => {}
     }
@@ -911,54 +1005,48 @@ fn activate_current(ctx: &Ctx, app: &App) {
     };
     persist_selection(ctx);
     publish_press(app, activate, release);
-    let delay = if app.global::<crate::Motion>().get_enabled() {
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    let duration = if app.global::<crate::Motion>().get_enabled() {
         34
     } else {
         0
     };
-    let ctx = ctx.clone();
-    let weak = app.as_weak();
-    slint::Timer::single_shot(std::time::Duration::from_millis(delay), move || {
-        let Some(app) = weak.upgrade() else {
-            return;
-        };
-        // Favorites drills into that system's favorites, not its media.
-        let (mode, favorite_id) = {
-            let shared = lock(&ctx.shared);
-            (
-                shared.systems_model.mode,
-                shared.systems_model.current().map(|row| row.id.clone()),
-            )
-        };
-        if mode == SystemsMode::Favorites {
-            if let Some(id) = favorite_id {
-                crate::games::enter_favorites_for_system(&ctx, &app, &id);
+    slint::Timer::single_shot(std::time::Duration::from_millis(duration), move || {
+        let release = {
+            let mut shared = lock(&ctx2.shared);
+            if shared.systems_model.activate_pulse != activate {
+                return;
             }
-            return;
-        }
-        let system = {
-            let shared = lock(&ctx.shared);
-            shared
-                .systems_model
-                .current()
-                .and_then(|row| catalog_entry(&shared, &row.id))
+            shared.systems_model.release_pulse += 1;
+            shared.systems_model.release_pulse
         };
-        if let Some(system) = system {
-            lock(&ctx.shared).persist.games.entered_from_hub = false;
-            crate::games::enter(&ctx, &app, &system);
-            if !system.zap_script.is_empty() {
-                let (activate, release) = {
-                    let mut shared = lock(&ctx.shared);
-                    shared.systems_model.release_pulse += 1;
-                    (
-                        shared.systems_model.activate_pulse,
-                        shared.systems_model.release_pulse,
-                    )
-                };
-                publish_press(&app, activate, release);
-            }
+        if let Some(app) = weak.upgrade() {
+            publish_press(&app, activate, release);
         }
     });
+    // The router owns the preceding grid push; list feedback retires locally.
+    let (mode, id) = {
+        let shared = lock(&ctx.shared);
+        (
+            shared.systems_model.mode,
+            shared.systems_model.current().map(|row| row.id.clone()),
+        )
+    };
+    if mode == SystemsMode::Favorites {
+        if let Some(id) = id {
+            crate::games::enter_favorites_for_system(ctx, app, &id);
+        }
+        return;
+    }
+    let system = id.and_then(|id| catalog_entry(&lock(&ctx.shared), &id));
+    if let Some(system) = system {
+        if system.zap_script.is_empty() {
+            crate::navigation::stage(ctx, app);
+        }
+        lock(&ctx.shared).persist.games.entered_from_hub = false;
+        crate::games::enter(ctx, app, &system);
+    }
 }
 
 /// Options on the focused system (Main.qml's `systems` owner, or the
@@ -1016,12 +1104,7 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> (f32, f32, f32, f32) {
     if list_layout(&shared) {
         let g = list_geometry(app, &shared);
         let layout = app.global::<crate::Layout>();
-        let top = list_rules::list_view_top(
-            model.grid.current_index(),
-            model.rows.len(),
-            g.visible_rows.max(1),
-            None,
-        );
+        let top = app.global::<SystemsView>().get_list_scroll_top().max(0) as usize;
         let local = model.grid.current_index().saturating_sub(top) as f32;
         let row_h = g.row_height as f32;
         (
@@ -1082,6 +1165,10 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
 }
 
 fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
+    if crate::press_feedback::pending(app) {
+        return false;
+    }
+    interrupt_page(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.systems_model;
@@ -1092,9 +1179,7 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
             return false;
         };
         let base = if list_layout(&shared) {
-            let visible = list_visible_rows(app, &shared);
-            let model = &shared.systems_model;
-            list_rules::list_view_top(model.grid.current_index(), model.rows.len(), visible, None)
+            app.global::<SystemsView>().get_list_view_top().max(0) as usize
         } else {
             let model = &shared.systems_model;
             model.grid.current_page() * model.grid.page_size()
@@ -1106,6 +1191,7 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
         }
         model.focus_armed = true;
         model.grid.set_current_index_immediate(index);
+        remember_list_top(&mut shared, app);
     }
     persist_selection(ctx);
     render(ctx, app);
@@ -1130,7 +1216,7 @@ pub fn bind_input(ctx: &std::sync::Arc<Ctx>, app: &App) {
         input.on_cell_clicked(move |local| {
             if let Some(app) = weak.upgrade() {
                 if pointer_select(&ctx, &app, local) {
-                    handle_action(&ctx, &app, actions::ACCEPT);
+                    crate::router::handle_action(&ctx, &app, actions::ACCEPT);
                 }
             }
         });

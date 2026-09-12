@@ -171,9 +171,10 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
                 show_image(ctx, app);
             }
         }
-        actions::UP | actions::DOWN | actions::PAGE_PREV | actions::PAGE_NEXT => {
-            app.invoke_game_info_scroll(action.into());
-        }
+        actions::UP => app.invoke_game_info_scroll(crate::ScrollAction::Up),
+        actions::DOWN => app.invoke_game_info_scroll(crate::ScrollAction::Down),
+        actions::PAGE_PREV => app.invoke_game_info_scroll(crate::ScrollAction::PagePrev),
+        actions::PAGE_NEXT => app.invoke_game_info_scroll(crate::ScrollAction::PageNext),
         _ => {}
     }
 }

@@ -151,6 +151,16 @@ impl MediaCache {
         lock_inner(&self.inner).map.contains_key(key)
     }
 
+    /// Release decoded image storage before `MiSTer` hands RAM to a
+    /// launched core. Negative results and queued identities remain so
+    /// a frontend that survives the handoff can continue cleanly.
+    pub fn clear_decoded(&self) {
+        let mut inner = lock_inner(&self.inner);
+        inner.map.clear();
+        inner.order.clear();
+        inner.bytes = 0;
+    }
+
     /// Put an image the cache did not fetch itself into it (the
     /// cold-boot manifest's own seed).
     pub fn seed(&self, key: MediaKey, image: DecodedImage) {
@@ -274,10 +284,18 @@ pub fn spawn_driver(
     client: Arc<Client>,
     handle: &tokio::runtime::Handle,
     mut rx: UnboundedReceiver<MediaKey>,
+    mut dormant: tokio::sync::watch::Receiver<bool>,
     on_ready: impl Fn(MediaKey, DecodedImage) + Send + 'static,
 ) {
     handle.spawn(async move {
         while let Some(key) = rx.recv().await {
+            // Preserve queued work while a local game owns the screen.
+            // One RPC already in flight may finish; the next one waits.
+            while *dormant.borrow_and_update() {
+                if dormant.changed().await.is_err() {
+                    return;
+                }
+            }
             // A key can be enqueued, then satisfied by an earlier
             // in-flight duplicate before we get to it.
             if cache.get(&key).is_some() {
@@ -480,6 +498,21 @@ mod tests {
         cache.insert(key(3), img(half));
         assert!(cache.get(&key(1)).is_some());
         assert!(cache.get(&key(2)).is_none());
+    }
+
+    #[test]
+    fn clear_decoded_releases_images_but_keeps_negative_memo() {
+        let (cache, _rx) = MediaCache::new();
+        cache.seed(key(1), img(64));
+        cache.insert_negative(key(2));
+
+        cache.clear_decoded();
+
+        assert!(!cache.is_cached(&key(1)));
+        assert!(cache.is_negative(&key(2)));
+        let inner = lock_inner(&cache.inner);
+        assert!(inner.order.is_empty());
+        assert_eq!(inner.bytes, 0);
     }
 
     #[test]

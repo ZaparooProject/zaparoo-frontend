@@ -201,7 +201,7 @@ pub fn push(shared: &Shared, app: &App, handle: &tokio::runtime::Handle) {
 
 fn apply(app: &App, output: &Output) {
     let status = app.global::<Status>();
-    status.set_kind(SharedString::from(output.message.kind.as_str()));
+    status.set_kind(output.message.kind.into());
     status.set_arg(SharedString::from(output.message.arg.as_str()));
     status.set_arg2(SharedString::from(output.message.arg2.as_str()));
     status.set_is_error(output.is_error);

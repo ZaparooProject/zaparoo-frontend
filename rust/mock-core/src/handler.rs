@@ -91,8 +91,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "run" => {
             let zap_script = req.params.get("text").and_then(Value::as_str).unwrap_or("");
             info!(%zap_script, "run");
-            // Upstream returns null on success.
-            Some(Ok(Value::Null))
+            Some(Ok(media_state::start_launch(zap_script, notifier)))
         }
         "readers.write" => {
             let zap_script = req.params.get("text").and_then(Value::as_str).unwrap_or("");
@@ -502,8 +501,8 @@ mod tests {
             .contains("launcher not found"));
     }
 
-    #[test]
-    fn run_accepts_any_text_and_returns_null() {
+    #[tokio::test]
+    async fn run_accepts_any_text_and_returns_null() {
         let req =
             r#"{"jsonrpc":"2.0","id":"1","method":"run","params":{"text":"**launch.system:nes"}}"#;
         let resp = parse(&dispatch(req));

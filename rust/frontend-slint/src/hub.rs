@@ -379,17 +379,17 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_release_pulse(hub.release_pulse);
     view.set_loaded(hub.categories_loaded);
     view.set_catalog_empty(shared.all_categories.is_empty());
-    view.set_indexing(app.global::<crate::Status>().get_kind().as_str() == "indexing");
+    view.set_indexing(app.global::<crate::Status>().get_kind() == crate::StatusKind::Indexing);
     let error = !view.get_hub_error().is_empty();
     match hub.current() {
         Some(entry) if !entry.is_empty() => {
             view.set_label_key(SharedString::from(entry.label_key.as_str()));
             view.set_label_name(SharedString::from(entry.name.as_str()));
-            view.set_label_reason(SharedString::from(if entry.disabled {
-                entry.reason.as_str()
+            view.set_label_reason(if entry.disabled {
+                entry.reason.into()
             } else {
-                ""
-            }));
+                crate::DisabledReason::None
+            });
             let is_category = entry.kind == Some(Kind::Category);
             view.set_focused_is_category(is_category);
             view.set_label_visible(!is_category || !error);
@@ -398,7 +398,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         _ => {
             view.set_label_key(SharedString::default());
             view.set_label_name(SharedString::default());
-            view.set_label_reason(SharedString::default());
+            view.set_label_reason(crate::DisabledReason::None);
             view.set_focused_is_category(false);
             view.set_label_visible(true);
             view.set_options_available(false);
@@ -549,29 +549,33 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 }
 
 fn activate_current(ctx: &Ctx, app: &App) {
-    {
+    let pulse = {
         let mut shared = lock(&ctx.shared);
         let hub = &mut shared.hub;
         if hub.current().is_none_or(Entry::is_empty) {
             return;
         }
         hub.activate_pulse += 1;
-    }
+        hub.activate_pulse
+    };
     commit_current(ctx);
     render(ctx, app);
-    // The press cue plays before the accept lands (DeferredAction.qml).
-    let delay = if app.global::<crate::Motion>().get_enabled() {
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    let duration = if app.global::<crate::Motion>().get_enabled() {
         34
     } else {
         0
     };
-    let ctx = ctx.clone();
-    let weak = app.as_weak();
-    slint::Timer::single_shot(std::time::Duration::from_millis(delay), move || {
-        if let Some(app) = weak.upgrade() {
-            emit_activate(&ctx, &app);
+    slint::Timer::single_shot(std::time::Duration::from_millis(duration), move || {
+        if lock(&ctx2.shared).hub.activate_pulse == pulse {
+            if let Some(app) = weak.upgrade() {
+                release_activate(&ctx2, &app);
+            }
         }
     });
+    // The router has already held the accepting tile through its push.
+    emit_activate(ctx, app);
 }
 
 /// Settle the push-in cue for accepts that keep the Hub on screen.
@@ -615,9 +619,8 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                     match path {
                         Some(path) if !path.is_empty() => {
                             crate::router::launch(ctx, app, path, &entry.name);
-                            release_activate(ctx, app);
                         }
-                        _ => release_activate(ctx, app),
+                        _ => {}
                     }
                 }
                 // Group by: System stops at the systems that hold
@@ -632,7 +635,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 }
                 "recents" => crate::games::enter_recents(ctx, app),
                 "settings" => crate::settings::enter(ctx, app),
-                _ => release_activate(ctx, app),
+                _ => {}
             }
         }
         Some(Kind::System) => {
@@ -644,10 +647,9 @@ fn emit_activate(ctx: &Ctx, app: &App) {
             match system {
                 Some(system) if !system.zap_script.is_empty() => {
                     crate::router::launch(ctx, app, system.zap_script.clone(), &system.name);
-                    release_activate(ctx, app);
                 }
                 Some(system) => crate::games::enter_from_hub(ctx, app, &system),
-                None => release_activate(ctx, app),
+                None => {}
             }
         }
         Some(Kind::Folder) => {
@@ -655,7 +657,6 @@ fn emit_activate(ctx: &Ctx, app: &App) {
         }
         Some(Kind::ZapScript) => {
             crate::router::launch(ctx, app, entry.script.clone(), &entry.name);
-            release_activate(ctx, app);
         }
         _ => {}
     }
@@ -750,7 +751,30 @@ fn move_held_to(hub: &mut HubModel, to: usize) -> bool {
     hub.layout.reseat_held_item(&snapshot, origin, to)
 }
 
+fn same_item(a: &Entry, b: &Entry) -> bool {
+    a.kind == b.kind
+        && a.id == b.id
+        && a.path == b.path
+        && a.script == b.script
+        && a.system == b.system
+}
+
 fn move_step(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
+    let (from_page, before) = {
+        let shared = lock(&ctx.shared);
+        let hub = &shared.hub;
+        let page = hub.grid.current_page();
+        let size = hub.grid.page_size();
+        (
+            page,
+            hub.entries
+                .iter()
+                .skip(page * size)
+                .take(size)
+                .cloned()
+                .collect::<Vec<_>>(),
+        )
+    };
     let moved = {
         let mut shared = lock(&ctx.shared);
         let hub = &mut shared.hub;
@@ -784,6 +808,33 @@ fn move_step(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
     };
     if moved {
         rebuild(ctx, app);
+        let origins = {
+            let shared = lock(&ctx.shared);
+            let hub = &shared.hub;
+            let size = hub.grid.page_size();
+            hub.entries
+                .iter()
+                .skip(hub.grid.current_page() * size)
+                .take(size)
+                .enumerate()
+                .map(|(i, entry)| {
+                    if hub.grid.current_page() != from_page || entry.is_empty() {
+                        return i as i32;
+                    }
+                    let mut matches = before
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, old)| same_item(old, entry));
+                    match (matches.next(), matches.next()) {
+                        (Some((origin, _)), None) => origin as i32,
+                        _ => i as i32,
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        let view = app.global::<HubView>();
+        view.set_move_origins(slint::ModelRc::new(slint::VecModel::from(origins)));
+        view.set_move_pulse(view.get_move_pulse().wrapping_add(1));
         commit_current(ctx);
     } else {
         render(ctx, app);
@@ -993,7 +1044,7 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
         )
     };
     if entries.is_empty() {
-        crate::router::open_alert(app, "hub_full");
+        crate::router::open_alert(app, crate::DialogKind::HubFull);
         return;
     }
     let rows: Vec<crate::MenuEntry> = entries
@@ -1076,6 +1127,9 @@ pub fn add_picked(ctx: &Ctx, app: &App, id: &str) {
 // ---------- Pointer ----------
 
 fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
+    if crate::press_feedback::pending(app) {
+        return false;
+    }
     {
         let mut shared = lock(&ctx.shared);
         let hub = &mut shared.hub;
@@ -1118,7 +1172,7 @@ pub fn bind_input(ctx: &std::sync::Arc<Ctx>, app: &App) {
                     if lock(&ctx.shared).hub.move_armed() {
                         accept_move(&ctx, &app);
                     } else {
-                        activate_current(&ctx, &app);
+                        crate::router::handle_action(&ctx, &app, actions::ACCEPT);
                     }
                 }
             }

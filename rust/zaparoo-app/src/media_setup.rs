@@ -38,11 +38,11 @@ impl FormRow {
     }
 
     /// Which control the row carries, in the settings vocabulary.
-    pub fn control(self) -> &'static str {
+    pub fn control(self) -> crate::settings::Control {
         match self {
-            Self::Source | Self::Systems => "picker",
-            Self::Rescrape => "toggle",
-            Self::Start => "action",
+            Self::Source | Self::Systems => crate::settings::Control::Picker,
+            Self::Rescrape => crate::settings::Control::Toggle,
+            Self::Start => crate::settings::Control::Action,
         }
     }
 }
@@ -126,13 +126,20 @@ pub fn resolved_systems(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeKind {
+    All,
+    Category,
+    System,
+}
+
 /// One row of the scope picker: its token, plus how the view should
 /// label it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeEntry {
     pub token: String,
-    /// "all", "category" or "system"; the view translates accordingly.
-    pub kind: &'static str,
+    /// The view translates the scope separately from its display name.
+    pub kind: ScopeKind,
     /// The category id or the system's display name; empty for All.
     pub name: String,
 }
@@ -142,17 +149,17 @@ pub struct ScopeEntry {
 pub fn scope_entries(categories: &[String], systems: &[(String, String)]) -> Vec<ScopeEntry> {
     let mut entries = vec![ScopeEntry {
         token: "*".to_string(),
-        kind: "all",
+        kind: ScopeKind::All,
         name: String::new(),
     }];
     entries.extend(categories.iter().map(|category| ScopeEntry {
         token: format!("cat:{category}"),
-        kind: "category",
+        kind: ScopeKind::Category,
         name: category.clone(),
     }));
     entries.extend(systems.iter().map(|(id, name)| ScopeEntry {
         token: id.clone(),
-        kind: "system",
+        kind: ScopeKind::System,
         name: name.clone(),
     }));
     entries
@@ -160,11 +167,11 @@ pub fn scope_entries(categories: &[String], systems: &[(String, String)]) -> Vec
 
 /// The label for the scope a form currently holds, as the same
 /// (kind, name) pair the picker rows carry.
-pub fn scope_label(scope: &Scope, system_name: &dyn Fn(&str) -> String) -> (&'static str, String) {
+pub fn scope_label(scope: &Scope, system_name: &dyn Fn(&str) -> String) -> (ScopeKind, String) {
     match scope {
-        Scope::All => ("all", String::new()),
-        Scope::Category(id) => ("category", id.clone()),
-        Scope::System(id) => ("system", system_name(id)),
+        Scope::All => (ScopeKind::All, String::new()),
+        Scope::Category(id) => (ScopeKind::Category, id.clone()),
+        Scope::System(id) => (ScopeKind::System, system_name(id)),
     }
 }
 
@@ -184,9 +191,12 @@ mod tests {
                 FormRow::Start
             ]
         );
-        assert_eq!(FormRow::Systems.control(), "picker");
-        assert_eq!(FormRow::Rescrape.control(), "toggle");
-        assert_eq!(FormRow::Start.control(), "action");
+        assert_eq!(FormRow::Systems.control(), crate::settings::Control::Picker);
+        assert_eq!(
+            FormRow::Rescrape.control(),
+            crate::settings::Control::Toggle
+        );
+        assert_eq!(FormRow::Start.control(), crate::settings::Control::Action);
     }
 
     #[test]
@@ -251,26 +261,29 @@ mod tests {
         );
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].token, "*");
-        assert_eq!(entries[0].kind, "all");
+        assert_eq!(entries[0].kind, ScopeKind::All);
         assert_eq!(entries[1].token, "cat:Console");
-        assert_eq!(entries[1].kind, "category");
+        assert_eq!(entries[1].kind, ScopeKind::Category);
         assert_eq!(entries[1].name, "Console");
         assert_eq!(entries[2].token, "NES");
-        assert_eq!(entries[2].kind, "system");
+        assert_eq!(entries[2].kind, ScopeKind::System);
         assert_eq!(entries[2].name, "Nintendo");
     }
 
     #[test]
     fn the_form_labels_its_scope_the_way_the_picker_does() {
         let name = |id: &str| format!("{id} name");
-        assert_eq!(scope_label(&Scope::All, &name), ("all", String::new()));
+        assert_eq!(
+            scope_label(&Scope::All, &name),
+            (ScopeKind::All, String::new())
+        );
         assert_eq!(
             scope_label(&Scope::Category("Handheld".into()), &name),
-            ("category", "Handheld".to_string())
+            (ScopeKind::Category, "Handheld".to_string())
         );
         assert_eq!(
             scope_label(&Scope::System("NES".into()), &name),
-            ("system", "NES name".to_string())
+            (ScopeKind::System, "NES name".to_string())
         );
     }
 }

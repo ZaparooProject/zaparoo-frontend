@@ -55,6 +55,36 @@ the lint image lacks Slint's desktop system libs; run `just lint-slint` and
 ## Always
 
 - Keep comments and docs in American English.
+- Use Slint enums for closed sets of UI states (active screen, settings page,
+  browse mode, loading/empty/error state), not strings or integer tags. Export
+  enums used at the Rust/Slint boundary and use the generated Rust types; map
+  toolkit-free domain enums explicitly rather than converting them to strings.
+  Model meaningful root/none states as variants, not empty-string sentinels,
+  and choose defaults explicitly (Slint otherwise uses the first variant).
+  Keep actual indices/counts numeric and text/open-ended IDs as strings. Convert
+  persisted/API tokens at the boundary with explicit unknown-value handling;
+  preserve existing serialized values and the persisted-schema approval rule.
+  See `docs/slint-state-types.md` for the type inventory and boundary exceptions.
+- Omit Slint bindings that merely repeat effective built-in defaults. An
+  unconstrained `Rectangle` outside a layout already fills its parent; redundant
+  `width: 100%` / `height: 100%` (or `parent.width` / `parent.height`) add noise.
+  Check element type, inherited bindings, child/preferred-size constraints, and
+  layout participation before removing bindings; do not bulk-delete matching
+  values. Keep intentional overrides and explicit application-state defaults
+  (including enums). Do not assume `Text`, `Image`, custom components, or `x`/`y`
+  share Rectangle sizing defaults.
+- Prefer Slint's built-in named constants and enums over equivalent magic
+  literals: write `font-weight: FontWeight.medium` instead of `500`, and use
+  named easing and property-enum values. Keep raw numbers for calculations and
+  exact design tokens such as palette colors; keep serialized/API tokens at
+  explicit boundaries.
+- Let Slint snap ordinary geometry, images, and text to physical pixels. Do not
+  wrap visual `x`/`y`/`width`/`height` expressions in
+  `Math.round(... / 1px) * 1px` merely for sharpness; this duplicates the
+  renderer and rounds at the wrong layer under fractional display scaling. Use
+  natural geometry such as `(parent.width - self.width) / 2`. Keep rounding
+  only for semantically discrete values or documented exact-pixel contracts
+  such as CRT calibration guides, bitmap raster sizing, and QR modules.
 - Follow `docs/content-style.md` for every user-visible string: menu
   ordering, capitalization, terminology, and the settings-page checklist.
 - After editing C++, Rust, or QML, run `just lint`. Run `just test` when the
@@ -97,15 +127,16 @@ the lint image lacks Slint's desktop system libs; run `just lint-slint` and
   rect is small (page-dot pulse, focus-ring blink, single-tile move) and let
   the rest of the scene stay static. See `docs/qml-gotchas.md` →
   "Software-renderer animation costs".
-- Do not hardcode pixel sizes or fixed element counts in UI. Use
+- In Qt/QML, do not hardcode pixel sizes or fixed element counts. Use
   `Sizing.pctH()`, `Sizing.pctW()`, `Sizing.fontSize()`,
   `Sizing.visibleCovers`, and `Sizing.radiusMd`/`Sizing.radiusSm` (for any
   rounded-square surface — see `docs/style.md`). Any value that drives `x`/`y`/`width`/
   `height`, border widths, margins, or font sizes must go through
   `Sizing.px()`, `Sizing.stroke()`, `Sizing.center()`, or `Sizing.half()`.
-  The whole app must run cleanly at 240p; fractional geometry is a bug
-  everywhere, not just on MiSTer.
-- Do not center user-visible text via `anchors.horizontalCenter` +
+  Qt/QML must run cleanly at 240p; fractional QML geometry is a bug everywhere,
+  not just on MiSTer. Slint uses its renderer-level physical-pixel snapping rule
+  above instead.
+- In Qt/QML, do not center user-visible text via `anchors.horizontalCenter` +
   `Text.AlignHCenter`. Center the `Text` item itself with
   `Sizing.center()` and render its glyphs left-aligned (or pre-measure
   with `TextMetrics`). Glyph runs that straddle a half-pixel soften

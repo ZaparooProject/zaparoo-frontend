@@ -24,7 +24,7 @@ component CenteredLine inherits Rectangle {
     in property <color> ink: Theme.text-primary;
     height: Math.ceil(label.preferred-height / 1px) * 1px;
     label := Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
         y: 0px;
         width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
         text: root.text;
@@ -36,24 +36,23 @@ component CenteredLine inherits Rectangle {
 
 export component AboutScreen inherits Rectangle {
     property <length> maximum-scroll: Math.max(0px, content.preferred-height - viewport.height);
-    property <length> scroll-y: Math.round(Math.min(root.maximum-scroll,
-        AboutView.scroll-milli * root.maximum-scroll / 1000) / 1px) * 1px;
+    property <length> scroll-y: Math.min(root.maximum-scroll,
+        AboutView.scroll-milli * root.maximum-scroll / 1000);
     changed maximum-scroll => {
         AboutView.maximum-scroll-milli = Math.ceil(root.maximum-scroll / Math.max(1px, Sizing.screen-height) * 1000);
     }
     TopStatusStrip {
         y: Sizing.header-bottom + Sizing.pct-h(1);
-        width: parent.width;
         height: Sizing.pct-h(7);
         title: @tr("About / License");
         show-page-counter: false;
     }
     card := Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
         y: Sizing.header-bottom + Sizing.pct-h(10);
         width: Math.min(parent.width - Sizing.pct-w(10), Sizing.pct-w(50));
         height: Math.max(0px, parent.height - Sizing.header-bottom - Sizing.pct-h(18));
-        background: Theme.bg-panel;
+        background: Theme.surface-card;
         border-radius: Sizing.radius-md;
         border-width: Sizing.stroke(1);
         border-color: Theme.border-mid;
@@ -65,13 +64,12 @@ export component AboutScreen inherits Rectangle {
             clip: true;
             content := VerticalLayout {
                 y: -root.scroll-y;
-                width: parent.width;
                 height: self.preferred-height;
                 spacing: Sizing.pct-h(2);
                 Rectangle {
-                    height: Math.round(Math.min(parent.width, Sizing.pct-h(35)) * 135 / 600 / 1px) * 1px;
+                    height: Math.min(parent.width, Sizing.pct-h(35)) * 135 / 600;
                     Image {
-                        x: Math.round((parent.width - self.width) / 2px) * 1px;
+                        x: (parent.width - self.width) / 2;
                         y: 0px;
                         width: Math.min(parent.width, Sizing.pct-h(35));
                         height: parent.height;
@@ -117,7 +115,7 @@ export component AboutScreen inherits Rectangle {
             }
         }
         for below in [false, true]: Image {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: below ? parent.height - Sizing.pct-h(3.5) : Sizing.pct-h(0.5);
             width: Sizing.pct-h(3);
             height: self.width;

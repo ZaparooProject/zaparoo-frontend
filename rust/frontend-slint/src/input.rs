@@ -23,6 +23,9 @@ use crate::App;
 pub struct InputModel {
     hold: rules::Hold,
     guard: rules::DuplicateGuard,
+    // Some desktop backends omit the repeat flag. Physical release, not a
+    // timestamp window, distinguishes a new press from native autorepeat.
+    pressed_keys: std::collections::HashSet<String>,
     rapid: rules::RapidNav,
     /// Origin for the monotonic millisecond clock the rules take.
     epoch: Instant,
@@ -40,6 +43,7 @@ impl InputModel {
         Self {
             hold: rules::Hold::new(),
             guard: rules::DuplicateGuard::new(),
+            pressed_keys: std::collections::HashSet::new(),
             rapid: rules::RapidNav::new(),
             epoch: Instant::now(),
             repeat_seq: 0,
@@ -50,11 +54,17 @@ impl InputModel {
 
     /// Retire the repeat ticket and report whether release needs a persist flush.
     fn release(&mut self, key: &str) -> bool {
+        self.pressed_keys.remove(key);
         if !self.hold.release(key) {
             return false;
         }
         self.repeat_seq += 1;
         true
+    }
+
+    #[cfg(all(test, feature = "mister"))]
+    pub(crate) fn advance_test_clock(&mut self, milliseconds: u64) {
+        self.epoch -= Duration::from_millis(milliseconds);
     }
 
     fn now_ms(&self) -> u64 {
@@ -69,13 +79,16 @@ impl Default for InputModel {
 }
 
 /// The keyboard is the live input source, so neither swap applies.
-/// Derived from the controller report, exactly as the help bar's own
-/// glyphs are.
+/// No controller report is the desktop-keyboard case; a report can
+/// explicitly identify either keyboard or controller input.
+fn keyboard_active_for_layout(layout: Option<&str>) -> bool {
+    layout.is_none_or(zaparoo_app::buttons::keyboard_active)
+}
+
 fn keyboard_active() -> bool {
-    zaparoo_core::controller_report::subscribe()
-        .borrow()
-        .as_ref()
-        .is_some_and(|report| zaparoo_app::buttons::keyboard_active(report.layout))
+    let report = zaparoo_core::controller_report::subscribe();
+    let report = report.borrow();
+    keyboard_active_for_layout(report.as_ref().map(|report| report.layout))
 }
 
 /// The Slint `has-modal()` set, plus the CRT calibration overlay that
@@ -99,8 +112,14 @@ fn modal_open(app: &App) -> bool {
 /// A real press: guard against a double delivery, map the key to an
 /// action, apply the swaps, route it, then arm the repeat.
 fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, String>, key: &str) {
+    if app.global::<crate::Shell>().get_dormant() {
+        return;
+    }
     let accepted = {
         let mut shared = lock(&ctx.shared);
+        if !shared.input.pressed_keys.insert(key.to_string()) {
+            return;
+        }
         let now = shared.input.now_ms();
         shared.input.guard.accept(key, now)
     };
@@ -161,6 +180,7 @@ pub fn stop_repeat(ctx: &Ctx) {
     let held = {
         let mut shared = lock(&ctx.shared);
         shared.input.repeat_seq += 1;
+        shared.input.pressed_keys.clear();
         shared.input.hold.stop()
     };
     if held {
@@ -278,8 +298,8 @@ fn schedule_quiet(ctx: &Ctx, app: &App) {
 /// bindings gate it on the active screen the same way.
 fn push_rapid(ctx: &Ctx, app: &App, active: bool) {
     let on_list = matches!(
-        app.global::<crate::Shell>().get_active_screen().as_str(),
-        "games" | "favorites" | "recents"
+        app.global::<crate::Shell>().get_active_screen(),
+        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents
     );
     crate::games::set_rapid(ctx, app, active && on_list);
 }
@@ -297,12 +317,27 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
     let released_ctx = ctx.clone();
     app.on_key_released(move |text| key_released(&released_ctx, &text));
     let lost_ctx = ctx.clone();
-    app.on_input_lost(move || stop_repeat(&lost_ctx));
+    let weak = app.as_weak();
+    app.on_input_lost(move || {
+        stop_repeat(&lost_ctx);
+        if let Some(app) = weak.upgrade() {
+            crate::press_feedback::cancel(&app);
+        }
+    });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::InputModel;
+    use super::{keyboard_active_for_layout, InputModel};
+
+    #[test]
+    fn missing_controller_report_means_keyboard_input() {
+        assert!(keyboard_active_for_layout(None));
+        assert!(keyboard_active_for_layout(Some(
+            zaparoo_app::buttons::KEYBOARD_STYLE
+        )));
+        assert!(!keyboard_active_for_layout(Some("style_b")));
+    }
 
     #[test]
     fn held_key_release_retires_timer_and_requests_exactly_one_flush() {

@@ -6,8 +6,8 @@
 // contract: screens (the .slint views) never route; every action lands
 // here, and this module decides what fills and what flips. The
 // games entry uses deferred "select -> loading -> next" routing:
-// source remains visible under the Loading cue until destination data
-// is Ready, then cached/native route motion commits the new screen.
+// source remains visible until destination data is ready, then the complete
+// route commits in one turn. Only local controls and spatial paging animate.
 
 use crate::games::GameRow;
 use crate::media_cache::MediaCache;
@@ -145,12 +145,8 @@ pub enum ContextOwner {
 
 /// First-run index modal phase (FirstRunIndexModal.qml's idle /
 /// running / completed vocabulary).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FirstRunPhase {
-    Idle,
-    Running,
-    Done,
-}
+pub use crate::FirstRunPhase;
+use crate::{DialogButton, DialogKind, DialogProgress, ErrorKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingRestart {
@@ -191,6 +187,10 @@ pub struct Ctx {
     /// Live 12-hour clock flag shared with the clock task; the
     /// Settings toggle flips it without a restart.
     pub clock_twelve_hour: Arc<std::sync::atomic::AtomicBool>,
+    /// Cooperative desktop suspension. Core lifecycle tracking keeps
+    /// this true while primary media runs; background tasks retain a
+    /// receiver and sleep instead of spending CPU behind the emulator.
+    pub dormant: tokio::sync::watch::Sender<bool>,
     /// Header status line ladder state.
     pub status: crate::status::Shared,
     /// `frontend.toml` location, for durable settings mirrors.
@@ -268,7 +268,8 @@ pub fn lock(shared: &Arc<Mutex<Shared>>) -> MutexGuard<'_, Shared> {
 }
 
 pub(crate) fn save_persist(shared: &Arc<Mutex<Shared>>) {
-    let snapshot = lock(shared).persist.clone();
+    let snapshot =
+        crate::navigation::source_persist().unwrap_or_else(|| lock(shared).persist.clone());
     persist::save(&snapshot);
 }
 
@@ -403,27 +404,31 @@ mod version_gate_tests {
 /// Open a dialog. Rust names the kind, its sub-kind and the one
 /// runtime value the copy needs; `DialogLabels` in the UI composes
 /// every word, so the buttons are keys too.
-fn open_dialog(app: &App, kind: &str, detail: &str, arg: &str, buttons: &[&str], focus: i32) {
+fn open_dialog(
+    app: &App,
+    kind: DialogKind,
+    detail: &str,
+    arg: &str,
+    buttons: &[DialogButton],
+    focus: i32,
+) {
     let overlays = app.global::<crate::Overlays>();
-    overlays.set_dialog_kind(SharedString::from(kind));
+    overlays.set_dialog_kind(kind);
+    overlays.set_dialog_error(ErrorKind::Generic);
+    overlays.set_first_run_phase(FirstRunPhase::Idle);
     overlays.set_dialog_detail(SharedString::from(detail));
     overlays.set_dialog_arg(SharedString::from(arg));
-    overlays.set_dialog_status(SharedString::default());
-    overlays.set_dialog_buttons(ModelRc::new(VecModel::from(
-        buttons
-            .iter()
-            .map(|b| SharedString::from(*b))
-            .collect::<Vec<_>>(),
-    )));
+    overlays.set_dialog_status(DialogProgress::None);
+    overlays.set_dialog_buttons(ModelRc::new(VecModel::from(buttons.to_vec())));
     overlays.set_dialog_focus(focus);
     overlays.set_dialog_open(true);
 }
 
 /// The first-run progress line, as the key plus the numbers the copy
 /// puts in it.
-fn set_dialog_status(app: &App, key: &str, step: i32, total: i32, name: &str) {
+fn set_dialog_status(app: &App, key: DialogProgress, step: i32, total: i32, name: &str) {
     let overlays = app.global::<crate::Overlays>();
-    overlays.set_dialog_status(SharedString::from(key));
+    overlays.set_dialog_status(key);
     overlays.set_dialog_status_step(step);
     overlays.set_dialog_status_total(total);
     overlays.set_dialog_status_name(SharedString::from(name));
@@ -433,7 +438,7 @@ fn close_dialog(app: &App) {
     crate::press_feedback::cancel(app);
     let overlays = app.global::<crate::Overlays>();
     overlays.set_dialog_open(false);
-    overlays.set_dialog_kind(SharedString::default());
+    overlays.set_dialog_kind(DialogKind::None);
     overlays.set_dialog_detail(SharedString::default());
     overlays.set_dialog_arg(SharedString::default());
 }
@@ -442,7 +447,14 @@ fn close_dialog(app: &App) {
 /// can't kill the frontend (Main.qml's quit-confirm rule). Default
 /// focus is "No".
 pub(crate) fn open_quit_confirm(app: &App) {
-    open_dialog(app, "quit_confirm", "", "", &["no", "yes"], 0);
+    open_dialog(
+        app,
+        DialogKind::QuitConfirm,
+        "",
+        "",
+        &[DialogButton::No, DialogButton::Yes],
+        0,
+    );
 }
 
 /// Advance the sequential startup chain: commercial notice ->
@@ -471,7 +483,14 @@ pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
         )
     };
     if !notice_ack {
-        open_dialog(app, "notice", "", "", &["i_understand"], 0);
+        open_dialog(
+            app,
+            DialogKind::Notice,
+            "",
+            "",
+            &[DialogButton::IUnderstand],
+            0,
+        );
         return;
     }
     if !version_shown {
@@ -481,7 +500,14 @@ pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
         }
         lock(&ctx.shared).version_warning_shown = true;
         if !version_supported(&version) {
-            open_dialog(app, "core_version", MIN_CORE_VERSION, &version, &["ok"], 0);
+            open_dialog(
+                app,
+                DialogKind::CoreVersion,
+                MIN_CORE_VERSION,
+                &version,
+                &[DialogButton::Ok],
+                0,
+            );
             return;
         }
     }
@@ -489,7 +515,14 @@ pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
     // systems means the media database has never been built.
     if !first_run_shown && indexed == 0 {
         lock(&ctx.shared).first_run_shown = true;
-        open_dialog(app, "first_run", "", "", &["start_scan"], 0);
+        open_dialog(
+            app,
+            DialogKind::FirstRun,
+            "",
+            "",
+            &[DialogButton::StartScan],
+            0,
+        );
     }
 }
 
@@ -521,16 +554,16 @@ fn check_core_version(ctx: &Ctx, app: &App) {
 fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
     use slint::Model as _;
     let overlays = app.global::<crate::Overlays>();
-    let kind = overlays.get_dialog_kind().to_string();
+    let kind = overlays.get_dialog_kind();
     let len = overlays.get_dialog_buttons().row_count();
     let focus = overlays.get_dialog_focus().max(0) as usize;
     let retry = (action == actions::ACCEPT
-        && kind == "action_error"
-        && overlays.get_dialog_detail() == "card_write")
+        && kind == DialogKind::ActionError
+        && overlays.get_dialog_error() == ErrorKind::CardWrite)
         .then(|| overlays.get_dialog_arg().to_string());
     let launcher_retry = (action == actions::ACCEPT
-        && kind == "action_error"
-        && overlays.get_dialog_detail() == "launcher_save")
+        && kind == DialogKind::ActionError
+        && overlays.get_dialog_error() == ErrorKind::LauncherSave)
         .then(|| overlays.get_dialog_arg().to_string());
     match action {
         actions::LEFT if len > 1 && focus > 0 => {
@@ -539,14 +572,14 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
         actions::RIGHT if len > 1 && focus + 1 < len => {
             overlays.set_dialog_focus((focus + 1) as i32);
         }
-        actions::ACCEPT => dialog_accept(ctx, app, &kind, focus),
-        actions::CANCEL => dialog_cancel(ctx, app, &kind),
+        actions::ACCEPT => dialog_accept(ctx, app, kind, focus),
+        actions::CANCEL => dialog_cancel(ctx, app, kind),
         _ => return,
     }
     // The surface came free (this dialog closed, or the alert on it was
     // dismissed): hand it to whatever failure was waiting.
     if !app.global::<crate::Overlays>().get_dialog_open() {
-        let next = if kind == "action_error" {
+        let next = if kind == DialogKind::ActionError {
             lock(&ctx.shared).errors.dismiss()
         } else {
             lock(&ctx.shared).errors.take_next()
@@ -565,21 +598,21 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
     }
 }
 
-fn dialog_accept(ctx: &Ctx, app: &App, kind: &str, focus: usize) {
+fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
     let confirmed = app
         .global::<crate::Overlays>()
         .get_dialog_buttons()
         .row_data(focus)
-        .is_some_and(|id| id == "yes");
+        .is_some_and(|id| id == DialogButton::Yes);
     match kind {
-        "quit_confirm" => {
+        DialogKind::QuitConfirm => {
             if confirmed {
                 let _ = slint::quit_event_loop();
             } else {
                 close_dialog(app);
             }
         }
-        "notice" => {
+        DialogKind::Notice => {
             lock(&ctx.shared).notice_ack = true;
             if let Err(e) = zaparoo_core::config::save_notice_ack(&ctx.config_path, true) {
                 tracing::warn!("could not persist notice ack: {e}");
@@ -587,12 +620,12 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: &str, focus: usize) {
             close_dialog(app);
             maybe_open_startup_notices(ctx, app);
         }
-        "core_version" => {
+        DialogKind::CoreVersion => {
             close_dialog(app);
             maybe_open_startup_notices(ctx, app);
         }
-        "first_run" => first_run_accept(ctx, app),
-        "restart_setting" => {
+        DialogKind::FirstRun => first_run_accept(ctx, app),
+        DialogKind::RestartSetting => {
             if confirmed {
                 confirm_pending_restart(ctx, app);
             } else {
@@ -604,13 +637,13 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: &str, focus: usize) {
     }
 }
 
-fn dialog_cancel(ctx: &Ctx, app: &App, kind: &str) {
+fn dialog_cancel(ctx: &Ctx, app: &App, kind: DialogKind) {
     match kind {
         // The notice must be acknowledged; the idle first-run gate has
         // no skip (Qt closes it only when indexed systems appear out
         // of band).
-        "notice" => {}
-        "first_run" => {
+        DialogKind::Notice => {}
+        DialogKind::FirstRun => {
             let running = lock(&ctx.shared).first_run == FirstRunPhase::Running;
             if running {
                 lock(&ctx.shared).first_run_cancelling = true;
@@ -627,11 +660,11 @@ fn dialog_cancel(ctx: &Ctx, app: &App, kind: &str) {
                 });
             }
         }
-        "core_version" => {
+        DialogKind::CoreVersion => {
             close_dialog(app);
             maybe_open_startup_notices(ctx, app);
         }
-        "restart_setting" => {
+        DialogKind::RestartSetting => {
             lock(&ctx.shared).pending_restart = None;
             close_dialog(app);
         }
@@ -650,11 +683,10 @@ fn first_run_accept(ctx: &Ctx, app: &App) {
                 guard.first_run_cancelling = false;
             }
             start_index(ctx, app, None);
-            set_dialog_status(app, "preparing", 0, 0, "");
+            set_dialog_status(app, DialogProgress::Preparing, 0, 0, "");
             let overlays = app.global::<crate::Overlays>();
-            overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![SharedString::from(
-                "cancel",
-            )])));
+            overlays.set_first_run_phase(FirstRunPhase::Running);
+            overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![DialogButton::Cancel])));
             overlays.set_dialog_focus(0);
         }
         FirstRunPhase::Running => {}
@@ -667,7 +699,7 @@ fn first_run_accept(ctx: &Ctx, app: &App) {
 /// Idle after a cancel). Called from the media-status watcher.
 pub fn refresh_first_run(ctx: &Ctx, app: &App) {
     if !app.global::<crate::Overlays>().get_dialog_open()
-        || app.global::<crate::Overlays>().get_dialog_kind().as_str() != "first_run"
+        || app.global::<crate::Overlays>().get_dialog_kind() != DialogKind::FirstRun
     {
         return;
     }
@@ -679,19 +711,19 @@ pub fn refresh_first_run(ctx: &Ctx, app: &App) {
     if ms.indexing || ms.optimizing {
         lock(&ctx.shared).first_run_saw_indexing = true;
         if ms.optimizing {
-            set_dialog_status(app, "optimizing", 0, 0, "");
+            set_dialog_status(app, DialogProgress::Optimizing, 0, 0, "");
         } else if ms.paused {
-            set_dialog_status(app, "paused", 0, 0, "");
+            set_dialog_status(app, DialogProgress::Paused, 0, 0, "");
         } else if ms.total_steps > 0 {
             set_dialog_status(
                 app,
-                "step",
+                DialogProgress::Step,
                 ms.current_step.max(0),
                 ms.total_steps,
                 &ms.current_step_display,
             );
         } else {
-            set_dialog_status(app, "preparing", 0, 0, "");
+            set_dialog_status(app, DialogProgress::Preparing, 0, 0, "");
         }
         return;
     }
@@ -710,20 +742,19 @@ pub fn refresh_first_run(ctx: &Ctx, app: &App) {
         guard.first_run_cancelling = false;
         guard.first_run_saw_indexing = false;
         drop(guard);
-        overlays.set_dialog_status(SharedString::default());
-        overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![SharedString::from(
-            "start_scan",
-        )])));
+        overlays.set_dialog_status(DialogProgress::None);
+        overlays.set_first_run_phase(FirstRunPhase::Idle);
+        overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![DialogButton::StartScan])));
         overlays.set_dialog_focus(0);
         return;
     }
     lock(&ctx.shared).first_run = FirstRunPhase::Done;
-    overlays.set_dialog_status(SharedString::default());
-    overlays.set_dialog_detail(SharedString::from("done"));
+    overlays.set_dialog_status(DialogProgress::None);
+    overlays.set_first_run_phase(FirstRunPhase::Done);
     overlays.set_dialog_arg(SharedString::from(
         ms.total_files.max(0).to_string().as_str(),
     ));
-    overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![SharedString::from("ok")])));
+    overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![DialogButton::Ok])));
     overlays.set_dialog_focus(0);
 }
 
@@ -757,8 +788,8 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
         // The boot curtain and the transition "Loading…" cue are not
         // burn targets; skip and let the next input re-arm the clock.
         if !app.global::<crate::Shell>().get_boot_complete()
+            || app.global::<crate::Shell>().get_dormant()
             || app.global::<crate::Shell>().get_transitioning()
-            || app.global::<crate::Shell>().get_route_transitioning()
         {
             return;
         }
@@ -766,33 +797,27 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
     });
 }
 
-const ROUTE_SETTLE_MS: u64 = 190;
-
-/// Grace window before the forward-transition cue paints, matching
-/// `MainLayout.loadingIndicatorDelayMs`. A fill that answers inside it
-/// never blanks the screen the user is still looking at.
+/// Slow work adds feedback without hiding the source or delaying a ready route.
 const LOADING_CUE_DELAY_MS: u64 = 300;
 
 thread_local! {
-    /// Grace-window ticket. Pending fills start and end on the Slint
-    /// event loop and nowhere else, so this never leaves the UI thread
-    /// and does not belong in the shared, lock-guarded state.
     static CUE_SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// A forward fill has started: gate input now, but leave the screen
-/// alone until the grace window is up. Qt's `pendingTransition` plus
-/// `DelayedLoadingIndicator`, in one call.
-pub(crate) fn begin_pending(app: &App, target: &str) {
+pub(crate) fn begin_pending(app: &App, target: crate::Screen) {
+    begin_pending_with_direction(app, target, 1);
+}
+
+pub(crate) fn begin_pending_with_direction(app: &App, target: crate::Screen, _direction: i32) {
     let shell = app.global::<crate::Shell>();
     if shell.get_transitioning() {
         return;
     }
-    shell.set_transition_target(SharedString::from(target));
+    shell.set_transition_target(target);
     shell.set_transitioning(true);
-    let ticket = CUE_SEQ.with(|c| {
-        c.set(c.get() + 1);
-        c.get()
+    let ticket = CUE_SEQ.with(|sequence| {
+        sequence.set(sequence.get().wrapping_add(1));
+        sequence.get()
     });
     let weak = app.as_weak();
     slint::Timer::single_shot(
@@ -812,160 +837,104 @@ pub(crate) fn begin_pending(app: &App, target: &str) {
     );
 }
 
-/// The fill answered (or was abandoned): drop the gate and the cue, and
-/// retire a grace window still counting down.
-fn clear_pending(app: &App) {
-    CUE_SEQ.with(|c| c.set(c.get() + 1));
+pub(crate) fn clear_pending(app: &App) {
+    CUE_SEQ.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
     let shell = app.global::<crate::Shell>();
     shell.set_transitioning(false);
     shell.set_transition_cue(false);
 }
 
-#[cfg(feature = "mister")]
-fn request_cached_route_transition(app: &App, direction: i32) -> bool {
-    let shell = app.global::<crate::Shell>();
-    if shell.get_orientation().as_str() != "horizontal" {
-        return false;
-    }
-    let sizing = app.global::<Sizing>();
-    let width = sizing.get_screen_width().round().max(0.0) as u32;
-    let height = sizing.get_screen_height().round().max(0.0) as u32;
-    let Some(geometry) = sizing::mister_route_transition_geometry(
-        width,
-        height,
-        sizing.get_header_bottom().round().max(0.0) as u32,
-        sizing.get_help_bar_height().round().max(0.0) as u32,
-    ) else {
-        return false;
-    };
-    crate::mister::request_route_transition(geometry, direction)
-}
-
-#[cfg(not(feature = "mister"))]
-fn request_cached_route_transition(_app: &App, _direction: i32) -> bool {
-    false
-}
-
-fn finish_route_transition(app: &App) {
-    let shell = app.global::<crate::Shell>();
-    let target = shell.get_route_to_screen();
-    shell.set_route_slide_anim(false);
-    shell.set_active_screen(target);
-    refresh_layout(app);
-    shell.set_route_cached_transition(false);
-    shell.set_route_from_gated(false);
-    shell.set_route_page_slide(0.0);
-    shell.set_route_from_screen(SharedString::default());
-    shell.set_route_to_screen(SharedString::default());
-    shell.set_route_transitioning(false);
-
-    let weak = app.as_weak();
-    slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
-        if let Some(app) = weak.upgrade() {
-            app.global::<crate::Shell>().set_route_slide_anim(true);
-        }
-    });
-}
-
-fn begin_route_transition(app: &App) {
-    let shell = app.global::<crate::Shell>();
-    if !shell.get_route_transitioning() {
-        return;
-    }
-    let direction = shell.get_route_slide_dir();
-    if request_cached_route_transition(app, direction) {
-        shell.set_route_cached_transition(true);
-        shell.set_active_screen(shell.get_route_to_screen());
-        refresh_layout(app);
-    } else {
-        shell.set_route_slide_anim(true);
-        shell.set_route_page_slide(direction as f32);
-    }
-
-    let expected_target = shell.get_route_to_screen();
-    let weak = app.as_weak();
-    slint::Timer::single_shot(
-        std::time::Duration::from_millis(ROUTE_SETTLE_MS),
-        move || {
-            let Some(app) = weak.upgrade() else {
-                return;
-            };
-            let shell = app.global::<crate::Shell>();
-            if shell.get_route_transitioning() && shell.get_route_to_screen() == expected_target {
-                finish_route_transition(&app);
-            }
-        },
-    );
-}
-
-/// Navigate one level through the screen hierarchy: the destination is
-/// staged one screen-width away on the side we are travelling toward and
-/// the strip slides onto it. `direction` is +1 going down into the
-/// hub-and-spoke and -1 coming back up, so a level always enters from
-/// the same side it will later leave by.
-pub(crate) fn transition_to_screen(app: &App, target: &str, direction: i32) {
-    transition_route(app, target, direction, false);
-}
-
-pub(crate) fn transition_settings_page(app: &App, direction: i32) {
-    transition_route(app, "settings", direction, true);
-}
-
-fn transition_route(app: &App, target: &str, direction: i32, settings_page: bool) {
-    let shell = app.global::<crate::Shell>();
-    let current = shell.get_active_screen();
-    if current.as_str() == target && !settings_page {
-        clear_pending(app);
-        return;
-    }
-    if shell.get_reduce_motion() || !app.global::<crate::Motion>().get_enabled() {
-        clear_pending(app);
-        shell.set_active_screen(SharedString::from(target));
-        refresh_layout(app);
-        return;
-    }
-    if shell.get_route_transitioning() {
-        return;
-    }
-
-    if current.as_str() == "settings" && !settings_page {
-        crate::settings::capture_outgoing(app);
-    }
-
-    // Whatever the user is looking at right now is what slides out, cue
-    // and all. Read the gate before clearing it.
-    shell.set_route_from_gated(shell.get_transition_cue());
+/// Publish a ready destination in this turn, never after a decorative timer.
+pub(crate) fn transition_to_screen(app: &App, target: crate::Screen, _direction: i32) {
     clear_pending(app);
+    let motion = app.global::<crate::Motion>();
+    motion.set_epoch(motion.get_epoch().wrapping_add(1));
+    app.global::<crate::Shell>().set_active_screen(target);
+    refresh_layout(app);
+}
 
-    shell.set_route_transitioning(true);
-    shell.set_route_from_screen(current);
-    shell.set_route_to_screen(SharedString::from(target));
-    shell.set_route_slide_dir(if direction > 0 { 1 } else { -1 });
-    // The strip is already mounted and settled at 0, so moving the
-    // offset now is a change `animate x` can act on, whether we got
-    // here straight off a keypress or out of a completed fetch.
-    begin_route_transition(app);
+pub(crate) fn transition_settings_page(
+    app: &App,
+    _direction: i32,
+    update: impl FnOnce(&App) + 'static,
+) {
+    update(app);
+    let motion = app.global::<crate::Motion>();
+    motion.set_epoch(motion.get_epoch().wrapping_add(1));
+    refresh_layout(app);
 }
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     if crate::press_feedback::pending(app) {
-        if action == actions::CANCEL || app.global::<crate::Shell>().get_saver_armed() {
-            crate::press_feedback::cancel(app);
-        } else {
+        if action == actions::ACCEPT {
+            return;
+        }
+        crate::press_feedback::cancel(app);
+        if action == actions::CANCEL {
             return;
         }
     }
     if action == actions::ACCEPT {
-        if let Some(target) = crate::press_feedback::current(app) {
+        if let Some(target) = crate::press_feedback::prepare(ctx, app) {
             reset_idle(ctx, app);
             let ctx = ctx.clone();
-            crate::press_feedback::defer(app, target, move |app| {
-                dispatch_action(&ctx, app, actions::ACCEPT);
+            crate::press_feedback::dispatch(app, &target, move |app| {
+                dispatch_with_focus(&ctx, app, actions::ACCEPT);
             });
             return;
         }
     }
+    dispatch_with_focus(ctx, app, action);
+}
+
+fn focus_index(app: &App) -> i32 {
+    let overlays = app.global::<crate::Overlays>();
+    if overlays.get_list_open() {
+        return overlays.get_list_index();
+    }
+    if overlays.get_context_open() {
+        return overlays.get_context_index();
+    }
+    if overlays.get_letter_open() {
+        return overlays.get_letter_index();
+    }
+    if overlays.get_dialog_open() {
+        return overlays.get_dialog_focus();
+    }
+    let setup = app.global::<crate::SetupModalView>();
+    if setup.get_open() {
+        return if setup.get_picker_page() {
+            setup.get_picker_sel()
+        } else {
+            setup.get_index()
+        };
+    }
+    match app.global::<crate::Shell>().get_active_screen() {
+        crate::Screen::Hub => app.global::<crate::HubView>().get_selected_local(),
+        crate::Screen::Settings => app.global::<crate::SettingsView>().get_index(),
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => {
+            app.global::<crate::SystemsView>().get_current_index()
+        }
+        _ => app.global::<crate::GamesView>().get_current_index(),
+    }
+}
+
+fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
+    let before = focus_index(app);
     dispatch_action(ctx, app, action);
+    let after = focus_index(app);
+    // A wrap can look geometrically adjacent on a two-row/two-column grid.
+    // Input direction disambiguates it; never glide backward across that wrap.
+    let wrapped = match action {
+        actions::UP | actions::LEFT => after > before,
+        actions::DOWN | actions::RIGHT => after < before,
+        actions::PAGE_PREV | actions::PAGE_NEXT => true,
+        _ => false,
+    };
+    if wrapped {
+        let motion = app.global::<crate::Motion>();
+        motion.set_epoch(motion.get_epoch().wrapping_add(1));
+    }
 }
 
 fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
@@ -1040,9 +1009,10 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         crate::game_info::handle_action(ctx, app, action);
         return;
     }
-    if app.global::<crate::Shell>().get_transitioning()
-        || app.global::<crate::Shell>().get_route_transitioning()
-    {
+    if app.global::<crate::Shell>().get_transitioning() {
+        if action == actions::CANCEL {
+            crate::navigation::cancel(ctx, app);
+        }
         return;
     }
     // A fresh press always keeps (or restores) the live grid; only the
@@ -1050,15 +1020,17 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     if !crate::input::rapid_page(ctx) {
         crate::input::note_rapid(ctx, app, action, false);
     }
-    match app.global::<crate::Shell>().get_active_screen().as_str() {
-        "hub" => crate::hub::handle_action(ctx, app, action),
-        "systems" | "favorite-systems" => crate::systems::handle_action(ctx, app, action),
-        // Favorites and Recents reuse the games-style grid; the mode
-        // stored in Shared adjusts back/paging/persist behavior.
-        "games" | "favorites" | "recents" => crate::games::handle_action(ctx, app, action),
-        "settings" => crate::settings::handle_action(ctx, app, action),
-        "about" => about_action(ctx, app, action),
-        _ => {}
+    match app.global::<crate::Shell>().get_active_screen() {
+        crate::Screen::Hub => crate::hub::handle_action(ctx, app, action),
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => {
+            crate::systems::handle_action(ctx, app, action);
+        }
+        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents => {
+            crate::games::handle_action(ctx, app, action);
+        }
+        crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
+        crate::Screen::About => about_action(ctx, app, action),
+        crate::Screen::None => {}
     }
 }
 
@@ -1084,7 +1056,7 @@ pub(crate) fn media_state(ctx: &Ctx) -> zaparoo_core::store::MediaStatusState {
 pub fn enter_about(ctx: &Ctx, app: &App) {
     lock(&ctx.shared).persist.active_screen = "about".to_string();
     save_persist(&ctx.shared);
-    transition_to_screen(app, "about", 1);
+    transition_to_screen(app, crate::Screen::About, 1);
 }
 
 fn about_action(ctx: &Ctx, app: &App, action: &str) {
@@ -1100,7 +1072,14 @@ fn about_action(ctx: &Ctx, app: &App, action: &str) {
 
 pub(crate) fn stage_restart(ctx: &Ctx, app: &App, pending: PendingRestart) {
     lock(&ctx.shared).pending_restart = Some(pending);
-    open_dialog(app, "restart_setting", "", "", &["no", "yes"], 0);
+    open_dialog(
+        app,
+        DialogKind::RestartSetting,
+        "",
+        "",
+        &[DialogButton::No, DialogButton::Yes],
+        0,
+    );
 }
 
 #[cfg(feature = "mister")]
@@ -1266,8 +1245,8 @@ pub(crate) fn output_scene(app: &App) -> sizing::Scene {
             )
         },
         |(ow, oh)| {
-            let orientation = app.global::<crate::Shell>().get_orientation().to_string();
-            crate::scene_size(f64::from(ow), f64::from(oh), &orientation, crt)
+            let orientation = app.global::<crate::Shell>().get_orientation();
+            crate::scene_size(f64::from(ow), f64::from(oh), orientation, crt)
         },
     );
     sizing::Scene::of(app, w, h, crt)
@@ -1740,7 +1719,7 @@ fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
         "back_to_hub" => {
             lock(&ctx.shared).persist.active_screen = "hub".to_string();
             save_persist(&ctx.shared);
-            transition_to_screen(app, "hub", -1);
+            transition_to_screen(app, crate::Screen::Hub, -1);
         }
         _ => {}
     }
@@ -1816,8 +1795,8 @@ fn favorites_sort_picked(ctx: &Ctx, app: &App, id: &str) {
 
 /// A one-button informational alert above the current screen (the
 /// `action_error` surface, with its own copy kind).
-pub(crate) fn open_alert(app: &App, kind: &str) {
-    open_dialog(app, kind, "", "", &["ok"], 0);
+pub(crate) fn open_alert(app: &App, kind: DialogKind) {
+    open_dialog(app, kind, "", "", &[DialogButton::Ok], 0);
 }
 
 /// Report a failed user action. The technical detail is already in the
@@ -1841,19 +1820,21 @@ pub(crate) fn report_action_error(ctx: &Ctx, app: &App, kind: &str, context: &st
 }
 
 fn show_action_error(app: &App, entry: &action_error::Entry) {
-    let button = if matches!(entry.kind.as_str(), "card_write" | "launcher_save") {
-        "retry"
+    let error = ErrorKind::try_from(entry.kind.as_str()).unwrap_or(ErrorKind::Generic);
+    let button = if matches!(error, ErrorKind::CardWrite | ErrorKind::LauncherSave) {
+        DialogButton::Retry
     } else {
-        "ok"
+        DialogButton::Ok
     };
     open_dialog(
         app,
-        "action_error",
-        &entry.kind,
+        DialogKind::ActionError,
+        "",
         &entry.context,
         &[button],
         0,
     );
+    app.global::<crate::Overlays>().set_dialog_error(error);
 }
 
 /// Accept on a category tile while the catalog errored: refetch it.
@@ -1920,12 +1901,12 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
             .on_pointer_choice(move |kind, index, accept| {
                 let Some(app) = weak.upgrade() else { return };
                 if index < 0
-                    || !lock(&ctx.shared).persist.settings.mouse_enabled
                     || crate::press_feedback::pending(&app)
+                    || !lock(&ctx.shared).persist.settings.mouse_enabled
                 {
                     return;
                 }
-                if kind == "wake" {
+                if kind == crate::PressOwner::Wake {
                     if app.global::<crate::Shell>().get_saver_armed() {
                         app.global::<crate::Shell>().set_saver_armed(false);
                         reset_idle(&ctx, &app);
@@ -1934,15 +1915,15 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                 }
                 let ov = app.global::<crate::Overlays>();
                 let row = index as usize;
-                match kind.as_str() {
-                    "card-write"
+                match kind {
+                    crate::PressOwner::CardWrite
                         if !ov.get_dialog_open() && ov.get_card_write_open() && row == 0 => {}
-                    "dialog"
+                    crate::PressOwner::Dialog
                         if ov.get_dialog_open() && row < ov.get_dialog_buttons().row_count() =>
                     {
                         ov.set_dialog_focus(index);
                     }
-                    "list"
+                    crate::PressOwner::List
                         if !ov.get_dialog_open()
                             && ov.get_list_open()
                             && !ov.get_launcher_saving()
@@ -1950,7 +1931,7 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                     {
                         ov.set_list_index(index);
                     }
-                    "letter"
+                    crate::PressOwner::Letter
                         if !ov.get_dialog_open()
                             && ov.get_letter_open()
                             && row < ov.get_letter_buckets().row_count() =>
@@ -1973,8 +1954,8 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
             let Some(app) = weak.upgrade() else {
                 return;
             };
-            if !lock(&ctx.shared).persist.settings.mouse_enabled
-                || crate::press_feedback::pending(&app)
+            if crate::press_feedback::pending(&app)
+                || !lock(&ctx.shared).persist.settings.mouse_enabled
             {
                 return;
             }
@@ -1987,7 +1968,7 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
         let Some(app) = weak.upgrade() else {
             return;
         };
-        if !lock(&ctx.shared).persist.settings.mouse_enabled || crate::press_feedback::pending(&app)
+        if crate::press_feedback::pending(&app) || !lock(&ctx.shared).persist.settings.mouse_enabled
         {
             return;
         }
@@ -2100,7 +2081,7 @@ pub(crate) fn open_game_info(ctx: &Ctx, app: &App, entry: &GameRow) {
 /// the store's `Tag::MEDIA_DB` invalidation watcher.
 pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
     app.global::<crate::Shell>()
-        .set_status_text(SharedString::from("launching"));
+        .set_status_text(crate::AppCue::Launching);
     let store = ctx.store.clone();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
@@ -2115,7 +2096,7 @@ pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
             app.global::<crate::Shell>()
-                .set_status_text(SharedString::default());
+                .set_status_text(crate::AppCue::None);
             if failed {
                 report_action_error(&ctx2, &app, "launch", &name);
             }

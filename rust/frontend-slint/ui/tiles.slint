@@ -9,6 +9,7 @@
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource } from "chrome.slint";
+import { FocusCursor, TileDisplacement } from "focus.slint";
 
 // One grid cell, as Rust projects it. Art is either a glyph key the
 // rasterizer serves tinted (`categories/...`, `icons/...`), a raster
@@ -37,9 +38,8 @@ export struct GridCell {
 // One-line caption with the focused-overflow marquee, ported from
 // ScrollingCaption.qml: fits -> static (centered), overflows unfocused
 // -> elided, overflows focused -> integer-pixel scroll-reveal stepped
-// by a 40 ms timer with an 800 ms dwell at each end. Only the focused
-// caption ever animates, so the dirty rect stays one line on one tile
-// - exactly the animation class the software pipeline is built for.
+// by a 40 ms timer after an 800 ms dwell. One bounded pass per focus,
+// never a perpetual loop. Accessible text always carries the complete name.
 export component MarqueeCaption inherits Rectangle {
     in property <string> content;
     // Sibling-diffed token suffix, dim, inline after the name. Empty
@@ -51,7 +51,7 @@ export component MarqueeCaption inherits Rectangle {
     in property <length> caption-font-size: Sizing.font-size(3.0);
     in property <color> caption-color: Theme.text-primary;
     in property <color> tags-color: Theme.text-variant;
-    in property <int> caption-weight: 400;
+    in property <int> caption-weight: FontWeight.normal;
     // Tile captions center a fitting name; list rows left-align
     // (ScrollingCaption's centerContent: false).
     in property <bool> center-content: true;
@@ -62,7 +62,21 @@ export component MarqueeCaption inherits Rectangle {
     property <length> gap-w: root.has-tags ? Sizing.pct-w(1.2) : 0px;
     property <int> scroll-x: 0;
     property <int> dir: -1;
-    property <int> pause-ticks: 0;
+    property <int> pause-ticks: 20;
+    property <int> elapsed-ticks: 0;
+    property <bool> finished: false;
+    accessible-role: text;
+    accessible-label: root.content + (root.tags == "" ? "" : " " + root.tags);
+    changed content => { root.restart(); }
+    changed tags => { root.restart(); }
+    changed focused => { root.restart(); }
+    function restart() {
+        root.scroll-x = 0;
+        root.dir = -1;
+        root.pause-ticks = 20;
+        root.elapsed-ticks = 0;
+        root.finished = false;
+    }
     property <length> name-full-w: label.preferred-width;
     property <length> tags-full-w: root.has-tags ? suffix.preferred-width : 0px;
     property <length> full-w: root.name-full-w + root.gap-w + root.tags-full-w;
@@ -83,21 +97,25 @@ export component MarqueeCaption inherits Rectangle {
         ? root.scroll-x * 1px
         : (root.overflows || !root.center-content
             ? 0px
-            : Math.round((root.width - root.full-w) / 2px) * 1px);
+            : (root.width - root.full-w) / 2);
 
     changed marquee => {
         if (!self.marquee) {
             self.scroll-x = 0;
             self.dir = -1;
-            self.pause-ticks = 0;
+            self.pause-ticks = 20;
         }
     }
 
     Timer {
         interval: 40ms;
-        running: root.marquee;
+        running: root.marquee && !root.finished;
         triggered => {
-            if (root.pause-ticks > 0) {
+            root.elapsed-ticks += 1;
+            if (root.elapsed-ticks >= 100) {
+                root.scroll-x = 0;
+                root.finished = true;
+            } else if (root.pause-ticks > 0) {
                 root.pause-ticks -= 1;
             } else if (root.scroll-x + root.dir <= -root.scroll-dist) {
                 root.scroll-x = -root.scroll-dist;
@@ -105,8 +123,7 @@ export component MarqueeCaption inherits Rectangle {
                 root.pause-ticks = 20;
             } else if (root.scroll-x + root.dir >= 0) {
                 root.scroll-x = 0;
-                root.dir = -1;
-                root.pause-ticks = 20;
+                root.finished = true;
             } else {
                 root.scroll-x = root.scroll-x + root.dir;
             }
@@ -115,7 +132,7 @@ export component MarqueeCaption inherits Rectangle {
 
     label := Text {
         x: root.block-x;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         width: root.name-render-w;
         overflow: elide;
         text: root.content;
@@ -126,7 +143,7 @@ export component MarqueeCaption inherits Rectangle {
 
     if root.has-tags: suffix-view := Text {
         x: root.block-x + root.name-render-w + root.gap-w;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         width: root.tags-render-w;
         overflow: elide;
         text: root.tags;
@@ -166,7 +183,7 @@ export component PressableSurface inherits Rectangle {
     }
     property <length> edge-band: Math.min(root.edge-height + root.radius, root.height);
     property <length> press-depth: Math.min(root.edge-height, root.height);
-    out property <length> face-y: Math.round(root.press-t * root.press-depth / 1px) * 1px;
+    out property <length> face-y: root.press-t * root.press-depth;
     // The face is shorter than the cell by the depth the press travels;
     // content and the focus ring belong to the face, never to the front
     // edge below it (Tile.qml puts both inside `faceContent`).
@@ -175,19 +192,16 @@ export component PressableSurface inherits Rectangle {
     property <length> ring-width: Sizing.card-border-width * 2;
 
     clip: true;
-    background: transparent;
 
     // Edge band, clipped to the part the face has not covered.
     Rectangle {
         x: 0;
         y: parent.height - self.height;
-        width: parent.width;
-        height: Math.round((1 - root.press-t) * root.edge-band / 1px) * 1px;
+        height: (1 - root.press-t) * root.edge-band;
         clip: true;
         Rectangle {
             x: 0;
             y: parent.height - self.height;
-            width: parent.width;
             height: root.edge-band;
             background: root.edge-color;
             border-bottom-left-radius: root.radius;
@@ -198,7 +212,6 @@ export component PressableSurface inherits Rectangle {
     face := Rectangle {
         x: 0;
         y: root.face-y;
-        width: parent.width;
         height: Math.max(0px, parent.height - root.press-depth);
         background: root.face-color;
         border-radius: root.radius;
@@ -230,11 +243,14 @@ export component PressableSurface inherits Rectangle {
 // an accent ring inside the card edge while focused, the favorite heart,
 // and, in caption mode, a one-line name band along the bottom. A hidden
 // or disabled tile mutes its front edge and keeps its art at the resting
-// tint; the worded reason lives in the host's caption. The held cue
-// (Options > Move) blinks the whole tile out of existence and back.
+// tint; the worded reason lives in the host's caption. Held tiles remain
+// visible throughout a Move session.
 export component Tile inherits Rectangle {
     in property <GridCell> cell;
     in property <bool> selected: false;
+    in property <bool> own-ring: true;
+    // The router holds the accepting face down until dispatch.
+    in property <bool> press-held: false;
     // The section owning this tile has user focus.
     in property <bool> section-focused: true;
     in property <bool> focus-ready: true;
@@ -249,8 +265,6 @@ export component Tile inherits Rectangle {
     // Resolved caption text (the host composes translations).
     in property <string> caption: "";
     in property <length> card-radius: Layout.card-radius;
-
-    background: transparent;
 
     property <length> outline-gap: Sizing.pct-h(0.4);
     property <length> outline-width: Sizing.focus-ring-width;
@@ -275,39 +289,35 @@ export component Tile inherits Rectangle {
         running: !root.mounted;
         triggered => { root.mounted = true; }
     }
-    changed activate-pulse => {
-        if (root.mounted && root.focused-selection) { root.pressed = true; }
+    property <{ activate: int, release: int }> press-signal: { activate: root.activate-pulse, release: root.release-pulse };
+    property <int> last-release: root.release-pulse;
+    changed press-signal => {
+        // A release arriving before the next paint wins over activation;
+        // independent changed callbacks have no guaranteed ordering.
+        if (root.release-pulse != root.last-release) {
+            root.pressed = false;
+        } else if (root.mounted && root.focused-selection) {
+            root.pressed = true;
+        }
+        root.last-release = root.release-pulse;
     }
-    changed release-pulse => {
-        if (root.mounted && root.focused-selection) { root.pressed = false; }
-    }
+    init => { root.last-release = root.release-pulse; }
     changed settling => {
         if (root.settling) { root.pressed = false; }
     }
     changed cell => { root.pressed = false; }
 
-    // Held blink: a hard 0/1 cut at about 0.77 Hz; Reduce motion shows
-    // the tile steadily instead.
-    property <bool> blink-on: true;
-    changed held => { root.blink-on = true; }
-    Timer {
-        interval: 650ms;
-        running: root.held && Motion.enabled;
-        triggered => { root.blink-on = !root.blink-on; }
-    }
-    opacity: (root.held && Motion.enabled && !root.blink-on) ? 0 : 1;
+    // A held tile stays visible and follows its placement; never blink it away.
 
     surface := PressableSurface {
-        width: 100%;
-        height: 100%;
         radius: root.card-radius;
         edge-color: root.muted ? Theme.border-mid : Theme.tile-edge;
-        pressed: root.pressed;
+        pressed: root.pressed || root.press-held;
 
         // Focus ring inside the card edge: an accent pill and a face
         // colored mask punched back out of its center. Sized to the face
         // so it never reaches down over the front edge.
-        if root.focused-selection: Rectangle {
+        if root.focused-selection && root.own-ring: Rectangle {
             x: root.outline-gap;
             y: root.outline-gap;
             width: parent.width - 2 * root.outline-gap;
@@ -373,7 +383,7 @@ export component Tile inherits Rectangle {
             text: root.cell.name;
             color: root.art-tint;
             font-size: Math.max(Sizing.font-size(2.8), Math.min(Sizing.font-size(5.8), Math.floor(self.box-h / 2 / 1.362 / 1px) * 1px));
-            font-weight: 600;
+            font-weight: FontWeight.semi-bold;
             wrap: word-wrap;
             overflow: elide;
             horizontal-alignment: center;
@@ -381,9 +391,9 @@ export component Tile inherits Rectangle {
         }
 
         if root.cell.favorite: Image {
-            x: Math.round(parent.width / 12 / 1px) * 1px;
-            y: Math.round(parent.width / 12 / 1px) * 1px;
-            width: Math.round(parent.width / 6 / 1px) * 1px;
+            x: parent.width / 12;
+            y: parent.width / 12;
+            width: parent.width / 6;
             height: self.width;
             source: GlyphSource.glyph("icons/Heart", self.width, Colors.transparent);
             image-fit: contain;
@@ -409,6 +419,10 @@ export component Tile inherits Rectangle {
 // pointer events by page-local index. Blank cells paint nothing.
 export component PagedGridView inherits Rectangle {
     in property <[GridCell]> cells: [];
+    in property <string> focus-scope: "";
+    in property <bool> focus-motion: true;
+    in property <[int]> move-origins: [];
+    in property <int> move-pulse: 0;
     in property <int> columns: 1;
     in property <length> cell-width: 0px;
     in property <length> cell-height: 0px;
@@ -422,6 +436,7 @@ export component PagedGridView inherits Rectangle {
     in property <bool> section-focused: true;
     in property <bool> focus-ready: true;
     in property <int> held-local: -1;
+    in property <bool> press-held: false;
     in property <int> activate-pulse: 0;
     in property <int> release-pulse: 0;
     in property <bool> settling: false;
@@ -438,7 +453,6 @@ export component PagedGridView inherits Rectangle {
     callback cell-right-clicked(int);
     callback wheel(int);
 
-    background: transparent;
     clip: true;
 
     // Two passes: every unselected tile, then the selected one on top so
@@ -447,15 +461,22 @@ export component PagedGridView inherits Rectangle {
     for cell[i] in root.cells: Rectangle {
         property <int> cell-col: Math.mod(i, root.columns);
         property <int> cell-row: Math.floor(i / root.columns);
-        x: root.left-inset + root.block-offset-x + self.cell-col * (root.cell-width + root.column-gap);
-        y: root.top-inset + root.block-offset-y + self.cell-row * (root.cell-height + root.row-gap);
+        property <int> origin: i < root.move-origins.length ? root.move-origins[i] : i;
+        property <int> origin-col: Math.mod(Math.max(0, self.origin), Math.max(1, root.columns));
+        property <int> origin-row: Math.floor(Math.max(0, self.origin) / Math.max(1, root.columns));
+        displacement := TileDisplacement {
+            pulse: root.move-pulse;
+            from-x: (parent.origin-col - parent.cell-col) * (root.cell-width + root.column-gap);
+            from-y: (parent.origin-row - parent.cell-row) * (root.cell-height + root.row-gap);
+            allowed: root.held-local >= 0 && i != root.held-local && parent.origin >= 0
+                && Math.abs(parent.origin-col - parent.cell-col) + Math.abs(parent.origin-row - parent.cell-row) == 1;
+        }
+        x: root.left-inset + root.block-offset-x + self.cell-col * (root.cell-width + root.column-gap) + displacement.offset-x;
+        y: root.top-inset + root.block-offset-y + self.cell-row * (root.cell-height + root.row-gap) + displacement.offset-y;
         width: root.cell-width;
         height: root.cell-height;
-        background: transparent;
 
         if !cell.is-empty && i != root.selected-local: Tile {
-            width: 100%;
-            height: 100%;
             cell: cell;
             selected: i == root.selected-local;
             section-focused: root.section-focused;
@@ -470,11 +491,11 @@ export component PagedGridView inherits Rectangle {
             card-radius: root.card-radius;
         }
 
-        if !cell.is-empty && i == root.selected-local: Tile {
-            width: 100%;
-            height: 100%;
+        if !cell.is-empty && i == root.selected-local && root.held-local < 0: Tile {
             cell: cell;
             selected: true;
+            own-ring: false;
+            press-held: root.press-held;
             section-focused: root.section-focused;
             focus-ready: root.focus-ready;
             held: i == root.held-local;
@@ -509,6 +530,51 @@ export component PagedGridView inherits Rectangle {
                 }
                 return reject;
             }
+        }
+    }
+
+    property <int> selected-col: Math.mod(Math.max(0, root.selected-local), Math.max(1, root.columns));
+    property <int> selected-row: Math.floor(Math.max(0, root.selected-local) / Math.max(1, root.columns));
+    property <length> selected-x: root.left-inset + root.block-offset-x + root.selected-col * (root.cell-width + root.column-gap);
+    property <length> selected-y: root.top-inset + root.block-offset-y + root.selected-row * (root.cell-height + root.row-gap);
+    property <bool> has-selection: root.selected-local >= 0 && root.selected-local < root.cells.length
+        && !root.cells[root.selected-local].is-empty && root.section-focused && root.focus-ready;
+    property <length> ring-gap: Sizing.pct-h(0.4);
+    // The retained focus ring belongs to the moving face, not the fixed edge.
+    property <float> press-t: root.press-held ? 1 : 0;
+    animate press-t {
+        duration: Motion.dur(root.press-held ? Motion.press-ms : Motion.settle-ms);
+        easing: ease-out-quad;
+    }
+    property <length> press-y: root.press-t * Sizing.press-edge-height;
+
+    FocusCursor {
+        motion: Motion.enabled && root.focus-motion;
+        radius: Math.max(0px, root.card-radius - root.ring-gap);
+        target: { x: root.selected-x + root.ring-gap, y: root.selected-y + root.ring-gap + root.press-y,
+            w: root.cell-width - 2 * root.ring-gap,
+            h: root.cell-height - Sizing.press-edge-height - 2 * root.ring-gap,
+            column: root.selected-col, row: root.selected-row, scope: root.focus-scope,
+            valid: root.has-selection && root.held-local < 0 };
+    }
+
+    // One retained held tile retargets from its current position on repeated
+    // moves. Cross-page changes snap through focus-scope, like the cursor.
+    FocusCursor {
+        motion: Motion.enabled && root.focus-motion;
+        stroke: 0px;
+        target: { x: root.selected-x, y: root.selected-y,
+            w: root.cell-width, h: root.cell-height,
+            column: root.selected-col, row: root.selected-row, scope: root.focus-scope,
+            valid: root.has-selection && root.held-local >= 0 };
+        if root.has-selection && root.held-local >= 0: Tile {
+            cell: root.cells[root.selected-local];
+            selected: true;
+            held: true;
+            compact-padding: root.compact-padding;
+            show-caption: root.show-caption;
+            caption: root.caption-for(root.cells[root.selected-local]);
+            card-radius: root.card-radius;
         }
     }
 }

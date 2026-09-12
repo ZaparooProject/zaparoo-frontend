@@ -731,6 +731,7 @@ mod tests {
             current_step_display: "Indexing SNES".into(),
             total_files: 1234,
             total_media: 567,
+            primary_active: None,
             scraping: false,
             scrape_done: false,
             scrape_paused: false,

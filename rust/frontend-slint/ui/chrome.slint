@@ -11,6 +11,7 @@
 // no percentages of their own beyond the ones the QML hardcodes.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { ContentState, StatusKind } from "state_types.slint";
 
 // Glyph provider implemented in Rust: the SVG sources under
 // resources/images are rasterized with resvg at the exact requested
@@ -99,7 +100,7 @@ export struct HelpEntry {
 // `zaparoo_app::status_line`. `kind` is the stable message id; the
 // sentence is composed here so it stays in the translation catalogs.
 export global Status {
-    in-out property <string> kind: "";
+    in-out property <StatusKind> kind: StatusKind.none;
     in-out property <string> arg: "";
     in-out property <string> arg2: "";
     in-out property <bool> is-error: false;
@@ -112,31 +113,31 @@ export global Status {
     in-out property <int> percent: -1;
 
     public pure function label() -> string {
-        if (self.kind == "disconnected") { return @tr("Disconnected"); }
-        if (self.kind == "reconnecting") { return @tr("Reconnecting…"); }
-        if (self.kind == "connecting") { return @tr("Connecting…"); }
-        if (self.kind == "core-error") {
+        if (self.kind == StatusKind.disconnected) { return @tr("Disconnected"); }
+        if (self.kind == StatusKind.reconnecting) { return @tr("Reconnecting…"); }
+        if (self.kind == StatusKind.connecting) { return @tr("Connecting…"); }
+        if (self.kind == StatusKind.core-error) {
             return self.arg == "" ? @tr("Core error") : @tr("Core error: {}", self.arg);
         }
-        if (self.kind == "indexing-paused") { return @tr("Indexing paused: game running"); }
-        if (self.kind == "indexing") {
+        if (self.kind == StatusKind.indexing-paused) { return @tr("Indexing paused: game running"); }
+        if (self.kind == StatusKind.indexing) {
             // Core leaves the step display empty right at the start of a
             // run; a bare "Indexing: " reads as broken.
             return self.arg == "" ? @tr("Indexing…") : @tr("Indexing: {}", self.arg);
         }
-        if (self.kind == "optimizing") {
+        if (self.kind == StatusKind.optimizing) {
             return self.arg == "" ? @tr("Optimizing database…") : @tr("Optimizing database: {}", self.arg);
         }
-        if (self.kind == "importing-paused") { return @tr("Importing paused: game running"); }
-        if (self.kind == "importing") {
+        if (self.kind == StatusKind.importing-paused) { return @tr("Importing paused: game running"); }
+        if (self.kind == StatusKind.importing) {
             return self.arg == "" ? @tr("Importing…") : @tr("Importing: {}", self.arg);
         }
-        if (self.kind == "indexed-files") { return @tr("Indexed {} files", self.arg); }
-        if (self.kind == "indexing-complete") { return @tr("Indexing complete"); }
-        if (self.kind == "import-failed") { return @tr("Import failed: {}", self.arg); }
-        if (self.kind == "imported") { return @tr("Imported {} of {}", self.arg, self.arg2); }
-        if (self.kind == "playtime-warning") { return @tr("Playtime limit in {}", self.arg); }
-        if (self.kind == "inbox") { return self.arg; }
+        if (self.kind == StatusKind.indexed-files) { return @tr("Indexed {} files", self.arg); }
+        if (self.kind == StatusKind.indexing-complete) { return @tr("Indexing complete"); }
+        if (self.kind == StatusKind.import-failed) { return @tr("Import failed: {}", self.arg); }
+        if (self.kind == StatusKind.imported) { return @tr("Imported {} of {}", self.arg, self.arg2); }
+        if (self.kind == StatusKind.playtime-warning) { return @tr("Playtime limit in {}", self.arg); }
+        if (self.kind == StatusKind.inbox) { return self.arg; }
         return "";
     }
     public pure function percent-text() -> string {
@@ -146,11 +147,9 @@ export global Status {
 
 // Segmented block progress track (ProgressTrack.qml). Determinate: cells
 // up to the fill fraction paint accent, the rest border-subtle.
-// Indeterminate: one lit cell marches. Either way the leading cell
-// blinks between the two colors every Motion.pulse-ms as a hard cut,
-// never a fade; it stops under Reduce motion and while paused. Cell
-// width and gap are whole pixels first so the track's total width is
-// always a whole-pixel sum.
+// Indeterminate: one lit cell marches, stopping under Reduce motion and
+// while paused. Determinate cells change only with actual progress. Slint
+// snaps the cells to physical pixels when rendering.
 export component ProgressTrack inherits Rectangle {
     in property <bool> active: false;
     in property <bool> paused: false;
@@ -163,14 +162,11 @@ export component ProgressTrack inherits Rectangle {
 
     out property <length> cell-width: Sizing.tier-240
         ? 4px
-        : Math.max(Sizing.stroke(2), Math.round(root.cell-height / 1px * 1.6) * 1px);
+        : Math.max(Sizing.stroke(2), root.cell-height * 1.6);
     property <int> filled-cells: (!root.active || !root.total-known || root.total-steps <= 0)
         ? 0
         : Math.min(root.cell-count, Math.round(Math.max(0, Math.min(1, root.current-step / root.total-steps)) * root.cell-count));
     property <int> march-index: 0;
-    property <int> pulse-cell-index: root.total-known ? Math.max(0, root.filled-cells - 1) : root.march-index;
-    property <bool> pulsing: root.active && !root.paused && Motion.enabled;
-    property <bool> blink-on: true;
 
     width: root.cell-count * root.cell-width + Math.max(0, root.cell-count - 1) * root.cell-gap;
     height: root.cell-height;
@@ -183,25 +179,14 @@ export component ProgressTrack inherits Rectangle {
         }
     }
 
-    Timer {
-        interval: Motion.dur(Motion.pulse-ms);
-        running: root.pulsing;
-        triggered => {
-            root.blink-on = !root.blink-on;
-        }
-    }
-
     for i in root.cell-count: Rectangle {
         property <bool> is-filled: root.active && (i < root.filled-cells || (!root.total-known && i == root.march-index));
-        property <bool> is-pulse-cell: root.pulsing && i == root.pulse-cell-index;
         x: i * (root.cell-width + root.cell-gap);
         y: 0;
         width: root.cell-width;
         height: root.cell-height;
         border-radius: Sizing.radius-sm;
-        background: self.is-pulse-cell
-            ? (root.blink-on ? Theme.accent : Theme.border-subtle)
-            : (self.is-filled ? Theme.accent : Theme.border-subtle);
+        background: self.is-filled ? Theme.accent : Theme.border-subtle;
     }
 }
 
@@ -241,7 +226,7 @@ export component StatusLine inherits Rectangle {
 
     track := ProgressTrack {
         x: parent.width - self.width;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         visible: root.show-track;
         active: root.show-track;
         paused: Status.paused;
@@ -252,7 +237,7 @@ export component StatusLine inherits Rectangle {
 
     if root.percent-known: Text {
         x: track.x - root.cells-spacing - self.width;
-        y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
+        y: (parent.height - self.preferred-height) / 2;
         width: root.percent-slot;
         horizontal-alignment: right;
         text: Status.percent-text();
@@ -262,7 +247,7 @@ export component StatusLine inherits Rectangle {
 
     Text {
         x: parent.width - root.track-reserve - root.percent-reserve - self.width;
-        y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
+        y: (parent.height - self.preferred-height) / 2;
         width: root.label-width;
         overflow: elide;
         text: root.label;
@@ -303,7 +288,7 @@ export component HeaderBar inherits Rectangle {
     property <length> logo-h: root.compact-status-header
         ? Math.max(1px, Sizing.header-height - 1px)
         : Sizing.header-height;
-    property <length> logo-painted-width: Math.round(root.logo-h / 1px * Brand.aspect) * 1px;
+    property <length> logo-painted-width: root.logo-h * Brand.aspect;
 
     logo := Image {
         x: Sizing.header-side-margin;
@@ -358,21 +343,21 @@ export component HeaderBar inherits Rectangle {
         height: Sizing.header-row-height;
         for key[i] in root.status-keys: Image {
             x: i * (root.icon-size + root.hud-spacing);
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            y: (parent.height - self.height) / 2;
             width: root.icon-size;
             height: root.icon-size;
             source: GlyphSource.glyph("status/" + key, root.icon-size, Theme.text-primary);
         }
         if root.battery-visible: Image {
             x: root.status-keys.length * (root.icon-size + root.hud-spacing);
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            y: (parent.height - self.height) / 2;
             width: root.icon-size;
             height: root.icon-size;
             source: GlyphSource.glyph(root.battery-icon, root.icon-size, Theme.text-primary);
         }
         if root.battery-label-visible: Text {
             x: root.icon-count * (root.icon-size + root.hud-spacing);
-            y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
+            y: (parent.height - self.preferred-height) / 2;
             width: root.battery-label-width;
             text: @tr("{}%", root.battery-percent);
             color: Theme.text-primary;
@@ -381,7 +366,7 @@ export component HeaderBar inherits Rectangle {
     }
     if root.clock-visible: Text {
         x: parent.width - Sizing.header-side-margin - root.clock-width;
-        y: root.hud-y + Math.round((Sizing.header-row-height - self.preferred-height) / 2px) * 1px;
+        y: root.hud-y + (Sizing.header-row-height - self.preferred-height) / 2;
         width: root.clock-width;
         horizontal-alignment: right;
         text: root.clock-text;
@@ -392,19 +377,20 @@ export component HeaderBar inherits Rectangle {
     // Browse title in the header (CRT profile only).
     if Layout.title-in-header && root.browse-title != "": Text {
         property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: parent.height - Sizing.header-row-height + Math.round((Sizing.header-row-height - self.preferred-height) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: parent.height - Sizing.header-row-height
+            + (Sizing.header-row-height - self.preferred-height) / 2;
         width: Math.min(Math.floor(parent.width / 3px) * 1px, self.natural);
         overflow: elide;
         text: root.browse-title;
         color: Theme.text-primary;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.header-row-height;
     }
     title-measure := Text {
         visible: false;
         text: root.browse-title;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.header-row-height;
     }
 
@@ -413,7 +399,7 @@ export component HeaderBar inherits Rectangle {
     // the header's right margin so it knows its true elide budget.
     StatusLine {
         property <length> left: root.compact-status-header
-            ? Sizing.header-side-margin + Math.round(root.logo-painted-width / 1px * 0.14) * 1px
+            ? Sizing.header-side-margin + root.logo-painted-width * 0.14
             : logo.x + logo.width + Sizing.pct-w(1);
         x: self.left;
         y: Layout.status-pill-pinned-top
@@ -470,7 +456,7 @@ export component PageIndicator inherits Rectangle {
 
     up := Image {
         x: 0;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         width: root.chevron-size;
         height: root.chevron-size;
         visible: root.has-navigation-range;
@@ -482,7 +468,7 @@ export component PageIndicator inherits Rectangle {
     }
     down := Image {
         x: up.x + up.width + root.chevron-spacing;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         width: root.chevron-size;
         height: root.chevron-size;
         visible: root.has-navigation-range;
@@ -494,7 +480,7 @@ export component PageIndicator inherits Rectangle {
     }
     page-count := Text {
         x: down.x + down.width + root.item-spacing;
-        y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
+        y: (parent.height - self.preferred-height) / 2;
         width: root.text-width;
         visible: root.has-navigation-range;
         overflow: elide;
@@ -535,10 +521,10 @@ export component TopStatusStrip inherits Rectangle {
         : (root.page-total-known
             ? @tr("Page {} / {}", root.current-page + 1, root.total-pages)
             : @tr("Page {}", root.current-page + 1));
-    property <length> slot-width: Math.round(root.width / 3px) * 1px;
+    property <length> slot-width: root.width / 3;
     property <length> title-measured: Math.ceil(title-measure.preferred-width / 1px) * 1px;
     property <length> title-text-width: Math.min(root.slot-width, root.title-measured);
-    property <length> title-y: Math.round((root.height - Sizing.font-hero) / 2px) * 1px;
+    property <length> title-y: (root.height - Sizing.font-hero) / 2;
     // Side texts share the title's baseline: offset by the difference
     // of the two ascents (anchors.baseline in the QML).
     property <length> side-y: root.title-y + Theme.ascent(Sizing.font-hero) - Theme.ascent(Sizing.font-section);
@@ -546,7 +532,7 @@ export component TopStatusStrip inherits Rectangle {
     title-measure := Text {
         visible: false;
         text: root.title;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
 
@@ -564,13 +550,13 @@ export component TopStatusStrip inherits Rectangle {
     // overflow it; Slint clips a Text to its height, so the natural line
     // box sits top-aligned at the same y instead.
     Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
         y: root.title-y;
         width: root.title-text-width;
         overflow: elide;
         text: root.title;
         color: Theme.text-primary;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
 
@@ -622,40 +608,40 @@ export component ActiveLabel inherits Rectangle {
     property <length> tags-width: Math.min(root.tags-measured, Math.max(0px, root.avail-width - root.name-width - root.requested-gap));
     property <length> gap: root.tags-width > 0px ? root.requested-gap : 0px;
     property <length> block-width: root.name-width + root.gap + root.tags-width;
-    property <length> block-x: Math.round((root.width - root.block-width) / 2px) * 1px;
-    property <length> text-y: Math.round((root.height - Sizing.font-hero) / 2px) * 1px;
+    property <length> block-x: (root.width - root.block-width) / 2;
+    property <length> text-y: (root.height - Sizing.font-hero) / 2;
 
     name-measure := Text {
         visible: false;
         text: root.text;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
     tags-measure := Text {
         visible: false;
         text: root.tags;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
 
     Text {
         x: root.block-x;
-        y: root.text-y + Math.round((Sizing.font-hero - self.preferred-height) / 2px) * 1px;
+        y: root.text-y + (Sizing.font-hero - self.preferred-height) / 2;
         width: root.name-width;
         overflow: elide;
         text: root.text;
         color: Theme.text-primary;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
     if root.has-tags: Text {
         x: root.block-x + root.name-width + root.gap;
-        y: root.text-y + Math.round((Sizing.font-hero - self.preferred-height) / 2px) * 1px;
+        y: root.text-y + (Sizing.font-hero - self.preferred-height) / 2;
         width: root.tags-width;
         overflow: elide;
         text: root.tags;
         color: Theme.text-variant;
-        font-weight: 500;
+        font-weight: FontWeight.medium;
         font-size: Sizing.font-hero;
     }
 }
@@ -670,7 +656,7 @@ component HelpEntryView inherits HorizontalLayout {
     height: Math.max(root.icon-size, Sizing.font-body);
 
     for token in root.entry.buttons: Image {
-        y: Math.round((root.height - self.height) / 2px) * 1px;
+        y: (root.height - self.height) / 2;
         width: root.icon-size;
         height: root.icon-size;
         source: GlyphSource.glyph(Buttons.key(token), root.icon-size, Theme.text-primary);
@@ -695,7 +681,6 @@ export component HelpBar inherits Rectangle {
     in property <length> side-margin: Sizing.pct-w(2);
 
     height: Sizing.help-bar-height;
-    background: transparent;
 
     property <length> entry-height: Math.max(Sizing.pct-h(4), Sizing.font-body);
     property <length> row-spacing: Sizing.pct-h(1);
@@ -727,8 +712,8 @@ export component HelpBar inherits Rectangle {
     }
 
     if !root.wrap-entries: HorizontalLayout {
-        x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
-        y: Math.round((parent.height - root.entry-height) / 2px) * 1px + Sizing.pct-h(0.2);
+        x: (parent.width - self.preferred-width) / 2;
+        y: (parent.height - root.entry-height) / 2 + Sizing.pct-h(0.2);
         width: self.preferred-width;
         height: root.entry-height;
         spacing: root.entry-gap;
@@ -737,11 +722,11 @@ export component HelpBar inherits Rectangle {
 
     if root.wrap-entries: Rectangle {
         x: root.side-margin;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         width: root.safe-width;
         height: 2 * root.entry-height + root.row-spacing;
         first := HorizontalLayout {
-            x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
+            x: (parent.width - self.preferred-width) / 2;
             y: 0;
             width: self.preferred-width;
             height: root.entry-height;
@@ -752,7 +737,7 @@ export component HelpBar inherits Rectangle {
             }
         }
         second := HorizontalLayout {
-            x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
+            x: (parent.width - self.preferred-width) / 2;
             y: root.entry-height + root.row-spacing;
             width: self.preferred-width;
             height: root.entry-height;
@@ -785,13 +770,12 @@ export component SectionHeader inherits Rectangle {
         overflow: elide;
         text: root.label;
         color: Theme.text-label;
-        font-weight: 600;
+        font-weight: FontWeight.semi-bold;
         font-size: Sizing.font-body;
     }
     Rectangle {
         x: 0;
         y: parent.height - self.height;
-        width: parent.width;
         height: Sizing.stroke(1);
         background: Theme.border-mid;
     }
@@ -800,8 +784,8 @@ export component SectionHeader inherits Rectangle {
 // Inverse-video row highlight (SelectionBar.qml), shared by lists and
 // the settings form. Paints nothing at rest; when active, a solid
 // selection-fill bar whose content color the host binds its text to.
-// `activate-pulse` fires a one-shot inverse blink for Motion.press-ms:
-// nothing moves, a text row is not a button.
+// Activation adds a local inset stroke, never a full-row inverse flash.
+// Selection and text contrast remain stable throughout the cue.
 export component SelectionBar inherits Rectangle {
     in property <bool> active: false;
     in property <int> activate-pulse: 0;
@@ -810,16 +794,14 @@ export component SelectionBar inherits Rectangle {
     in property <bool> press-held: false;
     in property <length> radius: Sizing.radius-sm;
 
-    out property <bool> flashing: root.flash || root.press-held;
-    out property <color> bar-color: root.flashing ? Theme.on-accent : Theme.selection-fill;
-    out property <color> content-color: root.flashing ? Theme.selection-fill : Theme.on-accent;
+    out property <bool> flashing: Motion.enabled && (root.flash || root.press-held);
+    out property <color> bar-color: Theme.selection-fill;
+    out property <color> content-color: Theme.on-accent;
     // Dark-on-light text reads thinner than light-on-dark at the same
     // weight, so a selected row steps up to Medium; a no-op on the
     // single-strike bitmap face.
-    out property <int> content-weight: root.active ? 500 : 400;
+    out property <int> content-weight: root.active ? FontWeight.medium : FontWeight.normal;
     property <bool> flash: false;
-
-    background: transparent;
 
     changed active => {
         if (!root.active) { root.flash = false; }
@@ -841,23 +823,25 @@ export component SelectionBar inherits Rectangle {
     }
 
     Rectangle {
-        width: 100%;
-        height: 100%;
         visible: root.active;
         background: root.bar-color;
         border-radius: root.radius;
+        if root.flashing: Rectangle {
+            x: Sizing.stroke(2); y: Sizing.stroke(2);
+            width: parent.width - 2 * self.x; height: parent.height - 2 * self.y;
+            border-width: Sizing.stroke(1);
+            border-color: Theme.on-accent;
+            border-radius: Math.max(0px, root.radius - Sizing.stroke(2));
+        }
     }
 }
 
 // In-screen state cue (ScreenStateOverlay.qml): the empty or failed
 // message centered over the content area, with an optional detail line.
-// `state` is "error", "empty" or "" (nothing painted).
+// Ready paints nothing. Loading waits before painting and holds briefly.
 export component StateCue inherits Rectangle {
-    // "loading", "error", "empty" or "" (nothing painted). Loading shows
-    // the cue only after `loading-delay` and keeps it for at least
-    // `minimum-visible` once shown (DelayedLoadingIndicator.qml), so a
-    // fast fill never flashes it.
-    in property <string> state: "";
+    // Delay and minimum visibility prevent a fast fill from flashing.
+    in property <ContentState> state: ContentState.ready;
     in property <string> empty-text: @tr("Nothing here");
     in property <string> empty-detail: "";
     in property <string> error-detail: @tr("Check Zaparoo Core and try again.");
@@ -868,9 +852,7 @@ export component StateCue inherits Rectangle {
     // below the header can still center the cue on the screen.
     in property <length> cue-center-y: root.height / 2;
 
-    background: transparent;
-
-    property <bool> loading: root.state == "loading";
+    property <bool> loading: root.state == ContentState.loading;
     property <bool> loading-shown: false;
     property <bool> hold: false;
     changed loading => {
@@ -893,12 +875,12 @@ export component StateCue inherits Rectangle {
         }
     }
     out property <bool> loading-visible: root.loading-shown;
-    property <string> message-state: root.loading-shown ? "" : (root.loading ? "" : root.state);
-    visible: root.loading-shown || root.message-state != "";
+    property <ContentState> message-state: root.loading-shown || root.loading ? ContentState.ready : root.state;
+    visible: root.loading-shown || root.message-state != ContentState.ready;
 
-    property <string> headline: root.message-state == "error" ? @tr("Failed to load") : root.empty-text;
-    property <string> detail: root.message-state == "error" ? root.error-detail : root.empty-detail;
-    property <length> text-w: Math.round(root.width * 0.7 / 1px) * 1px;
+    property <string> headline: root.message-state == ContentState.error ? @tr("Failed to load") : root.empty-text;
+    property <string> detail: root.message-state == ContentState.error ? root.error-detail : root.empty-detail;
+    property <length> text-w: root.width * 0.7;
     property <length> gap: Sizing.pct-h(0.6);
     property <length> block-h: headline-text.preferred-height + (root.detail != "" ? root.gap + detail-text.preferred-height : 0px);
 
@@ -908,11 +890,10 @@ export component StateCue inherits Rectangle {
         property <length> glyph: Sizing.font-size(3);
         property <length> spacing: Sizing.pct-w(0.6);
         property <length> w: self.glyph + self.spacing + Math.ceil(loading-label.preferred-width / 1px) * 1px;
-        x: Math.round((parent.width - self.w) / 2px) * 1px;
-        y: Math.round((root.cue-center-y - self.glyph / 2) / 1px) * 1px;
+        x: (parent.width - self.w) / 2;
+        y: root.cue-center-y - self.glyph / 2;
         width: self.w;
         height: self.glyph;
-        background: transparent;
         Image {
             x: 0;
             y: 0;
@@ -932,10 +913,10 @@ export component StateCue inherits Rectangle {
     }
 
     headline-text := Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - root.block-h) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - root.block-h) / 2;
         width: root.text-w;
-        visible: root.message-state != "";
+        visible: root.message-state != ContentState.ready;
         wrap: word-wrap;
         horizontal-alignment: center;
         text: root.headline;
@@ -943,10 +924,10 @@ export component StateCue inherits Rectangle {
         font-size: Sizing.font-section;
     }
     detail-text := Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
         y: headline-text.y + headline-text.preferred-height + root.gap;
         width: root.text-w;
-        visible: root.message-state != "" && root.detail != "";
+        visible: root.message-state != ContentState.ready && root.detail != "";
         wrap: word-wrap;
         horizontal-alignment: center;
         text: root.detail;

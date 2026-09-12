@@ -62,7 +62,7 @@ export global Theme {
     // texts on `anchors.baseline`; Slint has no baseline anchor, so hosts
     // offset the smaller text by the difference of the two ascents.
     public pure function ascent(size: length) -> length {
-        return Math.round(size / 1px * (self.crt ? 0.875 : 1.069)) * 1px;
+        return size * (self.crt ? 0.875 : 1.069);
     }
 }
 
@@ -70,6 +70,9 @@ export global Theme {
 // motion (Rust pushes `enabled` from the persisted setting).
 export global Motion {
     in-out property <bool> enabled: true;
+    // Transient route/model generation, never persisted.
+    in-out property <int> epoch: 0;
+    out property <duration> focus-ms: 80ms;
     out property <duration> press-ms: 34ms;
     out property <duration> settle-ms: 110ms;
     out property <duration> pulse-ms: 250ms;
@@ -80,8 +83,8 @@ export global Motion {
 
 export global Sizing {
     pure callback fit-letter-columns(int, length, length, length) -> int;
-    // Bound to the Window dimensions by App; every derived length is
-    // rounded to whole pixels.
+    // Bound to the Window dimensions by App; Slint snaps rendered geometry
+    // to physical pixels.
     in-out property <length> screen-width: 1280px;
     in-out property <length> screen-height: 720px;
     in-out property <bool> crt: false;
@@ -94,10 +97,10 @@ export global Sizing {
     in-out property <bool> bitmap-fonts: crt;
 
     public pure function pct-h(p: float) -> length {
-        return Math.round(p / 100 * (self.swap-axes ? self.screen-width : self.screen-height) / 1px) * 1px;
+        return p / 100 * (self.swap-axes ? self.screen-width : self.screen-height);
     }
     public pure function pct-w(p: float) -> length {
-        return Math.round(p / 100 * (self.swap-axes ? self.screen-height : self.screen-width) / 1px) * 1px;
+        return p / 100 * (self.swap-axes ? self.screen-height : self.screen-width);
     }
     // Mirrors Sizing.qml fontSize: minimum 8 px for 240p legibility;
     // the CRT path quantizes to 8 or 16 so the 6x8 bitmap font only

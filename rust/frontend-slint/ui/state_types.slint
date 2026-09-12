@@ -1,0 +1,58 @@
+// Closed UI discriminants shared with the generated Rust API.
+export enum Screen { hub, systems, favorite-systems, games, favorites, recents, settings, about, none }
+export enum GamesMode { browse, favorites, recents }
+export enum SystemsMode { category, favorites }
+export enum SettingsPage { root, appearance, library, display, controls, language, about }
+export enum ContentState { ready, loading, empty, error }
+export enum AppCue { none, launching }
+export enum DisabledReason { none, no-recent-games, no-internet, not-available }
+export enum RowKind { header, field }
+export enum ControlKind { none, picker, toggle, action, navigate }
+export enum ActionStatus { none, optimizing, paused, running, indexed, imported }
+export enum ScrollAction { up, down, page-prev, page-next }
+export enum SetupAction { select, start, toggle, change }
+export enum SetupKind { index, scrape }
+export enum SetupPicker { systems, source }
+export enum ScopeKind { all, category, system, source }
+export enum LogPhase { uploading, done, failed }
+export enum PressOwner { none, hub, systems, games, settings, setup, context, list, letter, card-write, dialog, log, wake }
+export enum StatusKind {
+    none, disconnected, reconnecting, connecting, core-error, indexing-paused,
+    indexing, optimizing, importing-paused, importing, indexed-files,
+    indexing-complete, import-failed, imported, playtime-warning, inbox,
+}
+export enum Orientation { horizontal, cw, ccw }
+export enum VideoStandard { ntsc, pal }
+export enum DialogKind { none, quit-confirm, restart-setting, notice, core-version, first-run, hub-full, action-error }
+export enum DialogProgress { none, preparing, optimizing, paused, step }
+export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-scan }
+export enum FirstRunPhase { idle, running, done }
+export enum ErrorKind { generic, launch, favorite, add-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, qr-code, card-write, setting }
+
+// Text adapters are for vocabulary/resource keys and focus identity only,
+// never routing. Runtime decisions use the enums themselves.
+export global StateTokens {
+    public pure function page(page: SettingsPage) -> string {
+        if (page == SettingsPage.appearance) { return "pageAppearance"; }
+        if (page == SettingsPage.library) { return "pageLibraryData"; }
+        if (page == SettingsPage.display) { return "pageDisplayInterface"; }
+        if (page == SettingsPage.controls) { return "pageControlsInput"; }
+        if (page == SettingsPage.language) { return "pageLanguage"; }
+        if (page == SettingsPage.about) { return "pageSupportAbout"; }
+        return "";
+    }
+    public pure function games(mode: GamesMode) -> string {
+        if (mode == GamesMode.favorites) { return "favorites"; }
+        if (mode == GamesMode.recents) { return "recents"; }
+        return "games";
+    }
+    public pure function systems(mode: SystemsMode) -> string {
+        return mode == SystemsMode.favorites ? "favorite-systems" : "systems";
+    }
+    public pure function setup(kind: SetupKind) -> string {
+        return kind == SetupKind.scrape ? "scrape" : "index";
+    }
+    public pure function picker(picker: SetupPicker) -> string {
+        return picker == SetupPicker.source ? "source" : "systems";
+    }
+}
