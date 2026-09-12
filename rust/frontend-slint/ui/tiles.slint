@@ -192,19 +192,16 @@ export component PressableSurface inherits Rectangle {
     property <length> ring-width: Sizing.card-border-width * 2;
 
     clip: true;
-    background: transparent;
 
     // Edge band, clipped to the part the face has not covered.
     Rectangle {
         x: 0;
         y: parent.height - self.height;
-        width: parent.width;
         height: Math.round((1 - root.press-t) * root.edge-band / 1px) * 1px;
         clip: true;
         Rectangle {
             x: 0;
             y: parent.height - self.height;
-            width: parent.width;
             height: root.edge-band;
             background: root.edge-color;
             border-bottom-left-radius: root.radius;
@@ -215,7 +212,6 @@ export component PressableSurface inherits Rectangle {
     face := Rectangle {
         x: 0;
         y: root.face-y;
-        width: parent.width;
         height: Math.max(0px, parent.height - root.press-depth);
         background: root.face-color;
         border-radius: root.radius;
@@ -270,8 +266,6 @@ export component Tile inherits Rectangle {
     in property <string> caption: "";
     in property <length> card-radius: Layout.card-radius;
 
-    background: transparent;
-
     property <length> outline-gap: Sizing.pct-h(0.4);
     property <length> outline-width: Sizing.focus-ring-width;
     property <length> ring-inner-edge: root.outline-gap + root.outline-width;
@@ -316,8 +310,6 @@ export component Tile inherits Rectangle {
     // A held tile stays visible and follows its placement; never blink it away.
 
     surface := PressableSurface {
-        width: 100%;
-        height: 100%;
         radius: root.card-radius;
         edge-color: root.muted ? Theme.border-mid : Theme.tile-edge;
         pressed: root.pressed || root.press-held;
@@ -461,7 +453,6 @@ export component PagedGridView inherits Rectangle {
     callback cell-right-clicked(int);
     callback wheel(int);
 
-    background: transparent;
     clip: true;
 
     // Two passes: every unselected tile, then the selected one on top so
@@ -484,11 +475,8 @@ export component PagedGridView inherits Rectangle {
         y: root.top-inset + root.block-offset-y + self.cell-row * (root.cell-height + root.row-gap) + displacement.offset-y;
         width: root.cell-width;
         height: root.cell-height;
-        background: transparent;
 
         if !cell.is-empty && i != root.selected-local: Tile {
-            width: 100%;
-            height: 100%;
             cell: cell;
             selected: i == root.selected-local;
             section-focused: root.section-focused;
@@ -504,8 +492,6 @@ export component PagedGridView inherits Rectangle {
         }
 
         if !cell.is-empty && i == root.selected-local && root.held-local < 0: Tile {
-            width: 100%;
-            height: 100%;
             cell: cell;
             selected: true;
             own-ring: false;
@@ -582,7 +568,6 @@ export component PagedGridView inherits Rectangle {
             column: root.selected-col, row: root.selected-row, scope: root.focus-scope,
             valid: root.has-selection && root.held-local >= 0 };
         if root.has-selection && root.held-local >= 0: Tile {
-            width: 100%; height: 100%;
             cell: root.cells[root.selected-local];
             selected: true;
             held: true;

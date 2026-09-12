@@ -43,7 +43,6 @@ export component AboutScreen inherits Rectangle {
     }
     TopStatusStrip {
         y: Sizing.header-bottom + Sizing.pct-h(1);
-        width: parent.width;
         height: Sizing.pct-h(7);
         title: @tr("About / License");
         show-page-counter: false;
@@ -65,7 +64,6 @@ export component AboutScreen inherits Rectangle {
             clip: true;
             content := VerticalLayout {
                 y: -root.scroll-y;
-                width: parent.width;
                 height: self.preferred-height;
                 spacing: Sizing.pct-h(2);
                 Rectangle {

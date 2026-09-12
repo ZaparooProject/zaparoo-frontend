@@ -104,7 +104,6 @@ export component GameInfoModal inherits Rectangle {
 
             contents := VerticalLayout {
                 y: -root.scroll-y;
-                width: parent.width;
                 height: self.preferred-height;
                 spacing: Sizing.pct-h(2.4);
 
@@ -148,7 +147,7 @@ export component GameInfoModal inherits Rectangle {
                     for row[i] in GameInfoView.rows: Rectangle {
                         property <length> top: i > 0 ? Sizing.pct-h(0.8) : 0px;
                         height: Math.round((Math.max(Sizing.pct-h(3), value.height) + self.top) / 1px) * 1px;
-                        if i > 0: Rectangle { y: 0px; width: parent.width; height: Sizing.stroke(1); background: Theme.border-subtle; }
+                        if i > 0: Rectangle { y: 0px; height: Sizing.stroke(1); background: Theme.border-subtle; }
                         Text {
                             x: 0px;
                             y: parent.top;

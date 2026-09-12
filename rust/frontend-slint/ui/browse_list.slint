@@ -100,8 +100,6 @@ export component BrowseList inherits Rectangle {
     }
 
     TouchArea {
-        width: 100%;
-        height: 100%;
         pointer-event(event) => {
             if (event.kind == PointerEventKind.up && event.button == PointerEventButton.right) {
                 root.empty-right-clicked();
@@ -118,7 +116,6 @@ export component BrowseList inherits Rectangle {
 
     Rectangle {
     y: Layout.card-padding-top;
-    width: root.width;
     height: Math.max(0px, root.height - Layout.card-padding-top - Layout.card-padding-bottom);
     clip: true;
     for row[i] in root.rows: Rectangle {
@@ -132,8 +129,6 @@ export component BrowseList inherits Rectangle {
         property <length> favorite-slot: row.favorite ? Layout.favorite-right-padding + root.heart-size : 0px;
 
         bar := SelectionBar {
-            width: 100%;
-            height: 100%;
             active: highlighted;
             activate-pulse: root.activate-pulse;
             release-pulse: root.release-pulse;
@@ -145,7 +140,6 @@ export component BrowseList inherits Rectangle {
             x: Layout.row-text-left-padding;
             y: 0;
             width: Math.max(0px, parent.width - Layout.row-text-left-padding - Layout.row-text-right-padding - favorite-slot);
-            height: parent.height;
             content: row.name;
             tags: row.tags;
             focused: highlighted;
@@ -414,14 +408,12 @@ export component BrowseDetailPane inherits Rectangle {
             body := Rectangle {
                 x: 0;
                 y: root.body-y;
-                width: parent.width;
                 height: root.body-h;
                 clip: true;
 
                 for meta[j] in root.rows: Rectangle {
                     x: 0;
                     y: root.table-y + j * (root.tag-row-h + Layout.tag-row-spacing);
-                    width: parent.width;
                     height: root.tag-row-h;
                     visible: root.visible-content;
                     Text {

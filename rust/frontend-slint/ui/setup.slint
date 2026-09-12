@@ -105,7 +105,6 @@ export component SetupModal inherits Rectangle {
             for row[i] in root.rows: SettingsRowView {
                 x: 0;
                 y: row.y-offset + i * root.row-gap;
-                width: parent.width;
                 height: row.height;
                 entry: row;
                 focused: i == root.index;
@@ -132,7 +131,6 @@ export component SetupModal inherits Rectangle {
             SectionHeader {
                 x: 0;
                 y: 0;
-                width: parent.width;
                 label-inset: 0px;
                 label: SettingsLabels.label(StateTokens.picker(root.picker-title));
             }
@@ -154,12 +152,9 @@ export component SetupModal inherits Rectangle {
             for entry[i] in root.picker-rows: Rectangle {
                 x: 0;
                 y: root.header-h + root.arrow-band + i * (root.picker-row-h + root.picker-gap);
-                width: parent.width;
                 height: root.picker-row-h;
 
                 bar := SelectionBar {
-                    width: 100%;
-                    height: 100%;
                     active: i == root.picker-sel;
                     activate-pulse: root.activate-pulse;
                     radius: Layout.row-radius;

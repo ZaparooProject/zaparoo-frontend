@@ -65,6 +65,14 @@ the lint image lacks Slint's desktop system libs; run `just lint-slint` and
   persisted/API tokens at the boundary with explicit unknown-value handling;
   preserve existing serialized values and the persisted-schema approval rule.
   See `docs/slint-state-types.md` for the type inventory and boundary exceptions.
+- Omit Slint bindings that merely repeat effective built-in defaults. An
+  unconstrained `Rectangle` outside a layout already fills its parent; redundant
+  `width: 100%` / `height: 100%` (or `parent.width` / `parent.height`) add noise.
+  Check element type, inherited bindings, child/preferred-size constraints, and
+  layout participation before removing bindings; do not bulk-delete matching
+  values. Keep intentional overrides and explicit application-state defaults
+  (including enums). Do not assume `Text`, `Image`, custom components, or `x`/`y`
+  share Rectangle sizing defaults.
 - Follow `docs/content-style.md` for every user-visible string: menu
   ordering, capitalization, terminology, and the settings-page checklist.
 - After editing C++, Rust, or QML, run `just lint`. Run `just test` when the

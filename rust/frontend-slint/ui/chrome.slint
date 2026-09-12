@@ -681,7 +681,6 @@ export component HelpBar inherits Rectangle {
     in property <length> side-margin: Sizing.pct-w(2);
 
     height: Sizing.help-bar-height;
-    background: transparent;
 
     property <length> entry-height: Math.max(Sizing.pct-h(4), Sizing.font-body);
     property <length> row-spacing: Sizing.pct-h(1);
@@ -777,7 +776,6 @@ export component SectionHeader inherits Rectangle {
     Rectangle {
         x: 0;
         y: parent.height - self.height;
-        width: parent.width;
         height: Sizing.stroke(1);
         background: Theme.border-mid;
     }
@@ -805,8 +803,6 @@ export component SelectionBar inherits Rectangle {
     out property <int> content-weight: root.active ? 500 : 400;
     property <bool> flash: false;
 
-    background: transparent;
-
     changed active => {
         if (!root.active) { root.flash = false; }
     }
@@ -827,15 +823,12 @@ export component SelectionBar inherits Rectangle {
     }
 
     Rectangle {
-        width: 100%;
-        height: 100%;
         visible: root.active;
         background: root.bar-color;
         border-radius: root.radius;
         if root.flashing: Rectangle {
             x: Sizing.stroke(2); y: Sizing.stroke(2);
             width: parent.width - 2 * self.x; height: parent.height - 2 * self.y;
-            background: transparent;
             border-width: Sizing.stroke(1);
             border-color: Theme.on-accent;
             border-radius: Math.max(0px, root.radius - Sizing.stroke(2));
@@ -858,8 +851,6 @@ export component StateCue inherits Rectangle {
     // Vertical center of the loading cue, so a content rect that starts
     // below the header can still center the cue on the screen.
     in property <length> cue-center-y: root.height / 2;
-
-    background: transparent;
 
     property <bool> loading: root.state == ContentState.loading;
     property <bool> loading-shown: false;
@@ -903,7 +894,6 @@ export component StateCue inherits Rectangle {
         y: Math.round((root.cue-center-y - self.glyph / 2) / 1px) * 1px;
         width: self.w;
         height: self.glyph;
-        background: transparent;
         Image {
             x: 0;
             y: 0;

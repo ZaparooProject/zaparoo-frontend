@@ -485,7 +485,6 @@ export global Overlays {
 // carrying the focused row's description.
 component SettingsScreen inherits Rectangle {
     in property <bool> outgoing: false;
-    background: transparent;
     property <SettingsPage> page: root.outgoing ? SettingsView.outgoing-page : SettingsView.page;
     property <bool> root-grid: root.page == SettingsPage.root;
     property <[SettingsRow]> rows: root.outgoing ? SettingsView.outgoing-rows : SettingsView.rows;
@@ -496,7 +495,6 @@ component SettingsScreen inherits Rectangle {
     TopStatusStrip {
         x: 0;
         y: Sizing.header-bottom + Layout.top-margin;
-        width: parent.width;
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
         title: SettingsLabels.page-title(root.page);
@@ -508,7 +506,6 @@ component SettingsScreen inherits Rectangle {
     if root.root-grid: PagedGridView {
         x: 0;
         y: SettingsView.grid-y;
-        width: parent.width;
         height: SettingsView.grid-height;
         cells: SettingsView.cells;
         press-held: PressFeedback.active(PressOwner.settings, root.index);
@@ -538,7 +535,6 @@ component SettingsScreen inherits Rectangle {
     if root.root-grid: ActiveLabel {
         x: 0;
         y: parent.height - (Sizing.tier-240 ? Sizing.help-bar-height : Sizing.pct-h(8)) - self.height;
-        width: parent.width;
         height: Sizing.tier-240 ? Sizing.hub-active-label-height : Sizing.pct-h(7);
         text: (root.index >= 0 && root.index < SettingsView.cells.length)
             ? SettingsLabels.label(SettingsView.cells[root.index].label-key)
@@ -594,7 +590,6 @@ component SettingsScreen inherits Rectangle {
         for row[i] in root.rows: Rectangle {
             x: 0;
             y: row.y-offset - row-scroll.offset;
-            width: parent.width;
             height: row.height;
 
             if row.kind == RowKind.header: Text {
@@ -607,8 +602,6 @@ component SettingsScreen inherits Rectangle {
             }
 
             if row.kind == RowKind.field: SettingsRowView {
-                width: 100%;
-                height: 100%;
                 entry: row;
                 focused: i == root.index;
                 activate-pulse: SettingsView.activate-pulse;
@@ -649,7 +642,6 @@ component SettingsScreen inherits Rectangle {
             y: parent.height - root.pad-y - root.hint-h;
             width: rows-band.width;
             height: root.hint-h;
-            vertical-alignment: top;
             wrap: word-wrap;
             overflow: elide;
             text: root.hint;
@@ -665,14 +657,12 @@ component SettingsScreen inherits Rectangle {
 // page cue in the footer's right slot, and the in-screen empty or failed
 // cue. Rust owns the entries, the cursor and the geometry.
 component HubScreen inherits Rectangle {
-    background: transparent;
     in property <bool> gated: false;
     property <bool> error: HubView.hub-error != "";
 
     grid := PagedGridView {
         x: 0;
         y: HubView.grid-y;
-        width: parent.width;
         height: HubView.grid-height;
         cells: HubView.cells;
         press-held: PressFeedback.active(PressOwner.hub, HubView.selected-local);
@@ -712,7 +702,6 @@ component HubScreen inherits Rectangle {
     label := ActiveLabel {
         x: 0;
         y: HubView.label-y;
-        width: parent.width;
         height: HubView.label-height;
         side-inset: indicator.width + Sizing.hub-grid-side-inset;
         text: Labels.hub(HubView.label-key, HubView.label-name);
@@ -736,7 +725,6 @@ component HubScreen inherits Rectangle {
     StateCue {
         x: 0;
         y: HubView.grid-y;
-        width: parent.width;
         height: HubView.grid-height;
         state: root.error ? ContentState.error : ((HubView.loaded && HubView.catalog-empty) ? ContentState.empty : ContentState.ready);
         empty-text: HubView.indexing ? @tr("Updating the media database") : @tr("No games found yet");
@@ -751,7 +739,6 @@ component HubScreen inherits Rectangle {
 // state cue. Rust projects the rows and owns the cursor; the swoop
 // strip slides one page period when a page turns.
 component SystemsScreen inherits Rectangle {
-    background: transparent;
     in property <bool> gated: false;
     property <bool> list-layout: Shell.systems-list-layout;
     property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
@@ -775,7 +762,6 @@ component SystemsScreen inherits Rectangle {
     TopStatusStrip {
         x: 0;
         y: Sizing.header-bottom + Layout.top-margin;
-        width: parent.width;
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
         title: root.title;
@@ -800,7 +786,6 @@ component SystemsScreen inherits Rectangle {
     if !root.list-layout: Rectangle {
         x: 0;
         y: SystemsView.grid-y;
-        width: parent.width;
         height: SystemsView.grid-height;
         clip: true;
         visible: !root.gate-hide;
@@ -809,15 +794,11 @@ component SystemsScreen inherits Rectangle {
             x: 0;
             property <float> page-progress: SystemsView.page-slide;
             y: Math.round(-self.page-progress * root.period / 1px) * 1px;
-            width: parent.width;
-            height: parent.height;
             animate page-progress { duration: SystemsView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
 
             PagedGridView {
                 x: 0;
                 y: 0;
-                width: parent.width;
-                height: parent.height;
                 cells: SystemsView.cells;
                 focus-scope: StateTokens.systems(SystemsView.mode) + ":" + SystemsView.page;
                 focus-motion: SystemsView.page-slide == 0 && !SystemsView.cached-transition;
@@ -847,8 +828,6 @@ component SystemsScreen inherits Rectangle {
             PagedGridView {
                 x: 0;
                 y: SystemsView.slide-dir * root.period;
-                width: parent.width;
-                height: parent.height;
                 cells: SystemsView.next-cells;
                 columns: SystemsView.columns;
                 cell-width: SystemsView.cell-width;
@@ -916,7 +895,6 @@ component SystemsScreen inherits Rectangle {
     if !root.list-layout: ActiveLabel {
         x: 0;
         y: root.label-y;
-        width: parent.width;
         height: Layout.active-label-height;
         side-inset: root.page-cue-in-footer ? Math.max(root.footer-left-inset, root.footer-right-inset) : Sizing.pct-w(3);
         text: SystemsView.label-name;
@@ -957,7 +935,6 @@ component SystemsScreen inherits Rectangle {
     cue := StateCue {
         x: 0;
         y: root.list-layout ? root.list-card-y : SystemsView.grid-y;
-        width: parent.width;
         height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : SystemsView.grid-height;
         cue-center-y: root.height / 2 - self.y;
         state: root.state;
@@ -1073,11 +1050,8 @@ component ListPickerModal inherits Rectangle {
             for entry[i] in root.entries: Rectangle {
                 x: 0;
                 y: (i - root.top) * root.stride;
-                width: parent.width;
                 height: root.row-h;
                 bar := SelectionBar {
-                    width: 100%;
-                    height: 100%;
                     active: i == root.current-index;
                     press-held: PressFeedback.active(PressOwner.list, i);
                 }
@@ -1624,8 +1598,8 @@ component ContextMenu inherits Rectangle {
 
     // Four bands around the anchor: the tile the menu is about stays
     // bright while the rest of the screen dims.
-    Rectangle { x: 0; y: 0; width: parent.width; height: root.anchor-y; background: Theme.scrim; }
-    Rectangle { x: 0; y: root.anchor-y + root.anchor-h; width: parent.width; height: Math.max(0px, parent.height - root.anchor-y - root.anchor-h); background: Theme.scrim; }
+    Rectangle { x: 0; y: 0; height: root.anchor-y; background: Theme.scrim; }
+    Rectangle { x: 0; y: root.anchor-y + root.anchor-h; height: Math.max(0px, parent.height - root.anchor-y - root.anchor-h); background: Theme.scrim; }
     Rectangle { x: 0; y: root.anchor-y; width: root.anchor-x; height: root.anchor-h; background: Theme.scrim; }
     Rectangle { x: root.anchor-x + root.anchor-w; y: root.anchor-y; width: Math.max(0px, parent.width - root.anchor-x - root.anchor-w); height: root.anchor-h; background: Theme.scrim; }
 
@@ -1651,8 +1625,6 @@ component ContextMenu inherits Rectangle {
             height: root.row-h;
 
             bar := SelectionBar {
-                width: 100%;
-                height: 100%;
                 active: i == root.current-index;
                 press-held: PressFeedback.active(PressOwner.context, i);
                 radius: Sizing.radius-sm;
@@ -1688,7 +1660,6 @@ component ContextMenu inherits Rectangle {
 // into GamesView. The detailed list keeps the prototype rows until the
 // MediaList row lands.
 component GamesScreen inherits Rectangle {
-    background: transparent;
     in property <bool> gated: false;
     property <bool> list-layout: Shell.browse-list-layout;
     property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
@@ -1712,7 +1683,6 @@ component GamesScreen inherits Rectangle {
     TopStatusStrip {
         x: 0;
         y: Sizing.header-bottom + Layout.top-margin;
-        width: parent.width;
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
         title: root.title;
@@ -1739,7 +1709,6 @@ component GamesScreen inherits Rectangle {
     if !root.list-layout: Rectangle {
         x: 0;
         y: GamesView.grid-y;
-        width: parent.width;
         height: GamesView.grid-height;
         clip: true;
         visible: !root.gate-hide;
@@ -1749,15 +1718,11 @@ component GamesScreen inherits Rectangle {
             property <float> page-progress: GamesView.page-slide;
             y: GamesView.folder-slide ? 0px : Math.round(-self.page-progress * root.period / 1px) * 1px;
             animate x { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
-            width: parent.width;
-            height: parent.height;
             animate page-progress { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
 
             PagedGridView {
                 x: 0;
                 y: 0;
-                width: parent.width;
-                height: parent.height;
                 cells: GamesView.cells;
                 focus-scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title + ":" + GamesView.page;
                 focus-motion: GamesView.page-slide == 0 && !GamesView.cached-transition;
@@ -1788,8 +1753,6 @@ component GamesScreen inherits Rectangle {
             PagedGridView {
                 x: GamesView.folder-slide ? GamesView.slide-dir * parent.width : 0px;
                 y: GamesView.folder-slide ? 0px : GamesView.slide-dir * root.period;
-                width: parent.width;
-                height: parent.height;
                 cells: GamesView.next-cells;
                 columns: GamesView.columns;
                 cell-width: GamesView.cell-width;
@@ -1862,7 +1825,6 @@ component GamesScreen inherits Rectangle {
     if !root.list-layout && !GamesView.page-loading: ActiveLabel {
         x: 0;
         y: root.label-y;
-        width: parent.width;
         height: GamesView.label-height;
         side-inset: root.page-cue-in-footer ? Math.max(root.footer-left-inset, root.footer-right-inset) : Sizing.pct-w(3);
         text: GamesView.label-name;
@@ -1874,7 +1836,6 @@ component GamesScreen inherits Rectangle {
         property <length> glyph: Sizing.font-size(3);
         x: 0;
         y: root.label-y;
-        width: parent.width;
         height: GamesView.label-height;
         HorizontalLayout {
             x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
@@ -1949,7 +1910,6 @@ component GamesScreen inherits Rectangle {
     cue := StateCue {
         x: 0;
         y: root.list-layout ? root.list-card-y : GamesView.grid-y;
-        width: parent.width;
         height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : GamesView.grid-height;
         cue-center-y: root.height / 2 - self.y;
         state: GamesView.folder-slide ? ContentState.ready : root.state;
@@ -1977,14 +1937,12 @@ component CrtCalibrationPattern inherits Rectangle {
             Math.round(col * (parent.width - root.stroke) / 16px) * 1px);
         y: 0;
         width: root.stroke;
-        height: parent.height;
         background: Theme.text-label;
     }
     for row in 13: Rectangle {
         x: 0;
         y: Math.min(parent.height - root.stroke,
             Math.round(row * (parent.height - root.stroke) / 12px) * 1px);
-        width: parent.width;
         height: root.stroke;
         background: Theme.text-label;
     }
@@ -1992,9 +1950,6 @@ component CrtCalibrationPattern inherits Rectangle {
     Rectangle {
         x: 0;
         y: 0;
-        width: parent.width;
-        height: parent.height;
-        background: transparent;
         border-width: root.stroke;
         border-color: Theme.text-primary;
     }
@@ -2003,7 +1958,6 @@ component CrtCalibrationPattern inherits Rectangle {
         y: root.action-y;
         width: parent.width - 2 * root.action-x;
         height: parent.height - 2 * root.action-y;
-        background: transparent;
         border-width: root.stroke;
         border-color: Theme.accent;
     }
@@ -2012,7 +1966,6 @@ component CrtCalibrationPattern inherits Rectangle {
         y: root.title-y;
         width: parent.width - 2 * root.title-x;
         height: parent.height - 2 * root.title-y;
-        background: transparent;
         border-width: root.stroke;
         border-color: Theme.text-primary;
     }
@@ -2063,32 +2016,21 @@ component RouteScreen inherits Rectangle {
     in property <bool> gated: false;
 
     if root.screen-token == Screen.hub && !Shell.boot-curtain: HubScreen {
-        width: 100%;
-        height: 100%;
         gated: root.gated;
     }
 
     if root.screen-token == Screen.systems || root.screen-token == Screen.favorite-systems: SystemsScreen {
-        width: 100%;
-        height: 100%;
         gated: root.gated;
     }
 
     if root.screen-token == Screen.settings: SettingsScreen {
-        width: 100%;
-        height: 100%;
         outgoing: root.outgoing;
     }
 
-    if root.screen-token == Screen.about: AboutScreen {
-        width: 100%;
-        height: 100%;
-    }
+    if root.screen-token == Screen.about: AboutScreen {}
 
     if root.screen-token == Screen.games || root.screen-token == Screen.favorites
         || root.screen-token == Screen.recents: GamesScreen {
-        width: 100%;
-        height: 100%;
         gated: root.gated;
     }
 }
@@ -2445,8 +2387,6 @@ export component App inherits Window {
     // Extend modal dimming into the CRT overscan bands. The regular
     // scrim lives inside `scene`; this sibling only paints behind it.
     if Theme.crt && root.has-modal(): Rectangle {
-        width: 100%;
-        height: 100%;
         background: Theme.scrim;
     }
 
@@ -2458,17 +2398,12 @@ export component App inherits Window {
     // Only one live screen. Async navigation retains this coherent source;
     // readiness replaces it atomically without an entrance effect.
     stage := Rectangle {
-        width: 100%;
-        height: 100%;
         clip: true;
 
         RouteScreen {
-            width: parent.width;
-            height: parent.height;
             screen-token: Shell.active-screen;
         }
         if Shell.transitioning: TouchArea {
-            width: 100%; height: 100%;
             scroll-event(event) => { return accept; }
         }
     }
@@ -2478,8 +2413,6 @@ export component App inherits Window {
     // the connection state ("Connecting… / Reconnecting… / Loading
     // library…" plus the escalated unreachable message from Rust).
     if Shell.boot-curtain: Rectangle {
-        width: 100%;
-        height: 100%;
         Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: Math.round((parent.height - self.height) / 2px) * 1px;
@@ -2494,7 +2427,6 @@ export component App inherits Window {
     header := HeaderBar {
         x: 0;
         y: Sizing.header-top-margin;
-        width: parent.width;
         clock-text: Shell.clock-text;
         clock-sample: Shell.clock-sample;
         status-keys: Shell.status-keys;
@@ -2508,7 +2440,6 @@ export component App inherits Window {
     // Modal scrims swallow pointer events rather than forwarding them to
     // the screen underneath. Modal controls paint after this blocker.
     if root.has-modal(): TouchArea {
-        width: 100%; height: 100%;
         scroll-event(event) => { return accept; }
     }
 
@@ -2517,26 +2448,16 @@ export component App inherits Window {
     // full-screen translucent surface costs ~100ms frames - the Qt
     // rulebook's ban earns its place back at this resolution. The
     // one-frame repaint on open is fine.
-    info-modal := GameInfoModal {
-        width: 100%;
-        height: 100%;
-    }
+    info-modal := GameInfoModal {}
 
-    if Overlays.card-write-open: CardWriteModal {
-        width: 100%;
-        height: 100%;
-    }
+    if Overlays.card-write-open: CardWriteModal {}
 
     if Overlays.qr-open: QrCodeModal {
-        width: 100%;
-        height: 100%;
         qr: Overlays.qr-image;
         modules: Overlays.qr-modules;
     }
 
     if LogUploadView.open: LogUploadModal {
-        width: 100%;
-        height: 100%;
         phase: LogUploadView.phase;
         button-pressed: PressFeedback.active(PressOwner.log, 0);
         url: LogUploadView.url;
@@ -2546,8 +2467,6 @@ export component App inherits Window {
     }
 
     if SetupModalView.open: SetupModal {
-        width: 100%;
-        height: 100%;
         kind: SetupModalView.kind;
         picker-page: SetupModalView.picker-page;
         picker-title: SetupModalView.picker-title;
@@ -2565,8 +2484,6 @@ export component App inherits Window {
     }
 
     if Overlays.context-open: ContextMenu {
-        width: 100%;
-        height: 100%;
         entries: Overlays.context-entries;
         current-index: Overlays.context-index;
         anchor-x: Overlays.context-anchor-x;
@@ -2576,8 +2493,6 @@ export component App inherits Window {
     }
 
     if Overlays.list-open: ListPickerModal {
-        width: 100%;
-        height: 100%;
         title: Labels.menu(Overlays.list-title, "");
         setting-id: Overlays.list-setting-id;
         entries: Overlays.list-entries;
@@ -2585,8 +2500,6 @@ export component App inherits Window {
     }
 
     if Overlays.letter-open: LetterJumpModal {
-        width: 100%;
-        height: 100%;
         buckets: Overlays.letter-buckets;
         current-index: Overlays.letter-index;
         loading: Overlays.letter-loading;
@@ -2596,15 +2509,13 @@ export component App inherits Window {
 
     // Alerts own input above every other modal, matching the router.
     if Overlays.dialog-open: TouchArea {
-        width: 100%; height: 100%;
         scroll-event(event) => { return accept; }
     }
-    if Overlays.dialog-open: DialogModal { width: 100%; height: 100%; }
+    if Overlays.dialog-open: DialogModal {}
 
     HelpBar {
         x: 0;
         y: parent.height - self.height;
-        width: parent.width;
         entries: root.help-entries();
         // Bleed past the CRT safe-area inset so the fill reaches the
         // framebuffer edge and the keyline lands on the safe-area line.
@@ -2613,10 +2524,7 @@ export component App inherits Window {
 
     // Topmost within the logical scene: burn protection covers header,
     // screens, and regular modals, and rotates with the display.
-    if Shell.saver-armed: ScreensaverOverlay {
-        width: 100%;
-        height: 100%;
-    }
+    if Shell.saver-armed: ScreensaverOverlay {}
     }
 
     // Desktop remains mapped behind the launched game. If the compositor
@@ -2625,8 +2533,6 @@ export component App inherits Window {
     // the dark fill while its wrapper takes over; desktop adds the logo so the
     // state looks intentional when raised.
     if Shell.dormant: dormant-surface := Rectangle {
-        width: 100%;
-        height: 100%;
         background: #030405;
 
         if !Shell.is-mister: Image {
@@ -2643,7 +2549,6 @@ export component App inherits Window {
     // the setting is off or a screen transition owns input.
     if Shell.dormant || !Shell.mouse-enabled || Shell.saver-armed
         || ((Shell.boot-curtain || Shell.transitioning) && !root.has-modal()): TouchArea {
-        width: 100%; height: 100%;
         clicked => {
             if (!Shell.dormant) { Overlays.pointer-choice(PressOwner.wake, 0, true); }
         }
@@ -2652,8 +2557,5 @@ export component App inherits Window {
 
     // Calibration deliberately bypasses scene rotation and the CRT safe
     // inset: its edge frame must identify true framebuffer pixels.
-    if Theme.crt && Overlays.crt-calibration-open: CrtCalibrationPattern {
-        width: 100%;
-        height: 100%;
-    }
+    if Theme.crt && Overlays.crt-calibration-open: CrtCalibrationPattern {}
 }

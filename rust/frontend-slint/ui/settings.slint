@@ -322,7 +322,6 @@ export component SettingsRowView inherits Rectangle {
     in property <int> activate-pulse: 0;
     in property <bool> settling: false;
 
-    background: transparent;
     opacity: root.entry.enabled ? 1.0 : 0.4;
 
     property <bool> is-action: root.entry.control == ControlKind.action;
@@ -330,8 +329,6 @@ export component SettingsRowView inherits Rectangle {
     property <length> knob-h: Sizing.pct-h(3.8);
 
     bar := SelectionBar {
-        width: 100%;
-        height: 100%;
         active: root.focused;
         // Toggles answer with their knob slide, not a flash.
         activate-pulse: root.entry.control == ControlKind.toggle ? 0 : root.activate-pulse;
