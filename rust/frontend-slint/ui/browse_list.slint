@@ -152,7 +152,7 @@ export component BrowseList inherits Rectangle {
 
         if row.favorite: Image {
             x: parent.width - Layout.favorite-right-padding - root.heart-size;
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            y: (parent.height - self.height) / 2;
             width: root.heart-size;
             height: root.heart-size;
             source: GlyphSource.glyph("icons/Heart", root.heart-size, Colors.transparent);
@@ -360,9 +360,9 @@ export component BrowseDetailPane inherits Rectangle {
             // Only a confirmed no-cover state shows the chip; the pane
             // never shows an hourglass.
             if root.visible-content && !root.has-cover && !root.wordmark && root.cover-absent: Image {
-                property <length> s: Math.round(parent.art-w * 0.5 / 1px) * 1px;
-                x: parent.art-x + Math.round((parent.art-w - self.s) / 2px) * 1px;
-                y: parent.art-y + Math.round((parent.art-h - self.s) / 2px) * 1px;
+                property <length> s: parent.art-w * 0.5;
+                x: parent.art-x + (parent.art-w - self.s) / 2;
+                y: parent.art-y + (parent.art-h - self.s) / 2;
                 width: self.s;
                 height: self.s;
                 source: GlyphSource.glyph(root.placeholder-key, self.s, Theme.text-label);
@@ -418,7 +418,7 @@ export component BrowseDetailPane inherits Rectangle {
                     visible: root.visible-content;
                     Text {
                         x: 0;
-                        y: Math.round((parent.height - self.height) / 2px) * 1px;
+                        y: (parent.height - self.height) / 2;
                         width: Math.min(root.label-w, parent.width);
                         horizontal-alignment: right;
                         overflow: elide;
@@ -428,7 +428,7 @@ export component BrowseDetailPane inherits Rectangle {
                     }
                     Text {
                         x: root.label-w + root.label-gap;
-                        y: Math.round((parent.height - self.height) / 2px) * 1px;
+                        y: (parent.height - self.height) / 2;
                         width: Math.max(0px, parent.width - root.label-w - root.label-gap);
                         overflow: elide;
                         text: meta.value;
@@ -453,8 +453,8 @@ export component BrowseDetailPane inherits Rectangle {
         }
         if content.loading-shown: HorizontalLayout {
             property <length> glyph: Sizing.font-size(3);
-            x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
-            y: Math.round((parent.height - self.glyph) / 2px) * 1px;
+            x: (parent.width - self.preferred-width) / 2;
+            y: (parent.height - self.glyph) / 2;
             height: self.glyph;
             spacing: Sizing.pct-w(0.6);
             Image {

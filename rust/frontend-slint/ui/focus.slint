@@ -23,7 +23,7 @@ export component ScrollOffset inherits Rectangle {
     property <length> position;
     property <bool> glide: false;
     property <bool> motion: Motion.enabled;
-    out property <length> offset: Math.round(root.position / 1px) * 1px;
+    out property <length> offset: root.position;
     out property <bool> moving: root.offset != root.target;
     changed target => {
         // Never leave the newly selected control outside the clip while the
@@ -55,8 +55,8 @@ export component TileDisplacement inherits Rectangle {
     property <float> progress: 1;
     property <bool> start-pending: false;
     property <bool> glide: false;
-    out property <length> offset-x: Math.round(root.from-x * (1 - root.progress) / 1px) * 1px;
-    out property <length> offset-y: Math.round(root.from-y * (1 - root.progress) / 1px) * 1px;
+    out property <length> offset-x: root.from-x * (1 - root.progress);
+    out property <length> offset-y: root.from-y * (1 - root.progress);
     changed pulse => {
         if (root.allowed && Motion.enabled && !root.start-pending && root.progress == 1) {
             root.glide = true;
@@ -119,8 +119,8 @@ export component FocusCursor inherits Rectangle {
         duration: root.glide && root.motion ? Motion.focus-ms : 0ms;
         easing: ease-out-quad;
     }
-    x: Math.round(root.position-x / 1px) * 1px;
-    y: Math.round(root.position-y / 1px) * 1px;
+    x: root.position-x;
+    y: root.position-y;
     width: root.target.w;
     height: root.target.h;
     visible: root.target.valid;

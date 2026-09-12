@@ -33,12 +33,13 @@ export component GameInfoModal inherits Rectangle {
     out property <length> maximum-scroll: Math.max(0px, root.body-h - root.viewport-height);
     out property <bool> scrollable: !GameInfoView.loading && !GameInfoView.failed && root.maximum-scroll > 0px;
     property <length> chrome-h: root.margin-y * 3 + title.height;
-    property <length> scroll-y: Math.round(Math.min(root.maximum-scroll, Math.max(0px, GameInfoView.scroll-position * Sizing.screen-height)) / 1px) * 1px;
+    property <length> scroll-y: Math.min(root.maximum-scroll,
+        Math.max(0px, GameInfoView.scroll-position * Sizing.screen-height));
 
     public function move-scroll(delta: length) {
         if (!GameInfoView.loading && !GameInfoView.failed) {
-            GameInfoView.scroll-position = Math.round(Math.max(0px, Math.min(root.maximum-scroll, root.scroll-y + delta)) / 1px)
-                / Math.max(1, Sizing.screen-height / 1px);
+            GameInfoView.scroll-position = Math.max(0px,
+                Math.min(root.maximum-scroll, root.scroll-y + delta)) / Math.max(1px, Sizing.screen-height);
         }
     }
     public function scroll(action: ScrollAction) {
@@ -58,15 +59,17 @@ export component GameInfoModal inherits Rectangle {
     property <length> label-w: Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2);
 
     panel := Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: Math.round(Math.min(Math.min(parent.width * 0.92, Sizing.pct-h(150)), parent.width - Sizing.pct-w(6)) / 1px) * 1px;
-        height: Math.round(Math.min(Math.max(0px, parent.height - Sizing.pct-h(16)), root.chrome-h + root.body-h) / 1px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: Math.min(Math.min(parent.width * 0.92, Sizing.pct-h(150)),
+            parent.width - Sizing.pct-w(6));
+        height: Math.min(Math.max(0px, parent.height - Sizing.pct-h(16)),
+            root.chrome-h + root.body-h);
         background: Theme.bg-panel;
         border-radius: Sizing.radius-md;
 
         title := Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: root.margin-y;
             width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px + Sizing.stroke(2), parent.width - 2 * root.pad-x);
             height: Math.ceil(self.preferred-height / 1px) * 1px;
@@ -76,7 +79,7 @@ export component GameInfoModal inherits Rectangle {
             overflow: elide;
         }
         loading-label := Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: title.y + title.height + root.margin-y;
             text: @tr("Loading details…");
             font-size: Sizing.font-body;
@@ -119,8 +122,8 @@ export component GameInfoModal inherits Rectangle {
                         visible: GameInfoView.modal-has-cover;
                     }
                     Text {
-                        x: Math.round((parent.width - self.width) / 2px) * 1px;
-                        y: Math.round((parent.height - self.height) / 2px) * 1px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
                         text: @tr("Loading image…");
                         color: Theme.text-primary;
                         font-size: Sizing.font-caption;
@@ -128,7 +131,7 @@ export component GameInfoModal inherits Rectangle {
                     }
                     for next in [false, true]: Image {
                         x: next ? parent.width - self.width : 0px;
-                        y: Math.round((parent.height - self.height) / 2px) * 1px;
+                        y: (parent.height - self.height) / 2;
                         width: Sizing.pct-h(4);
                         height: self.width;
                         property <bool> enabled: next ? GameInfoView.image-index + 1 < GameInfoView.image-count : GameInfoView.image-index > 0;
@@ -146,7 +149,7 @@ export component GameInfoModal inherits Rectangle {
                     spacing: Sizing.pct-h(0.8);
                     for row[i] in GameInfoView.rows: Rectangle {
                         property <length> top: i > 0 ? Sizing.pct-h(0.8) : 0px;
-                        height: Math.round((Math.max(Sizing.pct-h(3), value.height) + self.top) / 1px) * 1px;
+                        height: Math.max(Sizing.pct-h(3), value.height) + self.top;
                         if i > 0: Rectangle { y: 0px; height: Sizing.stroke(1); background: Theme.border-subtle; }
                         Text {
                             x: 0px;
@@ -199,7 +202,7 @@ export component GameInfoModal inherits Rectangle {
             }
         }
         for down in [false, true]: Image {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: down ? viewport.y + viewport.height + Sizing.pct-h(0.5) : viewport.y - self.height - Sizing.pct-h(0.5);
             width: Sizing.pct-h(3);
             height: self.width;

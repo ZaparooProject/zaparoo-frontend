@@ -544,7 +544,7 @@ component SettingsScreen inherits Rectangle {
     // Page: rows in a card, with the hint band pinned to its bottom.
     // The card carries its own margins rather than the browse profile's
     // card values, which belong to whichever browse view was last shown.
-    property <length> card-x: Math.round((self.width - self.card-w) / 2px) * 1px;
+    property <length> card-x: (self.width - self.card-w) / 2;
     property <length> card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Sizing.pct-h(4);
     property <length> card-w: Math.min(self.width - 2 * Sizing.pct-w(3), Sizing.pct-w(70));
     property <length> card-h: self.height - self.card-y - Sizing.help-bar-height - Sizing.pct-h(4);
@@ -711,7 +711,7 @@ component HubScreen inherits Rectangle {
 
     indicator := PageIndicator {
         x: parent.width - Sizing.hub-grid-side-inset - self.width;
-        y: label.y + Math.round((label.height - self.height) / 2px) * 1px;
+        y: label.y + (label.height - self.height) / 2;
         current-page: HubView.page;
         total-pages: HubView.total-pages;
         has-pages-above: HubView.has-pages-above;
@@ -793,7 +793,7 @@ component SystemsScreen inherits Rectangle {
         Rectangle {
             x: 0;
             property <float> page-progress: SystemsView.page-slide;
-            y: Math.round(-self.page-progress * root.period / 1px) * 1px;
+            y: -self.page-progress * root.period;
             animate page-progress { duration: SystemsView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
 
             PagedGridView {
@@ -906,7 +906,7 @@ component SystemsScreen inherits Rectangle {
 
     if !root.list-layout && root.page-cue-in-footer && root.count-text != "": Text {
         x: Layout.bottom-status-left-margin;
-        y: root.label-y + Math.round((Layout.active-label-height - self.height) / 2px) * 1px;
+        y: root.label-y + (Layout.active-label-height - self.height) / 2;
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
         height: Sizing.font-section;
         vertical-alignment: center;
@@ -919,7 +919,7 @@ component SystemsScreen inherits Rectangle {
 
     footer-indicator := PageIndicator {
         x: parent.width - Layout.bottom-status-right-margin - self.width;
-        y: root.label-y + Math.round((Layout.active-label-height - self.height) / 2px) * 1px;
+        y: root.label-y + (Layout.active-label-height - self.height) / 2;
         chevron-size: Layout.grid-page-chevron-size;
         current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
         total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
@@ -1000,14 +1000,14 @@ component ListPickerModal inherits Rectangle {
     }
     property <length> desired-w: Math.max(measure.preferred-width + root.swatch-band
         + 2 * Sizing.pct-w(2) + Sizing.stroke(2), title.preferred-width)
-        + 2 * root.pad-x + Math.round(Sizing.font-body * 1.5 / 1px) * 1px;
+        + 2 * root.pad-x + Sizing.font-body * 1.5;
     property <length> panel-w: Math.min(Sizing.pct-w(92), Math.max(Sizing.pct-w(30), Math.ceil(root.desired-w / 1px) * 1px));
     property <length> content-y: root.pad-y + title.preferred-height + root.title-gap;
     property <length> panel-h: root.content-y + root.viewport-h + 2 * root.arrow-band + root.pad-y;
 
     Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
         width: root.panel-w;
         height: root.panel-h;
         background: Theme.bg-panel;
@@ -1017,7 +1017,7 @@ component ListPickerModal inherits Rectangle {
         clip: true;
 
         title := Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: root.pad-y;
             width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
             overflow: elide;
@@ -1027,7 +1027,7 @@ component ListPickerModal inherits Rectangle {
         }
 
         if root.top > 0: Image {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: root.content-y;
             width: root.arrow;
             height: root.arrow;
@@ -1056,8 +1056,8 @@ component ListPickerModal inherits Rectangle {
                     press-held: PressFeedback.active(PressOwner.list, i);
                 }
                 Text {
-                    x: root.swatches ? Sizing.pct-w(2) : Math.round((parent.width - self.width) / 2px) * 1px;
-                    y: Math.round((parent.height - self.height) / 2px) * 1px;
+                    x: root.swatches ? Sizing.pct-w(2) : (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
                     width: Math.min(self.preferred-width, Math.max(0px, parent.width - 2 * Sizing.pct-w(2) - root.swatch-band));
                     overflow: elide;
                     text: Overlays.launcher-saving-visible && i == root.current-index ? @tr("Saving…") : root.entry-label(entry);
@@ -1067,7 +1067,7 @@ component ListPickerModal inherits Rectangle {
                 }
                 if root.swatches: Rectangle {
                     x: parent.width - Sizing.pct-w(2) - self.width;
-                    y: Math.round((parent.height - self.height) / 2px) * 1px;
+                    y: (parent.height - self.height) / 2;
                     width: 3 * root.swatch-size + 2 * root.swatch-gap;
                     height: root.swatch-size;
                     for n in 3: Rectangle {
@@ -1088,7 +1088,7 @@ component ListPickerModal inherits Rectangle {
         }
 
         if root.top + root.visible-rows < root.entries.length: Image {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: parent.height - root.pad-y - root.arrow;
             width: root.arrow;
             height: root.arrow;
@@ -1115,17 +1115,17 @@ component LetterJumpModal inherits Rectangle {
     property <length> panel-w: Sizing.pct-w(78);
     property <length> content-w: root.panel-w - 2 * Sizing.pct-w(4);
     property <int> rows: Math.max(1, Math.ceil(root.buckets.length / Math.max(1, root.columns)));
-    property <length> cell: Math.round(Math.max(Sizing.pct-w(7), Math.min(Sizing.pct-w(13),
+    property <length> cell: Math.max(Sizing.pct-w(7), Math.min(Sizing.pct-w(13),
         Math.min((root.content-w - (root.columns - 1) * root.gap) / Math.max(1, root.columns),
-            (Sizing.pct-h(52) - (root.rows - 1) * root.gap) / root.rows))) / 1px) * 1px;
+            (Sizing.pct-h(52) - (root.rows - 1) * root.gap) / root.rows)));
     property <length> grid-h: root.rows * root.cell + (root.rows - 1) * root.gap;
     property <length> grid-w: root.columns * root.cell + (root.columns - 1) * root.gap;
     property <length> content-y: root.pad-y + title.preferred-height + root.title-gap;
     property <length> panel-h: root.content-y + root.grid-h + root.pad-y;
 
     Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
         width: root.panel-w;
         height: root.panel-h;
         background: Theme.bg-panel;
@@ -1134,7 +1134,7 @@ component LetterJumpModal inherits Rectangle {
         // Keeping one surface treatment aligns pickers and dialogs.
 
         title := Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: root.pad-y;
             text: @tr("Go to…");
             color: Theme.text-primary;
@@ -1142,15 +1142,15 @@ component LetterJumpModal inherits Rectangle {
         }
 
         if root.buckets.length == 0: Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: root.content-y + Math.round((root.grid-h - self.height) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
+            y: root.content-y + (root.grid-h - self.height) / 2;
             text: root.loading ? @tr("Loading…") : @tr("No sections");
             color: Theme.text-label;
             font-size: Sizing.font-body;
         }
 
         Rectangle {
-            x: Math.round((parent.width - root.grid-w) / 2px) * 1px;
+            x: (parent.width - root.grid-w) / 2;
             y: root.content-y;
             width: root.grid-w;
             height: root.grid-h;
@@ -1164,15 +1164,15 @@ component LetterJumpModal inherits Rectangle {
                 pressed: PressFeedback.active(PressOwner.letter, i);
 
                 Text {
-                    x: Math.round((parent.width - self.width) / 2px) * 1px;
-                    y: Math.round((cell.face-height * 0.52 - self.height) / 2px) * 1px;
+                    x: (parent.width - self.width) / 2;
+                    y: (cell.face-height * 0.52 - self.height) / 2;
                     text: bucket.label;
                     color: cell.focused ? Theme.text-primary : Theme.text-label;
                     font-size: Sizing.font-size(3.4);
                     font-weight: 500;
                 }
                 Text {
-                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    x: (parent.width - self.width) / 2;
                     y: cell.face-height - self.height - Sizing.pct-h(0.8);
                     text: bucket.count;
                     color: Theme.text-label;
@@ -1195,15 +1195,16 @@ component CardWriteModal inherits Rectangle {
     background: Theme.scrim;
 
     Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: Math.round(Math.min(Math.min(parent.width * 0.92, Sizing.pct-h(90)), Math.max(Sizing.pct-w(30), title.preferred-width + 2 * Sizing.pct-w(4))) / 1px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: Math.min(Math.min(parent.width * 0.92, Sizing.pct-h(90)),
+            Math.max(Sizing.pct-w(30), title.preferred-width + 2 * Sizing.pct-w(4)));
         height: Math.ceil(title.preferred-height / 1px) * 1px + Sizing.pct-h(18);
         background: Theme.bg-panel;
         border-radius: Sizing.radius-md;
 
         title := Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: Sizing.pct-h(4);
             width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width - 2 * Sizing.pct-w(4));
             wrap: word-wrap;
@@ -1212,15 +1213,15 @@ component CardWriteModal inherits Rectangle {
             font-size: Sizing.font-title;
         }
         cancel-button := PressableSurface {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: parent.height - Sizing.pct-h(11);
             width: Math.min(Sizing.pct-w(28), parent.width - 2 * Sizing.pct-w(4));
             height: Sizing.pct-h(7);
             focused: true;
             pressed: PressFeedback.active(PressOwner.card-write, 0);
             Text {
-                x: Math.round((parent.width - self.width) / 2px) * 1px;
-                y: Math.round((cancel-button.face-height - self.height) / 2px) * 1px;
+                x: (parent.width - self.width) / 2;
+                y: (cancel-button.face-height - self.height) / 2;
                 text: @tr("Cancel");
                 color: Theme.text-primary;
                 font-size: Sizing.font-body;
@@ -1248,9 +1249,9 @@ component QrCodeModal inherits Rectangle {
     property <length> qr-px: root.module-px * root.modules;
 
     Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: Math.round(Math.min(parent.width * 0.92, Sizing.pct-h(105)) / 1px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: Math.min(parent.width * 0.92, Sizing.pct-h(105));
         height: Math.ceil(content.preferred-height / 1px) * 1px + 2 * Sizing.pct-h(4);
         background: Theme.bg-panel;
         border-radius: Sizing.radius-md;
@@ -1264,7 +1265,7 @@ component QrCodeModal inherits Rectangle {
             Rectangle {
                 height: Math.ceil(title.preferred-height / 1px) * 1px;
                 title := Text {
-                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    x: (parent.width - self.width) / 2;
                     y: 0px;
                     width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
                     text: Overlays.qr-documentation ? @tr("Documentation") : @tr("Write with App");
@@ -1276,7 +1277,7 @@ component QrCodeModal inherits Rectangle {
             Rectangle {
                 height: Math.ceil(instructions.preferred-height / 1px) * 1px;
                 instructions := Text {
-                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    x: (parent.width - self.width) / 2;
                     y: 0px;
                     width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
                     text: Overlays.qr-documentation
@@ -1290,7 +1291,7 @@ component QrCodeModal inherits Rectangle {
             Rectangle {
                 height: root.qr-px;
                 Image {
-                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    x: (parent.width - self.width) / 2;
                     y: 0px;
                     width: root.qr-px;
                     height: root.qr-px;
@@ -1301,7 +1302,7 @@ component QrCodeModal inherits Rectangle {
             if Overlays.qr-documentation: Rectangle {
                 height: Math.ceil(url.preferred-height / 1px) * 1px;
                 url := Text {
-                    x: Math.round((parent.width - self.width) / 2px) * 1px;
+                    x: (parent.width - self.width) / 2;
                     y: 0px;
                     width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
                     text: "zaparoo.org/docs/frontend";
@@ -1376,8 +1377,8 @@ component DialogModal inherits Rectangle {
     property <length> panel-h: root.button-y + root.btn-h + root.pad-y;
 
     Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
         width: root.panel-w;
         height: root.panel-h;
         background: Theme.bg-panel;
@@ -1386,7 +1387,7 @@ component DialogModal inherits Rectangle {
         // Keeping one surface treatment aligns pickers and dialogs.
 
         Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: root.pad-y;
             max-width: parent.width - 2 * root.pad-x;
             overflow: elide;
@@ -1396,7 +1397,7 @@ component DialogModal inherits Rectangle {
         }
 
         body-t := Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: root.body-y;
             width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, parent.width - 2 * root.pad-x);
             wrap: word-wrap;
@@ -1407,7 +1408,7 @@ component DialogModal inherits Rectangle {
         }
 
         if Overlays.dialog-status != DialogProgress.none: Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: root.status-y;
             max-width: parent.width - 2 * root.pad-x;
             overflow: elide;
@@ -1428,10 +1429,9 @@ component DialogModal inherits Rectangle {
                 ? Math.min(self.available-btn-w, button-measure.preferred-width)
                 : self.available-btn-w);
         for label[i] in Overlays.dialog-buttons: button := PressableSurface {
-            x: Math.round((parent.width
+            x: (parent.width
                 - (Overlays.dialog-buttons.length * parent.btn-w
-                    + (Overlays.dialog-buttons.length - 1) * root.btn-gap))
-                / 2px) * 1px
+                    + (Overlays.dialog-buttons.length - 1) * root.btn-gap)) / 2
                 + i * (parent.btn-w + root.btn-gap);
             y: root.button-y;
             width: parent.btn-w;
@@ -1440,8 +1440,8 @@ component DialogModal inherits Rectangle {
             pressed: PressFeedback.active(PressOwner.dialog, i);
 
             Text {
-                x: Math.round((parent.width - self.width) / 2px) * 1px;
-                y: Math.round((button.face-height - self.height) / 2px) * 1px;
+                x: (parent.width - self.width) / 2;
+                y: (button.face-height - self.height) / 2;
                 max-width: parent.width - Sizing.pct-w(1);
                 overflow: elide;
                 text: DialogLabels.button(label);
@@ -1467,7 +1467,7 @@ component ScreensaverOverlay inherits Rectangle {
     background: black;
 
     property <length> lh: Sizing.header-height;
-    property <length> lw: Math.round(root.lh / 1px * Brand.aspect) * 1px;
+    property <length> lw: root.lh * Brand.aspect;
     // Always the on-dark variant: the backstop is solid black whatever
     // the preset.
     property <image> logo: Brand.saver-logo(root.lw);
@@ -1521,8 +1521,8 @@ component ScreensaverOverlay inherits Rectangle {
     }
 
     Image {
-        x: Math.round(root.lx) * 1px;
-        y: Math.round(root.ly) * 1px;
+        x: root.lx * 1px;
+        y: root.ly * 1px;
         width: root.lw;
         height: root.lh;
         source: root.logo;
@@ -1588,13 +1588,15 @@ component ContextMenu inherits Rectangle {
     property <bool> fits-left: root.anchor-x - root.gap - root.panel-w >= root.margin;
     property <bool> beside: root.fits-right || root.fits-left;
     property <bool> fits-below: root.anchor-y + root.anchor-h + root.gap + root.panel-h <= root.usable-bottom;
-    property <length> panel-x: Math.round(Math.min(Math.max(root.beside
+    property <length> panel-x: Math.min(Math.max(root.beside
         ? (root.fits-right ? root.anchor-x + root.anchor-w + root.gap : root.anchor-x - root.gap - root.panel-w)
-        : root.anchor-x + (root.anchor-w - root.panel-w) / 2, root.margin), root.width - root.margin - root.panel-w) / 1px) * 1px;
+        : root.anchor-x + (root.anchor-w - root.panel-w) / 2, root.margin),
+        root.width - root.margin - root.panel-w);
     property <length> raw-y: root.beside
         ? root.anchor-y + (root.anchor-h - root.panel-h) / 2
         : (root.fits-below ? root.anchor-y + root.anchor-h + root.gap : root.anchor-y - root.gap - root.panel-h);
-    property <length> panel-y: Math.round(Math.min(Math.max(root.raw-y, root.margin), root.usable-bottom - root.panel-h) / 1px) * 1px;
+    property <length> panel-y: Math.min(Math.max(root.raw-y, root.margin),
+        root.usable-bottom - root.panel-h);
 
     // Four bands around the anchor: the tile the menu is about stays
     // bright while the rest of the screen dims.
@@ -1630,11 +1632,11 @@ component ContextMenu inherits Rectangle {
                 radius: Sizing.radius-sm;
             }
 
-            // Centered on its own measured width rather than stretched
-            // and aligned, so the glyph run lands on whole pixels.
+            // Centered on its own measured width rather than stretched.
             Text {
-                x: Math.round((parent.width - Math.min(self.preferred-width, parent.width - 2 * root.pad-x)) / 2px) * 1px;
-                y: Math.round((parent.height - self.height) / 2px) * 1px;
+                x: (parent.width
+                    - Math.min(self.preferred-width, parent.width - 2 * root.pad-x)) / 2;
+                y: (parent.height - self.height) / 2;
                 width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
                 overflow: elide;
                 text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
@@ -1716,7 +1718,7 @@ component GamesScreen inherits Rectangle {
         Rectangle {
             x: GamesView.folder-slide ? -GamesView.page-slide * parent.width : 0px;
             property <float> page-progress: GamesView.page-slide;
-            y: GamesView.folder-slide ? 0px : Math.round(-self.page-progress * root.period / 1px) * 1px;
+            y: GamesView.folder-slide ? 0px : -self.page-progress * root.period;
             animate x { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
             animate page-progress { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
 
@@ -1838,8 +1840,8 @@ component GamesScreen inherits Rectangle {
         y: root.label-y;
         height: GamesView.label-height;
         HorizontalLayout {
-            x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
-            y: Math.round((parent.height - parent.glyph) / 2px) * 1px;
+            x: (parent.width - self.preferred-width) / 2;
+            y: (parent.height - parent.glyph) / 2;
             height: parent.glyph;
             spacing: Sizing.pct-w(0.6);
             Image {
@@ -1858,7 +1860,7 @@ component GamesScreen inherits Rectangle {
 
     if !root.list-layout && root.page-cue-in-footer && root.count-text != "": Text {
         x: Layout.bottom-status-left-margin;
-        y: root.label-y + Math.round((GamesView.label-height - self.height) / 2px) * 1px;
+        y: root.label-y + (GamesView.label-height - self.height) / 2;
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
         height: Sizing.font-section;
         vertical-alignment: center;
@@ -1871,7 +1873,7 @@ component GamesScreen inherits Rectangle {
 
     footer-indicator := PageIndicator {
         x: parent.width - Layout.bottom-status-right-margin - self.width;
-        y: root.label-y + Math.round((GamesView.label-height - self.height) / 2px) * 1px;
+        y: root.label-y + (GamesView.label-height - self.height) / 2;
         chevron-size: Layout.grid-page-chevron-size;
         current-page: root.list-layout ? GamesView.list-page : GamesView.page;
         total-pages: root.list-layout ? GamesView.list-total-pages : GamesView.total-pages;
@@ -1889,8 +1891,8 @@ component GamesScreen inherits Rectangle {
     // 18%h card over the grid only during qualified held navigation.
     if !root.gate-hide && !root.list-layout && GamesView.rapid-active && GamesView.rapid-letter != "" && GamesView.count > 0: Rectangle {
         property <length> s: Sizing.pct-h(18);
-        x: Math.round((parent.width - self.s) / 2px) * 1px;
-        y: GamesView.grid-y + Math.round((GamesView.grid-height - self.s) / 2px) * 1px;
+        x: (parent.width - self.s) / 2;
+        y: GamesView.grid-y + (GamesView.grid-height - self.s) / 2;
         width: self.s;
         height: self.s;
         background: Theme.surface-card;
@@ -1899,8 +1901,8 @@ component GamesScreen inherits Rectangle {
         border-radius: Sizing.radius-sm;
 
         Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
             text: GamesView.rapid-letter;
             color: Theme.text-primary;
             font-size: Sizing.font-size(10);
@@ -1976,14 +1978,14 @@ component CrtCalibrationPattern inherits Rectangle {
         width: Math.max(Sizing.pct-w(42), readout.preferred-width + 2 * self.pad-x);
         height: Sizing.font-size(3.2) + 2 * Sizing.font-size(2.4)
             + 2 * Sizing.pct-h(1) + 2 * self.pad-y;
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
         background: #000000;
         border-width: root.stroke;
         border-color: Theme.text-primary;
 
         readout := Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: parent.pad-y;
             text: "H \{Overlays.crt-h-offset}   V \{Overlays.crt-v-offset}";
             color: Theme.text-primary;
@@ -1991,14 +1993,14 @@ component CrtCalibrationPattern inherits Rectangle {
             font-weight: 600;
         }
         Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: parent.pad-y + Sizing.font-size(3.2) + Sizing.pct-h(1);
             text: @tr("Arrows adjust position");
             color: Theme.text-label;
             font-size: Sizing.font-size(2.4);
         }
         Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
             y: parent.pad-y + Sizing.font-size(3.2) + Sizing.font-size(2.4)
                 + 2 * Sizing.pct-h(1);
             text: @tr("Accept or Back saves");
@@ -2391,8 +2393,8 @@ export component App inherits Window {
     }
 
     scene := Rectangle {
-        x: Math.round((root.width - self.width) / 2px) * 1px;
-        y: Math.round((root.height - self.height) / 2px) * 1px;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
         width: root.scene-width;
         height: root.scene-height;
     // Only one live screen. Async navigation retains this coherent source;
@@ -2414,8 +2416,8 @@ export component App inherits Window {
     // library…" plus the escalated unreachable message from Rust).
     if Shell.boot-curtain: Rectangle {
         Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
             max-width: parent.width - 2 * Sizing.pct-w(10);
             overflow: elide;
             text: Shell.boot-text;
@@ -2537,9 +2539,9 @@ export component App inherits Window {
 
         if !Shell.is-mister: Image {
             width: Sizing.pct-w(24);
-            height: Math.round(self.width / Brand.aspect / 1px) * 1px;
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            height: self.width / Brand.aspect;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
             source: Brand.logo(false, self.width);
             image-fit: contain;
         }

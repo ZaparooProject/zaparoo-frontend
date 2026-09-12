@@ -148,9 +148,8 @@ export global Status {
 // Segmented block progress track (ProgressTrack.qml). Determinate: cells
 // up to the fill fraction paint accent, the rest border-subtle.
 // Indeterminate: one lit cell marches, stopping under Reduce motion and
-// while paused. Determinate cells change only with actual progress. Cell
-// width and gap are whole pixels first so the track's total width is
-// always a whole-pixel sum.
+// while paused. Determinate cells change only with actual progress. Slint
+// snaps the cells to physical pixels when rendering.
 export component ProgressTrack inherits Rectangle {
     in property <bool> active: false;
     in property <bool> paused: false;
@@ -163,7 +162,7 @@ export component ProgressTrack inherits Rectangle {
 
     out property <length> cell-width: Sizing.tier-240
         ? 4px
-        : Math.max(Sizing.stroke(2), Math.round(root.cell-height / 1px * 1.6) * 1px);
+        : Math.max(Sizing.stroke(2), root.cell-height * 1.6);
     property <int> filled-cells: (!root.active || !root.total-known || root.total-steps <= 0)
         ? 0
         : Math.min(root.cell-count, Math.round(Math.max(0, Math.min(1, root.current-step / root.total-steps)) * root.cell-count));
@@ -227,7 +226,7 @@ export component StatusLine inherits Rectangle {
 
     track := ProgressTrack {
         x: parent.width - self.width;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         visible: root.show-track;
         active: root.show-track;
         paused: Status.paused;
@@ -238,7 +237,7 @@ export component StatusLine inherits Rectangle {
 
     if root.percent-known: Text {
         x: track.x - root.cells-spacing - self.width;
-        y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
+        y: (parent.height - self.preferred-height) / 2;
         width: root.percent-slot;
         horizontal-alignment: right;
         text: Status.percent-text();
@@ -248,7 +247,7 @@ export component StatusLine inherits Rectangle {
 
     Text {
         x: parent.width - root.track-reserve - root.percent-reserve - self.width;
-        y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
+        y: (parent.height - self.preferred-height) / 2;
         width: root.label-width;
         overflow: elide;
         text: root.label;
@@ -289,7 +288,7 @@ export component HeaderBar inherits Rectangle {
     property <length> logo-h: root.compact-status-header
         ? Math.max(1px, Sizing.header-height - 1px)
         : Sizing.header-height;
-    property <length> logo-painted-width: Math.round(root.logo-h / 1px * Brand.aspect) * 1px;
+    property <length> logo-painted-width: root.logo-h * Brand.aspect;
 
     logo := Image {
         x: Sizing.header-side-margin;
@@ -344,21 +343,21 @@ export component HeaderBar inherits Rectangle {
         height: Sizing.header-row-height;
         for key[i] in root.status-keys: Image {
             x: i * (root.icon-size + root.hud-spacing);
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            y: (parent.height - self.height) / 2;
             width: root.icon-size;
             height: root.icon-size;
             source: GlyphSource.glyph("status/" + key, root.icon-size, Theme.text-primary);
         }
         if root.battery-visible: Image {
             x: root.status-keys.length * (root.icon-size + root.hud-spacing);
-            y: Math.round((parent.height - self.height) / 2px) * 1px;
+            y: (parent.height - self.height) / 2;
             width: root.icon-size;
             height: root.icon-size;
             source: GlyphSource.glyph(root.battery-icon, root.icon-size, Theme.text-primary);
         }
         if root.battery-label-visible: Text {
             x: root.icon-count * (root.icon-size + root.hud-spacing);
-            y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
+            y: (parent.height - self.preferred-height) / 2;
             width: root.battery-label-width;
             text: @tr("{}%", root.battery-percent);
             color: Theme.text-primary;
@@ -367,7 +366,7 @@ export component HeaderBar inherits Rectangle {
     }
     if root.clock-visible: Text {
         x: parent.width - Sizing.header-side-margin - root.clock-width;
-        y: root.hud-y + Math.round((Sizing.header-row-height - self.preferred-height) / 2px) * 1px;
+        y: root.hud-y + (Sizing.header-row-height - self.preferred-height) / 2;
         width: root.clock-width;
         horizontal-alignment: right;
         text: root.clock-text;
@@ -378,8 +377,9 @@ export component HeaderBar inherits Rectangle {
     // Browse title in the header (CRT profile only).
     if Layout.title-in-header && root.browse-title != "": Text {
         property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: parent.height - Sizing.header-row-height + Math.round((Sizing.header-row-height - self.preferred-height) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: parent.height - Sizing.header-row-height
+            + (Sizing.header-row-height - self.preferred-height) / 2;
         width: Math.min(Math.floor(parent.width / 3px) * 1px, self.natural);
         overflow: elide;
         text: root.browse-title;
@@ -399,7 +399,7 @@ export component HeaderBar inherits Rectangle {
     // the header's right margin so it knows its true elide budget.
     StatusLine {
         property <length> left: root.compact-status-header
-            ? Sizing.header-side-margin + Math.round(root.logo-painted-width / 1px * 0.14) * 1px
+            ? Sizing.header-side-margin + root.logo-painted-width * 0.14
             : logo.x + logo.width + Sizing.pct-w(1);
         x: self.left;
         y: Layout.status-pill-pinned-top
@@ -456,7 +456,7 @@ export component PageIndicator inherits Rectangle {
 
     up := Image {
         x: 0;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         width: root.chevron-size;
         height: root.chevron-size;
         visible: root.has-navigation-range;
@@ -468,7 +468,7 @@ export component PageIndicator inherits Rectangle {
     }
     down := Image {
         x: up.x + up.width + root.chevron-spacing;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         width: root.chevron-size;
         height: root.chevron-size;
         visible: root.has-navigation-range;
@@ -480,7 +480,7 @@ export component PageIndicator inherits Rectangle {
     }
     page-count := Text {
         x: down.x + down.width + root.item-spacing;
-        y: Math.round((parent.height - self.preferred-height) / 2px) * 1px;
+        y: (parent.height - self.preferred-height) / 2;
         width: root.text-width;
         visible: root.has-navigation-range;
         overflow: elide;
@@ -521,10 +521,10 @@ export component TopStatusStrip inherits Rectangle {
         : (root.page-total-known
             ? @tr("Page {} / {}", root.current-page + 1, root.total-pages)
             : @tr("Page {}", root.current-page + 1));
-    property <length> slot-width: Math.round(root.width / 3px) * 1px;
+    property <length> slot-width: root.width / 3;
     property <length> title-measured: Math.ceil(title-measure.preferred-width / 1px) * 1px;
     property <length> title-text-width: Math.min(root.slot-width, root.title-measured);
-    property <length> title-y: Math.round((root.height - Sizing.font-hero) / 2px) * 1px;
+    property <length> title-y: (root.height - Sizing.font-hero) / 2;
     // Side texts share the title's baseline: offset by the difference
     // of the two ascents (anchors.baseline in the QML).
     property <length> side-y: root.title-y + Theme.ascent(Sizing.font-hero) - Theme.ascent(Sizing.font-section);
@@ -550,7 +550,7 @@ export component TopStatusStrip inherits Rectangle {
     // overflow it; Slint clips a Text to its height, so the natural line
     // box sits top-aligned at the same y instead.
     Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
         y: root.title-y;
         width: root.title-text-width;
         overflow: elide;
@@ -608,8 +608,8 @@ export component ActiveLabel inherits Rectangle {
     property <length> tags-width: Math.min(root.tags-measured, Math.max(0px, root.avail-width - root.name-width - root.requested-gap));
     property <length> gap: root.tags-width > 0px ? root.requested-gap : 0px;
     property <length> block-width: root.name-width + root.gap + root.tags-width;
-    property <length> block-x: Math.round((root.width - root.block-width) / 2px) * 1px;
-    property <length> text-y: Math.round((root.height - Sizing.font-hero) / 2px) * 1px;
+    property <length> block-x: (root.width - root.block-width) / 2;
+    property <length> text-y: (root.height - Sizing.font-hero) / 2;
 
     name-measure := Text {
         visible: false;
@@ -626,7 +626,7 @@ export component ActiveLabel inherits Rectangle {
 
     Text {
         x: root.block-x;
-        y: root.text-y + Math.round((Sizing.font-hero - self.preferred-height) / 2px) * 1px;
+        y: root.text-y + (Sizing.font-hero - self.preferred-height) / 2;
         width: root.name-width;
         overflow: elide;
         text: root.text;
@@ -636,7 +636,7 @@ export component ActiveLabel inherits Rectangle {
     }
     if root.has-tags: Text {
         x: root.block-x + root.name-width + root.gap;
-        y: root.text-y + Math.round((Sizing.font-hero - self.preferred-height) / 2px) * 1px;
+        y: root.text-y + (Sizing.font-hero - self.preferred-height) / 2;
         width: root.tags-width;
         overflow: elide;
         text: root.tags;
@@ -656,7 +656,7 @@ component HelpEntryView inherits HorizontalLayout {
     height: Math.max(root.icon-size, Sizing.font-body);
 
     for token in root.entry.buttons: Image {
-        y: Math.round((root.height - self.height) / 2px) * 1px;
+        y: (root.height - self.height) / 2;
         width: root.icon-size;
         height: root.icon-size;
         source: GlyphSource.glyph(Buttons.key(token), root.icon-size, Theme.text-primary);
@@ -712,8 +712,8 @@ export component HelpBar inherits Rectangle {
     }
 
     if !root.wrap-entries: HorizontalLayout {
-        x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
-        y: Math.round((parent.height - root.entry-height) / 2px) * 1px + Sizing.pct-h(0.2);
+        x: (parent.width - self.preferred-width) / 2;
+        y: (parent.height - root.entry-height) / 2 + Sizing.pct-h(0.2);
         width: self.preferred-width;
         height: root.entry-height;
         spacing: root.entry-gap;
@@ -722,11 +722,11 @@ export component HelpBar inherits Rectangle {
 
     if root.wrap-entries: Rectangle {
         x: root.side-margin;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         width: root.safe-width;
         height: 2 * root.entry-height + root.row-spacing;
         first := HorizontalLayout {
-            x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
+            x: (parent.width - self.preferred-width) / 2;
             y: 0;
             width: self.preferred-width;
             height: root.entry-height;
@@ -737,7 +737,7 @@ export component HelpBar inherits Rectangle {
             }
         }
         second := HorizontalLayout {
-            x: Math.round((parent.width - self.preferred-width) / 2px) * 1px;
+            x: (parent.width - self.preferred-width) / 2;
             y: root.entry-height + root.row-spacing;
             width: self.preferred-width;
             height: root.entry-height;
@@ -880,7 +880,7 @@ export component StateCue inherits Rectangle {
 
     property <string> headline: root.message-state == ContentState.error ? @tr("Failed to load") : root.empty-text;
     property <string> detail: root.message-state == ContentState.error ? root.error-detail : root.empty-detail;
-    property <length> text-w: Math.round(root.width * 0.7 / 1px) * 1px;
+    property <length> text-w: root.width * 0.7;
     property <length> gap: Sizing.pct-h(0.6);
     property <length> block-h: headline-text.preferred-height + (root.detail != "" ? root.gap + detail-text.preferred-height : 0px);
 
@@ -890,8 +890,8 @@ export component StateCue inherits Rectangle {
         property <length> glyph: Sizing.font-size(3);
         property <length> spacing: Sizing.pct-w(0.6);
         property <length> w: self.glyph + self.spacing + Math.ceil(loading-label.preferred-width / 1px) * 1px;
-        x: Math.round((parent.width - self.w) / 2px) * 1px;
-        y: Math.round((root.cue-center-y - self.glyph / 2) / 1px) * 1px;
+        x: (parent.width - self.w) / 2;
+        y: root.cue-center-y - self.glyph / 2;
         width: self.w;
         height: self.glyph;
         Image {
@@ -913,8 +913,8 @@ export component StateCue inherits Rectangle {
     }
 
     headline-text := Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - root.block-h) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - root.block-h) / 2;
         width: root.text-w;
         visible: root.message-state != ContentState.ready;
         wrap: word-wrap;
@@ -924,7 +924,7 @@ export component StateCue inherits Rectangle {
         font-size: Sizing.font-section;
     }
     detail-text := Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
         y: headline-text.y + headline-text.preferred-height + root.gap;
         width: root.text-w;
         visible: root.message-state != ContentState.ready && root.detail != "";

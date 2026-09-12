@@ -97,7 +97,7 @@ export component MarqueeCaption inherits Rectangle {
         ? root.scroll-x * 1px
         : (root.overflows || !root.center-content
             ? 0px
-            : Math.round((root.width - root.full-w) / 2px) * 1px);
+            : (root.width - root.full-w) / 2);
 
     changed marquee => {
         if (!self.marquee) {
@@ -132,7 +132,7 @@ export component MarqueeCaption inherits Rectangle {
 
     label := Text {
         x: root.block-x;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         width: root.name-render-w;
         overflow: elide;
         text: root.content;
@@ -143,7 +143,7 @@ export component MarqueeCaption inherits Rectangle {
 
     if root.has-tags: suffix-view := Text {
         x: root.block-x + root.name-render-w + root.gap-w;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
+        y: (parent.height - self.height) / 2;
         width: root.tags-render-w;
         overflow: elide;
         text: root.tags;
@@ -183,7 +183,7 @@ export component PressableSurface inherits Rectangle {
     }
     property <length> edge-band: Math.min(root.edge-height + root.radius, root.height);
     property <length> press-depth: Math.min(root.edge-height, root.height);
-    out property <length> face-y: Math.round(root.press-t * root.press-depth / 1px) * 1px;
+    out property <length> face-y: root.press-t * root.press-depth;
     // The face is shorter than the cell by the depth the press travels;
     // content and the focus ring belong to the face, never to the front
     // edge below it (Tile.qml puts both inside `faceContent`).
@@ -197,7 +197,7 @@ export component PressableSurface inherits Rectangle {
     Rectangle {
         x: 0;
         y: parent.height - self.height;
-        height: Math.round((1 - root.press-t) * root.edge-band / 1px) * 1px;
+        height: (1 - root.press-t) * root.edge-band;
         clip: true;
         Rectangle {
             x: 0;
@@ -391,9 +391,9 @@ export component Tile inherits Rectangle {
         }
 
         if root.cell.favorite: Image {
-            x: Math.round(parent.width / 12 / 1px) * 1px;
-            y: Math.round(parent.width / 12 / 1px) * 1px;
-            width: Math.round(parent.width / 6 / 1px) * 1px;
+            x: parent.width / 12;
+            y: parent.width / 12;
+            width: parent.width / 6;
             height: self.width;
             source: GlyphSource.glyph("icons/Heart", self.width, Colors.transparent);
             image-fit: contain;
@@ -546,7 +546,7 @@ export component PagedGridView inherits Rectangle {
         duration: Motion.dur(root.press-held ? Motion.press-ms : Motion.settle-ms);
         easing: ease-out-quad;
     }
-    property <length> press-y: Math.round(root.press-t * Sizing.press-edge-height / 1px) * 1px;
+    property <length> press-y: root.press-t * Sizing.press-edge-height;
 
     FocusCursor {
         motion: Motion.enabled && root.focus-motion;

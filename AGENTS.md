@@ -73,6 +73,13 @@ the lint image lacks Slint's desktop system libs; run `just lint-slint` and
   values. Keep intentional overrides and explicit application-state defaults
   (including enums). Do not assume `Text`, `Image`, custom components, or `x`/`y`
   share Rectangle sizing defaults.
+- Let Slint snap ordinary geometry, images, and text to physical pixels. Do not
+  wrap visual `x`/`y`/`width`/`height` expressions in
+  `Math.round(... / 1px) * 1px` merely for sharpness; this duplicates the
+  renderer and rounds at the wrong layer under fractional display scaling. Use
+  natural geometry such as `(parent.width - self.width) / 2`. Keep rounding
+  only for semantically discrete values or documented exact-pixel contracts
+  such as CRT calibration guides, bitmap raster sizing, and QR modules.
 - Follow `docs/content-style.md` for every user-visible string: menu
   ordering, capitalization, terminology, and the settings-page checklist.
 - After editing C++, Rust, or QML, run `just lint`. Run `just test` when the
@@ -115,15 +122,16 @@ the lint image lacks Slint's desktop system libs; run `just lint-slint` and
   rect is small (page-dot pulse, focus-ring blink, single-tile move) and let
   the rest of the scene stay static. See `docs/qml-gotchas.md` →
   "Software-renderer animation costs".
-- Do not hardcode pixel sizes or fixed element counts in UI. Use
+- In Qt/QML, do not hardcode pixel sizes or fixed element counts. Use
   `Sizing.pctH()`, `Sizing.pctW()`, `Sizing.fontSize()`,
   `Sizing.visibleCovers`, and `Sizing.radiusMd`/`Sizing.radiusSm` (for any
   rounded-square surface — see `docs/style.md`). Any value that drives `x`/`y`/`width`/
   `height`, border widths, margins, or font sizes must go through
   `Sizing.px()`, `Sizing.stroke()`, `Sizing.center()`, or `Sizing.half()`.
-  The whole app must run cleanly at 240p; fractional geometry is a bug
-  everywhere, not just on MiSTer.
-- Do not center user-visible text via `anchors.horizontalCenter` +
+  Qt/QML must run cleanly at 240p; fractional QML geometry is a bug everywhere,
+  not just on MiSTer. Slint uses its renderer-level physical-pixel snapping rule
+  above instead.
+- In Qt/QML, do not center user-visible text via `anchors.horizontalCenter` +
   `Text.AlignHCenter`. Center the `Text` item itself with
   `Sizing.center()` and render its glyphs left-aligned (or pre-measure
   with `TextMetrics`). Glyph runs that straddle a half-pixel soften
