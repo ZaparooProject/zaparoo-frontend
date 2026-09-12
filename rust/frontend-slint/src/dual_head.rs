@@ -90,7 +90,7 @@ struct SyncState {
     systems: TransitionPhase,
     games: TransitionPhase,
     /// Screen the CRT head last resolved its layout profile for.
-    layout_screen: slint::SharedString,
+    layout_screen: Option<crate::Screen>,
 }
 
 /// Copy router-owned state while leaving profile-specific geometry
@@ -134,8 +134,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     // The CRT head resolves its own layout profile (its scene is the
     // 240p tier) whenever the mirrored screen changes.
     let screen = target.get_active_screen();
-    if screen != state.layout_screen {
-        state.layout_screen = screen;
+    if Some(screen) != state.layout_screen {
+        state.layout_screen = Some(screen);
         let sizing = crt.global::<crate::Sizing>();
         let scene = crate::sizing::Scene::of(
             crt,
@@ -483,11 +483,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
             f64::from(sizing.get_screen_height()),
             true,
         );
-        let mode = match source.get_mode().as_str() {
-            "favorites" => crate::games::GamesMode::Favorites,
-            "recents" => crate::games::GamesMode::Recents,
-            _ => crate::games::GamesMode::Browse,
-        };
+        let mode = source.get_mode();
         let g = crate::games::geometry_for(&scene.inputs(), mode);
         let fit = zaparoo_app::paged_grid::fit(
             target.get_columns(),
@@ -591,10 +587,10 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
 
     let source = primary.global::<crate::PressFeedback>();
     let target = crt.global::<crate::PressFeedback>();
-    let index = match source.get_owner().as_str() {
-        "hub" => crt.global::<HubView>().get_selected_local(),
-        "systems" => crt.global::<SystemsView>().get_selected_local(),
-        "games" => crt.global::<GamesView>().get_selected_local(),
+    let index = match source.get_owner() {
+        crate::PressOwner::Hub => crt.global::<HubView>().get_selected_local(),
+        crate::PressOwner::Systems => crt.global::<SystemsView>().get_selected_local(),
+        crate::PressOwner::Games => crt.global::<GamesView>().get_selected_local(),
         _ => source.get_index(),
     };
     set_if_changed!(target, get_index => set_index, index);
@@ -659,6 +655,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_qr_modules => set_qr_modules,
         get_dialog_open => set_dialog_open,
         get_dialog_kind => set_dialog_kind,
+        get_dialog_error => set_dialog_error,
+        get_first_run_phase => set_first_run_phase,
         get_dialog_detail => set_dialog_detail,
         get_dialog_arg => set_dialog_arg,
         get_dialog_status => set_dialog_status,
@@ -735,6 +733,86 @@ mod tests {
     }
 
     #[test]
+    fn typed_defaults_and_dialog_state_survive_mirroring() -> Result<(), slint::PlatformError> {
+        assert!(slint::platform::set_platform(Box::new(TestPlatform)).is_ok());
+        let primary = App::new()?;
+        let crt = App::new()?;
+        assert_eq!(
+            primary.global::<Shell>().get_active_screen(),
+            crate::Screen::Hub
+        );
+        assert_eq!(
+            primary.global::<SettingsView>().get_page(),
+            crate::SettingsPage::Root
+        );
+        assert_eq!(
+            primary.global::<SettingsView>().get_outgoing_page(),
+            crate::SettingsPage::Root
+        );
+        assert_eq!(
+            primary.global::<GamesView>().get_mode(),
+            crate::GamesMode::Browse
+        );
+        assert_eq!(
+            primary.global::<SystemsView>().get_mode(),
+            crate::SystemsMode::Category
+        );
+        assert_eq!(
+            primary.global::<crate::PressFeedback>().get_owner(),
+            crate::PressOwner::None
+        );
+        assert_eq!(
+            primary.global::<Overlays>().get_dialog_kind(),
+            crate::DialogKind::None
+        );
+        let mut persisted = zaparoo_core::persist::PersistedState::default();
+        persisted.settings.orientation = "future-orientation".into();
+        persisted.settings.crt_video_standard = "future-standard".into();
+        crate::seed_display_globals(&primary, &persisted, false, false, (960, 540));
+        assert_eq!(
+            primary.global::<Shell>().get_orientation(),
+            crate::Orientation::Horizontal
+        );
+        assert_eq!(
+            primary.global::<Shell>().get_crt_standard(),
+            crate::VideoStandard::Ntsc
+        );
+        assert_eq!(persisted.settings.orientation, "future-orientation");
+        assert_eq!(persisted.settings.crt_video_standard, "future-standard");
+        let source = primary.global::<Overlays>();
+        source.set_dialog_open(true);
+        source.set_dialog_kind(crate::DialogKind::ActionError);
+        source.set_dialog_error(crate::ErrorKind::CardWrite);
+        source.set_dialog_arg("retry-payload".into());
+        source.set_dialog_buttons(ModelRc::new(VecModel::from(vec![
+            crate::DialogButton::Retry,
+        ])));
+        let mut state = SyncState::default();
+        sync_with_state(&primary, &crt, &mut state);
+        assert_eq!(state.layout_screen, Some(crate::Screen::Hub));
+        let target = crt.global::<Overlays>();
+        assert_eq!(target.get_dialog_kind(), crate::DialogKind::ActionError);
+        assert_eq!(target.get_dialog_error(), crate::ErrorKind::CardWrite);
+        assert_eq!(target.get_dialog_arg(), "retry-payload");
+        assert_eq!(
+            target.get_dialog_buttons().row_data(0),
+            Some(crate::DialogButton::Retry)
+        );
+        source.set_dialog_kind(crate::DialogKind::FirstRun);
+        source.set_first_run_phase(crate::FirstRunPhase::Done);
+        source.set_dialog_status(crate::DialogProgress::Step);
+        source.set_dialog_status_step(2);
+        source.set_dialog_status_total(3);
+        sync_with_state(&primary, &crt, &mut state);
+        assert_eq!(target.get_dialog_kind(), crate::DialogKind::FirstRun);
+        assert_eq!(target.get_first_run_phase(), crate::FirstRunPhase::Done);
+        assert_eq!(target.get_dialog_status(), crate::DialogProgress::Step);
+        assert_eq!(target.get_dialog_status_step(), 2);
+        assert_eq!(target.get_dialog_status_total(), 3);
+        Ok(())
+    }
+
+    #[test]
     fn settings_routes_keep_outgoing_rows_and_fit_each_output() -> Result<(), slint::PlatformError>
     {
         assert!(slint::platform::set_platform(Box::new(TestPlatform)).is_ok());
@@ -745,9 +823,9 @@ mod tests {
         crt.global::<crate::Sizing>().set_screen_width(352.0);
         crt.global::<crate::Sizing>().set_screen_height(240.0);
         let view = primary.global::<SettingsView>();
-        view.set_page("pageSupportAbout".into());
+        view.set_page(crate::SettingsPage::About);
         view.set_rows(ModelRc::new(VecModel::from(vec![crate::SettingsRow {
-            kind: "field".into(),
+            kind: crate::RowKind::Field,
             id: "aboutLicense".into(),
             height: 100.0,
             ..Default::default()
@@ -755,12 +833,12 @@ mod tests {
         crate::settings::capture_outgoing(&primary);
         primary
             .global::<Shell>()
-            .set_active_screen("settings".into());
+            .set_active_screen(crate::Screen::Settings);
         crate::router::transition_settings_page(&primary, -1, |_| {});
         let mut state = SyncState::default();
         sync_with_state(&primary, &crt, &mut state);
         let target = crt.global::<SettingsView>();
-        assert_eq!(target.get_outgoing_page().as_str(), "pageSupportAbout");
+        assert_eq!(target.get_outgoing_page(), crate::SettingsPage::About);
         assert!(target
             .get_outgoing_rows()
             .row_data(0)
@@ -770,7 +848,10 @@ mod tests {
         assert!(target.get_rows_height() > 0.0 && target.get_rows_height() < 240.0);
         assert!(target.get_cell_width() > 0.0 && target.get_cell_width() < 352.0);
         assert!(!crt.global::<Shell>().get_transitioning());
-        assert_eq!(crt.global::<Shell>().get_active_screen(), "settings");
+        assert_eq!(
+            crt.global::<Shell>().get_active_screen(),
+            crate::Screen::Settings
+        );
         let rows = target.get_rows();
         sync_with_state(&primary, &crt, &mut state);
         assert_eq!(target.get_rows(), rows);
@@ -789,7 +870,7 @@ mod tests {
 
         primary
             .global::<Shell>()
-            .set_active_screen(SharedString::from("games"));
+            .set_active_screen(crate::Screen::Games);
         primary.global::<GamesView>().set_selected_local(4);
         primary.global::<GamesView>().set_columns(7);
         primary
@@ -808,7 +889,10 @@ mod tests {
 
         sync(&primary, &crt);
 
-        assert_eq!(crt.global::<Shell>().get_active_screen().as_str(), "games");
+        assert_eq!(
+            crt.global::<Shell>().get_active_screen(),
+            crate::Screen::Games
+        );
         assert_eq!(crt.global::<GamesView>().get_selected_local(), 0);
         assert_eq!(crt.global::<GamesView>().get_columns(), 4);
         assert!(crt.global::<Theme>().get_crt());
@@ -834,14 +918,20 @@ mod tests {
         // route on the next synchronization, without a second animation gate.
         let shell = primary.global::<Shell>();
         shell.set_transitioning(true);
-        shell.set_active_screen(SharedString::from("games"));
+        shell.set_active_screen(crate::Screen::Games);
         sync_with_state(&primary, &crt, &mut state);
-        assert_eq!(crt.global::<Shell>().get_active_screen(), "games");
+        assert_eq!(
+            crt.global::<Shell>().get_active_screen(),
+            crate::Screen::Games
+        );
         assert!(crt.global::<Shell>().get_transitioning());
-        shell.set_active_screen(SharedString::from("systems"));
+        shell.set_active_screen(crate::Screen::Systems);
         shell.set_transitioning(false);
         sync_with_state(&primary, &crt, &mut state);
-        assert_eq!(crt.global::<Shell>().get_active_screen(), "systems");
+        assert_eq!(
+            crt.global::<Shell>().get_active_screen(),
+            crate::Screen::Systems
+        );
         assert!(!crt.global::<Shell>().get_transitioning());
 
         // Cached HDMI grid motion must not force a CRT cut. The CRT keeps

@@ -58,8 +58,8 @@ pub fn active() -> bool {
     SOURCE.with(|source| source.borrow().is_some())
 }
 
-pub fn retaining(app: &App, screens: &[&str]) -> bool {
-    screens.contains(&app.global::<Shell>().get_active_screen().as_str()) && active()
+pub fn retaining(app: &App, screens: &[crate::Screen]) -> bool {
+    screens.contains(&app.global::<Shell>().get_active_screen()) && active()
 }
 
 pub fn source_persist() -> Option<PersistedState> {
@@ -104,13 +104,13 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
     finish(app);
     crate::router::save_persist(&ctx.shared);
     crate::router::refresh_layout(app);
-    match app.global::<Shell>().get_active_screen().as_str() {
-        "games" | "favorites" | "recents" => {
+    match app.global::<Shell>().get_active_screen() {
+        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents => {
             crate::games::render(ctx, app);
             crate::games::resume_after_cancel(ctx, app);
         }
-        "systems" | "favorite-systems" => crate::systems::render(ctx, app),
-        "hub" => {
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => crate::systems::render(ctx, app),
+        crate::Screen::Hub => {
             lock(&ctx.shared).hub.release_pulse += 1;
             crate::hub::render(ctx, app);
         }

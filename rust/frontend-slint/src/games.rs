@@ -46,19 +46,14 @@ const ARCADE_SYSTEM_ID: &str = "Arcade";
 
 /// Which list the screen shows; the mode picks the fill source, the
 /// copy, the persisted selection slot and the back route.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GamesMode {
-    Browse,
-    Favorites,
-    Recents,
-}
+pub use crate::GamesMode;
 
 impl GamesMode {
-    pub fn token(self) -> &'static str {
+    pub fn screen(self) -> crate::Screen {
         match self {
-            Self::Browse => "games",
-            Self::Favorites => "favorites",
-            Self::Recents => "recents",
+            Self::Browse => crate::Screen::Games,
+            Self::Favorites => crate::Screen::Favorites,
+            Self::Recents => crate::Screen::Recents,
         }
     }
 
@@ -702,14 +697,7 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
         (begin_fill(model), size, sort, scope)
     };
     if flip {
-        crate::router::begin_pending(
-            app,
-            if mode == GamesMode::Favorites {
-                "favorites"
-            } else {
-                "recents"
-            },
-        );
+        crate::router::begin_pending(app, mode.screen());
     } else {
         render(ctx, app);
     }
@@ -834,7 +822,7 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
     };
     crate::router::save_persist(&ctx.shared);
     if flip {
-        crate::router::begin_pending(app, "games");
+        crate::router::begin_pending(app, crate::Screen::Games);
     } else {
         render(ctx, app);
     }
@@ -996,11 +984,11 @@ pub(crate) fn apply_fill(
         };
         model.restore_done = true;
         let fill_list = list && rules::list_fill_page(model.rows.len(), visible, model.has_more());
-        let token = model.mode.token();
+        let token = model.mode.screen();
         drop(shared);
         let mut shared = lock(&ctx.shared);
         refresh_display(&mut shared);
-        shared.persist.active_screen = token.to_string();
+        shared.persist.active_screen = token.token().to_string();
         (token, restore_fetch, fill_list)
     };
     if app.global::<crate::Shell>().get_transitioning()
@@ -1015,7 +1003,7 @@ pub(crate) fn apply_fill(
         crate::router::transition_to_screen(app, token, 1);
     } else {
         app.global::<crate::Shell>()
-            .set_status_text(SharedString::default());
+            .set_status_text(crate::AppCue::None);
     }
     render(ctx, app);
     crate::folder_motion::start(ctx, app);
@@ -1055,13 +1043,13 @@ fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip: bool) {
         model.error = message.to_string();
         model.folder_direction = 0;
         model.persist.end_replacement();
-        model.mode.token()
+        model.mode.screen()
     };
     if flip {
         crate::router::transition_to_screen(app, token, 1);
     } else {
         app.global::<crate::Shell>()
-            .set_status_text(SharedString::default());
+            .set_status_text(crate::AppCue::None);
     }
     render(ctx, app);
     if !flip {
@@ -1235,14 +1223,14 @@ pub(crate) fn on_append(
             fetch_more(ctx, app, rules::RAPID_FETCH_CHUNK, true);
             return;
         }
-        let token = lock(&ctx.shared).games.mode.token();
+        let token = lock(&ctx.shared).games.mode.screen();
         crate::navigation::finish(app);
         crate::router::save_persist(&ctx.shared);
         crate::router::transition_to_screen(app, token, 1);
         crate::folder_motion::start(ctx, app);
     }
     app.global::<crate::Shell>()
-        .set_status_text(SharedString::default());
+        .set_status_text(crate::AppCue::None);
     if landed_restore {
         persist_now(ctx);
     }
@@ -1566,7 +1554,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     let start = page * model.grid.page_size();
     let count = model.rows.len();
 
-    view.set_mode(SharedString::from(mode.token()));
+    view.set_mode(mode);
     view.set_title(SharedString::from(
         rules::screen_title(path_stack_len, &model.browse_path, &model.system_name).as_str(),
     ));
@@ -1774,7 +1762,14 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
 /// A media cover landed: repaint when the page (or the detail pane) shows
 /// that item.
 pub fn cover_landed(ctx: &Ctx, app: &App, key: &MediaKey) {
-    if crate::navigation::retaining(app, &["games", "favorites", "recents"]) {
+    if crate::navigation::retaining(
+        app,
+        &[
+            crate::Screen::Games,
+            crate::Screen::Favorites,
+            crate::Screen::Recents,
+        ],
+    ) {
         return;
     }
     let relevant = {
@@ -1903,7 +1898,14 @@ fn persist_current(ctx: &Ctx) {
 /// The selection, count or layout changed: peek the row's identity now,
 /// load its metadata after the debounce.
 fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
-    if crate::navigation::retaining(app, &["games", "favorites", "recents"]) {
+    if crate::navigation::retaining(
+        app,
+        &[
+            crate::Screen::Games,
+            crate::Screen::Favorites,
+            crate::Screen::Recents,
+        ],
+    ) {
         return;
     }
     let (steps, seq) = {
@@ -2036,7 +2038,7 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
 #[cfg(feature = "mister")]
 fn request_cached_page_transition(app: &App, direction: i32, _columns: i32, _rows: i32) -> bool {
     let shell = app.global::<crate::Shell>();
-    if shell.get_orientation().as_str() != "horizontal" || shell.get_browse_list_layout() {
+    if shell.get_orientation() != crate::Orientation::Horizontal || shell.get_browse_list_layout() {
         return false;
     }
     let sizing = app.global::<crate::Sizing>();
@@ -2542,20 +2544,20 @@ fn cancel(ctx: &Ctx, app: &App) {
         let grouped_favorites = !shared.games.favorites_system.is_empty()
             && shared.persist.settings.favorites_grouping == "system";
         let target = match mode {
-            GamesMode::Browse if arcade_bypass => "hub",
+            GamesMode::Browse if arcade_bypass => crate::Screen::Hub,
             GamesMode::Browse if shared.persist.games.entered_from_hub => {
                 shared.persist.games.entered_from_hub = false;
-                "hub"
+                crate::Screen::Hub
             }
-            GamesMode::Browse => "systems",
-            GamesMode::Favorites if grouped_favorites => "favorite-systems",
-            GamesMode::Favorites | GamesMode::Recents => "hub",
+            GamesMode::Browse => crate::Screen::Systems,
+            GamesMode::Favorites if grouped_favorites => crate::Screen::FavoriteSystems,
+            GamesMode::Favorites | GamesMode::Recents => crate::Screen::Hub,
         };
-        shared.persist.active_screen = target.to_string();
+        shared.persist.active_screen = target.token().to_string();
         target
     };
     crate::router::save_persist(&ctx.shared);
-    if target == "favorite-systems" {
+    if target == crate::Screen::FavoriteSystems {
         crate::systems::return_to_favorites(ctx, app);
         return;
     }

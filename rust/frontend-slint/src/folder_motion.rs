@@ -20,7 +20,7 @@ pub fn capture(app: &App, direction: i32) {
     clear(app);
     app.global::<GamesView>().set_slide_anim(true);
     if direction != 0 {
-        crate::router::begin_pending(app, "games");
+        crate::router::begin_pending(app, crate::Screen::Games);
     }
 }
 

@@ -9,6 +9,8 @@
 // dispatchers, Main.qml owns forward orchestration" contract.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
+export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, SelectionBar, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { FocusCursor, ScrollOffset } from "focus.slint";
@@ -56,17 +58,17 @@ export struct LetterBucket {
 // app-level names so every Rust call site maps 1:1.
 
 export global Shell {
-    in-out property <string> active-screen: "hub";
+    in-out property <Screen> active-screen: Screen.hub;
     // A Core-backed destination is pending. Preserve source, gate duplicate
     // accepts/pointer changes, and allow Back to cancel.
     in-out property <bool> transitioning: false;
     // Delayed header feedback shown only when a wait outlasts its grace
     // window. Fast routes complete without flashing loading text.
     in-out property <bool> transition-cue: false;
-    in-out property <string> transition-target;
+    in-out property <Screen> transition-target: Screen.hub;
     // Transient light cue / error line (the CoreStatusPill slot).
     // The header's transient app line, as a `Labels.status` key.
-    in-out property <string> status-text: "";
+    in-out property <AppCue> status-text: AppCue.none;
     in-out property <string> clock-text: "";
     // Widest reading for the clock format, so its slot never reflows.
     in-out property <string> clock-sample: "23:59";
@@ -102,12 +104,12 @@ export global Shell {
     // Display settings. Orientation rotates the complete logical scene
     // while App keeps the physical framebuffer fixed. Browse layout is
     // shared by Systems and games-style screens.
-    in-out property <string> orientation: "horizontal";
+    in-out property <Orientation> orientation: Orientation.horizontal;
     in-out property <bool> browse-list-layout: false;
     in-out property <bool> systems-list-layout: false;
     in-out property <bool> is-mister: false;
     in-out property <bool> crt-enabled: false;
-    in-out property <string> crt-standard: "ntsc";
+    in-out property <VideoStandard> crt-standard: VideoStandard.ntsc;
 }
 
 // Hub state (HubScreen.qml over `zaparoo_app::hub`): Rust resolves the
@@ -141,7 +143,7 @@ export global HubView {
     // worded reason while it is disabled.
     in-out property <string> label-key: "";
     in-out property <string> label-name: "";
-    in-out property <string> label-reason: "";
+    in-out property <DisabledReason> label-reason: DisabledReason.none;
     in-out property <bool> label-visible: true;
     in-out property <bool> focused-is-category: false;
     // Focus paints only once the restore or the first input has seated it.
@@ -176,9 +178,8 @@ export global HubInput {
 // and pushes the current page's cells at the geometry it resolved. The
 // page-swoop strip state is shared with the games grid.
 export global SystemsView {
-    // "systems" | "favorite-systems": the category list, or the systems
-    // that hold favorites (FavoriteSystemsScreen.qml).
-    in-out property <string> mode: "systems";
+    in-out property <SystemsMode> mode: SystemsMode.category;
+    out property <Screen> screen: self.mode == SystemsMode.favorites ? Screen.favorite-systems : Screen.systems;
     in-out property <[GridCell]> cells: [];
     in-out property <int> selected-local: 0;
     in-out property <string> category: "";
@@ -249,12 +250,9 @@ export global SystemsInput {
 }
 
 export global SettingsView {
-    // "" = the root category grid; otherwise the open subpage token
-    // (pageDisplayInterface / pageBrowsing / ...).
-    // The open page ("" is the root category grid), its rows, and the
-    // cursor. The root grid renders as tiles through the shared grid.
-    in-out property <string> page: "";
-    in-out property <string> outgoing-page: "";
+    // The root page renders as tiles through the shared grid.
+    in-out property <SettingsPage> page: SettingsPage.root;
+    in-out property <SettingsPage> outgoing-page: SettingsPage.root;
     in-out property <[SettingsRow]> outgoing-rows: [];
     in-out property <int> outgoing-index: 0;
     in-out property <length> outgoing-scroll: 0px;
@@ -281,9 +279,9 @@ export global SettingsView {
 // The media-job setup panel (Update media database, Update metadata).
 export global SetupModalView {
     in-out property <bool> open: false;
-    in-out property <string> kind: "index";
+    in-out property <SetupKind> kind: SetupKind.index;
     in-out property <bool> picker-page: false;
-    in-out property <string> picker-title: "systems";
+    in-out property <SetupPicker> picker-title: SetupPicker.systems;
     in-out property <[SettingsRow]> rows: [];
     in-out property <int> index: 0;
     in-out property <[SetupPickerRow]> picker-rows: [];
@@ -303,8 +301,7 @@ export global SetupInput {
 // The log uploader panel.
 export global LogUploadView {
     in-out property <bool> open: false;
-    // "uploading" | "done" | "failed"
-    in-out property <string> phase: "uploading";
+    in-out property <LogPhase> phase: LogPhase.uploading;
     in-out property <string> url: "";
     in-out property <image> qr;
     in-out property <int> qr-modules: 0;
@@ -323,9 +320,10 @@ export global SettingsInput {
 }
 
 export global GamesView {
-    // "games" | "favorites" | "recents": the mode picks the title, the
-    // empty and loading copy and the back route.
-    in-out property <string> mode: "games";
+    // The mode picks the title, empty/loading copy, and back route.
+    in-out property <GamesMode> mode: GamesMode.browse;
+    out property <Screen> screen: self.mode == GamesMode.favorites ? Screen.favorites
+        : (self.mode == GamesMode.recents ? Screen.recents : Screen.games);
     // Games: the system's display name, or the folder's own name below
     // the system root. The flat lists compose their titles in the view.
     in-out property <string> title: "";
@@ -411,16 +409,16 @@ export global GamesInput {
 
 // One pending commitment, owned by the router and mirrored to the CRT.
 export global PressFeedback {
-    in-out property <string> owner: "";
+    in-out property <PressOwner> owner: PressOwner.none;
     in-out property <int> index: -1;
-    public pure function active(owner: string, index: int) -> bool {
+    public pure function active(owner: PressOwner, index: int) -> bool {
         return self.owner == owner && self.index == index;
     }
 }
 
 // Context menu, View menu, letter picker, and card-writer state.
 export global Overlays {
-    callback pointer-choice(string, int, bool);
+    callback pointer-choice(PressOwner, int, bool);
     in-out property <bool> context-open: false;
     in-out property <[MenuEntry]> context-entries: [];
     in-out property <int> context-index: 0;
@@ -460,19 +458,19 @@ export global Overlays {
     // the Qt startup chain is strictly sequential: quit_confirm,
     // notice, core_version, first_run.
     in-out property <bool> dialog-open: false;
-    in-out property <string> dialog-kind: "";
-    // The sub-kind (an alert's failure kind, the first-run phase) and
-    // the one runtime value the copy needs; `DialogLabels` composes the
+    in-out property <DialogKind> dialog-kind: DialogKind.none;
+    in-out property <ErrorKind> dialog-error: ErrorKind.generic;
+    in-out property <FirstRunPhase> first-run-phase: FirstRunPhase.idle;
+    // Runtime text (minimum Core version and context); `DialogLabels` composes the
     // words from these so every dialog string can be translated.
     in-out property <string> dialog-detail: "";
     in-out property <string> dialog-arg: "";
     // First-run progress line, as a key plus its numbers.
-    in-out property <string> dialog-status: "";
+    in-out property <DialogProgress> dialog-status: DialogProgress.none;
     in-out property <int> dialog-status-step: 0;
     in-out property <int> dialog-status-total: 0;
     in-out property <string> dialog-status-name: "";
-    // Button keys, resolved through `DialogLabels.button`.
-    in-out property <[string]> dialog-buttons: [];
+    in-out property <[DialogButton]> dialog-buttons: [];
     in-out property <int> dialog-focus: 0;
     // Full-framebuffer CRT calibration pattern. Unlike normal modals,
     // this mounts outside the safe-area/rotation scene so its edge and
@@ -488,8 +486,8 @@ export global Overlays {
 component SettingsScreen inherits Rectangle {
     in property <bool> outgoing: false;
     background: transparent;
-    property <string> page: root.outgoing ? SettingsView.outgoing-page : SettingsView.page;
-    property <bool> root-grid: root.page == "";
+    property <SettingsPage> page: root.outgoing ? SettingsView.outgoing-page : SettingsView.page;
+    property <bool> root-grid: root.page == SettingsPage.root;
     property <[SettingsRow]> rows: root.outgoing ? SettingsView.outgoing-rows : SettingsView.rows;
     property <int> index: root.outgoing ? SettingsView.outgoing-index : SettingsView.index;
     property <length> rows-height: root.outgoing ? SettingsView.outgoing-rows-height : SettingsView.rows-height;
@@ -513,7 +511,7 @@ component SettingsScreen inherits Rectangle {
         width: parent.width;
         height: SettingsView.grid-height;
         cells: SettingsView.cells;
-        press-held: PressFeedback.active("settings", root.index);
+        press-held: PressFeedback.active(PressOwner.settings, root.index);
         focus-scope: "settings";
         columns: SettingsView.columns;
         cell-width: SettingsView.cell-width;
@@ -529,7 +527,7 @@ component SettingsScreen inherits Rectangle {
         focus-ready: true;
         activate-pulse: SettingsView.activate-pulse;
         release-pulse: SettingsView.release-pulse;
-        settling: Shell.active-screen != "settings";
+        settling: Shell.active-screen != Screen.settings;
         card-radius: Layout.card-radius;
         cell-hovered(i) => { SettingsInput.cell-hovered(i); }
         cell-clicked(i) => { SettingsInput.cell-clicked(i); }
@@ -584,7 +582,7 @@ component SettingsScreen inherits Rectangle {
             focus-start: root.rows[root.index].y-offset;
             focus-size: root.rows[root.index].height;
             viewport: root.rows-height;
-            scope: root.page + ":" + Motion.epoch;
+            scope: StateTokens.page(root.page) + ":" + Motion.epoch;
         }
         rows-band := Rectangle {
             x: root.pad-x;
@@ -599,7 +597,7 @@ component SettingsScreen inherits Rectangle {
             width: parent.width;
             height: row.height;
 
-            if row.kind == "header": Text {
+            if row.kind == RowKind.header: Text {
                 x: 0;
                 y: parent.height - self.height - Sizing.pct-h(0.6);
                 text: SettingsLabels.label(row.id);
@@ -608,17 +606,17 @@ component SettingsScreen inherits Rectangle {
                 font-weight: 600;
             }
 
-            if row.kind == "field": SettingsRowView {
+            if row.kind == RowKind.field: SettingsRowView {
                 width: 100%;
                 height: 100%;
                 entry: row;
                 focused: i == root.index;
                 activate-pulse: SettingsView.activate-pulse;
-                settling: Shell.active-screen != "settings";
+                settling: Shell.active-screen != Screen.settings;
             }
 
             TouchArea {
-                enabled: row.kind == "field" && row.enabled;
+                enabled: row.kind == RowKind.field && row.enabled;
                 mouse-cursor: pointer;
                 changed has-hover => {
                     if (self.has-hover) { SettingsInput.row-hovered(i); }
@@ -632,7 +630,7 @@ component SettingsScreen inherits Rectangle {
                 y: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].y-offset - row-scroll.offset : 0px,
                 w: parent.width,
                 h: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].height : 0px,
-                column: 0, row: root.index, scope: root.page,
+                column: 0, row: root.index, scope: StateTokens.page(root.page),
                 valid: root.index >= 0 && root.index < root.rows.length };
             radius: Layout.row-radius;
         }
@@ -677,7 +675,7 @@ component HubScreen inherits Rectangle {
         width: parent.width;
         height: HubView.grid-height;
         cells: HubView.cells;
-        press-held: PressFeedback.active("hub", HubView.selected-local);
+        press-held: PressFeedback.active(PressOwner.hub, HubView.selected-local);
         focus-scope: "hub:" + HubView.page;
         columns: HubView.columns;
         cell-width: HubView.cell-width;
@@ -695,7 +693,7 @@ component HubScreen inherits Rectangle {
         move-pulse: HubView.move-pulse;
         activate-pulse: HubView.activate-pulse;
         release-pulse: HubView.release-pulse;
-        settling: Shell.active-screen != "hub";
+        settling: Shell.active-screen != Screen.hub;
         compact-padding: true;
         card-radius: Sizing.radius-md;
         skip-empty-cells: !HubView.move-armed;
@@ -740,7 +738,7 @@ component HubScreen inherits Rectangle {
         y: HubView.grid-y;
         width: parent.width;
         height: HubView.grid-height;
-        state: root.error ? "error" : ((HubView.loaded && HubView.catalog-empty) ? "empty" : "");
+        state: root.error ? ContentState.error : ((HubView.loaded && HubView.catalog-empty) ? ContentState.empty : ContentState.ready);
         empty-text: HubView.indexing ? @tr("Updating the media database") : @tr("No games found yet");
         empty-detail: HubView.indexing
             ? @tr("Your games appear here as Core finds them.")
@@ -756,14 +754,14 @@ component SystemsScreen inherits Rectangle {
     background: transparent;
     in property <bool> gated: false;
     property <bool> list-layout: Shell.systems-list-layout;
-    property <bool> tate-list: self.list-layout && Shell.orientation != "horizontal";
-    property <string> state: SystemsView.error != "" ? "error"
-        : (SystemsView.loading ? "loading" : (SystemsView.count == 0 ? "empty" : ""));
+    property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
+    property <ContentState> state: SystemsView.error != "" ? ContentState.error
+        : (SystemsView.loading ? ContentState.loading : (SystemsView.count == 0 ? ContentState.empty : ContentState.ready));
     property <bool> gate-hide: root.gated || SystemsView.loading || cue.loading-visible || SystemsView.error != "";
     property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
     property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
     property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
-    property <bool> favorites: SystemsView.mode == "favorite-systems";
+    property <bool> favorites: SystemsView.mode == SystemsMode.favorites;
     property <string> title: root.favorites
         ? @tr("Favorites")
         : Labels.hub("category:" + SystemsView.category, SystemsView.category);
@@ -821,7 +819,7 @@ component SystemsScreen inherits Rectangle {
                 width: parent.width;
                 height: parent.height;
                 cells: SystemsView.cells;
-                focus-scope: SystemsView.mode + ":" + SystemsView.page;
+                focus-scope: StateTokens.systems(SystemsView.mode) + ":" + SystemsView.page;
                 focus-motion: SystemsView.page-slide == 0 && !SystemsView.cached-transition;
                 columns: SystemsView.columns;
                 cell-width: SystemsView.cell-width;
@@ -835,10 +833,10 @@ component SystemsScreen inherits Rectangle {
                 selected-local: SystemsView.cached-transition ? -1 : SystemsView.selected-local;
                 section-focused: !Overlays.context-open;
                 focus-ready: SystemsView.focus-ready;
-                press-held: PressFeedback.active("systems", SystemsView.selected-local);
+                press-held: PressFeedback.active(PressOwner.systems, SystemsView.selected-local);
                 activate-pulse: SystemsView.activate-pulse;
                 release-pulse: SystemsView.release-pulse;
-                settling: Shell.active-screen != SystemsView.mode;
+                settling: Shell.active-screen != SystemsView.screen;
                 card-radius: Layout.card-radius;
                 caption-for(cell) => { return cell.name; }
                 cell-hovered(i) => { SystemsInput.cell-hovered(i); }
@@ -883,12 +881,12 @@ component SystemsScreen inherits Rectangle {
         rows: SystemsView.list-rows;
         model-top: SystemsView.list-view-top;
         scroll-top: SystemsView.list-scroll-top;
-        scope: SystemsView.mode + ":" + SystemsView.category;
+        scope: StateTokens.systems(SystemsView.mode) + ":" + SystemsView.category;
         selected: SystemsView.list-sel;
         focus-ready: SystemsView.focus-ready;
         activate-pulse: SystemsView.activate-pulse;
         release-pulse: SystemsView.release-pulse;
-        settling: Shell.active-screen != SystemsView.mode;
+        settling: Shell.active-screen != SystemsView.screen;
         row-height: SystemsView.list-row-height;
         detail-title: SystemsView.detail-title;
         show-title: true;
@@ -1081,7 +1079,7 @@ component ListPickerModal inherits Rectangle {
                     width: 100%;
                     height: 100%;
                     active: i == root.current-index;
-                    press-held: PressFeedback.active("list", i);
+                    press-held: PressFeedback.active(PressOwner.list, i);
                 }
                 Text {
                     x: root.swatches ? Sizing.pct-w(2) : Math.round((parent.width - self.width) / 2px) * 1px;
@@ -1109,8 +1107,8 @@ component ListPickerModal inherits Rectangle {
                 }
                 TouchArea {
                     mouse-cursor: pointer;
-                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice("list", i, false); } }
-                    clicked => { Overlays.pointer-choice("list", i, true); }
+                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.list, i, false); } }
+                    clicked => { Overlays.pointer-choice(PressOwner.list, i, true); }
                 }
             }
         }
@@ -1189,7 +1187,7 @@ component LetterJumpModal inherits Rectangle {
                 width: root.cell;
                 height: root.cell;
                 focused: i == root.current-index;
-                pressed: PressFeedback.active("letter", i);
+                pressed: PressFeedback.active(PressOwner.letter, i);
 
                 Text {
                     x: Math.round((parent.width - self.width) / 2px) * 1px;
@@ -1208,8 +1206,8 @@ component LetterJumpModal inherits Rectangle {
                 }
                 TouchArea {
                     mouse-cursor: pointer;
-                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice("letter", i, false); } }
-                    clicked => { Overlays.pointer-choice("letter", i, true); }
+                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.letter, i, false); } }
+                    clicked => { Overlays.pointer-choice(PressOwner.letter, i, true); }
                 }
             }
         }
@@ -1245,7 +1243,7 @@ component CardWriteModal inherits Rectangle {
             width: Math.min(Sizing.pct-w(28), parent.width - 2 * Sizing.pct-w(4));
             height: Sizing.pct-h(7);
             focused: true;
-            pressed: PressFeedback.active("card-write", 0);
+            pressed: PressFeedback.active(PressOwner.card-write, 0);
             Text {
                 x: Math.round((parent.width - self.width) / 2px) * 1px;
                 y: Math.round((cancel-button.face-height - self.height) / 2px) * 1px;
@@ -1255,7 +1253,7 @@ component CardWriteModal inherits Rectangle {
             }
             TouchArea {
                 mouse-cursor: pointer;
-                clicked => { Overlays.pointer-choice("card-write", 0, true); }
+                clicked => { Overlays.pointer-choice(PressOwner.card-write, 0, true); }
             }
         }
     }
@@ -1355,12 +1353,12 @@ component DialogModal inherits Rectangle {
     property <length> pad-x: Sizing.pct-w(4);
     title-measure := Text {
         visible: false;
-        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
+        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
         font-size: Sizing.font-title;
     }
     body-measure := Text {
         visible: false;
-        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-detail, Overlays.dialog-arg);
+        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
         font-size: Sizing.font-body;
     }
     line-measure := Text {
@@ -1386,7 +1384,7 @@ component DialogModal inherits Rectangle {
         Math.max(Math.min(body-measure.preferred-width, line-measure.preferred-width * 45 / 26),
             button-measure.preferred-width)) + 2 * root.pad-x;
     // CommercialNoticeModal uses a wider shell for its long legal copy.
-    property <length> panel-w: Math.ceil((Overlays.dialog-kind == "notice"
+    property <length> panel-w: Math.ceil((Overlays.dialog-kind == DialogKind.notice
         ? Math.min(root.width * 0.78, Sizing.pct-h(110))
         : Math.min(Math.min(root.width * 0.92, Sizing.pct-h(90)),
             Math.max(Sizing.pct-w(30), root.desired-w))) / 1px) * 1px;
@@ -1396,11 +1394,11 @@ component DialogModal inherits Rectangle {
     property <length> btn-gap: Sizing.pct-w(2);
     property <length> title-h: title-measure.preferred-height;
     property <length> body-h: body-t.preferred-height;
-    property <length> status-h: Overlays.dialog-status != "" ? status-measure.preferred-height : 0px;
+    property <length> status-h: Overlays.dialog-status != DialogProgress.none ? status-measure.preferred-height : 0px;
     property <length> body-y: root.pad-y + root.title-h + root.content-gap;
     property <length> status-y: root.body-y + root.body-h + root.content-gap;
     property <length> button-y: root.status-y
-        + (Overlays.dialog-status != "" ? root.status-h + root.content-gap : 0px);
+        + (Overlays.dialog-status != DialogProgress.none ? root.status-h + root.content-gap : 0px);
     property <length> panel-h: root.button-y + root.btn-h + root.pad-y;
 
     Rectangle {
@@ -1418,7 +1416,7 @@ component DialogModal inherits Rectangle {
             y: root.pad-y;
             max-width: parent.width - 2 * root.pad-x;
             overflow: elide;
-            text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-detail);
+            text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
             color: Theme.text-primary;
             font-size: Sizing.font-title;
         }
@@ -1428,13 +1426,13 @@ component DialogModal inherits Rectangle {
             y: root.body-y;
             width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, parent.width - 2 * root.pad-x);
             wrap: word-wrap;
-            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-detail, Overlays.dialog-arg);
+            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
             color: Theme.text-primary;
             font-size: Sizing.font-body;
             horizontal-alignment: center;
         }
 
-        if Overlays.dialog-status != "": Text {
+        if Overlays.dialog-status != DialogProgress.none: Text {
             x: Math.round((parent.width - self.width) / 2px) * 1px;
             y: root.status-y;
             max-width: parent.width - 2 * root.pad-x;
@@ -1452,7 +1450,7 @@ component DialogModal inherits Rectangle {
         // A one-word alert action sizes around its label like the panel does;
         // it must not inflate to nearly the full width of the panel.
         property <length> btn-w: Math.min(Sizing.pct-w(28),
-            Overlays.dialog-kind == "action_error" && Overlays.dialog-buttons.length == 1
+            Overlays.dialog-kind == DialogKind.action-error && Overlays.dialog-buttons.length == 1
                 ? Math.min(self.available-btn-w, button-measure.preferred-width)
                 : self.available-btn-w);
         for label[i] in Overlays.dialog-buttons: button := PressableSurface {
@@ -1465,7 +1463,7 @@ component DialogModal inherits Rectangle {
             width: parent.btn-w;
             height: root.btn-h;
             focused: i == Overlays.dialog-focus;
-            pressed: PressFeedback.active("dialog", i);
+            pressed: PressFeedback.active(PressOwner.dialog, i);
 
             Text {
                 x: Math.round((parent.width - self.width) / 2px) * 1px;
@@ -1478,7 +1476,7 @@ component DialogModal inherits Rectangle {
             }
             TouchArea {
                 mouse-cursor: pointer;
-                clicked => { Overlays.pointer-choice("dialog", i, true); }
+                clicked => { Overlays.pointer-choice(PressOwner.dialog, i, true); }
             }
         }
     }
@@ -1656,7 +1654,7 @@ component ContextMenu inherits Rectangle {
                 width: 100%;
                 height: 100%;
                 active: i == root.current-index;
-                press-held: PressFeedback.active("context", i);
+                press-held: PressFeedback.active(PressOwner.context, i);
                 radius: Sizing.radius-sm;
             }
 
@@ -1693,12 +1691,12 @@ component GamesScreen inherits Rectangle {
     background: transparent;
     in property <bool> gated: false;
     property <bool> list-layout: Shell.browse-list-layout;
-    property <bool> tate-list: self.list-layout && Shell.orientation != "horizontal";
-    property <bool> is-games: GamesView.mode == "games";
-    property <string> title: GamesView.mode == "favorites" ? @tr("Favorites")
-        : (GamesView.mode == "recents" ? @tr("Recently played") : GamesView.title);
-    property <string> state: GamesView.error != "" ? "error"
-        : (GamesView.loading ? "loading" : (GamesView.count == 0 ? "empty" : ""));
+    property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
+    property <bool> is-games: GamesView.mode == GamesMode.browse;
+    property <string> title: GamesView.mode == GamesMode.favorites ? @tr("Favorites")
+        : (GamesView.mode == GamesMode.recents ? @tr("Recently played") : GamesView.title);
+    property <ContentState> state: GamesView.error != "" ? ContentState.error
+        : (GamesView.loading ? ContentState.loading : (GamesView.count == 0 ? ContentState.empty : ContentState.ready));
     property <bool> gate-hide: root.gated || GamesView.loading || cue.loading-visible || GamesView.error != "";
     property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
     property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
@@ -1761,7 +1759,7 @@ component GamesScreen inherits Rectangle {
                 width: parent.width;
                 height: parent.height;
                 cells: GamesView.cells;
-                focus-scope: GamesView.mode + ":" + GamesView.title + ":" + GamesView.page;
+                focus-scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title + ":" + GamesView.page;
                 focus-motion: GamesView.page-slide == 0 && !GamesView.cached-transition;
                 columns: GamesView.columns;
                 cell-width: GamesView.cell-width;
@@ -1775,10 +1773,10 @@ component GamesScreen inherits Rectangle {
                 selected-local: GamesView.cached-transition ? -1 : GamesView.selected-local;
                 section-focused: !Overlays.context-open;
                 focus-ready: GamesView.focus-ready;
-                press-held: PressFeedback.active("games", GamesView.selected-local);
+                press-held: PressFeedback.active(PressOwner.games, GamesView.selected-local);
                 activate-pulse: GamesView.activate-pulse;
                 release-pulse: GamesView.release-pulse;
-                settling: Shell.active-screen != GamesView.mode;
+                settling: Shell.active-screen != GamesView.screen;
                 show-caption: true;
                 card-radius: Layout.card-radius;
                 caption-for(cell) => { return cell.name; }
@@ -1825,12 +1823,12 @@ component GamesScreen inherits Rectangle {
         rows: GamesView.list-rows;
         model-top: GamesView.list-view-top;
         scroll-top: GamesView.list-scroll-top;
-        scope: GamesView.mode + ":" + GamesView.title;
+        scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title;
         selected: GamesView.list-sel;
         focus-ready: GamesView.focus-ready;
         activate-pulse: GamesView.activate-pulse;
         release-pulse: GamesView.release-pulse;
-        settling: Shell.active-screen != GamesView.mode;
+        settling: Shell.active-screen != GamesView.screen;
         row-height: GamesView.list-row-height;
         detail-title: GamesView.detail-title;
         show-title: false;
@@ -1954,11 +1952,11 @@ component GamesScreen inherits Rectangle {
         width: parent.width;
         height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : GamesView.grid-height;
         cue-center-y: root.height / 2 - self.y;
-        state: GamesView.folder-slide ? "" : root.state;
-        empty-text: GamesView.mode == "favorites" ? @tr("No favorites yet")
-            : (GamesView.mode == "recents" ? @tr("Nothing played yet") : @tr("No games in this system"));
-        loading-text: GamesView.mode == "favorites" ? @tr("Loading favorites…")
-            : (GamesView.mode == "recents" ? @tr("Loading recently played…") : @tr("Loading games…"));
+        state: GamesView.folder-slide ? ContentState.ready : root.state;
+        empty-text: GamesView.mode == GamesMode.favorites ? @tr("No favorites yet")
+            : (GamesView.mode == GamesMode.recents ? @tr("Nothing played yet") : @tr("No games in this system"));
+        loading-text: GamesView.mode == GamesMode.favorites ? @tr("Loading favorites…")
+            : (GamesView.mode == GamesMode.recents ? @tr("Loading recently played…") : @tr("Loading games…"));
         error-detail: GamesView.error;
     }
 }
@@ -2058,37 +2056,37 @@ component CrtCalibrationPattern inherits Rectangle {
 }
 
 component RouteScreen inherits Rectangle {
-    in property <string> screen-token;
+    in property <Screen> screen-token: Screen.hub;
     in property <bool> outgoing: false;
     // Hold this screen's content hidden even though the global cue is
     // down: set on the outgoing half of a route slide.
     in property <bool> gated: false;
 
-    if root.screen-token == "hub" && !Shell.boot-curtain: HubScreen {
+    if root.screen-token == Screen.hub && !Shell.boot-curtain: HubScreen {
         width: 100%;
         height: 100%;
         gated: root.gated;
     }
 
-    if root.screen-token == "systems" || root.screen-token == "favorite-systems": SystemsScreen {
+    if root.screen-token == Screen.systems || root.screen-token == Screen.favorite-systems: SystemsScreen {
         width: 100%;
         height: 100%;
         gated: root.gated;
     }
 
-    if root.screen-token == "settings": SettingsScreen {
+    if root.screen-token == Screen.settings: SettingsScreen {
         width: 100%;
         height: 100%;
         outgoing: root.outgoing;
     }
 
-    if root.screen-token == "about": AboutScreen {
+    if root.screen-token == Screen.about: AboutScreen {
         width: 100%;
         height: 100%;
     }
 
-    if root.screen-token == "games" || root.screen-token == "favorites"
-        || root.screen-token == "recents": GamesScreen {
+    if root.screen-token == Screen.games || root.screen-token == Screen.favorites
+        || root.screen-token == Screen.recents: GamesScreen {
         width: 100%;
         height: 100%;
         gated: root.gated;
@@ -2096,7 +2094,7 @@ component RouteScreen inherits Rectangle {
 }
 
 export component App inherits Window {
-    callback game-info-scroll(string);
+    callback game-info-scroll(ScrollAction);
     game-info-scroll(action) => { info-modal.scroll(action); }
     title: "Zaparoo Frontend (Slint demo)";
     background: Theme.bg-deep;
@@ -2115,12 +2113,12 @@ export component App inherits Window {
 
     pure function browse-header-title() -> string {
         if (!Layout.title-in-header) { return ""; }
-        if (Shell.active-screen == "settings") { return SettingsLabels.page-title(SettingsView.page); }
-        if (Shell.active-screen == "systems") { return Labels.hub("category:" + SystemsView.category, SystemsView.category); }
-        if (Shell.active-screen == "favorite-systems") { return @tr("Favorites"); }
-        if (Shell.active-screen == "games") { return GamesView.title; }
-        if (Shell.active-screen == "favorites") { return @tr("Favorites"); }
-        if (Shell.active-screen == "recents") { return @tr("Recently played"); }
+        if (Shell.active-screen == Screen.settings) { return SettingsLabels.page-title(SettingsView.page); }
+        if (Shell.active-screen == Screen.systems) { return Labels.hub("category:" + SystemsView.category, SystemsView.category); }
+        if (Shell.active-screen == Screen.favorite-systems) { return @tr("Favorites"); }
+        if (Shell.active-screen == Screen.games) { return GamesView.title; }
+        if (Shell.active-screen == Screen.favorites) { return @tr("Favorites"); }
+        if (Shell.active-screen == Screen.recents) { return @tr("Recently played"); }
         return "";
     }
 
@@ -2148,9 +2146,9 @@ export component App inherits Window {
     pure function move-cue(pages: int) -> HelpEntry {
         return { buttons: pages > 1 ? ["ButtonL", "ButtonR", "Dpad"] : ["Dpad"], label: @tr("Move") };
     }
-    pure function focused-settings-control() -> string {
+    pure function focused-settings-control() -> ControlKind {
         return SettingsView.index >= 0 && SettingsView.index < SettingsView.rows.length
-            ? SettingsView.rows[SettingsView.index].control : "";
+            ? SettingsView.rows[SettingsView.index].control : ControlKind.none;
     }
     pure function help-entries() -> [HelpEntry] {
         if (Shell.boot-curtain) {
@@ -2158,11 +2156,11 @@ export component App inherits Window {
         }
         // The uploader: nothing to confirm while it runs.
         if (LogUploadView.open) {
-            if (LogUploadView.phase == "uploading") {
+            if (LogUploadView.phase == LogPhase.uploading) {
                 return [{ buttons: ["ButtonB"], label: @tr("Back") }];
             }
             return [
-                { buttons: ["ButtonA"], label: LogUploadView.phase == "failed" ? @tr("Retry") : @tr("Done") },
+                { buttons: ["ButtonA"], label: LogUploadView.phase == LogPhase.failed ? @tr("Retry") : @tr("Done") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
@@ -2173,12 +2171,12 @@ export component App inherits Window {
                 { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                 { buttons: ["ButtonA"], label: SettingsLabels.setup-action(
                     SetupModalView.picker-page
-                        ? "select"
+                        ? SetupAction.select
                         : (SetupModalView.index >= 0 && SetupModalView.index < SetupModalView.rows.length
-                            ? (SetupModalView.rows[SetupModalView.index].control == "action"
-                                ? "start"
-                                : (SetupModalView.rows[SetupModalView.index].control == "toggle" ? "toggle" : "change"))
-                            : "change")) },
+                            ? (SetupModalView.rows[SetupModalView.index].control == ControlKind.action
+                                ? SetupAction.start
+                                : (SetupModalView.rows[SetupModalView.index].control == ControlKind.toggle ? SetupAction.toggle : SetupAction.change))
+                            : SetupAction.change)) },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
@@ -2244,7 +2242,7 @@ export component App inherits Window {
                 { buttons: ["ButtonA"], label: @tr("Save") },
             ];
         }
-        if (Shell.active-screen == "hub") {
+        if (Shell.active-screen == Screen.hub) {
             // Mid-reorder: the d-pad repositions the held tile, Accept
             // places it, Cancel reverts; nothing else is live.
             if (HubView.move-armed) {
@@ -2268,13 +2266,13 @@ export component App inherits Window {
                 { buttons: ["ButtonY"], label: @tr("View") },
             ];
         }
-        if (Shell.active-screen == "systems" || Shell.active-screen == "favorite-systems") {
+        if (Shell.active-screen == Screen.systems || Shell.active-screen == Screen.favorite-systems) {
             if (Shell.transitioning) {
                 return [{ buttons: ["ButtonB"], label: @tr("Back") }];
             }
             // The favorites list adds the View menu, which carries the
             // grouping switch.
-            if (Shell.active-screen == "favorite-systems") {
+            if (Shell.active-screen == Screen.favorite-systems) {
                 return [
                     self.move-cue(SystemsView.total-pages),
                     { buttons: ["ButtonA"], label: @tr("Open") },
@@ -2290,8 +2288,8 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
-        if (Shell.active-screen == "settings") {
-            if (SettingsView.page == "") {
+        if (Shell.active-screen == Screen.settings) {
+            if (SettingsView.page == SettingsPage.root) {
                 if (SettingsView.rows.length > 1) {
                     return [
                         { buttons: ["Dpad"], label: @tr("Move") },
@@ -2304,7 +2302,7 @@ export component App inherits Window {
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
             }
-            if (self.focused-settings-control() == "toggle") {
+            if (self.focused-settings-control() == ControlKind.toggle) {
                 return [
                     { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                     { buttons: ["DpadLeft", "DpadRight"], label: @tr("Change") },
@@ -2312,14 +2310,14 @@ export component App inherits Window {
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
             }
-            if (self.focused-settings-control() == "action") {
+            if (self.focused-settings-control() == ControlKind.action) {
                 return [
                     { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                     { buttons: ["ButtonA"], label: SettingsLabels.action(SettingsView.rows[SettingsView.index].value) },
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
             }
-            if (self.focused-settings-control() == "picker") {
+            if (self.focused-settings-control() == ControlKind.picker) {
                 return [
                     { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                     { buttons: ["ButtonA"], label: @tr("Change") },
@@ -2332,7 +2330,7 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
-        if (Shell.active-screen == "about") {
+        if (Shell.active-screen == Screen.about) {
             if (AboutView.maximum-scroll-milli <= 0) { return [{ buttons: ["ButtonB"], label: @tr("Back") }]; }
             return [
                 { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
@@ -2350,7 +2348,7 @@ export component App inherits Window {
             ];
         }
         if (GamesView.count == 0 && !GamesView.loading) {
-            if (Shell.active-screen == "recents") {
+            if (Shell.active-screen == Screen.recents) {
                 return [
                     { buttons: ["ButtonA"], label: @tr("Retry") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
@@ -2362,7 +2360,7 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
-        if (Shell.active-screen == "recents") {
+        if (Shell.active-screen == Screen.recents) {
             return [
                 self.move-cue(GamesView.total-pages),
                 { buttons: ["ButtonA"], label: @tr("Open") },
@@ -2540,7 +2538,7 @@ export component App inherits Window {
         width: 100%;
         height: 100%;
         phase: LogUploadView.phase;
-        button-pressed: PressFeedback.active("log", 0);
+        button-pressed: PressFeedback.active(PressOwner.log, 0);
         url: LogUploadView.url;
         qr: LogUploadView.qr;
         qr-modules: LogUploadView.qr-modules;
@@ -2647,7 +2645,7 @@ export component App inherits Window {
         || ((Shell.boot-curtain || Shell.transitioning) && !root.has-modal()): TouchArea {
         width: 100%; height: 100%;
         clicked => {
-            if (!Shell.dormant) { Overlays.pointer-choice("wake", 0, true); }
+            if (!Shell.dormant) { Overlays.pointer-choice(PressOwner.wake, 0, true); }
         }
         scroll-event(event) => { return accept; }
     }

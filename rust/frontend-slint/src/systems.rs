@@ -28,20 +28,7 @@ const REARM_MS: u64 = 50;
 /// Which list the screen shows: one category's systems, or the systems
 /// that hold favorites (`FavoriteSystemsScreen.qml`, structurally a
 /// Systems screen and grouped with it by the layout profile).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SystemsMode {
-    Category,
-    Favorites,
-}
-
-impl SystemsMode {
-    pub fn token(self) -> &'static str {
-        match self {
-            Self::Category => "systems",
-            Self::Favorites => "favorite-systems",
-        }
-    }
-}
+pub use crate::SystemsMode;
 
 #[derive(Debug, Clone)]
 #[allow(
@@ -193,10 +180,10 @@ pub fn enter(ctx: &Ctx, app: &App, category: &str, animate: bool) {
     view.set_loading(false);
     render(ctx, app);
     if animate {
-        crate::router::transition_to_screen(app, "systems", 1);
+        crate::router::transition_to_screen(app, crate::Screen::Systems, 1);
     } else {
         app.global::<crate::Shell>()
-            .set_active_screen(SharedString::from("systems"));
+            .set_active_screen(crate::Screen::Systems);
         crate::router::refresh_layout(app);
     }
 }
@@ -232,7 +219,7 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
     let waiting_for_data = lock(&ctx.shared).systems_model.loading;
     let ticket = lock(&ctx.shared).systems_model.transition_seq;
     if waiting_for_data {
-        crate::router::begin_pending_with_direction(app, "favorite-systems", direction);
+        crate::router::begin_pending_with_direction(app, crate::Screen::FavoriteSystems, direction);
     } else {
         crate::navigation::finish(app);
         let view = app.global::<SystemsView>();
@@ -240,7 +227,7 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
         view.set_loading(false);
         render(ctx, app);
         crate::router::save_persist(&ctx.shared);
-        crate::router::transition_to_screen(app, "favorite-systems", direction);
+        crate::router::transition_to_screen(app, crate::Screen::FavoriteSystems, direction);
     }
 
     let resource = ctx.store.subscribe::<SystemsFavoritesEndpoint>(());
@@ -279,7 +266,7 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
                         if waiting_for_data {
                             crate::router::transition_to_screen(
                                 &app,
-                                "favorite-systems",
+                                crate::Screen::FavoriteSystems,
                                 direction,
                             );
                         }
@@ -320,7 +307,7 @@ pub(crate) fn apply_favorites(
     render(ctx, app);
     if route_when_ready {
         crate::router::save_persist(&ctx.shared);
-        crate::router::transition_to_screen(app, "favorite-systems", direction);
+        crate::router::transition_to_screen(app, crate::Screen::FavoriteSystems, direction);
     }
 }
 
@@ -572,7 +559,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     } else {
         i32::try_from(model.grid.current_index().saturating_sub(start)).unwrap_or(0)
     });
-    view.set_mode(SharedString::from(model.mode.token()));
+    view.set_mode(model.mode);
     view.set_count(i32::try_from(model.rows.len()).unwrap_or(0));
     view.set_favorites_total(
         rules::favorites_total(&model.rows).map_or(-1, |total| i32::try_from(total).unwrap_or(0)),
@@ -729,7 +716,8 @@ fn persist_selection(ctx: &Ctx) {
 #[cfg(feature = "mister")]
 fn request_cached_page_transition(app: &App, direction: i32, _columns: i32, _rows: i32) -> bool {
     let shell = app.global::<crate::Shell>();
-    if shell.get_orientation().as_str() != "horizontal" || shell.get_systems_list_layout() {
+    if shell.get_orientation() != crate::Orientation::Horizontal || shell.get_systems_list_layout()
+    {
         return false;
     }
     let sizing = app.global::<crate::Sizing>();
@@ -989,7 +977,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         actions::CANCEL => {
             lock(&ctx.shared).persist.active_screen = "hub".to_string();
             crate::router::save_persist(&ctx.shared);
-            crate::router::transition_to_screen(app, "hub", -1);
+            crate::router::transition_to_screen(app, crate::Screen::Hub, -1);
         }
         _ => {}
     }

@@ -59,11 +59,11 @@ const ROTATION_CW: u8 = 1;
 const ROTATION_CCW: u8 = 2;
 static REQUESTED_ROTATION: AtomicU8 = AtomicU8::new(ROTATION_NONE);
 
-fn rotation_value(value: &str) -> u8 {
+fn rotation_value(value: crate::Orientation) -> u8 {
     match value {
-        "cw" => ROTATION_CW,
-        "ccw" => ROTATION_CCW,
-        _ => ROTATION_NONE,
+        crate::Orientation::Cw => ROTATION_CW,
+        crate::Orientation::Ccw => ROTATION_CCW,
+        crate::Orientation::Horizontal => ROTATION_NONE,
     }
 }
 
@@ -100,7 +100,7 @@ fn apply_window_geometry(
     window.set_size(slint::PhysicalSize::new(width, height));
 }
 
-pub fn set_orientation(value: &str) {
+pub fn set_orientation(value: crate::Orientation) {
     REQUESTED_ROTATION.store(rotation_value(value), Ordering::SeqCst);
 }
 
@@ -639,7 +639,9 @@ pub fn install_platform(
     resolution_policy: ResolutionPolicy,
     orientation: &str,
 ) -> Result<(), slint::PlatformError> {
-    set_orientation(orientation);
+    set_orientation(
+        crate::Orientation::try_from(orientation).unwrap_or(crate::Orientation::Horizontal),
+    );
     slint::platform::set_platform(Box::new(MisterPlatform::new(
         crt,
         crt_size,
@@ -761,9 +763,11 @@ mod tests {
 
     #[test]
     fn orientation_values_map_to_renderer_turns() {
-        assert_eq!(rotation_value("horizontal"), ROTATION_NONE);
-        assert_eq!(rotation_value("invalid"), ROTATION_NONE);
-        assert_eq!(rotation_value("cw"), ROTATION_CW);
-        assert_eq!(rotation_value("ccw"), ROTATION_CCW);
+        assert_eq!(
+            rotation_value(crate::Orientation::Horizontal),
+            ROTATION_NONE
+        );
+        assert_eq!(rotation_value(crate::Orientation::Cw), ROTATION_CW);
+        assert_eq!(rotation_value(crate::Orientation::Ccw), ROTATION_CCW);
     }
 }

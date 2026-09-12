@@ -55,6 +55,16 @@ the lint image lacks Slint's desktop system libs; run `just lint-slint` and
 ## Always
 
 - Keep comments and docs in American English.
+- Use Slint enums for closed sets of UI states (active screen, settings page,
+  browse mode, loading/empty/error state), not strings or integer tags. Export
+  enums used at the Rust/Slint boundary and use the generated Rust types; map
+  toolkit-free domain enums explicitly rather than converting them to strings.
+  Model meaningful root/none states as variants, not empty-string sentinels,
+  and choose defaults explicitly (Slint otherwise uses the first variant).
+  Keep actual indices/counts numeric and text/open-ended IDs as strings. Convert
+  persisted/API tokens at the boundary with explicit unknown-value handling;
+  preserve existing serialized values and the persisted-schema approval rule.
+  See `docs/slint-state-types.md` for the type inventory and boundary exceptions.
 - Follow `docs/content-style.md` for every user-visible string: menu
   ordering, capitalization, terminology, and the settings-page checklist.
 - After editing C++, Rust, or QML, run `just lint`. Run `just test` when the

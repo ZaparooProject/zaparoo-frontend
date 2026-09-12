@@ -379,17 +379,17 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_release_pulse(hub.release_pulse);
     view.set_loaded(hub.categories_loaded);
     view.set_catalog_empty(shared.all_categories.is_empty());
-    view.set_indexing(app.global::<crate::Status>().get_kind().as_str() == "indexing");
+    view.set_indexing(app.global::<crate::Status>().get_kind() == crate::StatusKind::Indexing);
     let error = !view.get_hub_error().is_empty();
     match hub.current() {
         Some(entry) if !entry.is_empty() => {
             view.set_label_key(SharedString::from(entry.label_key.as_str()));
             view.set_label_name(SharedString::from(entry.name.as_str()));
-            view.set_label_reason(SharedString::from(if entry.disabled {
-                entry.reason.as_str()
+            view.set_label_reason(if entry.disabled {
+                entry.reason.into()
             } else {
-                ""
-            }));
+                crate::DisabledReason::None
+            });
             let is_category = entry.kind == Some(Kind::Category);
             view.set_focused_is_category(is_category);
             view.set_label_visible(!is_category || !error);
@@ -398,7 +398,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         _ => {
             view.set_label_key(SharedString::default());
             view.set_label_name(SharedString::default());
-            view.set_label_reason(SharedString::default());
+            view.set_label_reason(crate::DisabledReason::None);
             view.set_focused_is_category(false);
             view.set_label_visible(true);
             view.set_options_available(false);
@@ -1044,7 +1044,7 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
         )
     };
     if entries.is_empty() {
-        crate::router::open_alert(app, "hub_full");
+        crate::router::open_alert(app, crate::DialogKind::HubFull);
         return;
     }
     let rows: Vec<crate::MenuEntry> = entries

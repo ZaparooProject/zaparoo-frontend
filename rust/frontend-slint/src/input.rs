@@ -298,8 +298,8 @@ fn schedule_quiet(ctx: &Ctx, app: &App) {
 /// bindings gate it on the active screen the same way.
 fn push_rapid(ctx: &Ctx, app: &App, active: bool) {
     let on_list = matches!(
-        app.global::<crate::Shell>().get_active_screen().as_str(),
-        "games" | "favorites" | "recents"
+        app.global::<crate::Shell>().get_active_screen(),
+        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents
     );
     crate::games::set_rapid(ctx, app, active && on_list);
 }

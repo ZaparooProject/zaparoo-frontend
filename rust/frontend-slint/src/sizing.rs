@@ -94,7 +94,10 @@ pub fn refresh_layout(app: &App, scene: Scene) {
 /// TATE list; every other screen resolves against the games grid.
 fn current_view(app: &App) -> View {
     let shell = app.global::<Shell>();
-    let rotated = matches!(shell.get_orientation().as_str(), "cw" | "ccw");
+    let rotated = matches!(
+        shell.get_orientation(),
+        crate::Orientation::Cw | crate::Orientation::Ccw
+    );
     let pick = |list: bool, grid: View, list_view: View, tate: View| {
         if !list {
             grid
@@ -104,8 +107,8 @@ fn current_view(app: &App) -> View {
             list_view
         }
     };
-    match shell.get_active_screen().as_str() {
-        "systems" | "favorite-systems" => pick(
+    match shell.get_active_screen() {
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => pick(
             shell.get_systems_list_layout(),
             View::SystemsGrid,
             View::SystemsList,

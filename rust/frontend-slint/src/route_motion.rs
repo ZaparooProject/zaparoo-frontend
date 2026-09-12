@@ -7,6 +7,10 @@
 //! visible pushes before dispatch, command ownership, and eventual quiescence.
 
 use crate::{App, GridCell, HubView, Shell, Sizing, SystemsView};
+use crate::{
+    ControlKind, DialogButton, DialogKind, ErrorKind, GamesMode, LogPhase, PressOwner, RowKind,
+    Screen, SettingsPage, SystemsMode,
+};
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{Platform, WindowAdapter};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
@@ -171,7 +175,7 @@ fn boot() -> (App, Rc<MinimalSoftwareWindow>) {
 
     let shell = app.global::<Shell>();
     shell.set_boot_complete(true);
-    shell.set_active_screen(SharedString::from("hub"));
+    shell.set_active_screen(Screen::Hub);
 
     let hub = app.global::<HubView>();
     hub.set_loaded(true);
@@ -240,7 +244,7 @@ fn system_logo_tile_feedback_preserves_images_and_settles() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("systems".into());
+    app.global::<Shell>().set_active_screen(Screen::Systems);
     let pixels = crate::system_logos::logo_for("SNES").expect("embedded SNES logo");
     let image = || {
         slint::Image::from_rgba8(
@@ -396,8 +400,7 @@ fn dormant_surface_is_static_and_opaque_over_live_ui() {
         "the dormant face must not animate"
     );
 
-    app.global::<Shell>()
-        .set_active_screen(SharedString::from("systems"));
+    app.global::<Shell>().set_active_screen(Screen::Systems);
     app.window().request_redraw();
     assert_eq!(
         dormant,
@@ -415,7 +418,7 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("games".into());
+    app.global::<Shell>().set_active_screen(Screen::Games);
     {
         let mut state = crate::router::lock(&ctx.shared);
         state.persist.settings.reduce_motion = false;
@@ -524,82 +527,74 @@ fn every_screen_route_and_settings_category_commits_without_animation_delay() {
     seat_folder(&ctx, &app, "Game", 0);
     let shell = app.global::<Shell>();
     for (from, to) in [
-        ("hub", "systems"),
-        ("systems", "games"),
-        ("hub", "games"),
-        ("hub", "favorite-systems"),
-        ("favorite-systems", "favorites"),
-        ("hub", "favorites"),
-        ("hub", "recents"),
-        ("hub", "settings"),
-        ("settings", "about"),
+        (Screen::Hub, Screen::Systems),
+        (Screen::Systems, Screen::Games),
+        (Screen::Hub, Screen::Games),
+        (Screen::Hub, Screen::FavoriteSystems),
+        (Screen::FavoriteSystems, Screen::Favorites),
+        (Screen::Hub, Screen::Favorites),
+        (Screen::Hub, Screen::Recents),
+        (Screen::Hub, Screen::Settings),
+        (Screen::Settings, Screen::About),
     ] {
-        shell.set_active_screen(from.into());
+        shell.set_active_screen(from);
         app.global::<SystemsView>().set_mode(
-            if from == "favorite-systems" || to == "favorite-systems" {
-                "favorite-systems"
+            if from == Screen::FavoriteSystems || to == Screen::FavoriteSystems {
+                SystemsMode::Favorites
             } else {
-                "systems"
-            }
-            .into(),
+                SystemsMode::Category
+            },
         );
-        app.global::<crate::GamesView>().set_mode(
-            if ["games", "favorites", "recents"].contains(&to) {
-                to
-            } else {
-                "games"
-            }
-            .into(),
-        );
+        app.global::<crate::GamesView>().set_mode(match to {
+            Screen::Favorites => GamesMode::Favorites,
+            Screen::Recents => GamesMode::Recents,
+            _ => GamesMode::Browse,
+        });
         crate::settings::open_page(
             &ctx,
             &app,
-            if to == "about" {
-                "pageSupportAbout"
+            if to == Screen::About {
+                SettingsPage::About
             } else {
-                ""
+                SettingsPage::Root
             },
         );
         crate::router::refresh_layout(&app);
         settle(&window);
         crate::router::transition_to_screen(&app, to, 1);
-        assert_eq!(
-            shell.get_active_screen().as_str(),
-            to,
-            "ready route commits now"
-        );
+        assert_eq!(shell.get_active_screen(), to, "ready route commits now");
         assert!(!shell.get_transitioning());
         settle(&window);
-        if to == "about" {
+        if to == Screen::About {
             crate::settings::show_about_return(&ctx, &app);
         } else {
             crate::router::transition_to_screen(&app, from, -1);
         }
-        assert_eq!(shell.get_active_screen().as_str(), from, "Back commits now");
+        assert_eq!(shell.get_active_screen(), from, "Back commits now");
         settle(&window);
     }
-    shell.set_active_screen("settings".into());
-    crate::settings::open_page(&ctx, &app, "");
+    shell.set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Root);
     let settings = app.global::<crate::SettingsView>();
     for (index, page) in zaparoo_app::settings::PAGES.iter().enumerate() {
         settings.set_index(index as i32);
         settle(&window);
         crate::settings::handle_action(&ctx, &app, "accept");
         assert_eq!(
-            settings.get_page().as_str(),
-            page.id,
+            Ok(settings.get_page()),
+            SettingsPage::try_from(page.id),
             "Settings is synchronous"
         );
         assert!(!shell.get_transitioning());
         crate::settings::handle_action(&ctx, &app, "cancel");
-        assert!(settings.get_page().is_empty());
+        assert_eq!(settings.get_page(), SettingsPage::Root);
         assert_eq!(
             settings.get_index(),
             index as i32,
             "Back restores the category tile"
         );
     }
-    crate::settings::open_page(&ctx, &app, "pageLibraryData");
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
     assert!(settings.get_scroll().abs() < f32::EPSILON);
     for _ in 0..6 {
         crate::settings::handle_action(&ctx, &app, "down");
@@ -610,9 +605,9 @@ fn every_screen_route_and_settings_category_commits_without_animation_delay() {
     );
 
     shell.set_reduce_motion(true);
-    crate::settings::navigate_page(&ctx, &app, "pageSupportAbout");
+    crate::settings::navigate_page(&ctx, &app, SettingsPage::About);
     assert!(!shell.get_transitioning());
-    crate::settings::navigate_page(&ctx, &app, "");
+    crate::settings::navigate_page(&ctx, &app, SettingsPage::Root);
     assert!(!shell.get_transitioning());
 }
 
@@ -649,7 +644,7 @@ fn page_lookahead_is_bounded_and_delayed_partial_pages_wait_then_slide() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("games".into());
+    app.global::<Shell>().set_active_screen(Screen::Games);
     seat_folder(&ctx, &app, "First", 0);
     let size = crate::router::lock(&ctx.shared).games.grid.page_size();
     {
@@ -732,7 +727,7 @@ fn rapid_letter_requires_a_qualified_hold_and_clears_on_taps_and_quiet() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("games".into());
+    app.global::<Shell>().set_active_screen(Screen::Games);
     seat_folder(&ctx, &app, "Game", 0);
     settle(&window);
     let view = app.global::<crate::GamesView>();
@@ -784,7 +779,7 @@ fn systems_redraw_retains_both_pages_during_a_slide() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("systems".into());
+    app.global::<Shell>().set_active_screen(Screen::Systems);
     {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.systems_model.rows = (0..40)
@@ -838,7 +833,7 @@ fn folders_keep_the_source_until_ready_in_both_directions() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("games".into());
+    app.global::<Shell>().set_active_screen(Screen::Games);
     let view = app.global::<crate::GamesView>();
     seat_folder(&ctx, &app, "Parent", 3);
     settle(&window);
@@ -937,7 +932,7 @@ fn launcher_save_keeps_picker_locked_delays_cue_and_retries_original_choice() {
         .mouse_enabled = true;
     crate::router::bind_context_input(&std::sync::Arc::new(ctx.clone()), &app);
     let ticket = crate::launchers::begin_save(&ctx, &app);
-    ov.invoke_pointer_choice("list".into(), 0, true);
+    ov.invoke_pointer_choice(PressOwner::List, 0, true);
     crate::router::handle_action(&ctx, &app, "up");
     crate::router::handle_action(&ctx, &app, "cancel");
     assert_eq!(ov.get_list_index(), 1);
@@ -953,7 +948,7 @@ fn launcher_save_keeps_picker_locked_delays_cue_and_retries_original_choice() {
     let payload = serde_json::json!(["system", "SNES", "", "alternate"]).to_string();
     crate::launchers::finish_save(&ctx, &app, ticket, Some(&payload));
     assert!(!ov.get_list_open());
-    assert_eq!(ov.get_dialog_detail(), "launcher_save");
+    assert_eq!(ov.get_dialog_error(), ErrorKind::LauncherSave);
     crate::router::handle_action(&ctx, &app, "accept");
     assert!(ov.get_list_open() && ov.get_launcher_saving());
     let selected = ov.get_list_entries().row_data(ov.get_list_index() as usize);
@@ -984,8 +979,11 @@ fn token_empty_retry_replaces_alert_and_cancel_drains_queue() {
     let ov = app.global::<crate::Overlays>();
     assert!(!ov.get_card_write_open());
     assert!(ov.get_dialog_open());
-    assert_eq!(ov.get_dialog_detail(), "card_write");
-    assert_eq!(ov.get_dialog_buttons().row_data(0), Some("retry".into()));
+    assert_eq!(ov.get_dialog_error(), ErrorKind::CardWrite);
+    assert_eq!(
+        ov.get_dialog_buttons().row_data(0),
+        Some(DialogButton::Retry)
+    );
     let first = ov.get_card_write_key();
     crate::router::handle_action(&ctx, &app, "accept");
     assert_ne!(ov.get_card_write_key(), first);
@@ -996,14 +994,14 @@ fn token_empty_retry_replaces_alert_and_cancel_drains_queue() {
     crate::router::report_action_error(&ctx, &app, "setting", "");
     crate::router::handle_action(&ctx, &app, "accept");
     assert_eq!(
-        ov.get_dialog_detail(),
-        "setting",
+        ov.get_dialog_error(),
+        ErrorKind::Setting,
         "retry must not replace a queued alert"
     );
     crate::router::handle_action(&ctx, &app, "cancel");
     assert_eq!(
-        ov.get_dialog_detail(),
-        "card_write",
+        ov.get_dialog_error(),
+        ErrorKind::CardWrite,
         "retry failure must survive behind the other alert"
     );
     crate::router::handle_action(&ctx, &app, "cancel");
@@ -1125,12 +1123,12 @@ fn letter_and_log_buttons_paint_their_pending_press() {
     }])));
     ov.set_letter_open(true);
     let commits = Rc::new(Cell::new(0));
-    for owner in ["letter", "log"] {
-        if owner == "log" {
+    for owner in [PressOwner::Letter, PressOwner::Log] {
+        if owner == PressOwner::Log {
             ov.set_letter_open(false);
             let log = app.global::<crate::LogUploadView>();
             log.set_open(true);
-            log.set_phase("failed".into());
+            log.set_phase(LogPhase::Failed);
         }
         settle(&window);
         app.window().request_redraw();
@@ -1139,11 +1137,8 @@ fn letter_and_log_buttons_paint_their_pending_press() {
         frame(&window);
         distinct_frames(&window, 2);
         app.window().request_redraw();
-        assert_eq!(
-            app.global::<crate::PressFeedback>().get_owner().as_str(),
-            owner
-        );
-        assert_ne!(resting, frame(&window), "{owner} button must push down");
+        assert_eq!(app.global::<crate::PressFeedback>().get_owner(), owner);
+        assert_ne!(resting, frame(&window), "{owner:?} button must push down");
         settle(&window);
     }
     assert_eq!(commits.get(), 2);
@@ -1157,7 +1152,7 @@ fn settings_category_and_picker_feedback_is_local_and_settles() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("settings".into());
+    app.global::<Shell>().set_active_screen(Screen::Settings);
     let settings = app.global::<crate::SettingsView>();
     settings.set_cells(cells(1, "Settings"));
     settings.set_cell_width(60.0);
@@ -1165,15 +1160,15 @@ fn settings_category_and_picker_feedback_is_local_and_settles() {
     settings.set_grid_y(40.0);
     settings.set_grid_height(80.0);
     settings.set_rows(ModelRc::new(VecModel::from(vec![crate::SettingsRow {
-        kind: "field".into(),
-        control: "navigate".into(),
+        kind: RowKind::Field,
+        control: ControlKind::Navigate,
         id: "pageDisplayInterface".into(),
         enabled: true,
         ..Default::default()
     }])));
     let commits = Rc::new(Cell::new(0));
-    for owner in ["settings", "list"] {
-        if owner == "list" {
+    for owner in [PressOwner::Settings, PressOwner::List] {
+        if owner == PressOwner::List {
             let ov = app.global::<crate::Overlays>();
             ov.set_list_entries(ModelRc::new(VecModel::from(vec![crate::MenuEntry {
                 id: "one".into(),
@@ -1189,21 +1184,18 @@ fn settings_category_and_picker_feedback_is_local_and_settles() {
         frame(&window);
         distinct_frames(&window, 2);
         app.window().request_redraw();
-        assert_eq!(
-            app.global::<crate::PressFeedback>().get_owner().as_str(),
-            owner
-        );
+        assert_eq!(app.global::<crate::PressFeedback>().get_owner(), owner);
         assert_ne!(
             resting,
             frame(&window),
-            "{owner} must show local feedback before dispatch"
+            "{owner:?} must show local feedback before dispatch"
         );
         settle(&window);
         app.window().request_redraw();
         assert_eq!(
             frame(&window),
             resting,
-            "{owner} feedback must fully release"
+            "{owner:?} feedback must fully release"
         );
     }
     assert_eq!(commits.get(), 2);
@@ -1221,7 +1213,7 @@ fn game_info_scrolls_long_content_but_not_short_or_loading_content() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("".into());
+    app.global::<Shell>().set_active_screen(Screen::None);
     let info = app.global::<crate::GameInfoView>();
     info.set_modal_open(true);
     info.set_modal_name("Details".into());
@@ -1230,7 +1222,7 @@ fn game_info_scrolls_long_content_but_not_short_or_loading_content() {
         value: "SNES".into(),
     }])));
     settle(&window);
-    app.invoke_game_info_scroll("down".into());
+    app.invoke_game_info_scroll(crate::ScrollAction::Down);
     assert_eq!(info.get_scroll_position(), 0.0);
     info.set_modal_description(
         "Long description with enough words to fill several viewports. "
@@ -1240,14 +1232,14 @@ fn game_info_scrolls_long_content_but_not_short_or_loading_content() {
     settle(&window);
     app.window().request_redraw();
     let top = frame(&window);
-    app.invoke_game_info_scroll("page_next".into());
+    app.invoke_game_info_scroll(crate::ScrollAction::PageNext);
     assert!(info.get_scroll_position() > 0.0);
     assert_ne!(top, frame(&window), "paging must move rendered content");
     for _ in 0..100 {
-        app.invoke_game_info_scroll("page_next".into());
+        app.invoke_game_info_scroll(crate::ScrollAction::PageNext);
     }
     let bottom = info.get_scroll_position();
-    app.invoke_game_info_scroll("down".into());
+    app.invoke_game_info_scroll(crate::ScrollAction::Down);
     assert_eq!(
         info.get_scroll_position(),
         bottom,
@@ -1255,7 +1247,7 @@ fn game_info_scrolls_long_content_but_not_short_or_loading_content() {
     );
     info.set_scroll_position(0.0);
     info.set_loading(true);
-    app.invoke_game_info_scroll("down".into());
+    app.invoke_game_info_scroll(crate::ScrollAction::Down);
     assert_eq!(
         info.get_scroll_position(),
         0.0,
@@ -1290,7 +1282,7 @@ fn about_seeds_scroll_before_paint_and_scrolls_with_clamped_geometry() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("about".into());
+    app.global::<Shell>().set_active_screen(Screen::About);
     view.set_scroll_milli(0);
     settle(&window);
     assert!(view.get_maximum_scroll_milli() > 0);
@@ -1332,7 +1324,7 @@ fn picker_keeps_first_row_until_focus_leaves_viewport() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("".into());
+    app.global::<Shell>().set_active_screen(Screen::None);
     app.global::<crate::Theme>()
         .set_text_primary(slint::Color::from_rgb_u8(0, 255, 0));
     let ov = app.global::<crate::Overlays>();
@@ -1374,17 +1366,20 @@ fn dialog_shells_respect_content_and_notice_caps() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("".into());
+    app.global::<Shell>().set_active_screen(Screen::None);
     app.global::<crate::Theme>()
         .set_bg_panel(slint::Color::from_rgb_u8(255, 0, 255));
     let ov = app.global::<crate::Overlays>();
     crate::router::open_quit_confirm(&app);
     let mut widths = Vec::new();
-    for kind in ["quit_confirm", "action_error", "notice"] {
-        ov.set_dialog_kind(kind.into());
-        if kind == "action_error" {
-            ov.set_dialog_kind("action_error".into());
-            ov.set_dialog_detail("launch".into());
+    for kind in [
+        DialogKind::QuitConfirm,
+        DialogKind::ActionError,
+        DialogKind::Notice,
+    ] {
+        ov.set_dialog_kind(kind);
+        if kind == DialogKind::ActionError {
+            ov.set_dialog_error(ErrorKind::Launch);
             ov.set_dialog_arg("A very long game name for a content-sized error".into());
         }
         settle(&window);
@@ -1422,15 +1417,15 @@ fn one_button_alert_sizes_action_to_its_label() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("".into());
+    app.global::<Shell>().set_active_screen(Screen::None);
     let theme = app.global::<crate::Theme>();
     theme.set_bg_panel(slint::Color::from_rgb_u8(255, 0, 255));
     theme.set_surface_card(slint::Color::from_rgb_u8(0, 255, 255));
     let ov = app.global::<crate::Overlays>();
-    ov.set_dialog_kind("action_error".into());
-    ov.set_dialog_detail("launch".into());
+    ov.set_dialog_kind(DialogKind::ActionError);
+    ov.set_dialog_error(ErrorKind::Launch);
     ov.set_dialog_arg("Sonic the Hedgehog".into());
-    ov.set_dialog_buttons(ModelRc::new(VecModel::from(vec!["ok".into()])));
+    ov.set_dialog_buttons(ModelRc::new(VecModel::from(vec![DialogButton::Ok])));
     ov.set_dialog_open(true);
     settle(&window);
     app.window().request_redraw();
@@ -1468,7 +1463,7 @@ fn qr_shell_preserves_square_modules_and_documentation_url() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("".into());
+    app.global::<Shell>().set_active_screen(Screen::None);
     let theme = app.global::<crate::Theme>();
     theme.set_text_primary(slint::Color::from_rgb_u8(0, 255, 0));
     theme.set_text_label(slint::Color::from_rgb_u8(255, 0, 255));
@@ -1527,7 +1522,7 @@ fn game_info_short_modal_keeps_close_help_at_desktop_size() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(width), f64::from(height), false),
     );
-    app.global::<Shell>().set_active_screen("".into());
+    app.global::<Shell>().set_active_screen(Screen::None);
     app.global::<crate::Theme>()
         .set_text_primary(slint::Color::from_rgb_u8(0, 255, 0));
     let info = app.global::<crate::GameInfoView>();
@@ -1574,7 +1569,7 @@ fn game_info_metadata_labels_paint_left_of_values() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("".into());
+    app.global::<Shell>().set_active_screen(Screen::None);
     let theme = app.global::<crate::Theme>();
     theme.set_text_label(slint::Color::from_rgb_u8(255, 0, 255));
     theme.set_text_primary(slint::Color::from_rgb_u8(0, 255, 0));
@@ -1626,7 +1621,7 @@ fn picker_selected_text_uses_on_accent_and_palette_previews_paint() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     crate::theme::apply_palette(&app, "zaparoo-dark", "normal");
-    app.global::<Shell>().set_active_screen("".into());
+    app.global::<Shell>().set_active_screen(Screen::None);
     let ov = app.global::<crate::Overlays>();
     ov.set_list_entries(ModelRc::new(VecModel::from(vec![crate::MenuEntry {
         id: "zaparoo-dark".into(),
@@ -1665,7 +1660,7 @@ fn mouse_setting_blocks_picker_clicks_but_not_enabled_selection() {
     use slint::platform::{PointerEventButton, WindowEvent};
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
-    app.global::<Shell>().set_active_screen("".into());
+    app.global::<Shell>().set_active_screen(Screen::None);
     let ov = app.global::<crate::Overlays>();
     ov.set_list_entries(ModelRc::new(VecModel::from(vec![crate::MenuEntry {
         id: "one".into(),
@@ -1698,7 +1693,7 @@ fn mouse_setting_blocks_picker_clicks_but_not_enabled_selection() {
     let clicks = Rc::new(Cell::new(0));
     let observed = clicks.clone();
     ov.on_pointer_choice(move |kind, _, accept| {
-        if kind == "list" && accept {
+        if kind == PressOwner::List && accept {
             observed.set(observed.get() + 1);
         }
     });
@@ -1742,12 +1737,12 @@ fn letter_columns_follow_each_windows_geometry() {
 fn confirm_defaults_to_no_on_the_left() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _) = boot();
-    app.global::<Shell>().set_active_screen("".into());
+    app.global::<Shell>().set_active_screen(Screen::None);
     crate::router::open_quit_confirm(&app);
     let ov = app.global::<crate::Overlays>();
     assert_eq!(ov.get_dialog_focus(), 0);
-    assert_eq!(ov.get_dialog_buttons().row_data(0), Some("no".into()));
-    assert_eq!(ov.get_dialog_buttons().row_data(1), Some("yes".into()));
+    assert_eq!(ov.get_dialog_buttons().row_data(0), Some(DialogButton::No));
+    assert_eq!(ov.get_dialog_buttons().row_data(1), Some(DialogButton::Yes));
 }
 
 fn advance(ms: u64) {
@@ -1778,7 +1773,7 @@ fn held_window_down_key_enters_rapid_mode_without_direct_repeat_dispatch() {
         shared.games.restore_done = true;
         shared.input.advance_test_clock(1);
     }
-    app.global::<Shell>().set_active_screen("games".into());
+    app.global::<Shell>().set_active_screen(Screen::Games);
     crate::router::refresh_layout(&app);
     crate::games::render(&ctx, &app);
     crate::input::bind(&ctx, &app, std::collections::HashMap::new());
@@ -1913,7 +1908,7 @@ fn browse_list_focus_and_scroll_are_local_and_restore_the_saved_viewport() {
         shared.games.grid.set_item_count(40);
         shared.games.focus_armed = true;
     }
-    app.global::<Shell>().set_active_screen("games".into());
+    app.global::<Shell>().set_active_screen(Screen::Games);
     app.global::<Shell>().set_browse_list_layout(true);
     crate::router::refresh_layout(&app);
     crate::games::render(&ctx, &app);
@@ -1989,7 +1984,7 @@ fn pending_folder_cancel_and_stale_reply_preserve_grid_and_list_sources() {
             shared.games.restore_done = true;
             shared.games.browse_path = "/parent".into();
         }
-        app.global::<Shell>().set_active_screen("games".into());
+        app.global::<Shell>().set_active_screen(Screen::Games);
         app.global::<Shell>().set_browse_list_layout(list);
         crate::router::refresh_layout(&app);
         crate::games::render(&ctx, &app);
@@ -2069,7 +2064,7 @@ fn restored_list_waits_for_selection_and_its_saved_viewport() {
     settle(&window);
     let source = pixels(&window);
     crate::navigation::stage(&ctx, &app);
-    crate::router::begin_pending(&app, "games");
+    crate::router::begin_pending(&app, Screen::Games);
     let mut rows = game_rows("Destination", 40);
     for (index, row) in rows.iter_mut().enumerate() {
         row.path = format!("/target/{index}");
@@ -2092,7 +2087,7 @@ fn restored_list_waits_for_selection_and_its_saved_viewport() {
         true,
     );
     assert!(app.global::<Shell>().get_transitioning());
-    assert_eq!(app.global::<Shell>().get_active_screen(), "hub");
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
     assert_region_matches(
         &pixels(&window),
         &source,
@@ -2112,7 +2107,7 @@ fn restored_list_waits_for_selection_and_its_saved_viewport() {
     );
     crate::games::on_append(&ctx, &app, ticket, Ok((rows[10..].to_vec(), None)));
     assert!(!app.global::<Shell>().get_transitioning());
-    assert_eq!(app.global::<Shell>().get_active_screen(), "games");
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Games);
     assert_eq!(app.global::<crate::GamesView>().get_current_index(), 8);
     assert_eq!(app.global::<crate::GamesView>().get_list_scroll_top(), 6);
     assert_eq!(
@@ -2137,7 +2132,7 @@ fn cold_and_cached_favorite_systems_restore_the_same_list_viewport() {
             .collect(),
     };
     for cached in [false, true] {
-        app.global::<Shell>().set_active_screen("hub".into());
+        app.global::<Shell>().set_active_screen(Screen::Hub);
         {
             let mut shared = crate::router::lock(&ctx.shared);
             shared.persist.active_screen = "hub".into();
@@ -2161,7 +2156,7 @@ fn cold_and_cached_favorite_systems_restore_the_same_list_viewport() {
         assert!(!app.global::<Shell>().get_transitioning());
         assert_eq!(
             app.global::<Shell>().get_active_screen(),
-            "favorite-systems"
+            Screen::FavoriteSystems
         );
         assert_eq!(app.global::<SystemsView>().get_current_index(), 8);
         assert_eq!(app.global::<SystemsView>().get_list_scroll_top(), 6);
@@ -2180,7 +2175,7 @@ fn failed_or_timed_out_navigation_restores_source_and_rejects_late_pages() {
     crate::router::lock(&ctx.shared).persist.active_screen = "hub".into();
     for timeout in [false, true] {
         crate::navigation::stage(&ctx, &app);
-        crate::router::begin_pending(&app, "games");
+        crate::router::begin_pending(&app, Screen::Games);
         let ticket = crate::router::lock(&ctx.shared).games.ticket;
         if timeout {
             advance(15_001);
@@ -2188,7 +2183,7 @@ fn failed_or_timed_out_navigation_restores_source_and_rejects_late_pages() {
             crate::games::on_append(&ctx, &app, ticket, Err("offline".into()));
         }
         assert!(!app.global::<Shell>().get_transitioning());
-        assert_eq!(app.global::<Shell>().get_active_screen(), "hub");
+        assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
         assert_eq!(zaparoo_core::persist::load().active_screen, "hub");
         assert!(app.global::<crate::Overlays>().get_dialog_open());
         crate::games::on_append(&ctx, &app, ticket, Ok((game_rows("Late", 4), None)));
@@ -2288,8 +2283,14 @@ fn grid_push_lowers_face_art_and_ring_before_ready_navigation() {
     let shell = app.global::<Shell>();
     shell.set_systems_list_layout(false);
     shell.set_browse_list_layout(false);
-    for owner in ["hub", "systems", "games", "settings"] {
-        shell.set_active_screen(owner.into());
+    for screen in [
+        Screen::Hub,
+        Screen::Systems,
+        Screen::Games,
+        Screen::Settings,
+    ] {
+        let owner = screen.token(); // Stable screenshot filename, not routing state.
+        shell.set_active_screen(screen);
         let mut art = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::new(8, 8);
         for (i, pixel) in art.make_mut_slice().iter_mut().enumerate() {
             *pixel = slint::Rgb8Pixel {
@@ -2307,8 +2308,8 @@ fn grid_push_lowers_face_art_and_ring_before_ready_navigation() {
             has_cover_focus: true,
             ..Default::default()
         }]));
-        match owner {
-            "hub" => {
+        match screen {
+            Screen::Hub => {
                 let view = app.global::<HubView>();
                 view.set_cells(page);
                 view.set_cell_width(70.0);
@@ -2316,7 +2317,7 @@ fn grid_push_lowers_face_art_and_ring_before_ready_navigation() {
                 view.set_grid_y(40.0);
                 view.set_grid_height(100.0);
             }
-            "systems" => {
+            Screen::Systems => {
                 let view = app.global::<SystemsView>();
                 view.set_cells(page);
                 view.set_count(1);
@@ -2326,7 +2327,7 @@ fn grid_push_lowers_face_art_and_ring_before_ready_navigation() {
                 view.set_grid_y(40.0);
                 view.set_grid_height(100.0);
             }
-            "games" => {
+            Screen::Games => {
                 let view = app.global::<crate::GamesView>();
                 view.set_cells(page);
                 view.set_count(1);
@@ -2345,8 +2346,8 @@ fn grid_push_lowers_face_art_and_ring_before_ready_navigation() {
                 view.set_grid_y(40.0);
                 view.set_grid_height(100.0);
                 view.set_rows(ModelRc::new(VecModel::from(vec![crate::SettingsRow {
-                    kind: "field".into(),
-                    control: "navigate".into(),
+                    kind: RowKind::Field,
+                    control: ControlKind::Navigate,
                     id: "pageAppearance".into(),
                     enabled: true,
                     ..Default::default()
@@ -2362,7 +2363,7 @@ fn grid_push_lowers_face_art_and_ring_before_ready_navigation() {
             return;
         };
         crate::press_feedback::dispatch(&app, &target, |app| {
-            crate::router::transition_to_screen(app, "about", 1);
+            crate::router::transition_to_screen(app, Screen::About, 1);
         });
         pixels(&window);
         advance(16);
@@ -2371,19 +2372,19 @@ fn grid_push_lowers_face_art_and_ring_before_ready_navigation() {
         let depressed = pixels(&window);
         save_push_evidence(&format!("{owner}-2-depressed"), &depressed);
         assert_eq!(
-            shell.get_active_screen().as_str(),
-            owner,
+            shell.get_active_screen(),
+            screen,
             "ready navigation must not hide the push"
         );
         let sizing = app.global::<Sizing>();
         let layout = app.global::<crate::Layout>();
-        let left = if owner == "hub" {
+        let left = if screen == Screen::Hub {
             sizing.get_hub_grid_side_inset()
         } else {
             layout.get_grid_left_inset()
         } as usize;
         let top = 40
-            + if owner == "hub" {
+            + if screen == Screen::Hub {
                 sizing.get_hub_grid_top_inset()
             } else {
                 layout.get_grid_top_inset()
@@ -2419,12 +2420,12 @@ fn grid_push_lowers_face_art_and_ring_before_ready_navigation() {
         );
         advance(32);
         assert_eq!(
-            shell.get_active_screen().as_str(),
-            owner,
+            shell.get_active_screen(),
+            screen,
             "fully depressed source must remain visible"
         );
         advance(16);
-        assert_eq!(shell.get_active_screen(), "about");
+        assert_eq!(shell.get_active_screen(), Screen::About);
         assert!(!crate::press_feedback::pending(&app));
         save_push_evidence(&format!("{owner}-3-destination"), &pixels(&window));
     }
@@ -2439,13 +2440,13 @@ fn window_and_pointer_accept_paint_settings_push_before_opening_page() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("settings".into());
+    app.global::<Shell>().set_active_screen(Screen::Settings);
     let input_ctx = std::sync::Arc::new(ctx.clone());
     crate::input::bind(&input_ctx, &app, std::collections::HashMap::new());
     crate::settings::bind_input(&input_ctx, &app);
     let view = app.global::<crate::SettingsView>();
     for pointer in [false, true] {
-        crate::settings::open_page(&ctx, &app, "");
+        crate::settings::open_page(&ctx, &app, SettingsPage::Root);
         view.set_index(0);
         settle(&window);
         let raised = pixels(&window);
@@ -2461,7 +2462,7 @@ fn window_and_pointer_accept_paint_settings_push_before_opening_page() {
                 .dispatch_event(slint::platform::WindowEvent::KeyReleased { text: key.into() });
         }
         assert!(crate::press_feedback::pending(&app));
-        assert!(view.get_page().is_empty());
+        assert_eq!(view.get_page(), SettingsPage::Root);
         app.global::<crate::SettingsInput>().invoke_cell_hovered(1);
         assert_eq!(
             view.get_index(),
@@ -2475,9 +2476,9 @@ fn window_and_pointer_accept_paint_settings_push_before_opening_page() {
             pixels(&window),
             "real input must paint the physical press"
         );
-        assert!(view.get_page().is_empty());
+        assert_eq!(view.get_page(), SettingsPage::Root);
         advance(48);
-        assert_eq!(view.get_page(), "pageAppearance");
+        assert_eq!(view.get_page(), SettingsPage::Appearance);
         crate::router::handle_action(&ctx, &app, "cancel");
         settle(&window);
         assert_eq!(
@@ -2491,15 +2492,15 @@ fn window_and_pointer_accept_paint_settings_push_before_opening_page() {
     crate::router::handle_action(&ctx, &app, "cancel");
     settle(&window);
     assert!(
-        view.get_page().is_empty(),
+        view.get_page() == SettingsPage::Root,
         "Back cancels the pending Accept, not the source screen"
     );
-    assert_eq!(app.global::<Shell>().get_active_screen(), "settings");
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Settings);
     crate::router::handle_action(&ctx, &app, "accept");
     crate::router::handle_action(&ctx, &app, "right");
     settle(&window);
     assert!(
-        view.get_page().is_empty(),
+        view.get_page() == SettingsPage::Root,
         "new selection retires the old Accept"
     );
     assert_eq!(view.get_index(), 1);
@@ -2507,7 +2508,7 @@ fn window_and_pointer_accept_paint_settings_push_before_opening_page() {
     app.invoke_input_lost();
     settle(&window);
     assert!(
-        view.get_page().is_empty(),
+        view.get_page() == SettingsPage::Root,
         "losing input ownership cancels the pending push"
     );
     assert!(!crate::press_feedback::pending(&app));
@@ -2515,7 +2516,7 @@ fn window_and_pointer_accept_paint_settings_push_before_opening_page() {
     crate::router::handle_action(&ctx, &app, "accept");
     assert_eq!(
         view.get_page(),
-        "pageLibraryData",
+        SettingsPage::Library,
         "reduced motion does not wait"
     );
 }
@@ -2529,7 +2530,7 @@ fn accepting_during_page_motion_pushes_the_logical_destination_tile() {
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    app.global::<Shell>().set_active_screen("games".into());
+    app.global::<Shell>().set_active_screen(Screen::Games);
     {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.games.rows = game_rows("Folder", 200);
@@ -2582,9 +2583,9 @@ fn ready_routes_commit_without_advancing_the_clock() {
     let (app, window) = boot();
     settle(&window);
     let time = CLOCK.with(Cell::get);
-    for (target, direction) in [("systems", 1), ("hub", -1)] {
+    for (target, direction) in [(Screen::Systems, 1), (Screen::Hub, -1)] {
         crate::router::transition_to_screen(&app, target, direction);
-        assert_eq!(app.global::<Shell>().get_active_screen().as_str(), target);
+        assert_eq!(app.global::<Shell>().get_active_screen(), target);
         assert_eq!(CLOCK.with(Cell::get), time);
         let immediate = pixels(&window);
         // No paint or timer is required before the coherent destination exists.
@@ -2598,7 +2599,7 @@ fn pending_navigation_preserves_source_pixels_outside_the_status_slot() {
     let (app, window) = boot();
     settle(&window);
     let source = pixels(&window);
-    crate::router::begin_pending(&app, "systems");
+    crate::router::begin_pending(&app, Screen::Systems);
     for ticks in [1, 6, 20, 100] {
         distinct_frames(&window, ticks);
         assert_region_matches(
@@ -2608,9 +2609,9 @@ fn pending_navigation_preserves_source_pixels_outside_the_status_slot() {
             55..H as usize,
             "source body stays intact while waiting",
         );
-        assert_eq!(app.global::<Shell>().get_active_screen(), "hub");
+        assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
     }
-    crate::router::transition_to_screen(&app, "systems", 1);
+    crate::router::transition_to_screen(&app, Screen::Systems, 1);
     let destination = pixels(&window);
     settle(&window);
     assert_eq!(
@@ -2626,11 +2627,11 @@ fn a_fast_fill_commits_without_flashing_loading_text() {
     let (app, window) = boot();
     settle(&window);
 
-    crate::router::begin_pending(&app, "systems");
+    crate::router::begin_pending(&app, Screen::Systems);
     distinct_frames(&window, 3);
     assert!(!app.global::<Shell>().get_transition_cue());
-    crate::router::transition_to_screen(&app, "systems", 1);
-    assert_eq!(app.global::<Shell>().get_active_screen(), "systems");
+    crate::router::transition_to_screen(&app, Screen::Systems, 1);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Systems);
     distinct_frames(&window, SETTLE_TICKS);
     assert!(!app.global::<Shell>().get_transition_cue());
 }
@@ -2641,12 +2642,15 @@ fn a_slow_fill_keeps_source_and_adds_static_delayed_feedback() {
     let (app, window) = boot();
     settle(&window);
 
-    crate::router::begin_pending(&app, "systems");
-    assert_eq!(app.global::<Shell>().get_transition_target(), "systems");
+    crate::router::begin_pending(&app, Screen::Systems);
+    assert_eq!(
+        app.global::<Shell>().get_transition_target(),
+        Screen::Systems
+    );
     distinct_frames(&window, 24);
     let shell = app.global::<Shell>();
     assert!(shell.get_transition_cue());
-    assert_eq!(shell.get_active_screen().as_str(), "hub");
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
     let held = pixels(&window);
     assert_eq!(
         distinct_frames(&window, 8),
@@ -2655,8 +2659,8 @@ fn a_slow_fill_keeps_source_and_adds_static_delayed_feedback() {
     );
     assert_eq!(held, pixels(&window));
 
-    crate::router::transition_to_screen(&app, "systems", 1);
-    assert_eq!(shell.get_active_screen().as_str(), "systems");
+    crate::router::transition_to_screen(&app, Screen::Systems, 1);
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
     distinct_frames(&window, SETTLE_TICKS);
     assert!(!shell.get_transitioning());
     assert!(!shell.get_transition_cue());

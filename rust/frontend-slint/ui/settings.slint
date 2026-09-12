@@ -10,15 +10,14 @@ import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, SelectionBar } from "chrome.slint";
 import { GridCell, Tile } from "tiles.slint";
 import { Labels } from "labels.slint";
+import { SettingsPage, RowKind, ControlKind, ActionStatus, SetupKind, ScopeKind, SetupAction, StateTokens } from "state_types.slint";
 
 // One row: a group header, or a field with its control and state.
 export struct SettingsRow {
-    // "header" | "field"
-    kind: string,
+    kind: RowKind,
     // Vocabulary key: the field id, or the header's own key.
     id: string,
-    // "picker" | "toggle" | "action" | "navigate"
-    control: string,
+    control: ControlKind,
     // Picker: the canonical value. Action: the label key its control
     // shows. Navigate on the root grid: the category glyph.
     value: string,
@@ -26,14 +25,14 @@ export struct SettingsRow {
     enabled: bool,
     // An action whose job is already running says so under its label.
     busy: bool,
-    status-key: string,
+    status-key: ActionStatus,
     status-count: string,
     // Where the row sits in the card and how tall it is; Rust stacks
     // them so a busy action's taller box shifts everything below it.
     y-offset: length,
     height: length,
-    // The setup forms name their scope and source rows here: `value`
-    // carries the kind, this the name it needs.
+    // Setup scope/source rows keep their discriminant separate from text.
+    scope-kind: ScopeKind,
     value-name: string,
 }
 
@@ -52,34 +51,34 @@ export global SettingsLabels {
         }
         return self.value(id, value);
     }
-    public pure function action-status(key: string, count: string) -> string {
-        if (key == "optimizing") { return @tr("Optimizing"); }
-        if (key == "paused") { return @tr("Paused"); }
-        if (key == "running") { return @tr("In progress"); }
-        if (key == "indexed") { return @tr("{} indexed", count); }
-        if (key == "imported") { return @tr("{} imported", count); }
+    public pure function action-status(key: ActionStatus, count: string) -> string {
+        if (key == ActionStatus.optimizing) { return @tr("Optimizing"); }
+        if (key == ActionStatus.paused) { return @tr("Paused"); }
+        if (key == ActionStatus.running) { return @tr("In progress"); }
+        if (key == ActionStatus.indexed) { return @tr("{} indexed", count); }
+        if (key == ActionStatus.imported) { return @tr("{} imported", count); }
         return "";
     }
-    public pure function page-title(id: string) -> string {
-        if (id == "") { return @tr("Settings"); }
-        return SettingsLabels.label(id);
+    public pure function page-title(page: SettingsPage) -> string {
+        if (page == SettingsPage.root) { return @tr("Settings"); }
+        return SettingsLabels.label(StateTokens.page(page));
     }
 
     // The media-job setup forms (IndexSetupModal, ScrapeSetupModal).
-    public pure function setup-title(kind: string) -> string {
-        if (kind == "scrape") { return @tr("Update metadata"); }
+    public pure function setup-title(kind: SetupKind) -> string {
+        if (kind == SetupKind.scrape) { return @tr("Update metadata"); }
         return @tr("Update media database");
     }
     // The scope a job runs over, and the source it runs from.
-    public pure function scope(kind: string, name: string) -> string {
-        if (kind == "all") { return @tr("All systems"); }
-        if (kind == "category") { return @tr("All {} systems", Labels.hub("category:" + name, name)); }
+    public pure function scope(kind: ScopeKind, name: string) -> string {
+        if (kind == ScopeKind.all) { return @tr("All systems"); }
+        if (kind == ScopeKind.category) { return @tr("All {} systems", Labels.hub("category:" + name, name)); }
         return name;
     }
-    public pure function setup-action(key: string) -> string {
-        if (key == "select") { return @tr("Select"); }
-        if (key == "start") { return @tr("Start"); }
-        if (key == "toggle") { return @tr("Toggle"); }
+    public pure function setup-action(key: SetupAction) -> string {
+        if (key == SetupAction.select) { return @tr("Select"); }
+        if (key == SetupAction.start) { return @tr("Start"); }
+        if (key == SetupAction.toggle) { return @tr("Toggle"); }
         return @tr("Change");
     }
 
@@ -326,7 +325,7 @@ export component SettingsRowView inherits Rectangle {
     background: transparent;
     opacity: root.entry.enabled ? 1.0 : 0.4;
 
-    property <bool> is-action: root.entry.control == "action";
+    property <bool> is-action: root.entry.control == ControlKind.action;
     property <length> pad: Sizing.pct-w(2);
     property <length> knob-h: Sizing.pct-h(3.8);
 
@@ -335,7 +334,7 @@ export component SettingsRowView inherits Rectangle {
         height: 100%;
         active: root.focused;
         // Toggles answer with their knob slide, not a flash.
-        activate-pulse: root.entry.control == "toggle" ? 0 : root.activate-pulse;
+        activate-pulse: root.entry.control == ControlKind.toggle ? 0 : root.activate-pulse;
         screen-settling: root.settling;
         radius: Layout.row-radius;
     }
@@ -348,7 +347,7 @@ export component SettingsRowView inherits Rectangle {
     }
     label := Text {
         x: root.is-action ? Math.round((parent.width - self.width) / 2px) * 1px : root.pad;
-        y: root.entry.status-key != ""
+        y: root.entry.status-key != ActionStatus.none
             ? Sizing.pct-h(1)
             : Math.round((parent.height - self.height) / 2px) * 1px;
         width: Math.min(Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2),
@@ -361,7 +360,7 @@ export component SettingsRowView inherits Rectangle {
     }
 
     // A running media job reports under its own row.
-    if root.entry.status-key != "": Text {
+    if root.entry.status-key != ActionStatus.none: Text {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: label.y + label.height + Sizing.pct-h(0.3);
         width: Math.min(self.preferred-width, parent.width - 2 * root.pad);
@@ -373,10 +372,10 @@ export component SettingsRowView inherits Rectangle {
     }
 
     property <string> value-text: (root.entry.id == "systems" || root.entry.id == "source")
-        ? SettingsLabels.scope(root.entry.value, root.entry.value-name)
+        ? SettingsLabels.scope(root.entry.scope-kind, root.entry.value-name)
         : SettingsLabels.value(root.entry.id, root.entry.value);
 
-    if root.entry.control == "picker": Text {
+    if root.entry.control == ControlKind.picker: Text {
         x: parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
         y: Math.round((parent.height - self.height) / 2px) * 1px;
         width: Math.min(self.preferred-width, Math.max(0px,
@@ -388,7 +387,7 @@ export component SettingsRowView inherits Rectangle {
         font-weight: bar.content-weight;
     }
 
-    if root.entry.control == "toggle": Rectangle {
+    if root.entry.control == ControlKind.toggle: Rectangle {
         property <length> inset: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
         x: parent.width - self.width - root.pad;
         y: Math.round((parent.height - self.height) / 2px) * 1px;
@@ -416,10 +415,10 @@ export component SettingsRowView inherits Rectangle {
     chevron := Image {
         x: parent.width - self.width - root.pad;
         y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: root.entry.control == "picker" || root.entry.control == "navigate"
+        width: root.entry.control == ControlKind.picker || root.entry.control == ControlKind.navigate
             ? Sizing.pct-h(3) : 0px;
         height: self.width;
-        visible: root.entry.control == "picker" || root.entry.control == "navigate";
+        visible: root.entry.control == ControlKind.picker || root.entry.control == ControlKind.navigate;
         source: GlyphSource.glyph("icons/NavRight", Math.max(1px, self.width), bar.active ? bar.content-color : Theme.text-label);
     }
 }

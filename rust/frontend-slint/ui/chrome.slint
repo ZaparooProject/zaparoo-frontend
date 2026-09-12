@@ -11,6 +11,7 @@
 // no percentages of their own beyond the ones the QML hardcodes.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { ContentState, StatusKind } from "state_types.slint";
 
 // Glyph provider implemented in Rust: the SVG sources under
 // resources/images are rasterized with resvg at the exact requested
@@ -99,7 +100,7 @@ export struct HelpEntry {
 // `zaparoo_app::status_line`. `kind` is the stable message id; the
 // sentence is composed here so it stays in the translation catalogs.
 export global Status {
-    in-out property <string> kind: "";
+    in-out property <StatusKind> kind: StatusKind.none;
     in-out property <string> arg: "";
     in-out property <string> arg2: "";
     in-out property <bool> is-error: false;
@@ -112,31 +113,31 @@ export global Status {
     in-out property <int> percent: -1;
 
     public pure function label() -> string {
-        if (self.kind == "disconnected") { return @tr("Disconnected"); }
-        if (self.kind == "reconnecting") { return @tr("Reconnecting…"); }
-        if (self.kind == "connecting") { return @tr("Connecting…"); }
-        if (self.kind == "core-error") {
+        if (self.kind == StatusKind.disconnected) { return @tr("Disconnected"); }
+        if (self.kind == StatusKind.reconnecting) { return @tr("Reconnecting…"); }
+        if (self.kind == StatusKind.connecting) { return @tr("Connecting…"); }
+        if (self.kind == StatusKind.core-error) {
             return self.arg == "" ? @tr("Core error") : @tr("Core error: {}", self.arg);
         }
-        if (self.kind == "indexing-paused") { return @tr("Indexing paused: game running"); }
-        if (self.kind == "indexing") {
+        if (self.kind == StatusKind.indexing-paused) { return @tr("Indexing paused: game running"); }
+        if (self.kind == StatusKind.indexing) {
             // Core leaves the step display empty right at the start of a
             // run; a bare "Indexing: " reads as broken.
             return self.arg == "" ? @tr("Indexing…") : @tr("Indexing: {}", self.arg);
         }
-        if (self.kind == "optimizing") {
+        if (self.kind == StatusKind.optimizing) {
             return self.arg == "" ? @tr("Optimizing database…") : @tr("Optimizing database: {}", self.arg);
         }
-        if (self.kind == "importing-paused") { return @tr("Importing paused: game running"); }
-        if (self.kind == "importing") {
+        if (self.kind == StatusKind.importing-paused) { return @tr("Importing paused: game running"); }
+        if (self.kind == StatusKind.importing) {
             return self.arg == "" ? @tr("Importing…") : @tr("Importing: {}", self.arg);
         }
-        if (self.kind == "indexed-files") { return @tr("Indexed {} files", self.arg); }
-        if (self.kind == "indexing-complete") { return @tr("Indexing complete"); }
-        if (self.kind == "import-failed") { return @tr("Import failed: {}", self.arg); }
-        if (self.kind == "imported") { return @tr("Imported {} of {}", self.arg, self.arg2); }
-        if (self.kind == "playtime-warning") { return @tr("Playtime limit in {}", self.arg); }
-        if (self.kind == "inbox") { return self.arg; }
+        if (self.kind == StatusKind.indexed-files) { return @tr("Indexed {} files", self.arg); }
+        if (self.kind == StatusKind.indexing-complete) { return @tr("Indexing complete"); }
+        if (self.kind == StatusKind.import-failed) { return @tr("Import failed: {}", self.arg); }
+        if (self.kind == StatusKind.imported) { return @tr("Imported {} of {}", self.arg, self.arg2); }
+        if (self.kind == StatusKind.playtime-warning) { return @tr("Playtime limit in {}", self.arg); }
+        if (self.kind == StatusKind.inbox) { return self.arg; }
         return "";
     }
     public pure function percent-text() -> string {
@@ -844,13 +845,10 @@ export component SelectionBar inherits Rectangle {
 
 // In-screen state cue (ScreenStateOverlay.qml): the empty or failed
 // message centered over the content area, with an optional detail line.
-// `state` is "error", "empty" or "" (nothing painted).
+// Ready paints nothing. Loading waits before painting and holds briefly.
 export component StateCue inherits Rectangle {
-    // "loading", "error", "empty" or "" (nothing painted). Loading shows
-    // the cue only after `loading-delay` and keeps it for at least
-    // `minimum-visible` once shown (DelayedLoadingIndicator.qml), so a
-    // fast fill never flashes it.
-    in property <string> state: "";
+    // Delay and minimum visibility prevent a fast fill from flashing.
+    in property <ContentState> state: ContentState.ready;
     in property <string> empty-text: @tr("Nothing here");
     in property <string> empty-detail: "";
     in property <string> error-detail: @tr("Check Zaparoo Core and try again.");
@@ -863,7 +861,7 @@ export component StateCue inherits Rectangle {
 
     background: transparent;
 
-    property <bool> loading: root.state == "loading";
+    property <bool> loading: root.state == ContentState.loading;
     property <bool> loading-shown: false;
     property <bool> hold: false;
     changed loading => {
@@ -886,11 +884,11 @@ export component StateCue inherits Rectangle {
         }
     }
     out property <bool> loading-visible: root.loading-shown;
-    property <string> message-state: root.loading-shown ? "" : (root.loading ? "" : root.state);
-    visible: root.loading-shown || root.message-state != "";
+    property <ContentState> message-state: root.loading-shown || root.loading ? ContentState.ready : root.state;
+    visible: root.loading-shown || root.message-state != ContentState.ready;
 
-    property <string> headline: root.message-state == "error" ? @tr("Failed to load") : root.empty-text;
-    property <string> detail: root.message-state == "error" ? root.error-detail : root.empty-detail;
+    property <string> headline: root.message-state == ContentState.error ? @tr("Failed to load") : root.empty-text;
+    property <string> detail: root.message-state == ContentState.error ? root.error-detail : root.empty-detail;
     property <length> text-w: Math.round(root.width * 0.7 / 1px) * 1px;
     property <length> gap: Sizing.pct-h(0.6);
     property <length> block-h: headline-text.preferred-height + (root.detail != "" ? root.gap + detail-text.preferred-height : 0px);
@@ -928,7 +926,7 @@ export component StateCue inherits Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: Math.round((parent.height - root.block-h) / 2px) * 1px;
         width: root.text-w;
-        visible: root.message-state != "";
+        visible: root.message-state != ContentState.ready;
         wrap: word-wrap;
         horizontal-alignment: center;
         text: root.headline;
@@ -939,7 +937,7 @@ export component StateCue inherits Rectangle {
         x: Math.round((parent.width - self.width) / 2px) * 1px;
         y: headline-text.y + headline-text.preferred-height + root.gap;
         width: root.text-w;
-        visible: root.message-state != "" && root.detail != "";
+        visible: root.message-state != ContentState.ready && root.detail != "";
         wrap: word-wrap;
         horizontal-alignment: center;
         text: root.detail;

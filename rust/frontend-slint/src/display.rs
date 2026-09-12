@@ -139,8 +139,12 @@ mod tests {
             (352, 240, false, 8.0, 8.0),
             (352, 240, true, 8.0, 8.0),
         ] {
-            for orientation in ["horizontal", "cw", "ccw"] {
-                state.settings.orientation = orientation.into();
+            for orientation in [
+                crate::Orientation::Horizontal,
+                crate::Orientation::Cw,
+                crate::Orientation::Ccw,
+            ] {
+                state.settings.orientation = orientation.token().into();
                 crate::seed_display_globals(&app, &state, crt, crt, (width, height));
                 let (w, h) =
                     crate::scene_size(f64::from(width), f64::from(height), orientation, crt);

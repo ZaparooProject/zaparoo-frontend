@@ -6,13 +6,15 @@
 // them into translated text. Kept in its own file so every screen and
 // modal can reach it without importing the app tree.
 
+import { Screen, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
+
 // Key-to-copy vocabulary for labels Rust hands over as stable ids.
 export global Labels {
-    public pure function loading(target: string) -> string {
-        if (target == "systems") { return @tr("Loading systems…"); }
-        if (target == "games") { return @tr("Loading games…"); }
-        if (target == "favorites") { return @tr("Loading favorites…"); }
-        if (target == "recents") { return @tr("Loading recently played…"); }
+    public pure function loading(target: Screen) -> string {
+        if (target == Screen.systems) { return @tr("Loading systems…"); }
+        if (target == Screen.games) { return @tr("Loading games…"); }
+        if (target == Screen.favorites) { return @tr("Loading favorites…"); }
+        if (target == Screen.recents) { return @tr("Loading recently played…"); }
         return @tr("Loading…");
     }
     public pure function hub(key: string, name: string) -> string {
@@ -112,117 +114,113 @@ export global Labels {
 
     // The header's transient app line. Rust pushes a key; today the
     // only one is the launch cue.
-    public pure function status(key: string) -> string {
-        if (key == "launching") { return @tr("Launching…"); }
+    public pure function status(key: AppCue) -> string {
+        if (key == AppCue.launching) { return @tr("Launching…"); }
         return "";
     }
 
-    public pure function hub-reason(reason: string) -> string {
-        if (reason == "no-recent-games") { return @tr("No recent games"); }
-        if (reason == "no-internet") { return @tr("No internet connection"); }
-        if (reason == "not-available") { return @tr("Not available"); }
+    public pure function hub-reason(reason: DisabledReason) -> string {
+        if (reason == DisabledReason.no-recent-games) { return @tr("No recent games"); }
+        if (reason == DisabledReason.no-internet) { return @tr("No internet connection"); }
+        if (reason == DisabledReason.not-available) { return @tr("Not available"); }
         return "";
     }
 }
 
-// The dialog vocabulary. Rust pushes a kind, an optional sub-kind or
-// second value (`detail`) and one runtime value (`arg`); every word a
-// dialog shows is composed here so it can be translated. `detail`
-// carries the failure kind for an alert, the minimum version for the
-// Core warning, and the first-run phase; `arg` carries the item name,
-// the running version, or the file count.
+// Typed dialog state stays separate from runtime text. `detail` carries
+// the minimum Core version; `arg` carries context, running version, or count.
 export global DialogLabels {
-    public pure function title(kind: string, detail: string) -> string {
-        if (kind == "quit_confirm") { return @tr("Quit Zaparoo Frontend?"); }
-        if (kind == "restart_setting") { return @tr("Quit and restart Zaparoo Frontend?"); }
-        if (kind == "notice") { return @tr("Welcome to Zaparoo Frontend"); }
-        if (kind == "core_version") { return @tr("Update Zaparoo Core"); }
-        if (kind == "first_run") { return @tr("First-time setup"); }
-        if (kind == "hub_full") { return @tr("Nothing left to add"); }
-        if (kind == "action_error") { return DialogLabels.error-title(detail); }
+    public pure function title(kind: DialogKind, error: ErrorKind) -> string {
+        if (kind == DialogKind.quit-confirm) { return @tr("Quit Zaparoo Frontend?"); }
+        if (kind == DialogKind.restart-setting) { return @tr("Quit and restart Zaparoo Frontend?"); }
+        if (kind == DialogKind.notice) { return @tr("Welcome to Zaparoo Frontend"); }
+        if (kind == DialogKind.core-version) { return @tr("Update Zaparoo Core"); }
+        if (kind == DialogKind.first-run) { return @tr("First-time setup"); }
+        if (kind == DialogKind.hub-full) { return @tr("Nothing left to add"); }
+        if (kind == DialogKind.action-error) { return DialogLabels.error-title(error); }
         return "";
     }
 
-    public pure function body(kind: string, detail: string, arg: string) -> string {
-        if (kind == "quit_confirm") { return @tr("Are you sure you want to exit?"); }
-        if (kind == "restart_setting") { return @tr("This setting needs a frontend restart to take effect."); }
-        if (kind == "notice") {
+    public pure function body(kind: DialogKind, error: ErrorKind, phase: FirstRunPhase, detail: string, arg: string) -> string {
+        if (kind == DialogKind.quit-confirm) { return @tr("Are you sure you want to exit?"); }
+        if (kind == DialogKind.restart-setting) { return @tr("This setting needs a frontend restart to take effect."); }
+        if (kind == DialogKind.notice) {
             return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About / License.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");
         }
-        if (kind == "core_version") {
+        if (kind == DialogKind.core-version) {
             return @tr("This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update.", detail, arg);
         }
-        if (kind == "first_run") {
-            if (detail == "done") { return @tr("Done. {} files indexed.", arg); }
+        if (kind == DialogKind.first-run) {
+            if (phase == FirstRunPhase.done) { return @tr("Done. {} files indexed.", arg); }
             return @tr("Zaparoo needs to scan your games before you can use the frontend. This usually takes a few minutes.");
         }
-        if (kind == "hub_full") {
+        if (kind == DialogKind.hub-full) {
             return @tr("All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\".");
         }
-        if (kind == "action_error") { return DialogLabels.error-body(detail, arg); }
+        if (kind == DialogKind.action-error) { return DialogLabels.error-body(error, arg); }
         return "";
     }
 
     // The first-run scan's progress line.
-    public pure function status(key: string, step: int, total: int, name: string) -> string {
-        if (key == "preparing") { return @tr("Preparing…"); }
-        if (key == "optimizing") { return @tr("Optimizing database - almost done"); }
-        if (key == "paused") { return @tr("Indexing paused"); }
-        if (key == "step") {
+    public pure function status(key: DialogProgress, step: int, total: int, name: string) -> string {
+        if (key == DialogProgress.preparing) { return @tr("Preparing…"); }
+        if (key == DialogProgress.optimizing) { return @tr("Optimizing database - almost done"); }
+        if (key == DialogProgress.paused) { return @tr("Indexing paused"); }
+        if (key == DialogProgress.step) {
             if (name == "") { return @tr("Step {} of {}", step, total); }
             return @tr("Step {} of {} - {}", step, total, name);
         }
         return "";
     }
 
-    public pure function button(key: string) -> string {
-        if (key == "yes") { return @tr("Yes"); }
-        if (key == "no") { return @tr("No"); }
-        if (key == "ok") { return @tr("OK"); }
-        if (key == "retry") { return @tr("Retry"); }
-        if (key == "cancel") { return @tr("Cancel"); }
-        if (key == "i_understand") { return @tr("I understand"); }
-        if (key == "start_scan") { return @tr("Start scan"); }
-        return key;
+    public pure function button(key: DialogButton) -> string {
+        if (key == DialogButton.yes) { return @tr("Yes"); }
+        if (key == DialogButton.no) { return @tr("No"); }
+        if (key == DialogButton.ok) { return @tr("OK"); }
+        if (key == DialogButton.retry) { return @tr("Retry"); }
+        if (key == DialogButton.cancel) { return @tr("Cancel"); }
+        if (key == DialogButton.i-understand) { return @tr("I understand"); }
+        if (key == DialogButton.start-scan) { return @tr("Start scan"); }
+        return "";
     }
 
     // A failed user action. The technical detail is already in the log;
     // these say what failed and what the user can do about it.
-    public pure function error-title(kind: string) -> string {
-        if (kind == "launch") { return @tr("Launch failed"); }
-        if (kind == "favorite") { return @tr("Favorite update failed"); }
-        if (kind == "add_to_hub") { return @tr("Add to Hub failed"); }
-        if (kind == "media_index") { return @tr("Media update failed"); }
-        if (kind == "media_scrape") { return @tr("Update metadata failed"); }
-        if (kind == "media_scrapers") { return @tr("Source list unavailable"); }
-        if (kind == "media_cancel") { return @tr("Cancel failed"); }
-        if (kind == "launcher" || kind == "launcher_save") { return @tr("Launcher update failed"); }
-        if (kind == "alternate_discovery") { return @tr("Alternate versions unavailable"); }
-        if (kind == "qr_code") { return @tr("QR code failed"); }
-        if (kind == "card_write") { return @tr("Token write failed"); }
-        if (kind == "setting") { return @tr("Setting not saved"); }
+    public pure function error-title(kind: ErrorKind) -> string {
+        if (kind == ErrorKind.launch) { return @tr("Launch failed"); }
+        if (kind == ErrorKind.favorite) { return @tr("Favorite update failed"); }
+        if (kind == ErrorKind.add-to-hub) { return @tr("Add to Hub failed"); }
+        if (kind == ErrorKind.media-index) { return @tr("Media update failed"); }
+        if (kind == ErrorKind.media-scrape) { return @tr("Update metadata failed"); }
+        if (kind == ErrorKind.media-scrapers) { return @tr("Source list unavailable"); }
+        if (kind == ErrorKind.media-cancel) { return @tr("Cancel failed"); }
+        if (kind == ErrorKind.launcher || kind == ErrorKind.launcher-save) { return @tr("Launcher update failed"); }
+        if (kind == ErrorKind.alternate-discovery) { return @tr("Alternate versions unavailable"); }
+        if (kind == ErrorKind.qr-code) { return @tr("QR code failed"); }
+        if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
+        if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
         return @tr("Action failed");
     }
 
-    public pure function error-body(kind: string, context: string) -> string {
-        if (kind == "launch") {
+    public pure function error-body(kind: ErrorKind, context: string) -> string {
+        if (kind == ErrorKind.launch) {
             if (context == "") { return @tr("Could not start this item. Check Zaparoo Core and try again."); }
             return @tr("Could not start {}. Check Zaparoo Core and try again.", context);
         }
-        if (kind == "favorite") { return @tr("Could not update this favorite. Check Zaparoo Core and try again."); }
-        if (kind == "add_to_hub") {
+        if (kind == ErrorKind.favorite) { return @tr("Could not update this favorite. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.add-to-hub) {
             if (context == "") { return @tr("Could not add this item to the Hub. Check Zaparoo Core and try again."); }
             return @tr("Could not add {} to the Hub. Check Zaparoo Core and try again.", context);
         }
-        if (kind == "media_index") { return @tr("Could not start the media database update. Check Zaparoo Core and try again."); }
-        if (kind == "media_scrape") { return @tr("Could not start updating metadata. Check Zaparoo Core and try again."); }
-        if (kind == "media_scrapers") { return @tr("Could not load the list of metadata sources. Check Zaparoo Core and try again."); }
-        if (kind == "media_cancel") { return @tr("Could not cancel the media operation. Check Zaparoo Core and try again."); }
-        if (kind == "launcher" || kind == "launcher_save") { return @tr("Could not change the launcher. Check Zaparoo Core and try again."); }
-        if (kind == "alternate_discovery") { return @tr("Could not find alternate versions. Check Zaparoo Core and try again."); }
-        if (kind == "qr_code") { return @tr("Could not create the QR code for this item."); }
-        if (kind == "card_write") { return @tr("Could not write to this token. Check that it is writable and try again."); }
-        if (kind == "setting") { return @tr("Could not save this setting. Try again."); }
+        if (kind == ErrorKind.media-index) { return @tr("Could not start the media database update. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.media-scrape) { return @tr("Could not start updating metadata. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.media-scrapers) { return @tr("Could not load the list of metadata sources. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.media-cancel) { return @tr("Could not cancel the media operation. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.launcher || kind == ErrorKind.launcher-save) { return @tr("Could not change the launcher. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.alternate-discovery) { return @tr("Could not find alternate versions. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.qr-code) { return @tr("Could not create the QR code for this item."); }
+        if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
+        if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }
         return @tr("The action could not be completed. Check Zaparoo Core and try again.");
     }
 }

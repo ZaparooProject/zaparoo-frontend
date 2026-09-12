@@ -55,6 +55,7 @@ mod route_motion;
 mod router;
 mod settings;
 mod sizing;
+mod state_types;
 mod status;
 mod system_logos;
 mod system_status;
@@ -201,7 +202,7 @@ pub(crate) fn set_live_crt_offsets(h_offset: i32, v_offset: i32) {
     let _ = (h_offset, v_offset);
 }
 
-pub(crate) fn set_live_orientation(app: &App, value: &str, framebuffer_size: (u32, u32)) {
+pub(crate) fn set_live_orientation(app: &App, value: Orientation, framebuffer_size: (u32, u32)) {
     #[cfg(feature = "mister")]
     {
         let _ = (app, framebuffer_size);
@@ -209,7 +210,7 @@ pub(crate) fn set_live_orientation(app: &App, value: &str, framebuffer_size: (u3
     }
     #[cfg(not(feature = "mister"))]
     {
-        let (w, h) = if matches!(value, "cw" | "ccw") {
+        let (w, h) = if matches!(value, Orientation::Cw | Orientation::Ccw) {
             (framebuffer_size.1, framebuffer_size.0)
         } else {
             framebuffer_size
@@ -286,7 +287,12 @@ fn merge_config_settings(
     s.crt_v_offset = v;
 }
 
-pub(crate) fn scene_size(width: f64, height: f64, orientation: &str, crt: bool) -> (f64, f64) {
+pub(crate) fn scene_size(
+    width: f64,
+    height: f64,
+    orientation: Orientation,
+    crt: bool,
+) -> (f64, f64) {
     let inset_w = if crt {
         2.0 * (width * 0.05).round()
     } else {
@@ -299,7 +305,7 @@ pub(crate) fn scene_size(width: f64, height: f64, orientation: &str, crt: bool) 
     };
     let safe_w = (width - inset_w).max(1.0);
     let safe_h = (height - inset_h).max(1.0);
-    if matches!(orientation, "cw" | "ccw") {
+    if matches!(orientation, Orientation::Cw | Orientation::Ccw) {
         (safe_h, safe_w)
     } else {
         (safe_w, safe_h)
@@ -316,10 +322,11 @@ fn seed_display_globals(
 ) {
     app.global::<Theme>().set_crt(visual_crt);
     app.global::<Sizing>().set_crt(visual_crt);
-    let rotated = matches!(persisted.settings.orientation.as_str(), "cw" | "ccw");
+    let orientation = Orientation::try_from(persisted.settings.orientation.as_str())
+        .unwrap_or(Orientation::Horizontal);
+    let rotated = orientation != Orientation::Horizontal;
     app.global::<Sizing>().set_swap_axes(rotated);
-    app.global::<Shell>()
-        .set_orientation(SharedString::from(persisted.settings.orientation.as_str()));
+    app.global::<Shell>().set_orientation(orientation);
     app.global::<Shell>()
         .set_browse_list_layout(persisted.settings.games_browse_layout == "list");
     app.global::<Shell>()
@@ -336,9 +343,10 @@ fn seed_display_globals(
     app.global::<Shell>()
         .set_is_mister(cfg!(feature = "mister"));
     app.global::<Shell>().set_crt_enabled(crt_enabled);
-    app.global::<Shell>().set_crt_standard(SharedString::from(
-        persisted.settings.crt_video_standard.as_str(),
-    ));
+    app.global::<Shell>().set_crt_standard(
+        VideoStandard::try_from(persisted.settings.crt_video_standard.as_str())
+            .unwrap_or(VideoStandard::Ntsc),
+    );
     let bitmap = display::bitmap_type(cfg!(feature = "mister"), visual_crt, framebuffer_size.1);
     app.global::<Sizing>().set_bitmap_fonts(bitmap);
     app.global::<Theme>().set_bitmap_fonts(bitmap);
@@ -355,7 +363,7 @@ fn seed_display_globals(
     let (scene_w, scene_h) = scene_size(
         f64::from(framebuffer_size.0),
         f64::from(framebuffer_size.1),
-        &persisted.settings.orientation,
+        orientation,
         visual_crt,
     );
     app.global::<Sizing>().set_screen_width(scene_w as f32);
@@ -572,11 +580,11 @@ fn main() -> Result<(), slint::PlatformError> {
     // Solve the initial grid shapes in logical scene space and re-solve
     // on resize/orientation changes. DRS still keys from the physical
     // output raster so its fidelity switch never changes page shape.
-    let initial_orientation = app.global::<Shell>().get_orientation().to_string();
+    let initial_orientation = app.global::<Shell>().get_orientation();
     let (initial_w, initial_h) = scene_size(
         f64::from(ui_framebuffer_size.0),
         f64::from(ui_framebuffer_size.1),
-        &initial_orientation,
+        initial_orientation,
         visual_crt,
     );
     apply_grid_shapes(&app, initial_w, initial_h, visual_crt);
@@ -585,9 +593,9 @@ fn main() -> Result<(), slint::PlatformError> {
         let ctx = ctx.clone();
         app.on_viewport_changed(move |w, h| {
             if let Some(app) = weak.upgrade() {
-                let orientation = app.global::<Shell>().get_orientation().to_string();
+                let orientation = app.global::<Shell>().get_orientation();
                 let (w, h) = output_size().map_or((f64::from(w), f64::from(h)), |(ow, oh)| {
-                    scene_size(f64::from(ow), f64::from(oh), &orientation, visual_crt)
+                    scene_size(f64::from(ow), f64::from(oh), orientation, visual_crt)
                 });
                 apply_grid_shapes(&app, w, h, visual_crt);
                 // The window is rarely the size the config asked for
@@ -600,11 +608,11 @@ fn main() -> Result<(), slint::PlatformError> {
 
     #[cfg(feature = "mister")]
     if let Some(mirror) = crt_mirror.as_ref() {
-        let orientation = mirror.global::<Shell>().get_orientation().to_string();
+        let orientation = mirror.global::<Shell>().get_orientation();
         let (w, h) = scene_size(
             f64::from(crt_framebuffer_size.0),
             f64::from(crt_framebuffer_size.1),
-            &orientation,
+            orientation,
             true,
         );
         apply_grid_shapes(mirror, w, h, true);
@@ -1462,12 +1470,21 @@ mod tests {
     #[test]
     fn scene_size_insets_then_rotates_crt_canvas() {
         assert_eq!(
-            scene_size(1280.0, 720.0, "horizontal", false),
+            scene_size(1280.0, 720.0, Orientation::Horizontal, false),
             (1280.0, 720.0)
         );
-        assert_eq!(scene_size(720.0, 480.0, "horizontal", true), (648.0, 432.0));
-        assert_eq!(scene_size(720.0, 480.0, "cw", true), (432.0, 648.0));
-        assert_eq!(scene_size(720.0, 480.0, "ccw", true), (432.0, 648.0));
+        assert_eq!(
+            scene_size(720.0, 480.0, Orientation::Horizontal, true),
+            (648.0, 432.0)
+        );
+        assert_eq!(
+            scene_size(720.0, 480.0, Orientation::Cw, true),
+            (432.0, 648.0)
+        );
+        assert_eq!(
+            scene_size(720.0, 480.0, Orientation::Ccw, true),
+            (432.0, 648.0)
+        );
     }
 
     #[test]

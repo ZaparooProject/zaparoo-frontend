@@ -1,4 +1,5 @@
 import { Theme, Sizing } from "theme.slint";
+import { ScrollAction } from "state_types.slint";
 import { DetailRow, MetaLabels } from "browse_list.slint";
 import { GlyphSource, SectionHeader } from "chrome.slint";
 
@@ -40,11 +41,11 @@ export component GameInfoModal inherits Rectangle {
                 / Math.max(1, Sizing.screen-height / 1px);
         }
     }
-    public function scroll(action: string) {
-        if (action == "up") { root.move-scroll(-Sizing.pct-h(8)); }
-        if (action == "down") { root.move-scroll(Sizing.pct-h(8)); }
-        if (action == "page_prev") { root.move-scroll(-Math.max(Sizing.pct-h(12), root.viewport-height - Sizing.pct-h(8))); }
-        if (action == "page_next") { root.move-scroll(Math.max(Sizing.pct-h(12), root.viewport-height - Sizing.pct-h(8))); }
+    public function scroll(action: ScrollAction) {
+        if (action == ScrollAction.up) { root.move-scroll(-Sizing.pct-h(8)); }
+        if (action == ScrollAction.down) { root.move-scroll(Sizing.pct-h(8)); }
+        if (action == ScrollAction.page-prev) { root.move-scroll(-Math.max(Sizing.pct-h(12), root.viewport-height - Sizing.pct-h(8))); }
+        if (action == ScrollAction.page-next) { root.move-scroll(Math.max(Sizing.pct-h(12), root.viewport-height - Sizing.pct-h(8))); }
     }
 
     label-measure := VerticalLayout {

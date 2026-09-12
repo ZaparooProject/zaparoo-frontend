@@ -57,7 +57,7 @@ fn render(ctx: &Ctx, app: &App) {
     let shared = lock(&ctx.shared);
     let model = &shared.log_upload;
     view.set_open(model.open);
-    view.set_phase(SharedString::from(model.phase.as_str()));
+    view.set_phase(model.phase.into());
     view.set_url(SharedString::from(model.url.as_str()));
 }
 
@@ -123,7 +123,7 @@ fn support_summary(ctx: &Ctx, app: &App) -> String {
     let _ = writeln!(
         out,
         "screen: {} ({}x{})",
-        app.global::<crate::Shell>().get_active_screen(),
+        app.global::<crate::Shell>().get_active_screen().token(),
         app.global::<crate::Sizing>().get_screen_width(),
         app.global::<crate::Sizing>().get_screen_height()
     );
