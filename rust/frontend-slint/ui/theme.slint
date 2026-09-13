@@ -76,6 +76,23 @@ export global Motion {
     out property <duration> press-ms: 34ms;
     out property <duration> settle-ms: 110ms;
     out property <duration> pulse-ms: 250ms;
+    // How far a focused grid tile grows. Small on purpose: our tiles are
+    // large and the screen is close, and scale is the motion class that
+    // vestibular guidance singles out, so this sits well under the 1.1 a
+    // TV app would use. It is an addition to the focus ring, never a
+    // replacement: a size change carries no contrast and so cannot satisfy
+    // WCAG 2.4.13. Silently absent on the software renderer, which has no
+    // transform support, which is also why CRT never sees it.
+    out property <percent> focus-zoom: 104%;
+    // Longer than a focus move on purpose. A slide is a short-distance
+    // movement and a scale is an expansion, which Carbon separates as
+    // 150ms and 240ms; at `focus-ms` a 4% scale gets about five frames and
+    // reads as a step rather than a motion.
+    out property <duration> zoom-ms: 160ms;
+    // Full cycle of the held-tile blink in Hub's Move mode: ~0.77 Hz, well
+    // under the 3 Hz WCAG flash-safety threshold, and slow enough that the
+    // tile is legible in its "on" half rather than strobing.
+    out property <duration> held-blink-ms: 650ms;
     public pure function dur(ms: duration) -> duration {
         return self.enabled ? ms : 0ms;
     }
@@ -102,6 +119,23 @@ export global Sizing {
     public pure function pct-w(p: float) -> length {
         return p / 100 * (self.swap-axes ? self.screen-height : self.screen-width);
     }
+    // Percentage of the shorter axis, for insets that have to measure the
+    // same on both of them. A card or panel lip is one margin seen four
+    // times, so deriving the sides from the width and the ends from the
+    // height gives 26px beside 14px on a 16:9 screen and reads as a
+    // mistake rather than as a margin. Taking the short axis keeps the
+    // inset square, keeps it off the axis that grows on an ultrawide, and
+    // spends the scarce dimension conservatively. See docs/style.md ->
+    // "Square insets".
+    public pure function pct-min(p: float) -> length {
+        return Math.min(self.pct-w(p), self.pct-h(p));
+    }
+    // The one inset every surface uses: the lip on all four sides of a
+    // card or a panel, and the gap between the blocks stacked inside it.
+    // One number, because a container's inset is one margin seen four
+    // times and a second near-identical token is how the last nine
+    // scales happened. See docs/style.md -> "Surface containment".
+    out property <length> surface-pad: Sizing.pct-min(2);
     // Mirrors Sizing.qml fontSize: minimum 8 px for 240p legibility;
     // the CRT path quantizes to 8 or 16 so the 6x8 bitmap font only
     // renders at integer multiples.
@@ -213,8 +247,10 @@ export global Layout {
     in-out property <length> card-side-margin: 38px;
     in-out property <length> card-top-margin: 14px;
     in-out property <length> card-bottom-margin: 58px;
-    in-out property <length> card-padding-left: 26px;
-    in-out property <length> card-padding-right: 26px;
+    // Square, like every container inset (docs/style.md, "Square insets");
+    // these defaults are the 1280x720 values an unpushed frame falls back to.
+    in-out property <length> card-padding-left: 14px;
+    in-out property <length> card-padding-right: 14px;
     in-out property <length> card-padding-top: 14px;
     in-out property <length> card-padding-bottom: 14px;
     in-out property <length> row-height: 0px;
@@ -233,8 +269,8 @@ export global Layout {
     in-out property <length> image-reserved-width: 0px;
     in-out property <length> image-reserved-height: 0px;
     in-out property <length> image-bottom-margin: 0px;
-    in-out property <length> pane-padding-left: 26px;
-    in-out property <length> pane-padding-right: 26px;
+    in-out property <length> pane-padding-left: 14px;
+    in-out property <length> pane-padding-right: 14px;
     in-out property <length> pane-padding-top: 14px;
     in-out property <length> pane-padding-bottom: 14px;
     in-out property <length> image-padding-left: 0px;

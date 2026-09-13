@@ -91,6 +91,14 @@ fn options(ctx: &Ctx, id: &str) -> Vec<String> {
 
 // ---------- Rendering ----------
 
+/// One rendered line of text at `size`, the way Slint lays it out: Noto
+/// Sans has a 1.362 em hhea line height and no line gap. Shared by the
+/// hint band, the action status line and the group heading so the three
+/// stay in step with the type ladder instead of with a magic percentage.
+fn line_height(size: i32) -> i32 {
+    (f64::from(size) * 1.362).ceil() as i32
+}
+
 /// Row metrics (`SettingsField.qml`): a field is one line tall, a
 /// running action adds its status band, a header is its own short row.
 struct Metrics {
@@ -100,11 +108,21 @@ struct Metrics {
 }
 
 fn metrics(app: &App) -> Metrics {
-    let inputs = crate::router::output_scene(app).inputs();
+    metrics_for(&crate::router::output_scene(app).inputs())
+}
+
+fn metrics_for(inputs: &zaparoo_app::sizing::Inputs) -> Metrics {
+    let derived = zaparoo_app::sizing::derive(inputs);
     Metrics {
         row: inputs.pct_h(8.0),
-        action_band: inputs.pct_h(3.2),
-        header: inputs.pct_h(5.0),
+        // Exactly the status line it makes room for, plus the gap over it.
+        // A flat percentage reserved a second *body* line for a caption
+        // and left the pair floating in a row taller than its content.
+        action_band: line_height(derived.font_caption) + inputs.pct_h(0.3),
+        // `SectionHeader`'s own anatomy: top gap, the label, the rule gap
+        // and the hairline. The heading is a shared component, so the row
+        // Rust stacks has to be the box that component draws.
+        header: inputs.pct_h(1.5) + line_height(derived.font_body) + inputs.pct_h(0.8) + 1,
     }
 }
 
@@ -276,9 +294,31 @@ fn rows_viewport_for(inputs: &zaparoo_app::sizing::Inputs) -> i32 {
         + inputs.pct_h(4.0);
     let bottom = derived.help_bar_height + inputs.pct_h(4.0);
     let card_h = (inputs.screen_height as i32 - card_y - bottom).max(0);
-    let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
-    // Card padding above, then the hint band and its divider below.
-    (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0)
+    // Descriptions are authored against the 240p card's line budget, so
+    // only that tier needs two lines held open; every wider one fits them
+    // on one and a second reserved line just holds the rows up. Fixed per
+    // tier, never per row: this is the rows viewport, and a band that grew
+    // with the focused description would reflow the list under the cursor.
+    let hint_lines = if derived.tier == zaparoo_app::sizing::Tier::T240 || inputs.bitmap_type {
+        2
+    } else {
+        1
+    };
+    let hint = hint_lines * line_height(derived.font_body);
+    // Four lips and a hairline: above the rows, either side of the hint
+    // rule, and under the hint text. One inset, used everywhere on the
+    // surface (`docs/style.md`, "Surface containment"); `app.slint`'s
+    // `pad` is the same token, so the two must move together.
+    let pad = inputs.pct_min(2.0);
+    (card_h - 4 * pad - 1 - hint).max(0)
+}
+
+/// The band's scroll offset and painted height, snapped to row edges.
+/// The rule lives in `zaparoo_app` so the snapshot tool solves it the
+/// same way rather than keeping a second copy that can drift.
+fn band_extent(rows: &[SettingsRow], index: usize, viewport: f32) -> (f32, f32) {
+    let spans: Vec<(f32, f32)> = rows.iter().map(|r| (r.y_offset, r.height)).collect();
+    rules::band_extent(&spans, index, viewport)
 }
 
 /// Push the open page: its rows, the cursor, and (on the root) the
@@ -288,18 +328,26 @@ pub fn render(ctx: &Ctx, app: &App) {
     let page = view.get_page();
     let rows = rows(ctx, app, page);
     let index = (view.get_index().max(0) as usize).min(rows.len().saturating_sub(1));
-    view.set_index(i32::try_from(index).unwrap_or(0));
     // Keep the focused row inside the viewport; the band never scrolls
     // past the last row.
     let viewport = rows_viewport(app);
-    let total = rows.last().map_or(0.0, |r| r.y_offset + r.height);
-    let focused = rows.get(index).map_or(0.0, |r| r.y_offset + r.height);
-    let scroll = (focused - viewport as f32)
-        .max(0.0)
-        .min((total - viewport as f32).max(0.0));
+    let (scroll, shown) = band_extent(&rows, index, viewport as f32);
+    // Rows before the cursor: the cursor's geometry is read out of the row
+    // it points at, so an index that arrives ahead of a longer page reads
+    // a row that is not there yet and collapses the fill for a frame.
+    // Keyed, not replaced: a toggle flipping changes one row, and
+    // resetting the list would rebuild the delegate that was mid-slide.
+    crate::view_model::publish_keyed(
+        &view.get_rows(),
+        rows,
+        PartialEq::eq,
+        |old, new| old.id == new.id && old.kind == new.kind,
+        |rows| view.set_rows(rows),
+    );
+    view.set_index(i32::try_from(index).unwrap_or(0));
     view.set_rows_height(viewport as f32);
+    view.set_rows_clip_height(shown);
     view.set_scroll(scroll);
-    crate::view_model::publish(&view.get_rows(), rows, |rows| view.set_rows(rows));
 
     if page == crate::SettingsPage::Root {
         let cells: Vec<GridCell> = rules::PAGES
@@ -347,6 +395,7 @@ pub(crate) fn capture_outgoing(app: &App) {
     view.set_outgoing_index(view.get_index());
     view.set_outgoing_scroll(view.get_scroll());
     view.set_outgoing_rows_height(view.get_rows_height());
+    view.set_outgoing_rows_clip_height(view.get_rows_clip_height());
 }
 
 /// A category is another level of Settings, not an in-place repaint.
@@ -793,11 +842,13 @@ pub(crate) fn mirror_geometry(primary: &App, crt: &App) {
     target.set_grid_y(y as f32);
     target.set_grid_height(height as f32);
     let viewport = rows_viewport_for(&inputs) as f32;
-    let (rows, scroll) = mirrored_rows(&source.get_rows(), source.get_index(), viewport, &inputs);
+    let (rows, scroll, shown) =
+        mirrored_rows(&source.get_rows(), source.get_index(), viewport, &inputs);
     crate::view_model::publish(&target.get_rows(), rows, |rows| target.set_rows(rows));
     target.set_scroll(scroll);
     target.set_rows_height(viewport);
-    let (rows, scroll) = mirrored_rows(
+    target.set_rows_clip_height(shown);
+    let (rows, scroll, shown) = mirrored_rows(
         &source.get_outgoing_rows(),
         source.get_outgoing_index(),
         viewport,
@@ -808,6 +859,7 @@ pub(crate) fn mirror_geometry(primary: &App, crt: &App) {
     });
     target.set_outgoing_scroll(scroll);
     target.set_outgoing_rows_height(viewport);
+    target.set_outgoing_rows_clip_height(shown);
 }
 
 #[cfg(feature = "mister")]
@@ -816,20 +868,21 @@ fn mirrored_rows(
     index: i32,
     viewport: f32,
     inputs: &zaparoo_app::sizing::Inputs,
-) -> (Vec<SettingsRow>, f32) {
+) -> (Vec<SettingsRow>, f32, f32) {
     use slint::Model;
+    let m = metrics_for(inputs);
     let mut offset = 0;
     let rows: Vec<_> = rows
         .iter()
         .map(|mut row| {
             let height = if row.kind == crate::RowKind::Header {
-                inputs.pct_h(5.0)
+                m.header
             } else {
-                inputs.pct_h(8.0)
+                m.row
                     + if row.status_key == crate::ActionStatus::None {
                         0
                     } else {
-                        inputs.pct_h(3.2)
+                        m.action_band
                     }
             };
             row.y_offset = offset as f32;
@@ -838,13 +891,8 @@ fn mirrored_rows(
             row
         })
         .collect();
-    let focused = rows
-        .get(index.max(0) as usize)
-        .map_or(0.0, |row| row.y_offset + row.height);
-    let scroll = (focused - viewport)
-        .max(0.0)
-        .min((offset as f32 - viewport).max(0.0));
-    (rows, scroll)
+    let (scroll, shown) = band_extent(&rows, index.max(0) as usize, viewport);
+    (rows, scroll, shown)
 }
 
 // ---------- Pointer ----------

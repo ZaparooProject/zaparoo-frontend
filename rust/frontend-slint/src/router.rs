@@ -1520,7 +1520,7 @@ pub(crate) fn refresh_readers(ctx: &Ctx) {
 /// The Frontend guide as a scannable link (the Documentation row).
 pub(crate) fn open_documentation_qr(app: &App) {
     const DOCS_URL: &str = "https://zaparoo.org/docs/frontend/";
-    if let Some((image, modules)) = crate::qr::qr_image(DOCS_URL) {
+    if let Some((image, modules)) = crate::qr::qr_image(DOCS_URL, crate::qr::code_colors(app)) {
         app.global::<crate::Overlays>().set_qr_documentation(true);
         app.global::<crate::Overlays>().set_qr_image(image);
         app.global::<crate::Overlays>()
@@ -1540,7 +1540,9 @@ pub(crate) fn open_qr_code(ctx: &Ctx, app: &App, entry: &GameRow) {
         report_action_error(ctx, app, "qr_code", "");
         return;
     }
-    let Some((image, modules)) = crate::qr::qr_image(&crate::qr::write_url(&text)) else {
+    let Some((image, modules)) =
+        crate::qr::qr_image(&crate::qr::write_url(&text), crate::qr::code_colors(app))
+    else {
         tracing::warn!("QR code for {} could not be rendered", entry.name);
         report_action_error(ctx, app, "qr_code", "");
         return;

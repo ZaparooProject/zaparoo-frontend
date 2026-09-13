@@ -113,11 +113,12 @@ fn every_derived_value_matches_the_qml() {
         let d = derive(&inputs);
         let at = label(&row);
 
-        // The Handheld profile above the compact tiers is the one place
-        // this port deliberately leaves the QML behind: five Hub columns
-        // where `Sizing.qml` has four. `handheld_hub_is_one_column_wider`
+        // The Handheld profile above the compact tiers is one of two
+        // places this port deliberately leaves the QML behind: six Hub
+        // columns where `Sizing.qml` has four. `handheld_hub_is_wider_than_the_qml`
         // owns these keys instead, so the divergence is pinned somewhere
-        // rather than silently tolerated here.
+        // rather than silently tolerated here. The other is the square
+        // container inset, in `layout_golden.rs`.
         let diverges = row["profile"] == "handheld"
             && !matches!(
                 d.tier,
@@ -334,12 +335,12 @@ fn probe_pairs_match_the_qml() {
 }
 
 /// The documented divergence, pinned. `Sizing.qml` puts four Hub columns
-/// on a high-resolution Handheld page; this port puts five, because the
+/// on a high-resolution Handheld page; this port puts six, because the
 /// tile is square and bounded by the row height, so a fourth of the width
 /// sat empty without buying any icon size. The QML keeps four so the small
 /// handheld panel it was tuned for is untouched.
 #[test]
-fn handheld_hub_is_one_column_wider_than_the_qml() {
+fn handheld_hub_is_wider_than_the_qml() {
     let mut checked = 0usize;
     for row in rows("GOLDEN") {
         if row["profile"] != "handheld" {
@@ -362,12 +363,12 @@ fn handheld_hub_is_one_column_wider_than_the_qml() {
             );
             continue;
         }
-        // Five by three, transposed on a rotated page the same way every
+        // Six by three, transposed on a rotated page the same way every
         // other declared shape is.
         let want = if inputs.swap_percentage_axes {
-            (3, 5)
+            (3, 6)
         } else {
-            (5, 3)
+            (6, 3)
         };
         assert_eq!(
             (d.hub_grid_columns, d.hub_grid_rows),

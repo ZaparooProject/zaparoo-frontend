@@ -24,15 +24,26 @@ export global GameInfoView {
 export component GameInfoModal inherits Rectangle {
     background: Theme.scrim;
     visible: GameInfoView.modal-open;
-    property <length> pad-x: Sizing.pct-w(4);
-    property <length> margin-y: Sizing.pct-h(4);
+    // The shared surface inset: all four sides, and the title gap. The
+    // body scrolls under the pinned title, but the boundary is already
+    // marked by the scroll chevrons above and below the viewport, so it
+    // takes no rule as well -- one cue per state. See docs/style.md,
+    // "Lines".
+    property <length> pad: Sizing.surface-pad;
     property <length> line-h: Math.ceil(Sizing.font-body * 1.362 / 1px) * 1px;
     property <length> body-h: GameInfoView.loading ? loading-label.preferred-height
         : GameInfoView.failed ? error-label.preferred-height : contents.preferred-height;
     out property <length> viewport-height: Math.max(0px, panel.height - root.chrome-h);
     out property <length> maximum-scroll: Math.max(0px, root.body-h - root.viewport-height);
     out property <bool> scrollable: !GameInfoView.loading && !GameInfoView.failed && root.maximum-scroll > 0px;
-    property <length> chrome-h: root.margin-y * 3 + title.height;
+    // Lip, title, gap, scroll cue, body, scroll cue, lip. The cues sit in
+    // a reserved band outside the viewport rather than in the lip, the
+    // same shape `ListPickerModal` uses, so the panel does not resize as
+    // the body scrolls past either end.
+    property <length> arrow: Sizing.pct-h(3);
+    property <length> arrow-band: root.arrow + Sizing.pct-h(0.5);
+    property <length> chrome-h: root.pad * 3 + title.height + 2 * root.arrow-band;
+    property <length> content-y: title.y + title.height + root.pad + root.arrow-band;
     property <length> scroll-y: Math.min(root.maximum-scroll,
         Math.max(0px, GameInfoView.scroll-position * Sizing.screen-height));
 
@@ -70,8 +81,8 @@ export component GameInfoModal inherits Rectangle {
 
         title := Text {
             x: (parent.width - self.width) / 2;
-            y: root.margin-y;
-            width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px + Sizing.stroke(2), parent.width - 2 * root.pad-x);
+            y: root.pad;
+            width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px + Sizing.stroke(2), parent.width - 2 * root.pad);
             height: Math.ceil(self.preferred-height / 1px) * 1px;
             text: GameInfoView.modal-name;
             font-size: Sizing.font-title;
@@ -80,16 +91,16 @@ export component GameInfoModal inherits Rectangle {
         }
         loading-label := Text {
             x: (parent.width - self.width) / 2;
-            y: title.y + title.height + root.margin-y;
+            y: root.content-y;
             text: @tr("Loading details…");
             font-size: Sizing.font-body;
             color: Theme.text-primary;
             visible: GameInfoView.loading;
         }
         error-label := Text {
-            x: root.pad-x;
-            y: title.y + title.height + root.margin-y;
-            width: parent.width - 2 * root.pad-x;
+            x: root.pad;
+            y: root.content-y;
+            width: parent.width - 2 * root.pad;
             text: @tr("Could not load details. Check Zaparoo Core and try again.");
             font-size: Sizing.font-body;
             color: Theme.text-primary;
@@ -98,9 +109,9 @@ export component GameInfoModal inherits Rectangle {
         }
 
         viewport := Rectangle {
-            x: root.pad-x;
-            y: title.y + title.height + root.margin-y;
-            width: parent.width - 2 * root.pad-x;
+            x: root.pad;
+            y: root.content-y;
+            width: parent.width - 2 * root.pad;
             height: root.viewport-height;
             clip: true;
             visible: !GameInfoView.loading && !GameInfoView.failed;
@@ -204,7 +215,7 @@ export component GameInfoModal inherits Rectangle {
         for down in [false, true]: Image {
             x: (parent.width - self.width) / 2;
             y: down ? viewport.y + viewport.height + Sizing.pct-h(0.5) : viewport.y - self.height - Sizing.pct-h(0.5);
-            width: Sizing.pct-h(3);
+            width: root.arrow;
             height: self.width;
             property <bool> active: down ? root.scroll-y < root.maximum-scroll : root.scroll-y > 0px;
             source: GlyphSource.glyph(down ? "icons/ScrollDown" : "icons/ScrollUp", self.width, self.active ? Theme.text-primary : Theme.text-label);

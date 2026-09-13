@@ -1201,6 +1201,149 @@ fn settings_category_and_picker_feedback_is_local_and_settles() {
     assert_eq!(commits.get(), 2);
 }
 
+/// Row geometry the way `settings::render` stacks it: `y_offset` running,
+/// `height` per row, so the fixture exercises the real band arithmetic.
+fn settings_rows(heights: &[f32]) -> (ModelRc<crate::SettingsRow>, Vec<f32>) {
+    let ids = [
+        "colorScheme",
+        "colorIntensity",
+        "systemLogoStyle",
+        "reduceMotion",
+        "screensaverTimeout",
+    ];
+    let mut offset = 0.0;
+    let mut offsets = Vec::new();
+    let rows: Vec<_> = heights
+        .iter()
+        .enumerate()
+        .map(|(i, height)| {
+            offsets.push(offset);
+            let row = crate::SettingsRow {
+                kind: RowKind::Field,
+                control: ControlKind::Picker,
+                id: ids[i % ids.len()].into(),
+                enabled: true,
+                y_offset: offset,
+                height: *height,
+                ..Default::default()
+            };
+            offset += height;
+            row
+        })
+        .collect();
+    (ModelRc::new(VecModel::from(rows)), offsets)
+}
+
+#[test]
+fn a_settings_move_that_scrolls_the_band_snaps_the_fill() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    let settings = app.global::<crate::SettingsView>();
+    settings.set_page(SettingsPage::Appearance);
+    // The last row is taller on purpose: the fill animates its height as
+    // well as its position, and a move that scrolls must not animate
+    // either, because the rows it is inverting have already jumped.
+    let heights = [30.0, 30.0, 30.0, 30.0, 60.0];
+    let (rows, offsets) = settings_rows(&heights);
+    settings.set_rows(rows);
+    let viewport = 120.0;
+    settings.set_rows_height(viewport);
+    settings.set_rows_clip_height(viewport);
+    settings.set_index(0);
+    settings.set_scroll(0.0);
+    settle(&window);
+
+    // Focus the tall last row. Its bottom is at 180, so the band scrolls
+    // to a row boundary that keeps it in view.
+    let scroll = offsets[4] + heights[4] - viewport;
+    settings.set_index(4);
+    settings.set_scroll(scroll);
+    settings.set_rows_clip_height(viewport);
+    let first = pixels(&window);
+    settle(&window);
+    let settled = pixels(&window);
+    assert_eq!(
+        first, settled,
+        "a move that scrolls the band must place the fill in one frame"
+    );
+
+    // A move inside the band still glides: same scroll, different row.
+    settings.set_index(3);
+    let stepping = pixels(&window);
+    settle(&window);
+    assert_ne!(
+        stepping,
+        pixels(&window),
+        "a move that does not scroll still travels"
+    );
+}
+
+#[test]
+fn accepting_a_list_row_flashes_the_whole_row_inverted() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::None);
+    let ov = app.global::<crate::Overlays>();
+    ov.set_list_title("Pick".into());
+    ov.set_list_entries(ModelRc::new(VecModel::from(vec![
+        crate::MenuEntry {
+            id: "one".into(),
+            label: "One".into(),
+            ..Default::default()
+        },
+        crate::MenuEntry {
+            id: "two".into(),
+            label: "Two".into(),
+            ..Default::default()
+        },
+    ])));
+    ov.set_list_index(0);
+    ov.set_list_open(true);
+    settle(&window);
+
+    let theme = app.global::<crate::Theme>();
+    let fill = theme.get_selection_fill();
+    let inverted = theme.get_on_accent();
+    let count = |buf: &[Rgb565Pixel], color: slint::Color| {
+        let target = (u16::from(color.red() >> 3) << 11)
+            | (u16::from(color.green() >> 2) << 5)
+            | u16::from(color.blue() >> 3);
+        buf.iter().filter(|pixel| pixel.0 == target).count()
+    };
+    let resting = pixels(&window);
+    assert!(count(&resting, fill) > 0, "the selected row is filled");
+
+    // The flash swaps the bar and its content, so the fill goes away and
+    // the row paints in the color its text was using. A stroke drawn on
+    // top of an unchanged fill is a different cue and was not this one.
+    app.global::<crate::PressFeedback>()
+        .set_owner(PressOwner::List);
+    app.global::<crate::PressFeedback>().set_index(0);
+    let flashed = pixels(&window);
+    assert!(
+        count(&flashed, fill) < count(&resting, fill) / 4,
+        "the fill inverts rather than keeping its color"
+    );
+    assert!(
+        count(&flashed, inverted) > count(&resting, inverted),
+        "and the row paints in the swapped color"
+    );
+
+    app.global::<crate::PressFeedback>()
+        .set_owner(PressOwner::None);
+    settle(&window);
+    assert_eq!(pixels(&window), resting, "and swaps back");
+}
+
 #[test]
 #[allow(
     clippy::float_cmp,
@@ -1314,6 +1457,42 @@ fn favorite_count_labels_use_real_plural_forms() {
     assert_eq!(labels.invoke_favorites(0), "0 favorites");
     assert_eq!(labels.invoke_favorites(1), "1 favorite");
     assert_eq!(labels.invoke_favorites(2), "2 favorites");
+}
+
+#[test]
+fn a_two_item_list_glides_on_the_wrap_as_well_as_the_step() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::None);
+    let ov = app.global::<crate::Overlays>();
+    ov.set_list_entries(ModelRc::new(VecModel::from(
+        (0..2)
+            .map(|i| crate::MenuEntry {
+                id: i.to_string().into(),
+                label: format!("Item {i}").into(),
+                label_key: "".into(),
+            })
+            .collect::<Vec<_>>(),
+    )));
+    ov.set_list_open(true);
+    // In a two-item list the wrap is the same one-row distance as the
+    // step, so it has no business snapping when the step glides.
+    for (from, to, what) in [(0, 1, "step down"), (1, 0, "wrap to the top")] {
+        ov.set_list_index(from);
+        settle(&window);
+        ov.set_list_index(to);
+        let immediate = pixels(&window);
+        advance(40);
+        let middle = pixels(&window);
+        advance(300);
+        let settled = pixels(&window);
+        assert_ne!(immediate, middle, "{what} must move, not jump");
+        assert_ne!(middle, settled, "{what} must still be in flight at 40ms");
+    }
 }
 
 #[test]
@@ -1472,6 +1651,18 @@ fn qr_shell_preserves_square_modules_and_documentation_url() {
     assert!(overlays.get_qr_documentation());
     let modules = u32::try_from(overlays.get_qr_modules()).unwrap_or_default();
     assert!(modules > 0);
+    // The code is painted in the scheme's own two colors, not black and
+    // white (QrMatrix.qml); the quiet zone is part of the code and takes
+    // the light one, so it is what bounds the matrix here.
+    let rgb565 = |color: slint::Color| {
+        (u16::from(color.red() >> 3) << 11)
+            | (u16::from(color.green() >> 2) << 5)
+            | u16::from(color.blue() >> 3)
+    };
+    let quiet = rgb565(theme.get_qr_light());
+    let dark = rgb565(theme.get_qr_dark());
+    assert_ne!(quiet, 0xffff, "the quiet zone is themed, not white");
+    assert_ne!(dark, 0x0000, "the modules are themed, not black");
     for docs in [true, false] {
         overlays.set_qr_documentation(docs);
         settle(&window);
@@ -1482,14 +1673,18 @@ fn qr_shell_preserves_square_modules_and_documentation_url() {
         }));
         let (mut left, mut top, mut right, mut bottom) = (W, H, 0, 0);
         let mut url_ink = 0;
+        let mut dark_modules = 0;
         for y in 35..H - 25 {
             for x in 0..W {
                 let pixel = pixels[(y * W + x) as usize].0;
-                if pixel == 0xffff {
+                if pixel == quiet {
                     left = left.min(x);
                     top = top.min(y);
                     right = right.max(x);
                     bottom = bottom.max(y);
+                }
+                if pixel == dark {
+                    dark_modules += 1;
                 }
                 let red = (pixel >> 11) & 31;
                 let green = (pixel >> 5) & 63;
@@ -1500,6 +1695,7 @@ fn qr_shell_preserves_square_modules_and_documentation_url() {
             }
         }
         assert!(right > left && bottom > top, "QR quiet zone must paint");
+        assert!(dark_modules > 0, "QR modules must paint in the dark role");
         assert_eq!(right - left, bottom - top, "matrix must remain square");
         assert_eq!(
             (right - left + 1) % modules,
@@ -2231,11 +2427,20 @@ fn hub_swap_moves_only_held_tile_and_local_neighbor_then_stops() {
         0..H as usize,
         "unrelated third tile stays still",
     );
-    advance(2_000);
+    // Move mode blinks the held tile out of existence and back on a fixed
+    // cycle (Tile.qml). Sampled a half cycle apart rather than against
+    // `endpoint`, so the assertion does not depend on where in the cycle
+    // the swap happened to finish.
+    advance(700);
+    let blink_a = pixels(&window);
+    advance(650);
+    let blink_b = pixels(&window);
+    advance(650);
+    assert_ne!(blink_a, blink_b, "the held tile blinks while it is held");
     assert_eq!(
         pixels(&window),
-        endpoint,
-        "held selection must not keep blinking"
+        blink_a,
+        "and the blink is a two-state cut, not a drift"
     );
     app.global::<crate::Motion>().set_enabled(false);
     hub.set_selected_local(0);
@@ -2248,6 +2453,14 @@ fn hub_swap_moves_only_held_tile_and_local_neighbor_then_stops() {
         pixels(&window),
         snapped,
         "reduced motion snaps the whole swap"
+    );
+    // Freezing a disappear cue on "gone" would hide the tile being moved,
+    // so reduce motion rests it on, not off.
+    advance(2_000);
+    assert_eq!(
+        pixels(&window),
+        snapped,
+        "reduced motion leaves the held tile painted, not blinking"
     );
 }
 

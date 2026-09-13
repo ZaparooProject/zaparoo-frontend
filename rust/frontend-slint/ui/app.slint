@@ -11,7 +11,7 @@
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
 export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
-import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, SelectionBar, StateCue } from "chrome.slint";
+import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
 import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
@@ -257,6 +257,7 @@ export global SettingsView {
     in-out property <int> outgoing-index: 0;
     in-out property <length> outgoing-scroll: 0px;
     in-out property <length> outgoing-rows-height: 0px;
+    in-out property <length> outgoing-rows-clip-height: 0px;
     in-out property <[SettingsRow]> rows: [];
     in-out property <int> index: 0;
     in-out property <[GridCell]> cells: [];
@@ -269,8 +270,11 @@ export global SettingsView {
     in-out property <length> grid-y: 0px;
     in-out property <length> grid-height: 0px;
     // The rows viewport and how far it has scrolled to keep the focused
-    // row inside it.
+    // row inside it. `rows-clip-height` is what the band actually shows:
+    // the viewport trimmed back to the last whole row, so the bottom edge
+    // never cuts a row through its text.
     in-out property <length> rows-height: 0px;
+    in-out property <length> rows-clip-height: 0px;
     in-out property <length> scroll: 0px;
     in-out property <int> activate-pulse: 0;
     in-out property <int> release-pulse: 0;
@@ -551,6 +555,7 @@ component SettingsScreen inherits Rectangle {
     property <[SettingsRow]> rows: root.outgoing ? SettingsView.outgoing-rows : SettingsView.rows;
     property <int> index: root.outgoing ? SettingsView.outgoing-index : SettingsView.index;
     property <length> rows-height: root.outgoing ? SettingsView.outgoing-rows-height : SettingsView.rows-height;
+    property <length> rows-clip-height: root.outgoing ? SettingsView.outgoing-rows-clip-height : SettingsView.rows-clip-height;
     property <length> scroll: root.outgoing ? SettingsView.outgoing-scroll : SettingsView.scroll;
 
     TopStatusStrip {
@@ -609,15 +614,25 @@ component SettingsScreen inherits Rectangle {
     property <length> card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Sizing.pct-h(4);
     property <length> card-w: Math.min(self.width - 2 * Sizing.pct-w(3), Sizing.pct-w(70));
     property <length> card-h: self.height - self.card-y - Sizing.help-bar-height - Sizing.pct-h(4);
-    property <length> pad-x: Sizing.pct-w(2);
-    property <length> pad-y: Sizing.pct-h(2);
+    // One lip on all four sides, and the same value again either side of
+    // the hint rule; see docs/style.md, "Surface containment".
+    // `zaparoo_app::settings::rows_viewport_for` subtracts the identical
+    // four, so the two must move together.
+    property <length> pad: Sizing.surface-pad;
     property <length> row-h: Sizing.pct-h(8);
-    property <length> action-band: Sizing.pct-h(3.2);
-    property <length> header-h: Sizing.pct-h(5);
-    property <length> hint-line: Math.ceil(Theme.ascent(Sizing.font-body) * 1.362 / 1px) * 1px;
-    property <length> hint-h: 2 * self.hint-line;
+    property <length> hint-line: Math.ceil(Sizing.font-body * 1.362 / 1px) * 1px;
+    // Descriptions are authored to fit two lines at the narrowest tier we
+    // ship (docs/content-style.md's length budget is the 240p card), so
+    // every wider tier fits them on one and a second reserved line is just
+    // a blank band holding the rows up. The reservation is fixed per tier
+    // rather than per row: it sets the rows viewport, and a band that grew
+    // and shrank with the focused row's description would reflow the list
+    // under the cursor.
+    property <length> hint-h: (Sizing.bitmap-fonts || Sizing.tier-240 ? 2 : 1) * self.hint-line;
     property <string> hint: root.index >= 0 && root.index < root.rows.length
         ? SettingsLabels.description(root.rows[root.index].id) : "";
+    property <length> hint-y: self.card-h - self.pad - self.hint-h;
+    property <length> hint-rule-y: self.hint-y - self.pad - Sizing.stroke(1);
 
     if !root.root-grid: Rectangle {
         x: root.card-x;
@@ -625,7 +640,10 @@ component SettingsScreen inherits Rectangle {
         width: root.card-w;
         height: root.card-h;
         background: Theme.surface-card;
-        border-radius: Layout.card-radius;
+        // The settings card is not a browse view, so it takes the shared
+        // radius rather than whichever profile the last browse screen left
+        // in `Layout` -- same reason it carries its own margins.
+        border-radius: Sizing.radius-md;
         border-width: Sizing.card-border-width;
         border-color: Theme.border-mid;
         clip: true;
@@ -642,34 +660,61 @@ component SettingsScreen inherits Rectangle {
             scope: StateTokens.page(root.page) + ":" + Motion.epoch;
         }
         rows-band := Rectangle {
-            x: root.pad-x;
-            y: root.pad-y;
-            width: root.card-w - 2 * root.pad-x;
-            height: root.rows-height;
+            x: root.pad;
+            y: root.pad;
+            width: root.card-w - 2 * root.pad;
+            height: root.rows-clip-height;
             clip: true;
 
+        // The fill and the rows hang off one scrolled parent, positioned
+        // against where the band is going to settle rather than against
+        // the offset that is still moving. So the cursor animates only the
+        // step the scroll does not already absorb -- a move that pulls the
+        // list up by exactly one row leaves the fill where it is, which is
+        // what it looks like on screen -- and whatever the scroll animates
+        // on top is a rigid translation over rows and fill together.
+        // Chasing the live offset instead made the fill lag the row it was
+        // inverting, so the covered band grew and shrank for the length of
+        // every scroll.
+        Rectangle {
+            y: root.scroll - row-scroll.offset;
+
         sel := SelectionCursor {
-            motion: Motion.enabled && !row-scroll.moving;
             radius: Layout.row-radius;
+            activate-pulse: SettingsView.activate-pulse;
+            release-pulse: SettingsView.release-pulse;
+            screen-settling: Shell.active-screen != Screen.settings;
+            press-held: PressFeedback.active(PressOwner.settings, root.index);
+            // Toggles answer with their knob slide, not a flash.
+            flash-enabled: root.index >= 0 && root.index < root.rows.length
+                && root.rows[root.index].control != ControlKind.toggle;
             target: { x: 0px,
-                y: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].y-offset - row-scroll.offset : 0px,
-                w: parent.width,
+                y: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].y-offset - root.scroll : 0px,
+                w: rows-band.width,
                 h: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].height : 0px,
-                column: 0, row: root.index, scope: StateTokens.page(root.page),
+                column: 0, row: root.index,
+                // The scroll position is part of the scope, so a move that
+                // scrolls the band snaps instead of gliding. The rows under
+                // the fill jump when the band scrolls, so the fill has to
+                // jump with them: gliding left it growing or shrinking to
+                // the new row's height in place, over rows that had already
+                // moved. Browse lists and the picker key their scope the
+                // same way; the settings card was the one that did not.
+                scope: StateTokens.page(root.page) + ":" + root.scroll / 1px,
                 valid: root.index >= 0 && root.index < root.rows.length };
         }
         for row[i] in root.rows: Rectangle {
             x: 0;
-            y: row.y-offset - row-scroll.offset;
+            y: row.y-offset - root.scroll;
             height: row.height;
 
-            if row.kind == RowKind.header: Text {
-                x: 0;
-                y: parent.height - self.height - Sizing.pct-h(0.6);
-                text: SettingsLabels.label(row.id);
-                color: Theme.text-variant;
-                font-size: Sizing.font-caption;
-                font-weight: FontWeight.semi-bold;
+            // The shared group heading, not a smaller private one: a band
+            // title is a label-colored line on a hairline rule at body
+            // size everywhere else in the app, and the settings card is
+            // where most of them appear.
+            if row.kind == RowKind.header: SectionHeader {
+                height: parent.height;
+                label: SettingsLabels.label(row.id);
             }
 
             property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
@@ -677,8 +722,6 @@ component SettingsScreen inherits Rectangle {
             if row.kind == RowKind.field: SettingsRowView {
                 entry: row;
                 focused: false;
-                activate-pulse: SettingsView.activate-pulse;
-                settling: Shell.active-screen != Screen.settings;
             }
             // The same row again, colored as selected and clipped to the
             // fill, so the inversion boundary is the fill's own edge.
@@ -686,11 +729,11 @@ component SettingsScreen inherits Rectangle {
                 radius: Layout.row-radius;
                 row-top: parent.y; row-height: parent.height;
                 fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                fill: sel.fill;
                 SettingsRowView {
                     entry: row;
                     focused: true;
-                    activate-pulse: SettingsView.activate-pulse;
-                    settling: Shell.active-screen != Screen.settings;
+                    flashing: sel.flashing;
                 }
             }
 
@@ -704,18 +747,19 @@ component SettingsScreen inherits Rectangle {
             }
         }
         }
+        }
 
-        // Hint band: the focused row's own description, two lines.
-        Rectangle {
-            x: rows-band.x;
-            y: parent.height - root.pad-y - root.hint-h - Sizing.pct-h(0.5);
-            width: rows-band.width;
-            height: Sizing.card-border-width;
-            background: Theme.border-mid;
+        // Hint band: the focused row's own description. The rows scroll
+        // and clip under it, so the boundary carries a structural rule,
+        // full card width, with the card's own lip either side of it.
+        Divider {
+            x: 0;
+            y: root.hint-rule-y;
+            width: parent.width;
         }
         Text {
             x: rows-band.x;
-            y: parent.height - root.pad-y - root.hint-h;
+            y: root.hint-y;
             width: rows-band.width;
             height: root.hint-h;
             wrap: word-wrap;
@@ -1035,8 +1079,9 @@ component ListPickerModal inherits Rectangle {
     property <length> row-h: Sizing.pct-h(7);
     property <length> row-sp: Sizing.pct-h(1);
     property <length> stride: root.row-h + root.row-sp;
-    property <length> pad-y: Sizing.pct-h(4);
-    property <length> title-gap: Sizing.pct-h(3);
+    // The shared surface inset: all four sides, and every gap between the
+    // blocks stacked inside. See docs/style.md, "Surface containment".
+    property <length> pad: Sizing.surface-pad;
     property <length> arrow: Sizing.pct-h(3);
     // A long option list (languages, color schemes) scrolls rather than
     // growing the panel past the screen; PickerList.qml's own cap.
@@ -1065,7 +1110,6 @@ component ListPickerModal inherits Rectangle {
     property <length> swatch-size: Sizing.pct-h(2.4);
     property <length> swatch-gap: Sizing.pct-w(0.6);
     property <length> swatch-band: root.swatches ? 3 * root.swatch-size + 2 * root.swatch-gap + Sizing.pct-w(2) : 0px;
-    property <length> pad-x: Sizing.pct-w(4);
     measure := VerticalLayout {
         visible: false;
         for entry in root.entries: Text {
@@ -1076,10 +1120,16 @@ component ListPickerModal inherits Rectangle {
     }
     property <length> desired-w: Math.max(measure.preferred-width + root.swatch-band
         + 2 * Sizing.pct-w(2) + Sizing.stroke(2), title.preferred-width)
-        + 2 * root.pad-x + Sizing.font-body * 1.5;
+        + 2 * root.pad + Sizing.font-body * 1.5;
     property <length> panel-w: Math.min(Sizing.pct-w(92), Math.max(Sizing.pct-w(30), Math.ceil(root.desired-w / 1px) * 1px));
-    property <length> content-y: root.pad-y + title.preferred-height + root.title-gap;
-    property <length> panel-h: root.content-y + root.viewport-h + 2 * root.arrow-band + root.pad-y;
+    // Rows slide under a pinned title only when the list is long enough
+    // to scroll, and that is the boundary a structural rule marks (see
+    // docs/style.md, "Lines"). A short picker is one block of whitespace
+    // and gets no line.
+    property <length> rule-y: root.pad + title.preferred-height + root.pad;
+    property <length> content-y: root.rule-y
+        + (root.scrollable ? Sizing.stroke(1) + root.pad : 0px);
+    property <length> panel-h: root.content-y + root.viewport-h + 2 * root.arrow-band + root.pad;
 
     Rectangle {
         x: (parent.width - self.width) / 2;
@@ -1094,12 +1144,17 @@ component ListPickerModal inherits Rectangle {
 
         title := Text {
             x: (parent.width - self.width) / 2;
-            y: root.pad-y;
-            width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+            y: root.pad;
+            width: Math.min(self.preferred-width, parent.width - 2 * root.pad);
             overflow: elide;
             text: root.setting-id != "" ? SettingsLabels.label(root.setting-id) : root.title;
             color: Theme.text-primary;
             font-size: Sizing.font-title;
+        }
+        if root.scrollable: Divider {
+            x: 0;
+            y: root.rule-y;
+            width: parent.width;
         }
 
         if root.top > 0: Image {
@@ -1111,13 +1166,14 @@ component ListPickerModal inherits Rectangle {
         }
 
         Rectangle {
-            x: root.pad-x;
+            x: root.pad;
             y: root.content-y + root.arrow-band;
-            width: parent.width - 2 * root.pad-x;
+            width: parent.width - 2 * root.pad;
             height: root.viewport-h;
             clip: true;
 
             sel := SelectionCursor {
+                press-held: PressFeedback.active(PressOwner.list, root.current-index);
                 target: { x: 0px, y: (root.current-index - root.top) * root.stride,
                     w: parent.width, h: root.row-h, column: 0, row: root.current-index,
                     scope: root.title + ":" + root.setting-id + ":" + root.top,
@@ -1143,6 +1199,7 @@ component ListPickerModal inherits Rectangle {
                 if lit: SelectionClip {
                     row-top: parent.y; row-height: parent.height;
                     fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                    fill: sel.fill;
                     PickerRowBody {
                         entry-id: entry.id;
                         label: Overlays.launcher-saving-visible && i == root.current-index ? @tr("Saving…") : root.entry-label(entry);
@@ -1150,14 +1207,10 @@ component ListPickerModal inherits Rectangle {
                         swatch-size: root.swatch-size;
                         swatch-gap: root.swatch-gap;
                         swatch-band: root.swatch-band;
-                        content-color: Theme.on-accent;
-                        swatch-edge: Theme.on-accent;
+                        content-color: sel.content;
+                        swatch-edge: sel.content;
                         weight: FontWeight.medium;
                     }
-                }
-                bar := SelectionBar {
-                    active: i == root.current-index;
-                    press-held: PressFeedback.active(PressOwner.list, i);
                 }
                 TouchArea {
                     mouse-cursor: pointer;
@@ -1169,7 +1222,7 @@ component ListPickerModal inherits Rectangle {
 
         if root.top + root.visible-rows < root.entries.length: Image {
             x: (parent.width - self.width) / 2;
-            y: parent.height - root.pad-y - root.arrow;
+            y: parent.height - root.pad - root.arrow;
             width: root.arrow;
             height: root.arrow;
             source: GlyphSource.glyph("icons/ScrollDown", root.arrow, Theme.text-label);
@@ -1190,18 +1243,18 @@ component LetterJumpModal inherits Rectangle {
     background: Theme.scrim;
 
     property <length> gap: Sizing.pct-w(1);
-    property <length> pad-y: Sizing.pct-h(4);
-    property <length> title-gap: Sizing.pct-h(3);
+    // The shared surface inset: all four sides, and the title gap.
+    property <length> pad: Sizing.surface-pad;
     property <length> panel-w: Sizing.pct-w(78);
-    property <length> content-w: root.panel-w - 2 * Sizing.pct-w(4);
+    property <length> content-w: root.panel-w - 2 * root.pad;
     property <int> rows: Math.max(1, Math.ceil(root.buckets.length / Math.max(1, root.columns)));
     property <length> cell: Math.max(Sizing.pct-w(7), Math.min(Sizing.pct-w(13),
         Math.min((root.content-w - (root.columns - 1) * root.gap) / Math.max(1, root.columns),
             (Sizing.pct-h(52) - (root.rows - 1) * root.gap) / root.rows)));
     property <length> grid-h: root.rows * root.cell + (root.rows - 1) * root.gap;
     property <length> grid-w: root.columns * root.cell + (root.columns - 1) * root.gap;
-    property <length> content-y: root.pad-y + title.preferred-height + root.title-gap;
-    property <length> panel-h: root.content-y + root.grid-h + root.pad-y;
+    property <length> content-y: root.pad + title.preferred-height + root.pad;
+    property <length> panel-h: root.content-y + root.grid-h + root.pad;
 
     Rectangle {
         x: (parent.width - self.width) / 2;
@@ -1215,7 +1268,7 @@ component LetterJumpModal inherits Rectangle {
 
         title := Text {
             x: (parent.width - self.width) / 2;
-            y: root.pad-y;
+            y: root.pad;
             text: @tr("Go to…");
             color: Theme.text-primary;
             font-size: Sizing.font-title;
@@ -1274,19 +1327,27 @@ component CardWriteModal inherits Rectangle {
 
     background: Theme.scrim;
 
+    // The shared surface inset, stacked: lip, title, gap, button, lip.
+    // The button used to be pinned at a fixed offset from the panel's
+    // bottom, so the lip under it was whatever the arithmetic happened to
+    // leave rather than the value every sibling panel uses.
+    property <length> pad: Sizing.surface-pad;
+    property <length> btn-h: Sizing.pct-h(7);
+    property <length> button-y: root.pad + Math.ceil(title.preferred-height / 1px) * 1px + root.pad;
+
     Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         width: Math.min(Math.min(parent.width * 0.92, Sizing.pct-h(90)),
-            Math.max(Sizing.pct-w(30), title.preferred-width + 2 * Sizing.pct-w(4)));
-        height: Math.ceil(title.preferred-height / 1px) * 1px + Sizing.pct-h(18);
+            Math.max(Sizing.pct-w(30), title.preferred-width + 2 * root.pad));
+        height: root.button-y + root.btn-h + root.pad;
         background: Theme.bg-panel;
         border-radius: Sizing.radius-md;
 
         title := Text {
             x: (parent.width - self.width) / 2;
-            y: Sizing.pct-h(4);
-            width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width - 2 * Sizing.pct-w(4));
+            y: root.pad;
+            width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width - 2 * root.pad);
             wrap: word-wrap;
             text: @tr("Hold a writable token near the reader");
             color: Theme.text-primary;
@@ -1294,9 +1355,9 @@ component CardWriteModal inherits Rectangle {
         }
         cancel-button := PressableSurface {
             x: (parent.width - self.width) / 2;
-            y: parent.height - Sizing.pct-h(11);
-            width: Math.min(Sizing.pct-w(28), parent.width - 2 * Sizing.pct-w(4));
-            height: Sizing.pct-h(7);
+            y: root.button-y;
+            width: Math.min(Sizing.pct-w(28), parent.width - 2 * root.pad);
+            height: root.btn-h;
             focused: true;
             pressed: PressFeedback.active(PressOwner.card-write, 0);
             Text {
@@ -1327,21 +1388,26 @@ component QrCodeModal inherits Rectangle {
         ? Math.max(1, Math.floor(root.max-px / root.modules / 1px)) * 1px
         : 1px;
     property <length> qr-px: root.module-px * root.modules;
+    // The shared surface inset: all four sides, and the gap between the
+    // stacked blocks. The panel is not content-sized (the code fixes its
+    // own width), so it takes the plain 0.78 cap its siblings use rather
+    // than the 0.92 a measured panel gets.
+    property <length> pad: Sizing.surface-pad;
 
     Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width: Math.min(parent.width * 0.92, Sizing.pct-h(105));
-        height: Math.ceil(content.preferred-height / 1px) * 1px + 2 * Sizing.pct-h(4);
+        width: Math.min(parent.width * 0.78, Sizing.pct-h(105));
+        height: Math.ceil(content.preferred-height / 1px) * 1px + 2 * root.pad;
         background: Theme.bg-panel;
         border-radius: Sizing.radius-md;
 
         content := VerticalLayout {
-            x: Sizing.pct-w(4);
-            y: Sizing.pct-h(4);
+            x: root.pad;
+            y: root.pad;
             width: parent.width - 2 * self.x;
             height: self.preferred-height;
-            spacing: Sizing.pct-h(2);
+            spacing: root.pad;
             Rectangle {
                 height: Math.ceil(title.preferred-height / 1px) * 1px;
                 title := Text {
@@ -1405,7 +1471,9 @@ component DialogModal inherits Rectangle {
     // Modal.qml's own panel rule: as wide as the copy needs, capped at
     // 92% of the screen and at a height-derived maximum, so a long body
     // does not stack up into extra lines on a 240p screen.
-    property <length> pad-x: Sizing.pct-w(4);
+    // The shared surface inset: all four sides, and every gap in the
+    // title/body/status/buttons stack.
+    property <length> pad: Sizing.surface-pad;
     title-measure := Text {
         visible: false;
         text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
@@ -1437,24 +1505,22 @@ component DialogModal inherits Rectangle {
     }
     property <length> desired-w: Math.max(title-measure.preferred-width,
         Math.max(Math.min(body-measure.preferred-width, line-measure.preferred-width * 45 / 26),
-            button-measure.preferred-width)) + 2 * root.pad-x;
+            button-measure.preferred-width)) + 2 * root.pad;
     // CommercialNoticeModal uses a wider shell for its long legal copy.
     property <length> panel-w: Math.ceil((Overlays.dialog-kind == DialogKind.notice
         ? Math.min(root.width * 0.78, Sizing.pct-h(110))
         : Math.min(Math.min(root.width * 0.92, Sizing.pct-h(90)),
             Math.max(Sizing.pct-w(30), root.desired-w))) / 1px) * 1px;
-    property <length> pad-y: Sizing.pct-h(4);
-    property <length> content-gap: Sizing.pct-h(3);
     property <length> btn-h: Sizing.pct-h(7);
     property <length> btn-gap: Sizing.pct-w(2);
     property <length> title-h: title-measure.preferred-height;
     property <length> body-h: body-t.preferred-height;
     property <length> status-h: Overlays.dialog-status != DialogProgress.none ? status-measure.preferred-height : 0px;
-    property <length> body-y: root.pad-y + root.title-h + root.content-gap;
-    property <length> status-y: root.body-y + root.body-h + root.content-gap;
+    property <length> body-y: root.pad + root.title-h + root.pad;
+    property <length> status-y: root.body-y + root.body-h + root.pad;
     property <length> button-y: root.status-y
-        + (Overlays.dialog-status != DialogProgress.none ? root.status-h + root.content-gap : 0px);
-    property <length> panel-h: root.button-y + root.btn-h + root.pad-y;
+        + (Overlays.dialog-status != DialogProgress.none ? root.status-h + root.pad : 0px);
+    property <length> panel-h: root.button-y + root.btn-h + root.pad;
 
     Rectangle {
         x: (parent.width - self.width) / 2;
@@ -1468,8 +1534,8 @@ component DialogModal inherits Rectangle {
 
         Text {
             x: (parent.width - self.width) / 2;
-            y: root.pad-y;
-            max-width: parent.width - 2 * root.pad-x;
+            y: root.pad;
+            max-width: parent.width - 2 * root.pad;
             overflow: elide;
             text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
             color: Theme.text-primary;
@@ -1479,7 +1545,7 @@ component DialogModal inherits Rectangle {
         body-t := Text {
             x: (parent.width - self.width) / 2;
             y: root.body-y;
-            width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, parent.width - 2 * root.pad-x);
+            width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, parent.width - 2 * root.pad);
             wrap: word-wrap;
             text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
             color: Theme.text-primary;
@@ -1490,7 +1556,7 @@ component DialogModal inherits Rectangle {
         if Overlays.dialog-status != DialogProgress.none: Text {
             x: (parent.width - self.width) / 2;
             y: root.status-y;
-            max-width: parent.width - 2 * root.pad-x;
+            max-width: parent.width - 2 * root.pad;
             overflow: elide;
             text: DialogLabels.status(Overlays.dialog-status, Overlays.dialog-status-step,
                 Overlays.dialog-status-total, Overlays.dialog-status-name);
@@ -1499,7 +1565,7 @@ component DialogModal inherits Rectangle {
         }
 
         // Same raised surfaces and safe-area width cap as Modal.qml.
-        property <length> available-btn-w: Math.floor((root.panel-w - 2 * root.pad-x
+        property <length> available-btn-w: Math.floor((root.panel-w - 2 * root.pad
             - Math.max(0, Overlays.dialog-buttons.length - 1) * root.btn-gap)
             / Math.max(1, Overlays.dialog-buttons.length) / 1px) * 1px;
         // A one-word alert action sizes around its label like the panel does;
@@ -1629,9 +1695,14 @@ component ContextMenu inherits Rectangle {
     property <length> gap: Sizing.pct-w(1.2);
     property <length> row-h: Sizing.pct-h(6);
     property <length> row-sp: Sizing.pct-h(1);
-    property <length> pad-x: Sizing.pct-w(2);
-    property <length> side-margin: Sizing.pct-w(1);
-    property <length> v-pad: Sizing.pct-h(1.5);
+    // The row's own text inset, which is a horizontal measure inside a
+    // row rather than the panel's lip; the browse list's row text padding
+    // is the same kind of value.
+    property <length> label-inset: Sizing.pct-w(2);
+    // The panel's lip: the shared surface inset, all four sides. A menu is
+    // a panel like any other, so it takes the same number rather than a
+    // second scale a hair below it.
+    property <length> pad: Sizing.surface-pad;
     property <length> panel-radius: Sizing.radius-md;
     property <length> min-panel-w: Sizing.pct-w(12);
     // A vertical layout's preferred width is the widest child's, which
@@ -1646,23 +1717,23 @@ component ContextMenu inherits Rectangle {
             font-weight: FontWeight.medium;
         }
     }
-    property <length> desired-panel-w: measure.preferred-width + 2 * root.pad-x
-        + 2 * root.side-margin + 2 * Sizing.stroke(2);
+    property <length> desired-panel-w: measure.preferred-width + 2 * root.label-inset
+        + 2 * root.pad + 2 * Sizing.stroke(2);
     property <length> panel-w: Math.min(Math.max(root.min-panel-w, root.desired-panel-w),
         Math.max(0px, root.width - 2 * root.margin));
     property <length> content-h: root.entries.length * root.row-h
-        + Math.max(0, root.entries.length - 1) * root.row-sp + 2 * root.v-pad;
+        + Math.max(0, root.entries.length - 1) * root.row-sp + 2 * root.pad;
     property <length> usable-bottom: Math.max(root.margin,
         root.height - Sizing.help-bar-clearance - root.margin);
     property <length> panel-h: Math.min(root.content-h,
         Math.max(0px, root.usable-bottom - root.margin));
-    property <length> viewport-h: Math.max(0px, root.panel-h - 2 * root.v-pad);
+    property <length> viewport-h: Math.max(0px, root.panel-h - 2 * root.pad);
     // Keep the focused row in view when the entries outrun the room the
     // anchor leaves (the discovery list can be long).
     property <length> row-bottom: (root.current-index + 1) * root.row-h
         + root.current-index * root.row-sp;
     property <length> scroll: Math.max(0px, Math.min(root.row-bottom - root.viewport-h,
-        root.content-h - 2 * root.v-pad - root.viewport-h));
+        root.content-h - 2 * root.pad - root.viewport-h));
 
     property <bool> fits-right: root.anchor-x + root.anchor-w + root.gap + root.panel-w <= root.width - root.margin;
     property <bool> fits-left: root.anchor-x - root.gap - root.panel-w >= root.margin;
@@ -1695,39 +1766,36 @@ component ContextMenu inherits Rectangle {
         clip: true;
 
         sel := SelectionCursor {
-            target: { x: root.side-margin, y: root.v-pad + root.current-index * (root.row-h + root.row-sp) - root.scroll,
-                w: parent.width - 2 * root.side-margin, h: root.row-h, column: 0, row: root.current-index,
+            press-held: PressFeedback.active(PressOwner.context, root.current-index);
+            target: { x: root.pad, y: root.pad + root.current-index * (root.row-h + root.row-sp) - root.scroll,
+                w: parent.width - 2 * root.pad, h: root.row-h, column: 0, row: root.current-index,
                 scope: "context:" + root.scroll / 1px,
                 valid: root.current-index >= 0 && root.current-index < root.entries.length };
         }
         for entry[i] in root.entries: Rectangle {
-            x: root.side-margin;
-            y: root.v-pad + i * (root.row-h + root.row-sp) - root.scroll;
-            width: parent.width - 2 * root.side-margin;
+            x: root.pad;
+            y: root.pad + i * (root.row-h + root.row-sp) - root.scroll;
+            width: parent.width - 2 * root.pad;
             height: root.row-h;
 
             property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
 
             ContextRowBody {
                 label: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
-                pad-x: root.pad-x;
+                pad-x: root.label-inset;
                 content-color: Theme.text-primary;
                 weight: FontWeight.normal;
             }
             if lit: SelectionClip {
                 row-top: parent.y; row-height: parent.height;
                 fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                fill: sel.fill;
                 ContextRowBody {
                     label: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
-                    pad-x: root.pad-x;
-                    content-color: Theme.on-accent;
+                    pad-x: root.label-inset;
+                    content-color: sel.content;
                     weight: FontWeight.medium;
                 }
-            }
-            bar := SelectionBar {
-                active: i == root.current-index;
-                press-held: PressFeedback.active(PressOwner.context, i);
-                radius: Sizing.radius-sm;
             }
 
             TouchArea {
@@ -1983,7 +2051,9 @@ component GamesScreen inherits Rectangle {
         background: Theme.surface-card;
         border-width: Sizing.card-border-width;
         border-color: Theme.border-mid;
-        border-radius: Sizing.radius-sm;
+        // A card recipe takes the card radius; this plate was the only
+        // `surface-card` on the small rung.
+        border-radius: Sizing.radius-md;
 
         Text {
             x: (parent.width - self.width) / 2;

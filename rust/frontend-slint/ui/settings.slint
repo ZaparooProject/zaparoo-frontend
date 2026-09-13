@@ -7,7 +7,7 @@
 // as ids and values; every user-visible string is translated here.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { GlyphSource, SelectionBar } from "chrome.slint";
+import { GlyphSource } from "chrome.slint";
 import { GridCell, Tile } from "tiles.slint";
 import { Labels } from "labels.slint";
 import { SettingsPage, RowKind, ControlKind, ActionStatus, SetupKind, ScopeKind, SetupAction, StateTokens } from "state_types.slint";
@@ -315,12 +315,16 @@ export global SettingsLabels {
 }
 
 // SettingsField.qml: an inverse-video row carrying the label, then the
-// value, the toggle knob or the action label.
+// value, the toggle knob or the action label. The host draws it twice --
+// once resting and once with `focused` inside the list's `SelectionClip`
+// -- so the inversion boundary is the travelling fill's own edge.
 export component SettingsRowView inherits Rectangle {
     in property <SettingsRow> entry;
     in property <bool> focused: false;
-    in property <int> activate-pulse: 0;
-    in property <bool> settling: false;
+    // The list cursor's activation flash. During it the fill and the row's
+    // content swap colors, so the inverted copy has to swap with them or it
+    // goes invisible against `Theme.on-accent` for the length of the cue.
+    in property <bool> flashing: false;
 
     opacity: root.entry.enabled ? 1.0 : 0.4;
 
@@ -328,13 +332,23 @@ export component SettingsRowView inherits Rectangle {
     property <length> pad: Sizing.pct-w(2);
     property <length> knob-h: Sizing.pct-h(3.8);
 
-    bar := SelectionBar {
-        active: root.focused;
-        // Toggles answer with their knob slide, not a flash.
-        activate-pulse: root.entry.control == ControlKind.toggle ? 0 : root.activate-pulse;
-        screen-settling: root.settling;
-        radius: Layout.row-radius;
-    }
+    // The selected row's two colors, and the weight that goes with them.
+    // Dark-on-light text reads thinner than light-on-dark at the same
+    // weight, so a selected row steps up to Medium; a no-op on the
+    // single-strike bitmap face.
+    property <color> fill-color: root.flashing ? Theme.on-accent : Theme.selection-fill;
+    property <color> content-color: root.flashing ? Theme.selection-fill : Theme.on-accent;
+    property <int> content-weight: root.focused ? FontWeight.medium : FontWeight.normal;
+
+    // A running media job reports under its own row, one type size down.
+    // Rust adds exactly that line plus its gap to the row's height, so the
+    // pair is centered as the two-line stack it is; reserving a second
+    // *body* line for a caption sat them high with a gap underneath.
+    property <bool> has-status: root.entry.status-key != ActionStatus.none;
+    property <length> status-gap: Sizing.pct-h(0.3);
+    property <length> stack-height: root.has-status
+        ? label.height + root.status-gap + status-measure.preferred-height
+        : label.height;
 
     label-measure := Text {
         visible: false;
@@ -342,30 +356,32 @@ export component SettingsRowView inherits Rectangle {
         font-size: Sizing.font-body;
         font-weight: FontWeight.medium;
     }
+    status-measure := Text {
+        visible: false;
+        text: SettingsLabels.action-status(root.entry.status-key, root.entry.status-count);
+        font-size: Sizing.font-caption;
+    }
     label := Text {
         x: root.is-action ? (parent.width - self.width) / 2 : root.pad;
-        y: root.entry.status-key != ActionStatus.none
-            ? Sizing.pct-h(1)
-            : (parent.height - self.height) / 2;
+        y: (parent.height - root.stack-height) / 2;
         width: Math.min(Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2),
             parent.width - 2 * root.pad);
         overflow: elide;
         text: SettingsLabels.label(root.entry.id);
-        color: bar.active ? bar.content-color : (root.is-action ? Theme.accent : Theme.text-primary);
+        color: root.focused ? root.content-color : (root.is-action ? Theme.accent : Theme.text-primary);
         font-size: Sizing.font-body;
-        font-weight: bar.content-weight;
+        font-weight: root.content-weight;
     }
 
-    // A running media job reports under its own row.
-    if root.entry.status-key != ActionStatus.none: Text {
+    if root.has-status: Text {
         x: (parent.width - self.width) / 2;
-        y: label.y + label.height + Sizing.pct-h(0.3);
+        y: label.y + label.height + root.status-gap;
         width: Math.min(self.preferred-width, parent.width - 2 * root.pad);
         overflow: elide;
         text: SettingsLabels.action-status(root.entry.status-key, root.entry.status-count);
-        color: bar.active ? bar.content-color : Theme.text-label;
+        color: root.focused ? root.content-color : Theme.text-label;
         font-size: Sizing.font-caption;
-        font-weight: bar.content-weight;
+        font-weight: root.content-weight;
     }
 
     property <string> value-text: (root.entry.id == "systems" || root.entry.id == "source")
@@ -379,9 +395,9 @@ export component SettingsRowView inherits Rectangle {
             chevron.x - Sizing.pct-w(2) - label.x - label.width - Sizing.pct-w(2)));
         overflow: elide;
         text: root.value-text;
-        color: bar.active ? bar.content-color : Theme.text-primary;
+        color: root.focused ? root.content-color : Theme.text-primary;
         font-size: Sizing.font-body;
-        font-weight: bar.content-weight;
+        font-weight: root.content-weight;
     }
 
     if root.entry.control == ControlKind.toggle: Rectangle {
@@ -391,7 +407,7 @@ export component SettingsRowView inherits Rectangle {
         width: root.knob-h * 1.85;
         height: root.knob-h;
         border-radius: Sizing.radius-sm;
-        background: bar.active
+        background: root.focused
             ? (root.entry.checked ? Theme.on-accent : Theme.on-accent-muted)
             : (root.entry.checked ? Theme.accent : Theme.border-mid);
 
@@ -402,9 +418,9 @@ export component SettingsRowView inherits Rectangle {
             width: parent.height - 2 * parent.inset;
             height: self.width;
             border-radius: Sizing.radius-sm;
-            background: bar.active ? Theme.selection-fill : Theme.surface-card;
+            background: root.focused ? root.fill-color : Theme.surface-card;
             border-width: Sizing.card-border-width;
-            border-color: bar.active ? Theme.on-accent : Theme.accent;
+            border-color: root.focused ? Theme.on-accent : Theme.accent;
             animate knob-x { duration: Motion.dur(Motion.settle-ms); easing: ease-out; }
         }
     }
@@ -416,6 +432,6 @@ export component SettingsRowView inherits Rectangle {
             ? Sizing.pct-h(3) : 0px;
         height: self.width;
         visible: root.entry.control == ControlKind.picker || root.entry.control == ControlKind.navigate;
-        source: GlyphSource.glyph("icons/NavRight", Math.max(1px, self.width), bar.active ? bar.content-color : Theme.text-label);
+        source: GlyphSource.glyph("icons/NavRight", Math.max(1px, self.width), root.focused ? root.content-color : Theme.text-label);
     }
 }

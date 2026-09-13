@@ -479,7 +479,8 @@ fn main() {
         } else {
             qr::write_url("/games/SNES/Chrono Trigger.sfc")
         };
-        let (image, modules) = qr::qr_image(&payload).expect("fixture QR encodes");
+        let (image, modules) =
+            qr::qr_image(&payload, qr::code_colors(&app)).expect("fixture QR encodes");
         let ov = app.global::<generated::Overlays>();
         ov.set_qr_image(image);
         ov.set_qr_modules(i32::try_from(modules).unwrap());
@@ -498,7 +499,9 @@ fn main() {
             LogPhase::Done
         });
         lv.set_url("https://logs.zaparoo.org/a1b2c3d4".into());
-        if let Some((image, modules)) = qr::qr_image("https://logs.zaparoo.org/a1b2c3d4") {
+        if let Some((image, modules)) =
+            qr::qr_image("https://logs.zaparoo.org/a1b2c3d4", qr::code_colors(&app))
+        {
             lv.set_qr(image);
             lv.set_qr_modules(i32::try_from(modules).unwrap_or(0));
         }
@@ -1039,9 +1042,16 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
     let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
     let viewport = (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0);
     view.set_page(page_id);
-    view.set_index(if page { 2 } else { 1 });
+    let index = if page { 2 } else { 1 };
+    view.set_index(index);
+    // Same snap the driver applies, from the same rule, so the fixture
+    // cannot quietly frame the band differently from the app.
+    let spans: Vec<(f32, f32)> = rows.iter().map(|r| (r.y_offset, r.height)).collect();
+    let (scroll, shown) =
+        zaparoo_app::settings::band_extent(&spans, index.max(0) as usize, viewport as f32);
     view.set_rows_height(viewport as f32);
-    view.set_scroll(0.0);
+    view.set_rows_clip_height(shown);
+    view.set_scroll(scroll);
     view.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
 
     if page {

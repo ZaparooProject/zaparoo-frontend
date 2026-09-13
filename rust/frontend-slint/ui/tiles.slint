@@ -307,7 +307,23 @@ export component Tile inherits Rectangle {
     }
     changed cell => { root.pressed = false; }
 
-    // A held tile stays visible and follows its placement; never blink it away.
+    // Held cue (Options -> Move), and only this: the WHOLE tile blinks out
+    // of existence and back. No tint, no recolor, no lift -- nothing is
+    // painted in that cell for the instant it is off, focus ring included,
+    // and it returns exactly as it was (Tile.qml). A hard cut, never a
+    // fade. `opacity` rather than `visible` because opacity cascades to
+    // every child, so one binding takes the art, the caption and the ring
+    // with it. Under Reduce motion the tile just stays on: freezing a
+    // disappear cue on "gone" would hide the very thing being moved, and
+    // the help bar's move-mode line carries the state instead.
+    property <bool> held-blink-on: true;
+    opacity: (root.held && Motion.enabled && !root.held-blink-on) ? 0.0 : 1.0;
+    Timer {
+        interval: Motion.dur(Motion.held-blink-ms);
+        running: root.held && Motion.enabled;
+        triggered => { root.held-blink-on = !root.held-blink-on; }
+    }
+    changed held => { root.held-blink-on = true; }
 
     surface := PressableSurface {
         radius: root.card-radius;
@@ -453,7 +469,40 @@ export component PagedGridView inherits Rectangle {
     callback cell-right-clicked(int);
     callback wheel(int);
 
-    clip: true;
+    property <int> selected-col: Math.mod(Math.max(0, root.selected-local), Math.max(1, root.columns));
+    property <int> selected-row: Math.floor(Math.max(0, root.selected-local) / Math.max(1, root.columns));
+    property <length> selected-x: root.left-inset + root.block-offset-x + root.selected-col * (root.cell-width + root.column-gap);
+    property <length> selected-y: root.top-inset + root.block-offset-y + root.selected-row * (root.cell-height + root.row-gap);
+    property <bool> has-selection: root.selected-local >= 0 && root.selected-local < root.cells.length
+        && !root.cells[root.selected-local].is-empty && root.section-focused && root.focus-ready;
+    property <length> ring-gap: Sizing.pct-h(0.4);
+    // The retained focus ring belongs to the moving face, not the fixed edge.
+    property <float> press-t: root.press-held ? 1 : 0;
+    animate press-t {
+        duration: Motion.dur(root.press-held ? Motion.press-ms : Motion.settle-ms);
+        easing: ease-out-quad;
+    }
+    property <length> press-y: root.press-t * Sizing.press-edge-height;
+
+    // A focused tile grows over its neighbours rather than pushing them,
+    // so the clip is widened by exactly that growth and the cell layer is
+    // pushed back in by the same amount. Nothing moves, and a tile on the
+    // grid's own edge is no longer trimmed on its outer side.
+    property <percent> zoom: Motion.enabled && !Sizing.crt ? Motion.focus-zoom : 100%;
+    property <length> headroom:
+        Math.max(root.cell-width, root.cell-height) * (Motion.focus-zoom - 100%) / 2;
+
+    Rectangle {
+        x: -root.headroom;
+        y: -root.headroom;
+        width: parent.width + 2 * root.headroom;
+        height: parent.height + 2 * root.headroom;
+        clip: true;
+    Rectangle {
+        x: root.headroom;
+        y: root.headroom;
+        width: root.width;
+        height: root.height;
 
     // Two passes: every unselected tile, then the selected one on top so
     // its ring stays whole at the cell boundaries (`z` is static in
@@ -475,6 +524,16 @@ export component PagedGridView inherits Rectangle {
         y: root.top-inset + root.block-offset-y + self.cell-row * (root.cell-height + root.row-gap) + displacement.offset-y;
         width: root.cell-width;
         height: root.cell-height;
+        // On the cell, not on the Tile inside it: the Tile is destroyed
+        // and rebuilt when focus moves, and a new element starts at its
+        // target value, so an animation on it never runs. The cell
+        // survives, so this scales both up and down.
+        transform-scale-x: root.has-selection && i == root.selected-local ? root.zoom : 100%;
+        transform-scale-y: root.has-selection && i == root.selected-local ? root.zoom : 100%;
+        animate transform-scale-x, transform-scale-y {
+            duration: Motion.dur(Motion.zoom-ms);
+            easing: ease-out-quad;
+        }
 
         if !cell.is-empty && i != root.selected-local: Tile {
             cell: cell;
@@ -533,22 +592,15 @@ export component PagedGridView inherits Rectangle {
         }
     }
 
-    property <int> selected-col: Math.mod(Math.max(0, root.selected-local), Math.max(1, root.columns));
-    property <int> selected-row: Math.floor(Math.max(0, root.selected-local) / Math.max(1, root.columns));
-    property <length> selected-x: root.left-inset + root.block-offset-x + root.selected-col * (root.cell-width + root.column-gap);
-    property <length> selected-y: root.top-inset + root.block-offset-y + root.selected-row * (root.cell-height + root.row-gap);
-    property <bool> has-selection: root.selected-local >= 0 && root.selected-local < root.cells.length
-        && !root.cells[root.selected-local].is-empty && root.section-focused && root.focus-ready;
-    property <length> ring-gap: Sizing.pct-h(0.4);
-    // The retained focus ring belongs to the moving face, not the fixed edge.
-    property <float> press-t: root.press-held ? 1 : 0;
-    animate press-t {
-        duration: Motion.dur(root.press-held ? Motion.press-ms : Motion.settle-ms);
-        easing: ease-out-quad;
-    }
-    property <length> press-y: root.press-t * Sizing.press-edge-height;
 
+    // Scales about the same centre as the tile, so the ring stays on it.
     FocusCursor {
+        transform-scale-x: root.zoom;
+        transform-scale-y: root.zoom;
+        animate transform-scale-x, transform-scale-y {
+            duration: Motion.dur(Motion.zoom-ms);
+            easing: ease-out-quad;
+        }
         motion: Motion.enabled && root.focus-motion;
         radius: Math.max(0px, root.card-radius - root.ring-gap);
         target: { x: root.selected-x + root.ring-gap, y: root.selected-y + root.ring-gap + root.press-y,
@@ -576,5 +628,7 @@ export component PagedGridView inherits Rectangle {
             caption: root.caption-for(root.cells[root.selected-local]);
             card-radius: root.card-radius;
         }
+    }
+    }
     }
 }

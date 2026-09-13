@@ -206,7 +206,9 @@ fn start(ctx: &Ctx, app: &App) {
                 }
             }
             if let Ok(url) = &outcome {
-                if let Some((image, modules)) = crate::qr::qr_image(url) {
+                if let Some((image, modules)) =
+                    crate::qr::qr_image(url, crate::qr::code_colors(&app))
+                {
                     let view = app.global::<LogUploadView>();
                     view.set_qr(image);
                     view.set_qr_modules(i32::try_from(modules).unwrap_or(0));

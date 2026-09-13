@@ -9,7 +9,7 @@
 // from the browse layout profile in `Layout`.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { GlyphSource, SelectionBar } from "chrome.slint";
+import { GlyphSource } from "chrome.slint";
 import { GridCell, MarqueeCaption } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
 
@@ -121,6 +121,9 @@ export component BrowseList inherits Rectangle {
     sel := SelectionCursor {
         motion: Motion.enabled && !scroll.moving;
         radius: Layout.row-radius;
+        activate-pulse: root.activate-pulse;
+        release-pulse: root.release-pulse;
+        screen-settling: root.settling;
         target: { x: Layout.card-padding-left,
             y: (root.selected + root.model-top) * root.stride - scroll.offset,
             w: root.width - Layout.card-padding-left - Layout.card-padding-right, h: root.row-height,
@@ -161,6 +164,7 @@ export component BrowseList inherits Rectangle {
             radius: Layout.row-radius;
             row-top: parent.y; row-height: parent.height;
             fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+            fill: sel.fill;
             // `focused` stays the logical selection in both copies, so the
             // marquee scrolls in step and the two never disagree at the
             // boundary; only the colors differ.
@@ -174,16 +178,9 @@ export component BrowseList inherits Rectangle {
                 center-content: false;
                 caption-font-size: Sizing.font-section;
                 caption-weight: FontWeight.medium;
-                caption-color: Theme.on-accent;
-                tags-color: Theme.on-accent-muted;
+                caption-color: sel.content;
+                tags-color: sel.content-muted;
             }
-        }
-        bar := SelectionBar {
-            active: highlighted;
-            activate-pulse: root.activate-pulse;
-            release-pulse: root.release-pulse;
-            screen-settling: root.settling;
-            radius: Layout.row-radius;
         }
 
         if row.favorite: Image {

@@ -7,11 +7,11 @@
 // panel rather than a second modal, the picker its rows open.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { GlyphSource, SectionHeader, SelectionBar } from "chrome.slint";
+import { GlyphSource, SectionHeader } from "chrome.slint";
 import { SelectionCursor, SelectionClip } from "focus.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { PressableSurface } from "tiles.slint";
-import { SetupKind, SetupPicker, ScopeKind, LogPhase, StateTokens } from "state_types.slint";
+import { SetupKind, SetupPicker, ScopeKind, LogPhase, ControlKind, StateTokens } from "state_types.slint";
 
 // One row of the picker page: the same (kind, name) pair the form's own
 // scope row carries, so both read through one vocabulary.
@@ -57,9 +57,9 @@ export component SetupModal inherits Rectangle {
 
     background: Theme.scrim;
 
-    property <length> pad-x: Sizing.pct-w(4);
-    property <length> pad-y: Sizing.pct-h(4);
-    property <length> title-gap: Sizing.pct-h(3);
+    // The shared surface inset: all four sides, and the title gap. See
+    // docs/style.md, "Surface containment".
+    property <length> pad: Sizing.surface-pad;
     property <length> row-gap: Sizing.pct-h(1.5);
     property <length> picker-row-h: Sizing.pct-h(7);
     property <length> picker-gap: Sizing.pct-h(1);
@@ -78,9 +78,9 @@ export component SetupModal inherits Rectangle {
         + root.picker-rows.length * root.picker-row-h
         + Math.max(0, root.picker-rows.length - 1) * root.picker-gap;
     property <length> body-h: root.picker-page ? root.picker-h : root.form-h;
-    property <length> content-y: root.pad-y + title.preferred-height + root.title-gap;
-    property <length> panel-w: Math.min(Sizing.pct-h(110), root.width - 2 * Sizing.pct-w(6));
-    property <length> panel-h: root.content-y + root.body-h + root.pad-y;
+    property <length> content-y: root.pad + title.preferred-height + root.pad;
+    property <length> panel-w: Math.min(root.width * 0.78, Sizing.pct-h(110));
+    property <length> panel-h: root.content-y + root.body-h + root.pad;
 
     header-measure := Text {
         visible: false;
@@ -100,7 +100,7 @@ export component SetupModal inherits Rectangle {
 
         title := Text {
             x: (parent.width - self.width) / 2;
-            y: root.pad-y;
+            y: root.pad;
             text: SettingsLabels.setup-title(root.kind);
             color: Theme.text-primary;
             font-size: Sizing.font-title;
@@ -108,12 +108,16 @@ export component SetupModal inherits Rectangle {
 
         // The form.
         if !root.picker-page: Rectangle {
-            x: root.pad-x;
+            x: root.pad;
             y: root.content-y;
-            width: parent.width - 2 * root.pad-x;
+            width: parent.width - 2 * root.pad;
             height: root.form-h;
 
             sel := SelectionCursor {
+                activate-pulse: root.activate-pulse;
+                // Toggles answer with their knob slide, not a flash.
+                flash-enabled: root.index >= 0 && root.index < root.rows.length
+                    && root.rows[root.index].control != ControlKind.toggle;
                 target: { x: 0px,
                     y: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].y-offset + root.index * root.row-gap : 0px,
                     w: parent.width,
@@ -130,7 +134,6 @@ export component SetupModal inherits Rectangle {
                 SettingsRowView {
                     entry: row;
                     focused: false;
-                    activate-pulse: root.activate-pulse;
 
                     TouchArea {
                         mouse-cursor: pointer;
@@ -144,10 +147,11 @@ export component SetupModal inherits Rectangle {
                     radius: Layout.row-radius;
                     row-top: parent.y; row-height: parent.height;
                     fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                    fill: sel.fill;
                     SettingsRowView {
                         entry: row;
                         focused: true;
-                        activate-pulse: root.activate-pulse;
+                        flashing: sel.flashing;
                     }
                 }
             }
@@ -156,15 +160,17 @@ export component SetupModal inherits Rectangle {
         // The picker page: a header, the windowed rows Rust sends, and
         // the scroll cues for what sits outside the window.
         if root.picker-page: Rectangle {
-            x: root.pad-x;
+            x: root.pad;
             y: root.content-y;
-            width: parent.width - 2 * root.pad-x;
+            width: parent.width - 2 * root.pad;
             height: root.picker-h;
 
+            // Default `label-inset`, because the picker rows under it
+            // carry the same `pct-w(2)` text inset -- a heading lines up
+            // with the rows it heads (docs/style.md, "Section headings").
             SectionHeader {
                 x: 0;
                 y: 0;
-                label-inset: 0px;
                 label: SettingsLabels.label(StateTokens.picker(root.picker-title));
             }
 
@@ -178,6 +184,7 @@ export component SetupModal inherits Rectangle {
 
             picker-sel := SelectionCursor {
                 radius: Layout.row-radius;
+                activate-pulse: root.activate-pulse;
                 target: { x: 0px, y: root.header-h + root.arrow-band + root.picker-sel * (root.picker-row-h + root.picker-gap),
                     w: parent.width, h: root.picker-row-h, column: 0, row: root.picker-sel,
                     scope: StateTokens.picker(root.picker-title),
@@ -199,16 +206,12 @@ export component SetupModal inherits Rectangle {
                     radius: Layout.row-radius;
                     row-top: parent.y; row-height: parent.height;
                     fill-top: picker-sel.fill-top; fill-bottom: picker-sel.fill-bottom;
+                    fill: picker-sel.fill;
                     PickerScopeLabel {
                         label: SettingsLabels.scope(entry.kind, entry.name);
-                        content-color: Theme.on-accent;
+                        content-color: picker-sel.content;
                         weight: FontWeight.medium;
                     }
-                }
-                bar := SelectionBar {
-                    active: i == root.picker-sel;
-                    activate-pulse: root.activate-pulse;
-                    radius: Layout.row-radius;
                 }
 
                 TouchArea {
@@ -243,9 +246,7 @@ export component LogUploadModal inherits Rectangle {
 
     background: Theme.scrim;
 
-    property <length> pad-x: Sizing.pct-w(4);
-    property <length> pad-y: Sizing.pct-h(4);
-    property <length> title-gap: Sizing.pct-h(3);
+    property <length> pad: Sizing.surface-pad;
     property <length> button-h: Sizing.pct-h(7);
     property <bool> done: root.phase == LogPhase.done;
     property <bool> failed: root.phase == LogPhase.failed;
@@ -258,10 +259,10 @@ export component LogUploadModal inherits Rectangle {
     property <length> body-h: root.done
         ? root.qr-px + Sizing.pct-h(2) + url-text.preferred-height
         : message.preferred-height;
-    property <length> content-y: root.pad-y + title.preferred-height + root.title-gap;
-    property <length> panel-w: Math.min(Sizing.pct-h(110), root.width - 2 * Sizing.pct-w(6));
+    property <length> content-y: root.pad + title.preferred-height + root.pad;
+    property <length> panel-w: Math.min(root.width * 0.78, Sizing.pct-h(110));
     property <length> panel-h: root.content-y + root.body-h
-        + (root.phase == LogPhase.uploading ? 0px : root.title-gap + root.button-h) + root.pad-y;
+        + (root.phase == LogPhase.uploading ? 0px : root.pad + root.button-h) + root.pad;
 
     Rectangle {
         x: (parent.width - self.width) / 2;
@@ -274,16 +275,16 @@ export component LogUploadModal inherits Rectangle {
 
         title := Text {
             x: (parent.width - self.width) / 2;
-            y: root.pad-y;
+            y: root.pad;
             text: @tr("Upload log file");
             color: Theme.text-primary;
             font-size: Sizing.font-title;
         }
 
         message := Text {
-            x: root.pad-x;
+            x: root.pad;
             y: root.content-y;
-            width: parent.width - 2 * root.pad-x;
+            width: parent.width - 2 * root.pad;
             visible: !root.done;
             wrap: word-wrap;
             horizontal-alignment: center;
@@ -314,9 +315,9 @@ export component LogUploadModal inherits Rectangle {
         }
 
         url-text := Text {
-            x: root.pad-x;
+            x: root.pad;
             y: root.content-y + root.qr-px + Sizing.pct-h(2);
-            width: parent.width - 2 * root.pad-x;
+            width: parent.width - 2 * root.pad;
             visible: root.done;
             wrap: char-wrap;
             horizontal-alignment: center;
@@ -327,8 +328,8 @@ export component LogUploadModal inherits Rectangle {
 
         if root.phase != LogPhase.uploading: button := PressableSurface {
             x: (parent.width - self.width) / 2;
-            y: parent.height - root.pad-y - root.button-h;
-            width: Math.min(Sizing.pct-w(28), parent.width - 2 * root.pad-x);
+            y: parent.height - root.pad - root.button-h;
+            width: Math.min(Sizing.pct-w(28), parent.width - 2 * root.pad);
             height: root.button-h;
             focused: true;
             pressed: root.button-pressed;
