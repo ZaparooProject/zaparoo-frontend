@@ -684,10 +684,7 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             crate::set_live_orientation(app, orientation, ctx.framebuffer_size);
         }
         "interfaceProfile" => {
-            app.global::<crate::Sizing>().set_handheld(
-                zaparoo_app::sizing::InterfaceProfile::resolve(value, crate::handheld_runtime())
-                    == zaparoo_app::sizing::InterfaceProfile::Handheld,
-            );
+            crate::apply_interface_profile(app, value);
             crate::sizing::apply_scene(app, crate::router::output_scene(app));
         }
         "language" | "clockFormat" => crate::router::apply_clock_setting(ctx, app),

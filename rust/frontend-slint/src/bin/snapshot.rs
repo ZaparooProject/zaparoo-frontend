@@ -173,6 +173,16 @@ fn main() {
     };
     let scene_w = f64::from(logical_width) - inset(logical_width);
     let scene_h = f64::from(logical_height) - inset(logical_height);
+    // ZAPAROO_SNAPSHOT_PROFILE renders an interface profile the host is
+    // not: `handheld` is what a Steam Deck resolves `device` to, and it
+    // changes page density, so the shapes only reproduce offline if the
+    // profile is set before the scene is solved.
+    app.global::<Sizing>().set_handheld(
+        zaparoo_app::sizing::InterfaceProfile::resolve(
+            &std::env::var("ZAPAROO_SNAPSHOT_PROFILE").unwrap_or_default(),
+            false,
+        ) == zaparoo_app::sizing::InterfaceProfile::Handheld,
+    );
     sizing::apply_scene(&app, sizing::Scene::of(&app, scene_w, scene_h, crt));
     // Chrome fixtures: a full HUD with a battery reading, and an
     // indexing run in the status line so the track and percent render.

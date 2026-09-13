@@ -13,7 +13,7 @@ import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, Co
 export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, SelectionBar, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
-import { FocusCursor, ScrollOffset } from "focus.slint";
+import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
 import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
@@ -483,6 +483,67 @@ export global Overlays {
 // Settings, ported from SettingsScreen.qml: the root is a grid of six
 // category tiles; a page is a card of rows over a two-line hint band
 // carrying the focused row's description.
+// A picker row's visible content, with its colors as inputs so the row
+// can draw it twice: once at rest and once inverted inside a
+// `SelectionClip`. Splitting it out is what keeps the two copies from
+// drifting apart.
+component PickerRowBody inherits Rectangle {
+    in property <string> label;
+    in property <string> entry-id;
+    in property <bool> swatches;
+    in property <length> swatch-size;
+    in property <length> swatch-gap;
+    in property <length> swatch-band;
+    in property <color> content-color;
+    in property <color> swatch-edge;
+    in property <int> weight;
+
+    Text {
+        x: root.swatches ? Sizing.pct-w(2) : (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: Math.min(self.preferred-width, Math.max(0px, parent.width - 2 * Sizing.pct-w(2) - root.swatch-band));
+        overflow: elide;
+        text: root.label;
+        color: root.content-color;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+    }
+    if root.swatches: Rectangle {
+        x: parent.width - Sizing.pct-w(2) - self.width;
+        y: (parent.height - self.height) / 2;
+        width: 3 * root.swatch-size + 2 * root.swatch-gap;
+        height: root.swatch-size;
+        for n in 3: Rectangle {
+            x: n * (root.swatch-size + root.swatch-gap);
+            width: root.swatch-size;
+            height: root.swatch-size;
+            background: Theme.preview-color(root.entry-id, n);
+            border-width: Sizing.stroke(1);
+            border-color: root.swatch-edge;
+        }
+    }
+}
+
+// A context-menu row's label, centered on its own measured width rather
+// than stretched. Drawn twice for the same reason as `PickerRowBody`.
+component ContextRowBody inherits Rectangle {
+    in property <string> label;
+    in property <length> pad-x;
+    in property <color> content-color;
+    in property <int> weight;
+
+    Text {
+        x: (parent.width - Math.min(self.preferred-width, parent.width - 2 * root.pad-x)) / 2;
+        y: (parent.height - self.height) / 2;
+        width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+        overflow: elide;
+        text: root.label;
+        color: root.content-color;
+        font-size: Sizing.font-caption;
+        font-weight: root.weight;
+    }
+}
+
 component SettingsScreen inherits Rectangle {
     in property <bool> outgoing: false;
     property <SettingsPage> page: root.outgoing ? SettingsView.outgoing-page : SettingsView.page;
@@ -587,6 +648,16 @@ component SettingsScreen inherits Rectangle {
             height: root.rows-height;
             clip: true;
 
+        sel := SelectionCursor {
+            motion: Motion.enabled && !row-scroll.moving;
+            radius: Layout.row-radius;
+            target: { x: 0px,
+                y: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].y-offset - row-scroll.offset : 0px,
+                w: parent.width,
+                h: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].height : 0px,
+                column: 0, row: root.index, scope: StateTokens.page(root.page),
+                valid: root.index >= 0 && root.index < root.rows.length };
+        }
         for row[i] in root.rows: Rectangle {
             x: 0;
             y: row.y-offset - row-scroll.offset;
@@ -601,11 +672,26 @@ component SettingsScreen inherits Rectangle {
                 font-weight: FontWeight.semi-bold;
             }
 
+            property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+
             if row.kind == RowKind.field: SettingsRowView {
                 entry: row;
-                focused: i == root.index;
+                focused: false;
                 activate-pulse: SettingsView.activate-pulse;
                 settling: Shell.active-screen != Screen.settings;
+            }
+            // The same row again, colored as selected and clipped to the
+            // fill, so the inversion boundary is the fill's own edge.
+            if row.kind == RowKind.field && lit: SelectionClip {
+                radius: Layout.row-radius;
+                row-top: parent.y; row-height: parent.height;
+                fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                SettingsRowView {
+                    entry: row;
+                    focused: true;
+                    activate-pulse: SettingsView.activate-pulse;
+                    settling: Shell.active-screen != Screen.settings;
+                }
             }
 
             TouchArea {
@@ -616,16 +702,6 @@ component SettingsScreen inherits Rectangle {
                 }
                 clicked => { SettingsInput.row-clicked(i); }
             }
-        }
-        FocusCursor {
-            motion: Motion.enabled && !row-scroll.moving;
-            target: { x: 0px,
-                y: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].y-offset - row-scroll.offset : 0px,
-                w: parent.width,
-                h: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].height : 0px,
-                column: 0, row: root.index, scope: StateTokens.page(root.page),
-                valid: root.index >= 0 && root.index < root.rows.length };
-            radius: Layout.row-radius;
         }
         }
 
@@ -1041,7 +1117,7 @@ component ListPickerModal inherits Rectangle {
             height: root.viewport-h;
             clip: true;
 
-            FocusCursor {
+            sel := SelectionCursor {
                 target: { x: 0px, y: (root.current-index - root.top) * root.stride,
                     w: parent.width, h: root.row-h, column: 0, row: root.current-index,
                     scope: root.title + ":" + root.setting-id + ":" + root.top,
@@ -1051,33 +1127,37 @@ component ListPickerModal inherits Rectangle {
                 x: 0;
                 y: (i - root.top) * root.stride;
                 height: root.row-h;
+                property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+
+                PickerRowBody {
+                    entry-id: entry.id;
+                    label: Overlays.launcher-saving-visible && i == root.current-index ? @tr("Saving…") : root.entry-label(entry);
+                    swatches: root.swatches;
+                    swatch-size: root.swatch-size;
+                    swatch-gap: root.swatch-gap;
+                    swatch-band: root.swatch-band;
+                    content-color: Theme.text-primary;
+                    swatch-edge: Theme.text-label;
+                    weight: FontWeight.normal;
+                }
+                if lit: SelectionClip {
+                    row-top: parent.y; row-height: parent.height;
+                    fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                    PickerRowBody {
+                        entry-id: entry.id;
+                        label: Overlays.launcher-saving-visible && i == root.current-index ? @tr("Saving…") : root.entry-label(entry);
+                        swatches: root.swatches;
+                        swatch-size: root.swatch-size;
+                        swatch-gap: root.swatch-gap;
+                        swatch-band: root.swatch-band;
+                        content-color: Theme.on-accent;
+                        swatch-edge: Theme.on-accent;
+                        weight: FontWeight.medium;
+                    }
+                }
                 bar := SelectionBar {
                     active: i == root.current-index;
                     press-held: PressFeedback.active(PressOwner.list, i);
-                }
-                Text {
-                    x: root.swatches ? Sizing.pct-w(2) : (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    width: Math.min(self.preferred-width, Math.max(0px, parent.width - 2 * Sizing.pct-w(2) - root.swatch-band));
-                    overflow: elide;
-                    text: Overlays.launcher-saving-visible && i == root.current-index ? @tr("Saving…") : root.entry-label(entry);
-                    color: bar.active ? bar.content-color : Theme.text-primary;
-                    font-size: Sizing.font-body;
-                    font-weight: bar.content-weight;
-                }
-                if root.swatches: Rectangle {
-                    x: parent.width - Sizing.pct-w(2) - self.width;
-                    y: (parent.height - self.height) / 2;
-                    width: 3 * root.swatch-size + 2 * root.swatch-gap;
-                    height: root.swatch-size;
-                    for n in 3: Rectangle {
-                        x: n * (root.swatch-size + root.swatch-gap);
-                        width: root.swatch-size;
-                        height: root.swatch-size;
-                        background: Theme.preview-color(entry.id, n);
-                        border-width: Sizing.stroke(1);
-                        border-color: bar.active ? bar.content-color : Theme.text-label;
-                    }
                 }
                 TouchArea {
                     mouse-cursor: pointer;
@@ -1614,7 +1694,7 @@ component ContextMenu inherits Rectangle {
         border-radius: root.panel-radius;
         clip: true;
 
-        FocusCursor {
+        sel := SelectionCursor {
             target: { x: root.side-margin, y: root.v-pad + root.current-index * (root.row-h + root.row-sp) - root.scroll,
                 w: parent.width - 2 * root.side-margin, h: root.row-h, column: 0, row: root.current-index,
                 scope: "context:" + root.scroll / 1px,
@@ -1626,23 +1706,28 @@ component ContextMenu inherits Rectangle {
             width: parent.width - 2 * root.side-margin;
             height: root.row-h;
 
+            property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+
+            ContextRowBody {
+                label: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
+                pad-x: root.pad-x;
+                content-color: Theme.text-primary;
+                weight: FontWeight.normal;
+            }
+            if lit: SelectionClip {
+                row-top: parent.y; row-height: parent.height;
+                fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                ContextRowBody {
+                    label: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
+                    pad-x: root.pad-x;
+                    content-color: Theme.on-accent;
+                    weight: FontWeight.medium;
+                }
+            }
             bar := SelectionBar {
                 active: i == root.current-index;
                 press-held: PressFeedback.active(PressOwner.context, i);
                 radius: Sizing.radius-sm;
-            }
-
-            // Centered on its own measured width rather than stretched.
-            Text {
-                x: (parent.width
-                    - Math.min(self.preferred-width, parent.width - 2 * root.pad-x)) / 2;
-                y: (parent.height - self.height) / 2;
-                width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
-                overflow: elide;
-                text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
-                color: bar.active ? bar.content-color : Theme.text-primary;
-                font-size: Sizing.font-caption;
-                font-weight: bar.content-weight;
             }
 
             TouchArea {

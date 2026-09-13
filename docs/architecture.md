@@ -42,6 +42,7 @@ src/app/main.cpp
     │     hub_layout.rs       — Hub's persisted [[hub.items]] layout schema
     │     logger.rs           — tracing-subscriber: stderr + JSONL file sinks
     │     runtime.rs          — Runtime enum: what device the frontend runs on
+    display_class.rs    — Viewing enum: how far away the screen we paint on is
     │     platform.rs         — Platform enum: what Zaparoo Core is running on
     │     platform_paths.rs   — log/config paths routed through runtime
     │     media_types.rs      — file-extension → media-type lookup
@@ -111,6 +112,7 @@ runtime/platform bugs come back.
 |---|---|---|
 | **Runtime** | `zaparoo_core::runtime::current()` (filesystem-cached) | What device is the **frontend binary** running on? |
 | **Platform** | `zaparoo_core::platform::subscribe()` (from `version` RPC) | What OS/device is **Zaparoo Core** running on? |
+| **Viewing** | `zaparoo_core::display_class::current()` (re-read, never cached) | How far away is the person from the screen we are **painting on right now**? |
 
 `Runtime == Mister` does **not** imply `Platform == Mister`. The frontend
 can run on a desktop while talking to Core on a MiSTer on the network,
@@ -121,10 +123,56 @@ Runtime has three values: `Mister` (the `/media/fat` marker), `SteamOs`
 desktop-Linux runtime and answers `is_desktop()`; it shares the XDG paths,
 the windowing system and the rendering backend, so `platform_paths.rs`
 stays a two-way `is_mister()` split. The variant exists only to change
-defaults for a device that presents like a console: it comes up fullscreen
-and the `device` interface profile resolves to `handheld`. Set
-`ZAPAROO_RUNTIME_OVERRIDE=steamos` to develop that behavior off a Deck.
+defaults for a device that presents like a console: it comes up fullscreen.
+Set `ZAPAROO_RUNTIME_OVERRIDE=steamos` to develop that behavior off a Deck.
 This is a different variable from the build-time `ZAPAROO_RUNTIME` below.
+
+### Viewing class
+
+Layout density wants to know how far away the person is, and nothing
+reports that. Every platform that solves it assumes a distance per device
+class and bakes it into a design unit: UWP's effective pixels fold density
+and an assumed distance together so a control subtends a constant angle
+from a phone to a Surface Hub, Android TV assumes 3 m and ships a fixed
+12-column grid at both 1080p and 4K, and tvOS designs at 1920x1080 and
+renders 4K at 2x. None of them measure anything, and neither do we.
+
+`display_class::Viewing` is `Handheld` or `Seated`, and it is a property of
+the **output**, not of the machine, so it is re-read on every scene change
+instead of cached. A docked Steam Deck is `Seated` and an undocked one is
+`Handheld` from the same process. Detection reads `/sys/class/drm`: an
+external connector that is both `connected` and `enabled` wins, otherwise a
+lit internal panel (`eDP`/`LVDS`/`DSI`/`DPI`) means handheld. `enabled` is
+the load-bearing word, because a cable in a dock with the display asleep is
+not the screen the user is looking at.
+
+Only a `SteamOs` runtime can be `Handheld` at all. A laptop also drives a
+built-in panel, and a 13 inch screen at desk distance subtends more than
+twice the angle a Deck does, so treating every internal panel as handheld
+would hand the roomier layout to the screen that least needs it.
+
+The angular arithmetic the two classes rest on, written down so the call
+stays falsifiable:
+
+| Screen | Width | Distance | Subtends |
+|---|---|---|---|
+| Steam Deck panel | 151 mm | ~400 mm | ~21° |
+| 52 inch TV | 1150 mm | ~3000 mm | ~22° |
+| 24 inch monitor | 530 mm | ~600 mm | ~48° |
+
+Note what that says: a handheld at arm's length and a TV across the room
+subtend nearly the same angle, so angular size alone does **not** separate
+them, and a desk monitor is far wider than either. The split is an
+ergonomic call, not a derivation. What the angle does give you is a floor:
+ISO 9241 wants characters subtending 20-22 arcminutes and treats ~16 as the
+minimum, so it can say when a choice is wrong even though it cannot say
+which choice is best. Column counts above that floor are a product
+decision, which is why Android TV ships "12 columns of 52dp" as a literal.
+
+`ZAPAROO_VIEWING_OVERRIDE=handheld|seated` forces the class for off-device
+work. Never derive it from reported DPI: inside a gamescope session the
+game's Xwayland output is a hardcoded 100x150mm whatever is really
+connected, which is why the desktop build pins `SLINT_SCALE_FACTOR=1`.
 
 ### When to use which
 

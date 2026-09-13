@@ -48,6 +48,10 @@ mod mister;
 )]
 mod mister_battery;
 mod navigation;
+// Reads the kernel power-supply class, which only the desktop feature
+// set has any use for; `MiSTer`'s reading comes off the `SMBus` instead.
+#[cfg(feature = "desktop")]
+mod power_supply;
 mod qr;
 // Route motion has to be checked by rendering, and that needs the
 // software renderer, which only the MiSTer feature set links.
@@ -297,11 +301,52 @@ fn merge_config_settings(
 }
 
 /// Runtimes that present like a console rather than a desktop: held in
-/// the hand, owning the whole screen, driven by a pad. Both the
-/// fullscreen default and what the `device` interface profile resolves to
-/// follow from that one fact.
+/// the hand, owning the whole screen, driven by a pad. This is what the
+/// machine *is*, so it never changes while we run, and it decides the
+/// fullscreen default.
 pub(crate) fn handheld_runtime() -> bool {
     zaparoo_core::runtime::current().is_steam_os()
+}
+
+/// Whether the screen being painted right now is one held in the hand.
+/// This is what the `device` interface profile follows, and unlike
+/// [`handheld_runtime`] it changes underneath us: a Steam Deck put on a
+/// dock is a lean-back device until it is picked back up.
+pub(crate) fn handheld_output() -> bool {
+    zaparoo_core::display_class::current().is_handheld()
+}
+
+/// Resolve `interfaceProfile` against the output in front of the user and
+/// push it. Called at seed and again on every scene change, because the
+/// answer moves with the dock rather than with the binary.
+pub(crate) fn apply_interface_profile(app: &App, setting: &str) {
+    app.global::<Sizing>().set_handheld(
+        zaparoo_app::sizing::InterfaceProfile::resolve(setting, handheld_output())
+            == zaparoo_app::sizing::InterfaceProfile::Handheld,
+    );
+}
+
+/// Pin logical pixels to physical ones before the window exists.
+///
+/// Slint's winit backend derives a scale factor from the display's
+/// reported DPI. On a Steam Deck's panel that lands at 2.17, so a
+/// 1280x800 output becomes a 591x369 logical scene: the whole UI drops
+/// into the 240p tier and every rasterized glyph is drawn at logical
+/// size and then upscaled by more than two.
+///
+/// This frontend sizes itself from the real framebuffer on purpose,
+/// which is what the resolution tiers in `zaparoo_app::sizing` are, so
+/// the two units have to stay the same thing. `MiSTer` never had the
+/// question: it owns the framebuffer outright.
+///
+/// An explicit `SLINT_SCALE_FACTOR` still wins, so a high-density desktop
+/// display can ask for the old behavior for one run.
+#[cfg(feature = "desktop")]
+fn pin_logical_pixels_to_physical() {
+    const VAR: &str = "SLINT_SCALE_FACTOR";
+    if std::env::var_os(VAR).is_none() {
+        std::env::set_var(VAR, "1");
+    }
 }
 
 /// Fullscreen is a desktop-only request. `MiSTer` owns the framebuffer
@@ -368,12 +413,7 @@ fn seed_display_globals(
         .set_browse_list_layout(persisted.settings.games_browse_layout == "list");
     app.global::<Shell>()
         .set_systems_list_layout(persisted.settings.systems_browse_layout == "list");
-    app.global::<Sizing>().set_handheld(
-        zaparoo_app::sizing::InterfaceProfile::resolve(
-            &persisted.settings.interface_profile,
-            handheld_runtime(),
-        ) == zaparoo_app::sizing::InterfaceProfile::Handheld,
-    );
+    apply_interface_profile(app, &persisted.settings.interface_profile);
     app.global::<Motion>().set_enabled(display::motion_enabled(
         persisted.settings.reduce_motion,
         cfg!(feature = "mister"),
@@ -556,6 +596,8 @@ fn main() -> Result<(), slint::PlatformError> {
     } else {
         DESKTOP_WINDOW_SIZE
     };
+    #[cfg(feature = "desktop")]
+    pin_logical_pixels_to_physical();
     let app = App::new()?;
     if fullscreen {
         app.window().set_fullscreen(true);
@@ -650,6 +692,14 @@ fn main() -> Result<(), slint::PlatformError> {
                 let (w, h) = output_size().map_or((f64::from(w), f64::from(h)), |(ow, oh)| {
                     scene_size(f64::from(ow), f64::from(oh), orientation, visual_crt)
                 });
+                // Docking swaps which screen we are painting on, and the
+                // compositor tells us by resizing us. Re-resolve the
+                // profile before the shapes so the same event carries
+                // both halves of the change.
+                apply_interface_profile(
+                    &app,
+                    &lock(&ctx.shared).persist.settings.interface_profile,
+                );
                 apply_grid_shapes(&app, w, h, visual_crt);
                 // The window is rarely the size the config asked for
                 // (a tiling WM, a smaller display, a live resize), so

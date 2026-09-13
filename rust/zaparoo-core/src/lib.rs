@@ -5,6 +5,7 @@
 pub mod client;
 pub mod config;
 pub mod controller_report;
+pub mod display_class;
 pub mod endpoints;
 pub mod hub_layout;
 pub mod input_actions;

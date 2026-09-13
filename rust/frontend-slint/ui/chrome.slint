@@ -781,11 +781,12 @@ export component SectionHeader inherits Rectangle {
     }
 }
 
-// Inverse-video row highlight (SelectionBar.qml), shared by lists and
-// the settings form. Paints nothing at rest; when active, a solid
-// selection-fill bar whose content color the host binds its text to.
-// Activation adds a local inset stroke, never a full-row inverse flash.
-// Selection and text contrast remain stable throughout the cue.
+// Inverse-video row state (SelectionBar.qml), shared by lists and the
+// settings form. It owns the *contract* of a selected row -- the content
+// color and weight the host binds its text to, and the activation stroke
+// -- while the fill under it is painted by the list's `SelectionCursor`,
+// so that a move between rows can animate. Selection and text contrast
+// remain stable throughout the cue.
 export component SelectionBar inherits Rectangle {
     in property <bool> active: false;
     in property <int> activate-pulse: 0;
@@ -822,17 +823,16 @@ export component SelectionBar inherits Rectangle {
         triggered => { root.flash = false; }
     }
 
-    Rectangle {
-        visible: root.active;
-        background: root.bar-color;
-        border-radius: root.radius;
-        if root.flashing: Rectangle {
-            x: Sizing.stroke(2); y: Sizing.stroke(2);
-            width: parent.width - 2 * self.x; height: parent.height - 2 * self.y;
-            border-width: Sizing.stroke(1);
-            border-color: Theme.on-accent;
-            border-radius: Math.max(0px, root.radius - Sizing.stroke(2));
-        }
+    // The fill itself belongs to the list's `SelectionCursor`, which is
+    // what lets a move between rows animate instead of jumping. What is
+    // left here is the activation stroke, which belongs to the one row
+    // that was actually pressed.
+    if root.active && root.flashing: Rectangle {
+        x: Sizing.stroke(2); y: Sizing.stroke(2);
+        width: parent.width - 2 * self.x; height: parent.height - 2 * self.y;
+        border-width: Sizing.stroke(1);
+        border-color: Theme.on-accent;
+        border-radius: Math.max(0px, root.radius - Sizing.stroke(2));
     }
 }
 

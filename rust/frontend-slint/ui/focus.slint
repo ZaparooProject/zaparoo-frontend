@@ -83,6 +83,109 @@ export component TileDisplacement inherits Rectangle {
     }
 }
 
+// The part of one row the selection fill is currently over. Host a copy
+// of the row's content in here, colored as a selected row, and it shows
+// exactly where the fill is and nowhere else. Children position
+// themselves in the row's own coordinate space, as if the clip were not
+// there.
+export component SelectionClip inherits Rectangle {
+    // The row's own band, in the same space as the cursor's fill-top.
+    in property <length> row-top;
+    in property <length> row-height;
+    in property <length> fill-top;
+    in property <length> fill-bottom;
+
+    in property <length> radius: Sizing.radius-sm;
+
+    out property <length> covered-top: Math.max(0px, root.fill-top - root.row-top);
+    out property <length> covered-bottom: Math.min(root.row-height, root.fill-bottom - root.row-top);
+
+    // Round only the corners that are the fill's own ends. A row the fill
+    // merely runs through keeps square edges, so two segments meeting at a
+    // row boundary read as one bar instead of pinching.
+    property <length> top-r: root.fill-top >= root.row-top ? root.radius : 0px;
+    property <length> bottom-r: root.fill-bottom <= root.row-top + root.row-height ? root.radius : 0px;
+
+    x: 0;
+    y: root.covered-top;
+    height: Math.max(0px, root.covered-bottom - root.covered-top);
+    clip: true;
+    // Opaque on purpose. The resting copy of the row is still painted
+    // underneath, and two runs of the same glyphs compositing over each
+    // other would leave a light fringe on every antialiased edge.
+    background: Theme.selection-fill;
+    border-top-left-radius: root.top-r;
+    border-top-right-radius: root.top-r;
+    border-bottom-left-radius: root.bottom-r;
+    border-bottom-right-radius: root.bottom-r;
+    Rectangle {
+        y: -parent.y;
+        height: root.row-height;
+        @children
+    }
+}
+
+// The selection fill itself, travelling. Rows that invert on selection
+// already carry the whole cue, so a focus ring over the top is a second
+// mark for one state; what moves instead is the fill.
+//
+// The fill is one rectangle, so its corners stay right, and it slides the
+// way the ring used to. What makes that legible is that the host draws
+// each row's content twice: once in its resting color, and once inverted
+// and clipped to `fill-top`..`fill-bottom` below. The inversion boundary
+// is then the fill's own edge, to the pixel, and a row the fill is only
+// half over is only half inverted. A per-row boolean cannot express that,
+// and `Theme.on-accent` is near-black, so getting it wrong leaves text
+// invisible against the panel for the length of the move.
+//
+// Same adjacency rule as FocusCursor: page jumps, scope changes and rows
+// of differing height snap.
+export component SelectionCursor inherits Rectangle {
+    in property <FocusTarget> target;
+    in property <length> radius: Sizing.radius-sm;
+    in property <bool> motion: Motion.enabled;
+
+    property <FocusTarget> previous;
+    property <bool> glide: false;
+    property <int> epoch: Motion.epoch;
+    property <length> position-y;
+
+    // The band the fill currently covers, in the host's own coordinate
+    // space, for rows to intersect their inverted copy against.
+    out property <length> fill-top: root.position-y;
+    out property <length> fill-bottom: root.position-y + root.target.h;
+
+    changed target => {
+        root.glide = root.motion && root.previous.valid && root.target.valid
+            && root.previous.scope == root.target.scope
+            && root.previous.w == root.target.w && root.previous.h == root.target.h
+            && root.target.column == root.previous.column
+            && Math.abs(root.target.row - root.previous.row) == 1;
+        root.position-y = root.target.y;
+        root.previous = root.target;
+    }
+    changed epoch => { root.snap(); }
+    changed motion => { if (!root.motion) { root.snap(); } }
+    function snap() {
+        root.glide = false;
+        root.position-y = root.target.y;
+        root.previous = root.target;
+    }
+    init => { root.snap(); }
+    animate position-y {
+        duration: root.glide && root.motion ? Motion.focus-ms : 0ms;
+        easing: ease-out-quad;
+    }
+
+    x: root.target.x;
+    y: root.position-y;
+    width: root.target.w;
+    height: root.target.h;
+    visible: root.target.valid;
+    background: Theme.selection-fill;
+    border-radius: root.radius;
+}
+
 export component FocusCursor inherits Rectangle {
     in property <FocusTarget> target;
     in property <length> radius: Sizing.radius-sm;

@@ -166,11 +166,6 @@ pub fn read_capacity_percent() -> Option<u8> {
     None
 }
 
-#[cfg(not(feature = "mister"))]
-pub fn read_capacity_percent() -> Option<u8> {
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::validate_capacity;

@@ -8,7 +8,7 @@
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, SectionHeader, SelectionBar } from "chrome.slint";
-import { FocusCursor } from "focus.slint";
+import { SelectionCursor, SelectionClip } from "focus.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { PressableSurface } from "tiles.slint";
 import { SetupKind, SetupPicker, ScopeKind, LogPhase, StateTokens } from "state_types.slint";
@@ -18,6 +18,25 @@ import { SetupKind, SetupPicker, ScopeKind, LogPhase, StateTokens } from "state_
 export struct SetupPickerRow {
     kind: ScopeKind,
     name: string,
+}
+
+// One setup-picker row's label, colors as inputs so the row can draw it
+// at rest and again inverted inside a `SelectionClip`.
+component PickerScopeLabel inherits Rectangle {
+    in property <string> label;
+    in property <color> content-color;
+    in property <int> weight;
+
+    Text {
+        x: Sizing.pct-w(2);
+        y: (parent.height - self.height) / 2;
+        width: parent.width - 2 * Sizing.pct-w(2);
+        overflow: elide;
+        text: root.label;
+        color: root.content-color;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+    }
 }
 
 export component SetupModal inherits Rectangle {
@@ -94,7 +113,7 @@ export component SetupModal inherits Rectangle {
             width: parent.width - 2 * root.pad-x;
             height: root.form-h;
 
-            FocusCursor {
+            sel := SelectionCursor {
                 target: { x: 0px,
                     y: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].y-offset + root.index * root.row-gap : 0px,
                     w: parent.width,
@@ -102,20 +121,34 @@ export component SetupModal inherits Rectangle {
                     column: 0, row: root.index, scope: StateTokens.setup(root.kind),
                     valid: root.index >= 0 && root.index < root.rows.length };
             }
-            for row[i] in root.rows: SettingsRowView {
+            for row[i] in root.rows: Rectangle {
                 x: 0;
                 y: row.y-offset + i * root.row-gap;
                 height: row.height;
-                entry: row;
-                focused: i == root.index;
-                activate-pulse: root.activate-pulse;
+                property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
 
-                TouchArea {
-                    mouse-cursor: pointer;
-                    changed has-hover => {
-                        if (self.has-hover) { root.row-hovered(i); }
+                SettingsRowView {
+                    entry: row;
+                    focused: false;
+                    activate-pulse: root.activate-pulse;
+
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        changed has-hover => {
+                            if (self.has-hover) { root.row-hovered(i); }
+                        }
+                        clicked => { root.row-clicked(i); }
                     }
-                    clicked => { root.row-clicked(i); }
+                }
+                if lit: SelectionClip {
+                    radius: Layout.row-radius;
+                    row-top: parent.y; row-height: parent.height;
+                    fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                    SettingsRowView {
+                        entry: row;
+                        focused: true;
+                        activate-pulse: root.activate-pulse;
+                    }
                 }
             }
         }
@@ -143,7 +176,8 @@ export component SetupModal inherits Rectangle {
                 source: GlyphSource.glyph("icons/ScrollUp", root.arrow, Theme.text-label);
             }
 
-            FocusCursor {
+            picker-sel := SelectionCursor {
+                radius: Layout.row-radius;
                 target: { x: 0px, y: root.header-h + root.arrow-band + root.picker-sel * (root.picker-row-h + root.picker-gap),
                     w: parent.width, h: root.picker-row-h, column: 0, row: root.picker-sel,
                     scope: StateTokens.picker(root.picker-title),
@@ -154,21 +188,27 @@ export component SetupModal inherits Rectangle {
                 y: root.header-h + root.arrow-band + i * (root.picker-row-h + root.picker-gap);
                 height: root.picker-row-h;
 
+                property <bool> lit: picker-sel.fill-bottom > self.y && picker-sel.fill-top < self.y + self.height;
+
+                PickerScopeLabel {
+                    label: SettingsLabels.scope(entry.kind, entry.name);
+                    content-color: Theme.text-primary;
+                    weight: FontWeight.normal;
+                }
+                if lit: SelectionClip {
+                    radius: Layout.row-radius;
+                    row-top: parent.y; row-height: parent.height;
+                    fill-top: picker-sel.fill-top; fill-bottom: picker-sel.fill-bottom;
+                    PickerScopeLabel {
+                        label: SettingsLabels.scope(entry.kind, entry.name);
+                        content-color: Theme.on-accent;
+                        weight: FontWeight.medium;
+                    }
+                }
                 bar := SelectionBar {
                     active: i == root.picker-sel;
                     activate-pulse: root.activate-pulse;
                     radius: Layout.row-radius;
-                }
-
-                Text {
-                    x: Sizing.pct-w(2);
-                    y: (parent.height - self.height) / 2;
-                    width: parent.width - 2 * Sizing.pct-w(2);
-                    overflow: elide;
-                    text: SettingsLabels.scope(entry.kind, entry.name);
-                    color: bar.active ? bar.content-color : Theme.text-primary;
-                    font-size: Sizing.font-body;
-                    font-weight: bar.content-weight;
                 }
 
                 TouchArea {

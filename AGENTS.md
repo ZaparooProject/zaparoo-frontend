@@ -285,15 +285,37 @@ state to go stale because there is no cross-screen state.
 - `Runtime` has three values: `Mister`, `SteamOs`, `Desktop`. SteamOS is a
   desktop-Linux runtime and answers `is_desktop()`, so `platform_paths.rs`
   stays a two-way `is_mister()` split; the variant only changes defaults for
-  a device that presents like a console. It starts fullscreen and its
-  `device` interface profile resolves to `handheld`.
+  a device that presents like a console. It starts fullscreen.
   `ZAPAROO_RUNTIME_OVERRIDE=steamos|mister|desktop` forces detection for
   off-device work. Do not confuse it with the build-time `ZAPAROO_RUNTIME`
   that `cmake/ZaparooRust.cmake` sets to pick the `zaparoo_runtime` cfg.
+- `Runtime` answers what the machine is; `display_class::Viewing` answers
+  how far away the person is from the screen we are painting on, which is
+  what layout density actually wants. It is a property of the *output*, so
+  it is re-read on every scene change rather than cached: a docked Steam
+  Deck is `Seated` and an undocked one is `Handheld`, same binary. Only a
+  `SteamOs` runtime can be `Handheld` at all, because a laptop also drives
+  a built-in panel and a 13 inch screen at desk distance subtends more
+  than twice the angle a Deck does. The `device` interface profile follows
+  this, not the runtime; `ZAPAROO_VIEWING_OVERRIDE=handheld|seated` forces
+  it. Never derive it from reported DPI: inside a gamescope session the
+  game's Xwayland output is a hardcoded 100x150mm whatever is connected.
 - `[video] fullscreen` is tri-state on purpose. An absent key lets the
   runtime decide; only an explicit `false` puts a Deck back in a window.
   `--fullscreen` and `--windowed` override it for one run.
 - Debug logging is enabled with `[logging] debug = true` or `ZAPAROO_DEBUG=1`.
+- The header's battery reading has two probes behind one HUD field.
+  `MiSTer` reads the optional pi-top-style `SMBus` fuel gauge
+  (`mister_battery.rs`); everything else reads the kernel power-supply
+  class (`power_supply.rs`). Filter that second one on `scope`: a paired
+  DualSense shows up as a `type=Battery` with `scope=Device`, so a naive
+  "first battery wins" puts the controller's charge in the status bar.
+- The desktop build pins `SLINT_SCALE_FACTOR=1` before the window exists.
+  Sizing keys off the real framebuffer (that is what the resolution tiers
+  are), so a compositor-derived scale factor is a bug here, not a feature:
+  a Steam Deck reports 2.17, which turns a 1280x800 output into a 591x369
+  logical scene, drops the whole UI into the 240p tier, and upscales every
+  rasterized glyph. Setting the variable yourself still overrides it.
 - `/tmp/zaparoo_launcher_input.json` is Main_MiSTer's alt-launcher input
   report (written on every button press; source is
   `support/zaparoo/launcher_input_metadata.cpp` in the `Main_MiSTer` repo).

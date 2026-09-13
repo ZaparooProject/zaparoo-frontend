@@ -31,6 +31,19 @@ use zaparoo_app::sizing::{
 
 const GOLDEN: &str = include_str!("../../../tests/fixtures/sizing_golden.txt");
 
+/// Everything an extra Hub column moves: the shape itself, the space each
+/// cell gets on both axes (a rotated page spends the extra column on the
+/// row axis), and the square tile that falls out of them.
+const HUB_SHAPE_KEYS: [&str; 7] = [
+    "hubGridColumns",
+    "hubGridRows",
+    "_hubGridWidthFit",
+    "_hubGridHeightFit",
+    "hubTileSize",
+    "hubTileWidth",
+    "hubTileHeight",
+];
+
 fn fields(line: &str) -> BTreeMap<&str, &str> {
     line.split_whitespace()
         .skip(1)
@@ -100,7 +113,20 @@ fn every_derived_value_matches_the_qml() {
         let d = derive(&inputs);
         let at = label(&row);
 
+        // The Handheld profile above the compact tiers is the one place
+        // this port deliberately leaves the QML behind: five Hub columns
+        // where `Sizing.qml` has four. `handheld_hub_is_one_column_wider`
+        // owns these keys instead, so the divergence is pinned somewhere
+        // rather than silently tolerated here.
+        let diverges = row["profile"] == "handheld"
+            && !matches!(
+                d.tier,
+                zaparoo_app::sizing::Tier::T240 | zaparoo_app::sizing::Tier::T480
+            );
         let expect = |key: &str, actual: i32| {
+            if diverges && HUB_SHAPE_KEYS.contains(&key) {
+                return;
+            }
             assert_eq!(actual, int(&row, key), "{key} at {at}");
         };
 
@@ -305,4 +331,69 @@ fn probe_pairs_match_the_qml() {
     let shape = games_grid_shape(&half_1080, 960.0, 365.0);
     assert_eq!(shape.columns, int(&row, "half1080_960x365_c"));
     assert_eq!(shape.rows, int(&row, "half1080_960x365_r"));
+}
+
+/// The documented divergence, pinned. `Sizing.qml` puts four Hub columns
+/// on a high-resolution Handheld page; this port puts five, because the
+/// tile is square and bounded by the row height, so a fourth of the width
+/// sat empty without buying any icon size. The QML keeps four so the small
+/// handheld panel it was tuned for is untouched.
+#[test]
+fn handheld_hub_is_one_column_wider_than_the_qml() {
+    let mut checked = 0usize;
+    for row in rows("GOLDEN") {
+        if row["profile"] != "handheld" {
+            continue;
+        }
+        let inputs = inputs_of(&row);
+        let d = derive(&inputs);
+        let at = label(&row);
+        let compact = matches!(
+            d.tier,
+            zaparoo_app::sizing::Tier::T240 | zaparoo_app::sizing::Tier::T480
+        );
+        if compact {
+            // The compact tiers were already dense enough; the profile
+            // never touched them and still does not.
+            assert_eq!(
+                (d.hub_grid_columns, d.hub_grid_rows),
+                (int(&row, "hubGridColumns"), int(&row, "hubGridRows")),
+                "compact hub shape at {at}"
+            );
+            continue;
+        }
+        // Five by three, transposed on a rotated page the same way every
+        // other declared shape is.
+        let want = if inputs.swap_percentage_axes {
+            (3, 5)
+        } else {
+            (5, 3)
+        };
+        assert_eq!(
+            (d.hub_grid_columns, d.hub_grid_rows),
+            want,
+            "hub shape at {at}"
+        );
+        // One more cell on an axis can only shrink that axis' share, and
+        // the tile stays the square that falls out of the tighter of the
+        // two.
+        assert!(
+            d.hub_grid_width_fit <= int(&row, "_hubGridWidthFit"),
+            "width fit grew at {at}"
+        );
+        assert!(
+            d.hub_grid_height_fit <= int(&row, "_hubGridHeightFit"),
+            "height fit grew at {at}"
+        );
+        assert_eq!(
+            d.hub_tile_size,
+            d.hub_grid_width_fit.min(d.hub_grid_height_fit),
+            "tile size at {at}"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 0,
+        "no high-resolution handheld rows in the fixture"
+    );
 }

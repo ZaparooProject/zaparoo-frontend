@@ -455,7 +455,15 @@ pub fn hub_grid_shape(inputs: &Inputs) -> GridShape {
         // Handheld changes page density, not persisted order: the same linear
         // Hub slots reflow into fewer columns. The low tiers are already
         // compact enough.
-        GridShape::new(4, 3)
+        //
+        // Five, where `Sizing.qml` says four. The Qt profile was tuned on a
+        // small handheld panel; on a Steam Deck class screen four columns
+        // leaves a third of the width empty without making the icons any
+        // bigger, because the tile is square and the row height, not the
+        // column count, bounds it. The QML keeps four so the device it was
+        // tuned for is untouched, and `tests/sizing_golden.rs` records the
+        // divergence rather than papering over it.
+        GridShape::new(5, 3)
     } else if compact {
         GridShape::new(4, 2)
     } else {
