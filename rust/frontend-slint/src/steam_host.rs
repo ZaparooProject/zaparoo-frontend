@@ -43,6 +43,7 @@ pub use desktop::{hosting, start};
 
 #[cfg(feature = "desktop")]
 mod desktop {
+    use std::ffi::OsString;
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixStream;
     use std::os::unix::process::CommandExt;
@@ -180,13 +181,15 @@ mod desktop {
             tracing::debug!("Core is remote; its launches are not ours to host");
             return;
         }
-        let Some(path) = host_socket_path() else {
+        let Some(dir) = socket_dir() else {
             tracing::debug!("no XDG_RUNTIME_DIR; cannot find Core's host socket");
             return;
         };
+        let host_path = dir.join(HOST_SOCKET);
+        let launch_path = dir.join(LAUNCH_SOCKET);
         let spawned = thread::Builder::new()
             .name("steam-launch-host".into())
-            .spawn(move || register_loop(&path));
+            .spawn(move || register_loop(&host_path, &launch_path));
         if let Err(err) = spawned {
             tracing::warn!(%err, "failed to start the Steam launch host");
         }
@@ -198,17 +201,13 @@ mod desktop {
     /// but a Steam session always has one, and guessing wrong would leave us
     /// registered on a socket nobody is listening to. Absent means we do not
     /// host, and the shortcut handles the launch as it always did.
-    fn socket_dir() -> Option<PathBuf> {
-        let dir = PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR")?);
+    fn socket_dir_from(runtime_dir: Option<OsString>) -> Option<PathBuf> {
+        let dir = PathBuf::from(runtime_dir?);
         dir.is_absolute().then(|| dir.join("zaparoo"))
     }
 
-    fn host_socket_path() -> Option<PathBuf> {
-        Some(socket_dir()?.join(HOST_SOCKET))
-    }
-
-    fn launch_socket_path() -> Option<PathBuf> {
-        Some(socket_dir()?.join(LAUNCH_SOCKET))
+    fn socket_dir() -> Option<PathBuf> {
+        socket_dir_from(std::env::var_os("XDG_RUNTIME_DIR"))
     }
 
     /// Stay registered for as long as the frontend runs. Core restarting is
@@ -222,11 +221,11 @@ mod desktop {
     /// life of the process, spinning and filling the log. Backing off instead
     /// costs a working reconnect nothing, because a real registration is up
     /// for far longer than this.
-    fn register_loop(path: &Path) {
+    fn register_loop(host_path: &Path, launch_path: &Path) {
         let mut backoff = RECONNECT_MIN;
         loop {
             let started = Instant::now();
-            match register(path) {
+            match register(host_path, launch_path) {
                 Ok(()) => tracing::info!("Core closed the launch host registration"),
                 Err(err) => tracing::debug!(%err, "launch host registration unavailable"),
             }
@@ -245,8 +244,8 @@ mod desktop {
     }
 
     /// One registration, held until Core hangs up.
-    fn register(path: &Path) -> std::io::Result<()> {
-        let stream = UnixStream::connect(path)?;
+    fn register(host_path: &Path, launch_path: &Path) -> std::io::Result<()> {
+        let stream = UnixStream::connect(host_path)?;
         send(
             &stream,
             &Hello {
@@ -260,18 +259,15 @@ mod desktop {
             if line.trim().is_empty() {
                 continue;
             }
-            handle_poke(&line);
+            handle_poke(&line, launch_path);
         }
         Ok(())
     }
 
-    fn handle_poke(line: &str) {
+    fn handle_poke(line: &str, launch_path: &Path) {
         match serde_json::from_str::<Poke>(line) {
             Ok(poke) if poke.kind == POKE_LAUNCH && poke.version == PROTOCOL_VERSION => {
-                let Some(path) = launch_socket_path() else {
-                    tracing::warn!("poked with no launch socket to answer on");
-                    return;
-                };
+                let path = launch_path.to_path_buf();
                 // A launch outlives the poke that asked for it, so the
                 // registration has to stay free to read the next one.
                 let spawned = thread::Builder::new()
@@ -450,20 +446,17 @@ mod desktop {
             vec![read_frame(&mut reader), read_frame(&mut reader)]
         }
 
-        /// A private runtime directory for one test, pointed at by
-        /// `XDG_RUNTIME_DIR` so the module resolves both socket paths inside
-        /// it. Each test runs in its own process, so the variable is ours.
+        /// A private runtime directory for one test. Paths stay explicit so
+        /// concurrent tests never share process-wide environment state.
         fn temp_runtime(name: &str) -> PathBuf {
             let root = std::env::temp_dir()
                 .join(format!("zaparoo-host-test-{}-{name}", std::process::id()));
             std::fs::create_dir_all(root.join("zaparoo")).expect("create test dir");
-            std::env::set_var("XDG_RUNTIME_DIR", &root);
             root
         }
 
         fn temp_socket(name: &str) -> PathBuf {
-            temp_runtime(name);
-            let path = launch_socket_path().expect("launch socket path");
+            let path = temp_runtime(name).join("zaparoo").join(LAUNCH_SOCKET);
             let _ = std::fs::remove_file(&path);
             path
         }
@@ -537,16 +530,17 @@ mod desktop {
         fn a_registration_says_who_it_is_and_then_serves_pokes() {
             // Two sockets, as Core binds them: the registration on one, the
             // launch the poke asks for on the other.
-            temp_runtime("register");
-            let host_path = host_socket_path().expect("host socket path");
-            let launch_path = launch_socket_path().expect("launch socket path");
+            let dir = temp_runtime("register").join("zaparoo");
+            let host_path = dir.join(HOST_SOCKET);
+            let launch_path = dir.join(LAUNCH_SOCKET);
             let _ = std::fs::remove_file(&host_path);
             let _ = std::fs::remove_file(&launch_path);
             let host = UnixListener::bind(&host_path).expect("bind host");
             let listener = UnixListener::bind(&launch_path).expect("bind launch");
             let registering = thread::spawn({
                 let host_path = host_path.clone();
-                move || register(&host_path)
+                let launch_path = launch_path.clone();
+                move || register(&host_path, &launch_path)
             });
 
             let (stream, _) = host.accept().expect("accept registration");
@@ -671,25 +665,22 @@ mod desktop {
 
         #[test]
         fn the_sockets_come_from_the_runtime_directory() {
-            std::env::set_var("XDG_RUNTIME_DIR", "/run/user/1000");
+            let dir = socket_dir_from(Some(OsString::from("/run/user/1000")))
+                .expect("absolute runtime directory");
             assert_eq!(
-                launch_socket_path(),
-                Some(PathBuf::from("/run/user/1000/zaparoo/steam-runtime.sock"))
+                dir.join(LAUNCH_SOCKET),
+                PathBuf::from("/run/user/1000/zaparoo/steam-runtime.sock")
             );
             // Registration has its own path, so a Core that only binds the
             // launch socket per launch never hears from us at all.
             assert_eq!(
-                host_socket_path(),
-                Some(PathBuf::from(
-                    "/run/user/1000/zaparoo/steam-launch-host.sock"
-                ))
+                dir.join(HOST_SOCKET),
+                PathBuf::from("/run/user/1000/zaparoo/steam-launch-host.sock")
             );
             // A relative value is not a runtime directory, and guessing past
             // it would register us on a socket nobody reads.
-            std::env::set_var("XDG_RUNTIME_DIR", "run/user/1000");
-            assert_eq!(host_socket_path(), None);
-            std::env::remove_var("XDG_RUNTIME_DIR");
-            assert_eq!(host_socket_path(), None);
+            assert_eq!(socket_dir_from(Some(OsString::from("run/user/1000"))), None);
+            assert_eq!(socket_dir_from(None), None);
         }
     }
 }

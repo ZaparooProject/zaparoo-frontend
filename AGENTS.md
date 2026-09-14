@@ -295,7 +295,7 @@ state to go stale because there is no cross-screen state.
   it is re-read on every scene change rather than cached: a docked Steam
   Deck is `Seated` and an undocked one is `Handheld`, same binary. Only a
   `SteamOs` runtime can be `Handheld` at all, because a laptop also drives
-  a built-in panel and a 13 inch screen at desk distance subtends more
+  a built-in panel and a 13-inch screen at desk distance subtend more
   than twice the angle a Deck does. The `device` interface profile follows
   this, not the runtime; `ZAPAROO_VIEWING_OVERRIDE=handheld|seated` forces
   it. Never derive it from reported DPI: inside a gamescope session the

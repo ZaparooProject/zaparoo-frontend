@@ -61,7 +61,7 @@ echo "Wrote $DESKTOP_DEST"
 
 shortcuts=("$HOME"/.steam/steam/userdata/*/config/shortcuts.vdf)
 for shortcuts_file in "${shortcuts[@]}"; do
-    if [ -f "$shortcuts_file" ] && strings "$shortcuts_file" | grep -qF "$BIN_DEST"; then
+    if [ -f "$shortcuts_file" ] && strings "$shortcuts_file" | grep -F "$BIN_DEST" >/dev/null; then
         echo "Steam shortcut already present; binary updated in place."
         exit 0
     fi

@@ -321,24 +321,28 @@ impl GamesModel {
         self.next_cursor.is_some()
     }
 
-    /// Rows Core places before media offsets. `totalDirs` excludes virtual
-    /// roots, so the loaded prefix is authoritative when it is larger.
-    fn leading_non_media_count(&self) -> usize {
+    /// Root rows Core places before its counted directories. `totalDirs`
+    /// excludes these virtual entries, including while only part of the
+    /// directory prefix has loaded.
+    fn root_count(&self) -> usize {
         self.rows
             .iter()
             .take_while(|row| row.entry_type != EntryType::Media)
+            .filter(|row| row.entry_type == EntryType::Root)
             .count()
     }
 
+    fn non_media_total(&self) -> usize {
+        self.total_dirs as usize + self.root_count()
+    }
+
     fn known_total(&self) -> Option<usize> {
-        self.total_known.then(|| {
-            self.total_files as usize
-                + (self.total_dirs as usize).max(self.leading_non_media_count())
-        })
+        self.total_known
+            .then(|| self.total_files as usize + self.non_media_total())
     }
 
     fn jump_target(&self, item_offset: usize) -> usize {
-        rules::jump_target(self.leading_non_media_count(), item_offset)
+        rules::jump_target(self.non_media_total(), item_offset)
     }
 
     fn state(&self) -> State {
@@ -2970,6 +2974,23 @@ mod tests {
         assert_eq!(model.known_total(), Some(5));
         assert_eq!(model.jump_target(1), 4);
         assert_eq!(model.rows[model.jump_target(1)].name, "Bravo");
+    }
+
+    #[test]
+    fn partial_directory_prefix_still_uses_core_directory_total() {
+        let mut model = GamesModel::new();
+        model.total_files = 2;
+        model.total_dirs = 2;
+        model.rows = [
+            entry("root", "Virtual", "mock://"),
+            entry("directory", "Favorites", "/g/Favorites"),
+        ]
+        .iter()
+        .map(GameRow::from)
+        .collect();
+
+        assert_eq!(model.known_total(), Some(5));
+        assert_eq!(model.jump_target(1), 4);
     }
 
     #[test]

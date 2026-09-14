@@ -342,7 +342,14 @@ fn fold_notification(notification: &Notification, state: &Arc<watch::Sender<Medi
         "media.stopped" => {
             match serde_json::from_value::<ActiveMediaInfo>(notification.params.clone()) {
                 Ok(active) if is_primary_slot(&active.slot) => {
-                    state.send_modify(|s| s.primary_active = None);
+                    state.send_modify(|s| {
+                        if s.primary_active
+                            .as_ref()
+                            .is_some_and(|current| same_media_identity(current, &active))
+                        {
+                            s.primary_active = None;
+                        }
+                    });
                 }
                 Ok(_) => {}
                 Err(e) => warn!("media_status: media.stopped decode failed: {e}"),
@@ -350,6 +357,13 @@ fn fold_notification(notification: &Notification, state: &Arc<watch::Sender<Medi
         }
         _ => {}
     }
+}
+
+fn same_media_identity(left: &ActiveMediaInfo, right: &ActiveMediaInfo) -> bool {
+    left.launcher_id == right.launcher_id
+        && left.system_id == right.system_id
+        && left.media_path == right.media_path
+        && left.media_name == right.media_name
 }
 
 fn is_primary_slot(slot: &str) -> bool {
@@ -583,11 +597,46 @@ mod tests {
         fold_notification(
             &Notification {
                 method: "media.stopped".into(),
-                params: json!({ "slot": "primary", "mediaName": "Super Metroid" }),
+                params: json!({
+                    "systemId": "SNES", "systemName": "Super Nintendo",
+                    "mediaPath": "/games/Super Metroid.sfc", "mediaName": "Super Metroid",
+                    "slot": "primary"
+                }),
             },
             &tx,
         );
         assert!(rx.borrow().primary_active.is_none());
+    }
+
+    #[test]
+    fn stale_stop_does_not_clear_a_newer_primary_launch() {
+        let current = ActiveMediaInfo {
+            launcher_id: "retroarch".into(),
+            system_id: "SNES".into(),
+            media_path: "/games/Super Metroid.sfc".into(),
+            media_name: "Super Metroid".into(),
+            slot: "primary".into(),
+            ..ActiveMediaInfo::default()
+        };
+        let (tx, rx) = watch::channel(MediaStatusState {
+            primary_active: Some(current.clone()),
+            ..MediaStatusState::default()
+        });
+        let tx = Arc::new(tx);
+
+        fold_notification(
+            &Notification {
+                method: "media.stopped".into(),
+                params: json!({
+                    "launcherId": "retroarch", "systemId": "NES",
+                    "mediaPath": "/games/Mega Man.nes", "mediaName": "Mega Man",
+                    "slot": "primary"
+                }),
+            },
+            &tx,
+        );
+
+        assert_eq!(rx.borrow().primary_active.as_ref(), Some(&current));
     }
 
     #[test]

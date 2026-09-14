@@ -454,6 +454,7 @@ pub(crate) fn open_quit_confirm(app: &App) {
     // report the game over while it is still on screen.
     if crate::steam_host::hosting() {
         tracing::debug!("quit declined: a hosted game is still running");
+        open_alert(app, DialogKind::QuitBlocked);
         return;
     }
     open_dialog(

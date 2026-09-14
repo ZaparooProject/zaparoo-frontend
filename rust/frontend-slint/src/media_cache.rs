@@ -151,6 +151,12 @@ impl MediaCache {
         lock_inner(&self.inner).map.contains_key(key)
     }
 
+    /// Put an in-flight request back behind the dormancy gate. Its queued
+    /// identity remains set, so no duplicate can join it while it waits.
+    fn retry_after_dormancy(&self, key: MediaKey) {
+        let _ = self.tx.send(key);
+    }
+
     /// Release decoded image storage before `MiSTer` hands RAM to a
     /// launched core. Negative results and queued identities remain so
     /// a frontend that survives the handoff can continue cleanly.
@@ -279,6 +285,44 @@ pub fn decode_bytes(bytes: &[u8]) -> Option<DecodedImage> {
     })
 }
 
+/// Build one Core request. Media identity fields are exclusive, and artwork
+/// preference leads the fallback ladder unless a carousel slot names one type.
+fn request_params(cache: &MediaCache, key: &MediaKey) -> MediaImageParams {
+    let mut image_types: Vec<String> = ["boxart", "image", "thumbnail", "boxart3d", "screenshot"]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let preferred = cache.preferred_image_type();
+    if !preferred.is_empty() && preferred != "auto" {
+        image_types.retain(|kind| *kind != preferred);
+        image_types.insert(0, preferred);
+    }
+    if let Some(kind) = &key.image_type {
+        image_types = vec![kind.clone()];
+    }
+    let delivery = should_request_local_path(key.max_size)
+        .then(|| zaparoo_app::covers::DELIVERY_LOCAL_PATH.to_string());
+    if key.media_id.is_some() {
+        MediaImageParams {
+            media_id: key.media_id,
+            system: String::new(),
+            path: String::new(),
+            image_types,
+            max_size: (key.max_size > 0).then_some(key.max_size),
+            delivery,
+        }
+    } else {
+        MediaImageParams {
+            media_id: None,
+            system: key.system.clone(),
+            path: key.path.clone(),
+            image_types,
+            max_size: (key.max_size > 0).then_some(key.max_size),
+            delivery,
+        }
+    }
+}
+
 pub fn spawn_driver(
     cache: Arc<MediaCache>,
     client: Arc<Client>,
@@ -301,49 +345,9 @@ pub fn spawn_driver(
             if cache.get(&key).is_some() {
                 continue;
             }
-            // The media ref is EXCLUSIVE: mediaId when Core provided
-            // one, otherwise the (system, path) pair - Core rejects a
-            // request mixing both. Image types are preference-first,
-            // then the Core default ladder (the Qt cache's
-            // `preferred_image_types` shape): a library scraped
-            // through `<image>` tags has no `boxart` property at all.
-            let mut image_types: Vec<String> =
-                ["boxart", "image", "thumbnail", "boxart3d", "screenshot"]
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect();
-            let preferred = cache.preferred_image_type();
-            if !preferred.is_empty() && preferred != "auto" {
-                image_types.retain(|t| *t != preferred);
-                image_types.insert(0, preferred);
-            }
-            if let Some(kind) = &key.image_type {
-                image_types = vec![kind.clone()];
-            }
-            // On a colocated MiSTer the bytes are already on the SD
-            // card: ask for the path and read it here rather than
-            // making Core base64 a file we can open ourselves.
-            let delivery = should_request_local_path(key.max_size)
-                .then(|| zaparoo_app::covers::DELIVERY_LOCAL_PATH.to_string());
-            let params = if key.media_id.is_some() {
-                MediaImageParams {
-                    media_id: key.media_id,
-                    system: String::new(),
-                    path: String::new(),
-                    image_types,
-                    max_size: (key.max_size > 0).then_some(key.max_size),
-                    delivery,
-                }
-            } else {
-                MediaImageParams {
-                    media_id: None,
-                    system: key.system.clone(),
-                    path: key.path.clone(),
-                    image_types,
-                    max_size: (key.max_size > 0).then_some(key.max_size),
-                    delivery,
-                }
-            };
+            // On a colocated MiSTer the bytes are already on the SD card:
+            // request its path instead of making Core base64 a local file.
+            let params = request_params(&cache, &key);
             let asked_for_path = params.delivery.is_some();
             let mut outcome = client.media_image(params.clone()).await;
             if let Err(e) = &outcome {
@@ -364,11 +368,29 @@ pub fn spawn_driver(
             }
             match outcome {
                 Ok(result) => {
-                    let image = if result.delivery == zaparoo_app::covers::DELIVERY_LOCAL_PATH {
-                        match result.local_path.filter(|p| !p.is_empty()) {
-                            Some(path) => read_local(path).await.as_deref().and_then(decode_bytes),
+                    // Finish any asynchronous local read before taking the
+                    // dormancy guard; no decoded pixels exist yet.
+                    let local_bytes = if result.delivery == zaparoo_app::covers::DELIVERY_LOCAL_PATH
+                    {
+                        match result.local_path.as_deref().filter(|p| !p.is_empty()) {
+                            Some(path) => read_local(path.to_string()).await,
                             None => None,
                         }
+                    } else {
+                        None
+                    };
+                    // Holding the watch read guard makes this result atomic
+                    // with set_dormant's send_replace. Either this finishes
+                    // first and clear_decoded removes it, or dormancy wins and
+                    // the undecoded request goes back through the gate.
+                    let dormant_guard = dormant.borrow_and_update();
+                    if *dormant_guard {
+                        drop(dormant_guard);
+                        cache.retry_after_dormancy(key);
+                        continue;
+                    }
+                    let image = if result.delivery == zaparoo_app::covers::DELIVERY_LOCAL_PATH {
+                        local_bytes.as_deref().and_then(decode_bytes)
                     } else {
                         decode(&result.data)
                     };
@@ -381,6 +403,12 @@ pub fn spawn_driver(
                     }
                 }
                 Err(e) => {
+                    let dormant_guard = dormant.borrow_and_update();
+                    if *dormant_guard {
+                        drop(dormant_guard);
+                        cache.retry_after_dormancy(key);
+                        continue;
+                    }
                     tracing::debug!(path = %key.path, "media.image failed: {}", e.message);
                     cache.insert_negative(key);
                 }

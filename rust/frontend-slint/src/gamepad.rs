@@ -32,6 +32,7 @@ pub use desktop::{note_keyboard_input, spawn};
 #[cfg(feature = "desktop")]
 mod desktop {
     use std::collections::HashMap;
+    use std::hash::Hash;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, RwLock};
     use std::time::Duration;
@@ -153,6 +154,95 @@ mod desktop {
     /// way are one hold rather than two competing ones.
     fn hold_key(action: &str) -> String {
         format!("pad:{action}")
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    enum PadControl {
+        Button(Button),
+        Axis(Axis),
+    }
+
+    /// Physical pad controls currently contributing to each logical action.
+    /// Multiple pads, or a stick and d-pad on one pad, share one `InputModel`
+    /// hold and release it only when its final owner goes away.
+    #[derive(Debug)]
+    struct ActiveActions<Id> {
+        sources: HashMap<(Id, PadControl), &'static str>,
+        owners: HashMap<&'static str, usize>,
+    }
+
+    impl<Id> Default for ActiveActions<Id> {
+        fn default() -> Self {
+            Self {
+                sources: HashMap::new(),
+                owners: HashMap::new(),
+            }
+        }
+    }
+
+    impl<Id: Copy + Eq + Hash> ActiveActions<Id> {
+        /// Change one physical control's action. Returns the logical release
+        /// and press edges, in that order, after co-owners are accounted for.
+        fn set(
+            &mut self,
+            id: Id,
+            control: PadControl,
+            next: Option<&'static str>,
+        ) -> (Option<&'static str>, Option<&'static str>) {
+            let key = (id, control);
+            let current = match next {
+                Some(action) => self.sources.insert(key, action),
+                None => self.sources.remove(&key),
+            };
+            if current == next {
+                return (None, None);
+            }
+
+            let released = current.and_then(|action| {
+                let count = self.owners.get_mut(action)?;
+                *count -= 1;
+                if *count == 0 {
+                    self.owners.remove(action);
+                    Some(action)
+                } else {
+                    None
+                }
+            });
+            let pressed = next.and_then(|action| {
+                let count = self.owners.entry(action).or_default();
+                let first = *count == 0;
+                *count += 1;
+                first.then_some(action)
+            });
+            (released, pressed)
+        }
+
+        /// Drop every control owned by one disconnected pad and return only
+        /// actions whose final owner disappeared.
+        fn disconnect(&mut self, id: Id) -> Vec<&'static str> {
+            let controls: Vec<PadControl> = self
+                .sources
+                .keys()
+                .filter_map(|(owner, control)| (*owner == id).then_some(*control))
+                .collect();
+            controls
+                .into_iter()
+                .filter_map(|control| self.set(id, control, None).0)
+                .collect()
+        }
+    }
+
+    fn dispatch_transition(
+        ctx: &Arc<Ctx>,
+        weak: &slint::Weak<App>,
+        transition: (Option<&'static str>, Option<&'static str>),
+    ) {
+        if let Some(action) = transition.0 {
+            release(ctx, weak, action);
+        }
+        if let Some(action) = transition.1 {
+            press(ctx, weak, action);
+        }
     }
 
     fn publish_pad(style: &'static str) {
@@ -307,6 +397,7 @@ mod desktop {
         }
 
         let mut latches: HashMap<(GamepadId, Axis), AxisLatch> = HashMap::new();
+        let mut active = ActiveActions::default();
         loop {
             let Some(event) = gilrs.next_event_blocking(Some(RESCAN_INTERVAL)) else {
                 if seen_a_pad || rescans >= RESCAN_LIMIT {
@@ -335,6 +426,9 @@ mod desktop {
                 }
                 EventType::Disconnected => {
                     latches.retain(|(id, _), _| *id != event.id);
+                    for action in active.disconnect(event.id) {
+                        release(ctx, weak, action);
+                    }
                     // Re-resolve from whatever is left rather than keeping
                     // the unplugged pad's glyphs on screen.
                     let remaining = gilrs
@@ -348,12 +442,21 @@ mod desktop {
                 }
                 EventType::ButtonPressed(button, _) => {
                     if let Some(action) = action_for_button(button) {
-                        press(ctx, weak, action);
+                        note_pad_input();
+                        dispatch_transition(
+                            ctx,
+                            weak,
+                            active.set(event.id, PadControl::Button(button), Some(action)),
+                        );
                     }
                 }
                 EventType::ButtonReleased(button, _) => {
-                    if let Some(action) = action_for_button(button) {
-                        release(ctx, weak, action);
+                    if action_for_button(button).is_some() {
+                        dispatch_transition(
+                            ctx,
+                            weak,
+                            active.set(event.id, PadControl::Button(button), None),
+                        );
                     }
                 }
                 EventType::AxisChanged(axis, value, _) => {
@@ -367,12 +470,15 @@ mod desktop {
                         continue;
                     }
                     latches.insert(key, next);
-                    if let Some(action) = latch_action(current, negative, positive) {
-                        release(ctx, weak, action);
+                    let next_action = latch_action(next, negative, positive);
+                    if next_action.is_some() {
+                        note_pad_input();
                     }
-                    if let Some(action) = latch_action(next, negative, positive) {
-                        press(ctx, weak, action);
-                    }
+                    dispatch_transition(
+                        ctx,
+                        weak,
+                        active.set(event.id, PadControl::Axis(axis), next_action),
+                    );
                 }
                 _ => {}
             }
@@ -382,8 +488,8 @@ mod desktop {
     #[cfg(test)]
     mod tests {
         use super::{
-            action_for_button, actions_for_axis, hold_key, latch_action, next_latch, Axis,
-            AxisLatch, Button,
+            action_for_button, actions_for_axis, hold_key, latch_action, next_latch, ActiveActions,
+            Axis, AxisLatch, Button, PadControl,
         };
         use zaparoo_core::input_actions::actions;
 
@@ -440,6 +546,50 @@ mod desktop {
             assert_eq!(next_latch(engaged, 0.3), AxisLatch::Center);
             // A flick straight across lands on the far side in one step.
             assert_eq!(next_latch(engaged, -0.9), AxisLatch::Negative);
+        }
+
+        #[test]
+        fn disconnected_pad_releases_only_its_unshared_actions() {
+            let mut active = ActiveActions::default();
+            assert_eq!(
+                active.set(
+                    1_u8,
+                    PadControl::Button(Button::South),
+                    Some(actions::ACCEPT)
+                ),
+                (None, Some(actions::ACCEPT))
+            );
+            assert_eq!(
+                active.set(
+                    2_u8,
+                    PadControl::Button(Button::South),
+                    Some(actions::ACCEPT)
+                ),
+                (None, None)
+            );
+            assert!(active.disconnect(1).is_empty());
+            assert_eq!(active.disconnect(2), [actions::ACCEPT]);
+        }
+
+        #[test]
+        fn stick_and_button_share_one_logical_hold() {
+            let mut active = ActiveActions::default();
+            assert_eq!(
+                active.set(1_u8, PadControl::Button(Button::DPadUp), Some(actions::UP)),
+                (None, Some(actions::UP))
+            );
+            assert_eq!(
+                active.set(1_u8, PadControl::Axis(Axis::LeftStickY), Some(actions::UP)),
+                (None, None)
+            );
+            assert_eq!(
+                active.set(1_u8, PadControl::Button(Button::DPadUp), None),
+                (None, None)
+            );
+            assert_eq!(
+                active.set(1_u8, PadControl::Axis(Axis::LeftStickY), None),
+                (Some(actions::UP), None)
+            );
         }
 
         #[test]

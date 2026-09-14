@@ -147,7 +147,7 @@ the load-bearing word, because a cable in a dock with the display asleep is
 not the screen the user is looking at.
 
 Only a `SteamOs` runtime can be `Handheld` at all. A laptop also drives a
-built-in panel, and a 13 inch screen at desk distance subtends more than
+built-in panel, and a 13-inch screen at desk distance subtends more than
 twice the angle a Deck does, so treating every internal panel as handheld
 would hand the roomier layout to the screen that least needs it.
 

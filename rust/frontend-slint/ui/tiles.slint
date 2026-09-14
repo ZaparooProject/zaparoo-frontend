@@ -63,7 +63,6 @@ export component MarqueeCaption inherits Rectangle {
     property <int> scroll-x: 0;
     property <int> dir: -1;
     property <int> pause-ticks: 20;
-    property <int> elapsed-ticks: 0;
     property <bool> finished: false;
     accessible-role: text;
     accessible-label: root.content + (root.tags == "" ? "" : " " + root.tags);
@@ -74,7 +73,6 @@ export component MarqueeCaption inherits Rectangle {
         root.scroll-x = 0;
         root.dir = -1;
         root.pause-ticks = 20;
-        root.elapsed-ticks = 0;
         root.finished = false;
     }
     property <length> name-full-w: label.preferred-width;
@@ -111,11 +109,7 @@ export component MarqueeCaption inherits Rectangle {
         interval: 40ms;
         running: root.marquee && !root.finished;
         triggered => {
-            root.elapsed-ticks += 1;
-            if (root.elapsed-ticks >= 100) {
-                root.scroll-x = 0;
-                root.finished = true;
-            } else if (root.pause-ticks > 0) {
+            if (root.pause-ticks > 0) {
                 root.pause-ticks -= 1;
             } else if (root.scroll-x + root.dir <= -root.scroll-dist) {
                 root.scroll-x = -root.scroll-dist;
@@ -357,7 +351,7 @@ export component Tile inherits Rectangle {
                 y: root.outline-width;
                 width: parent.width - 2 * root.outline-width;
                 height: parent.height - 2 * root.outline-width;
-                background: Theme.surface-card;
+                background: root.quiet ? Theme.bg-bar : Theme.surface-card;
                 border-radius: Math.max(0px, parent.border-radius - root.outline-width);
             }
         }

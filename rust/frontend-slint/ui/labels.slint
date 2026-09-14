@@ -132,6 +132,7 @@ export global Labels {
 export global DialogLabels {
     public pure function title(kind: DialogKind, error: ErrorKind) -> string {
         if (kind == DialogKind.quit-confirm) { return @tr("Quit Zaparoo Frontend?"); }
+        if (kind == DialogKind.quit-blocked) { return @tr("Game still running"); }
         if (kind == DialogKind.restart-setting) { return @tr("Quit and restart Zaparoo Frontend?"); }
         if (kind == DialogKind.notice) { return @tr("Welcome to Zaparoo Frontend"); }
         if (kind == DialogKind.core-version) { return @tr("Update Zaparoo Core"); }
@@ -143,6 +144,7 @@ export global DialogLabels {
 
     public pure function body(kind: DialogKind, error: ErrorKind, phase: FirstRunPhase, detail: string, arg: string) -> string {
         if (kind == DialogKind.quit-confirm) { return @tr("Are you sure you want to exit?"); }
+        if (kind == DialogKind.quit-blocked) { return @tr("Close the running game before exiting Zaparoo Frontend."); }
         if (kind == DialogKind.restart-setting) { return @tr("This setting needs a frontend restart to take effect."); }
         if (kind == DialogKind.notice) {
             return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About / License.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");

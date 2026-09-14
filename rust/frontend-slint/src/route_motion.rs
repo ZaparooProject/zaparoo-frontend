@@ -66,9 +66,12 @@ fn frame(window: &Rc<MinimalSoftwareWindow>) -> Option<u64> {
 fn pixels(window: &Rc<MinimalSoftwareWindow>) -> Vec<Rgb565Pixel> {
     let mut buf = vec![Rgb565Pixel(0); (W * H) as usize];
     window.request_redraw();
-    window.draw_if_needed(|renderer| {
-        renderer.render(&mut buf, W as usize);
-    });
+    assert!(
+        window.draw_if_needed(|renderer| {
+            renderer.render(&mut buf, W as usize);
+        }),
+        "a requested redraw must produce a frame"
+    );
     buf
 }
 

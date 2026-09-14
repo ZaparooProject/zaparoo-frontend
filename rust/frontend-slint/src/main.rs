@@ -492,6 +492,8 @@ fn main() -> Result<(), slint::PlatformError> {
         path.set_file_name("state-slint.toml");
         std::env::set_var("ZAPAROO_STATE_FILE", &path);
     }
+    #[cfg(feature = "desktop")]
+    pin_logical_pixels_to_physical();
 
     let config = zaparoo_core::config::load_config(&platform_paths::config_file_path());
     let _log_guard = init_demo_paths(&config);
@@ -605,8 +607,6 @@ fn main() -> Result<(), slint::PlatformError> {
     } else {
         DESKTOP_WINDOW_SIZE
     };
-    #[cfg(feature = "desktop")]
-    pin_logical_pixels_to_physical();
     let app = App::new()?;
     if fullscreen {
         app.window().set_fullscreen(true);
@@ -1324,6 +1324,9 @@ fn start_media_cache(
         move |key, image| {
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
+                if *ctx.dormant.borrow() {
+                    return;
+                }
                 if key.image_type.is_some() {
                     game_info::cover_landed(&ctx, &app, &key, &image);
                 } else {
